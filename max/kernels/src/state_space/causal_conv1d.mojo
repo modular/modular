@@ -55,8 +55,8 @@ Activation Support:
     - SiLU: Sigmoid Linear Unit activation (x * sigmoid(x))
 """
 
-from std.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from std.gpu import (
     block_dim,
     block_idx,
@@ -693,10 +693,10 @@ def causal_conv1d_channel_first_fwd_gpu[
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, C, L)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -766,6 +766,10 @@ def causal_conv1d_channel_first_fwd_gpu[
         bias_stride: Stride for the channel dimension of the bias tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -777,15 +781,15 @@ def causal_conv1d_channel_first_fwd_gpu[
     var nChannels: Int = Int(x.dim[1]())
     var nSeqLen: Int = Int(x.dim[2]())
 
-    if batch_id >= nBatches or channel_id >= nChannels or kWidth != width:
+    if batch_id >= nBatches or channel_id >= nChannels or kWidth != _width:
         return
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -800,14 +804,14 @@ def causal_conv1d_channel_first_fwd_gpu[
     var prev_input_chunk: SIMD[x_dtype, kNElts]
     var input_chunk: SIMD[x_dtype, kNElts]
 
-    # For width 3, we need to use scalars instead of SIMD (SIMD requires power-of-2 widths)
+    # For _width 3, we need to use scalars instead of SIMD (SIMD requires power-of-2 widths)
     # Declare variables for both cases - only one will be used based on kWidth
     var W_2: SIMD[x_dtype, 2] = 0
     var W_4: SIMD[x_dtype, 4] = 0
     var w0: Scalar[x_dtype] = 0
     var w1: Scalar[x_dtype] = 0
     var w2: Scalar[x_dtype] = 0
-    var w_single: Scalar[x_dtype] = 0  # For width 1
+    var w_single: Scalar[x_dtype] = 0  # For _width 1
 
     var weight_c_base: UInt32 = UInt32(channel_id) * weight_c_stride
     if kWidth == 1:
@@ -994,10 +998,10 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, C, L)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -1065,6 +1069,10 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
             tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -1271,10 +1279,10 @@ def causal_conv1d_channel_last_fwd_gpu[
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, L, C)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -1309,6 +1317,10 @@ def causal_conv1d_channel_last_fwd_gpu[
     For channel-last layout (B, L, C), we reshape to (B*L, C) to enable vectorized
     operations along channels, and process multiple sequence positions per thread.
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -1316,11 +1328,11 @@ def causal_conv1d_channel_last_fwd_gpu[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -1339,10 +1351,10 @@ def causal_conv1d_channel_last_fwd_gpu[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -1363,7 +1375,9 @@ def causal_conv1d_channel_last_fwd_gpu[
         var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](
             bias.raw_load(c_idx)
         )
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
+        var W = (weight._storage + c_idx * Int(weight_c_stride)).load[
+            width=kWidth
+        ]()
         var prev_chunk_col: Int = (seq_start - 1) // kNElts
         var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
@@ -1432,7 +1446,7 @@ def causal_conv1d_channel_last_fwd_gpu[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Build input window by loading directly from memory
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
+            # For channel-last (B, L, C): offset = _batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
             comptime for w in range(kWidth):
@@ -1484,10 +1498,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, L, C)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -1515,6 +1529,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     4. Optimized activation function with SIMD operations
     5. Better thread utilization and memory bandwidth usage
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -1522,11 +1540,11 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -1548,7 +1566,9 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
         if c_idx >= nChannels:
             break
 
-        var W = (weight.ptr + c_idx * Int(weight_c_stride)).load[width=kWidth]()
+        var W = (weight._storage + c_idx * Int(weight_c_stride)).load[
+            width=kWidth
+        ]()
         var prev_chunk_col: Int = (seq_start - 1) // kNElts
         var prev_input_chunk: SIMD[x_dtype, kNElts] = 0
         if prev_chunk_col >= 0 and prev_chunk_col * kNElts < nSeqLen:
@@ -1617,7 +1637,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Build input window by loading directly from memory
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
+            # For channel-last (B, L, C): offset = _batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             var input_window: SIMD[x_dtype, kWidth] = 0
 
             comptime for w in range(kWidth):
@@ -1678,10 +1698,10 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     bias_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, L, C)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -1767,6 +1787,10 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
             `seq_idx` tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -1774,11 +1798,11 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -1798,10 +1822,10 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -1810,8 +1834,8 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     if bias_dim == 0:
         return
 
-    # Helper function to load SIMD vector from 3D tensor at (batch, seq, channel_start)
-    # For channel-last (B, L, C), offset = batch * x_batch_stride + seq * x_l_stride + channel_start * x_c_stride
+    # Helper function to load SIMD vector from 3D tensor at (_batch, seq, channel_start)
+    # For channel-last (B, L, C), offset = _batch * x_batch_stride + seq * x_l_stride + channel_start * x_c_stride
     for c_offset in range(kNElts):
         var c_idx: Int = channel_start + c_offset
         if c_idx >= nChannels:
@@ -1881,7 +1905,7 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
+            # For channel-last (B, L, C): offset = _batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
@@ -2111,10 +2135,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     output_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, L, C)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -2148,6 +2172,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     5. Better thread utilization and memory bandwidth usage
     6. seq_idx support for conditional processing
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -2155,11 +2183,11 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -2235,7 +2263,7 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-last (B, L, C): offset = batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
+            # For channel-last (B, L, C): offset = _batch * x_batch_stride + seq * x_l_stride + channel * x_c_stride
             comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
@@ -2472,10 +2500,10 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     bias_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, C, L)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -2507,6 +2535,10 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     For channel-first (B, C, L): x_c_stride = L, x_l_stride = 1
     Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -2514,11 +2546,11 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -2537,10 +2569,10 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
 
     # Safety check for null pointers
     if (
-        Int(x.ptr) == 0
-        or Int(output.ptr) == 0
-        or Int(weight.ptr) == 0
-        or Int(bias.ptr) == 0
+        Int(x._storage) == 0
+        or Int(output._storage) == 0
+        or Int(weight._storage) == 0
+        or Int(bias._storage) == 0
     ):
         return
 
@@ -2616,7 +2648,7 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = cur_bias
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
+            # For channel-first (B, C, L): offset = _batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
             comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
@@ -2846,10 +2878,10 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     output_LT: TensorLayout,
     seq_idx_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],  # Shape (B, C, L)
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin
@@ -2878,6 +2910,10 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     For channel-first (B, C, L): x_c_stride = L, x_l_stride = 1
     Offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
 
     var tidx: Int = thread_idx.x
     var batch_id: Int = block_idx.z
@@ -2885,11 +2921,11 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     var chunk_id: Int = block_idx.x
     var kChunkSize: Int = block_dim.x
 
-    var nBatches: Int = batch
-    var nSeqLen: Int = seqlen
-    var nChannels: Int = dim
+    var nBatches: Int = _batch
+    var nSeqLen: Int = _seqlen
+    var nChannels: Int = _dim
 
-    if batch_id >= nBatches or kWidth != width:
+    if batch_id >= nBatches or kWidth != _width:
         return
 
     # Work with 3D tensor directly - manually load SIMD vectors using pointer arithmetic
@@ -2964,7 +3000,7 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
             var conv_sum: Scalar[output_dtype] = 0.0
 
             # Use scalar operations for all kWidth values to avoid SIMD issues with non-power-of-2 sizes
-            # For channel-first (B, C, L): offset = batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
+            # For channel-first (B, C, L): offset = _batch * x_batch_stride + channel * x_c_stride + seq * x_l_stride
             comptime if kWidth == 1:
                 var input_l: Int = seq_pos
                 if input_l >= 0 and input_l < nSeqLen:
@@ -3575,11 +3611,11 @@ def causal_conv1d_update_gpu[
     output_LT: TensorLayout,
     bias_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    state_len: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
     conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutUntrackedOrigin],
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
@@ -3647,27 +3683,32 @@ def causal_conv1d_update_gpu[
         out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
     var b = block_idx.x
     var c_base = block_idx.y * kNThreads
     var c = c_base + thread_idx.x
 
-    if b >= batch or c >= dim:
+    if b >= _batch or c >= _dim:
         return
 
-    var width_minus_1: Int = width - 1
+    var width_minus_1: Int = _width - 1
     var weight_c_base = Int(UInt32(c) * weight_c_stride)
     var cur_bias: Scalar[output_dtype] = Scalar[output_dtype](bias.raw_load(c))
     var silu_active = Bool(silu_activation != 0)
 
-    for l in range(seqlen):
+    for l in range(_seqlen):
         var conv_sum: Scalar[output_dtype] = cur_bias
 
-        for w in range(width):
-            var src_pos = state_len + l - (width_minus_1 - w)
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
             var input_val: Scalar[x_dtype] = 0.0
 
-            if src_pos >= state_len:
-                var x_l_pos = src_pos - state_len
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
                 var x_offset = Int(
                     UInt32(b) * x_batch_stride
                     + UInt32(c) * x_c_stride
@@ -3708,9 +3749,9 @@ def causal_conv1d_update_gpu[
         output.raw_store(out_offset, out_val)
 
     # Update conv_state
-    if seqlen >= state_len:
-        for s in range(state_len):
-            var x_l_pos = seqlen - state_len + s
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
             var x_offset = Int(
                 UInt32(b) * x_batch_stride
                 + UInt32(c) * x_c_stride
@@ -3726,11 +3767,11 @@ def causal_conv1d_update_gpu[
                 conv_state_offset, Scalar[conv_state_dtype](x_val)
             )
     else:
-        for s in range(state_len - seqlen):
+        for s in range(_state_len - _seqlen):
             var src_offset = Int(
                 UInt32(b) * conv_state_batch_stride
                 + UInt32(c) * conv_state_c_stride
-                + UInt32((s + seqlen)) * conv_state_l_stride
+                + UInt32((s + _seqlen)) * conv_state_l_stride
             )
             var dst_offset = Int(
                 UInt32(b) * conv_state_batch_stride
@@ -3740,7 +3781,7 @@ def causal_conv1d_update_gpu[
             var val = conv_state.raw_load(src_offset)
             conv_state.raw_store(dst_offset, val)
 
-        for l in range(seqlen):
+        for l in range(_seqlen):
             var x_offset = Int(
                 UInt32(b) * x_batch_stride
                 + UInt32(c) * x_c_stride
@@ -3750,7 +3791,7 @@ def causal_conv1d_update_gpu[
             var conv_state_offset = Int(
                 UInt32(b) * conv_state_batch_stride
                 + UInt32(c) * conv_state_c_stride
-                + UInt32((state_len - seqlen + l)) * conv_state_l_stride
+                + UInt32((_state_len - _seqlen + l)) * conv_state_l_stride
             )
             conv_state.raw_store(
                 conv_state_offset, Scalar[conv_state_dtype](x_val)
@@ -3768,11 +3809,11 @@ def causal_conv1d_update_gpu_no_bias[
     weight_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    width: Int,
-    state_len: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    width: Int32,
+    state_len: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
     conv_state: TileTensor[conv_state_dtype, conv_state_LT, MutUntrackedOrigin],
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
@@ -3836,26 +3877,31 @@ def causal_conv1d_update_gpu_no_bias[
         out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation (Int8: 0 or 1).
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _width = Int(width)
+    var _state_len = Int(state_len)
     var b = block_idx.x
     var c_base = block_idx.y * kNThreads
     var c = c_base + thread_idx.x
 
-    if b >= batch or c >= dim:
+    if b >= _batch or c >= _dim:
         return
 
-    var width_minus_1: Int = width - 1
+    var width_minus_1: Int = _width - 1
     var weight_c_base = Int(UInt32(c) * weight_c_stride)
     var silu_active = Bool(silu_activation != 0)
 
-    for l in range(seqlen):
+    for l in range(_seqlen):
         var conv_sum: Scalar[output_dtype] = 0.0
 
-        for w in range(width):
-            var src_pos = state_len + l - (width_minus_1 - w)
+        for w in range(_width):
+            var src_pos = _state_len + l - (width_minus_1 - w)
             var input_val: Scalar[x_dtype] = 0.0
 
-            if src_pos >= state_len:
-                var x_l_pos = src_pos - state_len
+            if src_pos >= _state_len:
+                var x_l_pos = src_pos - _state_len
                 var x_offset = Int(
                     UInt32(b) * x_batch_stride
                     + UInt32(c) * x_c_stride
@@ -3895,9 +3941,9 @@ def causal_conv1d_update_gpu_no_bias[
                 ]()
         output.raw_store(out_offset, out_val)
 
-    if seqlen >= state_len:
-        for s in range(state_len):
-            var x_l_pos = seqlen - state_len + s
+    if _seqlen >= _state_len:
+        for s in range(_state_len):
+            var x_l_pos = _seqlen - _state_len + s
             var x_offset = Int(
                 UInt32(b) * x_batch_stride
                 + UInt32(c) * x_c_stride
@@ -3913,11 +3959,11 @@ def causal_conv1d_update_gpu_no_bias[
                 conv_state_offset, Scalar[conv_state_dtype](x_val)
             )
     else:
-        for s in range(state_len - seqlen):
+        for s in range(_state_len - _seqlen):
             var src_offset = Int(
                 UInt32(b) * conv_state_batch_stride
                 + UInt32(c) * conv_state_c_stride
-                + UInt32((s + seqlen)) * conv_state_l_stride
+                + UInt32((s + _seqlen)) * conv_state_l_stride
             )
             var dst_offset = Int(
                 UInt32(b) * conv_state_batch_stride
@@ -3927,7 +3973,7 @@ def causal_conv1d_update_gpu_no_bias[
             var val = conv_state.raw_load(src_offset)
             conv_state.raw_store(dst_offset, val)
 
-        for l in range(seqlen):
+        for l in range(_seqlen):
             var x_offset = Int(
                 UInt32(b) * x_batch_stride
                 + UInt32(c) * x_c_stride
@@ -3937,7 +3983,7 @@ def causal_conv1d_update_gpu_no_bias[
             var conv_state_offset = Int(
                 UInt32(b) * conv_state_batch_stride
                 + UInt32(c) * conv_state_c_stride
-                + UInt32((state_len - seqlen + l)) * conv_state_l_stride
+                + UInt32((_state_len - _seqlen + l)) * conv_state_l_stride
             )
             conv_state.raw_store(
                 conv_state_offset, Scalar[conv_state_dtype](x_val)

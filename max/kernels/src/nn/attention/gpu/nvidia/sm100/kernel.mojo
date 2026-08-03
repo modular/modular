@@ -28,9 +28,9 @@ from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from std.gpu.primitives.warp import broadcast
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
@@ -38,7 +38,7 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -131,6 +131,40 @@ struct SM100MHA2Q[
     # BM_mask: the BM value passed to mask functions.
     # For pair-CTA, use PairBM so both CTAs make identical skip decisions.
     comptime BM_mask: Int = Self.config.PairBM_eff()
+
+    # Effective cross-stage P for THIS instantiation. This is the only site
+    # that sees the config, the mask type and the tile geometry at once, so
+    # it is where the last conjuncts land. Threaded identically into the
+    # load, MMA and softmax warps -- they must agree or the K-ahead/inplace
+    # handshake deadlocks.
+    #
+    # `config.crossp_on()` carries the config-level support matrix and drives
+    # the SMEM/mbar allocation. The extra mask conjunct can only narrow it,
+    # so the warps never use a barrier the layout did not allocate; an
+    # unused pair of mbars is harmless, the reverse is ILLEGAL_ADDRESS.
+    # `UNKNOWN_MASK` means the mask needs the runtime FULL_MASK slow path,
+    # which the K-ahead producer in `load_warp` does not implement.
+    # Store-shape conjunct for `softmax_warp`'s per-tile cross-P store, which
+    # assumes exactly 4 full batches. Mirrors that function's own arithmetic
+    # (`exp_simd == 2`) off the SAME `UMMA1Type` built above, so the two agree
+    # without either duplicating the accumulator type.
+    comptime _crossp_vs_len: Int = (Self.config.BN // Self.config.m_pack) // 2
+    comptime _crossp_batch: Int = 32 if Self.config.num_pv_stages == 1 else (
+        Self._crossp_vs_len
+        // (4 if Self.UMMA1Type.use_3_then_1_split else Self.num_pv_stages)
+    )
+    comptime CrossPStoreShapeOk: Bool = (
+        Self._crossp_batch > 0
+        and (Self._crossp_vs_len % Self._crossp_batch) == 0
+        and (Self._crossp_vs_len // Self._crossp_batch) == 4
+    )
+
+    comptime CrossPEffective: Bool = (
+        Self.config.crossp_on()
+        and Self.MaskType.nonfull_sets[Self.BM_mask, Self.config.BN]()[0]
+        != TileMaskStatus.UNKNOWN_MASK
+        and Self.CrossPStoreShapeOk
+    )
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
@@ -484,6 +518,14 @@ struct SM100MHA2Q[
             if warp_idx == 0:
                 # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
                 misc_mbars.init(lane_idx=Int32(thread_idx.x))
+                # BLASST: zero the skip-vote region ("don't skip") before it's
+                # published CTA-wide; the peel writes no vote, so this makes the
+                # peel's P@V never skip.
+                comptime if Self.SmemType.blasst_vote_slots > 0:
+                    var blasst_vote = smem.blasst_vote_smem()
+                    var blasst_lane = UInt32(thread_idx.x)
+                    if blasst_lane < UInt32(Self.SmemType.blasst_vote_slots):
+                        blasst_vote[blasst_lane] = UInt8(0)
             else:  # warp_idx == 1
                 tcgen05_alloc[Int32(Self.cta_group)](
                     smem.tmem_addr_ptr(),
@@ -583,6 +625,7 @@ struct SM100MHA2Q[
                     # 1Q body when the switch is compiled in, so the 2Q
                     # body's output halves are always non-empty.
                     output_nonempty=Self.config.can_switch_to_1q(),
+                    crossp_effective=Self.CrossPEffective,
                 ](
                     smem,
                     tmem_addr,
@@ -651,6 +694,7 @@ struct SM100MHA2Q[
                             ValidLengthType=Self.ValidLengthType,
                             _is_cache_length_accurate=Self._is_cache_length_accurate,
                             is_leader=True,
+                            crossp_effective=Self.CrossPEffective,
                         ](
                             smem,
                             pos.score_row,
@@ -671,6 +715,7 @@ struct SM100MHA2Q[
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=True,
+                                crossp_effective=Self.CrossPEffective,
                             ](
                                 smem,
                                 pos.score_row,
@@ -689,6 +734,7 @@ struct SM100MHA2Q[
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=False,
+                                crossp_effective=Self.CrossPEffective,
                             ](
                                 smem,
                                 pos.score_row,
@@ -727,7 +773,11 @@ struct SM100MHA2Q[
                         kv_input_row_offsets,
                         max_seq_len,
                     )
-                    fa4_mma[Self.config, page_size=Self.page_size](
+                    fa4_mma[
+                        Self.config,
+                        page_size=Self.page_size,
+                        crossp_effective=Self.CrossPEffective,
+                    ](
                         smem,
                         tmem_addr,
                         seq_info.prompt_idx,

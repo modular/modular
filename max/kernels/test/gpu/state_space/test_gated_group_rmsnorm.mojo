@@ -22,7 +22,7 @@ pointer arithmetic, no shared memory).
 """
 
 from std.math import rsqrt
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from std.testing import TestSuite, assert_almost_equal
 

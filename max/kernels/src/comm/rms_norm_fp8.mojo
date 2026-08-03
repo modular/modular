@@ -20,10 +20,10 @@ introducing a comm → nn → comm circular dependency.
 
 from std.math import rsqrt
 from std.sys import align_of, simd_width_of
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import WARP_SIZE, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -41,7 +41,7 @@ from layout import (
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
@@ -306,14 +306,18 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
         Storage=ScaleStorage,
     ],
     epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
-    cols: Int,
-    scale_ub: Scalar[scales_dtype],
+    weight_offset: Float32,
+    cols: Int32,
+    scale_ub: Float32,
 ):
     """GPU kernel for fused RMSNorm + FP8 with warp-tiling - optimized like standalone RMS norm.
 
     This kernel always multiplies by gamma before quantizing to FP8.
     """
+    var _cols = Int(cols)
+    var _epsilon = Scalar[in_dtype](epsilon)
+    var _weight_offset = Scalar[in_dtype](weight_offset)
+    var _scale_ub = Scalar[scales_dtype](scale_ub)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
     comptime assert gamma.flat_rank >= 1
@@ -327,19 +331,19 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
 
     # Helper: Load gamma and apply to value (shared between both kernel variants)
     @always_inline
-    @__copy_capture(gamma, weight_offset)
+    @__copy_capture(gamma, _weight_offset)
     @parameter
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
-            gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
+            gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )
         return val * gamma_accum
 
     var vec_data = SIMD[accum_type, simd_width](0)
-    var is_valid = idx < cols
+    var is_valid = idx < _cols
 
     with PDL():
         # Phase 1: Load input ONCE, compute mean square AND max(|gamma*x|).
@@ -366,7 +370,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
         ](thread_m2, thread_abs_max_gamma_x)
 
         var norm_factor = rsqrt(
-            (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
+            (row_m2 / Scalar[accum_type](_cols)) + _epsilon.cast[accum_type]()
         )
 
         # Derive max of normalized values: max(|gamma*x|) * norm_factor
@@ -374,7 +378,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
 
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
-        ](row_max, scale_ub)
+        ](row_max, _scale_ub)
         if tid == 0:
             scale_buffer[row] = scale_factor
 
@@ -451,10 +455,10 @@ def _rms_norm_fused_fp8_gpu_launch[
             ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
-                epsilon,
-                weight_offset,
-                cols,
-                scale_ub.cast[scales_dtype](),
+                epsilon.cast[DType.float32](),
+                weight_offset.cast[DType.float32](),
+                Int32(cols),
+                Float32(scale_ub),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),
@@ -482,10 +486,10 @@ def _rms_norm_fused_fp8_gpu_launch[
             ctx.enqueue_function[kernel](
                 gamma,
                 scale_output,
-                epsilon,
-                weight_offset,
-                cols,
-                scale_ub.cast[scales_dtype](),
+                epsilon.cast[DType.float32](),
+                weight_offset.cast[DType.float32](),
+                Int32(cols),
+                Float32(scale_ub),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(),
@@ -523,14 +527,18 @@ def _rms_norm_fused_fp8_kernel_block[
         Storage=ScaleStorage,
     ],
     epsilon: Float32,
-    weight_offset: Scalar[in_dtype],
-    cols: Int,
-    scale_ub: Scalar[scales_dtype],
+    weight_offset: Float32,
+    cols: Int32,
+    scale_ub: Float32,
 ):
     """GPU kernel for fused RMSNorm + FP8 with block-tiling - optimized version.
 
     This kernel always multiplies by gamma before quantizing to FP8.
     """
+    var _cols = Int(cols)
+    var _epsilon = Scalar[in_dtype](epsilon)
+    var _weight_offset = Scalar[in_dtype](weight_offset)
+    var _scale_ub = Scalar[scales_dtype](scale_ub)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
     comptime assert gamma.flat_rank >= 1
@@ -543,14 +551,14 @@ def _rms_norm_fused_fp8_kernel_block[
 
     # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @always_inline
-    @__copy_capture(gamma, weight_offset)
+    @__copy_capture(gamma, _weight_offset)
     @parameter
     def apply_gamma[
         width: Int
     ](val: SIMD[accum_type, width], col: Int) -> SIMD[accum_type, width]:
         var gamma_val = gamma.load[width=width, alignment=align](Coord(col))
         var gamma_accum = (
-            gamma_val.cast[accum_type]() + weight_offset.cast[accum_type]()
+            gamma_val.cast[accum_type]() + _weight_offset.cast[accum_type]()
         )
         return val * gamma_accum
 
@@ -562,9 +570,9 @@ def _rms_norm_fused_fp8_kernel_block[
         var thread_m2 = Scalar[accum_type](0)
         var thread_abs_max_gamma_x = Scalar[accum_type](0)
 
-        for col_offset in range(0, cols, threads_per_block * simd_width):
+        for col_offset in range(0, _cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
-            if col < cols:
+            if col < _cols:
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
                 thread_m2 += (vec_data**2).reduce_add()
                 # Compute |gamma * x| to find max for FP8 scaling
@@ -581,7 +589,7 @@ def _rms_norm_fused_fp8_kernel_block[
         ](thread_m2, thread_abs_max_gamma_x)
 
         var norm_factor = rsqrt(
-            (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
+            (row_m2 / Scalar[accum_type](_cols)) + _epsilon.cast[accum_type]()
         )
 
         # Derive max of normalized values: max(|gamma*x|) * norm_factor
@@ -590,16 +598,16 @@ def _rms_norm_fused_fp8_kernel_block[
         # Compute scale factor
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
-        ](row_max, scale_ub)
+        ](row_max, _scale_ub)
 
         # Write scale
         if tid == 0:
             scale_buffer[row] = scale_factor
 
         # Phase 2: Normalize, quantize and write output
-        for col_offset in range(0, cols, threads_per_block * simd_width):
+        for col_offset in range(0, _cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
-            if col < cols:
+            if col < _cols:
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
                 var normalized = apply_gamma[simd_width](
                     vec_data * norm_factor, col

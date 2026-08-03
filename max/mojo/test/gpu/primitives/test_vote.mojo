@@ -21,8 +21,8 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import GPUInfo
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import GPUInfo
 from std.gpu.primitives.warp import vote
 from std.sys.info import Vendor, _accelerator_arch
 from std.testing import assert_equal, TestSuite
@@ -49,7 +49,9 @@ def _vote_probe[
     out_masks: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = vote[ret_type](preds[lane] != 0).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = vote[ret_type](
+        preds[unsafe_offset=lane] != 0
+    ).cast[DType.uint64]()
 
 
 def _check[

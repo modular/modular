@@ -23,7 +23,10 @@ from max.driver import Buffer
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderMetrics
+from max.pipelines.lib.vision_encoder_cache import (
+    VideoEncoderMetrics,
+    VisionEncoderMetrics,
+)
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -90,6 +93,7 @@ class BatchMetrics:
     cache_hit_rate: float
     cache_hit_tokens: int
     cache_miss_tokens: int
+    device_blocks_served: int
 
     used_host_kv_pct: float
     total_host_kv_blocks: int
@@ -151,6 +155,12 @@ class BatchMetrics:
     dp_active_tokens: int = 0
     dp_step_capacity_tokens: int = 0
 
+    # Device-to-device KV block copies across DP replicas (a prefix-cache hit
+    # resident on another replica, materialized locally). Both 0 when
+    # data_parallel_degree == 1 or no such copy happened this batch.
+    cross_replica_blocks_copied: int = 0
+    cross_replica_bytes_copied: int = 0
+
     # Per-request prefix cache coverage for requests admitted in this batch
     # (cached_prefix_length / prompt_length). Empty for non-CE batches and
     # for CE batches that admit no new requests (e.g. follow-up prefill
@@ -169,6 +179,11 @@ class BatchMetrics:
     # are gated on this being non-None.
     vision_metrics: VisionEncoderMetrics | None = None
 
+    # Per-iteration video encoder statistics for multimodal models. None
+    # when the batch did no video encoding. The video log clause and video
+    # metrics are gated on this being non-None.
+    video_metrics: VideoEncoderMetrics | None = None
+
     @classmethod
     def create(
         cls,
@@ -182,6 +197,7 @@ class BatchMetrics:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
@@ -199,10 +215,13 @@ class BatchMetrics:
 
         total_kv_blocks = 0
         used_kv_pct = 0.0
+        device_blocks_served = 0
         used_host_kv_pct = 0.0
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
+        cross_replica_blocks_copied = 0
+        cross_replica_bytes_copied = 0
         disk_blocks_read = 0
         disk_blocks_written = 0
         inflight_disk_ops = 0
@@ -271,8 +290,13 @@ class BatchMetrics:
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
 
+            device_blocks_served = metrics_agg.device_blocks_served
             h2d_blocks_copied = metrics_agg.h2d_blocks_copied
             d2h_blocks_copied = metrics_agg.d2h_blocks_copied
+            cross_replica_blocks_copied = (
+                metrics_agg.cross_replica_blocks_copied
+            )
+            cross_replica_bytes_copied = metrics_agg.cross_replica_bytes_copied
             disk_blocks_written = metrics_agg.disk_blocks_written
             disk_blocks_read = metrics_agg.disk_blocks_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
@@ -387,10 +411,13 @@ class BatchMetrics:
             cache_hit_rate=cache_hit_rate,
             cache_hit_tokens=cache_hit_tokens,
             cache_miss_tokens=cache_miss_tokens,
+            device_blocks_served=device_blocks_served,
             used_host_kv_pct=used_host_kv_pct,
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
+            cross_replica_blocks_copied=cross_replica_blocks_copied,
+            cross_replica_bytes_copied=cross_replica_bytes_copied,
             disk_blocks_read=disk_blocks_read,
             disk_blocks_written=disk_blocks_written,
             used_disk_kv_pct=used_disk_kv_pct,
@@ -418,6 +445,7 @@ class BatchMetrics:
             per_request_prefix_coverage=per_request_prefix_coverage,
             num_new_admissions=len(per_request_prefix_coverage),
             vision_metrics=batch_vision_metrics,
+            video_metrics=batch_video_metrics,
         )
 
     def pretty_format(self) -> str:
@@ -520,6 +548,18 @@ class BatchMetrics:
                 f"({vm.num_images_cached} hit, {vm.num_images_encoded} miss) | "
             )
 
+        video_str = ""
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            video_str = (
+                f"Video Encoder: {vid.num_clips_encoded} clips, "
+                f"{sum(vid.frame_counts)} frames, "
+                f"{vid.num_tokens_encoded} toks encoded, "
+                f"{vid.encoding_time_ms:.1f}ms, "
+                f"cache hit rate {vid.cache_hit_rate:.1%} "
+                f"({vid.num_clips_cached} hit, {vid.num_clips_encoded} miss) | "
+            )
+
         exec_label = (
             "Previous Execution"
             if self.batch_execution_time_is_previous
@@ -556,6 +596,7 @@ class BatchMetrics:
             f"{dkv_health_str}"
             f"{spec_decode_str}"
             f"{vision_str}"
+            f"{video_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -629,6 +670,16 @@ class BatchMetrics:
             extra["vision_patches_encoded"] = vm.num_patches_encoded
             extra["vision_tokens_encoded"] = vm.num_tokens_encoded
             extra["vision_cache_hit_rate"] = vm.cache_hit_rate
+
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            extra["video_clips_total"] = vid.num_clips_total
+            extra["video_clips_encoded"] = vid.num_clips_encoded
+            extra["video_clips_cached"] = vid.num_clips_cached
+            extra["video_frames_encoded"] = sum(vid.frame_counts)
+            extra["video_tokens_encoded"] = vid.num_tokens_encoded
+            extra["video_encoding_time_ms"] = vid.encoding_time_ms
+            extra["video_cache_hit_rate"] = vid.cache_hit_rate
 
         if (
             self.nixl_read_latency_avg_ms > 0
@@ -715,6 +766,12 @@ class BatchMetrics:
             METRICS.dp_step_capacity_tokens(
                 self.dp_step_capacity_tokens, batch_type=bt
             )
+            METRICS.cache_cross_replica_blocks_copied(
+                self.cross_replica_blocks_copied
+            )
+            METRICS.cache_cross_replica_bytes_copied(
+                self.cross_replica_bytes_copied
+            )
 
         METRICS.cache_num_used_blocks(
             int(self.total_kv_blocks * self.used_kv_pct)
@@ -726,6 +783,7 @@ class BatchMetrics:
         if self.batch_type == BatchType.CE and self.num_new_admissions > 0:
             METRICS.cache_hits(self.cache_hit_tokens)
             METRICS.cache_misses(self.cache_miss_tokens)
+            METRICS.cache_device_blocks_served(self.device_blocks_served)
             for coverage in self.per_request_prefix_coverage:
                 METRICS.cache_request_prefix_coverage(coverage * 100)
 
@@ -777,6 +835,14 @@ class BatchMetrics:
             METRICS.vision_patches_encoded(vm.num_patches_encoded)
             METRICS.vision_tokens_encoded(vm.num_tokens_encoded)
             METRICS.vision_cache_hit_rate(vm.cache_hit_rate * 100)
+
+        vid = self.video_metrics
+        if vid is not None and vid.num_clips_total > 0:
+            METRICS.video_clips_encoded(vid.num_clips_encoded)
+            METRICS.video_tokens_encoded(vid.num_tokens_encoded)
+            METRICS.video_encoding_time_milliseconds(vid.encoding_time_ms)
+            for frame_count in vid.frame_counts:
+                METRICS.video_frames_per_clip(frame_count)
 
 
 def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
@@ -837,6 +903,7 @@ class SchedulerLogger:
         total_preemption_count: int,
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
+        batch_video_metrics: VideoEncoderMetrics | None = None,
         batch_execution_time_is_previous: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
@@ -854,6 +921,8 @@ class SchedulerLogger:
                 for the most recent batch.
             batch_vision_metrics: Per-batch vision encoder metrics for the
                 most recent batch, or None when no vision encoding ran.
+            batch_video_metrics: Per-batch video encoder metrics for the
+                most recent batch, or None when no video encoding ran.
             batch_execution_time_is_previous: When True, ``batch_execution_time_s``
                 is the execution time of the previous batch (the overlap
                 scheduler is active); the log line will read
@@ -881,6 +950,7 @@ class SchedulerLogger:
             total_preemption_count=total_preemption_count,
             batch_spec_decode_metrics=batch_spec_decode_metrics,
             batch_vision_metrics=batch_vision_metrics,
+            batch_video_metrics=batch_video_metrics,
             batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -24,13 +25,19 @@ from max.nn.rotary_embedding import YarnScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -47,6 +54,12 @@ class GptOssConfig(
     Contains parameters specific to the GPT OSS architecture, typically
     extracted from a HuggingFace configuration object's text config.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float4_e2m1fnx2",
+    }
 
     # GPT OSS specific parameters
     vocab_size: int
@@ -147,6 +160,8 @@ class GptOssConfig(
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     """Whether to return the last token, all logits, or a variable number of logits."""
 
+    quantization_encoding: SupportedEncoding | None = None
+
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
         """Retrieves the number of hidden layers from the HuggingFace configuration.
@@ -188,9 +203,9 @@ class GptOssConfig(
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         # For MXFP4 models, non-quantized layers (embedding, attention, norm,
         # lm_head) are BF16.  The MoE expert weights use MXFP4 packed uint8
@@ -315,6 +330,7 @@ class GptOssConfig(
             devices=device_refs,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

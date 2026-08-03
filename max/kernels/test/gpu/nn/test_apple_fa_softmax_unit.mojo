@@ -24,7 +24,7 @@ value rather than a real P.V product, so the test isolates the softmax algebra.
 """
 
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2
 from std.sys.info import _accelerator_arch
 
@@ -83,7 +83,7 @@ def _softmax_unit_kernel(
                 var col = ni * 16 + cb + (el & 3)
                 frag[el] = src[row * SK + col]
             acc[ni] = frag
-        return acc
+        return acc.copy()
 
     @parameter
     def add_output(
@@ -188,7 +188,7 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
     for r in range(SQ):
         var m = Float32(-3.0e38)
         var l = Float32(0)
-        var o_ref = [Float32(0)] * OUT_N
+        var o_ref = List[Float32](length=OUT_N, fill=0)
 
         # tile 0
         var m0 = Float32(-3.0e38)

@@ -41,8 +41,8 @@ first ``v_depth`` output columns.
 from std.random import seed
 from std.sys import get_defined_int
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 
 from _paged_prefill_test_utils import run_test_paged_prefill
 

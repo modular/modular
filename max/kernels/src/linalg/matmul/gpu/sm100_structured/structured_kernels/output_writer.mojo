@@ -27,7 +27,7 @@ from std.sys import simd_width_of, size_of, align_of
 from std.gpu import WARP_SIZE, thread_idx
 from std.gpu import lane_id, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,
     Idx,
@@ -44,7 +44,7 @@ from layout.layout_tensor import upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-from std.gpu.compute.mma import ld_matrix
+from max.gpu.compute.mma import ld_matrix
 from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,

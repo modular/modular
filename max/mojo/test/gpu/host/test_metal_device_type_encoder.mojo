@@ -23,7 +23,7 @@
 # is `TrivialRegisterPassable`, and its `_to_device_type` dispatches to
 # `encode_device_ptr`, which appends the owning buffer's handle.
 
-from std.gpu.host.device_context import DeviceContext, DevicePointer
+from max.gpu.host import DeviceContext, DevicePointer
 from std.gpu.host._device_context_metal import MetalDeviceTypeEncoder
 from std.testing import assert_equal, assert_true, TestSuite
 
@@ -58,7 +58,7 @@ def test_closure_registers_captured_buffers() raises:
     var storage = alloc[type_of(k)](1)
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
-        encoder, storage.bitcast[NoneType]().as_unsafe_any_origin()
+        encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()
     )
 
     # Both captured pointers route through `encode_device_ptr`, registering
@@ -77,7 +77,7 @@ def test_closure_registers_captured_buffers() raises:
     assert_true(found_a, "buffer a was not registered in _buffers")
     assert_true(found_b, "buffer b was not registered in _buffers")
 
-    storage.free()
+    storage.unsafe_free()
 
 
 def test_closure_registers_buffers_via_nested_struct() raises:
@@ -94,7 +94,7 @@ def test_closure_registers_buffers_via_nested_struct() raises:
     var storage = alloc[type_of(k)](1)
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
-        encoder, storage.bitcast[NoneType]().as_unsafe_any_origin()
+        encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()
     )
 
     assert_equal(len(encoder._buffers), 2)
@@ -111,7 +111,7 @@ def test_closure_registers_buffers_via_nested_struct() raises:
     assert_true(found_a, "nested buffer a was not registered in _buffers")
     assert_true(found_b, "nested buffer b was not registered in _buffers")
 
-    storage.free()
+    storage.unsafe_free()
 
 
 def main() raises:

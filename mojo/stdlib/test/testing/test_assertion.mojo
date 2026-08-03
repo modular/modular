@@ -82,13 +82,13 @@ def test_assert_equal_with_simd() raises:
 
 def test_assert_equal_with_list() raises:
     assert_equal(
-        ["This", "is", "Mojo"],
+        List(["This", "is", "Mojo"]),
         List[String](["This", "is", "Mojo"]),
     )
 
     with assert_raises():
         assert_equal(
-            ["This", "is", "Mojo"],
+            List(["This", "is", "Mojo"]),
             List[String](["This", "is", "mojo"]),
         )
 
@@ -242,9 +242,9 @@ def test_assert_equal_stringslice() raises:
             )
         )
 
-    l1 = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
-    l2 = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
-    l3 = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
+    l1: List = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    l2: List = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    l3: List = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)

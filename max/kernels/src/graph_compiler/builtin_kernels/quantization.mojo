@@ -25,9 +25,9 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
@@ -997,10 +997,10 @@ struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
         var raw_e8 = input.to_tile_tensor[DType.int64]()
         var dst_e8 = output.to_tile_tensor[DType.int64]()
         var raw_tt = TileTensor[mut=False](
-            raw_e8.ptr.bitcast[Scalar[DType.uint8]](), raw_e8.layout
+            raw_e8._storage.bitcast[Scalar[DType.uint8]](), raw_e8.layout
         )
         var dst_tt = TileTensor[mut=True](
-            dst_e8.ptr.bitcast[Scalar[DType.uint8]](), dst_e8.layout
+            dst_e8._storage.bitcast[Scalar[DType.uint8]](), dst_e8.layout
         )
         var a_off_tt = expert_start_indices.to_tile_tensor[DType.int64]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]

@@ -20,10 +20,10 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.int import index as _index
 from std.collections._conditional import _ComptimeConditional
-from std.memory import stack_allocation as _std_stack_allocation
+from std.memory import unsafe_stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
 from std.reflection import call_location
-from std.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, DevicePointer, HostBuffer
 from layout._fillers import BATCH_SIZE
 from layout.layout_tensor import LayoutTensor
 from std.sys import prefetch
@@ -378,7 +378,7 @@ struct TileTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -387,7 +387,7 @@ struct TileTensor[
         to construct a `LayoutTensor` that you can use on the GPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceBuffer
+        from max.gpu.host import DeviceContext, DeviceBuffer
         from layout.tile_layout import row_major
         from layout import TileTensor
         from layout import Idx
@@ -465,7 +465,7 @@ struct TileTensor[
         The resulting tensor's data can only be accessed on the CPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, HostBuffer
+        from max.gpu.host import DeviceContext, HostBuffer
         from layout.tile_layout import row_major
         from layout import TileTensor
         from layout import Idx
@@ -2639,6 +2639,20 @@ struct TileTensor[
     def address_space_cast[
         target_address_space: AddressSpace
     ](self,) -> Self.AddressSpaceCastType[target_address_space]:
+        """Return a version of this tensor cast to a new address space.
+
+        Parameters:
+            target_address_space: The target address space to cast to.
+
+        Returns:
+            A TileTensor covering the same elements in the new address space.
+        """
+        return self.unsafe_address_space_cast[target_address_space]()
+
+    @always_inline
+    def unsafe_address_space_cast[
+        target_address_space: AddressSpace
+    ](self) -> Self.AddressSpaceCastType[target_address_space]:
         """Return a version of this tensor cast to a new address space.
 
         Parameters:

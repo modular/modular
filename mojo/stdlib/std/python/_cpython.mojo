@@ -378,11 +378,9 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         #   type, similar to `get_linkage_name()`?
 
         var with_kwargs = func.isa[PyCFunctionWithKeywords]()
-        var func_ptr = rebind[OpaquePointer[MutUntrackedOrigin]](
+        var func_ptr = _fn_ptr_as_opaque(
             func[PyCFunctionWithKeywords]
-        ) if with_kwargs else rebind[OpaquePointer[MutUntrackedOrigin]](
-            func[PyCFunction]
-        )
+        ) if with_kwargs else _fn_ptr_as_opaque(func[PyCFunction])
 
         var flags = c_int(
             METH_VARARGS
@@ -419,7 +417,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
         return PyMethodDef(
             func_name.as_c_string_slice().unsafe_ptr(),
-            rebind[OpaquePointer[MutUntrackedOrigin]](func),
+            _fn_ptr_as_opaque(func),
             flags,
             docstring.as_c_string_slice().unsafe_ptr(),
         )
@@ -429,6 +427,17 @@ def _null_fn_ptr[T: TrivialRegisterPassable]() -> T:
     return __mlir_op.`pop.pointer.bitcast`[_type=T](
         __mlir_attr.`#interp.pointer<0> : !kgen.pointer<none>`
     )
+
+
+def _fn_ptr_as_opaque[
+    T: TrivialRegisterPassable
+](func: T) -> OpaquePointer[MutUntrackedOrigin]:
+    """Reinterprets a C ABI function as the `void *` CPython stores it in."""
+    return {
+        _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+            _type=OpaquePointer[MutUntrackedOrigin]._mlir_type
+        ](func)
+    }
 
 
 comptime PyTypeObjectPtr = _CPointer[PyTypeObject, MutUntrackedOrigin]
@@ -506,14 +515,12 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
     def tp_dealloc(func: destructor) -> Self:
         return PyType_Slot(
             Py_tp_dealloc,
-            rebind[OpaquePointer[MutUntrackedOrigin]](func),
+            _fn_ptr_as_opaque(func),
         )
 
     @staticmethod
     def tp_init(func: Typed_initproc) -> Self:
-        return PyType_Slot(
-            Py_tp_init, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_init, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def tp_methods(methods: _CPointer[PyMethodDef, MutUntrackedOrigin]) -> Self:
@@ -524,15 +531,11 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def tp_new(func: Typed_newfunc) -> Self:
-        return PyType_Slot(
-            Py_tp_new, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_new, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def tp_repr(func: reprfunc) -> Self:
-        return PyType_Slot(
-            Py_tp_repr, rebind[OpaquePointer[MutUntrackedOrigin]](func)
-        )
+        return PyType_Slot(Py_tp_repr, _fn_ptr_as_opaque(func))
 
     @staticmethod
     def null() -> Self:
@@ -1929,7 +1932,7 @@ struct CPython(Defaultable, Movable):
         # Common Object Structures
         self._Py_Is = Py_Is.load(self.lib.borrow())
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         pass
 
     def destroy(mut self):
@@ -3339,7 +3342,8 @@ struct CPython(Defaultable, Movable):
             return None
         return StringSlice[ImmutAnyOrigin](
             unsafe_from_utf8=Span(
-                unsafe_ptr=ptr.value().bitcast[Byte](), length=Int(length)
+                unsafe_ptr=ptr.value().unsafe_bitcast[Byte](),
+                length=Int(length),
             )
         )
 

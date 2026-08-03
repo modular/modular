@@ -14,6 +14,7 @@
 
 from std.iter import StopIteration
 from std.memory import alloc
+from std.memory.memory import _free
 from std.testing import TestSuite, assert_equal
 from test_utils import ExplicitCopyOnly
 
@@ -89,11 +90,11 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
         self._len = 0
         self._capacity = 0
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(self._len):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._capacity > 0:
-            MutUnsafePointer(self._data).free()
+            _free(self._data)
 
     def __len__(self) -> Int:
         return self._len
@@ -109,7 +110,7 @@ struct MoveOnlyList[T: Movable & ImplicitlyDeletable]:
                     self._data.unsafe_offset(i).unsafe_take_pointee()
                 )
             if self._capacity > 0:
-                MutUnsafePointer(self._data).free()
+                _free(self._data)
             self._data = new_data
             self._capacity = new_cap
         self._data.unsafe_offset(self._len).unsafe_write(value^)

@@ -27,7 +27,7 @@ from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
-from std.memory import OpaquePointer, stack_allocation
+from std.memory import OpaquePointer, unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
     GILAcquired,
@@ -135,7 +135,9 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDeletable]:
+struct PyMojoObject[T: ImplicitlyDeletable](
+    Movable where conforms_to(T, Movable)
+):
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -652,7 +654,10 @@ struct PythonTypeBuilder(Copyable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            self._insert_slot(PyType_Slot.tp_methods(self.methods.steal_data()))
+            var methods_ptr = (
+                self.methods.unsafe_take_allocation().unsafe_leak()
+            )
+            self._insert_slot(PyType_Slot.tp_methods(methods_ptr))
 
         # Convert _slots dictionary to a list of PyType_Slot structs
         var slots = List[PyType_Slot]()
@@ -1591,10 +1596,10 @@ def _try_convert_arg[
 
 
 # NOTE:
-#   @always_inline is needed so that the stack_allocation() that appears in
-#   the definition below is valid in the _callers_ stack frame, effectively
-#   allowing us to "return" a pointer to stack-allocated data from this
-#   function.
+#   @always_inline is needed so that the unsafe_stack_allocation() that
+#   appears in the definition below is valid in the _callers_ stack frame,
+#   effectively allowing us to "return" a pointer to stack-allocated data
+#   from this function.
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
@@ -1623,7 +1628,9 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
+    var converted_arg_ptr = unsafe_stack_allocation[
+        1, T
+    ]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)

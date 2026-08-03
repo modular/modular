@@ -34,7 +34,7 @@ from std.gpu.memory import (
     ReduceOp,
 )
 from std.gpu.sync import cp_async_bulk_commit_group
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Coord,
@@ -291,7 +291,7 @@ def store_fragment_to_smem[
             vec, dst, warp_offset
         )
 
-    from std.gpu.compute.mma import st_matrix
+    from max.gpu.compute.mma import st_matrix
     from std.memory import bitcast
 
     comptime c_type = dst.dtype

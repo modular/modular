@@ -187,7 +187,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.handle = _open_file(String(path), String(mode))
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the file handle."""
         try:
             self.close()

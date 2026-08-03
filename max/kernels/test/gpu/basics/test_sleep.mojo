@@ -22,7 +22,7 @@ GPUs, including:
 
 from std.time import global_perf_counter_ns, perf_counter_ns, sleep
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_true
 
 

@@ -14,8 +14,8 @@
 from std.math import erf, exp, tanh
 from std.sys.info import simd_width_of
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 from std.testing import TestSuite
 
@@ -39,9 +39,9 @@ def test_elementwise_1d() raises:
         var vector_ptr: UnsafePointer[
             vector.T, vector.origin
         ] = vector.unsafe_ptr()
-        var elem = vector_ptr.load[width=simd_width](idx[0].value())
+        var elem = vector_ptr.unsafe_load[width=simd_width](idx[0].value())
         var val = exp(erf(tanh(elem + 1)))
-        vector_ptr.store[width=simd_width](idx[0].value(), val)
+        vector_ptr.unsafe_store[width=simd_width](idx[0].value(), val)
 
     elementwise[func, simd_width_of[DType.float32]()](Coord(num_elements), ctx)
 

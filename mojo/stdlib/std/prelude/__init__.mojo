@@ -31,10 +31,14 @@ from std.collections import (
     KeyElement,
     List,
     Optional,
+    ImmSpan,
+    MutSpan,
     Span,
 )
 from std.collections.string import (
     Codepoint,
+    ImmStringSlice,
+    MutStringSlice,
     StaticString,
     String,
     StringSlice,

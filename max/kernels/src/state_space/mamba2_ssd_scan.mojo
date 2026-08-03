@@ -56,9 +56,9 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import lane_group_sum
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from std.math import exp2
 from std.sys.info import align_of
 from std.utils.index import IndexList
@@ -97,11 +97,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     # storage policy; a single param binds it for every tile argument.
     Storage: TensorStorage = PointerStorage[element_width=1],
 ](
-    nheads: Int,
-    head_dim: Int,
-    ngroups: Int,
-    nheads_ngroups_ratio: Int,
-    batch: Int,
+    nheads_dev: Int32,
+    head_dim_dev: Int32,
+    ngroups_dev: Int32,
+    nheads_ngroups_ratio_dev: Int32,
+    batch_dev: Int32,
     dt_softplus: Int8,
     # Tensors (varlen / ragged: time dim is the packed total_len)
     x: TileTensor[
@@ -157,6 +157,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     `(b, h, p)` channel, carries the `dstate`-vector state in registers, and
     walks its sequence `[seq_start, seq_end)` sequentially.
     """
+    var nheads = Int(nheads_dev)
+    var head_dim = Int(head_dim_dev)
+    var nheads_ngroups_ratio = Int(nheads_ngroups_ratio_dev)
+    var batch = Int(batch_dev)
     # block_idx.x * block_dim.x + thread_idx.x -> head_dim channel p
     var p = block_dim.x * block_idx.x + thread_idx.x
     var h = block_idx.y  # head
@@ -304,11 +308,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     # single param binds it for every tile argument.
     Storage: TensorStorage = PointerStorage[element_width=1],
 ](
-    nheads: Int,
-    head_dim: Int,
-    ngroups: Int,
-    nheads_ngroups_ratio: Int,
-    batch: Int,
+    nheads_dev: Int32,
+    head_dim_dev: Int32,
+    ngroups_dev: Int32,
+    nheads_ngroups_ratio_dev: Int32,
+    batch_dev: Int32,
     dt_softplus: Int8,
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Storage=Storage],
     dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Storage=Storage],
@@ -377,13 +381,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
             `PointerStorage[element_width=1]`).
 
     Args:
-        nheads: Number of attention heads.
-        head_dim: Channel dimension per head; the `p` extent of `x` and `y`.
-        ngroups: Number of B/C groups; `nheads // ngroups` heads share each
-            group.
-        nheads_ngroups_ratio: Ratio `nheads // ngroups` mapping head `h` to
-            group `h // nheads_ngroups_ratio`.
-        batch: Number of sequences in the varlen batch.
+        nheads_dev: Number of attention heads.
+        head_dim_dev: Channel dimension per head; the `p` extent of `x`
+            and `y`.
+        ngroups_dev: Number of B/C groups; `nheads // ngroups` heads share
+            each group.
+        nheads_ngroups_ratio_dev: Ratio `nheads // ngroups` mapping head
+            `h` to group `h // nheads_ngroups_ratio`.
+        batch_dev: Number of sequences in the varlen batch.
         dt_softplus: Nonzero applies `softplus` to `dt + dt_bias`; zero
             skips it.
         x: Input sequence tensor of shape `(total_len, nheads, head_dim)`.
@@ -418,6 +423,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         ssm_pool_strides: Strides of `ssm_pool` along `(max_slots, nheads,
             head_dim, dstate)`.
     """
+    var nheads = Int(nheads_dev)
+    var head_dim = Int(head_dim_dev)
+    var nheads_ngroups_ratio = Int(nheads_ngroups_ratio_dev)
+    var batch = Int(batch_dev)
     var p = block_dim.x * block_idx.x + thread_idx.x
     var h = block_idx.y
     var b = block_idx.z
@@ -585,11 +594,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     cache_indices_LT: TensorLayout,
     DSTATE_SPLIT: Int = 1,
 ](
-    nheads: Int,
-    head_dim: Int,
-    ngroups: Int,
-    nheads_ngroups_ratio: Int,
-    batch: Int,
+    nheads_dev: Int32,
+    head_dim_dev: Int32,
+    ngroups_dev: Int32,
+    nheads_ngroups_ratio_dev: Int32,
+    batch_dev: Int32,
     dt_softplus: Int8,
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
     dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin],
@@ -667,6 +676,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
       not depend on ``tx`` or ``ty``), so the warp agrees and the shuffle is not
       reached divergently.
     """
+    var nheads = Int(nheads_dev)
+    var head_dim = Int(head_dim_dev)
+    var nheads_ngroups_ratio = Int(nheads_ngroups_ratio_dev)
+    var batch = Int(batch_dev)
     comptime L = DSTATE // DSTATE_SPLIT
     var tx = thread_idx.x  # DSTATE sub-tile index in [0, DSTATE_SPLIT)
     var p = block_idx.x * block_dim.y + thread_idx.y
@@ -1099,11 +1112,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     # param binds it for every tile argument.
     Storage: TensorStorage = PointerStorage[element_width=1],
 ](
-    nheads: Int,
-    head_dim: Int,
-    ngroups: Int,
-    nheads_ngroups_ratio: Int,
-    batch: Int,
+    nheads_dev: Int32,
+    head_dim_dev: Int32,
+    ngroups_dev: Int32,
+    nheads_ngroups_ratio_dev: Int32,
+    batch_dev: Int32,
     dt_softplus: Int8,
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Storage=Storage],
     dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Storage=Storage],
@@ -1205,6 +1218,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         state_dtype == DType.float32 or state_dtype == DType.bfloat16
     ), "state_dtype must be float32 or bfloat16"
 
+    var nheads = Int(nheads_dev)
+    var head_dim = Int(head_dim_dev)
+    var nheads_ngroups_ratio = Int(nheads_ngroups_ratio_dev)
+    var batch = Int(batch_dev)
     var p = block_dim.x * block_idx.x + thread_idx.x
     var h = block_idx.y
     var b = block_idx.z

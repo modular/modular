@@ -13,55 +13,40 @@
 
 """Python bindings for the MO interpreter ops.
 
-This module defines the operation handler registry and the Mojo op bindings
-for the MO graph interpreter.
+This module defines the operation handler registry and the graph-compiler-
+backed op bindings for the MO graph interpreter.
 """
 
-from collections.abc import Callable
-
-import mojo.importer
-from max import _core
-from max._core.dialects import mo
-from max._core.driver import Buffer
-
-# Import op bindings from categorized Mojo modules
-# matmul / unary-elementwise handlers are backed by graph-compiler models
-# (compiled below), unlike the Mojo op bindings above.
-from . import (  # type: ignore[attr-defined]
-    argnonzero_ops,
-    band_part_ops,
+from . import (
+    band_part_gc,
+    cast_gc,
     conv_gc,
-    data_movement_ops,
+    data_movement_gc,
     elementwise_binary_gc,
-    elementwise_cast_ops,
-    gather_scatter_ops,
+    gather_gc,
     gc_compile,
     group_norm_gc,
     layer_norm_gc,
     matmul_gc,
-    misc_ops,
-    nms_ops,
+    nms_gc,
+    nonzero_gc,
     pooling_gc,
+    random_gc,
+    range_gc,
     reduce_axis_gc,
     resize_gc,
     rms_norm_gc,
-    roi_align_ops,
+    roi_align_gc,
+    scatter_gc,
+    scatter_nd_gc,
     select_gc,
     shape_rearrange_gc,
     topk_gc,
     unary_elementwise_gc,
 )
 
-# Cast: any dtype input -> any dtype output. (IsNan/IsInf now route through the
-# graph compiler; see unary_elementwise_gc.)
-UNARY_MIXED: dict[
-    type[_core.Operation], Callable[[Buffer, Buffer, int], None]
-] = {
-    mo.CastOp: elementwise_cast_ops.Cast,
-}
-
-# Import handlers after defining kernels to avoid circular import issues.
-# handlers.py uses the kernel dictionaries defined above.
+# Import handlers after the op modules to avoid circular import issues:
+# handlers.py imports the op modules above (via the package).
 # Re-export the warm-adoption query (from gc_compile) so a consumer can assert
 # the ops were force-loaded from the manifest rather than cold-compiled.
 from .gc_compile import adopted_from_manifest
@@ -91,7 +76,6 @@ _precompile_gc_models()
 
 __all__ = [
     "GC_FAMILIES",
-    "UNARY_MIXED",
     "_MO_OP_HANDLERS",
     "adopted_from_manifest",
     "compile_all_families",

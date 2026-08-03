@@ -18,8 +18,8 @@ from std.memory import ThinAllocation, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from std.gpu.memory import AddressSpace
 from std.collections import OptionalReg
 from kv_cache.types import (
@@ -62,7 +62,7 @@ from nn.attention.mha_utils import (
     dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
 from std.utils import Index, IndexList
@@ -447,7 +447,7 @@ def _matmul_common[
     comptime if is_cpu[target]():
         var c_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=BS * SEQ_LEN * N)
-        ).into_deletable()
+        ).into_managed()
         var c_ptr: UnsafePointer[
             Scalar[dtype], origin_of(c_alloc)
         ] = c_alloc.unsafe_ptr()
@@ -462,7 +462,7 @@ def _matmul_common[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
-        dealloc(c_alloc^.into_allocation())
+        dealloc(c_alloc^)
     else:
         # Allocate a device-local scratch for the matmul accumulator; the
         # epilogue lambda reads from it and scatters Q/K/V to the real
@@ -812,7 +812,7 @@ def generic_flash_attention_kv_cache_padded_materialized_mask[
 def _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     *,
@@ -948,16 +948,16 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     q_out_origin: Origin[mut=True],
     q_out_storage: TensorStorage,
     q_layout: TensorLayout,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     q_storage: TensorStorage,
     q_gamma_layout: TensorLayout,
-    q_gamma_origin: Origin[mut=False],
+    q_gamma_origin: ImmOrigin,
     q_gamma_storage: TensorStorage,
     k_gamma_layout: TensorLayout,
-    k_gamma_origin: Origin[mut=False],
+    k_gamma_origin: ImmOrigin,
     k_gamma_storage: TensorStorage,
     offsets_layout: TensorLayout,
-    offsets_origin: Origin[mut=False],
+    offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
     //,
@@ -977,14 +977,16 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         dtype, k_gamma_layout, k_gamma_origin, Storage=k_gamma_storage
     ],
     epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_num_heads: Int,
-    num_cols: Int,
+    q_num_heads: Int32,
+    num_cols: Int32,
 ):
+    var _q_num_heads = Int(q_num_heads)
+    var _num_cols = Int(num_cols)
     comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
     comptime assert q_proj.flat_rank == 3, "q_proj must have rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
@@ -998,7 +1000,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
 
     var tid = thread_idx.x
     var combined_row = Int(block_idx.x)
-    var q_rows = Int(total_seq_len) * q_num_heads
+    var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
     var global_token_idx: Int
@@ -1009,13 +1011,13 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         global_token_idx = k_row // k_num_heads
         head_idx = k_row % k_num_heads
     else:
-        global_token_idx = combined_row // q_num_heads
-        head_idx = combined_row % q_num_heads
+        global_token_idx = combined_row // _q_num_heads
+        head_idx = combined_row % _q_num_heads
 
     var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
     var gamma_val = SIMD[dtype, simd_width](0)
-    if idx < num_cols:
+    if idx < _num_cols:
         if is_k:
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -1046,10 +1048,10 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
         gamma_val,
         epsilon,
         weight_offset_accum,
-        num_cols,
+        _num_cols,
     )
 
-    if idx < num_cols:
+    if idx < _num_cols:
         if is_k:
             var batch_idx = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -1200,11 +1202,11 @@ def fused_qk_rms_norm_ragged_paged[
             q_gamma,
             k_gamma,
             epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_num_heads,
-            cols,
+            Int32(q_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1222,16 +1224,16 @@ def _fused_qk_rms_norm_rope_process_row[
     q_out_origin: Origin[mut=True],
     q_out_storage: TensorStorage,
     q_gamma_layout: TensorLayout,
-    q_gamma_origin: Origin[mut=False],
+    q_gamma_origin: ImmOrigin,
     q_gamma_storage: TensorStorage,
     k_gamma_layout: TensorLayout,
-    k_gamma_origin: Origin[mut=False],
+    k_gamma_origin: ImmOrigin,
     k_gamma_storage: TensorStorage,
     freqs_layout: TensorLayout,
-    freqs_origin: Origin[mut=False],
+    freqs_origin: ImmOrigin,
     freqs_storage: TensorStorage,
     offsets_layout: TensorLayout,
-    offsets_origin: Origin[mut=False],
+    offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
     freq_dtype: DType,
@@ -1443,16 +1445,16 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     q_out_origin: Origin[mut=True],
     q_out_storage: TensorStorage,
     q_gamma_layout: TensorLayout,
-    q_gamma_origin: Origin[mut=False],
+    q_gamma_origin: ImmOrigin,
     q_gamma_storage: TensorStorage,
     k_gamma_layout: TensorLayout,
-    k_gamma_origin: Origin[mut=False],
+    k_gamma_origin: ImmOrigin,
     k_gamma_storage: TensorStorage,
     freqs_layout: TensorLayout,
-    freqs_origin: Origin[mut=False],
+    freqs_origin: ImmOrigin,
     freqs_storage: TensorStorage,
     offsets_layout: TensorLayout,
-    offsets_origin: Origin[mut=False],
+    offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
     freq_dtype: DType,
@@ -1481,14 +1483,16 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         freq_dtype, freqs_layout, freqs_origin, Storage=freqs_storage
     ],
     epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_num_heads: Int,
-    num_cols: Int,
+    q_num_heads: Int32,
+    num_cols: Int32,
 ):
+    var _q_num_heads = Int(q_num_heads)
+    var _num_cols = Int(num_cols)
     comptime assert q_output.flat_rank == 3, "q_output must have rank 3"
     comptime assert q_gamma.flat_rank == 1, "q_gamma must have rank 1"
     comptime assert k_gamma.flat_rank == 1, "k_gamma must have rank 1"
@@ -1498,7 +1502,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     ), "input_row_offsets must be rank 1"
 
     var combined_row = Int(block_idx.x)
-    var q_rows = Int(total_seq_len) * q_num_heads
+    var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
     var global_token_idx: Int
@@ -1508,7 +1512,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         var k_row = combined_row - q_rows
         global_token_idx, head_idx = divmod(k_row, k_num_heads)
     else:
-        global_token_idx, head_idx = divmod(combined_row, q_num_heads)
+        global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
     _fused_qk_rms_norm_rope_process_row[
         q_input_fn,
@@ -1528,9 +1532,9 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         k_gamma,
         freqs_cis,
         epsilon,
-        weight_offset,
+        Scalar[dtype](weight_offset),
         input_row_offsets,
-        num_cols,
+        _num_cols,
     )
 
 
@@ -1712,11 +1716,11 @@ def fused_qk_rms_norm_rope_ragged_paged[
             k_gamma,
             freqs_cis,
             epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_num_heads,
-            cols,
+            Int32(q_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -1735,22 +1739,22 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     q_index_out_origin: Origin[mut=True],
     q_index_out_storage: TensorStorage,
     q_main_gamma_layout: TensorLayout,
-    q_main_gamma_origin: Origin[mut=False],
+    q_main_gamma_origin: ImmOrigin,
     q_main_gamma_storage: TensorStorage,
     k_main_gamma_layout: TensorLayout,
-    k_main_gamma_origin: Origin[mut=False],
+    k_main_gamma_origin: ImmOrigin,
     k_main_gamma_storage: TensorStorage,
     q_index_gamma_layout: TensorLayout,
-    q_index_gamma_origin: Origin[mut=False],
+    q_index_gamma_origin: ImmOrigin,
     q_index_gamma_storage: TensorStorage,
     k_index_gamma_layout: TensorLayout,
-    k_index_gamma_origin: Origin[mut=False],
+    k_index_gamma_origin: ImmOrigin,
     k_index_gamma_storage: TensorStorage,
     freqs_layout: TensorLayout,
-    freqs_origin: Origin[mut=False],
+    freqs_origin: ImmOrigin,
     freqs_storage: TensorStorage,
     offsets_layout: TensorLayout,
-    offsets_origin: Origin[mut=False],
+    offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
     freq_dtype: DType,
@@ -1808,15 +1812,18 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     ],
     main_epsilon: Float32,
     index_epsilon: Float32,
-    weight_offset: Scalar[dtype],
+    weight_offset: Float32,
     total_seq_len: UInt32,
     input_row_offsets: TileTensor[
         DType.uint32, offsets_layout, offsets_origin, Storage=offsets_storage
     ],
-    q_main_num_heads: Int,
-    q_index_num_heads: Int,
-    num_cols: Int,
+    q_main_num_heads_dev: Int32,
+    q_index_num_heads_dev: Int32,
+    num_cols_dev: Int32,
 ):
+    var q_main_num_heads = Int(q_main_num_heads_dev)
+    var q_index_num_heads = Int(q_index_num_heads_dev)
+    var num_cols = Int(num_cols_dev)
     # Four-band grid: [ q_main | k_main | q_index | k_index ], each band
     # tsl * heads rows. The band is a function of block_idx only, so it is
     # uniform across the block; the barrier inside the shared per-row helper is
@@ -1858,7 +1865,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             k_main_gamma,
             freqs_cis,
             main_epsilon,
-            weight_offset,
+            Scalar[dtype](weight_offset),
             input_row_offsets,
             num_cols,
         )
@@ -1892,7 +1899,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             k_index_gamma,
             freqs_cis,
             index_epsilon,
-            weight_offset,
+            Scalar[dtype](weight_offset),
             input_row_offsets,
             num_cols,
         )
@@ -2144,12 +2151,12 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             freqs_cis,
             main_epsilon,
             index_epsilon,
-            weight_offset,
+            weight_offset.cast[DType.float32](),
             total_seq_len,
             input_row_offsets,
-            q_main_num_heads,
-            q_index_num_heads,
-            cols,
+            Int32(q_main_num_heads),
+            Int32(q_index_num_heads),
+            Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
         )
@@ -2657,7 +2664,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
-    ).into_deletable()
+    ).into_managed()
     var blocks_ptr: UnsafePointer[
         Scalar[dtype], origin_of(blocks_alloc)
     ] = blocks_alloc.unsafe_ptr()
@@ -2670,7 +2677,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
-    ).into_deletable()
+    ).into_managed()
     var cache_lengths_ptr: UnsafePointer[
         UInt32, origin_of(cache_lengths_alloc)
     ] = cache_lengths_alloc.unsafe_ptr()
@@ -2689,7 +2696,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     var n_lookup_table = kv_collection.lookup_table.num_elements()
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
-    ).into_deletable()
+    ).into_managed()
     var lookup_table_ptr: UnsafePointer[
         UInt32, origin_of(lookup_table_alloc)
     ] = lookup_table_alloc.unsafe_ptr()
@@ -2717,7 +2724,7 @@ def print_kv_cache_cont_batch_generic_gpu[
 
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
-    ).into_deletable()
+    ).into_managed()
     var valid_lengths_host_ptr: UnsafePointer[
         UInt32, origin_of(valid_lengths_host_alloc)
     ] = valid_lengths_host_alloc.unsafe_ptr()
@@ -2757,10 +2764,10 @@ def print_kv_cache_cont_batch_generic_gpu[
         is_print_compact,
     )
 
-    dealloc(blocks_alloc^.into_allocation())
-    dealloc(cache_lengths_alloc^.into_allocation())
-    dealloc(lookup_table_alloc^.into_allocation())
-    dealloc(valid_lengths_host_alloc^.into_allocation())
+    dealloc(blocks_alloc^)
+    dealloc(cache_lengths_alloc^)
+    dealloc(lookup_table_alloc^)
+    dealloc(valid_lengths_host_alloc^)
 
 
 def print_kv_cache_paged_generic_gpu[
@@ -2787,7 +2794,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_blocks = kv_collection.blocks.num_elements()
     var blocks_alloc = alloc(
         AllocLayout[Scalar[dtype]](count=n_blocks)
-    ).into_deletable()
+    ).into_managed()
     var blocks_ptr: UnsafePointer[
         Scalar[dtype], origin_of(blocks_alloc)
     ] = blocks_alloc.unsafe_ptr()
@@ -2800,7 +2807,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_cache_lengths = kv_collection.cache_lengths.num_elements()
     var cache_lengths_alloc = alloc(
         AllocLayout[UInt32](count=n_cache_lengths)
-    ).into_deletable()
+    ).into_managed()
     var cache_lengths_ptr: UnsafePointer[
         UInt32, origin_of(cache_lengths_alloc)
     ] = cache_lengths_alloc.unsafe_ptr()
@@ -2819,7 +2826,7 @@ def print_kv_cache_paged_generic_gpu[
     var n_lookup_table = kv_collection.lookup_table.num_elements()
     var lookup_table_alloc = alloc(
         AllocLayout[UInt32](count=n_lookup_table)
-    ).into_deletable()
+    ).into_managed()
     var lookup_table_ptr: UnsafePointer[
         UInt32, origin_of(lookup_table_alloc)
     ] = lookup_table_alloc.unsafe_ptr()
@@ -2857,7 +2864,7 @@ def print_kv_cache_paged_generic_gpu[
     )
     var valid_lengths_host_alloc = alloc(
         AllocLayout[UInt32](count=valid_lengths.size())
-    ).into_deletable()
+    ).into_managed()
     var valid_lengths_host_ptr: UnsafePointer[
         UInt32, origin_of(valid_lengths_host_alloc)
     ] = valid_lengths_host_alloc.unsafe_ptr()
@@ -2897,10 +2904,10 @@ def print_kv_cache_paged_generic_gpu[
         is_print_compact,
     )
 
-    dealloc(blocks_alloc^.into_allocation())
-    dealloc(cache_lengths_alloc^.into_allocation())
-    dealloc(lookup_table_alloc^.into_allocation())
-    dealloc(valid_lengths_host_alloc^.into_allocation())
+    dealloc(blocks_alloc^)
+    dealloc(cache_lengths_alloc^)
+    dealloc(lookup_table_alloc^)
+    dealloc(valid_lengths_host_alloc^)
 
 
 # ===-----------------------------------------------------------------------===#

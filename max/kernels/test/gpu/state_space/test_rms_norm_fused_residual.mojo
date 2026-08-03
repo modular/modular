@@ -13,7 +13,7 @@
 """GPU tests for RMSNorm with fused residual connection."""
 
 from std.math import sqrt
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,

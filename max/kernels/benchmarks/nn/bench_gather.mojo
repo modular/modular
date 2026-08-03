@@ -14,7 +14,7 @@
 from std.random import rand, randint
 
 from std.benchmark import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather_elements
 

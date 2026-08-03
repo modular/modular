@@ -27,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -36,7 +36,7 @@ from layout import (
     lt_to_tt,
 )
 from layout._fillers import random
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 
 from std.utils.index import IndexList
 from linalg.fp4_utils import (

@@ -23,7 +23,7 @@ from std.benchmark import (
 )
 from std.builtin._closure import __ownership_keepalive
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
 from std.testing import assert_equal
 
@@ -32,10 +32,10 @@ def vec_func(
     in0: UnsafePointer[Float32, ImmutAnyOrigin],
     in1: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len: Int32,
 ):
     var tid = global_idx.x
-    if tid >= len:
+    if tid >= Int(len):
         return
     output[tid] = in0[tid] + in1[tid]
 
@@ -66,7 +66,7 @@ def bench_vec_add(
             in0_device,
             in1_device,
             out_device,
-            length,
+            Int32(length),
             grid_dim=(length // block_dim),
             block_dim=(block_dim),
         )

@@ -323,7 +323,7 @@ struct PythonObject(
         """
         self = Self(from_borrowed=copy._obj_ptr)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the object.
 
         Decrements the underlying refcount of the pointed-to object.

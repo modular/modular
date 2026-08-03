@@ -13,6 +13,7 @@
 
 from std.collections.string import StaticString
 from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
+from std.memory import alloc, dealloc, Layout
 from std.sys import (
     align_of,
     get_defined_string,
@@ -20,7 +21,7 @@ from std.sys import (
     size_of,
 )
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -29,8 +30,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import _is_sm10x_gpu
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from std.utils import IndexList
@@ -78,16 +79,20 @@ def run_elementwise[
     var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
     var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
 
-    var in_host_ptr = alloc[Scalar[dtype]](cb_in.alloc_size(), alignment=align)
-    var out_host_ptr = alloc[Scalar[dtype]](
-        cb_out.alloc_size(), alignment=align
+    var in_host_alloc = alloc(
+        Layout[Scalar[dtype]].aligned[align](count=cb_in.alloc_size())
+    ).into_managed()
+    var out_host_alloc = alloc(
+        Layout[Scalar[dtype]].aligned[align](count=cb_out.alloc_size())
+    ).into_managed()
+
+    var in_host = TileTensor(in_host_alloc.unsafe_ptr(), row_major(Coord(dims)))
+    var out_host = TileTensor(
+        out_host_alloc.unsafe_ptr(), row_major(Coord(dims))
     )
 
-    var in_host = TileTensor(in_host_ptr, row_major(Coord(dims)))
-    var out_host = TileTensor(out_host_ptr, row_major(Coord(dims)))
-
-    for i in range(cb_in.alloc_size()):
-        in_host_ptr[i] = Scalar[dtype](i)
+    for i in range(len(in_host_alloc.unsafe_span())):
+        in_host_alloc.unsafe_span()[i] = Scalar[dtype](i)
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
@@ -144,11 +149,12 @@ def run_elementwise[
 
     ctx.synchronize()
     ctx.enqueue_copy(out_host.ptr, cb_out.device_buffer())
+    ctx.synchronize()
 
     _ = cb_in
     _ = cb_out
-    in_host_ptr.free()
-    out_host_ptr.free()
+    dealloc(in_host_alloc^)
+    dealloc(out_host_alloc^)
 
 
 def list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:

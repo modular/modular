@@ -16,20 +16,20 @@ from std.math.uutils import umod, udivmod
 
 from std.gpu import barrier, thread_idx
 from std.gpu import warp_id as get_warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import async_copy
 from std.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from std.utils import IndexList
 
 
 def producer_consumer_kernel[NUM_THREADS: Int]():
     var warp_id = get_warp_id()
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -69,13 +69,13 @@ def test_producer_consumer_kernel(ctx: DeviceContext) raises:
 def producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
     var k_tile_iters = num_iters
 
-    var producer_mbar = stack_allocation[
+    var producer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
-    var consumer_mbar = stack_allocation[
+    var consumer_mbar = unsafe_stack_allocation[
         Q_SIZE,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -154,7 +154,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
     warpgroup_idx, warpgroup_tid = udivmod(thread_idx.x, 128)
 
-    smem = stack_allocation[
+    smem = unsafe_stack_allocation[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
@@ -171,13 +171,13 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
     barrier()
 
-    var produced_mbar = stack_allocation[
+    var produced_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
-    var consumed_mbar = stack_allocation[
+    var consumed_mbar = unsafe_stack_allocation[
         num_stages,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,

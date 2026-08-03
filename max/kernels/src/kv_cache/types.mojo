@@ -23,8 +23,8 @@ This module defines two traits that define the roles of the different structs
 """
 
 from std.math import align_up
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from std.gpu.memory import (
     CacheEviction,
     cp_async_bulk_tensor_shared_cluster_global_elect,
@@ -360,7 +360,7 @@ struct PagedRowIndices[
     page_size: Int,
     pair_cta: Bool = False,
     is_leader: Bool = True,
-](ImplicitlyCopyable):
+](Copyable):
     """Pre-computed physical row indices for a BN-row range of paged KV cache.
 
     `BN` is V's tile row count. `MHAOperand.populate` (or its
@@ -1076,7 +1076,7 @@ def _populate_via_row_idx[
         result.rows[i] = row_idx_fn(
             batch_idx, base_kv_row + UInt32(i * Result.eff_page)
         )
-    return result
+    return result^
 
 
 trait KVCacheT(DevicePassable, TrivialRegisterPassable):
@@ -1806,7 +1806,7 @@ struct ContinuousBatchingKVCache[
             swizzle_mode,
             fold_chunks=fold_chunks,
             row_major=row_major,
-        ](ctx, self.blocks.ptr, Int(rows))
+        ](ctx, self.blocks._storage, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[
@@ -1870,7 +1870,7 @@ struct ContinuousBatchingKVCache[
             l2_promotion=l2_promotion,
         ](
             ctx,
-            self.blocks.ptr.bitcast[Scalar[tma_dtype]](),
+            self.blocks._storage.bitcast[Scalar[tma_dtype]](),
             self.num_kv_rows(),
         )
 
@@ -1945,7 +1945,7 @@ struct ContinuousBatchingKVCache[
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
-        var offset_ptr = self.blocks.ptr + Int(
+        var offset_ptr = self.blocks._storage + Int(
             self.blocks.layout(full_block_idx)
         )
         return offset_ptr.as_unsafe_any_origin()
@@ -2394,7 +2394,9 @@ struct PagedKVCache[
                 ),
             )
             var lut_row_ptr = (
-                self.lookup_table.ptr + batch_idx * row_stride + first_lut_idx
+                self.lookup_table._storage
+                + batch_idx * row_stride
+                + first_lut_idx
             )
             comptime for c in range(num_chunks):
                 var simd = lut_row_ptr.load[width=chunk, alignment=4 * chunk](
@@ -2403,7 +2405,7 @@ struct PagedKVCache[
                 var rows_simd = simd * SIMD[DType.uint32, chunk](stride)
                 comptime for i in range(chunk):
                     result.rows[c * chunk + i] = rows_simd[i]
-        return result
+        return result^
 
     @always_inline
     def create_tma_tile[
@@ -2452,7 +2454,7 @@ struct PagedKVCache[
             swizzle_mode,
             fold_chunks=fold_chunks,
             row_major=row_major,
-        ](ctx, self.blocks.ptr, Int(rows))
+        ](ctx, self.blocks._storage, Int(rows))
 
     @always_inline
     def create_gather4_tma_tile[
@@ -2516,7 +2518,7 @@ struct PagedKVCache[
             l2_promotion=l2_promotion,
         ](
             ctx,
-            self.blocks.ptr.bitcast[Scalar[tma_dtype]](),
+            self.blocks._storage.bitcast[Scalar[tma_dtype]](),
             self.num_kv_rows(),
         )
 
@@ -2562,7 +2564,7 @@ struct PagedKVCache[
         )
         # Offset past the FP8 content to reach the BF16 rope data,
         # then reinterpret the pointer as BF16.
-        var rope_ptr = (self.blocks.ptr + padded_depth).bitcast[
+        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[
             Scalar[DType.bfloat16]
         ]()
         comptime smem_dim = IndexList[3](BN, 1, BK)
@@ -2607,7 +2609,7 @@ struct PagedKVCache[
         reinterprets as BF16, and creates a gather4 TMA descriptor whose row
         stride is the full row width in BF16 elements.
         """
-        var rope_ptr = (self.blocks.ptr + padded_depth).bitcast[
+        var rope_ptr = (self.blocks._storage + padded_depth).bitcast[
             Scalar[DType.bfloat16]
         ]()
         return create_tma_tile_gather4[
@@ -2914,7 +2916,7 @@ struct PagedKVCache[
             batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
 
-        var ptr = self.blocks.ptr + Int(self.blocks.layout(full_block_idx))
+        var ptr = self.blocks._storage + Int(self.blocks.layout(full_block_idx))
         return ptr.as_unsafe_any_origin()
 
     @always_inline
@@ -2935,7 +2937,7 @@ struct PagedKVCache[
         assert self.scales is not None, "Quantization scale factors not set."
         var scales_block = self.scales.value()
 
-        var scales_ptr = scales_block.ptr + Int(
+        var scales_ptr = scales_block._storage + Int(
             scales_block.layout(full_scale_block_idx)
         )
         return scales_ptr.as_unsafe_any_origin()
@@ -2948,7 +2950,7 @@ struct PagedKVCache[
         dangling pointer if scales are not set."""
 
         comptime if Self.quantization_enabled:
-            return self.scales.value().ptr.as_unsafe_any_origin()
+            return self.scales.value()._storage.as_unsafe_any_origin()
         # SAFETY: Only reached when quantization is disabled; callers guard
         # scales access behind comptime `quantization_enabled` checks.
         return UnsafePointer[
@@ -3129,7 +3131,7 @@ struct ContinuousBatchingKVCacheCollection[
                 Self.CacheType.blocks_tt_layout,
                 4,
             ](
-                self.blocks.ptr + offset,
+                self.blocks._storage + offset,
                 self.kv_cache_dynamic_shape,
                 self.kv_cache_dynamic_strides,
             ),
@@ -3414,7 +3416,7 @@ struct PagedKVCacheCollection[
                     Self.CacheType.scales_tt_layout,
                     4,
                 ](
-                    self.scales.value().ptr + scale_offset,
+                    self.scales.value()._storage + scale_offset,
                     self.kv_cache_scales_dynamic_shape,
                     self.kv_cache_scales_dynamic_strides,
                 )
@@ -3426,7 +3428,7 @@ struct PagedKVCacheCollection[
                 Self.CacheType.blocks_tt_layout,
                 4,
             ](
-                self.blocks.ptr + blocks_offset,
+                self.blocks._storage + blocks_offset,
                 self.kv_cache_dynamic_shape,
                 self.kv_cache_dynamic_strides,
             ),

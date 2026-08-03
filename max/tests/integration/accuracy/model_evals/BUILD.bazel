@@ -82,19 +82,40 @@ modular_py_binary(
     name = "aa_omniscience_eval",
     testonly = True,
     srcs = ["aa_omniscience_eval.py"],
-    # AA-Omniscience-Public carries an image column; the datasets loader decodes
-    # it via Pillow at runtime even though nothing here imports it statically.
-    ignore_extra_deps = [
-        requirement("pillow"),
-    ],
     imports = ["."],
     main = "aa_omniscience_eval.py",
     deps = [
         ":eval_common",
         requirement("click"),
         requirement("datasets"),
-        requirement("pillow"),
     ],
+)
+
+modular_py_binary(
+    name = "scicode_eval",
+    testonly = True,
+    srcs = ["scicode_eval.py"],
+    imports = ["."],
+    main = "scicode_eval.py",
+    # scicode + h5py are NOT deps here: the generated code's tests run in a
+    # separate interpreter (--test-python) that has them installed.
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+    ],
+)
+
+# One-command local runner: provisions the scicode/h5py harness venv +
+# test_data.h5, then runs scicode_eval with --test-python/--test-data injected.
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:scicode_eval_local -- \
+#     --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 --sample-size 2
+sh_binary(
+    name = "scicode_eval_local",
+    testonly = True,
+    srcs = ["run_scicode_local.sh"],
+    data = [":scicode_eval"],
+    tags = ["manual"],
 )
 
 # One command to run all five non-agentic text evals in sequence against a

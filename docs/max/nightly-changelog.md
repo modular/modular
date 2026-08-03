@@ -8,8 +8,25 @@ This version is still a work in progress.
 
 ## Documentation
 
+- The MAX AI kernels library has been renamed to the MAX accelerator library,
+  reflecting an expanded scope that now includes the GPU programming APIs
+  migrated out of the Mojo standard library and gathered under a new top-level
+  `max` package. Its API reference moved to
+  [`/api/mojo/`](https://docs.modular.com/api/mojo/), and links to the previous
+  location redirect.
+
 ## MAX models
 
+- Added DSpark speculative decoding for Gemma4 12B
+  (`UnifiedDSparkGemma4ForCausalLM`), DeepSeek's block-drafting method
+  (arXiv 2607.05147). A small non-causal draft transformer conditioned on
+  selected target-layer hidden states drafts a 7-token block per step, and
+  a sequential Markov head biases each draft position's logits from the
+  previously drafted token. Enabled by serving `google/gemma-4-12B-it` with
+  `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
+  --speculative-method dflash --num-speculative-tokens 7`. Verified on a
+  single B200 at ~4.6 accepted draft tokens per step (greedy, code-style
+  prompts; ~5.6 including the bonus token), in the paper's reported band.
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
   GLM-5.1 sparse-attention architecture with cross-layer index sharing.
 - Added multi-token prediction (MTP) speculative decoding for GLM-5.2
@@ -111,7 +128,7 @@ This version is still a work in progress.
   step skipping — the recommended default, with `balanced` and `fast` presets)
   and `--first-block-caching` (first-block-residual reuse — zero-tuning and
   data-adaptive). The two are mutually exclusive and both off by default. See
-  the [image generation guide](/max/inference/image-generation).
+  the [image generation guide](/serve/image-generation).
 - Gemma 4 with multi-token prediction (MTP) speculative decoding
   (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
   Previously this path was served text-only: image tokens were ingested by
@@ -127,6 +144,29 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `MAX_SERVE_OTLP_METRICS_ENDPOINT` to additionally push a
+  self-calibrating exponential-histogram shadow of every histogram metric
+  (TTFT, ITL, request time, token counts, throughput, etc.) to an OTLP
+  endpoint (for example a Datadog Agent OTLP receiver, or any OTel
+  collector), rather than using the existing hand-tuned static bucket
+  boundaries. The existing histograms keep exporting on the local
+  Prometheus `/metrics` endpoint exactly as before, unaffected either way
+  (the classic Prometheus text format cannot carry exponential histograms
+  regardless); the shadow metric (named `<metric>.exponential`) goes only
+  to the configured OTLP endpoint, so both representations are available
+  side by side for comparison. Unset by default, which adds nothing and
+  leaves today's behavior unchanged.
+- Added video encoder statistics to the scheduler's per-iteration batch log
+  for multimodal models, mirroring the existing `Vision Encoder` clause. Each
+  batch line with video work now includes a `Video Encoder` clause reporting
+  the number of clips encoded this iteration versus served from the video
+  encoder cache (with the cache hit rate), the sampled frame count, the
+  video tokens encoded, and the encoder wall-clock time. The same values are
+  exported as OpenTelemetry metrics under the `maxserve.video.*` namespace.
+  A model that manages its own encoder cache internally rather than through
+  the pipeline-owned `VisionEncoderCache` (e.g. MiniMax-M3) now implements a
+  `SupportsPooledVisionMetrics` protocol so both its image and video metrics
+  reach the scheduler.
 - Added opt-in token-balanced CE scheduling across data-parallel replicas.
   With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
   encoding requests wait in an unbound pool and are placed by a per-step
@@ -449,6 +489,15 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- Histogram bucket boundaries are now generated instead of hand-written: most
+  metrics use geometric ladders, while percentages step linearly by 5,
+  tightening to 2 above 90. Several ranges are wider too: latencies extend to 8
+  hours (previously 30 minutes) and token counts to 100M (previously 1M), so
+  slow compiles and very long contexts no longer land in the overflow bucket.
+  Every histogram now also starts with a `0` boundary. Because the individual
+  bucket edges have moved, dashboards and alerts that hardcode `le` values need
+  updating.
+
 ### `max` CLI
 
 - The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
@@ -486,61 +535,6 @@ This version is still a work in progress.
   is compiled host-independently and can be shipped and reused across hosts of
   the same architecture family. Mirrors `set_virtual_device_target_arch()` for
   GPUs. Leaving it unset compiles for the build host's CPU, as before.
-
-- `InferenceSession.profiling` now records libkineto traces in
-  `--config=kineto` builds (Linux x86_64). libkineto is auto-enabled when the
-  pipeline entrypoints configure a session with profiling enabled;
-  `session.profiling.start()` also enables it explicitly and (on hosts with a
-  live CUDA primary context) subscribes to CUPTI's Activity Callback API, and
-  `session.profiling.stop()` flushes and serializes a Chrome-trace JSON file
-  compatible with Meta's
-  [HTA](https://github.com/facebookresearch/HolisticTraceAnalysis).
-  `session.profiling.wait_for_trace()` blocks until serialization is done and
-  raises `max.engine.ProfilingError` if libkineto could not write the trace.
-  Default builds — including the shipped wheels — do not link the libkineto
-  backend yet, so the control surface remains a safe no-op there.
-- `ProfilingConfig` gains six new fields for the libkineto profiler, each
-  configurable from Python through the matching `session.debug.profiling_*`
-  setter or its `MODULAR_MAX_DEBUG_PROFILING_*` environment variable:
-  `profiling_enabled`, `profiling_output_path`, `profiling_dynolog_enabled`,
-  `profiling_warmup_steps`, `profiling_active_steps`, and
-  `profiling_periodic_flush_seconds`.
-- `profiling_output_path` accepts template variables (`{pid}`, `{rank}`) and a
-  directory form (`/tmp/traces/`) that auto-generates a distinct per-process
-  file (keyed on rank, PID, timestamp, and a sequence counter), so
-  multi-process and multi-rank captures no longer collide on a single fixed
-  filename. `{rank}` resolves to `MODULAR_RANK` / `OMPI_COMM_WORLD_RANK` /
-  `"0"`.
-- Forking while the profiler is enabled is safe for host applications that
-  embed `InferenceSession` and fork (Python `multiprocessing` with the `fork`
-  start method, pre-fork servers, or a bare `os.fork()`) — child processes
-  start with the profiler disabled and can call `start()` again; the parent
-  retains its enabled state across the fork. (MAX itself launches
-  workers with the `spawn` start method and is unaffected.)
-- `session.profiling.range(name)` is a new context manager that annotates a
-  named CPU span in the trace. The span appears as a `user_annotation` bar in
-  Perfetto/HTA with the GPU kernels launched inside it correlated to it, and
-  also records during Dynolog-initiated on-demand traces. When no trace is
-  live the calls reduce to a single predicted branch, so annotations are safe
-  to leave in production code. The companion `session.profiling.is_recording`
-  property reports whether a trace of either origin is live — the right gate
-  for eliding annotation work on hot paths (`is_enabled` reflects only the
-  session API and stays `False` during daemon-driven traces).
-- MAX processes launched with `KINETO_USE_DAEMON=1` now register with a
-  [Dynolog](https://github.com/facebookincubator/dynolog) daemon at device
-  initialization, so `dyno gputrace --pids <pid>` captures any such process
-  on demand with no profiling flags and no code changes. Set
-  `profiling_dynolog_enabled = False` (or
-  `MODULAR_MAX_DEBUG_PROFILING_DYNOLOG_ENABLED=0`) to opt a process out.
-- Profiling can now be armed and disarmed at runtime for CUDA-graph
-  (capture/replay) workloads: a mid-run `session.profiling.start()` or a
-  Dynolog `dyno gputrace` request captures kernels replayed from graphs that
-  were instantiated before profiling was enabled, and replay overhead reverts
-  when the trace stops. Enabling at session construction is no longer
-  required for these workloads.
-- This API is orthogonal to the existing `session.gpu_profiling()`
-  (NVTX/Nsight) path. See `max/docs/profiling.md` in the repository for the
-  full user guide.
 
 - Eager execution in `max.experimental` now routes every realization through
   the `max.experimental.executor.Executor` abstraction. The out-of-the-box
@@ -582,6 +576,18 @@ This version is still a work in progress.
   matmul, elementwise, and reduce migrations. Structural parameters (pad
   widths, repeat counts, split/slice bounds) stay runtime operands, so one
   compiled graph per `(op, device, dtype[, rank])` serves every shape.
+
+- The eager interpreter's gather and scatter ops (`gather`, `gather_nd`,
+  `scatter`, `scatter_nd`, and their `add`/`max`/`min`/`mul` reductions) now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings, matching the matmul, elementwise, reduce, and shape-rearrange
+  migrations. Pure copies serve every dtype, including `float16`; the
+  reductions drop the `float16`/`bfloat16` CPU inputs the Mojo path accepted and
+  raise. `gather_nd` and `scatter_nd` (including its reductions) dispatch
+  through the genuine `ops.gather_nd`/`ops.scatter_nd*`, which run on GPU as
+  well as CPU; duplicate index vectors resolve deterministically (overwrite is
+  last-write-wins, reduce accumulates atomically via the GPU kernel's
+  compare-and-swap loop).
 
 - The eager interpreter's pooling ops (`max_pool`/`avg_pool`, floor and
   ceil-mode variants) now run through pre-compiled graph-compiler models
@@ -633,6 +639,47 @@ This version is still a work in progress.
   pre-existing limitation of the kernel itself, not new in this change), so
   eager `group_norm` on CPU now raises `NotImplementedError` instead of
   running through the old hand-written Mojo binding.
+
+- The eager interpreter's `cast` op now runs through pre-compiled graph-compiler
+  models instead of a hand-written Mojo binding, matching the matmul,
+  elementwise, reduce, and shape-rearrange migrations. On CPU the
+  float16/bfloat16 endpoints the Mojo path accepted are no longer supported and
+  raise; on accelerators float64 is excluded, matching the sibling families.
+
+- The eager interpreter's `band_part`, `arg_nonzero`, `non_maximum_suppression`,
+  `random.normal`, `random.uniform`, `range`, and `roi_align` ops now run
+  through pre-compiled graph-compiler models instead of hand-written Mojo
+  bindings, so each shares one implementation with the compiled path. Eager CPU
+  coverage narrows to float32 and float64 for `arg_nonzero`,
+  `non_maximum_suppression`, `random.uniform`, `range`, and `roi_align`,
+  matching the dtype policy the other graph-compiler-backed float ops use; the
+  deleted bindings also accepted float16 and bfloat16. `band_part`'s coverage
+  is unchanged, `random.normal` still accepts float16 and bfloat16, and sampled
+  random values are unchanged. `arg_nonzero`, `non_maximum_suppression`, and
+  `roi_align` remain CPU-only, as their `MO_HostOnly` trait already required.
+
+- `band_part` now supports CPU float64 on Apple-silicon builds, which the
+  deleted binding rejected.
+
+- `arg_nonzero` no longer caps input rank.
+
+- `non_maximum_suppression` now runs suppression twice, once to size the output
+  and once to compute it, in exchange for dropping the upper-bound allocation
+  and its truncating copy.
+
+- `range` now raises on a non-evenly-divisible interval or a zero `step` where
+  it previously returned a mis-sized or constant tensor.
+
+- `random.uniform`'s samples depend on the kernel's SIMD grouping, so an eager
+  graph can draw different values than a compiled one from the same seed.
+
+- Added `max.graph.KernelLibrary.has_shape_function`, which reports whether
+  a kernel in a loaded library registered a shape function.
+
+- The eager interpreter's last three Mojo-bound ops (`transpose`,
+  `broadcast_to`, mutable `store_slice`) now run through graph-compiler
+  models; no Mojo sources ship, removing the multi-minute first-import JIT
+  compile from wheel installs.
 
 - Added a `max warm-interpreter-cache` command that batch-compiles the full
   eager interpreter model matrix into the on-disk cache for the current
@@ -743,9 +790,21 @@ This version is still a work in progress.
     `max.benchmark.bench_multicontext`
   - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
     `max.benchmark.bencher_iter_custom`
+  - `std.gpu.compute` -> `max.gpu.compute`
 
 ## Breaking changes
 
+- Dynamic CE chunk sizing in the data-parallel load-balancer
+  (`--dp-ce-balance-enable-dynamic-chunk-size`) now defaults to off. The
+  smaller, more frequent context-encoding chunks it produces interact with
+  tiered-KV onload latency on speculative-decoding deployments; re-enable it
+  explicitly for workloads where its TTFT win is measured to hold.
+
+- Removed the deprecated `--max-num-steps` CLI flag (and the corresponding
+  `max_num_steps` config field). Multi-step pipeline execution is no longer
+  supported; the pipeline always runs single-step decode. The flag had been a
+  no-op that only logged a warning, so passing it now errors instead of being
+  ignored.
 - `PipelineTokenizer.eos` (a single scalar token id) is replaced by
   `PipelineTokenizer.eos_token_ids` (a set): the tokenizer's declared EOS
   plus any additional terminators from the model config's `eos_token_id`
@@ -804,6 +863,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed a per-kernel-launch memory leak on macOS: the Metal driver now drains
+  autoreleased Objective-C objects (command buffers, encoders) per call
+  instead of accumulating them for the lifetime of the thread.
+- Fixed a custom op with a data-dependent output dimension killing the process
+  when its kernel registers no shape function. It now reports a compile error.
 - Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
   `--config-file` recipe instead of overriding just the named setting. For
   example, passing `--kv-connector-config` alongside a recipe that sets
@@ -986,6 +1050,14 @@ This version is still a work in progress.
   the filter into the layout the grouped-conv kernel requires when the filter
   traced back to a compile-time constant; it now also packs a non-constant
   filter when `groups > 1`, since the kernel cannot run without one.
+
+- Fixed `maxserve_time_to_first_token_milliseconds` under-reporting TTFT. The
+  timer started when the request reached the token-generation pipeline, so
+  request parsing, validation and media resolution were excluded and the
+  metric disagreed with client-observed TTFT under load. It now starts when
+  the API server receives the request, matching the origin already used by
+  `maxserve_request_time_milliseconds`. Expect a step up in reported TTFT that
+  reflects measurement, not a regression.
 
 ## Mojo language
 

@@ -141,7 +141,7 @@ Not alone. Mojo is one component of the Modular Platform, which
 makes it easier for you to author highly performant, portable CPU and GPU graph
 operations, but you’ll also need a runtime (or "OS") that supports graph-level
 transformations and heterogeneous compute, which is provided by the
-[Modular Platform](https://docs.modular.com/max/intro).
+[Modular Platform](https://docs.modular.com/intro).
 
 ### How do I convert Python programs or libraries to Mojo?
 
@@ -206,7 +206,7 @@ It includes:
 
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
-- [Layout library](/docs/layout/)
+- [Layout library](https://docs.modular.com/api/mojo/layout/)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
@@ -223,7 +223,7 @@ the LSP and debugger tools. It includes:
 
 - [`mojo` CLI](/docs/cli/) (includes the Mojo compiler)
 - [Mojo standard library](/docs/std/)
-- [Layout library](/docs/layout/)
+- [Layout library](https://docs.modular.com/api/mojo/layout/)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 

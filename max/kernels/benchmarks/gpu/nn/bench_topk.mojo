@@ -14,7 +14,7 @@
 from std.math import ceildiv, iota
 from std.random import random_float64
 
-from std.algorithm.reduction import max as reduce_max
+from max.algorithm.reduction import max as reduce_max
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -23,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major

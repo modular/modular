@@ -45,7 +45,7 @@ from std.math import ceildiv, max, min
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Idx,
     Layout,

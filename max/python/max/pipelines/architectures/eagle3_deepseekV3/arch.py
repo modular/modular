@@ -34,12 +34,8 @@ eagle3_deepseekV3_arch = SupportedArchitecture(
     example_repo_ids=[
         "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
+    supported_encodings={"bfloat16", "float8_e4m3fn", "float4_e2m1fnx2"},
     multi_gpu_supported=True,
     pipeline_model=Eagle3DeepseekV3Model,
     tokenizer=TextTokenizer,
@@ -61,12 +57,8 @@ eagle3_mha_deepseekV3_arch = SupportedArchitecture(
     example_repo_ids=[
         "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float8_e4m3fn",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
+    supported_encodings={"bfloat16", "float8_e4m3fn", "float4_e2m1fnx2"},
     multi_gpu_supported=True,
     pipeline_model=Eagle3MHADeepseekV3Model,
     tokenizer=TextTokenizer,

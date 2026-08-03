@@ -14,6 +14,7 @@
 from std.random import rand
 
 from std.benchmark import *
+from std.memory import alloc, dealloc
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.attention.cpu.mha import flash_attention
 
@@ -49,32 +50,42 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
-    var q_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
-    var k_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
-    var v_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
-    var mask_ptr = alloc[Scalar[dtype]](mask_shape.flattened_length())
-    var output_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
+    var q_alloc = alloc[Scalar[dtype]](
+        {count = q_shape.flattened_length()}
+    ).into_managed()
+    var k_alloc = alloc[Scalar[dtype]](
+        {count = kv_shape.flattened_length()}
+    ).into_managed()
+    var v_alloc = alloc[Scalar[dtype]](
+        {count = kv_shape.flattened_length()}
+    ).into_managed()
+    var mask_alloc = alloc[Scalar[dtype]](
+        {count = mask_shape.flattened_length()}
+    ).into_managed()
+    var output_alloc = alloc[Scalar[dtype]](
+        {count = q_shape.flattened_length()}
+    ).into_managed()
 
-    rand(q_ptr, q_shape.flattened_length())
-    rand(k_ptr, kv_shape.flattened_length())
-    rand(v_ptr, kv_shape.flattened_length())
-    rand(mask_ptr, mask_shape.flattened_length())
+    rand(q_alloc.unsafe_span())
+    rand(k_alloc.unsafe_span())
+    rand(v_alloc.unsafe_span())
+    rand(mask_alloc.unsafe_span())
 
     comptime layout = Layout.row_major[3]()
     var q = LayoutTensor[dtype, layout](
-        q_ptr, RuntimeLayout[layout].row_major(q_shape)
+        q_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(q_shape)
     )
     var k = LayoutTensor[dtype, layout](
-        k_ptr, RuntimeLayout[layout].row_major(kv_shape)
+        k_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(kv_shape)
     )
     var v = LayoutTensor[dtype, layout](
-        v_ptr, RuntimeLayout[layout].row_major(kv_shape)
+        v_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(kv_shape)
     )
     var mask = LayoutTensor[dtype, layout](
-        mask_ptr, RuntimeLayout[layout].row_major(mask_shape)
+        mask_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(mask_shape)
     )
     var output = LayoutTensor[dtype, layout](
-        output_ptr, RuntimeLayout[layout].row_major(q_shape)
+        output_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(q_shape)
     )
 
     @parameter
@@ -130,6 +141,12 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         b.iter[iter_fn[UNKNOWN_VALUE]]()
 
     m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
+
+    dealloc(q_alloc^)
+    dealloc(k_alloc^)
+    dealloc(v_alloc^)
+    dealloc(mask_alloc^)
+    dealloc(output_alloc^)
 
 
 def main() raises:

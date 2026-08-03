@@ -30,7 +30,7 @@ def dependent_type[dtype: DType, //, value: Scalar[dtype]]():
 # end-dependent-type-infer-only
 
 
-def mutate_span(span: Span[mut=True, Byte, ...]) raises:
+def mutate_span(span: Span[mut=True, Byte, _]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)

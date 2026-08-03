@@ -18,7 +18,7 @@ import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import click
 import pytest
@@ -35,9 +35,23 @@ from pytest import MonkeyPatch
 
 @pytest.fixture(autouse=True)
 def _skip_repo_access_check() -> Iterator[None]:
-    """These precedence tests use placeholder repos, so skip the HF
-    existence check that ``PipelineConfig`` construction now runs."""
-    with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
+    """These precedence tests use placeholder repos, so skip the HF network
+    calls that ``MAXModelConfig`` construction now runs: the existence check
+    (via both the ``model_config`` and ``hf_utils`` references) and the eager
+    ``load_huggingface_config``."""
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+        patch("huggingface_hub.file_exists", return_value=False),
+        patch(
+            "max.pipelines.lib.config.model_config.load_huggingface_config",
+            return_value=MagicMock(),
+        ),
+    ):
         yield
 
 

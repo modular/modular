@@ -26,7 +26,9 @@ from std.sys import (
 )
 from std.sys.info import _accelerator_arch, _has_blackwell_tcgen05
 
-from std.algorithm.functional import elementwise, tile_and_unswitch
+from std.algorithm.functional import tile_and_unswitch
+
+from max.algorithm.functional import elementwise
 from std.gpu import (
     WARP_SIZE,
     barrier,
@@ -34,8 +36,8 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.primitives.grid_controls import PDLLevel
-from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import (
     Coord,
     Idx,
@@ -51,7 +53,7 @@ from layout import (
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
 from std.logger import Logger
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 from ...gemv import (
@@ -110,9 +112,9 @@ def matmul_kernel[
     c_ptr: UnsafePointer[mut=True, Scalar[c_type], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[a_type], ImmutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[b_type], ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
     """Matrix Multiplication using shared memory.
     This version loads blocks of size tile_size x tile_size from A and B
@@ -138,10 +140,14 @@ def matmul_kernel[
         c_ptr: Pointer to the row-major output matrix C of shape `(m, n)`.
         a_ptr: Pointer to the row-major input matrix A of shape `(m, k)`.
         b_ptr: Pointer to the row-major input matrix B of shape `(k, n)`.
-        m: Number of rows of A and C.
-        n: Number of columns of B and C.
-        k: Contraction dimension: columns of A and rows of B.
+        m_dev: Number of rows of A and C.
+        n_dev: Number of columns of B and C.
+        k_dev: Contraction dimension: columns of A and rows of B.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime b_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -156,12 +162,12 @@ def matmul_kernel[
     )
 
     # Allocate A, B tile in shared memory.
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         a_type,
         address_space=AddressSpace.SHARED,
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         tile_size * tile_size,
         b_type,
         address_space=AddressSpace.SHARED,
@@ -263,48 +269,13 @@ def matmul_kernel_naive[
     c: TileTensor[c_type, c_layout_type, MutAnyOrigin, Storage=c_storage],
     a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin, Storage=a_storage],
     b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin, Storage=b_storage],
-    m: Int,
-    n: Int,
-    k: Int,
+    m: Int32,
+    n: Int32,
+    k: Int32,
 ):
-    """Computes one output element of a matrix multiply per thread by iterating over the K dimension.
-
-    Each thread maps to a single `(x, y)` coordinate of `c` and accumulates the
-    dot product of the corresponding row of `a` and column of `b` (or row of
-    `b` when `transpose_b` is set). When `elementwise_lambda_fn` is supplied the
-    accumulated value is passed through it instead of being stored directly.
-
-    Parameters:
-        c_type: DType of the output tile `c` elements.
-        a_type: DType of the input tile `a` elements.
-        b_type: DType of the input tile `b` elements.
-        c_layout_type: Tensor layout of the output tile `c`.
-        a_layout_type: Tensor layout of the input tile `a`.
-        b_layout_type: Tensor layout of the input tile `b`.
-        BLOCK_DIM: Thread-block dimension used when launching the kernel.
-        transpose_b: Whether `b` is accessed transposed, so its row `y` is
-            read as `b[y, i]` instead of `b[i, y]` (defaults to `False`).
-        elementwise_lambda_fn: Optional epilogue applied to the accumulated
-            value before it is stored to `c` (defaults to `None`, which
-            stores the raw accumulation).
-        s_type: DType used for the inner accumulation (defaults to the
-            accumulator type for `c_type`).
-        c_storage: Storage type of the output tile `c` (defaults to
-            `PointerStorage[element_width=1]`).
-        a_storage: Storage type of the input tile `a` (defaults to
-            `PointerStorage[element_width=1]`).
-        b_storage: Storage type of the input tile `b` (defaults to
-            `PointerStorage[element_width=1]`).
-
-    Args:
-        c: Output tile of shape `(m, n)`.
-        a: Input tile of shape `(m, k)`.
-        b: Input tile of shape `(k, n)`, or `(n, k)` when `transpose_b`
-            is set.
-        m: Number of rows of `a` and `c`.
-        n: Number of columns of `c`.
-        k: Contraction dimension shared by `a` and `b`.
-    """
+    var _m = Int(m)
+    var _n = Int(n)
+    var _k = Int(k)
     comptime assert c.flat_rank == 2, "expected 2D tensor for c"
     comptime assert a.flat_rank == 2, "expected 2D tensor for a"
     comptime assert b.flat_rank == 2, "expected 2D tensor for b"
@@ -312,25 +283,24 @@ def matmul_kernel_naive[
     var x = global_idx.x
     var y = global_idx.y
 
-    if x >= m or y >= n:
+    if x >= _m or y >= _n:
         return
 
     var accum = Scalar[s_type]()
 
     comptime if transpose_b:
-        for i in range(k):
+        for i in range(_k):
             accum += (
                 rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
                 * rebind[Scalar[b_type]](b[y, i]).cast[s_type]()
             )
 
     else:
-        for i in range(k):
+        for i in range(_k):
             accum += (
                 rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
                 * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
             )
-
     comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
@@ -711,9 +681,9 @@ def _matmul_gpu[
                     c,
                     a,
                     b,
-                    m,
-                    n,
-                    k,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
                     grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
                     block_dim=(4 * WARP_SIZE,),
                 )
@@ -1449,9 +1419,9 @@ def _matmul_gpu[
                 c,
                 a,
                 b,
-                m,
-                n,
-                k,
+                Int32(m),
+                Int32(n),
+                Int32(k),
                 grid_dim=(ceildiv(n, BLOCK_N), ceildiv(m, BLOCK_M)),
                 block_dim=(NUM_WARPS * WARP_SIZE,),
             )
@@ -1539,9 +1509,9 @@ def _matmul_gpu[
         c,
         a,
         b,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -1909,7 +1879,7 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                runtime_config.num_k_partitions,
+                Int32(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
             )
@@ -1919,7 +1889,7 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                runtime_config.num_k_partitions,
+                Int32(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),

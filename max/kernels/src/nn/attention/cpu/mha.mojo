@@ -20,9 +20,11 @@ from std.os import abort
 from std.sys import align_of, simd_width_of
 from std.sys.info import CompilationTarget
 
-from std.algorithm import sync_parallelize, tile, vectorize
-from std.gpu.host import DeviceContext
-from std.algorithm.reduction import (
+from std.algorithm import tile, vectorize
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
+from max.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,
     _simd_sum,
@@ -47,11 +49,16 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from std.memory import alloc, dealloc, unsafe_memset_zero, stack_allocation
-from std.memory.alloc import DeletableAllocation, Layout as AllocLayout
+from std.memory import (
+    alloc,
+    dealloc,
+    unsafe_memset_zero,
+    unsafe_stack_allocation,
+)
+from std.memory.alloc import ManagedAllocation, Layout as AllocLayout
 from nn.attention.mha_mask import MHAMask
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import Index, IndexList
 
@@ -257,7 +264,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         # SIMD width has not been observed to improve performance and causes
         # code size to unnecessarily increase.
         comptime transpose_width = 4
-        comptime tile_sizes = [transpose_width, 1]
+        comptime tile_sizes: List[Int] = [transpose_width, 1]
 
         var transpose_buffer = tt_stack_allocation[dtype=Self.dtype,](
             row_major[transpose_width, transpose_width]()
@@ -544,7 +551,7 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     dtype: DType,
     rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: def(IndexList[rank]) capturing -> UnsafePointer[
@@ -736,12 +743,12 @@ struct _FlashAttention[
         )
         @parameter
         def task_func(task_id: Int):
-            var qk_block_ptr = stack_allocation[
+            var qk_block_ptr = unsafe_stack_allocation[
                 Self._config.block_m * Self._config.qk_block_n,
                 Self.dtype,
                 alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
             ]()
-            var o_block_ptr = stack_allocation[
+            var o_block_ptr = unsafe_stack_allocation[
                 Self._config.block_m * Self._config.o_block_n,
                 Self.dtype,
                 alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
@@ -759,9 +766,7 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_alloc = Optional[
-                DeletableAllocation[Scalar[Self.dtype]]
-            ]()
+            var packed_alloc = Optional[ManagedAllocation[Scalar[Self.dtype]]]()
             var packed_ptr = type_of(
                 packed_alloc.value().unsafe_ptr()
             ).unsafe_dangling()
@@ -772,7 +777,7 @@ struct _FlashAttention[
                         count=packed_size,
                         alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                     )
-                ).into_deletable()
+                ).into_managed()
                 packed_ptr = packed_alloc.unsafe_value().unsafe_ptr()
 
             var q_seq_stride = num_heads * depth_dim
@@ -948,9 +953,9 @@ struct _FlashAttention[
             # NOTE: passing `dealloc[Scalar[Self.dtype]]` directly crashes the
             # when the dtype is parametric; wrap it in a local function as a workaround.
             def _dealloc_packed(
-                var packed: DeletableAllocation[Scalar[Self.dtype]],
+                var packed: ManagedAllocation[Scalar[Self.dtype]],
             ):
-                dealloc(packed^.into_allocation())
+                dealloc(packed^)
 
             packed_alloc^.deinit_with(_dealloc_packed)
 
@@ -962,7 +967,7 @@ def _flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_k_fn: def[simd_width: Int, rank: Int](
@@ -1068,7 +1073,7 @@ def flash_attention[
     dtype: DType,
     rank: Int,
     mask_rank: Int,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_k_fn: def[simd_width: Int, rank: Int](
@@ -1324,7 +1329,7 @@ def flash_attention_split_kv[
 def _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     mask_fn: def[simd_width: SIMDLength, mask_rank: Int](
@@ -1395,7 +1400,7 @@ def _flash_attention_kv_cache[
 def _flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_q_ptr_fn: def(IndexList[4]) capturing -> UnsafePointer[
@@ -1487,7 +1492,7 @@ def _flash_attention_kv_cache[
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](
@@ -1541,7 +1546,7 @@ def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](
@@ -1600,7 +1605,7 @@ def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    q_origin: Origin[mut=False],
+    q_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
 ](

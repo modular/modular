@@ -68,11 +68,11 @@ from std.gpu import (
 )
 from std.gpu import block_idx
 from std.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
@@ -217,8 +217,10 @@ def qk_mma_kernel[
         ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -524,7 +526,7 @@ def run_qk_spike[
             q_tma_op,
             k_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,
@@ -558,7 +560,7 @@ def run_qk_spike[
             q_tma_op,
             k_tma_op,
             o.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(N // BN, M // BM),
             block_dim=(block_dim),
             shared_mem_bytes=smem_use,

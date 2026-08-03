@@ -23,7 +23,7 @@ of `reducescatter_rmsnorm.mojo` -- keep in sync. One block per GLOBAL row so eac
 row's `block.sum` runs parallel across blocks, not `ngpus` serial within one.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
@@ -38,7 +38,7 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
@@ -86,18 +86,16 @@ def _allgather_rmsnorm_kernel[
     simd_width: Int,
     threads_per_block: Int,
 ](
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
-    in_lengths: StaticTuple[Int, ngpus],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    in_lengths: StaticTuple[Int32, ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    cols: Int,
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
+    cols_dev: Int32,
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    my_rank_dev: Int32,
 ):
     """Gather every source-GPU row into `[rows, cols]` and RMSNorm it in registers.
 
@@ -105,6 +103,8 @@ def _allgather_rmsnorm_kernel[
     `[prefix(g), prefix(g)+in_lengths[g])`; `normed_out`/`sum_out` are the full
     replicated outputs, indexed by GLOBAL row.
     """
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     # 2D stores below use Coord(grow, col_idx).
     comptime assert normed_out.flat_rank >= 2
@@ -132,7 +132,7 @@ def _allgather_rmsnorm_kernel[
     var rows = 0
     comptime for g in range(ngpus):
         row_starts[g] = rows
-        rows += in_lengths[g]
+        rows += Int(in_lengths[g])
 
     # Start barrier: we P2P-read peers' shards, so all ranks must be ready.
     _multi_gpu_barrier[ngpus, is_start=True](
@@ -194,16 +194,14 @@ def _allgather_rmsnorm_launch[
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int, ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
 ) raises:
@@ -236,17 +234,20 @@ def _allgather_rmsnorm_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
     ]
+    var in_lengths_dev = StaticTuple[Int32, ngpus](0)
+    comptime for i in range(ngpus):
+        in_lengths_dev[i] = Int32(in_lengths[i])
     ctx.enqueue_function[kernel](
         src_ptrs,
-        in_lengths,
+        in_lengths_dev,
         gamma,
         normed_out,
         sum_out,
         epsilon,
         weight_offset,
-        cols,
+        Int32(cols),
         rank_sigs,
-        my_rank,
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=block_dim,
     )
@@ -262,15 +263,13 @@ def allgather_rmsnorm[
     in_origin: Origin,
     //,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
 ) raises:
     """Fused all-gather + RMSNorm across `ngpus` GPUs (bf16 in/out).
@@ -317,13 +316,13 @@ def allgather_rmsnorm[
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
 
-    var src_ptrs = InlineArray[
+    var src_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
     var in_lengths = StaticTuple[Int, ngpus](0)
     var rows = 0
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].ptr.as_imm().as_unsafe_any_origin()
+        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
         var len_i = input_buffers[i].num_elements() // cols
         in_lengths[i] = len_i
         rows += len_i
@@ -382,15 +381,13 @@ def _dispatch_ag_norm[
     //,
     two_launch: def() raises capturing -> None,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
 ) raises:

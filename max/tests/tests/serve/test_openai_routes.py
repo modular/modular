@@ -1209,6 +1209,42 @@ async def test_openai_chat_completion_reasoning(
     assert response.usage.completion_tokens == expected_completion_tokens
 
 
+async def test_openai_chat_completion_usage_present_with_max_tokens_one(
+    patch_openai_metrics: None,
+) -> None:
+    """CENG-920: max_tokens=1 must still report usage, not null.
+
+    A single-token budget can be spent without incrementing either token
+    counter (e.g. hitting the length cap before any content or reasoning
+    token is produced), but ``prompt_tokens`` is always known once the
+    request ran, so ``usage`` must never collapse to ``None``.
+    """
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.MAXIMUM_LENGTH,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=12,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.choices[0].finish_reason == "length"
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 12
+    assert response.usage.completion_tokens == 0
+    assert response.usage.total_tokens == 12
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:
@@ -3059,6 +3095,59 @@ async def test_stream_emits_reasoning_by_default(
     responses = await _run_stream(_STREAM_REASONING_CHUNKS)
     assert responses[0].choices[0].delta.reasoning == "thinking"
     assert responses[0].choices[0].delta.reasoning_content is None
+
+
+# A single boundary chunk carrying both the reasoning tail and the first
+# content tokens — the case CENG-892 must split apart.
+_STREAM_REASONING_CONTENT_BOUNDARY_CHUNKS = [
+    TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE,
+        decoded_reasoning_tokens="thinking",
+        reasoning_token_count=1,
+        decoded_tokens="answer",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+    TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE,
+        decoded_reasoning_tokens=None,
+        reasoning_token_count=0,
+        decoded_tokens=" more",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_stream_splits_reasoning_and_content_boundary_chunk(
+    patch_openai_metrics: None,
+) -> None:
+    """CENG-892: a chunk carrying both reasoning and content is split.
+
+    No emitted delta may set both ``reasoning_content`` and ``content``, the
+    reasoning fragment must precede the content fragment, and a terminal
+    finish_reason must ride the content delta, not the reasoning delta.
+    """
+    responses = await _run_stream(
+        _STREAM_REASONING_CONTENT_BOUNDARY_CHUNKS,
+        emit_reasoning_content=True,
+    )
+    deltas = [r.choices[0].delta for r in responses]
+
+    # No delta carries both fields at once.
+    for delta in deltas:
+        assert not (delta.reasoning_content and delta.content)
+
+    # Reasoning is emitted before content, and both fragments survive intact.
+    reasoning_idx = next(i for i, d in enumerate(deltas) if d.reasoning_content)
+    content_idx = next(i for i, d in enumerate(deltas) if d.content)
+    assert reasoning_idx < content_idx
+    assert deltas[reasoning_idx].reasoning_content == "thinking"
+    assert "".join(d.content or "" for d in deltas) == "answer more"
+
+    # The reasoning delta is non-terminal; finish_reason rides content only.
+    assert responses[reasoning_idx].choices[0].finish_reason is None
 
 
 _REASONING_CONTENT_CHUNKS = [

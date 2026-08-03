@@ -182,13 +182,14 @@ class Module(Layer, ABC):
         class Linear(nn.Module):
             def __init__(self, in_dims, out_dims):
                 super().__init__()
-                self.weight = Weight("weight", DType.float32, (in_dim, out_dim), DeviceRef.CPU())
+                self.weight = Weight("weight", DType.float32, (in_dims, out_dims), DeviceRef.CPU())
 
             def __call__(self, x):
                 return x @ self.weight.T
 
         class MLP(nn.Module):
             def __init__(self):
+                super().__init__()
                 self.up = Linear(5, 10)
                 self.gate = Linear(5, 10)
                 self.down = Linear(10, 5)
@@ -303,24 +304,52 @@ class Module(Layer, ABC):
 
         Examples:
 
-            Build a subgraph from layer 0 and call it once per layer with
-            layer-specific weights:
+            Define a small layer, build a subgraph from a representative input,
+            then call it once per repetition with a layer-specific weight
+            ``prefix``:
 
             .. code-block:: python
 
-                # Build the subgraph once from representative inputs.
-                subgraph = self.layers[0].build_subgraph(
-                    "transformer_block",
-                    inputs=h,
-                    weight_prefix="layers.0.",
-                )
+                from max.dtype import DType
+                from max.graph import DeviceRef, Graph, TensorType, Weight, ops
+                from max.nn.layer import Module
 
-                # Call it once per layer with the correct weight prefix.
-                for idx in range(len(self.layers)):
-                    outputs = ops.call(
-                        subgraph, *h, prefix=f"layers.{idx}."
+                class Linear(Module):
+                    def __init__(self, in_dims, out_dims):
+                        super().__init__()
+                        self.weight = Weight(
+                            "weight",
+                            DType.float32,
+                            (in_dims, out_dims),
+                            DeviceRef.CPU(),
+                        )
+
+                    def __call__(self, x):
+                        return x @ self.weight.T
+
+                num_layers = 3
+                layer = Linear(4, 4)
+                with Graph(
+                    "build_subgraph_example",
+                    input_types=(
+                        TensorType(DType.float32, [2, 4], device=DeviceRef.CPU()),
+                    ),
+                ) as graph:
+                    h = graph.inputs[0].tensor
+
+                    # Build the subgraph once from a representative input.
+                    subgraph = layer.build_subgraph(
+                        "linear_block",
+                        inputs=[h],
+                        weight_prefix="layers.0.",
                     )
-                    h = [x.tensor for x in outputs]
+
+                    # Call it once per layer with the correct weight prefix.
+                    for idx in range(num_layers):
+                        outputs = ops.call(subgraph, h, prefix=f"layers.{idx}.")
+                        h = outputs[0].tensor
+
+                    graph.output(h)
 
         Args:
             name: The name of the subgraph. Must be unique within the containing
@@ -923,6 +952,8 @@ def add_layer_hook(
     Example of printing debug inputs:
 
     .. code-block:: python
+
+        from max.nn.layer import add_layer_hook
 
         def print_info(layer, args, kwargs, outputs):
             print("Layer:", type(layer).__name__)

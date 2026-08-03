@@ -82,7 +82,7 @@ Three attention routes, picked at runtime from `kv_collection.max_seq_length`
 import extensibility
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
 from std.sys.info import has_amd_gpu_accelerator
@@ -99,7 +99,11 @@ from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, StaticInt
 
 from msa.sparse_indexer_prefill import sparse_indexer_prefill
-from msa.sparse_indexer_decode import sparse_indexer_decode
+from msa.sparse_indexer_decode import (
+    sparse_indexer_decode,
+    sparse_indexer_decode_score_mtp,
+    sparse_indexer_decode_topk_mtp,
+)
 from msa.msa_1q import msa_sm100_decode
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
 from msa.amd.decode import msa_amd_decode_dispatch
@@ -260,6 +264,59 @@ struct Struct_msa_indexer_ragged_paged:
                 score_buf,
                 tt_row_major(num_index_heads, total_q, max_num_blocks),
             )
+
+            # AMD speculative widths 2-4 use the decode-style scorer and top-k.
+            # Width one retains the established decode route; widths five
+            # through eight retain prefill until production enables wider AMD
+            # speculation.
+            comptime USE_AMD_MTP_SCORER = (
+                has_amd_gpu_accelerator()
+                and num_index_heads == 1
+                and idx_head_dim == 128
+                and block_size == 128
+                and type_of(k_operand).dtype == DType.bfloat16
+                and type_of(k_operand).page_size % block_size == 0
+            )
+            comptime if USE_AMD_MTP_SCORER:
+                var max_q_len = Int(k_collection.max_seq_length)
+                comptime for query_width in range(2, 5):
+                    if max_q_len == query_width:
+                        sparse_indexer_decode_score_mtp[
+                            DType.bfloat16,
+                            type_of(k_operand),
+                            query_width,
+                            num_index_heads,
+                            idx_head_dim,
+                            block_size,
+                        ](
+                            q.to_tile_tensor[DType.int64](),
+                            k_operand,
+                            prefix_lens.to_tile_tensor[DType.int64](),
+                            input_row_offsets.to_tile_tensor[DType.int64](),
+                            score,
+                            batch,
+                            total_q,
+                            max_num_blocks,
+                            init_blocks,
+                            local_blocks,
+                            scale,
+                            ctx,
+                        )
+                        sparse_indexer_decode_topk_mtp[
+                            query_width, num_index_heads, block_size
+                        ](
+                            prefix_lens.to_tile_tensor[DType.int64](),
+                            input_row_offsets.to_tile_tensor[DType.int64](),
+                            score,
+                            out_idxs.to_tile_tensor[DType.int64](),
+                            batch,
+                            total_q,
+                            max_num_blocks,
+                            topk,
+                            ctx,
+                        )
+                        _ = score_buf^
+                        return
 
             sparse_indexer_prefill[
                 DType.bfloat16,
@@ -490,15 +547,15 @@ struct Struct_msa_attention_ragged_paged:
                     k_op,
                     v_op,
                     d_indices_tt,
-                    topk,  # indices_stride (topk in BLOCKS)
-                    num_rows,  # num_rows_q (1 token/seq)
+                    Int32(topk),  # indices_stride (topk in BLOCKS)
+                    Int32(num_rows),  # num_rows_q (1 token/seq)
                     NullMask(),
                     valid_length,
                     StaticInt[1](),  # max_prompt_len (decode)
-                    topk_tokens,  # max_cache_valid_length
+                    Int32(topk_tokens),  # max_cache_valid_length
                     scale,
                     None,  # kv_input_row_offsets
-                    num_rows,  # batch_size
+                    Int32(num_rows),  # batch_size
                     ctx,
                 )
         elif 1 < max_q_len <= MAX_SPEC_DRAFT:
@@ -579,17 +636,19 @@ struct Struct_msa_attention_ragged_paged:
                             k_op,
                             v_op,
                             d_indices_tt,
-                            topk,  # indices_stride (topk in BLOCKS)
-                            num_rows,  # num_rows_q (total draft tokens)
+                            Int32(topk),  # indices_stride (topk in BLOCKS)
+                            Int32(num_rows),  # num_rows_q (total draft tokens)
                             NullMask(),
                             valid_length,  # ragged Q offsets (tail + row remap)
                             StaticInt[
                                 1
                             ](),  # max_prompt_len: tile is decode-shaped
-                            topk_tokens,  # max_cache_valid_length
+                            Int32(topk_tokens),  # max_cache_valid_length
                             scale,
                             None,  # kv_input_row_offsets
-                            batch,  # batch_size (grid.x = batch*spec_max_seq_len)
+                            Int32(
+                                batch
+                            ),  # batch_size (grid.x = batch*spec_max_seq_len)
                             ctx,
                             # Spec decode derives BOTH the per-block logical
                             # start and the per-token logical query position

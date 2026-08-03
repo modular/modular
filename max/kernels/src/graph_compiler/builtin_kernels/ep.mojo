@@ -19,13 +19,13 @@ Expert Parallelism (EP) Communication Kernel.
 import extensibility
 from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
+from max.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
 from std.utils.index import IndexList
 
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
 from extensibility import (
     InputTensor,
@@ -1447,7 +1447,7 @@ struct DistributedEPDispatchBlockScaledNV:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch.mxfp4")
@@ -1597,7 +1597,7 @@ struct DistributedEPDispatchMXFP4:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch")
@@ -1719,7 +1719,7 @@ struct DistributedEPDispatch:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.dispatch.fp8")
@@ -1863,7 +1863,7 @@ struct DistributedEPDispatchFP8:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs.copy())
 
 
 @extensibility.register("mo.distributed.ep.combine")
@@ -2006,7 +2006,7 @@ struct DistributedEPCombine:
                 gpu_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_combine, gpu_ctxs)
+        _launch_device_collective[num_devices](launch_combine, gpu_ctxs.copy())
 
 
 @extensibility.register("ep.combine_async")
@@ -2753,7 +2753,7 @@ struct Struct_ep_fused_silu_mxfp4:
                 scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
-                max_padded_M,
+                Int32(max_padded_M),
                 alpha,
                 limit,
                 grid_dim=hw_info.sm_count,

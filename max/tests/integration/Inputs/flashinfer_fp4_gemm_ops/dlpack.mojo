@@ -82,7 +82,7 @@ struct DLDataType(ImplicitlyCopyable, Movable):
 
     @staticmethod
     def from_dtype[dtype: DType](lanes: UInt16 = 1) -> Self:
-        comptime assert [dtype in Self.CODE_MAP]
+        comptime assert dtype in Self.CODE_MAP
         comptime code: UInt8 = Self.CODE_MAP.get(dtype, 0)
         return Self(code, UInt8(bit_width_of[dtype]()), lanes)
 
@@ -152,7 +152,9 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         self.byte_offset = 0
 
         self._shape_ptr = (
-            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+            UnsafePointer(to=self.shape)
+            .unsafe_bitcast[Int64]()
+            .as_unsafe_any_origin()
         )
 
         # DLPack convention is that null strides mean the tensor isrow-major
@@ -163,7 +165,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         else:
             self._strides_ptr = (
                 UnsafePointer(to=self.strides)
-                .bitcast[Int64]()
+                .unsafe_bitcast[Int64]()
                 .as_unsafe_any_origin()
             )
 
@@ -184,10 +186,12 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
 
         # Fix up self-referential pointers to our own inline storage.
         self._shape_ptr = (
-            UnsafePointer(to=self.shape).bitcast[Int64]().as_unsafe_any_origin()
+            UnsafePointer(to=self.shape)
+            .unsafe_bitcast[Int64]()
+            .as_unsafe_any_origin()
         )
         self._strides_ptr = (
             UnsafePointer(to=self.strides)
-            .bitcast[Int64]()
+            .unsafe_bitcast[Int64]()
             .as_unsafe_any_origin()
         )

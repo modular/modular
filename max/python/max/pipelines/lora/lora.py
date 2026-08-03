@@ -247,8 +247,57 @@ class LoRAModel:
 
         .. code-block:: python
 
-            lora = LoRAModel("my_adapter", "/path/to/lora", base_dtype, max_lora_rank,
-                             n_heads=32, n_kv_heads=8, head_dim=128)
+            import json
+            import tempfile
+            from pathlib import Path
+
+            import numpy as np
+            from safetensors.numpy import save_file
+            from max.dtype import DType
+            from max.pipelines.lora.lora import LoRAModel
+
+            # Build a tiny real LoRA adapter on disk (rank 4, one attention
+            # layer with q/k/v/o projections) so the loader has something to
+            # read.
+            rank, n_heads, n_kv_heads, head_dim = 4, 8, 8, 16
+            hidden = n_heads * head_dim
+            kv_hidden = n_kv_heads * head_dim
+            tmp = tempfile.mkdtemp()
+            tensors = {}
+            for proj, out in (
+                ("q_proj", hidden),
+                ("k_proj", kv_hidden),
+                ("v_proj", kv_hidden),
+                ("o_proj", hidden),
+            ):
+                base = f"base_model.model.model.layers.0.self_attn.{proj}"
+                tensors[f"{base}.lora_A.weight"] = np.zeros(
+                    (rank, hidden), dtype=np.float32
+                )
+                tensors[f"{base}.lora_B.weight"] = np.zeros(
+                    (out, rank), dtype=np.float32
+                )
+            save_file(tensors, str(Path(tmp) / "adapter_model.safetensors"))
+            (Path(tmp) / "adapter_config.json").write_text(
+                json.dumps(
+                    {
+                        "r": rank,
+                        "lora_alpha": 8,
+                        "bias": "none",
+                        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                    }
+                )
+            )
+
+            lora = LoRAModel(
+                "my_adapter",
+                tmp,
+                DType.bfloat16,
+                max_lora_rank=16,
+                n_heads=n_heads,
+                n_kv_heads=n_kv_heads,
+                head_dim=head_dim,
+            )
 
         Args:
             name:
@@ -923,8 +972,58 @@ class LoRAManager:
 
         .. code-block:: python
 
-            lora_id = manager.load_adapter("my_adapter=/path/to/lora")
-            lora_id = manager.load_adapter("/path/to/another_lora")
+            import json
+            import tempfile
+            from pathlib import Path
+
+            import numpy as np
+            from safetensors.numpy import save_file
+            from max.dtype import DType
+            from max.pipelines.lora.config import LoRAConfig
+            from max.pipelines.lora.lora import LoRAManager
+
+            def make_adapter() -> str:
+                rank, hidden = 4, 128
+                tmp = tempfile.mkdtemp()
+                tensors = {}
+                for proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                    base = f"model.layers.0.self_attn.{proj}"
+                    tensors[f"{base}.lora_A.weight"] = np.zeros(
+                        (rank, hidden), dtype=np.float32
+                    )
+                    tensors[f"{base}.lora_B.weight"] = np.zeros(
+                        (hidden, rank), dtype=np.float32
+                    )
+                save_file(tensors, str(Path(tmp) / "adapter.safetensors"))
+                (Path(tmp) / "adapter_config.json").write_text(
+                    json.dumps(
+                        {
+                            "r": rank,
+                            "lora_alpha": 8,
+                            "bias": "none",
+                            "target_modules": [
+                                "q_proj",
+                                "k_proj",
+                                "v_proj",
+                                "o_proj",
+                            ],
+                        }
+                    )
+                )
+                return tmp
+
+            manager = LoRAManager(
+                config=LoRAConfig(max_lora_rank=16, max_num_loras=2),
+                base_model_path="my-base-model",
+                base_dtype=DType.bfloat16,
+                n_heads=8,
+                n_kv_heads=8,
+                head_dim=16,
+                max_lora_seq_len=128,
+            )
+
+            status = manager.load_adapter(f"my_adapter={make_adapter()}")
+            status = manager.load_adapter(make_adapter())
 
         Args:
             path:
@@ -980,6 +1079,50 @@ class LoRAManager:
 
         .. code-block:: python
 
+            import json
+            import tempfile
+            from pathlib import Path
+
+            import numpy as np
+            from safetensors.numpy import save_file
+            from max.dtype import DType
+            from max.pipelines.lora.config import LoRAConfig
+            from max.pipelines.lora.lora import LoRAManager
+
+            rank, hidden = 4, 128
+            tmp = tempfile.mkdtemp()
+            tensors = {}
+            for proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                base = f"model.layers.0.self_attn.{proj}"
+                tensors[f"{base}.lora_A.weight"] = np.zeros(
+                    (rank, hidden), dtype=np.float32
+                )
+                tensors[f"{base}.lora_B.weight"] = np.zeros(
+                    (hidden, rank), dtype=np.float32
+                )
+            save_file(tensors, str(Path(tmp) / "adapter.safetensors"))
+            (Path(tmp) / "adapter_config.json").write_text(
+                json.dumps(
+                    {
+                        "r": rank,
+                        "lora_alpha": 8,
+                        "bias": "none",
+                        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                    }
+                )
+            )
+
+            manager = LoRAManager(
+                config=LoRAConfig(max_lora_rank=16, max_num_loras=2),
+                base_model_path="my-base-model",
+                base_dtype=DType.bfloat16,
+                n_heads=8,
+                n_kv_heads=8,
+                head_dim=16,
+                max_lora_seq_len=128,
+            )
+            manager.load_adapter(f"my_adapter={tmp}")
+
             manager.unload_adapter("my_adapter")
 
         Args:
@@ -1008,6 +1151,50 @@ class LoRAManager:
         Useful for enabling a specific adapter for use in model inference.
 
         .. code-block:: python
+
+            import json
+            import tempfile
+            from pathlib import Path
+
+            import numpy as np
+            from safetensors.numpy import save_file
+            from max.dtype import DType
+            from max.pipelines.lora.config import LoRAConfig
+            from max.pipelines.lora.lora import LoRAManager
+
+            rank, hidden = 4, 128
+            tmp = tempfile.mkdtemp()
+            tensors = {}
+            for proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                base = f"model.layers.0.self_attn.{proj}"
+                tensors[f"{base}.lora_A.weight"] = np.zeros(
+                    (rank, hidden), dtype=np.float32
+                )
+                tensors[f"{base}.lora_B.weight"] = np.zeros(
+                    (hidden, rank), dtype=np.float32
+                )
+            save_file(tensors, str(Path(tmp) / "adapter.safetensors"))
+            (Path(tmp) / "adapter_config.json").write_text(
+                json.dumps(
+                    {
+                        "r": rank,
+                        "lora_alpha": 8,
+                        "bias": "none",
+                        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+                    }
+                )
+            )
+
+            manager = LoRAManager(
+                config=LoRAConfig(max_lora_rank=16, max_num_loras=2),
+                base_model_path="my-base-model",
+                base_dtype=DType.bfloat16,
+                n_heads=8,
+                n_kv_heads=8,
+                head_dim=16,
+                max_lora_seq_len=128,
+            )
+            manager.load_adapter(f"my_adapter={tmp}")
 
             manager.activate_adapter("my_adapter")
 

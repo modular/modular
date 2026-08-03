@@ -18,7 +18,7 @@
 #        error, mut default error, out + return type error,
 #        variadic default error, out variadic error, __init__
 #        without out error, where on runtime arg error,
-#        Resource/__del__ (undefined _release), parse/parse_strict
+#        Resource/__deinit__ (undefined _release), parse/parse_strict
 #        (signature-only stubs), copy/move constructor snippets
 #        (no enclosing struct), configure keyword-only (pass-only
 #        body), overload-set import-shadowing snippet (fictional
@@ -75,7 +75,7 @@ def test_backtick_name():
     `import`()  # In `import`
 
 
-# --- Generic function with parameters ---
+# --- Parameterized function ---
 
 
 def clamp[
@@ -276,7 +276,7 @@ def get_first[T: Copyable](ref data: List[T]) -> ref[data[0]] T:
 
 
 def test_ref() raises:
-    var data = ["one", "two", "three"]
+    var data: List = ["one", "two", "three"]
     ref first = get_first(data)
     assert_equal(first, "one")
     first = "Первый"

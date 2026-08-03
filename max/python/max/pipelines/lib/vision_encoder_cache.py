@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
@@ -175,6 +175,27 @@ class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
         ...
 
 
+@runtime_checkable
+class SupportsPooledVisionMetrics(Protocol):
+    """A pipeline model that owns its vision/video encoder cache internally.
+
+    Most models encode images through :class:`SupportsVisionEncoding`, so the
+    pipeline owns the :class:`VisionEncoderCache` and drains its metrics
+    directly. A model that instead builds and drives its own cache (e.g. to
+    handle video, which :class:`SupportsVisionEncoding` doesn't cover)
+    implements this protocol so the pipeline's ``batch_vision_metrics``/
+    ``batch_video_metrics`` can still reach it.
+    """
+
+    def pop_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns and clears this model's per-batch image encoder metrics."""
+        ...
+
+    def pop_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns and clears this model's per-batch video encoder metrics."""
+        ...
+
+
 def derive_counts_from_spans(
     selection: Sequence[tuple[VLMContextType, Sequence[ImageMetadata]]],
 ) -> list[int]:
@@ -274,6 +295,45 @@ class VisionEncoderMetrics:
         if self.num_images_total == 0:
             return 0.0
         return self.num_images_cached / self.num_images_total
+
+
+@dataclass
+class VideoEncoderMetrics:
+    """Per-iteration video encoder statistics for one batch.
+
+    Populated by a pipeline model that caches video clips (by content hash,
+    same LRU semantics as :class:`VisionEncoderCache`) and surfaced via
+    :class:`SupportsPooledVisionMetrics` so video encoder cost is attributed
+    separately from the language model forward pass, mirroring
+    :class:`VisionEncoderMetrics`.
+    """
+
+    num_clips_total: int = 0
+    """Clips referenced by video requests in this batch (hits + misses)."""
+
+    num_clips_encoded: int = 0
+    """Clips the video encoder actually ran on this batch (cache misses)."""
+
+    num_clips_cached: int = 0
+    """Clips served from the video encoder cache this batch (cache hits)."""
+
+    frame_counts: list[int] = field(default_factory=list)
+    """Sampled frame count per newly-encoded clip this batch (cache misses
+    only), one entry per clip so callers can observe the distribution rather
+    than only a batch-level total."""
+
+    num_tokens_encoded: int = 0
+    """Merged video tokens produced by the encoder this batch."""
+
+    encoding_time_ms: float = 0.0
+    """Wall-clock time spent running the video encoder this batch."""
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of clips served from cache (0.0 when no clips)."""
+        if self.num_clips_total == 0:
+            return 0.0
+        return self.num_clips_cached / self.num_clips_total
 
 
 class VisionEncoderCache(Generic[VLMContextType]):
@@ -698,25 +758,25 @@ class VisionEncoderCache(Generic[VLMContextType]):
         scatter positions OOB-masked.
 
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
-        ``next_images`` to decide which contexts to return. That is consistent
-        because a fully-processed image (in ``ctx.images`` but not
-        ``next_images``) is always cache-resident: a request holds a ref on
-        every image it has encoded, so the entry can't be evicted while the
-        request is live, and the ``ctx.images`` scan sees it as a hit.
+        ``next_images`` to decide which contexts are candidates, so a context
+        can be a candidate solely because of an uncached image ahead of the
+        window (e.g. a later chunk's image) while every in-window image is a
+        cache hit. Such contexts have an empty miss set and are excluded from
+        the returned selection: there is nothing to encode for them this
+        iteration, and assembly reads their in-window hits from the cache and
+        zero-fills out-of-window images from ``context_batch`` directly.
         """
         uncached = self.get_uncached_contexts(context_batch)
-        return [
-            (
-                ctx,
-                [
-                    img
-                    for img in ctx.next_images_in_window
-                    if img.image_hash is None
-                    or self.lookup(img.image_hash) is None
-                ],
-            )
-            for ctx in uncached
-        ]
+        selection: list[tuple[VLMContextType, list[ImageMetadata]]] = []
+        for ctx in uncached:
+            misses = [
+                img
+                for img in ctx.next_images_in_window
+                if img.image_hash is None or self.lookup(img.image_hash) is None
+            ]
+            if misses:
+                selection.append((ctx, misses))
+        return selection
 
     @traced
     def cache_vision_embeddings(

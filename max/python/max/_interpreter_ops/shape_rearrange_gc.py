@@ -43,7 +43,7 @@ width: the handler bit-casts every dtype to the same-width unsigned int (a
 zero-copy view), runs the copy, and views the result back. One graph per width
 (uint8/16/32/64) therefore serves every dtype uniformly — including float16
 (no typed CPU kernel) and bool on GPU — and every width compiles on every
-device. See :func:`uint_view_dtype`.
+device. See :func:`gc_compile.uint_view_dtype`.
 """
 
 from collections.abc import Callable
@@ -58,31 +58,9 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType, ops
 
-MAX_RANK = 5  # Matches op_utils.MAX_RANK; sweep ranks 1..MAX_RANK.
+MAX_RANK = gc_compile.MAX_RANK  # Sweep ranks 1..MAX_RANK.
 
-_WIDTH_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
-_UINT_FOR_SIZE = {
-    1: DType.uint8,
-    2: DType.uint16,
-    4: DType.uint32,
-    8: DType.uint64,
-}
-
-
-def uint_view_dtype(dtype: DType) -> DType:
-    """The same-bit-width unsigned int a dtype is bit-cast to for copying.
-
-    Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
-            pack multiple elements per byte and so cannot be reinterpreted
-            element-for-element as a whole-byte unsigned int.
-    """
-    bits = dtype.size_in_bits
-    if bits % 8 != 0 or bits // 8 not in _UINT_FOR_SIZE:
-        raise NotImplementedError(
-            f"shape-rearrange GC path does not support sub-byte dtype {dtype}"
-        )
-    return _UINT_FOR_SIZE[bits // 8]
+_WIDTH_DTYPES = gc_compile.WIDTH_DTYPES
 
 
 class DeviceClass(Enum):

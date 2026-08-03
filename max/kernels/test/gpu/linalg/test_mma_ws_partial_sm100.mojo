@@ -123,20 +123,20 @@ from std.random import randn, seed
 from std.sys import size_of
 
 from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import (
     AddressSpace,
     external_memory,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -707,9 +707,9 @@ def _ss_naive_ref[
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        QK_N,
-        k_valid,
+        Int32(M),
+        Int32(QK_N),
+        Int32(k_valid),
         grid_dim=(
             ceildiv(M, NAIVE_BLOCK_DIM),
             ceildiv(QK_N, NAIVE_BLOCK_DIM),
@@ -2260,9 +2260,9 @@ def test_ts_partial(ctx: DeviceContext) raises:
         c_ref_tt,
         a_tt,
         b_tt,
-        TS_P_REF_ROWS,
-        TS_P_REF_COLS,
-        TS_COLS,
+        Int32(TS_P_REF_ROWS),
+        Int32(TS_P_REF_COLS),
+        Int32(TS_COLS),
         grid_dim=(
             ceildiv(TS_P_REF_ROWS, NAIVE_BLOCK_DIM),
             ceildiv(TS_P_REF_COLS, NAIVE_BLOCK_DIM),

@@ -60,7 +60,7 @@
 from std.random import random_float64, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils.numerics import inf, nan
 from layout import Coord, TileTensor, row_major
 from nn.topk import fused_token_sampling_gpu

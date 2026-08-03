@@ -19,8 +19,8 @@ from std.memory.alloc import Layout as AllocLayout
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.algorithm.functional import parallelize_over_rows
-from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from max.algorithm.functional import parallelize_over_rows
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
@@ -32,8 +32,8 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.gpu.host import DeviceContext, DeviceBuffer
-from std.gpu.host.info import is_cpu
+from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host.info import is_cpu
 from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from std.random import Random
@@ -50,11 +50,11 @@ from layout import (
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout
 from std.math import log2
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.topk_fi import topk_topp_sampling_from_prob
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
@@ -453,7 +453,7 @@ def fused_token_sampling_cpu[
         out_vals_shape[input.rank - 1] = bound_max_k
         var out_vals_alloc = alloc(
             AllocLayout[Scalar[dtype]](count=out_vals_shape.flattened_length())
-        ).into_deletable()
+        ).into_managed()
         var out_vals_ptr: UnsafePointer[
             Scalar[dtype], origin_of(out_vals_alloc)
         ] = out_vals_alloc.unsafe_ptr()
@@ -473,7 +473,7 @@ def fused_token_sampling_cpu[
             seed,
         )
 
-        dealloc(out_vals_alloc^.into_allocation())
+        dealloc(out_vals_alloc^)
 
 
 def _top_k_sampling[
@@ -910,12 +910,12 @@ def _block_reduce_topk[
     comptime u_width = simd_width_of[Scalar[T]]()
 
     # Allocate shared memory for indices and values
-    var p_sram = stack_allocation[
+    var p_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
         Scalar[DType.int],
         address_space=AddressSpace.SHARED,
     ]()
-    var u_sram = stack_allocation[
+    var u_sram = unsafe_stack_allocation[
         (MAX_BLOCK_SIZE // WARP_SIZE) * u_width,
         Scalar[T],
         address_space=AddressSpace.SHARED,
@@ -960,9 +960,9 @@ def _topk_stage1[
     largest: Bool = True,
 ](
     K: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
-    max_k: Int,
-    num_elements: Int,
-    num_blocks_per_input: Int,
+    max_k: Int32,
+    num_elements: Int32,
+    num_blocks_per_input: Int32,
     in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[T], MutAnyOrigin
@@ -998,34 +998,37 @@ def _topk_stage1[
     Note:
         The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * max_k.
     """
+    var _max_k = Int(max_k)
+    var _num_elements = Int(num_elements)
+    var _num_blocks_per_input = Int(num_blocks_per_input)
 
     tid = thread_idx.x
     bid = block_idx.x
     block_size = block_dim.x
 
-    batch_id, block_lane = udivmod(bid, num_blocks_per_input)
+    batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
 
     var block_offset = block_lane * block_size
-    var stride = block_size * num_blocks_per_input
+    var stride = block_size * _num_blocks_per_input
 
-    _in_buffer_tmp = in_buffer_tmp + batch_id * num_elements
+    _in_buffer_tmp = in_buffer_tmp + batch_id * _num_elements
 
     # Hoist per-block output base pointers out of the k loop.
-    var out_vals = local_topk_vals + bid * max_k
-    var out_idxs = local_topk_idxs + bid * max_k
+    var out_vals = local_topk_vals + bid * _max_k
+    var out_idxs = local_topk_idxs + bid * _max_k
 
-    var k_batch = max_k
+    var k_batch = _max_k
     if K:
         var k_raw = Int(K.unsafe_value()[batch_id])
-        k_batch = max_k if k_raw == -1 else k_raw
+        k_batch = _max_k if k_raw == -1 else k_raw
 
     # Clamp k_batch to the number of elements we can actually draw from
-    if k_batch > num_elements:
-        k_batch = num_elements
+    if k_batch > _num_elements:
+        k_batch = _num_elements
 
     # Shared memory to broadcast the winner index so the owning thread
     # can write the dead value (better L1 locality than thread 0).
-    var winner_sram = stack_allocation[
+    var winner_sram = unsafe_stack_allocation[
         1, Int, address_space=AddressSpace.SHARED
     ]()
 
@@ -1034,7 +1037,7 @@ def _topk_stage1[
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
         var heap = TopKHeap[T, largest, HEAP_SIZE]()
-        for i in range(tid + block_offset, num_elements, stride):
+        for i in range(tid + block_offset, _num_elements, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
         # Phase 2: Extract winners from heaps without re-scanning.
@@ -1046,7 +1049,7 @@ def _topk_stage1[
             var partial = heap.best()
             if partial.p < 0:
                 partial = TopK_2[T, largest]()
-                for i in range(tid + block_offset, num_elements, stride):
+                for i in range(tid + block_offset, _num_elements, stride):
                     partial.insert(_in_buffer_tmp[i], i)
 
             var total = _block_reduce_topk[ascending=largest](partial)
@@ -1069,7 +1072,7 @@ def _topk_stage1[
         for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(tid + block_offset, num_elements, stride):
+            for i in range(tid + block_offset, _num_elements, stride):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1089,7 +1092,7 @@ def _topk_stage1[
                 _in_buffer_tmp[winner_p] = _topk_dead_val[T, largest]()
 
         # Parallel sentinel fill using all threads.
-        for remaining_k in range(k_batch + tid, max_k, block_size):
+        for remaining_k in range(k_batch + tid, _max_k, block_size):
             out_vals[remaining_k] = _topk_dead_val[T, largest]()
             out_idxs[remaining_k] = Scalar[out_idx_type](-1)
 
@@ -1102,8 +1105,8 @@ def _topk_stage2[
     largest: Bool = True,
 ](
     K: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
-    max_k: Int,
-    num_blocks_per_input: Int,
+    max_k: Int32,
+    num_blocks_per_input: Int32,
     local_topk_vals: UnsafePointer[
         Scalar[T], ImmutAnyOrigin
     ],  # Input array of size n_batch * num_blocks_per_input * K
@@ -1154,16 +1157,18 @@ def _topk_stage2[
     The function uses shared memory to store and process the local Top-K results,
     and performs a block-level reduction to find the global Top-K elements.
     """
+    var _max_k = Int(max_k)
+    var _num_blocks_per_input = Int(num_blocks_per_input)
     # compute the total number of elements reduced from stage 1
-    var num_elem_reduced = num_blocks_per_input * max_k
+    var num_elem_reduced = _num_blocks_per_input * _max_k
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
     # assert (block_idx.x == 0)
     # assert (grid_dim.x == 1)
-    var batch_i_topk_vals = global_topk_vals + batch_id * max_k
+    var batch_i_topk_vals = global_topk_vals + batch_id * _max_k
     var batch_i_topk_idxs = global_topk_idxs + batch_id * (
-        1 if sampling else max_k
+        1 if sampling else _max_k
     )
     var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
     var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
@@ -1171,7 +1176,7 @@ def _topk_stage2[
     # Allocate shared memory for values and indices
     var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
     var vals_smem_size = num_e_rounded
-    var vals_sram = stack_allocation[
+    var vals_sram = unsafe_stack_allocation[
         _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
         Scalar[T],
         address_space=AddressSpace.SHARED,
@@ -1190,21 +1195,21 @@ def _topk_stage2[
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block
-        var k_batch = max_k
+        var k_batch = _max_k
         if K:
             var k_raw = Int(K.unsafe_value()[batch_id])
-            k_batch = max_k if k_raw == -1 else k_raw
+            k_batch = _max_k if k_raw == -1 else k_raw
 
-        # Clamp k_batch to not exceed the reduced elements per batch and max_k
+        # Clamp k_batch to not exceed the reduced elements per batch and _max_k
         if k_batch > num_elem_reduced:
             k_batch = num_elem_reduced
 
-        if num_blocks_per_input == 1 and not sampling:
+        if _num_blocks_per_input == 1 and not sampling:
             if tid < k_batch:
                 batch_i_topk_vals[tid] = _local_topk_vals[tid]
                 # cast to out_idx_type
                 batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            elif tid >= k_batch and tid < max_k:
+            elif tid >= k_batch and tid < _max_k:
                 # Fill unused positions with sentinel values
                 batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
                 batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
@@ -1216,7 +1221,7 @@ def _topk_stage2[
             # The 2* below is for warp align safety
             s_val2 = (s_id + 2 * k_batch).bitcast[Scalar[T]]()
 
-        var s_sum = stack_allocation[
+        var s_sum = unsafe_stack_allocation[
             1, Scalar[T], address_space=AddressSpace.SHARED
         ]()
         s_sum[0] = Scalar[T](0)
@@ -1228,12 +1233,12 @@ def _topk_stage2[
             idxs_sram[i] = i
         barrier()
 
-        for k in range(max_k):
+        for k in range(_max_k):
             if k >= k_batch:
                 # Fill remaining positions with sentinel values for unused elements
                 comptime if not sampling:
                     if tid == 0:
-                        for remaining_k in range(k, max_k):
+                        for remaining_k in range(k, _max_k):
                             batch_i_topk_vals[remaining_k] = _topk_dead_val[
                                 T, largest
                             ]()
@@ -1242,7 +1247,7 @@ def _topk_stage2[
                             ](-1)
                 else:
                     if tid == 0:
-                        for remaining_k in range(k, max_k):
+                        for remaining_k in range(k, _max_k):
                             batch_i_topk_vals[remaining_k] = _topk_dead_val[
                                 T, largest
                             ]()
@@ -1491,9 +1496,9 @@ def _topk_gpu[
     comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
     ctx.enqueue_function[kernel_1](
         k_ptr,
-        max_k,
-        N,
-        num_blocks_per_input_,
+        Int32(max_k),
+        Int32(N),
+        Int32(num_blocks_per_input_),
         input_buf_tmp,
         device_local_topk_vals.to_device_buffer(ctx),
         device_local_topk_idxs.to_device_buffer(ctx),
@@ -1560,8 +1565,8 @@ def _topk_gpu[
     comptime kernel_2 = _topk_stage2[dtype, out_idx_type, sampling, largest]
     ctx.enqueue_function[kernel_2](
         k_ptr,
-        max_k,
-        num_blocks_per_input_,
+        Int32(max_k),
+        Int32(num_blocks_per_input_),
         device_local_topk_vals.to_device_buffer(ctx),
         device_local_topk_idxs.to_device_buffer(ctx),
         out_vals.to_device_buffer(ctx),

@@ -79,9 +79,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         session = InferenceSession(devices=[*devices])
         self._pipeline_config.configure_session(session)
 
-        if not self._pipeline_config.model.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Resolve weight paths (downloads from HF if needed).
         weight_paths = self._pipeline_config.model.resolved_weight_paths()
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import logging
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,13 +34,18 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SamplingConfig,
 )
-from max.pipelines.lib.config.model_config import _infer_weight_path
+from max.pipelines.lib.config.model_config import (
+    _infer_weight_path,
+    _select_dtype_cast,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_estimate_memory_footprint,
+    mock_hf_repo_access,
     mock_pipeline_config_resolve,
 )
 from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
@@ -604,6 +608,22 @@ class TestSpeculativeArchitectureOverride:
         )
         assert self._resolved_arch(cfg) == "UnifiedMTPGemma4ForCausalLM"
 
+    def test_gemma4_unified_dspark(self) -> None:
+        cfg = self._make_config(
+            "Gemma4UnifiedForConditionalGeneration",
+            is_dflash=True,
+            draft_arch="Gemma4DSparkModel",
+        )
+        assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4ForCausalLM"
+
+    def test_gemma4_unified_without_dspark_draft_is_noop(self) -> None:
+        cfg = self._make_config(
+            "Gemma4UnifiedForConditionalGeneration", draft_arch=None
+        )
+        assert (
+            self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
+        )
+
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(
             "DeepseekV3ForCausalLM", speculative=False, draft_arch=None
@@ -614,6 +634,7 @@ class TestSpeculativeArchitectureOverride:
 class TestDraftModelDefaultsInheritance:
     """Tests that draft model inherits certain defaults from the target model."""
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_trust_remote_code(
         self,
     ) -> None:
@@ -628,6 +649,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["trust_remote_code"] is True
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_does_not_inherit_false_trust_remote_code(
         self,
     ) -> None:
@@ -643,6 +665,7 @@ class TestDraftModelDefaultsInheritance:
         # trust_remote_code should not be added when target has False
         assert "trust_remote_code" not in draft_kwargs
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_trust_remote_code(
         self,
     ) -> None:
@@ -661,6 +684,7 @@ class TestDraftModelDefaultsInheritance:
         # Explicit False should be preserved
         assert draft_kwargs["trust_remote_code"] is False
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_device_specs(self) -> None:
         """_apply_draft_model_defaults inherits device_specs from target."""
         target_devices = [DeviceSpec.cpu()]
@@ -674,6 +698,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["device_specs"] == target_devices
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_device_specs(
         self,
     ) -> None:
@@ -693,6 +718,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["device_specs"] == draft_devices
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_inherits_data_parallel_degree(
         self,
     ) -> None:
@@ -707,6 +733,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["data_parallel_degree"] == 8
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_preserves_explicit_data_parallel_degree(
         self,
     ) -> None:
@@ -724,6 +751,7 @@ class TestDraftModelDefaultsInheritance:
 
         assert draft_kwargs["data_parallel_degree"] == 4
 
+    @mock_hf_repo_access
     def test_apply_draft_model_defaults_does_not_inherit_quantization_encoding(
         self,
     ) -> None:
@@ -880,37 +908,28 @@ class TestFloat32WeightFallbackScoping:
             ),
         ):
             # Best-effort (pre-architecture) pass must not bind weight_path.
-            assert (
-                _infer_weight_path(
-                    config, "bfloat16", config._applied_dtype_cast_from
-                )
-                == []
-            )
+            assert _infer_weight_path(config, "bfloat16", None) == []
 
             # Architecture-level given-encoding resolution.
-            config.validate_and_resolve_quantization_encoding_weight_path(
-                default_encoding="bfloat16"
-            )
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
 
         # The requested bfloat16 is preserved; the float32 weights are cast at
         # load time, recorded in the dtype-cast bookkeeping.
-        assert config.quantization_encoding == "bfloat16"
-        assert config._applied_dtype_cast_from == "float32"
-        assert config._applied_dtype_cast_to == "bfloat16"
+        assert encoding == "bfloat16"
+        assert cast_from == "float32"
+        assert cast_to == "bfloat16"
 
+    @mock_hf_repo_access
     def test_no_given_encoding_f32_only_repo_casts_to_bfloat16(self) -> None:
         """Architecture-level resolution alone still casts f32 -> bf16.
 
         No ``quantization_encoding`` given, repo has only float32 weights,
-        no ``subfolder``. Calls ``validate_and_resolve_quantization_encoding_weight_path``
-        directly (bypassing ``resolve()``/the best-effort pass entirely) to
-        verify the ``without-given-encoding`` path applies the same
-        float32 -> bfloat16 GPU cast the best-effort pass normally applies
-        first. Regression guard for the case where resolve() wasn't called
-        first or the best-effort pass silently failed to infer an encoding:
-        without this cast, a model whose repo ships only float32 weights
-        would silently run in float32 on GPU instead of the expected
-        bfloat16.
+        no ``subfolder``. Calls ``_select_quantization_encoding`` directly to
+        verify the no-given-encoding path applies the float32 -> bfloat16 GPU
+        cast. Regression guard for a model whose repo ships only float32
+        weights: without this cast it would silently run in float32 on GPU
+        instead of the expected bfloat16.
         """
         config = MAXModelConfig(model_path="test/f32-only")
         assert config.quantization_encoding is None
@@ -927,14 +946,14 @@ class TestFloat32WeightFallbackScoping:
                 return_value=True,
             ),
         ):
-            config.validate_and_resolve_quantization_encoding_weight_path(
-                default_encoding="bfloat16"
-            )
+            encoding = _select_quantization_encoding(config, "bfloat16")
+            cast_from, cast_to = _select_dtype_cast(config, "bfloat16")
 
-        assert config.quantization_encoding == "bfloat16"
-        assert config._applied_dtype_cast_from == "float32"
-        assert config._applied_dtype_cast_to == "bfloat16"
+        assert encoding == "bfloat16"
+        assert cast_from == "float32"
+        assert cast_to == "bfloat16"
 
+    @mock_hf_repo_access
     def test_diffuser_subcomponent_f32_fallback_still_resolves(self) -> None:
         """A diffuser sub-component (``subfolder`` set) still gets the fallback.
 
@@ -955,9 +974,7 @@ class TestFloat32WeightFallbackScoping:
             new_callable=PropertyMock,
             return_value=_make_f32_only_repo(),
         ):
-            resolved_weight_path = _infer_weight_path(
-                config, "bfloat16", config._applied_dtype_cast_from
-            )
+            resolved_weight_path = _infer_weight_path(config, "bfloat16", None)
 
         assert resolved_weight_path == _F32_SAFETENSORS
         assert config.quantization_encoding == "bfloat16"
@@ -2086,49 +2103,6 @@ def test_validate_and_resolve_overlap_scheduler__validate(
 
 @prepare_registry
 @mock_pipeline_config_resolve
-def test_validate_and_resolve_max_num_steps_deprecated_override(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Non-1 max_num_steps is deprecated, warned, and forced to 1."""
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_num_steps=10),
-    )
-    with caplog.at_level(logging.WARNING):
-        config._validate_and_resolve_max_num_steps()
-    assert config.runtime.max_num_steps == 1
-    assert "deprecated" in caplog.text.lower()
-    assert "10" in caplog.text
-
-
-@prepare_registry
-@mock_pipeline_config_resolve
-def test_validate_and_resolve_max_num_steps_legacy_default() -> None:
-    """Legacy max_num_steps=-1 resolves silently to 1."""
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="test/model",
-                    device_specs=[DeviceSpec.accelerator()],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_num_steps=-1),
-    )
-    config._validate_and_resolve_max_num_steps()
-    assert config.runtime.max_num_steps == 1
-
-
-@prepare_registry
-@mock_pipeline_config_resolve
 @pytest.mark.parametrize(
     "num_speculative_tokens,expected_device_graph_capture",
     [
@@ -2374,6 +2348,7 @@ def _backend_arch(default: str | None) -> SimpleNamespace:
     )
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
     """Unset + an arch with no backend preference resolves to the global
     default ``xgrammar``."""
@@ -2389,6 +2364,7 @@ def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
     """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
     resolves to the arch default."""
@@ -2403,6 +2379,7 @@ def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
     assert config.sampling.structured_output_backend == "llguidance"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
     """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
     honored, not silently overwritten. This is the precedence bug this fix
@@ -2419,6 +2396,7 @@ def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
     None
 ):
@@ -2436,6 +2414,7 @@ def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
     assert config.sampling.structured_output_backend == "llguidance"
 
 
+@mock_hf_repo_access
 def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     """Unset + ``arch=None`` exercises the unconditional global fallback."""
     config = PipelineConfig(
@@ -2447,6 +2426,7 @@ def test_resolve_backend__unset_no_arch_defaults_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
     must carry the ``None`` sentinel into the built ``PipelineConfig``.
@@ -2465,6 +2445,7 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     assert config.sampling.structured_output_backend is None
 
 
+@mock_hf_repo_access
 def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
     """End-to-end guard for the reported bug: a model launched without an
     explicit backend and no arch pin ends up on ``xgrammar``, not
@@ -2480,6 +2461,7 @@ def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
     assert config.sampling.structured_output_backend == "xgrammar"
 
 
+@mock_hf_repo_access
 def test_from_args__explicit_backend_is_preserved() -> None:
     """An explicit ``--structured-output-backend`` value survives
     ``from_args`` and wins over resolution."""

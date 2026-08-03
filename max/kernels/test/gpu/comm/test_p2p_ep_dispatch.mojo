@@ -14,7 +14,7 @@
 from std.random import randint, randn, seed
 from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -27,7 +27,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from comm.sync import enable_p2p
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx, row_major
 from std.math import ceildiv
 from shmem.ep import (
@@ -54,7 +54,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     get_scale_factor,
 )
-from std.gpu.host.info import _is_sm10x_gpu, MI355X
+from max.gpu.host.info import _is_sm10x_gpu, MI355X
 
 
 def legalize_topk_ids[
@@ -171,7 +171,7 @@ struct BF16DispatchTest[
                 )
             )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(Self.n_ranks):
             self.host_output_bufs_list[i].free()
 
@@ -320,7 +320,7 @@ struct BlockwiseFP8DispatchTest[
                 )
             )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(Self.n_ranks):
             self.host_output_bufs_list[i].free()
             self.host_output_scales_bufs_list[i].free()
@@ -531,7 +531,7 @@ struct NVFP4DispatchTest[
                 )
             )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(Self.n_ranks):
             self.host_output_bufs_list[i].free()
             self.host_output_scales_bufs_list[i].free()
@@ -762,7 +762,7 @@ struct MXFP4DispatchTest[
                 )
             )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         for i in range(Self.n_ranks):
             self.host_output_bufs_list[i].free()
             self.host_output_scales_bufs_list[i].free()

@@ -37,7 +37,6 @@ from typing import cast
 import numpy as np
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     _compute_seq_len,
@@ -49,7 +48,6 @@ BLOCK_SIZE = 4
 
 def _make_block_manager() -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=BLOCK_SIZE,
         connector=cast(object, NullConnector()),  # type: ignore[arg-type]

@@ -78,9 +78,9 @@ from std.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -104,7 +104,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     mul_ftz,
     st_shared_v4_b32,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive_multicast,
 )
@@ -119,7 +119,7 @@ from layout.tma_async import (
     _gather4_box_width,
     _default_desc_shape,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLAPrefillSparseCommon,
@@ -755,15 +755,9 @@ struct MLAPrefillSparseQKVFP8[
             q_tma_op.prefetch_descriptor()
             kv_tma_op.prefetch_descriptor()
 
-        ref smem = UnsafePointer[
-            UInt8, MutUntrackedOrigin, address_space=AddressSpace.SHARED
-        ](
-            external_memory[
-                UInt8, address_space=AddressSpace.SHARED, alignment=128
-            ]()
-        ).bitcast[
-            Self.SMemType
-        ]()[]
+        ref smem = external_memory[
+            UInt8, address_space=AddressSpace.SHARED, alignment=128
+        ]().bitcast[Self.SMemType]()[]
 
         var q_ptr = smem.q.unsafe_ptr()
         var kv_ptr: UnsafePointer[

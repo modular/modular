@@ -15,12 +15,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 import resource
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, TypeVar
 
 import numpy as np
@@ -31,6 +33,37 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+
+logger = logging.getLogger(__name__)
+
+# Model paths for which the best-effort ``AutoConfig`` architecture probe has
+# already failed and been reported. A benchmark can reload the tokenizer many
+# times (across concurrency sweeps and spawned worker processes), so we warn at
+# most once per model path per process instead of flooding the output.
+_reported_autoconfig_failures: set[str] = set()
+
+
+@contextlib.contextmanager
+def _quiet_hf_hub_retries() -> Iterator[None]:
+    """Silence ``huggingface_hub``'s HTTP-retry warnings for a block.
+
+    The best-effort Hub lookups here (revision resolution, the architecture
+    probe, and the tokenizer's cache-staleness ``HEAD`` checks) degrade
+    gracefully when the Hub is slow or unreachable. But ``huggingface_hub``
+    logs a ``WARNING`` for every failed request and every retry, so on a host
+    with flaky or blocked Hub access a single benchmark emits thousands of
+    non-actionable ``... thrown while requesting ...`` / ``Retrying in Ns``
+    lines. Raising the ``huggingface_hub`` logger to ``ERROR`` for the duration
+    drops that chatter while still surfacing genuine failures, which propagate
+    as exceptions regardless of the log level.
+    """
+    hub_logger = logging.getLogger("huggingface_hub")
+    previous_level = hub_logger.level
+    hub_logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        hub_logger.setLevel(previous_level)
 
 
 def deadline_remaining_s(end_time_ns: int | None) -> float | None:
@@ -146,9 +179,45 @@ def resolve_revision(pretrained_model_name_or_path: str) -> str | None:
     the local cache without re-checking the Hub on every spawn.
     """
     try:
-        return HfApi().model_info(pretrained_model_name_or_path).sha
+        with _quiet_hf_hub_retries():
+            return HfApi().model_info(pretrained_model_name_or_path).sha
     except Exception:
         return None
+
+
+def _resolve_architectures(
+    pretrained_model_name_or_path: str,
+    *,
+    revision: str | None,
+    trust_remote_code: bool,
+) -> list[str]:
+    """Best-effort probe of a model's ``architectures`` via ``AutoConfig``.
+
+    Used only to detect architecture-specific tokenizer overrides. Returns an
+    empty list (and warns at most once per model path) when the config cannot
+    be loaded — e.g. a locally-produced quant whose repo is not on the Hub, or
+    a host that cannot reach the Hub. The warning shares the root cause of the
+    ``huggingface_hub`` retry chatter suppressed by :func:`_quiet_hf_hub_retries`,
+    so it is deduplicated rather than repeated for every load.
+    """
+    try:
+        with _quiet_hf_hub_retries():
+            config = AutoConfig.from_pretrained(
+                pretrained_model_name_or_path,
+                trust_remote_code=trust_remote_code,
+                revision=revision,
+            )
+        return getattr(config, "architectures", None) or []
+    except (ValueError, OSError) as exc:
+        if pretrained_model_name_or_path not in _reported_autoconfig_failures:
+            _reported_autoconfig_failures.add(pretrained_model_name_or_path)
+            logger.warning(
+                "AutoConfig.from_pretrained failed for %r: %s. Skipping "
+                "architecture-specific tokenizer overrides.",
+                pretrained_model_name_or_path,
+                exc,
+            )
+        return []
 
 
 def get_tokenizer(
@@ -157,12 +226,18 @@ def get_tokenizer(
     revision: str | None,
     model_max_length: int | None = None,
     trust_remote_code: bool = False,
+    architectures: list[str] | None = None,
 ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
     """Load a tokenizer for a benchmark model.
 
     ``revision`` is explicit; callers should resolve it once via
     :func:`resolve_revision` (or reuse a previously resolved value) so that
     repeated loads across worker processes hit the same cached snapshot.
+
+    ``architectures`` lets a caller supply a previously resolved architecture
+    list (e.g. the parent process passing its result to spawned tokenizer-pool
+    workers) so the redundant per-worker ``AutoConfig`` Hub lookup — and its
+    warning — is skipped. When ``None`` the list is resolved here once.
     """
     tokenizer_kwargs: dict[str, bool | int | str | None] = {
         "trust_remote_code": trust_remote_code,
@@ -170,28 +245,24 @@ def get_tokenizer(
     }
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
-    tokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path, **tokenizer_kwargs
-    )
+    with _quiet_hf_hub_retries():
+        tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path, **tokenizer_kwargs
+        )
     # Stash the resolved revision so downstream consumers (e.g. the worker
     # tokenizer pool) can pin worker loads to the same snapshot without
     # re-resolving against the Hub. Transformers does not expose this on
     # the tokenizer instance itself.
     tokenizer._resolved_revision = revision
-    try:
-        config = AutoConfig.from_pretrained(
+    if architectures is None:
+        architectures = _resolve_architectures(
             pretrained_model_name_or_path,
-            trust_remote_code=trust_remote_code,
             revision=revision,
+            trust_remote_code=trust_remote_code,
         )
-        architectures = getattr(config, "architectures", None) or []
-    except (ValueError, OSError) as exc:
-        print(
-            f"Warning: AutoConfig.from_pretrained failed for "
-            f"{pretrained_model_name_or_path!r}: {exc}. "
-            "Skipping architecture-specific tokenizer overrides."
-        )
-        architectures = []
+    # Stash the resolved architectures alongside the revision so the tokenizer
+    # pool can forward them to workers and avoid re-probing the Hub per worker.
+    tokenizer._resolved_architectures = architectures
     if "KimiK25ForConditionalGeneration" in architectures:
         original_encode = tokenizer.encode
 

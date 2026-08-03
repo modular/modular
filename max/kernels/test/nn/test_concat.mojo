@@ -13,7 +13,7 @@
 
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from std.utils import IndexList, StaticTuple

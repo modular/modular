@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from std.math.fast import exp_approx_f32
 from std.math import exp as ref_exp
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.testing import *
 from std.utils import Index, IndexList
 from std.utils.coord import Coord

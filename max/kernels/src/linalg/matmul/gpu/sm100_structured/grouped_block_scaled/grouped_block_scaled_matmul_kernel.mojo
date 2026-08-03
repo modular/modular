@@ -43,7 +43,7 @@ from std.gpu import WARP_SIZE, block_idx, lane_id
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
-from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
 from layout import (
     Coord,
@@ -1394,7 +1394,7 @@ struct GroupedBlockScaledMatmulKernel[
         # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
-        num_groups: Int,
+        num_groups: Int32,
     ):
         """Grouped block-scaled GEMM kernel entry point.
 
@@ -1436,6 +1436,7 @@ struct GroupedBlockScaledMatmulKernel[
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
         """
+        var _num_groups = Int(num_groups)
         Self.validate_config()
 
         # Alias kernel args for internal methods
@@ -1477,7 +1478,7 @@ struct GroupedBlockScaledMatmulKernel[
         var ctx = Self.Context(tmem_addr_storage)
 
         # ===== Grouped Tile Scheduler =====
-        var scheduler = Self.SchedulerType(problem_sizes, num_groups)
+        var scheduler = Self.SchedulerType(problem_sizes, _num_groups)
 
         # ===== Barrier Initialization =====
         Self.init_barriers(
@@ -1990,10 +1991,10 @@ struct GroupedBlockScaledMatmulKernel[
         group_c_ptrs_lt: Self.GroupPtrTile,
         group_sfa_ptrs_lt: Self.GroupPtrTile,
         group_sfb_ptrs_lt: Self.GroupPtrTile,
-        # Per-group problem sizes: (num_groups, 4) with [M, N, K, L]
+        # Per-group problem sizes: (_num_groups, 4) with [M, N, K, L]
         problem_sizes_lt: Self.ProblemSizesTile,
         # Number of active groups
-        num_groups: Int,
+        num_groups: Int32,
     ):
         """Grouped block-scaled GEMM kernel with 2SM (cta_group=2) support.
 
@@ -2042,6 +2043,7 @@ struct GroupedBlockScaledMatmulKernel[
                 `(max_groups, 4)` tensor with `[M, N, K, L]` per group.
             num_groups: Number of active GEMM groups to process.
         """
+        var _num_groups = Int(num_groups)
         Self.validate_config()
 
         # Alias kernel args for internal methods
@@ -2092,7 +2094,7 @@ struct GroupedBlockScaledMatmulKernel[
             ufloordiv(block_idx.x, 2)
         )  # 2SM: cta_group=2
         var initial_work = Self._compute_initial_work(
-            problem_sizes, num_groups, initial_linear_idx
+            problem_sizes, _num_groups, initial_linear_idx
         )
 
         # ===== Barrier Initialization =====
@@ -2139,7 +2141,7 @@ struct GroupedBlockScaledMatmulKernel[
                 2,  # cta_group=2
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -2216,7 +2218,7 @@ struct GroupedBlockScaledMatmulKernel[
                 2,  # cta_group=2
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -2272,7 +2274,7 @@ struct GroupedBlockScaledMatmulKernel[
                 2,  # cta_group=2
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -2354,7 +2356,7 @@ struct GroupedBlockScaledMatmulKernel[
                 2,  # cta_group=2
             ](
                 problem_sizes,
-                num_groups,
+                _num_groups,
                 clc_full.ptr,
                 clc_empty.ptr,
                 clc_response.ptr,
@@ -2391,7 +2393,7 @@ struct GroupedBlockScaledMatmulKernel[
     @always_inline
     def _compute_initial_work(
         problem_sizes: Self.ProblemSizesTile,
-        num_groups: Int,
+        _num_groups: Int,
         linear_idx: UInt32,
     ) -> GroupedWorkInfo:
         """Compute initial work info from linear tile index."""
@@ -2402,7 +2404,7 @@ struct GroupedBlockScaledMatmulKernel[
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0
-        for g in range(num_groups):
+        for g in range(_num_groups):
             var m = UInt32(Int(problem_sizes[g, 0]))
             var n = UInt32(Int(problem_sizes[g, 1]))
             var m_tiles = ceildiv(Int(m), Self.BM)
@@ -2415,7 +2417,7 @@ struct GroupedBlockScaledMatmulKernel[
 
         # Binary search for group
         var lo: UInt32 = 0
-        var hi: UInt32 = UInt32(num_groups)
+        var hi: UInt32 = UInt32(_num_groups)
         while lo < hi:
             var mid = (lo + hi) / 2
             if linear_idx < cumulative[Int(mid + 1)]:

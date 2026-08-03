@@ -232,9 +232,9 @@ __extension DeviceExternalFunction:
         """
         comptime num_args = Ts.length
 
-        var dense_args_addrs = InlineArray[
-            OpaquePointer[MutAnyOrigin], num_args
-        ](uninitialized=True)
+        var dense_args_addrs = Array[OpaquePointer[MutAnyOrigin], num_args](
+            uninitialized=True
+        )
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.

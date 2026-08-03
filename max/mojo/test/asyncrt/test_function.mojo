@@ -14,7 +14,7 @@
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 from std.sys import has_apple_gpu_accelerator
 
@@ -70,8 +70,10 @@ def vec_func(
     in1: UnsafePointer[S, MutAnyOrigin],
     output: UnsafePointer[S, MutAnyOrigin],
     s: TwoS,
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -109,7 +111,7 @@ def _run_test_function_checked(ctx: DeviceContext) raises:
         in1,
         out,
         ones,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -159,7 +161,7 @@ def _run_test_function_experimental(ctx: DeviceContext) raises:
         in1,
         out,
         ones,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

@@ -43,7 +43,7 @@ struct _PythonGlobal(Defaultable, Movable):
     def __init__(out self):
         self.cpython = {}
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.cpython.destroy()
 
 
@@ -287,7 +287,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         #   in a global variable (yet).
         return Self._unsafe_add_functions(
             module,
-            functions.steal_data().unsafe_origin_cast[MutUntrackedOrigin](),
+            functions.unsafe_take_allocation().unsafe_leak(),
         )
 
     @staticmethod

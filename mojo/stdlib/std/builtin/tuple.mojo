@@ -119,7 +119,7 @@ struct Tuple[*element_types: Movable](
 
         args^.consume_elements[init_elt]()
 
-    def __del__(
+    def __deinit__(
         deinit self,
     ) where Self.element_types.all_conforms_to[ImplicitlyDeletable]():
         """Destructor that destroys all of the elements.
@@ -556,7 +556,7 @@ struct Tuple[*element_types: Movable](
         t^.consume_elements[handler]()
         ```
         """
-        # `deinit self` disables `Tuple.__del__`; the underlying `!kgen.struct`
+        # `deinit self` disables `Tuple.__deinit__`; the underlying `!kgen.struct`
         # destructor is trivial, so moving every element out and letting `self`
         # die leaks nothing.
         comptime for i in range(Self.__len__()):

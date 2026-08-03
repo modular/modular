@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm.backend.gpu.reduction import reduce_launch
-from std.gpu.host import DeviceContext
+from max.algorithm.backend.gpu.reduction import reduce_launch
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
 from std.utils import IndexList, StaticTuple

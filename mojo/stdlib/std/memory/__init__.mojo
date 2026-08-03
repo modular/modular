@@ -51,13 +51,14 @@ from .memory import (
     unsafe_uninit_move_n,
     forget_deinit,
 )
-from .stack_allocation import stack_allocation
+from .stack_allocation import stack_allocation, unsafe_stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
     ImmPointer,
     ImmutPointer,
     MutPointer,
+    OptionalPointer,
     Pointer,
 )
 from .unsafe import bitcast, pack_bits
@@ -66,7 +67,6 @@ from .unsafe_pointer import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
-    OptionalPointer,
     OptionalUnsafePointer,
     ImmUnsafePointer,
     ImmutUnsafePointer,

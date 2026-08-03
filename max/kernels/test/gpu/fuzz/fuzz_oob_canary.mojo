@@ -26,7 +26,7 @@
 # planted bug from generated specs.
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
@@ -39,8 +39,11 @@ comptime BLOCK = 256
 
 
 def canary_kernel(
-    dst: UnsafePointer[Float32, MutAnyOrigin], n: Int, overflow: Int
+    dst: UnsafePointer[Float32, MutAnyOrigin], n_dev: Int32, overflow_dev: Int32
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var n = Int(n_dev)
+    var overflow = Int(overflow_dev)
     var gid = global_idx.x
     if gid < n:
         dst[gid] = Float32(gid)
@@ -74,8 +77,8 @@ def run_one_case(ctx: DeviceContext, spec: CanarySpec) raises:
     var dst = ctx.enqueue_create_buffer[DType.float32](n)
     ctx.enqueue_function[canary_kernel](
         dst,
-        n,
-        spec.overflow,
+        Int32(n),
+        Int32(spec.overflow),
         grid_dim=ceildiv(n, BLOCK),
         block_dim=BLOCK,
     )

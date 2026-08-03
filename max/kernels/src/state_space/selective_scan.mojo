@@ -25,8 +25,8 @@ from std.gpu import (
 )
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
-from std.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
 from nn.activations import silu
@@ -86,11 +86,11 @@ def selective_scan_fwd_gpu[
     z_LT: TensorLayout,
     delta_bias_LT: TensorLayout,
 ](
-    total_batch_dim: Int,
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    group_size: Int,
+    total_batch_dim: Int32,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    group_size: Int32,
     delta_softplus: Int8,
     output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
@@ -166,17 +166,22 @@ def selective_scan_fwd_gpu[
         delta_bias_strides: Stride tuple for `delta_bias`.
     """
     # Calculate which (batch, dim) this thread is responsible for
+    var _total_batch_dim = Int(total_batch_dim)
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _group_size = Int(group_size)
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
+    if thread_id >= _total_batch_dim:
         return
 
-    var b, d = divmod(thread_id, dim)
+    var b, d = divmod(thread_id, _dim)
 
     # Additional bounds checking
-    if b >= batch or d >= dim:
+    if b >= _batch or d >= _dim:
         return
 
-    var group_id = d // group_size
+    var group_id = d // _group_size
 
     # Local state storage (max dstate 16 to fit in registers)
     # Note: Using large SIMD sizes (e.g. 256) causes register spilling and massive performance loss
@@ -184,7 +189,7 @@ def selective_scan_fwd_gpu[
     var cum_a = SIMD[DType.float32, MAX_DSTATE](1.0)
     var cum_b = SIMD[DType.float32, MAX_DSTATE](0.0)
 
-    # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
+    # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
     # This optimization converts exp(A * delta) to exp2(A * LOG2E * delta)
     # which is faster on GPUs
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -229,10 +234,10 @@ def selective_scan_fwd_gpu[
     var curr_z_offset = UInt32(b * z_strides[0] + d * z_strides[1])
     var curr_out_z_offset = UInt32(b * out_z_strides[0] + d * out_z_strides[1])
 
-    # Process sequence sequentially for this (batch, dim)
+    # Process sequence sequentially for this (_batch, _dim)
     # OPTIMIZED: Tiled loading with pre-loaded B/C tiles and buffered outputs
     comptime TILE_SIZE = 8  # Sweet spot: larger causes register spilling
-    var aligned_seqlen = seqlen - (seqlen % TILE_SIZE)
+    var aligned_seqlen = _seqlen - (_seqlen % TILE_SIZE)
     var t = 0
 
     var output_contiguous = output_strides[2] == 1
@@ -334,7 +339,7 @@ def selective_scan_fwd_gpu[
             # Checkpoint handling
             var current_t = t + i
             var is_chunk_boundary = t_in_chunk == chunk_size
-            var is_last_step = current_t == seqlen - 1
+            var is_last_step = current_t == _seqlen - 1
 
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
@@ -403,7 +408,7 @@ def selective_scan_fwd_gpu[
         t += TILE_SIZE
 
     # Tail loop (scalar)
-    while t < seqlen:
+    while t < _seqlen:
         t_in_chunk += 1
         var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
             DType.float32
@@ -458,7 +463,7 @@ def selective_scan_fwd_gpu[
         curr_out_z_offset += UInt32(out_z_strides[2])
 
         var is_chunk_boundary = t_in_chunk == chunk_size
-        var is_last_step = t == seqlen - 1
+        var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
@@ -500,11 +505,11 @@ def selective_scan_fwd_gpu_minimal[
     B_LT: TensorLayout,
     C_LT: TensorLayout,
 ](
-    total_batch_dim: Int,
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    group_size: Int,
+    total_batch_dim: Int32,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    group_size: Int32,
     delta_softplus: Int8,
     output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin],
@@ -575,16 +580,21 @@ def selective_scan_fwd_gpu_minimal[
         C_strides: 4D strides `(batch, n_groups, DSTATE, seqlen)` for
             indexing `C`.
     """
+    var _total_batch_dim = Int(total_batch_dim)
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _group_size = Int(group_size)
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
+    if thread_id >= _total_batch_dim:
         return
 
-    var b, d = divmod(thread_id, dim)
+    var b, d = divmod(thread_id, _dim)
 
-    if b >= batch or d >= dim:
+    if b >= _batch or d >= _dim:
         return
 
-    var group_id = d // group_size
+    var group_id = d // _group_size
 
     var state = SIMD[DType.float32, MAX_DSTATE](0.0)
     var cum_a = SIMD[DType.float32, MAX_DSTATE](1.0)
@@ -613,7 +623,7 @@ def selective_scan_fwd_gpu_minimal[
     var curr_C_offset = UInt32(b * C_strides[0] + group_id * C_strides[1])
 
     # Simple scalar loop - no tiling for simplicity in minimal version
-    for t in range(seqlen):
+    for t in range(_seqlen):
         t_in_chunk += 1
 
         var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
@@ -657,7 +667,7 @@ def selective_scan_fwd_gpu_minimal[
         curr_C_offset += UInt32(C_strides[3])
 
         var is_chunk_boundary = t_in_chunk == chunk_size
-        var is_last_step = t == seqlen - 1
+        var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
@@ -722,10 +732,10 @@ def selective_scan_update_gpu[
     z_LT: TensorLayout,
     dt_bias_LT: TensorLayout,
 ](
-    total_batch_dim: Int,
-    batch: Int,
-    dim: Int,
-    group_size: Int,
+    total_batch_dim: Int32,
+    batch: Int32,
+    dim: Int32,
+    group_size: Int32,
     delta_softplus: Int8,
     state_out: TileTensor[kernel_dtype, state_out_LT, MutUntrackedOrigin],
     output: TileTensor[kernel_dtype, output_LT, MutUntrackedOrigin],
@@ -817,18 +827,22 @@ def selective_scan_update_gpu[
         dt_bias_strides: 1D strides `(dim,)` for indexing `dt_bias`.
     """
     # Calculate which (batch, dim) this thread is responsible for
+    var _total_batch_dim = Int(total_batch_dim)
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _group_size = Int(group_size)
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
+    if thread_id >= _total_batch_dim:
         return
 
-    var b, d = divmod(thread_id, dim)
+    var b, d = divmod(thread_id, _dim)
 
     # Additional bounds checking
-    if b >= batch or d >= dim:
+    if b >= _batch or d >= _dim:
         return
 
     # Compute group_id for this dimension
-    var group_id = d // group_size
+    var group_id = d // _group_size
 
     # Load dt value
     var dt_offset = UInt32(b * dt_strides[0] + d * dt_strides[1])
@@ -854,7 +868,7 @@ def selective_scan_update_gpu[
     var x_offset = UInt32(b * x_strides[0] + d * x_strides[1])
     var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[DType.float32]()
 
-    # Load A values for this dim and pre-multiply by LOG2E for faster exp2
+    # Load A values for this _dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
@@ -1701,11 +1715,11 @@ def ssd_combined_gpu[
     delta_bias_LT: TensorLayout,
     gamma_LT: TensorLayout,
 ](
-    total_batch_dim: Int,
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    group_size: Int,
+    total_batch_dim: Int32,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    group_size: Int32,
     delta_softplus: Int8,
     output: TileTensor[kernel_dtype, output_LT, MutAnyOrigin],
     x: TileTensor[kernel_dtype, x_LT, MutAnyOrigin],
@@ -1789,11 +1803,16 @@ def ssd_combined_gpu[
             the combined output.
     """
     # Compute row-major strides from dimensions
-    var n_groups = dim // group_size
-    var n_chunks = ceildiv(seqlen, 2048)
-    # 3D (batch, dim, seqlen) strides
-    var output_b_stride = UInt32(dim * seqlen)
-    var output_d_stride = UInt32(seqlen)
+    var _total_batch_dim = Int(total_batch_dim)
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _group_size = Int(group_size)
+    var n_groups = _dim // _group_size
+    var n_chunks = ceildiv(_seqlen, 2048)
+    # 3D (_batch, _dim, _seqlen) strides
+    var output_b_stride = UInt32(_dim * _seqlen)
+    var output_d_stride = UInt32(_seqlen)
     var output_t_stride = UInt32(1)
     var u_b_stride = output_b_stride
     var u_d_stride = output_d_stride
@@ -1810,18 +1829,18 @@ def ssd_combined_gpu[
     var z_b_stride = output_b_stride
     var z_d_stride = output_d_stride
     var z_t_stride = output_t_stride
-    # 4D (batch, dim, n_chunks, 2*dstate) strides for x
-    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    # 4D (_batch, _dim, n_chunks, 2*dstate) strides for x
+    var x_b_stride = UInt32(_dim * n_chunks * 2 * DSTATE)
     var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
     var x_chunk_stride = UInt32(2 * DSTATE)
     var x_n_stride = UInt32(1)
-    # 2D (dim, dstate) strides for A
+    # 2D (_dim, dstate) strides for A
     var A_d_stride = UInt32(DSTATE)
     var A_n_stride = UInt32(1)
-    # 4D (batch, n_groups, dstate, seqlen) strides for B, C
-    var B_b_stride = UInt32(n_groups * DSTATE * seqlen)
-    var B_g_stride = UInt32(DSTATE * seqlen)
-    var B_n_stride = UInt32(seqlen)
+    # 4D (_batch, n_groups, dstate, _seqlen) strides for B, C
+    var B_b_stride = UInt32(n_groups * DSTATE * _seqlen)
+    var B_g_stride = UInt32(DSTATE * _seqlen)
+    var B_n_stride = UInt32(_seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
     var C_g_stride = B_g_stride
@@ -1833,15 +1852,15 @@ def ssd_combined_gpu[
     var gamma_stride = UInt32(1)
 
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
+    if thread_id >= _total_batch_dim:
         return
 
-    var b, d = divmod(thread_id, dim)
+    var b, d = divmod(thread_id, _dim)
 
-    if b >= batch or d >= dim:
+    if b >= _batch or d >= _dim:
         return
 
-    var group_id = d // group_size
+    var group_id = d // _group_size
 
     # Local state storage
     var state = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -1908,7 +1927,7 @@ def ssd_combined_gpu[
 
     # Process sequence
     comptime TILE_SIZE = 8
-    var aligned_seqlen = seqlen - (seqlen % TILE_SIZE)
+    var aligned_seqlen = _seqlen - (_seqlen % TILE_SIZE)
     var t = 0
 
     while t < aligned_seqlen:
@@ -2026,7 +2045,7 @@ def ssd_combined_gpu[
             # Check chunk boundary
             var is_chunk_boundary = t_in_chunk == chunk_size
             var current_t = t + i
-            var is_last_step = current_t == seqlen - 1
+            var is_last_step = current_t == _seqlen - 1
 
             if is_chunk_boundary or is_last_step:
                 comptime for n in range(DSTATE):
@@ -2069,7 +2088,7 @@ def ssd_combined_gpu[
         t += TILE_SIZE
 
     # Handle remaining timesteps
-    while t < seqlen:
+    while t < _seqlen:
         t_in_chunk += 1
         var u_val = Scalar[kernel_dtype](u.raw_load(curr_u_offset)).cast[
             DType.float32
@@ -2140,7 +2159,7 @@ def ssd_combined_gpu[
         curr_residual_offset += residual_t_stride
 
         var is_chunk_boundary = t_in_chunk == chunk_size
-        var is_last_step = t == seqlen - 1
+        var is_last_step = t == _seqlen - 1
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):
                 var x_offset_a = UInt32(
@@ -3207,15 +3226,15 @@ def mamba_split_conv1d_scan_combined_gpu[
     outproj_weight_layout: TensorLayout,
     outproj_bias_layout: TensorLayout,
 ](
-    total_batch_dim: Int,
-    batch: Int,
-    seqlen: Int,
-    dim: Int,
-    nheads: Int,
-    headdim: Int,
-    ngroups: Int,
-    width: Int,
-    chunk_size: Int,
+    total_batch_dim: Int32,
+    batch: Int32,
+    seqlen: Int32,
+    dim: Int32,
+    nheads: Int32,
+    headdim: Int32,
+    ngroups: Int32,
+    width: Int32,
+    chunk_size: Int32,
     delta_softplus: Int8,
     norm_before_gate: Int8,
     has_rmsnorm: Int8,
@@ -3243,76 +3262,85 @@ def mamba_split_conv1d_scan_combined_gpu[
     epsilon: Scalar[kernel_dtype],
 ):
     """GPU kernel for mamba_split_conv1d_scan_combined operation."""
+    var _total_batch_dim = Int(total_batch_dim)
+    var _batch = Int(batch)
+    var _seqlen = Int(seqlen)
+    var _dim = Int(dim)
+    var _nheads = Int(nheads)
+    var _headdim = Int(headdim)
+    var _ngroups = Int(ngroups)
+    var _width = Int(width)
+    var _chunk_size = Int(chunk_size)
     # Compute row-major strides from dimensions
-    var n_chunks = ceildiv(seqlen, chunk_size)
-    var zxbcdt_channels = 2 * dim + 2 * ngroups * DSTATE + nheads
+    var n_chunks = ceildiv(_seqlen, _chunk_size)
+    var zxbcdt_channels = 2 * _dim + 2 * _ngroups * DSTATE + _nheads
     var out_dim = output.dim(2)
-    # zxbcdt: (batch, seqlen, channels)
-    var zxbcdt_b_stride = UInt32(seqlen * zxbcdt_channels)
+    # zxbcdt: (_batch, _seqlen, channels)
+    var zxbcdt_b_stride = UInt32(_seqlen * zxbcdt_channels)
     var zxbcdt_s_stride = UInt32(zxbcdt_channels)
     var zxbcdt_c_stride = UInt32(1)
-    # conv_weight: (channels, width)
-    var conv_weight_c_stride = UInt32(width)
+    # conv_weight: (channels, _width)
+    var conv_weight_c_stride = UInt32(_width)
     var conv_weight_w_stride = UInt32(1)
     # conv_bias: (channels,)
     var conv_bias_stride = UInt32(1)
-    # output: (batch, seqlen, out_dim)
-    var output_b_stride = UInt32(seqlen * Int(out_dim))
+    # output: (_batch, _seqlen, out_dim)
+    var output_b_stride = UInt32(_seqlen * Int(out_dim))
     var output_s_stride = UInt32(out_dim)
     var output_c_stride = UInt32(1)
-    # x: (batch, dim, n_chunks, 2*dstate)
-    var x_b_stride = UInt32(dim * n_chunks * 2 * DSTATE)
+    # x: (_batch, _dim, n_chunks, 2*dstate)
+    var x_b_stride = UInt32(_dim * n_chunks * 2 * DSTATE)
     var x_d_stride = UInt32(n_chunks * 2 * DSTATE)
     var x_chunk_stride = UInt32(2 * DSTATE)
     var x_n_stride = UInt32(1)
-    # out_z, z: (batch, dim, seqlen)
-    var out_z_b_stride = UInt32(dim * seqlen)
-    var out_z_d_stride = UInt32(seqlen)
+    # out_z, z: (_batch, _dim, _seqlen)
+    var out_z_b_stride = UInt32(_dim * _seqlen)
+    var out_z_d_stride = UInt32(_seqlen)
     var out_z_t_stride = UInt32(1)
     var z_b_stride = out_z_b_stride
     var z_d_stride = out_z_d_stride
     var z_t_stride = out_z_t_stride
-    # dt: (batch, nheads, seqlen)
-    var dt_b_stride = UInt32(nheads * seqlen)
-    var dt_h_stride = UInt32(seqlen)
+    # dt: (_batch, _nheads, _seqlen)
+    var dt_b_stride = UInt32(_nheads * _seqlen)
+    var dt_h_stride = UInt32(_seqlen)
     var dt_s_stride = UInt32(1)
-    # A: (nheads,)
+    # A: (_nheads,)
     var A_stride = UInt32(1)
-    # B, C: (batch, ngroups, dstate, seqlen)
-    var B_b_stride = UInt32(ngroups * DSTATE * seqlen)
-    var B_g_stride = UInt32(DSTATE * seqlen)
-    var B_n_stride = UInt32(seqlen)
+    # B, C: (_batch, _ngroups, dstate, _seqlen)
+    var B_b_stride = UInt32(_ngroups * DSTATE * _seqlen)
+    var B_g_stride = UInt32(DSTATE * _seqlen)
+    var B_n_stride = UInt32(_seqlen)
     var B_t_stride = UInt32(1)
     var C_b_stride = B_b_stride
     var C_g_stride = B_g_stride
     var C_n_stride = B_n_stride
     var C_t_stride = B_t_stride
-    # D: (nheads, headdim) or (nheads,)
-    var D_h_stride = UInt32(headdim) if D.dim(1) > 0 else UInt32(1)
+    # D: (_nheads, _headdim) or (_nheads,)
+    var D_h_stride = UInt32(_headdim) if D.dim(1) > 0 else UInt32(1)
     var D_p_stride = UInt32(1)
     # 1D strides
     var dt_bias_stride = UInt32(1)
     var rmsnorm_weight_stride = UInt32(1)
-    # outproj_weight: (out_dim, dim)
-    var outproj_weight_out_stride = UInt32(dim)
+    # outproj_weight: (out_dim, _dim)
+    var outproj_weight_out_stride = UInt32(_dim)
     var outproj_weight_in_stride = UInt32(1)
     var outproj_bias_stride = UInt32(1)
 
     var thread_id = block_dim.x * block_idx.x + thread_idx.x
-    if thread_id >= total_batch_dim:
+    if thread_id >= _total_batch_dim:
         return
 
-    var b, d = divmod(thread_id, dim)
+    var b, d = divmod(thread_id, _dim)
 
-    if b >= batch or d >= dim:
+    if b >= _batch or d >= _dim:
         return
 
-    var h, p = divmod(d, headdim)
-    var group_id = h // ngroups if ngroups > 1 else 0
-    var width_minus_1 = width - 1
+    var h, p = divmod(d, _headdim)
+    var group_id = h // _ngroups if _ngroups > 1 else 0
+    var width_minus_1 = _width - 1
     var z_start = 0
-    var xBC_start = dim
-    var dt_start = 2 * dim + 2 * ngroups * DSTATE
+    var xBC_start = _dim
+    var dt_start = 2 * _dim + 2 * _ngroups * DSTATE
 
     # Initialize state for selective scan
     var state = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -3355,7 +3383,7 @@ def mamba_split_conv1d_scan_combined_gpu[
     var t_in_chunk = 0
 
     # Process sequence
-    for t in range(seqlen):
+    for t in range(_seqlen):
         # Step 1: Load z and dt from zxbcdt
         var z_channel = z_start + d
         var z_offset = (
@@ -3397,7 +3425,7 @@ def mamba_split_conv1d_scan_combined_gpu[
             conv_bias.raw_load(UInt32(x_channel_in_xBC) * conv_bias_stride)
         ).cast[DType.float32]()
 
-        for w in range(width):
+        for w in range(_width):
             var input_t = t - (width_minus_1 - w)
             if input_t >= 0:
                 var xbc_offset = (
@@ -3426,13 +3454,13 @@ def mamba_split_conv1d_scan_combined_gpu[
 
         comptime for n in range(DSTATE):
             # B channel
-            var B_channel_in_xBC = dim + group_id * DSTATE + n
+            var B_channel_in_xBC = _dim + group_id * DSTATE + n
             var B_channel_in_zxbcdt = xBC_start + B_channel_in_xBC
 
             var B_conv_sum = Scalar[kernel_dtype](
                 conv_bias.raw_load(UInt32(B_channel_in_xBC) * conv_bias_stride)
             ).cast[DType.float32]()
-            for w in range(width):
+            for w in range(_width):
                 var input_t = t - (width_minus_1 - w)
                 if input_t >= 0:
                     var xbc_offset = (
@@ -3465,14 +3493,14 @@ def mamba_split_conv1d_scan_combined_gpu[
             )
             # C channel
             var C_channel_in_xBC = (
-                dim + ngroups * DSTATE + group_id * DSTATE + n
+                _dim + _ngroups * DSTATE + group_id * DSTATE + n
             )
             var C_channel_in_zxbcdt = xBC_start + C_channel_in_xBC
 
             var C_conv_sum = Scalar[kernel_dtype](
                 conv_bias.raw_load(UInt32(C_channel_in_xBC) * conv_bias_stride)
             ).cast[DType.float32]()
-            for w in range(width):
+            for w in range(_width):
                 var input_t = t - (width_minus_1 - w)
                 if input_t >= 0:
                     var xbc_offset = (
@@ -3620,8 +3648,8 @@ def mamba_split_conv1d_scan_combined_gpu[
             )
         # Check chunk boundary
         t_in_chunk += 1
-        var is_chunk_boundary = t_in_chunk == chunk_size
-        var is_last_step = t == seqlen - 1
+        var is_chunk_boundary = t_in_chunk == _chunk_size
+        var is_last_step = t == _seqlen - 1
 
         if is_chunk_boundary or is_last_step:
             comptime for n in range(DSTATE):

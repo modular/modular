@@ -43,6 +43,7 @@ from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.transformer import captures_by_device
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
@@ -126,6 +127,12 @@ class Eagle3MHAKimiK25Unified(Module):
         self.draft: Eagle3MHADraft | None = None
         if draft_config is not None:
             self.draft = Eagle3MHADraft(draft_config)
+            aux_layer_ids = config.eagle_aux_hidden_state_layer_ids
+            assert aux_layer_ids is not None
+            assert len(aux_layer_ids) == draft_config.fc_input_multiplier, (
+                f"the target captures {len(aux_layer_ids)} aux hidden states "
+                f"but the draft's fc fuses {draft_config.fc_input_multiplier}"
+            )
 
     def __call__(
         self,
@@ -219,7 +226,7 @@ class Eagle3MHAKimiK25Unified(Module):
                 ep_inputs,
             )
         logits = target_outputs[1]
-        hidden_states = list(target_outputs[3 : 3 + n_devs])
+        hidden_states = captures_by_device(target_outputs[3:], n_devs)
 
         effective_bitmasks = apply_overlap_bitmask(
             pinned_bitmask,

@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.ffi import _CPointer
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceStream
+from max.gpu.host import DeviceContext, DeviceStream
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from std.memory.unsafe_pointer import unsafe_cast
@@ -34,9 +34,11 @@ def native_stream_ptr(
 def scale_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    n: Int,
+    n_dev: Int32,
     scale: Float32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n = Int(n_dev)
     var tid = global_idx.x
     if tid >= n:
         return
@@ -75,7 +77,7 @@ def main() raises:
             func,
             dev_in,
             dev_out,
-            length,
+            Int32(length),
             scale,
             grid_dim=ceildiv(length, 32),
             block_dim=32,

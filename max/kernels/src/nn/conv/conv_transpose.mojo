@@ -37,13 +37,16 @@ from _cudnn.infer import (
     cudnnTensorFormat_t,
 )
 from std.algorithm import (
-    elementwise,
-    sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from std.gpu.host import DeviceContext
+
+from max.algorithm import (
+    elementwise,
+    sync_parallelize,
+)
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,
@@ -56,8 +59,8 @@ from layout.tensor_storage import TensorStorage
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
@@ -840,9 +843,9 @@ struct ConvTransposedPacked[
         last_c_tile: Bool,
     ](
         self,
-        output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmUnsafePointer[Scalar[input_dt], _],
-        filter: ImmUnsafePointer[Scalar[filter_dt], _],
+        output: UnsafePointer[mut=True, Scalar[output_dt], _],
+        input: UnsafePointer[Scalar[input_dt], _],
+        filter: UnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -921,9 +924,9 @@ struct ConvTransposedPacked[
         filter_dt: DType,
     ](
         self,
-        output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmUnsafePointer[Scalar[input_dt], _],
-        filter: ImmUnsafePointer[Scalar[filter_dt], _],
+        output: UnsafePointer[mut=True, Scalar[output_dt], _],
+        input: UnsafePointer[Scalar[input_dt], _],
+        filter: UnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -1168,9 +1171,9 @@ def update_w_tile_3d[
     input_dt: DType,
     filter_dt: DType,
 ](
-    output: MutUnsafePointer[Scalar[output_dt], _],
-    input: ImmUnsafePointer[Scalar[input_dt], _],
-    filter: ImmUnsafePointer[Scalar[filter_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
+    input: UnsafePointer[Scalar[input_dt], _],
+    filter: UnsafePointer[Scalar[filter_dt], _],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,

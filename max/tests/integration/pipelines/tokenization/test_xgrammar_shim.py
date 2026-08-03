@@ -1677,6 +1677,751 @@ def test_gemma_4_min_length_bitmask_forbids_early_close_delimiter() -> None:
         assert _gemma_bit_set(bitmask, _GEMMA_ID["a"])
 
 
+def test_gemma_4_declared_key_excluded_from_additional_properties() -> None:
+    # With strict_mode=False, objects that don't set additionalProperties:false
+    # get an additional-properties branch whose value is unconstrained. The
+    # additional-key pattern must still exclude the DECLARED property names --
+    # otherwise an optional declared key (`foo`, typed integer) can be emitted
+    # through that branch with an arbitrary value, producing grammar-legal but
+    # schema-violating output.
+    params = {"properties": {"foo": {"type": "integer"}}}
+
+    # Declared key with its declared type is accepted.
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode("<|tool_call>call:f{foo:42}<tool_call|>")
+    )
+    assert ok.is_completed()
+
+    # Undeclared keys still flow through the additional branch (the point of
+    # strict_mode=False), including keys that merely extend a declared name.
+    extra = _gemma_matcher_params(params)
+    assert _accept_ids(
+        extra,
+        _gemma_encode('<|tool_call>call:f{bar:<|"|>x<|"|>}<tool_call|>'),
+    )
+    assert extra.is_completed()
+
+    prefixed = _gemma_matcher_params(params)
+    assert _accept_ids(
+        prefixed,
+        _gemma_encode('<|tool_call>call:f{foobar:<|"|>x<|"|>}<tool_call|>'),
+    )
+    assert prefixed.is_completed()
+
+    # The declared key must NOT be matchable as an additional property: a
+    # string value for integer-typed `foo` is rejected.
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(bad, _gemma_encode('<|tool_call>call:f{foo:<|"|>'))
+
+
+def test_gemma_4_false_schema_property_key_never_emittable() -> None:
+    # A `false` property schema forbids the key outright: the key must never
+    # be emittable with any value -- not even through the strict_mode=False
+    # additional-properties branch that admits undeclared keys.
+    params = {"properties": {"foo": True, "bar": False}}
+
+    # `foo: true` accepts any value.
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode("<|tool_call>call:f{foo:42}<tool_call|>")
+    )
+    assert ok.is_completed()
+
+    # Keys merely extending the forbidden name stay emittable.
+    prefixed = _gemma_matcher_params(params)
+    assert _accept_ids(
+        prefixed,
+        _gemma_encode('<|tool_call>call:f{barx:<|"|>x<|"|>}<tool_call|>'),
+    )
+    assert prefixed.is_completed()
+
+    # The forbidden key itself must never be emittable, with any value.
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(bad, _gemma_encode("<|tool_call>call:f{bar:1"))
+
+
+def test_gemma_4_only_false_schema_properties_still_excluded() -> None:
+    # An object whose declared properties are ALL false-schema behaves like
+    # an object with no declared properties -- undeclared keys stay
+    # emittable -- but the forbidden names must still never be emitted.
+    params = {"properties": {"bar": False}}
+
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode('<|tool_call>call:f{barx:<|"|>x<|"|>}<tool_call|>')
+    )
+    assert ok.is_completed()
+
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(bad, _gemma_encode("<|tool_call>call:f{bar:1"))
+
+
+def test_gemma_4_forbidden_keys_scoped_to_their_object() -> None:
+    # Forbidden (false-schema) keys apply per object level: a name forbidden
+    # at the outer level stays emittable inside a nested object and vice
+    # versa.
+    params = {
+        "properties": {
+            "bar": False,
+            "inner": {"type": "object", "properties": {"qux": False}},
+        }
+    }
+
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode("<|tool_call>call:f{inner:{bar:1}}<tool_call|>")
+    )
+    assert ok.is_completed()
+
+    bad_inner = _gemma_matcher_params(params)
+    assert not _accept_ids(
+        bad_inner, _gemma_encode("<|tool_call>call:f{inner:{qux:1")
+    )
+
+    bad_outer = _gemma_matcher_params(params)
+    assert not _accept_ids(bad_outer, _gemma_encode("<|tool_call>call:f{bar:1"))
+
+
+def test_gemma_4_property_names_with_properties_rejected() -> None:
+    # Combining propertyNames with declared properties (including keys
+    # forbidden by a false schema) can't be enforced correctly: the two key
+    # constraints would have to be intersected. Rather than accept a schema it
+    # would only partially enforce, the combination is rejected under
+    # reject_unsupported.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "properties": {"foo": {"type": "integer"}},
+                "propertyNames": {"pattern": "^[a-z]+$"},
+            }
+        )
+
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "properties": {"bar": False},
+                "propertyNames": {"pattern": "^[a-z]+$"},
+            }
+        )
+
+
+def test_gemma_4_cache_key_annotation_named_property_not_collided() -> None:
+    # A property NAME that happens to spell an annotation keyword (title,
+    # description, ...) is a name, not an annotation. Sibling subschemas
+    # differing only in such a property are different schemas and must not
+    # share behavior: in `a` the key is integer-typed, in `b` it is
+    # forbidden.
+    params = {
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {"description": {"type": "integer"}},
+            },
+            "b": {"type": "object", "properties": {"description": False}},
+        },
+    }
+
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode("<|tool_call>call:f{a:{description:1}}<tool_call|>")
+    )
+    assert ok.is_completed()
+
+    # In b, description is forbidden outright -- it must not be accepted
+    # just because a declares an integer-typed property of the same name.
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(
+        bad, _gemma_encode("<|tool_call>call:f{b:{description:1")
+    )
+
+
+def test_bare_key_terminal_undecomposable_rejected() -> None:
+    # A bare-key terminal in an unsupported shape (here: grouped
+    # subexpressions rather than a plain class-with-repetition form) cannot
+    # keep declared property names out of the additional keys; the schema
+    # must be rejected under reject_unsupported rather than accepted with
+    # the key constraint only partially enforced.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"foo": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal="([a-zA-Z_])([-a-zA-Z0-9_.])*",
+            max_whitespace_cnt=1,
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    with pytest.raises(Exception):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_gemma_4_required_forced_property_with_pattern_properties_rejected() -> (
+    None
+):
+    # A key listed in `required` but absent from `properties` is still a
+    # declared property of the object, so `required` + `patternProperties`
+    # needs the same key intersection as declared properties +
+    # patternProperties. It must be rejected even though the schema carries
+    # no `properties` keyword at all -- otherwise the pattern constraint is
+    # silently dropped for the required key.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "required": ["x"],
+                "patternProperties": {"^[a-z]+$": {"type": "string"}},
+            }
+        )
+
+
+def test_bare_key_class_escape_unambiguous_before_hex_digit_member() -> None:
+    # A key alphabet mixing a control character and a hex-digit character
+    # must keep the two distinct: keys using the hex-digit character stay
+    # accepted.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a0\x01][a0\x01]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    m = xgr.GrammarMatcher(_gemma_compiler().compile_structural_tag(tag))
+    assert _accept_ids(m, _gemma_encode("{0:1}"))
+    assert m.is_completed()
+
+
+def test_cache_key_const_instance_values_not_annotation_filtered() -> None:
+    # const/enum values are JSON INSTANCES, not schemas: an object member
+    # named "title" inside a const value is data, not an ignorable
+    # annotation. Two consts differing only in such a member are different
+    # schemas and must not share behavior -- each accepts exactly its own
+    # literal value.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"a": {"const": {"title": "a"}}, "b": {"const": {"title": "b"}}}, '
+        '"required": ["a", "b"]}'
+    )
+    # A const value is accepted only in its canonical JSON spelling (no
+    # whitespace inside it); the enclosing object allows whitespace.
+    assert _accepts(compiled, '{"a": {"title":"a"}, "b": {"title":"b"}}')
+
+
+def test_cache_key_distinguishes_property_names_default_type() -> None:
+    # An empty schema means "any string" when it constrains property names but
+    # "any value" when it constrains a property value. Those two readings must
+    # stay distinct even when the schema text is identical -- otherwise object
+    # keys could be emitted as arbitrary JSON values (e.g. bare numbers)
+    # instead of strings.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"b": {}, "a": {"type": "object", "propertyNames": {}}}, '
+        '"required": ["a", "b"]}'
+    )
+    assert _accepts(compiled, '{"b": 1, "a": {"a": 1}}')
+    assert not _accepts(compiled, '{"b": 1, "a": {1: 1}}')
+
+
+def test_cache_key_not_forgeable_via_property_name() -> None:
+    # A property name may contain quotes and colons that make one
+    # subschema's text resemble a structurally different sibling's. Such
+    # similar-looking schemas must not share behavior: `y` must still
+    # accept its own declared shape.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "object", "properties": {'
+        '"x": {"type": "object", "properties": {"a\\":true,\\"b": {"type": "integer"}}}, '
+        '"y": {"type": "object", "properties": {"a": true, "b": {"type": "integer"}}}}, '
+        '"required": ["y"]}'
+    )
+    assert _accepts(compiled, '{"y": {"a": true, "b": 1}}')
+
+
+def test_gemma_4_property_names_max_length_zero_rejected_as_schema_error() -> (
+    None
+):
+    # maxLength 0 permits only the empty key, which a bare key cannot
+    # represent. This must surface as a schema-level rejection naming
+    # propertyNames, not fail later with an opaque internal error.
+    with pytest.raises(Exception, match="propertyNames"):
+        _gemma_compile({"type": "object", "propertyNames": {"maxLength": 0}})
+
+
+def test_gemma_4_property_names_explicit_min_length_zero_rejected() -> None:
+    # An explicit minLength of 0 affirmatively permits the empty key, which
+    # a bare key cannot represent. Silently tightening an author's explicit
+    # bound would misenforce the schema, so it is rejected. An ABSENT
+    # minimum makes no such promise and compiles: keys simply need at least
+    # one character.
+    with pytest.raises(Exception, match="minLength"):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"type": "string", "minLength": 0},
+            }
+        )
+
+    # An absent minimum still compiles (keys need at least one character).
+    m = _gemma_matcher_params(
+        {"type": "object", "propertyNames": {"type": "string", "maxLength": 3}}
+    )
+    assert _accept_ids(m, _gemma_encode("<|tool_call>call:f{abc"))
+
+
+def test_gemma_4_property_names_empty_matching_pattern_rejected() -> None:
+    # A propertyNames pattern whose language contains the empty string
+    # would let the grammar emit a zero-length bare key (`{: 1}`), which
+    # the format cannot represent. Reject under reject_unsupported.
+    with pytest.raises(Exception):
+        _gemma_compile({"type": "object", "propertyNames": {"pattern": "^a*$"}})
+
+
+def test_gemma_4_empty_matching_pattern_properties_key_rejected() -> None:
+    # Same hole through patternProperties: a key pattern matching the empty
+    # string could emit `{: 1}`.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "patternProperties": {"^a*$": {"type": "integer"}},
+            }
+        )
+
+
+def test_gemma_4_property_names_with_pattern_properties_rejected() -> None:
+    # patternProperties and propertyNames both constrain the key language,
+    # and enforcing both needs an unsupported key intersection -- fail closed
+    # rather than enforce only one.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "propertyNames": {"maxLength": 1},
+                "patternProperties": {"^a+$": {"type": "integer"}},
+            }
+        )
+
+
+def test_xml_root_forbidden_key_excluded_from_additional_branch() -> None:
+    # The XML formats must honor forbidden (false-schema) keys like every
+    # other format: `bar` must never be emittable, even though
+    # additionalProperties:true admits arbitrary other keys.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"bar": False},
+                "additionalProperties": True,
+            },
+            style="qwen_xml",
+        )
+    )
+    compiled = _compiler().compile_structural_tag(tag)
+    assert _accepts(compiled, "<parameter=baz>1</parameter>")
+    assert not _accepts(compiled, "<parameter=bar>1</parameter>")
+
+
+def test_xml_root_declared_key_excluded_from_additional_branch() -> None:
+    # Same for declared keys: `foo` is integer-typed, so it must not be
+    # emittable through the any-valued additional branch with a non-integer
+    # value.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"foo": {"type": "integer"}},
+                "additionalProperties": True,
+            },
+            style="qwen_xml",
+        )
+    )
+    compiled = _compiler().compile_structural_tag(tag)
+    assert _accepts(compiled, "<parameter=foo>1</parameter>")
+    assert not _accepts(compiled, "<parameter=foo>x</parameter>")
+
+
+def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:
+    # A bare-key alphabet that includes the characters used to terminate a key
+    # (whitespace or the colon) can't have declared names excluded reliably: an
+    # excluded name could be respelled as a distinct key that lenient parsers
+    # treat as the same one (e.g. `foo` + space). Such a terminal must fail
+    # closed under reject_unsupported.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a][a ]*",
+            bare_key_literal_forbidden=r":{},\x00-\x1f\x7f",
+            bare_key_pattern_forbidden=r"\t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    with pytest.raises(Exception):
+        _gemma_compiler().compile_structural_tag(tag)
+
+    # The full ASCII whitespace set is covered, not just the grammar's own
+    # separator characters: a form feed is strippable by lenient downstream
+    # parsers just like a space.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a][a\x0c]*",
+            bare_key_literal_forbidden=r":{},\x00-\x1f\x7f",
+            bare_key_pattern_forbidden=r"\t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    with pytest.raises(Exception):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_bare_key_terminal_non_ascii_rejected() -> None:
+    # Excluding declared names from a bare-key alphabet is only supported
+    # for ASCII alphabets; a terminal with a non-ASCII member must fail
+    # closed under reject_unsupported rather than be partially enforced.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"a": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal="[aé][aé]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=True,
+        )
+    )
+    with pytest.raises(Exception):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_gemma_4_declared_key_outside_alphabet_still_typed() -> None:
+    # A declared name containing a character outside the format's key
+    # alphabet (`$`) is still usable, and its value keeps its declared type.
+    params = {"properties": {"a$b": {"type": "integer"}}}
+
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok, _gemma_encode("<|tool_call>call:f{a$b:1}<tool_call|>")
+    )
+    assert ok.is_completed()
+
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(bad, _gemma_encode('<|tool_call>call:f{a$b:<|"|>'))
+
+
+def test_gemma_4_non_ascii_declared_key_supported() -> None:
+    # Non-ASCII declared property names are supported, and their values keep
+    # the declared type.
+    vocab = _GEMMA_VOCAB + ["é"]
+    ids = {tok: i for i, tok in enumerate(vocab)}
+    info = xgr.TokenizerInfo(
+        vocab,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[ids["<eos>"]],
+        special_token_ids=[ids[tok] for tok in _GEMMA_SPECIALS],
+    )
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4",
+        tools=_gemma_tool_with_params(
+            {"properties": {"clé": {"type": "integer"}}}
+        ),
+        tool_choice="required",
+        reasoning=False,
+    )
+    compiled = xgr.GrammarCompiler(info).compile_structural_tag(tag)
+
+    def encode(text: str) -> list[int]:
+        out: list[int] = []
+        i = 0
+        while i < len(text):
+            for sp in _GEMMA_SPECIALS:
+                if text.startswith(sp, i):
+                    out.append(ids[sp])
+                    i += len(sp)
+                    break
+            else:
+                out.append(ids[text[i]])
+                i += 1
+        return out
+
+    ok = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(ok, encode("<|tool_call>call:f{clé:1}<tool_call|>"))
+    assert ok.is_completed()
+
+    bad = xgr.GrammarMatcher(compiled)
+    assert not _accept_ids(bad, encode('<|tool_call>call:f{clé:<|"|>'))
+
+
+def test_gemma_4_property_names_non_ascii_pattern_keys() -> None:
+    # A propertyNames pattern may constrain keys to non-ASCII characters.
+    vocab = _GEMMA_VOCAB + ["é"]
+    ids = {tok: i for i, tok in enumerate(vocab)}
+    info = xgr.TokenizerInfo(
+        vocab,
+        vocab_type=xgr.VocabType.RAW,
+        stop_token_ids=[ids["<eos>"]],
+        special_token_ids=[ids[tok] for tok in _GEMMA_SPECIALS],
+    )
+    tag = xgr.get_builtin_structural_tag(
+        "gemma_4",
+        tools=_gemma_tool_with_params(
+            {"type": "object", "propertyNames": {"pattern": "^é+$"}}
+        ),
+        tool_choice="required",
+        reasoning=False,
+    )
+    compiled = xgr.GrammarCompiler(info).compile_structural_tag(tag)
+
+    def encode(text: str) -> list[int]:
+        out: list[int] = []
+        i = 0
+        while i < len(text):
+            for sp in _GEMMA_SPECIALS:
+                if text.startswith(sp, i):
+                    out.append(ids[sp])
+                    i += len(sp)
+                    break
+            else:
+                out.append(ids[text[i]])
+                i += 1
+        return out
+
+    ok = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(ok, encode("<|tool_call>call:f{é:1}<tool_call|>"))
+    assert ok.is_completed()
+
+    bad = xgr.GrammarMatcher(compiled)
+    assert not _accept_ids(bad, encode("<|tool_call>call:f{a"))
+
+
+def test_property_names_max_length_zero_permissive_forces_empty_object() -> (
+    None
+):
+    # Without reject_unsupported the schema is not rejected, but the grammar
+    # must still never emit a zero-length bare key: since only the empty key
+    # would satisfy maxLength 0, no property is emittable at all and the
+    # object can only be `{}`.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={"type": "object", "propertyNames": {"maxLength": 0}},
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=False,
+        )
+    )
+    compiled = _gemma_compiler().compile_structural_tag(tag)
+
+    ok = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(ok, _gemma_encode("{}"))
+    assert ok.is_completed()
+
+    no_empty_key = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(no_empty_key, _gemma_encode("{"))
+    assert not no_empty_key.accept_token(_GEMMA_ID[":"])
+
+    no_key = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(no_key, _gemma_encode("{"))
+    assert not no_key.accept_token(_GEMMA_ID["a"])
+
+
+def test_property_names_max_length_zero_with_declared_properties_forces_empty() -> (
+    None
+):
+    # propertyNames maxLength 0 constrains every key, including declared
+    # ones, to the empty key -- which a bare key cannot represent. So the
+    # only valid instance is `{}` and no key, declared or otherwise, is
+    # emittable.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"foo": {"type": "integer"}},
+                "propertyNames": {"maxLength": 0},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=False,
+        )
+    )
+    compiled = _gemma_compiler().compile_structural_tag(tag)
+
+    ok = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(ok, _gemma_encode("{}"))
+    assert ok.is_completed()
+
+    no_key = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(no_key, _gemma_encode("{"))
+    assert not no_key.accept_token(_GEMMA_ID["f"])
+
+
+def test_property_names_empty_only_with_min_properties_rejected() -> None:
+    # propertyNames admits only the empty key (unrepresentable as a bare key),
+    # so the object must be empty; minProperties>=1 makes that unsatisfiable.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": {"maxLength": 0},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=False,
+        )
+    )
+    with pytest.raises(Exception, match="propertyNames"):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_property_names_empty_only_with_required_rejected() -> None:
+    # Same conflict via required: a required key cannot be present when only
+    # the empty (unrepresentable) key is allowed.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "required": ["x"],
+                "propertyNames": {"maxLength": 0},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=False,
+        )
+    )
+    with pytest.raises(Exception, match="propertyNames"):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_property_names_empty_only_with_additional_properties_forces_empty() -> (
+    None
+):
+    # additionalProperties present but no lower bound: the object still
+    # collapses to `{}` (no key is representable) rather than admitting an
+    # additional key.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "propertyNames": {"maxLength": 0},
+                "additionalProperties": {"type": "string"},
+            },
+            string_value_delimiter_token='<|"|>',
+            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
+            bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
+            max_whitespace_cnt=1,
+            strict_mode=False,
+            require_object_root=True,
+            reject_unsupported=False,
+        )
+    )
+    compiled = _gemma_compiler().compile_structural_tag(tag)
+
+    ok = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(ok, _gemma_encode("{}"))
+    assert ok.is_completed()
+
+    no_key = xgr.GrammarMatcher(compiled)
+    assert _accept_ids(no_key, _gemma_encode("{"))
+    assert not no_key.accept_token(_GEMMA_ID["a"])
+
+
+def test_gemma_4_property_names_bounded_empty_pattern_rejected() -> None:
+    # A bounded-repetition pattern with a zero lower bound (`[a-z]{0,5}`) can
+    # match the empty string, so it could emit a zero-length bare key just
+    # like `[a-z]*`; it must be rejected under reject_unsupported.
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {"type": "object", "propertyNames": {"pattern": "[a-z]{0,5}"}}
+        )
+    with pytest.raises(Exception):
+        _gemma_compile(
+            {
+                "type": "object",
+                "patternProperties": {"[a-z]{0,5}": {"type": "integer"}},
+            }
+        )
+
+
+def test_gemma_4_property_names_bounded_nonempty_pattern_compiles() -> None:
+    # The complement: a bounded pattern that cannot match empty (`[a-z]{1,5}`)
+    # is a valid key constraint and still compiles.
+    m = _gemma_matcher_params(
+        {"type": "object", "propertyNames": {"pattern": "[a-z]{1,5}"}}
+    )
+    assert _accept_ids(m, _gemma_encode("<|tool_call>call:f{ab"))
+
+
+def test_gemma_4_property_names_key_cannot_be_empty() -> None:
+    # A bare key has no delimiters, so a zero-length key is unrepresentable:
+    # an unconstrained-string propertyNames must still require at least one
+    # key character (otherwise the grammar emits `{: 1}`).
+    m = _gemma_matcher_params(
+        {"type": "object", "propertyNames": {"type": "string"}}
+    )
+    assert _accept_ids(m, _gemma_encode("<|tool_call>call:f{a"))
+    ok = _gemma_matcher_params(
+        {"type": "object", "propertyNames": {"type": "string"}}
+    )
+    assert _accept_ids(ok, _gemma_encode("<|tool_call>call:f{"))
+    assert not ok.accept_token(_GEMMA_ID[":"])
+
+
 # Control/special tokens that the real Gemma tokenizer decodes to the empty
 # string with skip_special_tokens=True (channel/turn/tool/think markers, etc.).
 # The production backend derives exactly these from the tokenizer and force-marks
@@ -1985,7 +2730,6 @@ def test_gemma_4_property_names_bare_safe_compiles() -> None:
         {
             "type": "object",
             "propertyNames": {"type": "string", "pattern": "^[a-z_]+$"},
-            "additionalProperties": {"type": "string"},
         }
     )
     assert isinstance(compiled, xgr.CompiledGrammar)

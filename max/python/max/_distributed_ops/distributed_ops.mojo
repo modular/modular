@@ -14,7 +14,7 @@
 from std.collections import Array
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
@@ -109,12 +109,12 @@ def _do_broadcast[
         out_ptrs[i] = UnsafePointer[Scalar[DType.uint8], MutAnyOrigin](
             unsafe_from_address=out_addr
         )
-        # unsafe_write prevents DeviceContext.__del__ from dropping a
+        # unsafe_write prevents DeviceContext.__deinit__ from dropping a
         # refcount, so assigning into the uninitialized slot would destroy it
         var ctx_array_ptr: UnsafePointer[
             DeviceContext, origin_of(ctx_array)
         ] = ctx_array.unsafe_ptr()
-        (ctx_array_ptr + i).unsafe_write(
+        ctx_array_ptr.unsafe_offset(i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](unsafe_from_address=ctx_addr)
             )

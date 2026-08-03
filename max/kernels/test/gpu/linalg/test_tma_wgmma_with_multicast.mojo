@@ -17,8 +17,8 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
 from std.gpu import warp_id as get_warp_id
 from std.gpu.memory import fence_mbarrier_init
@@ -38,7 +38,7 @@ from layout.tma_async import (
     _idx_product,
     create_tma_tile,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -134,7 +134,7 @@ def multicast_tma_wgmma_kernel[
     var rank_m = block_rank / CLUSTER_N
     var rank_n = block_rank % CLUSTER_N
 
-    mbar = stack_allocation[
+    mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,

@@ -3,6 +3,16 @@
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo")
 load("@rules_mojo//mojo/private:utils.bzl", "MOJO_EXTENSIONS", "collect_mojoinfo", "format_import")  # buildifier: disable=bzl-visibility
 
+def _format_include(file):
+    return ["-I", file.dirname]
+
+def _root_directory(file):
+    # Pass srcs[0]'s dir through map_each so Bazel path-mapping rewrites it. A
+    # raw `.dirname` string is left unmapped, so a generated srcs[0] (e.g. an
+    # overlaid stdlib tree) would point at the un-stripped bazel-out path where
+    # the path-mapped inputs were never materialized.
+    return file.dirname
+
 def _mojo_doc_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
 
@@ -12,10 +22,10 @@ def _mojo_doc_implementation(ctx):
     file_args = ctx.actions.args()
     for file in ctx.files.srcs:
         if not file.dirname.startswith(root_directory):
-            file_args.add("-I", file.dirname)
+            file_args.add_all([file], map_each = _format_include)
 
     file_args.add_all(import_paths, map_each = format_import)
-    file_args.add(root_directory)
+    file_args.add_all([ctx.files.srcs[0]], map_each = _root_directory)
 
     mojodoc_output = ctx.actions.declare_file(ctx.label.name + ".mojodoc.json")
     ctx.actions.run(
@@ -31,7 +41,8 @@ def _mojo_doc_implementation(ctx):
                         mojodoc_output.path,
                         file_args,
                     ] + (["--docs-base-path", ctx.attr.docs_base_path] if ctx.attr.docs_base_path else []) +
-                    (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []),
+                    (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []) +
+                    ctx.attr.copts,
         progress_message = "%{label} generating mojodoc.json",
         env = {
             "MODULAR_HOME": ".",  # Make sure any cache files are written to somewhere bazel will cleanup
@@ -96,6 +107,13 @@ mojo_doc = rule(
             default = "none",
             values = ["all", "stable", "none"],
             doc = "Show stability markers in generated docs",
+        ),
+        "copts": attr.string_list(
+            default = [],
+            doc = "Extra flags passed to `mojo doc` (e.g. `--ignore-deprecated=...`). " +
+                  "Unlike `mojo_library`'s `copts`, these are not compiler flags in " +
+                  "the general sense -- only flags `mojo doc`'s own option table " +
+                  "recognizes are valid here.",
         ),
         "_mojodoc_json_to_markdown": attr.label(
             default = Label("//bazel/internal:mojodoc_json_to_markdown"),

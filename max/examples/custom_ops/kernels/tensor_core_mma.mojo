@@ -30,7 +30,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -42,7 +42,7 @@ from std.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
-from kernels.amd_helpers import (
+from .amd_helpers import (
     AMD_MMA,
     MMATileBuffers,
     amd_scheduling_hints,
@@ -114,7 +114,9 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 # Copy with transpose: element at (i,j) in original KxN goes to (j,i) in transposed NxK
                 for i in range(K):  # rows of original KxN matrix
                     for j in range(N):  # cols of original KxN matrix
-                        b_transposed_ptr[j * K + i] = b_tt._storage[i * N + j]
+                        b_transposed_ptr[
+                            unsafe_offset=j * K + i
+                        ] = b_tt._storage[unsafe_offset=i * N + j]
 
                 b_ptr_to_use = b_transposed_ptr.as_unsafe_any_origin()
             else:

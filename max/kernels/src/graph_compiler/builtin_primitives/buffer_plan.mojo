@@ -179,7 +179,7 @@ struct BufferPlanState[
         deinit self,
     ) -> Tuple[Int, Array[Int, Self.num_allocs]]:
         assert self.allocated == Self.num_allocs
-        return self.pool_size, self.offsets
+        return self.pool_size, self.offsets.copy()
 
     @always_inline
     def stats(self) -> BufferPlanStats:

@@ -25,7 +25,7 @@ Covers two paths:
 from std.collections import Optional
 from std.random import random_si64
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
@@ -169,9 +169,9 @@ def _run_8x8_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -285,9 +285,9 @@ def _run_8x8_bias_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )

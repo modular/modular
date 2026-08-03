@@ -20,21 +20,21 @@ struct HeapArray(Writable):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
-            (self.data + i).unsafe_write(values[i])
+            self.data.unsafe_offset(i).unsafe_write(values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         for i in range(self.size):
-            writer.write(self.data[i])
+            writer.write(self.data[unsafe_offset=i])
             if i < self.size - 1:
                 writer.write(", ")
         writer.write("]")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
-            (self.data + i).unsafe_deinit_pointee()
-        self.data.free()
+            self.data.unsafe_offset(i).unsafe_deinit_pointee()
+        self.data.unsafe_free()
 
 
 def main():

@@ -50,7 +50,7 @@ from comm.allreduce_residual_rmsnorm import (
 )
 from std.collections import Optional
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, coord_to_index_list, row_major

@@ -15,7 +15,7 @@ from std.math import iota
 from std.os import abort
 from std.sys import size_of
 
-from std.algorithm.functional import parallelize_over_rows
+from max.algorithm.functional import parallelize_over_rows
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -24,7 +24,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
 from std.testing import assert_almost_equal, assert_true
 
@@ -201,7 +201,7 @@ def bench_p2p(
         bencher_iter_custom[kernel_launch](b, ctx1)
 
     # Create list of throughput measures
-    var measures = [
+    var measures: List = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
     ]

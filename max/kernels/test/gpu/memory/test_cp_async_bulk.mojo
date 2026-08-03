@@ -14,7 +14,7 @@
 from std.sys import size_of
 
 from std.gpu import thread_idx, block_dim, barrier, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_global_shared_cta,
@@ -29,7 +29,7 @@ from std.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from layout.tma_async import SharedMemBarrier
@@ -48,10 +48,10 @@ def kernel_bulk_g2s[
 ):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
     ]()
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1, SharedMemBarrier, address_space=AddressSpace.SHARED
     ]()
 
@@ -114,7 +114,7 @@ def kernel_bulk_s2g[
 ](dst: UnsafePointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
     ]()
 
@@ -162,7 +162,7 @@ def kernel_bulk_reduce_s2g[
 ](dst: UnsafePointer[Float32, MutAnyOrigin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         NUM_ELEMS, Float32, address_space=AddressSpace.SHARED
     ]()
 

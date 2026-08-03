@@ -27,7 +27,7 @@ of bounds.
 
 from std.collections import Set
 from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
 from std.testing import assert_equal, assert_true
@@ -52,9 +52,11 @@ def _select_test_kernel[
 ](
     scores: TileTensor[DType.float32, ScoresLT, MutAnyOrigin],
     out_idxs: TileTensor[DType.int32, OutLT, MutAnyOrigin],
-    num_blocks: Int,
-    k: Int,
+    num_blocks_dev: Int32,
+    k_dev: Int32,
 ):
+    var num_blocks = Int(num_blocks_dev)
+    var k = Int(k_dev)
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
@@ -182,8 +184,8 @@ def _run_case(
     ctx.enqueue_function[kernel](
         scores_t,
         out_t,
-        num_blocks,
-        k,
+        Int32(num_blocks),
+        Int32(k),
         grid_dim=num_rows,
         block_dim=128,
     )

@@ -16,8 +16,10 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
-from std.algorithm import sync_parallelize, tile
-from std.gpu.host import DeviceContext
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -37,11 +39,11 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 
@@ -1137,12 +1139,12 @@ def _matmul_qint4_m_any[
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
-                var b_s8_buf = stack_allocation[
+                var b_s8_buf = unsafe_stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
                     DType.int8,
                     alignment=alignment,
                 ]()
-                var b_scale_buf = stack_allocation[
+                var b_scale_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.float32,
                     alignment=alignment,
@@ -1153,7 +1155,7 @@ def _matmul_qint4_m_any[
                 # accumulator.
                 comptime needs_correction = aq_type.is_unsigned()
 
-                var b_correction_buf = stack_allocation[
+                var b_correction_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,

@@ -129,7 +129,7 @@ def test_impl_shrink_realloc_empty_deque() raises:
 
 
 def test_impl_init_list() raises:
-    q = Deque(elements=Optional([Int(0), 1, 2]))
+    q = Deque(elements=Optional(List([Int(0), 1, 2])))
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
     assert_equal(q._capacity, q.default_capacity)
@@ -141,7 +141,7 @@ def test_impl_init_list() raises:
 
 
 def test_impl_init_list_args() raises:
-    q = Deque(elements=Optional([0, 1, 2]), maxlen=2, capacity=10)
+    q = Deque(elements=Optional(List([0, 1, 2])), maxlen=2, capacity=10)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
     assert_equal(q._capacity, 4)
@@ -334,7 +334,7 @@ def test_impl_appendleft_with_maxlen() raises:
 
 def test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
-    lst = [0, 1, 2]
+    lst: List = [0, 1, 2]
 
     q.extend(lst.copy())
     assert_equal(q._head, 0)
@@ -398,7 +398,7 @@ def test_impl_extend() raises:
 
 def test_impl_extendleft() raises:
     q = Deque[Int](maxlen=4)
-    lst = [0, 1, 2]
+    lst: List = [0, 1, 2]
 
     q.extendleft(lst.copy())
     # head wrapped to the end of the buffer
@@ -528,8 +528,8 @@ def test_impl_clear() raises:
 
 
 def test_impl_add() raises:
-    l1 = [1, 2, 3, 4, 5, 6, 7, 8]
-    l2 = [9, 10, 11, 12, 13, 14, 15, 16]
+    l1: List = [1, 2, 3, 4, 5, 6, 7, 8]
+    l2: List = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, capacity=20, maxlen=30)
     q2 = Deque(elements=l2^, min_capacity=200, shrink=False)
 
@@ -594,8 +594,8 @@ def test_impl_add() raises:
 
 
 def test_impl_iadd() raises:
-    l1 = [1, 2, 3, 4, 5, 6, 7, 8]
-    l2 = [9, 10, 11, 12, 13, 14, 15, 16]
+    l1: List = [1, 2, 3, 4, 5, 6, 7, 8]
+    l2: List = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, maxlen=10)
     q2 = Deque(elements=l2^, min_capacity=200, shrink=False)
 
@@ -628,7 +628,7 @@ def test_impl_iadd() raises:
 
 
 def test_impl_mul() raises:
-    l = [1, 2, 3]
+    l: List = [1, 2, 3]
     q = Deque(elements=l^, capacity=3, min_capacity=2, maxlen=7, shrink=False)
 
     q1 = q * 0
@@ -675,7 +675,7 @@ def test_impl_mul() raises:
 
 
 def test_impl_imul() raises:
-    l = [1, 2, 3]
+    l: List = [1, 2, 3]
 
     q = Deque(
         elements=l.copy(), capacity=3, min_capacity=2, maxlen=7, shrink=False
@@ -769,8 +769,8 @@ def test_copy_trivial() raises:
 
 def test_copy_list() raises:
     q = Deque[List[Int]]()
-    lst1 = [1, 2, 3]
-    lst2 = [4, 5, 6]
+    lst1: List = [1, 2, 3]
+    lst2: List = [4, 5, 6]
     q.append(lst1.copy())
     q.append(lst2^)
     assert_equal(q[0], lst1)
@@ -788,8 +788,8 @@ def test_copy_list() raises:
 
 def test_move_list() raises:
     q = Deque[List[Int]]()
-    lst1 = [1, 2, 3]
-    lst2 = [4, 5, 6]
+    lst1: List = [1, 2, 3]
+    lst2: List = [4, 5, 6]
     q.append(lst1.copy())
     q.append(lst2^)
     assert_equal(q[0], lst1)
@@ -1055,8 +1055,8 @@ def test_iter() raises:
 
 def test_iter_with_list() raises:
     q = Deque[List[Int]]()
-    lst1 = [1, 2, 3]
-    lst2 = [4, 5, 6]
+    lst1: List = [1, 2, 3]
+    lst2: List = [4, 5, 6]
     q.append(lst1.copy())
     q.append(lst2.copy())
     assert_equal(len(q), 2)
@@ -1291,7 +1291,7 @@ def test_deque_empty_deinit_with() raises:
 
 # We use `MutAnyOrigin` to bypass exclusivity checking
 # otherwise we cannot construct a deque of Observables where
-# all point to the same copy/move/del counter.
+# all point to the same copy/move/deinit counter.
 comptime ObservableElement = Observable[
     CopyOrigin=MutAnyOrigin,
     MoveOrigin=MutAnyOrigin,

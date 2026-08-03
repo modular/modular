@@ -59,8 +59,8 @@ from std.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import _is_sm10x_gpu
 
 from std.utils import StaticTuple
 
@@ -176,9 +176,9 @@ def _allgather_p2p_kernel[
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    lengths: StaticTuple[Int, ngpus],
-    max_num_blocks: Int,
-    my_rank: Int,
+    lengths: StaticTuple[Int32, ngpus],
+    max_num_blocks: Int32,
+    my_rank: Int32,
 ):
     """P2P kernel for allgather operation.
 
@@ -190,7 +190,8 @@ def _allgather_p2p_kernel[
 
     var global_tid = global_idx.x
     var stride = grid_dim.x * BLOCK_SIZE
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var my_sig = rank_sigs[_my_rank]
 
     var src_ptrs_rr = Array[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
@@ -200,15 +201,15 @@ def _allgather_p2p_kernel[
     )
     var lengths_rr = Array[Int, ngpus](uninitialized=True)
     for i in range(ngpus):
-        var target = circular_add[ngpus](my_rank, i)
+        var target = circular_add[ngpus](_my_rank, i)
         src_ptrs_rr[i] = src_ptrs[target]
         out_ptrs_rr[i] = outputs[target]
-        lengths_rr[i] = lengths[target]
+        lengths_rr[i] = Int(lengths[target])
 
     with PDL():
         # Synchronize before reading.
         _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
         # Copy each source GPU's data to its output buffer (outputs[i] holds
@@ -259,7 +260,7 @@ def _allgather_p2p_kernel[
 
         # Synchronize after writing.
         _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
 
@@ -278,8 +279,8 @@ def _allgather_tma_kernel[
     outputs: StaticTuple[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus],
     src_ptrs: StaticTuple[UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    lengths: StaticTuple[Int, ngpus],
-    my_rank: Int,
+    lengths: StaticTuple[Int32, ngpus],
+    my_rank: Int32,
 ):
     """Allgather using cp.async.bulk TMA instructions.
 
@@ -292,7 +293,8 @@ def _allgather_tma_kernel[
     """
     comptime NUM_WARPS = BLOCK_SIZE // WARP_SIZE
 
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var my_sig = rank_sigs[_my_rank]
 
     var smem_base = external_memory[
         UInt8, address_space=AddressSpace.SHARED, alignment=128
@@ -322,7 +324,7 @@ def _allgather_tma_kernel[
         .bitcast[UInt8]()
         .address_space_cast[AddressSpace.GLOBAL]()
     )
-    var nbytes = lengths[my_src_idx] * size_of[dtype]()
+    var nbytes = Int(lengths[my_src_idx]) * size_of[dtype]()
     var smem = smem_base + warp * BYTES_PER_COPY
     var mbar = mbar_base + warp
 
@@ -336,7 +338,7 @@ def _allgather_tma_kernel[
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
         if is_leader:
@@ -361,7 +363,7 @@ def _allgather_tma_kernel[
                 cp_async_bulk_wait_group[0]()
 
         _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
 
@@ -376,7 +378,7 @@ def _allgather_p2p_tma[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], ngpus
     ],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    lengths: StaticTuple[Int, ngpus],
+    lengths: StaticTuple[Int32, ngpus],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
@@ -395,7 +397,7 @@ def _allgather_p2p_tma[
 
     var max_length = 0
     for i in range(ngpus):
-        max_length = max(max_length, lengths[i])
+        max_length = max(max_length, Int(lengths[i]))
 
     # Dynamic grid: at least 1 block, scale with data volume,
     var total_chunks = ceildiv(
@@ -418,7 +420,7 @@ def _allgather_p2p_tma[
         list_of_in_ptrs,
         rank_sigs,
         lengths,
-        my_rank,
+        Int32(my_rank),
         grid_dim=tma_grid,
         block_dim=TMA_BLOCK_SIZE,
         shared_mem_bytes=tma_smem,
@@ -471,6 +473,11 @@ def _allgather_p2p[
             UnsafePointer[Scalar[dtype], MutAnyOrigin]
         ](output_buffers[src_idx]._storage)
 
+    # Build Int32 versions for passing to GPU kernels.
+    var lengths_i32 = StaticTuple[Int32, ngpus]()
+    comptime for i in range(ngpus):
+        lengths_i32[i] = Int32(lengths[i])
+
     # TMA path: NVIDIA sm100+ with 16-byte-aligned (possibly zero) inputs.
     # Uses cp.async.bulk DMA for both NVLink reads and local HBM writes.
     comptime _use_tma = _is_sm10x_gpu(ctx.default_device_info)
@@ -485,7 +492,7 @@ def _allgather_p2p[
                 output_ptrs,
                 list_of_in_ptrs,
                 rank_sigs,
-                lengths,
+                lengths_i32,
                 ctx,
                 my_rank,
             )
@@ -523,9 +530,9 @@ def _allgather_p2p[
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
-        lengths,
-        max_num_blocks,
-        my_rank,
+        lengths_i32,
+        Int32(max_num_blocks),
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel.ON),

@@ -17,8 +17,8 @@ from std.random import rand, random_si64
 from std.math import ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import MI355X
 from layout import (
     Coord,
     Idx,
@@ -142,9 +142,9 @@ def test[
             c_ref_tensor,
             a_tensor.as_immut(),
             b_tensor.as_immut(),
-            m,
-            n,
-            k,
+            Int32(m),
+            Int32(n),
+            Int32(k),
             grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )

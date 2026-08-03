@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import get_defined_int
 from std.gpu.primitives.grid_controls import pdl_launch_attributes
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     Dim,
@@ -29,7 +29,7 @@ from std.gpu.host import (
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.common import (
@@ -167,7 +167,10 @@ def mha_sm100_dispatch[
         pair_cta=pair_cta,
     )
     comptime assert fa4_config_2q.supported(), fa4_config_2q.description()
-    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
+
+    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+        q_arg.origin
+    ]()
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)

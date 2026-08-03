@@ -26,7 +26,7 @@ honored one of two mutually exclusive ways:
 """
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.sys import size_of
 
@@ -140,12 +140,9 @@ def fused_bias_residual_matmul_dispatch_sm100[
         _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
     )
 
-    @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
     comptime small_MN_gemms_configs = small_MN_gemms_table.find(
-        rule=small_MN_gemms_rule
+        rule=lambda (x: TuningConfigSmallMNGemms) -> Bool: x.K == static_K
+        and x.N == static_N
     )
 
     comptime if small_MN_gemms_configs:

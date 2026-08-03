@@ -3,8 +3,8 @@ title: Eager execution
 description: Use the eager API to create tensors, apply operations, inspect intermediate values, and run a forward pass.
 ---
 
-The [`max.experimental`](/max/api/python/experimental/) API abstracts the MAX
-framework's [graph](/max/develop/graph/) foundation so you can write and run
+The [`max.experimental`](/api/python/experimental/) API abstracts the MAX
+framework's [graph](/develop/graph/) foundation so you can write and run
 models using PyTorch-like programming patterns. In other words, this API lets
 you execute models eagerly, without thinking about graph compilation. The
 fastest way to learn the API is to walk through the steps of building a small
@@ -12,16 +12,16 @@ forward pass.
 
 :::note
 
-The [`max.experimental`](/max/api/python/experimental/) API is still under
-active development. Use the stable [`max.graph`](/max/api/python/graph) and
-[`max.nn`](/max/api/python/nn) APIs to create production-ready models. Learn
-more in [Graph overview](/max/develop/graph/).
+The [`max.experimental`](/api/python/experimental/) API is still under
+active development. Use the stable [`max.graph`](/api/python/graph) and
+[`max.nn`](/api/python/nn) APIs to create production-ready models. Learn
+more in [Graph overview](/develop/graph/).
 
 :::
 
 ## Create a tensor
 
-A [`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor/) is the
+A [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) is the
 fundamental data structure for eager execution. This example creates a `Tensor`
 with hard-coded data:
 
@@ -65,7 +65,7 @@ print(d)
 ```
 
 Here are some
-[`max.experimental.functional`](/max/api/python/experimental.functional) APIs
+[`max.experimental.functional`](/api/python/experimental.functional) APIs
 in use:
 
 {/* @sync: ../../code/develop/index/functional_api.py */}
@@ -170,9 +170,9 @@ errors appear at the line that caused them.
 Now that you know how to write a small forward pass, explore more deeply about
 the building blocks you'll use day-to-day:
 
-- [Tensor fundamentals](/max/develop/tensors): Learn what tensors are,
+- [Tensor fundamentals](/develop/tensors): Learn what tensors are,
   how to create them, and how to inspect their attributes.
-- [Basic operations](/max/develop/basic-ops): Apply arithmetic operators,
+- [Basic operations](/develop/basic-ops): Apply arithmetic operators,
   reductions, and the functional API to tensors.
-- [Data types](/max/develop/dtypes): Specify how each element in a tensor is
+- [Data types](/develop/dtypes): Specify how each element in a tensor is
   represented in memory.

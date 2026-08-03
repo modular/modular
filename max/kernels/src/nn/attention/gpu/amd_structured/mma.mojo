@@ -21,7 +21,7 @@ shared-memory-to-register load logic for the two sequential attention
 GEMMs (P = Q @ K^T and O += P @ V).
 """
 
-from std.gpu.compute.mma import mma as gpu_mma
+from max.gpu.compute.mma import mma as gpu_mma
 from std.gpu import lane_id, WARP_SIZE
 from std.gpu.intrinsics import ds_read_tr16_b64
 from std.math.uutils import ufloordiv, umod

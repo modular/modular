@@ -56,15 +56,15 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import Layout, RowMajorLayout, TileTensor, row_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
@@ -1600,7 +1600,9 @@ def blackwell_swiglu_warp_specialized_kernel[
 
     # ===== Shared memory =====
     var smem_bytes = external_memory[
-        Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
     ]()
     ref smem = smem_bytes.bitcast[SmemType]()[]
     var ptr_tmem_addr: UnsafePointer[

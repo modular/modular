@@ -13,8 +13,8 @@
 
 from std.compile import compile_info
 from std.gpu import barrier, thread_idx
-from std.gpu.host import get_gpu_target
-from std.memory import stack_allocation
+from max.gpu.host import get_gpu_target
+from std.memory import unsafe_stack_allocation
 from std.testing import *
 from std.testing import TestSuite
 from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
@@ -83,8 +83,10 @@ def test_data_layout_llvm() raises:
 def test_data_layout_asm() raises:
     @parameter
     def my_func(src: Pointer[Int32, ImmutAnyOrigin]):
-        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
-        a[thread_idx.x] = src[unsafe_offset=0]
+        var a = unsafe_stack_allocation[
+            20, Int32, address_space=AddressSpace.SHARED
+        ]()
+        a[unsafe_offset=thread_idx.x] = src[unsafe_offset=0]
         barrier()
 
     var target_short_asm = compile_info[

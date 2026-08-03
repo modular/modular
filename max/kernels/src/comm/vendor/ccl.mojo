@@ -20,7 +20,7 @@ availability probes.
 
 from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.utils import IndexList
 from std.ffi import _CPointer, _get_global_or_null, external_call
 from std.ffi import _find_dylib
@@ -30,7 +30,7 @@ from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
 from std.memory.unsafe_pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
@@ -323,7 +323,7 @@ def _check_ccl_ok(status: ncclResult_t) raises:
 def _get_global_comms(ngpus: Int) raises -> Communicators:
     var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     if global_ptr := _get_global_or_null(NAME):
-        return global_ptr.value().bitcast[Communicators]()[]
+        return global_ptr.value().unsafe_bitcast[Communicators]()[]
 
     if ngpus > MAX_GPUS:
         raise Error("too many GPUs for CCL")
@@ -375,7 +375,7 @@ def wait_for_comms(ngpus: Int):
 def allreduce[
     dtype: DType,
     in_layout: TensorLayout,
-    in_origin: Origin[mut=False],
+    in_origin: ImmOrigin,
     rank_sigs_origin: Origin[mut=True],
     out_layout: TensorLayout,
     out_origin: MutOrigin,
@@ -503,7 +503,7 @@ def is_broadcast_available() -> Bool:
 def allgather[
     dtype: DType,
     in_layout: TensorLayout,
-    in_origin: Origin[mut=False],
+    in_origin: ImmOrigin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
     //,

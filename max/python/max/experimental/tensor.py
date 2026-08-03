@@ -992,7 +992,10 @@ class Tensor(DLPackArray, HasTensorValue):
         return instance
 
     def _as_constant_external(
-        self, name: str, align: int | None = None
+        self,
+        name: str,
+        align: int | None = None,
+        is_placeholder: bool = False,
     ) -> Tensor:
         """Creates graph external constant(s) matching ``self``'s layout.
 
@@ -1007,6 +1010,9 @@ class Tensor(DLPackArray, HasTensorValue):
             name: The name of the constant.
             align: The alignment of the constant. If not provided,
                 the default alignment for the tensor's dtype will be used.
+            is_placeholder: When :obj:`True`, marks the constant(s) as
+                placeholders resolved by the enclosing subgraph call's
+                ``prefix`` (see :func:`max.graph.ops.call`).
 
         Returns:
             A tensor on the requested placement initialized from the
@@ -1014,7 +1020,9 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         if not self.is_distributed:
             stype = TensorType(self.dtype, self.shape, CPU())
-            return F.constant_external(name, stype, align=align).to(self.device)
+            return F.constant_external(
+                name, stype, align=align, is_placeholder=is_placeholder
+            ).to(self.device)
         assert self._mapping is not None
         _mesh = self._mapping.mesh
         values = []
@@ -1022,7 +1030,12 @@ class Tensor(DLPackArray, HasTensorValue):
         for i in range(_mesh.num_devices):
             local = local_shape_at(shape, i)
             stype = TensorType(self.dtype, local, CPU())
-            t = F.constant_external(f"{name}._shard.{i}", stype, align=align)
+            t = F.constant_external(
+                f"{name}._shard.{i}",
+                stype,
+                align=align,
+                is_placeholder=is_placeholder,
+            )
             t = t.to(_mesh.devices[i])
             values.append(t._graph_value)
         return current_realization_context().create_unrealized(

@@ -35,7 +35,7 @@ from std.gpu.memory import (
 from std.gpu.sync import (
     named_barrier,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -47,7 +47,7 @@ from layout.tma_async import (
     TMATensorTile,
     _gather4_box_width,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
@@ -354,7 +354,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             SplitAccumType=Self.SplitAccumType,
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        indices_stride: Int,
+        indices_stride_dev: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         attn_sink_ptr: OptionalReg[
@@ -371,7 +371,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_indices_stride: Int,
+        extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
             UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
@@ -405,6 +405,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         comptime num_reg_correction = 72
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
+        var indices_stride = Int(indices_stride_dev)
+        var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.ptr[0])
         var q_max_seq_len = Int(scalar_args.ptr[1])
         var num_partitions = mla_decode_pack.num_partitions

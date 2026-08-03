@@ -16,7 +16,7 @@ from std.os import abort
 from std.random import randn
 from std.sys import get_defined_int, size_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -25,7 +25,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major, coord_to_index_list
 from nn.concat import _concat_gpu_elementwise, _concat_inner_most_single_dim
 

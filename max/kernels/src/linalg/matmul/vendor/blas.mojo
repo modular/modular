@@ -94,7 +94,7 @@ from _rocblas.rocblas import (
     rocblas_create_handle,
     rocblas_destroy_handle,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
 from layout import (
@@ -109,11 +109,13 @@ from layout import (
 )
 from layout.tile_tensor import NullableTileTensor
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils import IndexList
 from std.utils.variant import Variant
-from std.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
+from max.gpu.host.info import B200, _is_sm10x_gpu, _is_sm12x_gpu
 from std.collections import OptionalReg
+
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -212,7 +214,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
     """
 
     comptime resolved_backend = _resolve_backend[Self.backend]()
-    comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
+    comptime _cublas_type = Optional[OpaquePointer[MutAnyOrigin]]
     comptime _rocblas_type = _rocblas.Handle
     comptime _hipblaslt_type = hipblasLtHandle_t
     comptime type = Variant[
@@ -313,26 +315,26 @@ comptime _DEBUG_VENDOR_BLAS = False
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: UnsafePointer[T, origin, address_space=addr]) -> UnsafePointer[
-    NoneType, MutAnyOrigin
+](ptr: UnsafePointer[T, origin, address_space=addr]) -> OpaquePointer[
+    MutAnyOrigin
 ]:
     """Cast any pointer to a void pointer for vendor FFI calls."""
-    return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr)
+    return rebind[OpaquePointer[MutAnyOrigin]](ptr)
 
 
 @always_inline
 def _ffi_void_ptr[
     T: AnyType, origin: Origin, addr: AddressSpace
-](ptr: Optional[UnsafePointer[T, origin, address_space=addr]]) -> Optional[
-    UnsafePointer[NoneType, MutAnyOrigin]
-]:
+](
+    ptr: Optional[UnsafePointer[T, origin, address_space=addr]]
+) -> OptionalPointer[NoneType, MutAnyOrigin]:
     """Cast an optional non-null pointer to a nullable void pointer for vendor
     FFI calls.
 
     Returns None when the optional is empty.
     """
     if ptr:
-        return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr.unsafe_value())
+        return rebind[OpaquePointer[MutAnyOrigin]](ptr.unsafe_value())
     return None
 
 
@@ -367,7 +369,7 @@ def _get_global_handle[
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
     if global_ptr := _get_global_or_null(HANDLE_NAME):
-        var ptr = global_ptr.value().bitcast[Handle[backend]]()
+        var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]
 
@@ -663,7 +665,7 @@ def matmul[
         elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
-                _ffi_void_ptr(handle._get_cublas()),
+                handle._get_cublas(),
                 c_tensor,
                 a_tensor,
                 b_tensor,
@@ -1393,6 +1395,7 @@ def _cublasLt_matmul[
         workspace_size
     )
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         check_cublas_error(
             cublasLtMatmul(
@@ -1412,7 +1415,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
                 .as_imm()
@@ -1444,7 +1447,7 @@ def _cublasLt_matmul[
                 .as_unsafe_any_origin(),  # beta
                 None,  # _c
                 _cdesc,  # _cdesc
-                _ffi_void_ptr(d.ptr),  # _d
+                d_void,  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo)
                 .as_imm()
@@ -1726,6 +1729,7 @@ def _hipblasLt_matmul[
     var workspace_size = heuristicResult.workspaceSize
     var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
 
+    var d_void = _ffi_void_ptr(d.ptr)
     if c_row_major:
         _check_hipblas_error(
             hipblasLtMatmul(
@@ -1737,9 +1741,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(a.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),
@@ -1758,9 +1762,9 @@ def _hipblasLt_matmul[
                 _ffi_void_ptr(b.ptr),
                 _bdesc,
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
-                _ffi_void_ptr(d.ptr),
+                d_void,
                 _ddesc,
                 UnsafePointer(to=heuristicResult.algo),
                 workspace.unsafe_ptr().bitcast[NoneType](),

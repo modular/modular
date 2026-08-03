@@ -84,10 +84,10 @@ def _metrics_url(framework: str) -> str:
 #   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
-    "deepseek-ai/DeepSeek-R1-0528": "max/pipelines/architectures/deepseekV3/recipes/r1_0528_8x_b200.yaml",
-    "deepseek-ai/DeepSeek-R1-0528__modulev3": "max/pipelines/architectures/deepseekV3_modulev3/recipes/r1_0528_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V3.1-Terminus__modulev3": "max/pipelines/architectures/deepseekV3_modulev3/recipes/terminus_8x_b200.yaml",
+    "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
@@ -117,8 +117,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_tp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_tp_8x_b200.yaml",
     "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": "max/pipelines/architectures/qwen3/recipes/qwen3_235b_a22b_8x_b200.yaml",
-    "unsloth/gpt-oss-20b-BF16__modulev3": "max/pipelines/architectures/gpt_oss_modulev3/recipes/gpt_oss_20b.yaml",
     "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
     "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
@@ -183,7 +181,8 @@ class ServerCommand(NamedTuple):
 def is_vision_model(model: str) -> bool:
     """Check if the model supports vision tasks."""
     model = model.casefold()
-    if any(kw in model for kw in ("gemma-3-1b",)):
+    # gemma-4-12B is served text-only in MAX (gemma4_unified arch).
+    if any(kw in model for kw in ("gemma-3-1b", "gemma-4-12b")):
         return False
     return any(
         kw in model
@@ -446,6 +445,9 @@ def get_server_cmd(
         "--limit-mm-per-prompt.video",
         "0",
     ]
+    # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
+    if "inkling" in model.casefold():
+        VLLM += ["--gpu-memory-utilization", "0.8"]
     MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
 
     if gpu_count > 1:

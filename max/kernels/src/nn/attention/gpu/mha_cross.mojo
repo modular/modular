@@ -22,7 +22,7 @@ from std.sys import align_of, simd_width_of
 
 from std.algorithm.functional import vectorize
 from std.gpu import block_idx, global_idx
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
@@ -53,16 +53,23 @@ def _bmm0_bs[
         DType.uint32, KVLayoutType, ImmutAnyOrigin
     ],
     scale: Float32,
-    batch_size: Int,
-    q_max_seq_len: Int,
+    batch_size: Int32,
+    q_max_seq_len: Int32,
     # The maximum current sequence length in the KV cache.
-    kv_max_seq_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
+    kv_max_seq_len: Int32,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
     mask_functor: mask_t,
 ):
+    var _batch_size = Int(batch_size)
+    var _q_max_seq_len = Int(q_max_seq_len)
+    var _kv_max_seq_len = Int(kv_max_seq_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
     comptime assert q_input_row_offsets.flat_rank == 1
     comptime assert kv_input_row_offsets.flat_rank == 1
 
@@ -75,35 +82,35 @@ def _bmm0_bs[
     comptime kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = block_idx.z
-    var batch, head = udivmod(batch_head, num_heads)
+    var batch, head = udivmod(batch_head, _num_heads)
 
     var cur_query_len: Int
     var cur_kv_len: Int
     var q_offset: Int
     var num_keys: Int
-    var padded_num_keys = kv_max_seq_len + max_cache_size
-    var p_offset = batch_head * q_max_seq_len * padded_num_keys
+    var padded_num_keys = _kv_max_seq_len + _max_cache_size
+    var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
-    q_offset = (q_seq_start * num_heads + head) * depth
+    q_offset = (q_seq_start * _num_heads + head) * _depth
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
-    # num_heads * kv_max_seq_len * batch * depth + depth * head
+    # _num_heads * _kv_max_seq_len * batch * _depth + _depth * head
     num_keys = cur_kv_len + k_cache.cache_length(batch)
 
-    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
-    assert num_keys <= padded_num_keys, "Invalid max_cache_size"
+    assert cur_kv_len <= _kv_max_seq_len, "Invalid cur_kv_len"
+    assert num_keys <= padded_num_keys, "Invalid _max_cache_size"
 
-    if x >= (kv_max_seq_len + max_cache_size) or y >= q_max_seq_len:
+    if x >= (_kv_max_seq_len + _max_cache_size) or y >= _q_max_seq_len:
         return
 
     var q = q_ptr + q_offset
 
-    var kv_head = ufloordiv(head, group)
+    var kv_head = ufloordiv(head, _group)
 
     var p = p_ptr + p_offset
 
@@ -116,10 +123,10 @@ def _bmm0_bs[
 
         def accum_fn[
             width: Int
-        ](offset: Int) {q, y, num_heads, depth, k_ptr, mut}:
+        ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
-                y * num_heads * depth + offset
+                y * _num_heads * _depth + offset
             ).cast[k_type]()
             var k_val = k_ptr.load[width=width, alignment=alignment](offset)
             var qk_val = (q_val * k_val).cast[p_type]()
@@ -129,7 +136,7 @@ def _bmm0_bs[
             else:
                 accum_vec += rebind[type_of(accum_vec)](qk_val)
 
-        vectorize[simd_width_of[p_type]()](depth, accum_fn)
+        vectorize[simd_width_of[p_type]()](_depth, accum_fn)
         accum += accum_vec.reduce_add()
 
     var score_row = y
@@ -162,13 +169,19 @@ def _bmm1_bs[
     kv_input_row_offsets: TileTensor[
         DType.uint32, KVLayoutType, ImmutAnyOrigin
     ],
-    q_max_seq_len: Int,
-    kv_max_seq_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
+    q_max_seq_len: Int32,
+    kv_max_seq_len: Int32,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
 ):
+    var _q_max_seq_len = Int(q_max_seq_len)
+    var _kv_max_seq_len = Int(kv_max_seq_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
     comptime assert q_input_row_offsets.flat_rank == 1
     comptime assert kv_input_row_offsets.flat_rank == 1
 
@@ -181,33 +194,33 @@ def _bmm1_bs[
     var y = global_idx.y
 
     var batch_head = block_idx.z
-    var batch, head = udivmod(batch_head, num_heads)
+    var batch, head = udivmod(batch_head, _num_heads)
 
     var cur_query_len: Int
     var cur_kv_len: Int
     var output_offset: Int
-    var padded_num_keys = kv_max_seq_len + max_cache_size
-    var p_offset = batch_head * q_max_seq_len * padded_num_keys
+    var padded_num_keys = _kv_max_seq_len + _max_cache_size
+    var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
     q_seq_start = Int(q_input_row_offsets[batch])
     q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
-    output_offset = (q_seq_start * num_heads + head) * depth
+    output_offset = (q_seq_start * _num_heads + head) * _depth
 
     kv_seq_start = Int(kv_input_row_offsets[batch])
     kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
 
-    assert cur_query_len <= q_max_seq_len, "Invalid cur_query_len"
-    assert cur_kv_len <= kv_max_seq_len, "Invalid cur_kv_len"
+    assert cur_query_len <= _q_max_seq_len, "Invalid cur_query_len"
+    assert cur_kv_len <= _kv_max_seq_len, "Invalid cur_kv_len"
 
-    if x >= depth or y >= cur_query_len:
+    if x >= _depth or y >= cur_query_len:
         return
 
     var p = p_ptr + p_offset
 
-    var kv_head = ufloordiv(head, group)
+    var kv_head = ufloordiv(head, _group)
     var output = output_ptr + output_offset
 
     var accum = Float32(0.0)
@@ -218,7 +231,7 @@ def _bmm1_bs[
             DType.float32
         ]()
 
-    output[y * num_heads * depth + x] = accum.cast[output_type]()
+    output[y * _num_heads * _depth + x] = accum.cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -350,13 +363,13 @@ def mha_cross_gpu_naive[
         q_input_row_offsets,
         kv_input_row_offsets,
         scale,
-        batch_size,
-        q_max_seq_len,
-        kv_max_seq_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
+        Int32(batch_size),
+        Int32(q_max_seq_len),
+        Int32(kv_max_seq_len),
+        Int32(max_cache_size),
+        Int32(num_heads),
+        Int32(depth),
+        Int32(group),
         mask_functor,
         grid_dim=(
             ceildiv(num_keys, 32),
@@ -397,12 +410,12 @@ def mha_cross_gpu_naive[
         v,
         q_input_row_offsets,
         kv_input_row_offsets,
-        q_max_seq_len,
-        kv_max_seq_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
+        Int32(q_max_seq_len),
+        Int32(kv_max_seq_len),
+        Int32(max_cache_size),
+        Int32(num_heads),
+        Int32(depth),
+        Int32(group),
         grid_dim=(
             ceildiv(depth, 32),
             ceildiv(q_max_seq_len, 16),

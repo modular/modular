@@ -13,7 +13,7 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
-from std.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceContext, DeviceContextArray
 from std.runtime.asyncrt import TaskGroup, task_id_for_device
 
 
@@ -70,5 +70,7 @@ def _launch_device_collective[
 
     _launch_device_collective[num_devices](
         func,
-        rebind[Array[DeviceContext, num_devices]](dev_ctxs.device_contexts^),
+        rebind[Array[DeviceContext, num_devices]](
+            dev_ctxs.device_contexts^
+        ).copy(),
     )

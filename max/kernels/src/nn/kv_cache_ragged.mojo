@@ -18,10 +18,12 @@ from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
 from std.memory.alloc import Layout as AllocLayout
 
-from std.algorithm.functional import elementwise, unswitch
+from std.algorithm.functional import unswitch
+
+from max.algorithm.functional import elementwise
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
@@ -77,7 +79,7 @@ from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList
 

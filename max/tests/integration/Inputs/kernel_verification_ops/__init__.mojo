@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
 from extensibility import (
@@ -101,8 +101,8 @@ struct MyIntMemory(Movable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyInt del")
+    def __deinit__(deinit self):
+        print("MyInt ")
 
 
 @extensibility.register("make_my_int_memory")
@@ -182,7 +182,7 @@ def binary_kernel_with_raises_shape(
 struct MutableInputTensorKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
 @extensibility.register("op_with_int_parameter")

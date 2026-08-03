@@ -23,8 +23,8 @@ from std.benchmark import (
     BenchmarkInfo,
     Report,
 )
-from std.gpu.host import DeviceContext
-from std.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
 
 
 # ===----------------------------------------------------------------------=== #

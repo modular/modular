@@ -41,7 +41,7 @@ from comm.broadcast import broadcast
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
@@ -210,7 +210,7 @@ struct DistributedAllReduceSum:
                 )
 
             _launch_device_collective[num_devices](
-                launch_vendor_allreduce, dev_ctxs_input
+                launch_vendor_allreduce, dev_ctxs_input.copy()
             )
             return
 
@@ -244,7 +244,9 @@ struct DistributedAllReduceSum:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allreduce, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.reducescatter.sum")
@@ -382,7 +384,7 @@ struct DistributedReduceScatterSum:
             )
 
         _launch_device_collective[num_devices](
-            launch_reducescatter, dev_ctxs_input
+            launch_reducescatter, dev_ctxs_input.copy()
         )
 
 
@@ -509,7 +511,9 @@ struct DistributedAllGather:
                 local_rank,
             )
 
-        _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_allgather, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.broadcast")
@@ -599,7 +603,7 @@ struct DistributedBroadcast:
                 outputs[index]
                 .to_tile_tensor[DType.int64]()
                 .make_dynamic[DType.int64]()
-                .ptr,
+                ._storage,
                 in_buf.layout,
             )
             broadcast[num_devices](
@@ -610,7 +614,9 @@ struct DistributedBroadcast:
                 root,
             )
 
-        _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
+        _launch_device_collective[num_devices](
+            launch_broadcast, dev_ctxs_input.copy()
+        )
 
 
 @extensibility.register("mo.distributed.scatter")
@@ -698,7 +704,7 @@ struct DistributedScatter:
                 dev_ctxs_input[index],
             )
 
-        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
+        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input.copy())
 
 
 @extensibility.register(
@@ -841,7 +847,9 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_allreduce, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.reduce_scatter_rms_norm")
@@ -1001,7 +1009,9 @@ struct DistributedReduceScatterRMSNorm:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_rs_norm, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_rs_norm, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.allgather_rms_norm")
@@ -1070,12 +1080,10 @@ struct DistributedAllGatherRMSNorm:
         comptime InputTensorType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
-        var in_tensors = InlineArray[InputTensorType, num_devices](
+        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
+        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
             uninitialized=True
         )
-        var rank_sigs = InlineArray[
-            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -1115,12 +1123,12 @@ struct DistributedAllGatherRMSNorm:
                 # (natural concat order) so the norm runs over the whole tensor.
                 var cols_rt = Int(sum_buf.dim[rank - 1]())
                 var base = rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
-                    sum_buf.ptr
+                    sum_buf._storage
                 )
                 comptime OutViewType = type_of(
                     TileTensor(base, row_major(cols_rt, cols_rt))
                 )
-                var out_views = InlineArray[OutViewType, num_devices](
+                var out_views = Array[OutViewType, num_devices](
                     uninitialized=True
                 )
                 var row_off = 0
@@ -1181,7 +1189,9 @@ struct DistributedAllGatherRMSNorm:
                 dev_ctxs[index],
             )
 
-        _launch_device_collective[num_devices](launch_fused_ag_norm, dev_ctxs)
+        _launch_device_collective[num_devices](
+            launch_fused_ag_norm, dev_ctxs.copy()
+        )
 
 
 @extensibility.register("mo.composite.distributed.matmul_reduce_scatter.sum")

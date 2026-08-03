@@ -44,8 +44,8 @@ NVFP4 routing (B200-tuned via ablation):
 
 from std.collections import Optional
 
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.gpu.primitives.grid_controls import PDLLevel
 from std.utils.index import Index
 from layout import TileTensor

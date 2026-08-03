@@ -473,6 +473,8 @@ struct _WriteBufferHeap(Writable, Writer):
     ](ref[origin] self) -> StringSlice[origin]:
         return StringSlice(
             unsafe_from_utf8=Span[Byte, origin](
+                # `_data` is untracked, so handing it out under `origin` takes
+                # an explicit cast; untracked-to-named is never implicit.
                 unsafe_ptr=self._data.mut_cast[mut]().unsafe_origin_cast[
                     origin
                 ](),

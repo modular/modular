@@ -12,10 +12,10 @@ but you can use any model from Hugging Face that's based on an architecture
 below.
 
 To deploy any of these models with MAX, pass the model name to the [`max
-serve`](/max/cli/serve/) or [`docker run`](/max/container/) command. Try it now
-by following the [MAX quickstart guide](/max/get-started/). Or if you want to
+serve`](/cli/serve/) or [`docker run`](/container/) command. Try it now
+by following the [MAX quickstart guide](/get-started/). Or if you want to
 serve a custom model, see the tutorial to [serve custom model
-architectures](/max/develop/serve-custom-model-architectures/).
+architectures](/develop/serve-custom-model-architectures/).
 
 You can also see the
 [model source code in GitHub](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures).
@@ -153,6 +153,15 @@ You can also see the
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16</td>
       <td className='gpus'>Yes</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/unified_dspark_gemma4"><code>Gemma4DSparkModel</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/deepseek-ai/dspark_gemma4_12b_block7">deepseek-ai/dspark_gemma4_12b_block7</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16</td>
+      <td className='gpus'>No</td>
     </tr>
     <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gemma4"><code>Gemma4ForConditionalGeneration</code></a></td>
@@ -536,6 +545,15 @@ You can also see the
       </td>
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/unified_dspark_gemma4"><code>UnifiedDSparkGemma4ForCausalLM</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/google/gemma-4-12B-it">google/gemma-4-12B-it</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>bfloat16</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>

@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -62,6 +63,7 @@ mojo_test(
         "_fuzz.mojo",
         "test_fuzz_fills.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     main = "test_fuzz_fills.mojo",
     tags = ["manual"],
     deps = [
@@ -79,6 +81,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_matmul.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -111,6 +114,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_gemv_split_k.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -151,6 +155,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mha_causal.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -176,6 +181,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mha_nullmask.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -205,6 +211,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mla_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -241,6 +248,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_rope_rmsnorm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -278,6 +286,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qk_rms_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -315,6 +324,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qk_rope.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -354,6 +364,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qkv_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -397,6 +408,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_qkv_index_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -426,6 +438,7 @@ mojo_test(
     name = "repro_decode_hang.mojo.test",
     size = "small",
     srcs = ["repro_decode_hang.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -450,6 +463,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_moe_indices.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -475,6 +489,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_softmax.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -499,6 +514,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_rms_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -523,6 +539,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_layer_norm.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -549,6 +566,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_block_scaled_fp4.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -583,6 +601,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_block_scaled_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -598,6 +617,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:linalg",
+        "//max:max_mojo",
         "//max:nn",
         "//max:structured_kernels",
         "@mojo//:std",
@@ -617,6 +637,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_grouped_matmul_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -632,6 +653,7 @@ mojo_test(
     deps = [
         "//max:internal_utils",
         "//max:linalg",
+        "//max:max_mojo",
         "//max:nn",
         "//max:structured_kernels",
         "@mojo//:std",
@@ -653,6 +675,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_moe_router.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -685,6 +708,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_mxfp8_quantize.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -721,6 +745,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_swiglu_mxfp8.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -758,6 +783,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_fused_swiglu_dispatch.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -797,6 +823,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_msa_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -840,6 +867,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_msa_prefill.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -884,6 +912,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_topk_sampling.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -912,6 +941,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_ep_combine.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -945,6 +975,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -978,6 +1009,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer_decode.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -1016,6 +1048,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_sparse_indexer_prefill.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
@@ -1049,6 +1082,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_oob_canary.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -1059,6 +1093,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )
@@ -1074,6 +1109,7 @@ mojo_test(
         "_fuzz.mojo",
         "fuzz_numeric_canary.mojo",
     ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -1084,6 +1120,7 @@ mojo_test(
     ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
 )

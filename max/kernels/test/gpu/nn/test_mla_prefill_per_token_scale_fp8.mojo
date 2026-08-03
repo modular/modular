@@ -13,7 +13,7 @@
 
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import randn
 from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major

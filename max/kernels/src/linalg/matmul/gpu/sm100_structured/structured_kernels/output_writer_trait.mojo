@@ -58,7 +58,7 @@ Target hardware: SM100 (B200).
 
 from std.collections import Optional
 from std.memory import Pointer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout.tma_async import TMATensorTile
 

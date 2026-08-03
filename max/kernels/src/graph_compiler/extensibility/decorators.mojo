@@ -21,7 +21,7 @@ def register_internal(name: StaticString):
     """
     Registers the given mojo function as an implementation of an `mo` op or a
     `mo.custom` op. Used by built-in
-    [MAX Graph operations](/max/api/python/graph.ops).
+    [MAX Graph operations](/api/python/graph.ops).
 
     For registering [custom operations](/max/develop/custom-ops/), use the
     [@extensibility.register](/mojo/manual/decorators/extensibility-register) decorator,

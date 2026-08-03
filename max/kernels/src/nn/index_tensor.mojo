@@ -17,11 +17,11 @@ from std.sys import simd_width_of
 from std.sys.info import _current_target
 
 from nn.reshape import reshape
-from std.algorithm import elementwise, sync_parallelize
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
+from max.algorithm import elementwise, sync_parallelize
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu
 from layout import Coord, Idx, TileTensor, coord_to_index_list
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils import IndexList
 

@@ -14,10 +14,10 @@
 from std.math import iota
 from std.random import random_float64
 
-from std.algorithm.functional import parallelize_over_rows
+from max.algorithm.functional import parallelize_over_rows
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Coord,

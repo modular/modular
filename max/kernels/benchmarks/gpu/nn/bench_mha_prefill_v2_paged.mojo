@@ -60,7 +60,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList, StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse

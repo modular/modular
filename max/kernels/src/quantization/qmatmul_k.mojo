@@ -17,8 +17,10 @@ from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import llvm_intrinsic
 
-from std.algorithm import sync_parallelize, tile
-from std.gpu.host import DeviceContext
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import LayoutTensor, TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
@@ -33,12 +35,12 @@ from std.memory import (
     bitcast,
     dealloc,
     unsafe_memcpy,
-    stack_allocation,
+    unsafe_stack_allocation,
     Allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 
@@ -538,7 +540,7 @@ def _pack_block_Q6_K[
         == size_of[_block_Q6_K_packed[block_n]]()
     ), "packed block size should be multiple of the unpacked block size"
 
-    var q_bits_block_buf = stack_allocation[
+    var q_bits_block_buf = unsafe_stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8
     ]()
 
@@ -548,7 +550,7 @@ def _pack_block_Q6_K[
         for g in range(group_count):
             dst_ptr[].q_scales[g * block_n + n] = src_ptr[].q_scales[g]
 
-        var q_bits_column_buf = stack_allocation[
+        var q_bits_column_buf = unsafe_stack_allocation[
             _block_QK_K.quantized_k, DType.uint8
         ]()
 
@@ -1138,7 +1140,7 @@ def _matmul_Q4_K_columns[
     var b_tile_ptr = b_ptr.bitcast[_block_Q4_K_packed[block_n]]()
 
     # Unpack the scales and minimums to uint8 values.
-    var b_q_scales_and_mins_buf = stack_allocation[
+    var b_q_scales_and_mins_buf = unsafe_stack_allocation[
         2 * group_count * block_n, DType.uint8, alignment=alignment
     ]()
     b_tile_ptr[].q_scales_and_mins.unpack(b_q_scales_and_mins_buf)
@@ -1175,7 +1177,7 @@ def _matmul_Q4_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
+    var b_q_bits = unsafe_stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
     b_tile_ptr[].q_bits.unpack(b_q_bits)
@@ -1417,7 +1419,7 @@ def _matmul_Q6_K_columns[
         return
 
     # Unpack the quantized bits to uint8 values.
-    var b_q_bits = stack_allocation[
+    var b_q_bits = unsafe_stack_allocation[
         _block_QK_K.quantized_k * block_n, DType.uint8, alignment=alignment
     ]()
     b_tile_ptr[].q_bits.unpack[zero_point=UInt8(b_zero_point)](b_q_bits)

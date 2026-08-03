@@ -3,18 +3,18 @@ title: Packages
 description: Learn how to install Modular tools, set up your environment, and choose between nightly and stable versions
 ---
 
-import InstallModular from '../_includes/install-modular.mdx';
+import InstallModular from './_includes/install-modular.mdx';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '../requirements';
+import { requirementsNoGPU } from './requirements';
 
 All the Modular APIs and tools (including MAX and Mojo) are included in a
 single Python/Conda package named `modular`. This page explains what's in the
 package and shows how to install it.
 
 If you just want to get started with Modular, instead see our
-[quickstart guide](/max/get-started/).
+[quickstart guide](/get-started/).
 
 ## Package managers
 
@@ -149,10 +149,10 @@ Here's a summary of what's in the `modular` package.
     The `modular` Conda package installs the following:
 
     - MAX tools and libraries:
-      - [`max` CLI](/max/cli/)
-      - [`max` Python library](/max/api/python/)
-      - [`max` Mojo library](/max/api/kernels/comm/)
-      - [MAX Engine C API](/max/api/c/)
+      - [`max` CLI](/cli/)
+      - [`max` Python library](/api/python/)
+      - [MAX accelerator library](/api/mojo/)
+      - [MAX Engine C API](/api/c/)
     - The `mojo` package:
       - [`mojo` CLI](https://mojolang.org/docs/cli/) (includes the Mojo compiler)
       - [Mojo standard library](https://mojolang.org/docs/std/)
@@ -172,9 +172,9 @@ Here's a summary of what's in the `modular` package.
     The `modular` Python wheel installs the following:
 
     - MAX tools and libraries:
-      - [`max` CLI](/max/cli/)
-      - [`max` Python library](/max/api/python/)
-      - [`max` Mojo library](/max/api/kernels/comm/)
+      - [`max` CLI](/cli/)
+      - [`max` Python library](/api/python/)
+      - [MAX accelerator library](/api/mojo/)
     - The `mojo` package:
       - [`mojo` CLI](https://mojolang.org/docs/cli/) (includes the Mojo compiler)
       - [Mojo standard library](https://mojolang.org/docs/std/)
@@ -239,7 +239,7 @@ To install `modular`, your system must meet these specifications.
 - 8 GiB RAM minimum for Mojo development. MAX inference and model serving
   require significantly more memory, with the exact amount varying by model.
   For the catalog of supported models, see the
-  [supported models](/max/models/) page; for a specific model, check its
+  [supported models](/models/) page; for a specific model, check its
   Hugging Face page for memory details.
 - Python 3.10–3.14.
 - A C compiler (such as `cc`, `gcc`, or `clang`)—used as a linker.
@@ -455,7 +455,7 @@ is listed as compatible, confirm that the available memory is sufficient for the
 model you're using.
 
 - MAX can serve models on either CPU or GPU, but some models require one or
-more GPUs. When you browse our [supported models](/max/models/), you can check
+more GPUs. When you browse our [supported models](/models/), you can check
 for multi-GPU support.
 
 - For comprehensive GPU hardware tables, arch targets, and troubleshooting, see
@@ -464,6 +464,6 @@ the
 page.
 
 - To deploy MAX in containers, see the [deployment
-guide](/max/deploy/local-to-cloud/).
+guide](/serve/local-to-cloud/).
 
 :::

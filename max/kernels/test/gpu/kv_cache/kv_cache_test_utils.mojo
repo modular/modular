@@ -16,7 +16,7 @@ from std.math import ceildiv
 from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
@@ -148,7 +148,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         self.host_ptr.free()
 
     def copy_to_device(mut self, ctx: DeviceContext) raises:

@@ -34,7 +34,7 @@ order: `linear_id = x + y * dim_x + z * dim_x * dim_y`.
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv
 
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
 from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
@@ -65,7 +65,7 @@ def _block_reduce_with_padding[
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
     ]()
 
@@ -90,7 +90,9 @@ def _block_reduce_with_padding[
     # Account for padding when storing to avoid bank conflicts.
     if lid == 0:
         comptime for i in range(num_reductions):
-            shared_mem[i * smem_stride + compute_offset(wid)] = warp_results[i]
+            shared_mem[
+                unsafe_offset=i * smem_stride + compute_offset(wid)
+            ] = warp_results[i]
 
     barrier()
 
@@ -103,7 +105,9 @@ def _block_reduce_with_padding[
             # Load values from the shared memory (ith lane will have ith
             # warp's value). Account for padding when loading.
             if lid < n_warps:
-                block_val = shared_mem[i * smem_stride + compute_offset(lid)]
+                block_val = shared_mem[
+                    unsafe_offset=i * smem_stride + compute_offset(lid)
+                ]
 
             # Reduce across the first warp
             warp_results[i] = warp_reduce_fn[reduction_idx=i](block_val)
@@ -112,14 +116,14 @@ def _block_reduce_with_padding[
             # Store the final results back to shared memory for broadcast
             if lid == 0:
                 comptime for i in range(num_reductions):
-                    shared_mem[i] = warp_results[i]
+                    shared_mem[unsafe_offset=i] = warp_results[i]
 
     comptime if broadcast:
         # Synchronize and broadcast the results to all threads
         barrier()
         # All threads read the final results from shared memory
         comptime for i in range(num_reductions):
-            warp_results[i] = shared_mem[i]
+            warp_results[i] = shared_mem[unsafe_offset=i]
 
     return warp_results
 
@@ -584,18 +588,18 @@ def broadcast[
         return warp.broadcast(val)
 
     # Multi-warp block - use shared memory
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         width, dtype, address_space=AddressSpace.SHARED
     ]()
 
     # Source thread writes its value to shared memory
     if thread_idx.x == Int(src_thread):
-        shared_mem.store(val)
+        shared_mem.unsafe_store(val)
 
     barrier()
 
     # All threads read the same value from shared memory
-    return shared_mem.load[width=width]()
+    return shared_mem.unsafe_load[width=width]()
 
 
 @always_inline
@@ -640,7 +644,7 @@ def broadcast[
     comptime if block_size == WARP_SIZE:
         return warp.broadcast(val)
 
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         width, dtype, address_space=AddressSpace.SHARED
     ]()
 
@@ -650,11 +654,11 @@ def broadcast[
         + thread_idx.z * block_dim_x * block_dim_y
     )
     if linear_tid == Int(src_thread):
-        shared_mem.store(val)
+        shared_mem.unsafe_store(val)
 
     barrier()
 
-    return shared_mem.load[width=width]()
+    return shared_mem.unsafe_load[width=width]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -678,7 +682,7 @@ def _prefix_sum[
     # Allocate shared memory for inter-warp communication
     # We need one slot per warp to store warp-level scan results
     comptime n_warps = block_size // WARP_SIZE
-    var warp_mem = stack_allocation[
+    var warp_mem = unsafe_stack_allocation[
         align_up(n_warps, WARP_SIZE), dtype, address_space=AddressSpace.SHARED
     ]()
 
@@ -694,7 +698,7 @@ def _prefix_sum[
             # Adding them gives the inclusive sum of the warp.
             inclusive_warp_sum += val
 
-        warp_mem[wid] = inclusive_warp_sum
+        warp_mem[unsafe_offset=wid] = inclusive_warp_sum
 
     barrier()
 
@@ -702,15 +706,15 @@ def _prefix_sum[
     var lid = lane_id()
     if wid == 0:
         var previous_warps_prefix = warp.prefix_sum[exclusive=False](
-            warp_mem[lid]
+            warp_mem[unsafe_offset=lid]
         )
         if lid < n_warps:
-            warp_mem[lid] = previous_warps_prefix
+            warp_mem[unsafe_offset=lid] = previous_warps_prefix
     barrier()
 
     # Step 4: Add the prefix from previous warps
     if wid > 0:
-        thread_result += warp_mem[wid - 1]
+        thread_result += warp_mem[unsafe_offset=wid - 1]
 
     return thread_result
 

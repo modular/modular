@@ -13,8 +13,8 @@
 
 from std.io.io import _printf
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import block_idx
 from std.gpu.memory import (
     AddressSpace,
@@ -25,17 +25,19 @@ from std.gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.utils.index import Index
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def kernel_copy_async_tma(descriptor: TMADescriptor):
-    var shmem = stack_allocation[
+    var shmem = unsafe_stack_allocation[
         16, DType.float32, alignment=16, address_space=AddressSpace.SHARED
     ]()
-    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
+    var mbar = unsafe_stack_allocation[
+        1, Int64, address_space=AddressSpace.SHARED
+    ]()
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 

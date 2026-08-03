@@ -30,7 +30,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from max.benchmark.benchmark_shared.percentile_metrics import (
@@ -168,12 +168,20 @@ def _compute_confidence_info(
     )
 
 
-class ThroughputMetrics(Metrics):
+@dataclass(init=False)
+class ThroughputMetrics(PercentileMetrics):
     """
     Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
     are worse for throughput (e.g., p99 represents the 1st percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (rather than wrapping one in a
+    private attribute) so the computed stats live in dataclass fields: JSON /
+    ``model_dump`` serializable, and expandable into per-stat columns by the
+    schema-driven CSV flattener. The public API (``mean``, ``p99``,
+    ``to_flat_dict``, ``format_with_prefix``, ``validate_metrics``, ...) is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -197,7 +205,7 @@ class ThroughputMetrics(Metrics):
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
         ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -212,25 +220,22 @@ class ThroughputMetrics(Metrics):
             "p99": float(np.percentile(data, 1)) * scale_factor,  # Bottom 1%
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of throughput metrics in table format."""
         return self.format_with_prefix(prefix="throughput")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
-class StandardPercentileMetrics(Metrics):
+@dataclass(init=False)
+class StandardPercentileMetrics(PercentileMetrics):
     """
     Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
     (e.g., p99 represents the 99th percentile).
+
+    Structured as a ``PercentileMetrics`` subclass (see ``ThroughputMetrics``)
+    so the computed stats are serializable dataclass fields; the public API is
+    inherited from ``PercentileMetrics`` unchanged.
     """
 
     def __init__(
@@ -254,7 +259,7 @@ class StandardPercentileMetrics(Metrics):
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
         ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
-        self._metrics = PercentileMetrics(
+        super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
 
@@ -269,19 +274,12 @@ class StandardPercentileMetrics(Metrics):
             "p99": float(np.percentile(data, 99)) * scale_factor,
         }
 
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to the internal metrics object."""
-        return getattr(self._metrics, name)
-
     def __str__(self) -> str:
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
 
-    def validate_metrics(self) -> tuple[bool, list[str]]:
-        """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate_metrics()
 
-
+@dataclass(init=False)
 class RatePercentileMetrics(StandardPercentileMetrics):
     """Bounded ratio in [0, 1]; mean of per-item ratios.
 
@@ -300,14 +298,17 @@ class RatePercentileMetrics(StandardPercentileMetrics):
         scale_factor = 100.0 if as_percent else 1.0
         unit = "%" if as_percent else None
         super().__init__(data, scale_factor=scale_factor, unit=unit)
-        self._upper_bound = scale_factor
 
     def validate_metrics(self) -> tuple[bool, list[str]]:
-        m = self._metrics.mean
+        # Upper bound follows the stored representation: 100 for a percentage
+        # (unit "%"), 1 for a fraction. Catches negatives and values above the
+        # representation's maximum.
+        upper_bound = 100.0 if self.unit == "%" else 1.0
+        m = self.mean
         if not math.isfinite(m):
             return False, [f"Invalid mean: {m}"]
-        if m < 0 or m > self._upper_bound:
-            return False, [f"Mean {m} outside [0, {self._upper_bound}]"]
+        if m < 0 or m > upper_bound:
+            return False, [f"Mean {m} outside [0, {upper_bound}]"]
         return True, []
 
 
@@ -412,8 +413,6 @@ class BaseBenchmarkMetrics(BaseModel, Metrics):
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
                 d.update(val.to_flat_dict(name))
                 d.update(val.confidence_to_flat_dict(name))
-            elif isinstance(val, ChunkTimingMetrics):
-                d.update(val.to_flat_dict(name))
         if self.metrics_by_endpoint:
             # Backwards compat: `server_metrics` mirrors the first endpoint so
             # existing BigQuery/analysis consumers keep working.
@@ -594,6 +593,14 @@ class TextGenAggregates(_CompletedRunBase):
     max_output: int
     max_total: int
 
+    # Run-level aggregate throughput: (input + output) tokens per minute over
+    # wall-clock duration. Derived in ``_derive_aggregate_tokens_per_minute``
+    # so it is a real stored field (not a ``@computed_field``) and therefore
+    # flows through the field-based CSV reporter as well as the JSON reporters,
+    # rather than existing only inside ``to_result_dict``. ``nan`` when
+    # duration is non-positive (degenerate / fully-skipped runs).
+    aggregate_tokens_per_minute: float = float("nan")
+
     # Global: SUM(cached_tokens) / SUM(prompt_tokens).
     global_cached_token_rate: float
     # Per-turn cached_tokens / prompt_tokens; None when usage data is
@@ -624,17 +631,28 @@ class TextGenAggregates(_CompletedRunBase):
     # for single-turn workloads or when usage data is unavailable.
     per_turn_cache_retentions: list[float] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _derive_aggregate_tokens_per_minute(self) -> TextGenAggregates:
+        """Derive run-level TPM so console, JSON, and CSV share one source.
+
+        Computed from the token totals and wall-clock duration rather than
+        stored by callers, so every construction path (and JSON round-trips)
+        yields a consistent value.
+        """
+        self.aggregate_tokens_per_minute = (
+            (self.total_input + self.total_output) * 60.0 / self.duration
+            if self.duration > 0
+            else float("nan")
+        )
+        return self
+
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
         # Aggregate across the entire benchmark run (not per-GPU): sum of
         # input + output tokens divided by wall-clock duration, in tokens/min.
-        d["aggregate_tokens_per_minute"] = (
-            (self.total_input + self.total_output) * 60.0 / self.duration
-            if self.duration > 0
-            else float("nan")
-        )
+        d["aggregate_tokens_per_minute"] = self.aggregate_tokens_per_minute
         d["max_concurrent_conversations"] = self.max_concurrent_conversations
         d["skip_first_n_requests"] = self.skip_first_n_requests
         d["skip_last_n_requests"] = self.skip_last_n_requests
@@ -811,11 +829,11 @@ class BenchmarkResult(BaseModel):
     #
     # IMPORTANT: keep these as two *separate* Optional fields, NOT a combined
     # union ``aggregates: TextGenAggregates | PixelGenAggregates | None``.
-    # The generic CSV reporter in
-    # ``utils/benchmarking/results_publication/reporters/csv.py`` can only
+    # The shared type-driven CSV column derivation in
+    # ``max/python/max/benchmark/benchmark_shared/model_csv.py`` can only
     # expand ``Optional[SingleStructuredType]`` recursively into per-field
     # columns.  A two-type union returns ``None`` from
-    # ``_unwrap_optional_structured_type``, causing ``_flatten_model`` to fall
+    # ``_unwrap_optional_structured_type``, causing ``flatten_model`` to fall
     # through to ``json.dumps`` and emit a single opaque JSON-blob column —
     # making the CSV output difficult to work with in spreadsheet tools.
     text_data: TextGenAggregates | None = None
@@ -1069,40 +1087,6 @@ class BenchmarkResult(BaseModel):
         if agg is None:
             return []
         return agg.confidence_warnings()
-
-
-@dataclass
-class ChunkTimingMetrics:
-    """Timing statistics for audio chunks (min, mean, median, p99, max)."""
-
-    min: float
-    mean: float
-    median: float
-    p99: float
-    max: float
-
-    @staticmethod
-    def from_samples(data: list[float]) -> ChunkTimingMetrics:
-        if not data:
-            return ChunkTimingMetrics(
-                min=0.0, mean=0.0, median=0.0, p99=0.0, max=0.0
-            )
-        return ChunkTimingMetrics(
-            min=float(np.min(data)),
-            mean=float(np.mean(data)),
-            median=float(np.median(data)),
-            p99=float(np.percentile(data, 99)),
-            max=float(np.max(data)),
-        )
-
-    def to_flat_dict(self, name: str) -> dict[str, float]:
-        return {
-            f"min_{name}": self.min,
-            f"mean_{name}": self.mean,
-            f"median_{name}": self.median,
-            f"p99_{name}": self.p99,
-            f"max_{name}": self.max,
-        }
 
 
 # ---------------------------------------------------------------------------

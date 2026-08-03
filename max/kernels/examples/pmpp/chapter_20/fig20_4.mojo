@@ -15,8 +15,8 @@ from std.math import exp, abs
 from std.random import rand
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
@@ -70,17 +70,19 @@ def softmax_kernel(
     S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = stack_allocation[
+    var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var broadcast_slot = stack_allocation[
+    var broadcast_slot = unsafe_stack_allocation[
         1,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -205,7 +207,7 @@ def main() raises:
             d_S,
             d_D,
             d_P,
-            N,
+            Int32(N),
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
         )

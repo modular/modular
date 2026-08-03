@@ -16,8 +16,7 @@ from std.math import fma
 from std.ffi import external_call, c_size_t, _CPointer
 from std.sys import size_of, align_of
 
-import std.algorithm
-import std.algorithm.functional
+from max.algorithm.functional import elementwise
 
 from extensibility import StaticTensorSpec
 from extensibility import (
@@ -32,14 +31,13 @@ from extensibility import (
 )
 from std.collections import Array
 from std.gpu import block_idx
-from std.gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
+from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
 )
 from std.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
-from std.gpu.host.info import is_accelerator, is_cpu, is_gpu
+from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import UnsafeMaybeUninit
 from layout import (
     Coord,
@@ -74,7 +72,7 @@ from extensibility import (
 
 from std.utils import Index, IndexList, StaticTuple
 
-from std.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
+from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
 
 from .buffer_plan import BufferPlanState, BufferPlanStats
 
@@ -143,6 +141,19 @@ struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
         """
         self.view = view
         self.storage = storage^
+
+    def __init__(out self, var buffer: DeviceBuffer[DType.int8]):
+        """Builds the composite from a DeviceBuffer.
+
+        Args:
+            buffer: A DeviceBuffer which owns the underlying memory.
+        """
+        var shape = Index(len(buffer))
+
+        var view = MutByteBuffer(buffer.unsafe_ptr(), shape)
+        var storage = AnyAsyncValueRef(storage_buf=buffer^)
+
+        self = Self(view, storage^)
 
     def __init__(out self, *, copy: Self):
         """Creates a copy sharing the same backing memory (retains the storage).
@@ -371,7 +382,7 @@ def unpack_buffer_ref(
         OpaquePointer[MutAnyOrigin],
     ](async_ptr, UnsafePointer(to=size))
     var shape = IndexList[1](Int(size))
-    var view = MutByteBuffer(data_ptr.bitcast[Int8](), shape)
+    var view = MutByteBuffer(data_ptr.unsafe_bitcast[Int8](), shape)
     # Retain the backing storage of the source async value so this composite
     # keeps the memory alive if it (or a derivative) is re-packed as an output.
     return OwnedByteBuffer(
@@ -405,7 +416,7 @@ def unpack_tensor[
         shapes[0] = 1
 
     var view = DynamicTensor[dtype, buffer_rank](
-        buffer_ptr.bitcast[Scalar[dtype]](), shapes
+        buffer_ptr.unsafe_bitcast[Scalar[dtype]](), shapes
     )
     # Retain the backing storage of the source async value so this composite
     # keeps the memory alive if it (or a derivative) is re-packed as an output.
@@ -514,12 +525,9 @@ def mgp_tensor_slice[
     input: OwnedTensor[dtype, rank],
     output_spec: IndexList[rank],
     start: OwnedTensor[DType.int64, 1],
-) -> OwnedTensor[dtype, rank]:
+    dev_context: DeviceContext,
+) raises -> OwnedTensor[dtype, rank]:
     var input_shape = input.shape()
-
-    # The slice shares the input's backing memory, so it retains the input's
-    # storage handle (copy) to keep it alive independently.
-    var storage = AnyAsyncValueRef(copy=input.storage)
 
     # Find k: the first non-size-1 input dimension (the sliced dimension).
     var k = rank
@@ -538,19 +546,39 @@ def mgp_tensor_slice[
     # rank-1 DynamicTensors of size 1 by TensorCreateOp::emitMojo.)
     var start_k = Int(start.unsafe_ptr()[0]) if k < rank else 0
 
-    # Compute the offset, normalizing negative start values.
-    if start_k >= 0:
-        var view = DynamicTensor[dtype, rank](
-            input.unsafe_ptr() + start_k * stride_k, output_spec
-        )
-        return OwnedTensor[dtype, rank](view, storage^)
-    else:
+    # Normalize a negative start and clamp into [0, dim_k], matching the
+    # clamping in `mo.slice`'s shape function; a start past the end yields an
+    # empty slice.
+    var elem_offset = 0
+    if k < rank:
         var dim_k = input_shape[k]
-        var normalized = max(0, dim_k + start_k)
-        var view = DynamicTensor[dtype, rank](
-            input.unsafe_ptr() + normalized * stride_k, output_spec
-        )
-        return OwnedTensor[dtype, rank](view, storage^)
+        var normalized = dim_k + start_k if start_k < 0 else start_k
+        elem_offset = min(max(normalized, 0), dim_k) * stride_k
+
+    var out_elems = 1
+    for i in range(rank):
+        out_elems *= output_spec[i]
+    comptime dtype_size = size_of[dtype]()
+
+    # Slice via the byte-buffer path so the slice is registered with the device
+    # runtime where required. The transient byte buffer retains the input's
+    # storage handle, which the slice then hands to the output tensor.
+    var base_bytes = OwnedByteBuffer(
+        MutByteBuffer(
+            input.unsafe_ptr().bitcast[Int8](), Index(input.bytecount())
+        ),
+        AnyAsyncValueRef(copy=input.storage),
+    )
+    var slice_bytes = mgp_buffer_slice(
+        base_bytes,
+        elem_offset * dtype_size,
+        out_elems * dtype_size,
+        dev_context,
+    )
+    var view = DynamicTensor[dtype, rank](
+        slice_bytes.unsafe_ptr().bitcast[Scalar[dtype]](), output_spec
+    )
+    return OwnedTensor[dtype, rank](view, slice_bytes.take_storage())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -567,27 +595,15 @@ def mgp_buffer_alloc(
     # alias alignment = 0 if bRawAlign == UInt64.MAX else Int(bRawAlign)
 
     # This primitive has a byte-size input, so always assume a byte format
-    var shape = IndexList[1](byte_size)
-    var buf = dev_context.enqueue_create_buffer[DType.int8](byte_size)
-    # Build a non-owning view over the memory, then wrap the live owning
-    # DeviceBuffer in an AsyncValue storage handle (net-zero take of the buffer's
-    # handle). The composite carries the view + storage, mirroring the C++
-    # TensorBufferRef; the pack site later surrenders the storage net-zero.
-    var view = MutByteBuffer(buf.unsafe_ptr(), shape)
-    var storage = AnyAsyncValueRef(storage_buf=buf^)
-    return OwnedByteBuffer(view, storage^)
+    return {dev_context.enqueue_create_buffer[DType.int8](byte_size)}
 
 
 @register_internal("mgp.device_graph.alloc")
 @no_inline
-def mgp_device_graph_alloc(
-    byte_size: Int, builder: DeviceGraphBuilder
-) raises -> OwnedByteBuffer:
-    # The device-graph counterpart of `mgp_buffer_alloc`: it takes the recording
-    # builder instead of a device context. For now it just allocates via the
-    # builder's device context; later the builder can track device-graph
-    # memory-pool allocations here.
-    return mgp_buffer_alloc(byte_size, builder.context())
+def mgp_device_graph_alloc[
+    is_host: Bool
+](byte_size: Int, builder: DeviceGraphBuilder) raises -> OwnedByteBuffer:
+    return {builder.create_buffer[DType.int8](byte_size, is_host=is_host)}
 
 
 @register_internal("mgp.buffer.constant")
@@ -601,7 +617,7 @@ def mgp_buffer_constant(
     # Constant memory is owned by the resource system, not refcounted, so the
     # storage handle is the empty (non-tracked) reference.
     var view = MutByteBuffer(
-        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
+        resource_ptr.unsafe_bitcast[Int8](), IndexList[1](resource_bytecount)
     )
     return OwnedByteBuffer(view, AnyAsyncValueRef())
 
@@ -664,11 +680,31 @@ def mgp_buffer_to_index(
 @register_internal("mgp.buffer.slice")
 @no_inline
 def mgp_buffer_slice(
-    buffer: OwnedByteBuffer, offset: Int, size: Int
-) -> OwnedByteBuffer:
-    # The slice shares the source's backing memory, so it retains the source's
-    # storage handle (copy) to keep it alive independently.
-    var view = MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+    buffer: OwnedByteBuffer, offset: Int, size: Int, dev_context: DeviceContext
+) raises -> OwnedByteBuffer:
+    """Returns a sub-buffer view of `buffer` at byte `offset` for `size` bytes.
+
+    The slice goes through `DeviceBuffer.create_sub_buffer` so backends whose
+    runtime only accepts registered pointers register it.
+    On other devices the returned address is simply `buffer + offset`.
+    The parent's storage handle is retained to keep the backing memory alive.
+
+    Args:
+        buffer: The parent buffer to slice.
+        offset: Byte offset of the slice within the parent.
+        size: Byte size of the slice.
+        dev_context: The device context the buffer is associated with.
+
+    Returns:
+        An `OwnedByteBuffer` viewing the sliced region and retaining the parent's
+        backing storage.
+
+    Raises:
+        If `[offset, offset + size)` does not fit within the parent buffer.
+    """
+    var parent = buffer.to_device_buffer(dev_context)
+    var sub = parent.create_sub_buffer[DType.int8](offset, size)
+    var view = MutByteBuffer(sub.unsafe_ptr(), Index(size))
     return OwnedByteBuffer(view, AnyAsyncValueRef(copy=buffer.storage))
 
 
@@ -681,7 +717,8 @@ def mgp_buffer_bulk_slice[
     base: OwnedByteBuffer,
     offsets: Array[Int, N],
     sizes: Array[Int, N],
-) -> Array[OwnedByteBuffer, N]:
+    dev_context: DeviceContext,
+) raises -> Array[OwnedByteBuffer, N]:
     """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
 
     Parameters:
@@ -691,10 +728,14 @@ def mgp_buffer_bulk_slice[
         base: The pool buffer.
         offsets: Byte offset of each slice within the pool.
         sizes: Byte size of each slice.
+        dev_context: The device context the pool buffer is associated with.
 
     Returns:
         An Array of N OwnedByteBuffer slices into the pool, each retaining
         the pool's backing storage.
+
+    Raises:
+        If any slice does not fit within the pool buffer.
     """
     var result = Array[UnsafeMaybeUninit[OwnedByteBuffer], N](
         uninitialized=True
@@ -703,7 +744,9 @@ def mgp_buffer_bulk_slice[
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
     for i in range(N):
-        result[i].init_from(mgp_buffer_slice(base, offsets[i], sizes[i]))
+        result[i].init_from(
+            mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
+        )
 
     return {unsafe_assume_initialized = result^}
 
@@ -762,7 +805,7 @@ def mgp_buffer_plan[
         ],
     ):
         result = {}
-        result.allocate_greedy(static_sizes)
+        result.allocate_greedy(materialize[static_sizes]())
 
     comptime state = compute_static_allocations()
 
@@ -773,7 +816,7 @@ def mgp_buffer_plan[
         logger.debug(stats)
 
         comptime results = state.take_results()
-        return results
+        return materialize[results]()
     else:
         var runtime_state = materialize[state]()
         runtime_state.allocate_greedy[start=num_static_sizes](runtime_sizes)
@@ -1181,8 +1224,8 @@ struct MyInt(Movable):
         print("MyInt.__moveinit__", move.val)
         self.val = move.val
 
-    def __del__(deinit self):
-        print("MyInt.__del__", self.val)
+    def __deinit__(deinit self):
+        print("MyInt.__deinit__", self.val)
 
 
 @register_internal("testfuse.my_int.from_index")
@@ -1209,8 +1252,8 @@ struct MyIntReg2(ImplicitlyCopyable, RegisterPassable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyIntReg2.__del__", self.val)
+    def __deinit__(deinit self):
+        print("MyIntReg2.__deinit__", self.val)
 
 
 @register_internal("testfuse.my_int_reg2.from_index")
@@ -1361,7 +1404,7 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         )
 
         var buffer = MutByteBuffer(
-            buffer_data.unsafe_value().bitcast[Int8](),
+            buffer_data.unsafe_value().unsafe_bitcast[Int8](),
             Index(buffer_size),
         )
 
@@ -1410,9 +1453,9 @@ def mogg_async_unpack[
     """
     var ptr = external_call[
         "MGP_RT_GetValueFromAsync", OpaquePointer[MutAnyOrigin]
-    ](async_ptr).bitcast[T]()
+    ](async_ptr).unsafe_bitcast[T]()
 
-    return UnsafePointer[T, MutAnyOrigin].__getitem__(ptr, 0)
+    return ptr[]
 
 
 struct MoggAsyncPackHelper:
@@ -1910,7 +1953,7 @@ def foreach[
         var val = func[width, alignment](rebind[IndexList[tensor.rank]](idx))
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -1969,7 +2012,7 @@ def foreach[
         var val = func[width, alignment](idx)
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -2082,7 +2125,7 @@ def foreach_fusion[
     # capturing` form did not.
     var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width=simd_width,
         target=target,
         _trace_description=_trace_name,
@@ -2180,7 +2223,7 @@ struct _ElementwiseFusionTileAdapter[
             dtype=Self.dtype, address_space=AddressSpace.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
-            dst_local.ptr.address_space_cast[
+            dst_local._storage.address_space_cast[
                 AddressSpace.GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
@@ -2223,7 +2266,7 @@ def foreach_fusion_tile[
 
     Analogous to `foreach_fusion`, but for tile-based fusion: instead of driving
     a per-element SIMD loop
-    via `std.algorithm.functional.elementwise`, this launches one GPU block per
+    via `max.algorithm.functional.elementwise`, this launches one GPU block per
     output tile and drives the fusion struct's tile `compute` over the output.
     The fusion struct manufactures each tile (loading its own inputs through a
     copier the driver supplies) and the driver stores the result via a store
@@ -2314,7 +2357,7 @@ def foreach_out_func[
         idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,

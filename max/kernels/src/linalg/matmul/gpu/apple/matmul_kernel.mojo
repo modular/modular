@@ -28,7 +28,7 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 
 from std.collections import Array, Optional
 from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
 from std.utils import IndexList
 from layout import TensorStorage, TileTensor, Idx
@@ -287,6 +287,17 @@ struct Im2colALoader[
     var r: Int32
     var s: Int32
     var k_total: Int32  # R*S*C, prebaked once (the partial-K bound)
+
+    def __init__(out self, *, copy: Self):
+        self.input_ptr = copy.input_ptr
+        self.h_base = copy.h_base.copy()
+        self.w_base = copy.w_base.copy()
+        self.batch_base = copy.batch_base.copy()
+
+        self.c0 = copy.c0
+        self.r = copy.r
+        self.s = copy.s
+        self.k_total = copy.k_total
 
     @always_inline
     def __init__(
@@ -1267,8 +1278,8 @@ struct AppleM5MatMul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
-        k_strip_start: Int,
-        k_strip_end: Int,
+        k_strip_start_dev: Int32,
+        k_strip_end_dev: Int32,
     ):
         """`clamp_v2` chained-pass kernel. `enqueue_apple_matmul_clamp_chain`
         launches it twice: pass 0 zero-seeds `[k_strip_start, k_strip_end)`,
@@ -1276,6 +1287,9 @@ struct AppleM5MatMul[
         reduce kernel is needed. Otherwise identical to `run`; requires
         `Self.clamp_edge=True` (asserted below).
         """
+        # `Int` is not device-passable; widen the fixed-width args.
+        var k_strip_start = Int(k_strip_start_dev)
+        var k_strip_end = Int(k_strip_end_dev)
         comptime assert (
             Self.clamp_edge
             and Self.c_type == DType.float32
@@ -1468,7 +1482,7 @@ struct AppleM5MatMul[
         ],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
-        k_per_split: Int,
+        k_per_split: Int32,
     ):
         """One 64x64 output tile's fp32 partial over a BK-aligned K-slice.
 
@@ -1652,7 +1666,7 @@ struct AppleM5MatMul[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
         partials_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        num_splits: Int,
+        num_splits: Int32,
     ):
         """Sum `num_splits` fp32 partials per output element, cast, store / fuse.
 
@@ -1671,6 +1685,7 @@ struct AppleM5MatMul[
                 partial is at offset `s * M * N`.
             num_splits: Number of K splits to sum per output element.
         """
+        var _num_splits = Int(num_splits)
         # `c_type` / `elementwise_lambda_fn` are struct params -- use `Self.x`.
         var c_ptr = c.ptr
         var m = Int(c.dim[0]())
@@ -1683,7 +1698,7 @@ struct AppleM5MatMul[
 
         var acc = Float32(0)
         var mn = m * n
-        for s in range(num_splits):
+        for s in range(_num_splits):
             acc += partials_ptr[s * mn + idx]
 
         var y = acc.cast[Self.c_type]()
@@ -2254,7 +2269,7 @@ def enqueue_apple_matmul_split_k[
             b,
             log2_m,
             log2_n,
-            k_per_split,
+            Int32(k_per_split),
             grid_dim=(side_m * side_n * actual_splits),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2265,11 +2280,10 @@ def enqueue_apple_matmul_split_k[
             b,
             log2_m,
             log2_n,
-            k_per_split,
+            Int32(k_per_split),
             grid_dim=(side_m * side_n * actual_splits),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
-
     comptime reduce_kernel = MM.run_split_k_reduce[
         type_of(c).LayoutType, type_of(c).Storage
     ]
@@ -2277,7 +2291,7 @@ def enqueue_apple_matmul_split_k[
     ctx.enqueue_function[reduce_kernel](
         c,
         partials.unsafe_ptr(),
-        actual_splits,
+        Int32(actual_splits),
         grid_dim=((n_elems + MM.REDUCE_BLOCK - 1) // MM.REDUCE_BLOCK),
         block_dim=(MM.REDUCE_BLOCK),
     )
@@ -2414,8 +2428,8 @@ def enqueue_apple_matmul_clamp_chain[
             b,
             log2_m,
             log2_n,
-            0,
-            strips_pass0,
+            Int32(0),
+            Int32(strips_pass0),
             grid_dim=(grid_dim),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2425,8 +2439,8 @@ def enqueue_apple_matmul_clamp_chain[
             b,
             log2_m,
             log2_n,
-            strips_pass0,
-            num_strips,
+            Int32(strips_pass0),
+            Int32(num_strips),
             grid_dim=(grid_dim),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2437,8 +2451,8 @@ def enqueue_apple_matmul_clamp_chain[
         b,
         log2_m,
         log2_n,
-        0,
-        strips_pass0,
+        Int32(0),
+        Int32(strips_pass0),
         grid_dim=(grid_dim),
         block_dim=(MM.THREADS_PER_BLOCK),
     )
@@ -2448,8 +2462,8 @@ def enqueue_apple_matmul_clamp_chain[
         b,
         log2_m,
         log2_n,
-        strips_pass0,
-        num_strips,
+        Int32(strips_pass0),
+        Int32(num_strips),
         grid_dim=(grid_dim),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

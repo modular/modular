@@ -17,15 +17,18 @@ from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import (
-    sync_parallelize,
     tile,
-    unsafe_parallel_memcpy,
     vectorize,
 )
-from std.gpu.host import DeviceContext
+
+from max.algorithm import (
+    sync_parallelize,
+    unsafe_parallel_memcpy,
+)
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import IndexList, StaticTuple
 

@@ -25,7 +25,7 @@ All 128 threads participate, processing o_cols physical columns per phase.
 """
 
 from std.sys import size_of
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_st,
     tcgen05_store_wait,

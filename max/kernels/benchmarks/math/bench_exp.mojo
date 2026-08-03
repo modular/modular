@@ -30,7 +30,7 @@ from std.benchmark import (
 from layout import Coord, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast, dealloc, unsafe_stack_allocation
 
 
 def _ri(v: Int) -> Int64:
@@ -72,13 +72,19 @@ def bench_unary[
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
-    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var input_ptr_alloc = alloc[Scalar[dtype]](
+        {count = size, alignment = alignment}
+    ).into_managed()
+    var input_ptr = input_ptr_alloc.unsafe_ptr()
+    var output_ptr_alloc = alloc[Scalar[dtype]](
+        {count = size, alignment = alignment}
+    ).into_managed()
+    var output_ptr = output_ptr_alloc.unsafe_ptr()
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
-        input_ptr[i] = f
+        input_ptr.unsafe_offset(i).unsafe_write(f)
 
     @parameter
     def bench(mut b: Bencher, size: Int) raises:
@@ -102,8 +108,8 @@ def bench_unary[
         [elements],
     )
 
-    input_ptr.free()
-    output_ptr.free()
+    dealloc(input_ptr_alloc^)
+    dealloc(output_ptr_alloc^)
 
 
 def ldexp2kf_opt[
@@ -397,7 +403,7 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas_ptr = unsafe_stack_allocation[delta_range, DType.int32]()
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
     _ = deltas.fill(Scalar[DType.int32](0))
 

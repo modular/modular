@@ -24,7 +24,7 @@ from std.math.uutils import umod
 from std.sys import size_of
 
 from std.atomic import Atomic, Ordering
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu import (
     barrier,
     block_idx,

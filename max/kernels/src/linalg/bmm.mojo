@@ -25,12 +25,12 @@ from std.sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from std.algorithm import elementwise, sync_parallelize
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm import elementwise, sync_parallelize
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
     ComptimeInt,
     Coord,
@@ -51,9 +51,9 @@ from layout.tile_layout import Layout as TileLayout
 from std.logger import Logger
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from std.gpu.host.info import H100, _is_sm10x_gpu
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from max.gpu.host.info import H100, _is_sm10x_gpu
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -1134,8 +1134,9 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_scales_tensor: LayoutTensor[
         b_scales_type, b_scales_layout, ImmutAnyOrigin
     ],
-    num_iters: Int,
+    num_iters: Int32,
 ):
+    var _num_iters = Int(num_iters)
     comptime c_2d_layout: Layout = _2D_layout[c_layout]
     comptime b_scales_2d_layout: Layout = _2D_layout[b_scales_layout]
 
@@ -1214,7 +1215,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c_tt,
         a_scales_tma_op,
         b_scales_tt,
-        num_iters,
+        Int32(_num_iters),
     )
 
 
@@ -1420,7 +1421,7 @@ def bmm_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

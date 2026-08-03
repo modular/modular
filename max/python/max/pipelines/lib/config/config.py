@@ -15,15 +15,14 @@
 
 from __future__ import annotations
 
-import atexit
 import json
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from max.config import ConfigFileModel
 from max.driver import accelerator_api, load_devices
-from max.engine import InferenceSession, ProfilingError
-from max.graph.quantization import QuantizationEncoding
+from max.engine import InferenceSession
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
@@ -54,7 +53,11 @@ from pydantic import (
 )
 from typing_extensions import Self
 
-from .model_config import MAXModelConfig
+from .model_config import (
+    MAXModelConfig,
+    _select_dtype_cast,
+    _select_quantization_encoding,
+)
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -127,46 +130,6 @@ def _is_disable_parser_sentinel(value: str | None) -> bool:
     disable the parser, overriding any architecture-declared default.
     """
     return isinstance(value, str) and value.lower() == DISABLE_PARSER_SENTINEL
-
-
-# Guards the one-time ``atexit`` registration of
-# ``_finalize_profiling_on_exit``.  The profiling namespace is shared across
-# sessions (it fronts process-global profiler state), so one hook flushes the
-# trace no matter how many sessions were configured — and registering per
-# ``configure_session()`` call would pin every session alive until interpreter
-# exit via the hook's argument reference.
-_profiling_atexit_registered = False
-
-
-def _finalize_profiling_on_exit(session: InferenceSession) -> None:
-    """``atexit`` hook that drains the libkineto trace at process shutdown.
-
-    Auto-enable in :meth:`PipelineConfig.configure_session` has no symmetric
-    point at which to disable because the consumers (``max pipelines
-    generate``, ``LLM``, ``serve``) do not call back into config code
-    when they finish.  Registering this hook from ``configure_session``
-    means the trace gets flushed on a normal interpreter exit even if
-    user code never invokes ``session.profiling.stop()``.
-
-    User code that *does* call ``stop()`` explicitly leaves the profiler
-    in the ``idle`` state, so the ``is_enabled`` guard makes this a no-op
-    on its second visit.  Exceptions during shutdown are intentionally
-    swallowed — interpreter teardown is too unreliable to bubble them up
-    and the trace failure (if any) is already recorded in
-    ``lastTraceError`` for callers that consult it before exit.
-    """
-    try:
-        if session.profiling.is_enabled:
-            session.profiling.stop()
-            session.profiling.wait_for_trace()
-    except ProfilingError:
-        # The only expected failure here is trace serialization, which
-        # wait_for_trace() raises as ProfilingError; it's already recorded in
-        # lastTraceError for callers that consult it, so swallow it at exit.
-        # We intentionally do NOT catch broad Exception: a programming error
-        # (e.g. a renamed attribute) must surface as an atexit traceback
-        # rather than be silently dropped.
-        pass
 
 
 class PipelineConfig(ConfigFileModel):
@@ -370,42 +333,16 @@ class PipelineConfig(ConfigFileModel):
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
         session._use_vendor_ccl(self.runtime.use_vendor_ccl)
-
-        # libkineto auto-enable at session construction.  start() must run
-        # before model load: CUPTI cannot retroactively instrument CUDA graphs
-        # instantiated before its subscription (see activatePendingTrace() in
-        # Support/Profiling/internal/Range.h), so a later start() captures
-        # zero GPU activity.  MXTOOLS-211 tracks the MLRT graph-cache
-        # invalidation that lifts this restriction.
-        #
-        # Propagate the remaining ProfilingConfig fields to session.debug
-        # *before* start() so libkineto reads the right output path / step
-        # counts when it primes its CUPTI subscription.
-        if self.profiling.profiling_enabled:
-            if self.profiling.profiling_output_path is not None:
-                session.debug.profiling_output_path = (
-                    self.profiling.profiling_output_path
-                )
-            session.debug.profiling_dynolog_enabled = (
-                self.profiling.profiling_dynolog_enabled
+        # BLASST prefill sparsity sweep hook (off unless ENABLE_BLASST is set in
+        # the env). Injects the comptime defines the SM100 2Q attention kernel
+        # reads via get_defined_{bool,int}. Values must be str/int, never Python
+        # True (a UnitAttr fails KGEN's string coercion). No effect when unset.
+        if os.environ.get("ENABLE_BLASST"):
+            session._set_mojo_define("ENABLE_BLASST", "true")
+            session._set_mojo_define(
+                "BLASST_LOG_THRESHOLD_MAG",
+                int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
             )
-            session.debug.profiling_warmup_steps = (
-                self.profiling.profiling_warmup_steps
-            )
-            session.debug.profiling_active_steps = (
-                self.profiling.profiling_active_steps
-            )
-            session.debug.profiling_periodic_flush_seconds = (
-                self.profiling.profiling_periodic_flush_seconds
-            )
-            session.profiling.start()
-            # One hook per process suffices: session.profiling fronts shared
-            # process-global profiler state, so flushing through the first
-            # session flushes for all (see _profiling_atexit_registered).
-            global _profiling_atexit_registered
-            if not _profiling_atexit_registered:
-                atexit.register(_finalize_profiling_on_exit, session)
-                _profiling_atexit_registered = True
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
@@ -922,13 +859,31 @@ class PipelineConfig(ConfigFileModel):
         model_kwarg = kwargs.pop("model", None)
         draft_model_kwarg = kwargs.pop("draft_model", None)
 
+        # Fold --model-override entries into the directly-passed model/draft
+        # dicts BEFORE constructing MAXModelConfig. The constructor eagerly
+        # resolves the HuggingFace repo handle, and under HF_HUB_OFFLINE a repo
+        # cached only at a pinned SHA has no "main" snapshot — so constructing
+        # at the dataclass-default revision raises. A recipe passed via
+        # --config-file supplies the model as a dict here and pins the revision
+        # via --model-override, so that override must reach the constructor and
+        # not just a later with_override(). (The --model-path CLI path folds
+        # these overrides in _build_models_from_kwargs.)
+        component_overrides: dict[str, dict[str, Any]] = {}
+        for override_str in kwargs.get("model_override") or []:
+            component, field_name, value = cls._parse_model_override(
+                override_str
+            )
+            component_overrides.setdefault(component, {})[field_name] = value
+
         # If a MAXModelConfig (or plain dict from config file) was passed
         # directly, wrap it in a manifest.
         if model_kwarg is not None:
             if isinstance(model_kwarg, dict) and not isinstance(
                 model_kwarg, MAXModelConfig
             ):
-                model_kwarg = MAXModelConfig(**model_kwarg)
+                model_kwarg = MAXModelConfig(
+                    **{**model_kwarg, **component_overrides.get("main", {})}
+                )
             kwargs["models"] = ModelManifest({"main": model_kwarg})
 
         # Separate PipelineConfig-own fields from sub-config fields.
@@ -942,12 +897,19 @@ class PipelineConfig(ConfigFileModel):
 
         instance = cls(**pydantic_kwargs)
 
-        # Add draft model via with_override.
+        # Add draft model via with_override. Fold draft --model-override
+        # entries in before construction for the same offline-revision reason
+        # as the main model above.
         if draft_model_kwarg is not None:
             if isinstance(draft_model_kwarg, dict) and not isinstance(
                 draft_model_kwarg, MAXModelConfig
             ):
-                draft_model_kwarg = MAXModelConfig(**draft_model_kwarg)
+                draft_model_kwarg = MAXModelConfig(
+                    **{
+                        **draft_model_kwarg,
+                        **component_overrides.get("draft", {}),
+                    }
+                )
             instance.models = instance.models.with_override(
                 "draft", config=draft_model_kwarg
             )
@@ -1096,6 +1058,16 @@ class PipelineConfig(ConfigFileModel):
             )
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+        # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
+        # block drafter declares architectures: ["Gemma4DSparkModel"].
+        if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
+            draft_archs = (
+                self.draft_model.huggingface_config.architectures
+                if self.draft_model is not None
+                else None
+            )
+            if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
+                target_archs[0] = "UnifiedDSparkGemma4ForCausalLM"
         if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
             draft_archs = (
                 self.draft_model.huggingface_config.architectures
@@ -1148,8 +1120,6 @@ class PipelineConfig(ConfigFileModel):
             return
 
         # Validation for max_length is handled in MAXModelConfig
-
-        self._validate_and_resolve_max_num_steps()
 
         if (
             self.sampling.enable_structured_output
@@ -1402,19 +1372,6 @@ class PipelineConfig(ConfigFileModel):
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.runtime.enable_overlap_scheduler = True
 
-    def _validate_and_resolve_max_num_steps(self) -> None:
-        """Normalize deprecated ``max_num_steps`` to single-step decode."""
-        if self.runtime.max_num_steps in (1, -1):
-            self.runtime.max_num_steps = 1
-            return
-
-        logger.warning(
-            "--max-num-steps=%s is deprecated and ignored; using single-step "
-            "decode (max_num_steps=1).",
-            self.runtime.max_num_steps,
-        )
-        self.runtime.max_num_steps = 1
-
     def _validate_pipeline_config_for_speculative_decoding(
         self,
         target_arch: Any,
@@ -1483,16 +1440,17 @@ class PipelineConfig(ConfigFileModel):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        model_config.validate_and_resolve_quantization_encoding_weight_path(
-            default_encoding=arch.default_encoding
+        resolved_encoding = _select_quantization_encoding(
+            model_config, arch.default_encoding
         )
-
-        # by this point, the quantization_encoding must be provided. verify it is supported.
-        if model_config.quantization_encoding not in arch.supported_encodings:
+        cast_from, _ = _select_dtype_cast(model_config, arch.default_encoding)
+        if resolved_encoding not in arch.supported_encodings:
             raise ValueError(
-                f"quantization_encoding of '{model_config.quantization_encoding}' not supported by MAX engine."
+                f"quantization_encoding of '{resolved_encoding}' not supported by MAX engine."
             )
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
+            resolved_encoding=resolved_encoding,
+            applied_dtype_cast_from=cast_from,
             supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
@@ -1549,15 +1507,6 @@ class PipelineConfig(ConfigFileModel):
     # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
     # should rely on the BaseModel implementation.
 
-    @property
-    def graph_quantization_encoding(self) -> QuantizationEncoding | None:
-        """Converts the CLI encoding to a MAX graph quantization encoding.
-
-        Returns:
-            The graph quantization encoding corresponding to the CLI encoding.
-        """
-        return self.model.graph_quantization_encoding
-
     @classmethod
     def from_args(cls, args: PipelineArgs) -> Self:
         """Construct a :class:`PipelineConfig` from a :class:`PipelineArgs`.
@@ -1602,6 +1551,8 @@ class PipelineConfig(ConfigFileModel):
             runtime=PipelineRuntimeConfig(
                 pipeline_role=args.pipeline_role,
                 max_batch_size=args.max_batch_size,
+                precompiled_mefs=args.precompiled_mefs,
+                export_mefs=args.export_mefs,
                 max_queue_size_tg=args.max_queue_size_tg,
                 min_batch_size_tg=args.min_batch_size_tg,
                 ep_size=args.ep_size,
@@ -1613,7 +1564,6 @@ class PipelineConfig(ConfigFileModel):
                 chunked_prefill_min_chunk_size=args.chunked_prefill_min_chunk_size,
                 enable_in_flight_batching=args.enable_in_flight_batching,
                 eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
-                max_num_steps=args.max_num_steps,
                 max_batch_input_tokens=args.max_batch_input_tokens,
                 use_experimental_kernels=args.use_experimental_kernels,
                 use_vendor_blas=args.use_vendor_blas,
@@ -1645,12 +1595,6 @@ class PipelineConfig(ConfigFileModel):
             ),
             profiling=ProfilingConfig(
                 gpu_profiling=args.gpu_profiling,
-                profiling_enabled=args.profiling_enabled,
-                profiling_output_path=args.profiling_output_path,
-                profiling_dynolog_enabled=args.profiling_dynolog_enabled,
-                profiling_warmup_steps=args.profiling_warmup_steps,
-                profiling_active_steps=args.profiling_active_steps,
-                profiling_periodic_flush_seconds=args.profiling_periodic_flush_seconds,
             ),
             lora=args.lora.model_copy(deep=True) if args.lora else None,
             speculative=args.speculative.model_copy(deep=True)

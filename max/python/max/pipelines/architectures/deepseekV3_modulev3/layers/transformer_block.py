@@ -29,7 +29,7 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import Partial, PlacementMapping
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter
@@ -188,6 +188,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
         residual = x
         norm_x = self.input_layernorm(x)
@@ -202,7 +203,11 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
 
         hidden_states = self._post_attention(residual, attn_out)
         norm_h = self.post_attention_layernorm(hidden_states)
-        mlp_out = self.mlp(norm_h)
+        if isinstance(self.mlp, ExpertParallelMoE):
+            assert comm_buffers is not None
+            mlp_out = self.mlp(norm_h, comm_buffers)
+        else:
+            mlp_out = self.mlp(norm_h)
         hidden_states = self._post_mlp(hidden_states, mlp_out)
         return F.rebind(hidden_states, x.shape)
 

@@ -133,6 +133,7 @@ from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     prompt_tokens_for_context,
 )
 from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
     SupportsVisionEncoding,
     VisionEncoderCache,
     as_vision_context_batches,
@@ -181,7 +182,7 @@ from ..interfaces import (
     UnifiedEagleOutputs,
 )
 from ..utils import CompilationTimer
-from ..vision_encoder_cache import VisionEncoderMetrics
+from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -1596,16 +1597,17 @@ class OverlapTextGenerationPipeline(
         )
         self.vocab_size = self._structured_output.vocab_size
 
-        session = InferenceSession(devices=[*self._devices])
+        session = InferenceSession(
+            devices=[*self._devices],
+            precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
+            export_mefs=pipeline_config.runtime.export_mefs,
+        )
         self.session = session
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not model_config.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = model_config.resolved_weight_paths()
 
@@ -3619,16 +3621,48 @@ class OverlapTextGenerationPipeline(
         """Executes a batch of requests asynchronously on the GPU.
 
         This method returns before the outputs for the current batch are
-        ready. The caller may need to call ``execute()`` again (possibly
-        with an empty batch) to retrieve these outputs. For example:
+        ready, so the outputs it returns belong to the *previous* batch. To
+        drain the outputs for the final batch, call ``execute()`` again with an
+        empty batch.
+
+        The batch of requests is a
+        :class:`~max.pipelines.modeling.types.TextGenerationInputs`, which wraps
+        one or more :class:`~max.pipelines.context.TextContext` objects. Build a
+        batch on CPU like this:
 
         .. code-block:: python
 
+            import numpy as np
+            from max.pipelines.context import TextContext, TokenBuffer
+            from max.pipelines.modeling.types import (
+                RequestID,
+                TextGenerationInputs,
+            )
+
+            contexts = [
+                TextContext(
+                    request_id=RequestID(),
+                    max_length=32,
+                    tokens=TokenBuffer(np.arange(8, dtype=np.int64)),
+                )
+                for _ in range(4)
+            ]
+            inputs = TextGenerationInputs(batches=[contexts])
+            empty_inputs = TextGenerationInputs(batches=[[]])
+            assert len(inputs.flat_batch) == 4
+            assert len(empty_inputs.flat_batch) == 0
+
+        Given a loaded ``pipeline``, the first ``execute`` returns no outputs
+        (they belong to a not-yet-submitted previous batch); a second, empty
+        call drains the first batch's outputs:
+
+        .. code-block:: text
+
             output_a = pipeline.execute(inputs)
-            assert len(outputs) == 0
+            assert len(output_a) == 0
 
             output_b = pipeline.execute(empty_inputs)
-            assert len(outputs) == len(inputs.flat_batch)
+            assert len(output_b) == len(inputs.flat_batch)
 
         Args:
             inputs: The inputs for the batch.
@@ -3870,11 +3904,27 @@ class OverlapTextGenerationPipeline(
 
         Returns ``None`` for text-only models and for batches that did no
         vision encoding (e.g. decode steps). The metrics come from the
-        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one.
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
+        otherwise, for a model that owns its encoder cache internally, from
+        :class:`SupportsPooledVisionMetrics`.
         """
-        if self._encoder_cache is None:
-            return None
-        return self._encoder_cache.pop_metrics()
+        if self._encoder_cache is not None:
+            return self._encoder_cache.pop_metrics()
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_vision_metrics()
+        return None
+
+    def batch_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns video encoder metrics for the most recent batch.
+
+        Returns ``None`` for models with no video support and for batches
+        that did no video encoding. Video encoding has no pipeline-owned
+        cache equivalent to :class:`VisionEncoderCache`, so this only ever
+        comes from a model implementing :class:`SupportsPooledVisionMetrics`.
+        """
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_video_metrics()
+        return None
 
     def batch_spec_decode_metrics(
         self,

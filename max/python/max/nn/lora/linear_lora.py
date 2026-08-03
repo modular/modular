@@ -58,26 +58,24 @@ class LinearLoRA(Module, SupportsLoRA):
 
         .. code-block:: python
 
+            from max.driver import Accelerator, CPU, accelerator_count
+            from max.dtype import DType
+            from max.graph import DeviceRef
+            from max.nn.lora import LinearLoRA
+
+            device = Accelerator() if accelerator_count() > 0 else CPU()
+            device_ref = DeviceRef.from_device(device)
+
             linear_layer = LinearLoRA(
                 in_dim=256,
                 out_dim=128,
                 max_lora_rank=16,
                 max_num_loras=100,
-                dtype=dtype.float32,
-                device=DeviceRef.GPU(),
-                has_bias=True,
+                dtype=DType.float32,
+                device=device_ref,
                 has_lora_bias=True,
                 name="lora_linear"
             )
-
-            lora_ids: TensorValue # shape: [max_num_loras,]
-            lora_ranks: TensorValue # shape: [max_num_loras,]
-            input_row_offsets: TensorValue
-            linear_layer.set_lora_batch_info(lora_ids, lora_ranks, input_row_offsets)
-
-            # Input tensor of shape: [batch, ..., 256]
-            input_tensor: TensorValue
-            output = linear_layer(input_tensor)
         """
         super().__init__()
 

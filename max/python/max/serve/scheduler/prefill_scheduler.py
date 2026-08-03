@@ -425,6 +425,9 @@ class PrefillScheduler(Scheduler):
             batch_vision_metrics=self.pipeline.batch_vision_metrics()
             if hasattr(self.pipeline, "batch_vision_metrics")
             else None,
+            batch_video_metrics=self.pipeline.batch_video_metrics()
+            if hasattr(self.pipeline, "batch_video_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS

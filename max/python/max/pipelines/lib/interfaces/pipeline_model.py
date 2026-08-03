@@ -45,12 +45,18 @@ from max.pipelines.kv_cache.config import (
     KVCacheConfig,
     cache_dtype_for_encoding,
 )
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
 )
 from max.pipelines.lora import LoRAInputs, LoRAManager
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.profiler import traced
 from transformers import AutoConfig
 
@@ -172,6 +178,12 @@ class ModelInputs:
 
     .. code-block:: python
 
+        from dataclasses import dataclass
+
+        from max.driver import Buffer
+        from max.dtype import DType
+        from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+
         @dataclass
         class ReplitInputs(ModelInputs):
             tokens: Buffer
@@ -185,7 +197,8 @@ class ModelInputs:
         inputs = ReplitInputs(tokens=tokens, input_row_offsets=input_row_offsets)
 
         # Access tensors
-        list(inputs) == [tokens, input_row_offsets]  # Output: True
+        assert inputs.tokens is tokens
+        assert inputs.input_row_offsets is input_row_offsets
     """
 
     kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None
@@ -454,12 +467,35 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return Signals.allocate(self.devices)
 
     @property
+    def _resolved_encoding(self) -> SupportedEncoding:
+        """The effective quantization encoding for this model.
+
+        The config holds only the raw user value (possibly ``None``); encoding
+        resolution lives in the consumer. Resolve here against the
+        architecture's ``DEFAULT_ENCODING`` (the same value
+        ``ArchConfig.initialize`` uses), for the generic consumers that hold
+        only the config class rather than a built ``ArchConfig``.
+        """
+        model_config = self.pipeline_config.model
+        default = getattr(
+            getattr(type(self), "model_config_cls", None),
+            "DEFAULT_ENCODING",
+            None,
+        )
+        if default is not None:
+            return _select_quantization_encoding(model_config, default)
+        encoding = model_config.quantization_encoding
+        if encoding is None:
+            raise ValueError(
+                "quantization_encoding could not be resolved for "
+                f"'{model_config.model_path}'."
+            )
+        return encoding
+
+    @property
     def dtype(self) -> DType:
-        """Returns the model data type from pipeline config."""
-        quantization_encoding = self.pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        return supported_encoding_dtype(quantization_encoding)
+        """Returns the model data type."""
+        return supported_encoding_dtype(self._resolved_encoding)
 
     @property
     def sampler_custom_extensions(self) -> Sequence[Path]:
@@ -771,7 +807,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=cache_dtype_for_encoding(
-                self.pipeline_config.model.quantization_encoding,
+                self._resolved_encoding,
                 self.pipeline_config.model.kv_cache.kv_cache_format,
             ),
         )

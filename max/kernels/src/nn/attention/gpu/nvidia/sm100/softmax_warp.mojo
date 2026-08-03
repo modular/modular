@@ -16,9 +16,10 @@ from std.math import exp2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf
-from std.sys import size_of, get_defined_int
+from std.sys import size_of, get_defined_int, get_defined_bool
 from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
+from std.gpu import block_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.sync import (
@@ -29,7 +30,7 @@ from std.gpu.sync import (
 )
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.primitives.id import cluster_dim
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
@@ -41,15 +42,17 @@ from std.gpu.compute.arch.tcgen05 import (
 from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,
     EnableEarlyAdd,
+    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
     apply_mask,
+    blasst_vote_unanimous,
     combine_pack_o_row,
     elect,
     exp2_emulation,
@@ -177,7 +180,7 @@ def fa4_scale_write_output[
         comptime if zero_fill:
             # Empty (all-masked) row: emit zeros without reading the
             # never-produced O accumulator in TMEM.
-            var o_vals = InlineArray[Scalar[accum_dtype], o_sw_K](
+            var o_vals = Array[Scalar[accum_dtype], o_sw_K](
                 fill=Scalar[accum_dtype](0)
             )
             var packed = scale_pack_o_row[output_type, w=o_sw_K](
@@ -2154,6 +2157,11 @@ def fa4_softmax[
     # WGs even for their single-O configs) and every non-single-O path
     # byte-identical.
     single_softmax_wg: Bool = False,
+    # Effective cross-stage-P switch, computed once at the kernel level where
+    # config, MaskType and the store shape are all visible. Defaults True so
+    # the config-level gate alone decides for callers that do not thread it;
+    # the MHA kernel passes its own narrower predicate.
+    crossp_effective: Bool = True,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -2296,12 +2304,31 @@ def fa4_softmax[
     # so there is NO per-warp column offset here (see sm100/CLAUDE.md).
     s_tmem += UInt32(config.TMEM_S1 - config.TMEM_S0) * warp_group_idx
 
-    p_tmem = s_tmem
+    # Cross-stage P (2Q + non-WS only): write this WG's P into the OTHER
+    # stage's free S columns instead of self-aliased s_tmem, so exp2 no
+    # longer overwrites the S it just read -- letting S release right after
+    # LDTM, before exp2. Default OFF => p_tmem == s_tmem, byte-identical.
+    comptime CrossP = crossp_effective and MiscMBarsType.CrossP_enabled
+    var p_tmem: UInt32
+    comptime if CrossP:
+        p_tmem = tmem_addr + (
+            UInt32(config.TMEM_P0) if warp_group_idx
+            == UInt32(0) else UInt32(config.TMEM_P1)
+        )
+    else:
+        p_tmem = s_tmem
     s_tile = UMMA0Type.CType(s_tmem)
     p_tile = UMMA1Type.AType(p_tmem)
 
     var pipeline_s = mbars.consumer_s(warp_group_idx)
     pipeline_c = mbars.producer_c(warp_group_idx)
+    # Cross-stage P inplace handshake (2Q + non-WS only): `inplace_cons` waits
+    # the peer's "S{1-wg} window free" signal before storing P{wg} there;
+    # `inplace_prod` commits it after each LDTM (fire-and-forget, no acquire).
+    # Depth-4 so the producer's bounded lead over the consumer never laps a
+    # single-stage mbar.
+    var inplace_cons = mbars.inplace_consumer(UInt32(1) - warp_group_idx)
+    var inplace_prod = mbars.inplace_producer(warp_group_idx)
     var order_phase: UInt32 = 1 - warp_group_idx
 
     var order_s_wait: Optional[MBarType] = None
@@ -2365,6 +2392,21 @@ def fa4_softmax[
         -8
     ) if size_of[qkv_type]() >= 2 else Scalar[accum_dtype](-2)
     comptime p_fp8_bias: Scalar[accum_dtype] = 8 + rescale_threshold
+
+    # BLASST (arXiv 2512.12087): a block is a skip candidate iff all 32 lanes
+    # agree its tile-local max sits `blasst_log_threshold` below the true
+    # running max `m_true`. `and not config.use_ws`: main's `_pv_ws` P@V path
+    # has no BLASST analog, so stripping would drop P while the MMA still ran
+    # P@V (wrong O).
+    comptime ENABLE_BLASST = get_defined_bool[
+        "ENABLE_BLASST", False
+    ]() and not config.use_ws
+    # Negative log2-domain threshold; the compiler rejects negative int
+    # defines, so it's passed as a positive milli-unit magnitude via
+    # -D BLASST_LOG_THRESHOLD_MAG and negated here.
+    comptime blasst_log_threshold: Scalar[accum_dtype] = -Float32(
+        get_defined_int["BLASST_LOG_THRESHOLD_MAG", 1_000_000_000]()
+    ) * Float32(0.001)
 
     @parameter
     @always_inline
@@ -2539,6 +2581,16 @@ def fa4_softmax[
                 k_scale_off = (k_scale_off + UInt32(config.BN)) if (
                     k_scale_off != UInt32(k_scale_wrap - config.BN)
                 ) else 0
+        comptime if CrossP:
+            # Cross-stage P early release: S{wg} is now fully read into `s`,
+            # so signal both the MMA (may overwrite S{wg}) and the peer WG
+            # (S{wg}'s columns are free for P{1-wg}). `load_wait`+`fence_before`
+            # order this ahead of the mbar arrives so the MMA can't race the read.
+            tcgen05_load_wait()
+            tcgen05_fence_before()
+            var sfree_p = mbars.sfree_producer(warp_group_idx)
+            sfree_p.commit()
+            inplace_prod.commit()
         return vrow_max
 
     @parameter
@@ -2558,6 +2610,18 @@ def fa4_softmax[
         return maximum(
             load_mask_max_impl[mask_strategy=mask_strategy](kv_row), old_max
         )
+
+    # Same wait+fence+load as `load_mask_max`, but returns the pure tile-local
+    # max (no `old_max` fusion) so one reduction feeds both the running max
+    # and the BLASST vote.
+    @parameter
+    @always_inline
+    def load_mask_tile_max[
+        mask_strategy: MaskStrategy
+    ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
+        pipeline_s.wait()
+        tcgen05_fence_after()
+        return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
 
     @parameter
     @always_inline
@@ -2704,6 +2768,109 @@ def fa4_softmax[
                 x = exp2(x)
             s_store[idx](x)
 
+        # Cross-stage P store: per-tile asymmetric static schedule (`ahead`
+        # batches of exp2 buffered before the inplace wait, tuned per-tile
+        # since each WG's consume signal arrives at a different phase) with
+        # the row-sum interleaved per-batch. Same 4-acc every-4th reduction
+        # tree/pairings as the aliased path below => bit-exact, no reassociation.
+        comptime if CrossP:
+            comptime assert not EnableForcedOrdering, (
+                "FA4_TMEM_CROSS_P per-tile store is untested with"
+                " FA4ForcedSoftmaxOrdering"
+            )
+            comptime assert not (
+                ExplicitTMEMCrossP
+                and not (remainder == 0 and num_batch_iters == 4)
+            ), (
+                "FA4_TMEM_CROSS_P=true was requested but the per-tile store"
+                " assumes 4 full batches (headline shape)"
+            )
+
+            @parameter
+            @always_inline
+            def _asym[ahead: Int]() -> f32x2:
+                # buffer `ahead` batches (exp2 only, no store)
+                comptime for bb in range(ahead):
+                    comptime for idx in range(
+                        bb * batch_size, (bb + 1) * batch_size
+                    ):
+                        exp_iter[idx]()
+                # single inplace consume (instant at this static position)
+                inplace_cons.wait()
+                inplace_cons.step()
+                # init 0 only to satisfy definite-init across the comptime-if
+                # branches; batch 0 ASSIGNS (overwrites) below, so the 4-acc
+                # every-4th tree/pairings are unchanged => bit-exact.
+                var r0 = f32x2(0)
+                var r1 = f32x2(0)
+                var r2 = f32x2(0)
+                var r3 = f32x2(0)
+                comptime for b in range(num_batch_iters):
+                    # 3-then-1: release consumer_s[0] (P[0:96)) at the b==3
+                    # boundary, after batches 0,1,2 are stored.
+                    comptime if 4 * b == 3 * num_batch_iters:
+                        tcgen05_store_wait()
+                        tcgen05_fence_before()
+                        comptime if config.pair_cta:
+                            umma_arrive_leader_cta(
+                                pipeline_s.consumer_mbar[0]()
+                            )
+                        else:
+                            pipeline_s.release_no_step[0]()
+                    comptime if b >= ahead:
+                        comptime for idx in range(
+                            b * batch_size, (b + 1) * batch_size
+                        ):
+                            exp_iter[idx]()
+                    comptime if b == 0:
+                        BatchTileType(p_tmem).store_async(s)
+                    else:
+                        comptime el = batch_size * b * exp_simd
+                        comptime to = (el * size_of[qkv_type]()) // size_of[
+                            accum_dtype
+                        ]()
+                        BatchTileType(p_tmem + UInt32(to)).store_async[
+                            src_offset=el
+                        ](s)
+                    # interleave the row-sum for batch b (same 4-acc every-4th
+                    # tree as the aliased path => bit-exact)
+                    comptime if b == 0:
+                        r0 = s_load[0]()
+                        r1 = s_load[1]()
+                        r2 = s_load[2]()
+                        r3 = s_load[3]()
+                        comptime for k in range(4, batch_size, 4):
+                            r0 = add_ftz(r0, s_load[k]())
+                            r1 = add_ftz(r1, s_load[k + 1]())
+                            r2 = add_ftz(r2, s_load[k + 2]())
+                            r3 = add_ftz(r3, s_load[k + 3]())
+                    else:
+                        comptime for k in range(
+                            b * batch_size, (b + 1) * batch_size, 4
+                        ):
+                            r0 = add_ftz(r0, s_load[k]())
+                            r1 = add_ftz(r1, s_load[k + 1]())
+                            r2 = add_ftz(r2, s_load[k + 2]())
+                            r3 = add_ftz(r3, s_load[k + 3]())
+                tcgen05_store_wait()
+                tcgen05_fence_before()
+                comptime if config.pair_cta:
+                    umma_arrive_leader_cta(
+                        pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
+                    )
+                    pipeline_s.step()
+                else:
+                    pipeline_s.release[config.num_pv_stages - 1]()
+                pipeline_c.acquire()
+                return add_ftz(add_ftz(r0, r1), add_ftz(r2, r3))
+
+            # Per-tile ahead value (see `_asym` above). Warp-uniform branch --
+            # no divergence cost.
+            if warp_group_idx == UInt32(0):
+                return _asym[1]()
+            else:
+                return _asym[0]()
+
         # --- Batch 0 ---
         comptime for idx in range(batch_size):
             exp_iter[idx]()
@@ -2807,6 +2974,35 @@ def fa4_softmax[
             acc2 = add_ftz(acc2, s_load[i + 2]())
             acc3 = add_ftz(acc3, s_load[i + 3]())
         return add_ftz(add_ftz(acc0, acc1), add_ftz(acc2, acc3))
+
+    # Stripped sibling of store_exp for a WG-unanimous skip: no exp2/P-store/
+    # row-sum, but reproduces every barrier arrival so the MMA and correction
+    # warps stay in lockstep.
+    @parameter
+    @always_inline
+    def store_exp_skip():
+        # Match store_exp's tail ordering (no P store to fence, but keep the
+        # same tcgen05 wait/fence discipline before releasing S-consumer).
+        tcgen05_store_wait()
+        tcgen05_fence_before()
+        # Cross-stage P: the peer's inplace producer commits every block
+        # regardless of skip, so this consumer phase must advance here too
+        # (BLASST skip) or it drifts out of lockstep with the peer.
+        comptime if CrossP:
+            inplace_cons.wait()
+            inplace_cons.step()
+        comptime if config.pair_cta:
+            comptime for pv_stage in range(config.num_pv_stages):
+                umma_arrive_leader_cta(pipeline_s.consumer_mbar[pv_stage]())
+            pipeline_s.step()
+        else:
+            comptime for pv_stage in range(config.num_pv_stages - 1):
+                pipeline_s.release_no_step[pv_stage]()
+            pipeline_s.release[config.num_pv_stages - 1]()
+        comptime if EnableForcedOrdering:
+            _ = order_s_arrive.unsafe_value()[].arrive()
+            order_phase ^= 1
+        pipeline_c.acquire()
 
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](
         seq_info.prompt_idx, score_row
@@ -3191,6 +3387,55 @@ def fa4_softmax[
         else:
             return mul_ftz(m, neg_scale_log2e)
 
+    # TRUE per-lane running max, distinct from the lazy/stale `row_max`;
+    # orthogonal to the #92318 scaled-domain carry (raw units).
+    var m_true: Float32 = row_max
+
+    # Vote-ALL (not vote-ANY): skipping needs every lane's agreement, since
+    # P@V is monolithic over the WG and one dissenting row's contribution
+    # would be lost. Published to smem keyed by (wg, S-consumer phase) --
+    # double-buffered since softmax can run one block ahead of the MMA's
+    # P@V read; the peel's zero-inited region reads as "don't skip".
+    var blasst_vote = smem.blasst_vote_smem()
+    var blasst_warp_in_wg: UInt32 = warp_idx & UInt32(3)
+    var blasst_lane0: Bool = (tid % UInt32(32)) == UInt32(0)
+
+    @parameter
+    @always_inline
+    def blasst_observe(tile_max: Float32) -> Bool:
+        m_true = max_ftz(m_true, tile_max)
+        var diff_true = sub_ftz(tile_max, m_true)
+        comptime if use_fma:
+            diff_true = mul_ftz(diff_true, scale_log2e)
+        var would_skip = _vote_nvidia_helper(
+            diff_true < blasst_log_threshold
+        ) == UInt32(0xFFFFFFFF)
+        # `pipeline_s.state.phase()` is the S-consumer generation of the block
+        # softmax is currently producing (store_exp steps it AFTER this).
+        var vote_phase: UInt32 = pipeline_s.state.phase()
+        var vote_base: UInt32 = (
+            warp_group_idx * UInt32(2) + vote_phase
+        ) * UInt32(4)
+        if blasst_lane0:
+            blasst_vote[vote_base + blasst_warp_in_wg] = UInt8(
+                1
+            ) if would_skip else UInt8(0)
+        # Strip only on the WG-unanimous vote (P@V is monolithic over the WG;
+        # one warp skipping while a sibling keeps would multiply stale P).
+        # Barrier id = warp_group_idx so the two WGs never cross-sync.
+        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+        return blasst_vote_unanimous(blasst_vote, warp_group_idx, vote_phase)
+
+    # Cross-stage P JIT-P1 seed: WG1 consumes one extra s0_p1 token, giving
+    # WG0 a one-block lead so WG1's P1(m) store waits on WG0's block-(m+1) S0
+    # release -- the WAR that makes the QK0-first MMA order legal (see
+    # mma_warp cross-P block). WG0 needs no seed (covered by MMA program
+    # order). Balanced by the WG0 drain after the main loop below.
+    comptime if CrossP:
+        if warp_group_idx == UInt32(1):
+            inplace_cons.wait()
+            inplace_cons.step()
+
     var row_sum: f32x2
     comptime if use_fma:
         neg_max_scaled = neg_scaled_max(row_max)
@@ -3277,12 +3522,110 @@ def fa4_softmax[
                 kv_row += UInt32(kv_row_stride)
                 # calculate rowmax
                 old_max = row_max
-                var new_row_max: Float32 = load_mask_max[mask_strategy](
-                    kv_row, old_max
-                )
+                var new_row_max: Float32
+                # WG-unanimous skip decision (comptime-False -> byte-identical
+                # OFF).
+                var blasst_wg_skip: Bool = False
+                comptime if ENABLE_BLASST:
+                    # One reduction feeds both: pure `tile_max` for the vote
+                    # (folding old_max in would suppress the skips BLASST
+                    # targets), and `new_row_max` via max_ftz (bitwise-identical
+                    # to the init-fused form, fewer instructions).
+                    var tile_max = maximum(
+                        load_mask_tile_max[mask_strategy](kv_row)
+                    )
+                    new_row_max = max_ftz(tile_max, old_max)
+                    blasst_wg_skip = blasst_observe(tile_max)
+                else:
+                    new_row_max = load_mask_max[mask_strategy](kv_row, old_max)
 
-                # Loop-body scoped so `nms_new` reaches the gate's adoption
-                # below (dead `0.0` for non-fma; DCE'd).
+                if not blasst_wg_skip:
+                    # Loop-body scoped so `nms_new` reaches the gate's adoption
+                    # below (dead `0.0` for non-fma; DCE'd).
+                    var nms_new: Float32 = 0.0
+                    comptime if use_fma:
+                        # scaled-domain carry: one FMUL (nms_new) feeds both
+                        # the correction diff and store_exp's bias.
+                        nms_new = neg_scaled_max(new_row_max)
+                        diff = sub_ftz(nms_new, neg_max_scaled)
+                    else:
+                        diff = sub_ftz(old_max, new_row_max)
+                    var correction: Float32
+
+                    comptime if rescale_threshold < 0:
+                        # old_max - new_row_max < -8
+                        # 8 < new_row_max - old_max
+                        if _vote_nvidia_helper(diff < rescale_threshold) != 0:
+                            row_max = new_row_max
+                            comptime if use_fma:
+                                neg_max_scaled = nms_new
+                            correction = exp2(diff)
+                        else:
+                            correction = 1
+                    else:
+                        row_max = new_row_max
+                        comptime if use_fma:
+                            neg_max_scaled = nms_new
+                        correction = exp2(diff)
+                    correction_smem[] = correction
+                    pipeline_c.commit()
+                    # update s->p
+                    comptime if use_fma:
+                        local_rowsum = store_exp(neg_max_scaled)
+                    else:
+                        local_rowsum = store_exp(row_max)
+                    row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
+                else:
+                    # Stripped: no exp2/P-store/row-sum; identity correction
+                    # leaves prior-block O untouched.
+                    correction_smem[] = 1.0
+                    pipeline_c.commit()
+                    store_exp_skip()
+                o_phase ^= 1
+    else:
+        while True:
+            kv_row += UInt32(kv_row_stride)
+            if kv_row >= num_keys:
+                break
+            cur_mask_status = mask.status(
+                seq_info.prompt_idx,
+                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
+                Index[dtype=DType.int32](BM_mask, BN),
+            )
+            if cur_mask_status == TileMaskStatus.FULL_MASK:
+                continue
+            # calculate rowmax
+            old_max = row_max
+            var new_row_max: Scalar[accum_dtype]
+            # WG-unanimous skip decision (comptime-False -> byte-identical OFF).
+            var blasst_wg_skip: Bool = False
+            comptime if ENABLE_BLASST:
+                # See the main-loop note above: one reduction feeds both the
+                # pure tile_max (vote) and new_row_max (max_ftz fold).
+                var tile_max: Float32
+                if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
+                    tile_max = maximum(
+                        load_mask_tile_max[
+                            MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
+                        ](kv_row)
+                    )
+                else:
+                    tile_max = maximum(
+                        load_mask_tile_max[MaskStrategy.OUT_OF_BOUNDS](kv_row)
+                    )
+                new_row_max = max_ftz(tile_max, old_max)
+                blasst_wg_skip = blasst_observe(tile_max)
+            else:
+                if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
+                    new_row_max = load_mask_max[
+                        MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
+                    ](kv_row, old_max)
+                else:
+                    new_row_max = load_mask_max[MaskStrategy.OUT_OF_BOUNDS](
+                        kv_row, old_max
+                    )
+
+            if not blasst_wg_skip:
                 var nms_new: Float32 = 0.0
                 comptime if use_fma:
                     # scaled-domain carry: one FMUL (nms_new) feeds both the
@@ -3316,65 +3659,19 @@ def fa4_softmax[
                 else:
                     local_rowsum = store_exp(row_max)
                 row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
-                o_phase ^= 1
-    else:
-        while True:
-            kv_row += UInt32(kv_row_stride)
-            if kv_row >= num_keys:
-                break
-            cur_mask_status = mask.status(
-                seq_info.prompt_idx,
-                Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=DType.int32](BM_mask, BN),
-            )
-            if cur_mask_status == TileMaskStatus.FULL_MASK:
-                continue
-            # calculate rowmax
-            old_max = row_max
-            var new_row_max: Scalar[accum_dtype]
-            if cur_mask_status == TileMaskStatus.PARTIAL_MASK:
-                new_row_max = load_mask_max[
-                    MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS
-                ](kv_row, old_max)
             else:
-                new_row_max = load_mask_max[MaskStrategy.OUT_OF_BOUNDS](
-                    kv_row, old_max
-                )
-
-            var nms_new: Float32 = 0.0
-            comptime if use_fma:
-                # scaled-domain carry: one FMUL (nms_new) feeds both the
-                # correction diff and store_exp's bias (see pre-loop note).
-                nms_new = neg_scaled_max(new_row_max)
-                diff = sub_ftz(nms_new, neg_max_scaled)
-            else:
-                diff = sub_ftz(old_max, new_row_max)
-            var correction: Float32
-
-            comptime if rescale_threshold < 0:
-                # old_max - new_row_max < -8
-                # 8 < new_row_max - old_max
-                if _vote_nvidia_helper(diff < rescale_threshold) != 0:
-                    row_max = new_row_max
-                    comptime if use_fma:
-                        neg_max_scaled = nms_new
-                    correction = exp2(diff)
-                else:
-                    correction = 1
-            else:
-                row_max = new_row_max
-                comptime if use_fma:
-                    neg_max_scaled = nms_new
-                correction = exp2(diff)
-            correction_smem[] = correction
-            pipeline_c.commit()
-            # update s->p
-            comptime if use_fma:
-                local_rowsum = store_exp(neg_max_scaled)
-            else:
-                local_rowsum = store_exp(row_max)
-            row_sum = fma_ftz(row_sum, f32x2(correction), local_rowsum)
+                # Stripped (see main-loop note): no exp2/P-store/row-sum.
+                correction_smem[] = 1.0
+                pipeline_c.commit()
+                store_exp_skip()
             o_phase ^= 1
+
+    # Cross-stage P JIT-P1 drain: WG0-only extra s0_p1 commit that balances
+    # the WG1 seed above, consumed by WG1's final P store.
+    comptime if CrossP:
+        if warp_group_idx == UInt32(0):
+            inplace_prod.commit()
+
     # Do the final correction and write.
     comptime assert size_of[output_type]() >= size_of[qkv_type]()
 

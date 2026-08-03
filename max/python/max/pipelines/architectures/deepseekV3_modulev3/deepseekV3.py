@@ -25,23 +25,28 @@ from max.experimental.nn.common_layers.functional_kernels import local_map
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import DP
+from max.experimental.nn.module import subgraphable
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
+    DeviceMesh,
     PlacementMapping,
     Replicated,
     Sharded,
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager
+from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
 )
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
+    QuantizedMoE,
+)
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
@@ -105,6 +110,7 @@ class DeepseekV3TextModel(
             Tensor,
             Tensor | None,
             Tensor | None,
+            EPCommBuffers | None,
         ],
         tuple[Tensor, ...],
     ]
@@ -164,18 +170,21 @@ class DeepseekV3TextModel(
         scale = self.rope.compute_scale(math.sqrt(1.0 / qk_head_dim))
         layers = []
         for i in range(config.num_hidden_layers):
-            layers.append(
-                DeepseekV3TransformerBlock(
-                    config=config,
-                    layer_idx=i,
-                    attention_scale=scale,
-                    ep_batch_manager=ep_batch_manager,
-                )
+            layer = DeepseekV3TransformerBlock(
+                config=config,
+                layer_idx=i,
+                attention_scale=scale,
+                ep_batch_manager=ep_batch_manager,
             )
+
+            # Subgraph the blocks with MoE.
+            if isinstance(layer.mlp, QuantizedMoE):
+                layer = subgraphable(layer, name="moe_block")
+            layers.append(layer)
 
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
-        self.layers = ModuleList(layers)
+        self.layers = ModuleList[DeepseekV3TransformerBlock](layers)
         self.kv_params = config.kv_params
         self.config = config
         self.mesh = config.mesh
@@ -189,6 +198,7 @@ class DeepseekV3TextModel(
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
+        comm_buffers: EPCommBuffers | None = None,
     ) -> tuple[Tensor, ...]:
         if self.mesh is not None:
             tokens = F.distributed_broadcast(tokens, self.mesh)
@@ -241,6 +251,7 @@ class DeepseekV3TextModel(
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
+                comm_buffers,
             )
 
         last_token_h = gather_last_tokens(h, input_row_offsets)
@@ -286,9 +297,14 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         batch_context_lengths = variadic_args[:dp_degree]
         variadic_args = variadic_args[dp_degree:]
         if dp_degree > 1:
+            assert dp_degree == mesh.num_devices
+
+            cpu_mesh = DeviceMesh(
+                tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
+            )
             batch_context_lengths_tensor = Tensor.from_shard_values(
                 [TensorValue(shard) for shard in batch_context_lengths],
-                PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+                PlacementMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
             )
 
             data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
@@ -300,11 +316,6 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
         assert isinstance(kv_collections, KVCacheInputs)
 
-        # Any variadic graph values left after the KV cache are the EP
-        # communication buffers; hand them to the batch manager so the MoE
-        # dispatch/combine kernels can reference them.
-        if self.ep_batch_manager is not None:
-            self.ep_batch_manager.fetch_buffers(list(kv_inputs))
         # Combine the per-device upstream KV collections into a single
         # mesh-distributed PagedCacheValues (one shard per device).
         if mesh is not None:
@@ -314,6 +325,14 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
             )
         else:
             raise ValueError("Mesh must be define")
+
+        comm_buffers: EPCommBuffers | None = None
+        if self.ep_batch_manager is not None:
+            # Any variadic graph values left after the KV cache are the EP
+            # communication buffers. Wrap them as an explicit forward argument
+            # so they thread through each MoE block's subgraph boundary.
+            ep_buffers = list(kv_inputs)
+            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
         return self.language_model(
             tokens,
             kv_collection,
@@ -322,4 +341,5 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
             batch_context_lengths_tensor,
             data_parallel_splits,
             input_row_offsets_i64,
+            comm_buffers,
         )

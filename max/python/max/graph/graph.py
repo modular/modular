@@ -278,6 +278,26 @@ class KernelLibrary:
         else:
             self._analysis.verify_custom_op(custom_op)
 
+    def has_shape_function(self, kernel: str) -> bool:
+        """Returns whether *kernel* registers a shape function.
+
+        A kernel that registers no shape function has no way to compute its
+        output shape at run time, so the graph compiler rejects a
+        data-dependent output dimension declared for it.
+
+        Args:
+            kernel: The registered name of the kernel to check.
+
+        Returns:
+            ``True`` if a shape function is registered for *kernel*.
+
+        Raises:
+            KeyError: If no kernel named *kernel* is in the library.
+        """
+        if kernel not in self:
+            raise KeyError(f"no kernel named {kernel!r} in the kernel library")
+        return self._analysis.has_shape_function(kernel)
+
 
 _default_custom_extensions: tuple[Path, ...] = ()
 
@@ -430,14 +450,41 @@ class Module:
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, Module, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         module = Module()
-        with Graph("encoder", input_types=encoder_inputs, module=module) as encoder:
-            ...
-        with Graph("decoder", input_types=decoder_inputs, module=module) as decoder:
-            ...
-        models = session.load_all(module, weights_registry=weights)
-        encoder = models[encoder.name]
-        decoder = models[decoder.name]
+        with Graph("encoder", input_types=[], module=module) as encoder:
+            encoder.output(
+                ops.constant(
+                    np.array([1.0, 2.0, 3.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+        with Graph("decoder", input_types=[], module=module) as decoder:
+            decoder.output(
+                ops.constant(
+                    np.array([4.0, 5.0, 6.0], dtype=np.float32),
+                    DType.float32,
+                    device=device_ref,
+                )
+            )
+
+        models = InferenceSession(devices=[device]).load_all(module)
+        (enc_out,) = models[encoder.name].execute()
+        (dec_out,) = models[decoder.name].execute()
+
+    .. invisible-code-block: python
+
+        np.testing.assert_allclose(enc_out.to_numpy(), [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(dec_out.to_numpy(), [4.0, 5.0, 6.0])
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,

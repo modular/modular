@@ -26,7 +26,7 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import mean
+from max.algorithm import mean
 from comm.allreduce import allreduce
 from internal_utils.fp8_utils import cast_saturating
 
@@ -34,9 +34,9 @@ from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
 from comm.device_collective import _launch_device_collective
 from comm import MAX_GPUS, Signal
 from extensibility import StaticTensorSpec
-from std.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
+from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
-from std.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import B200, Vendor, is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -122,7 +122,7 @@ from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_gpu,
     causal_conv1d_varlen_fwd_seqparallel_gpu,
 )
-from std.runtime.tracing import trace_arg
+from max.runtime.tracing import trace_arg
 from extensibility import (
     InputTensor,
     InputVariadicTensors,
@@ -2999,15 +2999,15 @@ struct TPoolPatchMerger:
 
         nn_tpool_patch_merger[dtype](
             TileTensor(
-                out_tt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                out_tt._storage.unsafe_origin_cast[MutAnyOrigin](),
                 out_tt.layout,
             ),
             TileTensor(
-                in_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt._storage.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 in_tt.layout,
             ),
             TileTensor(
-                grid_tt.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt._storage.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
                 grid_tt.layout,
             ),
             Int(kH),
@@ -3180,9 +3180,9 @@ struct GatedDeltaConv1dFwd:
                     conv_output_ragged_tt.LayoutType,
                 ]
             ](
-                batch_size,
-                total_seq_len,
-                conv_dim,
+                Int32(batch_size),
+                Int32(total_seq_len),
+                Int32(conv_dim),
                 qkv_input_ragged_tt,
                 conv_weight_tt,
                 conv_state_tt,
@@ -3417,10 +3417,10 @@ struct GatedDeltaRecurrenceFwd:
                     input_row_offsets_tt.LayoutType,
                 ]
             ](
-                batch_size,
-                num_value_heads,
-                num_key_heads,
-                key_dim,
+                Int32(batch_size),
+                Int32(num_value_heads),
+                Int32(num_key_heads),
+                Int32(key_dim),
                 recurrence_output_tt,
                 recurrent_state_tt,
                 slot_idx_tt,
@@ -3675,11 +3675,11 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             var compiled = ctx.compile_function[kernel]()
             ctx.enqueue_function(
                 compiled,
-                nheads,
-                head_dim,
-                ngroups,
-                nheads_ngroups_ratio,
-                batch,
+                Int32(nheads),
+                Int32(head_dim),
+                Int32(ngroups),
+                Int32(nheads_ngroups_ratio),
+                Int32(batch),
                 dt_softplus_int8,
                 x_tt,
                 dt_tt,
@@ -4017,11 +4017,11 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 var compiled = ctx.compile_function[kernel]()
                 ctx.enqueue_function(
                     compiled,
-                    nheads,
-                    head_dim,
-                    ngroups,
-                    nheads_ngroups_ratio,
-                    batch,
+                    Int32(nheads),
+                    Int32(head_dim),
+                    Int32(ngroups),
+                    Int32(nheads_ngroups_ratio),
+                    Int32(batch),
                     dt_softplus_int8,
                     x_tt,
                     dt_tt,
@@ -4070,11 +4070,11 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 var compiled = ctx.compile_function[kernel]()
                 ctx.enqueue_function(
                     compiled,
-                    nheads,
-                    head_dim,
-                    ngroups,
-                    nheads_ngroups_ratio,
-                    batch,
+                    Int32(nheads),
+                    Int32(head_dim),
+                    Int32(ngroups),
+                    Int32(nheads_ngroups_ratio),
+                    Int32(batch),
                     dt_softplus_int8,
                     x_tt,
                     dt_tt,
@@ -4122,11 +4122,11 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 var compiled = ctx.compile_function[kernel]()
                 ctx.enqueue_function(
                     compiled,
-                    nheads,
-                    head_dim,
-                    ngroups,
-                    nheads_ngroups_ratio,
-                    batch,
+                    Int32(nheads),
+                    Int32(head_dim),
+                    Int32(ngroups),
+                    Int32(nheads_ngroups_ratio),
+                    Int32(batch),
                     dt_softplus_int8,
                     x_tt,
                     dt_tt,
@@ -4441,9 +4441,9 @@ struct CausalConv1DVarlenFwd[
                     # tile count early-return inside the kernel.
                     gpu_ctx.enqueue_function(
                         compiled_func,
-                        dim,
-                        total_seqlen,
-                        batch,
+                        Int32(dim),
+                        Int32(total_seqlen),
+                        Int32(batch),
                         x_tt,
                         weight_tt,
                         bias_tt,
@@ -4452,17 +4452,17 @@ struct CausalConv1DVarlenFwd[
                         has_initial_state_tt,
                         conv_states_tt,
                         output_tt,
-                        x_dim_stride,
-                        x_seqlen_stride,
-                        weight_dim_stride,
-                        weight_width_stride,
-                        out_dim_stride,
-                        out_seqlen_stride,
-                        conv_states_batch_stride,
-                        conv_states_dim_stride,
-                        conv_states_width_stride,
+                        UInt32(x_dim_stride),
+                        UInt32(x_seqlen_stride),
+                        UInt32(weight_dim_stride),
+                        UInt32(weight_width_stride),
+                        UInt32(out_dim_stride),
+                        UInt32(out_seqlen_stride),
+                        UInt32(conv_states_batch_stride),
+                        UInt32(conv_states_dim_stride),
+                        UInt32(conv_states_width_stride),
                         silu_activation_int8,
-                        PAD_SLOT_ID,
+                        Int32(PAD_SLOT_ID),
                         Int8(has_cache_indices),
                         Int8(has_initial_state_flag),
                         Int8(has_conv_states),
@@ -4500,9 +4500,9 @@ struct CausalConv1DVarlenFwd[
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    dim,
-                    total_seqlen,
-                    batch,
+                    Int32(dim),
+                    Int32(total_seqlen),
+                    Int32(batch),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -4511,17 +4511,17 @@ struct CausalConv1DVarlenFwd[
                     has_initial_state_tt,
                     conv_states_tt,
                     output_tt,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
-                    conv_states_batch_stride,
-                    conv_states_dim_stride,
-                    conv_states_width_stride,
+                    UInt32(x_dim_stride),
+                    UInt32(x_seqlen_stride),
+                    UInt32(weight_dim_stride),
+                    UInt32(weight_width_stride),
+                    UInt32(out_dim_stride),
+                    UInt32(out_seqlen_stride),
+                    UInt32(conv_states_batch_stride),
+                    UInt32(conv_states_dim_stride),
+                    UInt32(conv_states_width_stride),
                     silu_activation_int8,
-                    PAD_SLOT_ID,
+                    Int32(PAD_SLOT_ID),
                     Int8(has_cache_indices),
                     Int8(has_initial_state_flag),
                     Int8(has_conv_states),
@@ -4831,7 +4831,9 @@ struct LaunchHostFunc:
         var ud_addr = Int(payload[1])
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
-        ctx.stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
+        # Reinterpret the raw trampoline address as a thin function value.
+        var tr_fn = Pointer(to=tr_ptr).unsafe_bitcast[_HostFuncTy]()[]
+        ctx.stream().enqueue_host_func(tr_fn, ud_ptr)
 
 
 @extensibility.register("mo.wait_host_value")

@@ -61,8 +61,8 @@ from linalg.arch.sm100.mma import smem_descriptor
 
 from std.gpu.globals import WARP_SIZE
 from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from nn.attention.mha_utils import (
@@ -70,7 +70,7 @@ from nn.attention.mha_utils import (
     NoPartition,
     OptionallyStaticInt,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.utils.static_tuple import StaticTuple
 from kv_cache.types import padded_depth
 

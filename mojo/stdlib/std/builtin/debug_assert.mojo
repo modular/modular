@@ -42,6 +42,10 @@ from std.reflection import call_location, SourceLocation
 comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
 
+comptime _NO_MESSAGE = "assertion failed"
+"""Must remain a string literal: the no-message path passes `byte_length() + 1`
+and relies on the trailing nul in static memory."""
+
 
 @always_inline("nodebug")
 def _string_free_comptime_assert[
@@ -87,6 +91,27 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         return True
     else:
         return ASSERT_MODE == assert_mode
+
+
+@always_inline
+def _debug_assert_fail[*Ts: Writable](*messages: *Ts, location: SourceLocation):
+    """Reports a failed assertion, formatting the message if there is one."""
+
+    comptime if messages.__len__() == 0:
+        _debug_assert_msg(
+            _NO_MESSAGE.unsafe_ptr(), _NO_MESSAGE.byte_length() + 1, location
+        )
+    else:
+        var message = _WriteBufferHeap()
+
+        comptime for i in range(messages.__len__()):
+            messages[i].write_to(message)
+
+        var cstr = message.nul_terminate()
+        var bytes_with_nul = cstr.as_bytes_with_nul()
+        _debug_assert_msg(
+            bytes_with_nul.unsafe_ptr(), len(bytes_with_nul), location
+        )
 
 
 @always_inline
@@ -195,17 +220,14 @@ def debug_assert[
         if cond():
             return
 
-        var message = _WriteBufferHeap()
-
-        comptime for i in range(messages.__len__()):
-            messages[i].write_to(message)
-
-        var cstr = message.nul_terminate()
-        var bytes_with_nul = cstr.as_bytes_with_nul()
-        _debug_assert_msg(
-            bytes_with_nul.unsafe_ptr(),
-            len(bytes_with_nul),
-            location.value() if location else call_location(),
+        # `debug_assert` is used a lot, so its body must generate short, concise
+        # code. Avoid standard library functions that contain error/abort code
+        # inside; those cause code bloat at every call site.
+        #
+        # `call_location()` must be resolved here rather than in the callee, so
+        # that the reported location stays at this assert's own caller.
+        _debug_assert_fail(
+            *messages, location=location.or_else(call_location())
         )
 
 
@@ -318,20 +340,85 @@ def debug_assert[
         if cond:
             return
 
-        var message = _WriteBufferHeap()
-
-        comptime for i in range(messages.__len__()):
-            messages[i].write_to(message)
-
-        var cstr = message.nul_terminate()
-        var bytes_with_nul = cstr.as_bytes_with_nul()
-
-        _debug_assert_msg(
-            bytes_with_nul.unsafe_ptr(),
-            len(bytes_with_nul),
-            location.value() if location else call_location(),
+        # See the sibling overload: avoid stdlib functions carrying error/abort
+        # code, and resolve `call_location()` here rather than in the callee.
+        _debug_assert_fail(
+            *messages, location=location.or_else(call_location())
         )
 
+    elif _use_compiler_assume:
+        assume(cond)
+
+
+# The two no-message overloads below omit `location` on purpose: they are
+# optimized for fast compile time, because they are used frequently. An
+# `Optional[SourceLocation]` and an `or_else` call generate extra IR and thus
+# slow compilation down.
+@always_inline
+def debug_assert[
+    cond: def() capturing[_] -> Bool,
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+]():
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    def main():
+        var x = 1
+
+        def check() capturing -> Bool:
+            return x > 0
+
+        debug_assert[check]()
+    ```
+
+    Parameters:
+        cond: The function to invoke to check if the assertion holds.
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond():
+            return
+
+        _debug_assert_fail(location=call_location())
+
+
+@always_inline
+def debug_assert[
+    assert_mode: StaticString = "none",
+    cpu_only: Bool = False,
+    _use_compiler_assume: Bool = False,
+](cond: Bool):
+    """Asserts that the condition is true at run time, with no message.
+
+    On failure this reports `assertion failed` at the call site. Use the
+    overload taking `messages` to report a formatted message instead.
+
+    ```mojo
+    var x = 1
+    debug_assert(x > 0)
+    ```
+
+    Parameters:
+        assert_mode: Determines when the assert is turned on.
+        cpu_only: If true, only run the assert on CPU.
+        _use_compiler_assume: If true, assume the condition is true for repeated
+            checks, to help the compiler optimize (default False).
+
+    Args:
+        cond: The bool value to assert.
+    """
+
+    comptime if _assert_enabled[assert_mode, cpu_only]():
+        if cond:
+            return
+
+        _debug_assert_fail(location=call_location())
     elif _use_compiler_assume:
         assume(cond)
 

@@ -77,6 +77,7 @@ modular_py_library(
     # (private kv-tier-connector wheel, linux-x86_64); the shim lazily imports
     # it, so declare it unresolved here rather than as a build dep.
     ignore_unresolved_imports = ["kv_tier_connector"],
+    test_docstring_examples = True,
     deps = [
         ":kv_connector",
         "//max/python/max/pipelines/context",

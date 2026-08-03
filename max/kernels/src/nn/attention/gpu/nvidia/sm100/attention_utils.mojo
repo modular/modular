@@ -23,21 +23,21 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 
 from std.math import ceildiv, exp2, align_up, iota
 from std.math.constants import log2e
-from std.sys import size_of, _RegisterPackType
+from std.sys import size_of, _RegisterPackType, get_defined_bool
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu import block_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.primitives.warp import broadcast
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.memory import AddressSpace
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
     MMASmemDescriptorPair,
 )
-from std.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
+from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
 from layout import (
     IntTuple,
     Layout,
@@ -406,6 +406,30 @@ def pack_row[
             chunk[k] = o_vals[start + per_u32 * c + k]
         packed[c] = bitcast[DType.uint32, 1](chunk.cast[output_type]())
     return packed
+
+
+@always_inline
+def blasst_vote_unanimous(
+    blasst_vote: SharedMemPointer[UInt8], wg: UInt32, phase: UInt32
+) -> Bool:
+    """Reads the BLASST per-warp skip votes for `(wg, phase)` and ANDs them.
+
+    Shared by the softmax-side vote publisher (`blasst_observe`, which reads
+    back its own WG's vote right after publishing it) and the MMA-side
+    consumer (`blasst_should_skip`, which reads a vote published earlier by
+    the S-consumer pipeline's own synchronization). Only the read-back
+    itself is shared here -- each caller's surrounding synchronization
+    differs and stays local to that caller.
+    """
+    # One aligned 32-bit read replaces 4 byte reads + a short-circuit AND
+    # chain (which serializes the loads behind 3 branches). Legal because a
+    # `(wg, phase)` group's 4 slots are consecutive bytes at a 4-byte-aligned
+    # address (`blasst_vote_byte_offset` follows the UInt32 `tmem_addr`, and
+    # `base` is a multiple of 4) and every slot only ever holds 0 or 1
+    # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
+    # "all four nonzero" == "the word is 0x01010101".
+    var base = (wg * UInt32(2) + phase) * UInt32(4)
+    return (blasst_vote + base).bitcast[UInt32]()[0] == UInt32(0x01010101)
 
 
 @always_inline
@@ -4096,6 +4120,7 @@ struct FA4MiscMBars[
     splitk_partitions: Int = 1,
     BM: Int = 128,
     use_ws: Bool = False,
+    crossp: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -4134,6 +4159,12 @@ struct FA4MiscMBars[
             `num_qk_stages` depth factor is already folded into the slot count).
             When False (default), the non-WS full-depth-tile count applies and
             the layout is byte-identical.
+        crossp: Whether cross-stage P applies to the config this type was
+            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather than
+            read from the `FA4_TMEM_CROSS_P` define, because that define
+            defaults ON and this type cannot see the config fields that scope
+            it to the MHA 2Q shape. False (default) keeps the mbar layout
+            byte-identical to cross-P-off.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
@@ -4190,8 +4221,25 @@ struct FA4MiscMBars[
         1 if (Self.num_q == 1 and Self.splitk_partitions > 1) else 0
     )
 
+    # Cross-stage P: 4 handshakes (sfree0/sfree1 + s0_p1/s1_p0, see the
+    # accessors below) appended after Publish, so OFF `size` is byte-identical.
+    # 2Q + non-WS only -- mutually exclusive with Publish (num_q==1 only), so
+    # appending after it never collides.
+    # `crossp` is `FA4Config.crossp_on()`, threaded in by whoever built this
+    # type, so this count and `FA4Config.smem_used` always agree. Do NOT read
+    # the `FA4_TMEM_CROSS_P` define here: it defaults ON, and this struct
+    # cannot see the config fields that scope it to the MHA 2Q shape.
+    comptime CrossP_enabled: Bool = (
+        Self.crossp and Self.num_q == 2 and not Self.use_ws
+    )
+    comptime CrossP_offset = Self.Publish_offset + Self.Publish_count
+    comptime InplaceDepth: Int = 4
+    comptime CrossP_count: Int = (
+        2 + 2 * Self.InplaceDepth
+    ) if Self.CrossP_enabled else 0
+
     # Total size includes all barriers
-    comptime size = Self.Publish_offset + Self.Publish_count
+    comptime size = Self.CrossP_offset + Self.CrossP_count
     comptime number_warpgroup_count = Self.S0_producer_offset
 
     @always_inline
@@ -4235,6 +4283,11 @@ struct FA4MiscMBars[
         comptime if Self.Publish_count > 0:
             if lane_idx == Int32(Self.Publish_offset):
                 return Int32(Self.BM * Self.splitk_partitions)
+        # Cross-stage P handshakes (appended after Publish): all WG-collective
+        # (softmax commit / softmax<->softmax), count=128.
+        comptime if Self.CrossP_enabled:
+            if lane_idx >= Int32(Self.CrossP_offset):
+                return 128
         return 1
 
     @always_inline
@@ -4357,6 +4410,51 @@ struct FA4MiscMBars[
                 barrier slot.
         """
         return self.mbar_base + UInt32(Self.num_pv_stages) * wg_idx
+
+    # ---- Cross-stage P handshake accessors (CrossP_enabled, 2Q, non-WS) ----
+    comptime CrossPProducer = RolePipeline[1, True, 1, 1]
+    comptime CrossPConsumer = RolePipeline[1, False, 1, 1]
+    # Inplace pipes are DEPTH-4 one-sided (only the full mbar side is wired):
+    # producer_mbar_base == consumer_mbar_base so both producer.commit() and
+    # consumer.wait() cycle the SAME 4 full mbars via state.index(); the empty
+    # side is never allocated/armed.
+    comptime InplaceProducer = RolePipeline[Self.InplaceDepth, True, 1, 1]
+    comptime InplaceConsumer = RolePipeline[Self.InplaceDepth, False, 1, 1]
+
+    # sfree{wg}: softmax commits "S{wg} scores consumed" (producer-only, 1
+    # mbar, consumer_mbar aliased/unused -- natural throttle); MMA QK{wg}
+    # acquires it (consumer .wait/.step) before overwriting S{wg}.
+    @always_inline
+    def sfree_producer(self, wg: UInt32) -> Self.CrossPProducer:
+        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        return {m, m}
+
+    @always_inline
+    def sfree_consumer(self, wg: UInt32) -> Self.CrossPConsumer:
+        var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
+        return {m, m}
+
+    # inplace{k}: k=0 -> s0_p1 (softmax0 produces "S0 window free", softmax1
+    # consumes before storing P1 into S0's window); k=1 -> s1_p0 (mirror).
+    # DEPTH-4 one-sided: 4 full mbars at base; both producer and consumer
+    # cycle them via state.index() (producer_mbar_base == consumer_mbar_base).
+    @always_inline
+    def inplace_producer(self, k: UInt32) -> Self.InplaceProducer:
+        var base = (
+            self.mbar_base
+            + UInt32(Self.CrossP_offset + 2)
+            + k * UInt32(Self.InplaceDepth)
+        )
+        return {base, base}
+
+    @always_inline
+    def inplace_consumer(self, k: UInt32) -> Self.InplaceConsumer:
+        var base = (
+            self.mbar_base
+            + UInt32(Self.CrossP_offset + 2)
+            + k * UInt32(Self.InplaceDepth)
+        )
+        return {base, base}
 
     # O pipeline convenience methods
     @always_inline("nodebug")

@@ -34,7 +34,7 @@ You can install Modular using a `pip` or `conda` package manager like
 of your choice.
 
 To get started with the Modular Platform and serve a model using the MAX
-framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
+framework, see [the quickstart guide](https://docs.modular.com/get-started).
 
 > [!NOTE]
 > **Nightly vs. stable releases**
@@ -47,7 +47,7 @@ framework, see [the quickstart guide](https://docs.modular.com/max/get-started).
 
 After your model endpoint is up and running, you can start sending the model
 inference requests using
-[our OpenAI-compatible REST API](https://docs.modular.com/max/rest-api/).
+[our OpenAI-compatible REST API](https://docs.modular.com/rest-api/).
 
 Explore all the models you can deploy with Modular in our
 [Model Library](https://www.modular.com/models).
@@ -70,7 +70,7 @@ docker run --gpus=1 \
 ```
 
 For more information, see our [MAX container
-docs](https://docs.modular.com/max/container) or the [Modular Docker Hub
+docs](https://docs.modular.com/container) or the [Modular Docker Hub
 repository](https://hub.docker.com/u/modular).
 
 ## Get started with Mojo

@@ -17,11 +17,11 @@ from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu
 
-from std.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
+from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
 from std.algorithm.functional import tile
 from std.atomic import Atomic
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
@@ -32,8 +32,8 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import ManagedTensorSlice
 
 from std.utils import IndexList, StaticTuple
@@ -247,7 +247,7 @@ def gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        comptime k_tile_sizes = [
+        comptime k_tile_sizes: List[Int] = [
             2 * simd_width,
             1,
         ] if CompilationTarget.has_neon() else [

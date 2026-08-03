@@ -18,19 +18,19 @@ definitions while maintaining performance through compile-time specialization.
 
 Key components:
 
-- [`TensorLayout`](/docs/layout/tile_layout/TensorLayout): Trait
+- [`TensorLayout`](/api/mojo/layout/tile_layout/TensorLayout): Trait
   defining the interface for all mixed layouts.
-- [`Layout`](/docs/layout/tile_layout/Layout): Primary struct
+- [`Layout`](/api/mojo/layout/tile_layout/Layout): Primary struct
   implementing a layout with mixed compile-time and runtime dimensions.
-- [`row_major`](/docs/layout/tile_layout/row_major): Create a
+- [`row_major`](/api/mojo/layout/tile_layout/row_major): Create a
   row-major layout from a shape.
-- [`col_major`](/docs/layout/tile_layout/col_major): Create a
+- [`col_major`](/api/mojo/layout/tile_layout/col_major): Create a
   column-major layout from a shape.
-- [`blocked_product`](/docs/layout/tile_layout/blocked_product):
+- [`blocked_product`](/api/mojo/layout/tile_layout/blocked_product):
   Create a hierarchical blocked layout from block and tiler layouts.
-- [`zipped_divide`](/docs/layout/tile_layout/zipped_divide): Divide
+- [`zipped_divide`](/api/mojo/layout/tile_layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
-- [`coalesce`](/docs/layout/tile_layout/coalesce): Simplify a
+- [`coalesce`](/api/mojo/layout/tile_layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:
@@ -2249,27 +2249,18 @@ comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
 
 
 comptime _BoolIsTrue[a: Bool]: Bool = a
-comptime _TwoCoordLikePredicate = __mlir_type[
-    `!lit.generator<<"LHS": `,
-    +CoordLike,
-    `, "RHS": `,
-    +CoordLike,
-    `> `,
-    +Bool,
-    `>`,
-]
 
 comptime _tabulatePredicate[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
     idx: Int,
 ]: Bool = pred[a[idx], b[idx]]
 
 comptime _AllEltsSatisfy[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
 ]: Bool = a.length == b.length and ParameterList.tabulate[
     a.length, _tabulatePredicate[a, b, pred, _]
 ]().all_satisfies[

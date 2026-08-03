@@ -41,6 +41,7 @@ from .types import (
     ObservableDel,
     ObservableMoveOnly,
     ExplicitDelOnly,
+    PinnedExplicitDelOnly,
     TriviallyCopyableMoveCounter,
 )
 from .words import (

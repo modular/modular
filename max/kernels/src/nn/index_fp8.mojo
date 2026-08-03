@@ -27,7 +27,7 @@ from layout import (
 )
 from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
 from std.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
@@ -149,7 +149,9 @@ def fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
     ref q_smem = smem_ptr.q_smem
@@ -499,7 +501,7 @@ def _index_matmul_max[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
-    max_seq_len: Int,
+    max_seq_len: Int32,
 ):
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
@@ -747,7 +749,7 @@ def fp8_index_naive[
         k_lt,
         valid_length_lt,
         k_operand,
-        max_seq_len,
+        Int32(max_seq_len),
         grid_dim=(
             ceildiv(max_seq_len, 16),
             ceildiv(max_num_keys, 16),

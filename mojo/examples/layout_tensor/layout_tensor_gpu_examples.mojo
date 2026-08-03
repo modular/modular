@@ -22,7 +22,7 @@ from std.gpu import (
     WARP_SIZE,
 )
 from std.gpu.memory import async_copy_wait_all
-from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
 from std.memory import UnsafePointer
@@ -161,7 +161,7 @@ def shared_memory_alloc_example() raises:
 def simd_width_example():
     # start-simd-width-example
     from std.sys.info import simd_width_of
-    from std.gpu.host.compile import get_gpu_target
+    from max.gpu.host.compile import get_gpu_target
 
     comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
     # end-simd-width-example

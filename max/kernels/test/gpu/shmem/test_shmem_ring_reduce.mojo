@@ -18,7 +18,7 @@ from std.os import abort
 from shmem import *
 from std.ffi import c_int
 from std.sys.info import size_of
-from std.gpu.host import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 
 comptime min_size = 1024 * 1024 * 32
 comptime max_size = min_size * 16
@@ -33,9 +33,9 @@ comptime chunk_size = 1024 * 256
 def ring_reduce(
     dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
     src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
-    nreduce: Int,
+    nreduce_dev: Int32,
     signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
-    chunk_size: Int,
+    chunk_size_dev: Int32,
 ):
     """Perform Allreduce using ring algorithm.
 
@@ -46,10 +46,13 @@ def ring_reduce(
     Args:
         dst_ptr: Destination buffer for reduced data.
         src_ptr: Source buffer with input data.
-        nreduce: Number of elements to reduce.
+        nreduce_dev: Number of elements to reduce.
         signal_ptr: Signaling buffer for synchronization.
-        chunk_size: Size of each chunk in bytes.
+        chunk_size_dev: Size of each chunk in bytes.
     """
+    # `Int` is not device-passable; widen the fixed-width args.
+    var nreduce = Int(nreduce_dev)
+    var chunk_size = Int(chunk_size_dev)
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -152,11 +155,11 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
-                num_ints,
+                Int32(num_ints),
                 DeviceBuffer[DType.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
-                chunk_size,
+                Int32(chunk_size),
                 grid_dim=num_blocks,
                 block_dim=threads_per_block,
             )
@@ -168,11 +171,11 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,
                 src,
-                num_ints,
+                Int32(num_ints),
                 DeviceBuffer[DType.uint64](
                     ctx._ctx, signal, num_blocks, owning=False
                 ),
-                chunk_size,
+                Int32(chunk_size),
                 grid_dim=num_blocks,
                 block_dim=threads_per_block,
             )

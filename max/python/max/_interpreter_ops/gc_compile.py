@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 from max import _core, engine
+from max._core.engine import get_config_value
 from max._mlir_context import in_default_mlir_context
 from max.driver import (
     Device,
@@ -80,6 +81,46 @@ GPU_FLOAT_DTYPES = [DType.float16, DType.float32, DType.bfloat16]
 SIGNED_INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UNSIGNED_INT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
 
+_UINT_FOR_SIZE = {
+    1: DType.uint8,
+    2: DType.uint16,
+    4: DType.uint32,
+    8: DType.uint64,
+}
+
+WIDTH_DTYPES = list(_UINT_FOR_SIZE.values())
+"""The four uint widths a pure-copy family sweeps instead of real dtypes."""
+
+MAX_RANK = 5
+"""Historical interpreter rank cap, shared by every rank-capped family."""
+
+
+def uint_view_dtype(dtype: DType) -> DType:
+    """Returns the same-bit-width unsigned int a dtype is bit-cast to for copying.
+
+    Pure-copy ops (shape rearrange, gather, band-part masking) never interpret
+    an element's value, so one graph per width serves every dtype of that
+    width -- including float16, which has no typed CPU kernel, and bool on GPU.
+
+    Args:
+        dtype: The dtype to reinterpret.
+
+    Returns:
+        The unsigned integer dtype of the same bit width.
+
+    Raises:
+        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+            pack multiple elements per byte and so cannot be reinterpreted
+            element-for-element as a whole-byte unsigned int.
+    """
+    bits = dtype.size_in_bits
+    if bits % 8 != 0 or bits // 8 not in _UINT_FOR_SIZE:
+        raise NotImplementedError(
+            f"eager GC copy path does not support sub-byte dtype {dtype}"
+        )
+    return _UINT_FOR_SIZE[bits // 8]
+
+
 _SpecT = TypeVar("_SpecT")
 
 
@@ -118,6 +159,22 @@ def canonical_rank3(shape: Sequence[int], axis: int) -> tuple[int, int, int]:
     if axis < 0:
         axis += ndim
     return (prod(shape[:axis]), shape[axis], prod(shape[axis + 1 :]))
+
+
+def flat_index_strides(indexed_shape: Sequence[int]) -> list[int]:
+    """Row-major strides of *indexed_shape* (product of trailing sizes).
+
+    Used by gather_nd/scatter_nd to flatten a multi-dimensional index vector
+    into a single scalar: ``flat_idx = sum(idx[j] * stride[j])``. E.g.
+    ``(4, 3, 2) -> [6, 2, 1]``. Plain Python arithmetic on a list of at most
+    a handful of small ints (bounded by the interpreter's rank cap) --
+    never touches a Buffer.
+    """
+    n = len(indexed_shape)
+    strides = [1] * n
+    for i in range(n - 2, -1, -1):
+        strides[i] = strides[i + 1] * indexed_shape[i + 1]
+    return strides
 
 
 def discover_devices() -> list[Device]:
@@ -167,8 +224,11 @@ def should_precompile() -> bool:
 
 
 def _derived_root() -> Path | None:
-    """The ``MODULAR_DERIVED_PATH`` root, or None if unset."""
-    derived = os.environ.get("MODULAR_DERIVED_PATH")
+    """The ``MODULAR_DERIVED_PATH`` root, or None if unset or empty."""
+    try:
+        derived = get_config_value("derived_path")
+    except KeyError:
+        return None
     return Path(derived) if derived else None
 
 
@@ -413,8 +473,11 @@ class GCFamilySpec(Protocol):
         Every family sweeps the same discovered set by default, so this is a
         concrete, inherited implementation rather than a per-family override
         point -- except for a family whose kernel is restricted to a device
-        subset (e.g. ``group_norm``, GPU-only), which must override this to
-        exclude the devices it never builds for. ``_adopt_from_manifest``
+        subset, which must override this to exclude the devices it never
+        builds for: ``group_norm`` (GPU-only), and the ``MO_HostOnly``
+        families (``resize_gc``, ``nonzero_gc``, ``nms_gc``, ``roi_align_gc``)
+        which are CPU-only, since sweeping an accelerator for a host-only op
+        would only produce an empty per-slot module. ``_adopt_from_manifest``
         requires a manifest entry for every device this returns, so a family
         that lists a device it never populates fails adoption entirely.
         """

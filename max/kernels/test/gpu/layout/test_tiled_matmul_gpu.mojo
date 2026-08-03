@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.compute.mma import mma
+from max.gpu.compute.mma import mma
 from std.gpu.sync import barrier
 from layout import *
 from layout.layout_tensor import copy_dram_to_sram, copy_local_to_dram

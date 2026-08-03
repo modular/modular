@@ -28,8 +28,8 @@ from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
     block_idx,
@@ -38,13 +38,13 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.memory import external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAInsDescriptor,
     UMMAKind,
     mma_arrive_multicast,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -103,8 +103,10 @@ def bulk_mma_pair_cta_kernel[
     a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime cta_group = 2
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -398,9 +400,11 @@ def bulk_mma_pair_cta_ts_kernel[
     a_tma_op: TMATensorTile[ab_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
     """TS pair-CTA kernel: A from TMEM (via tcgen05_cp), B from SMEM."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_iters = Int(num_iters_dev)
     comptime cta_group = 2
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -812,7 +816,7 @@ def test_bulk_mma_pair_cta[
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
                 align_up(N // BN // cta_group, Int(cluster_shape[1])),
@@ -845,7 +849,7 @@ def test_bulk_mma_pair_cta[
             a_tma_op,
             b_tma_op,
             c.device_tensor(),
-            K // BK,
+            Int32(K // BK),
             grid_dim=(
                 align_up(M // BM, Int(cluster_shape[0])),
                 align_up(N // BN // cta_group, Int(cluster_shape[1])),

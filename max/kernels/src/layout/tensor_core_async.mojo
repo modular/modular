@@ -37,8 +37,8 @@ This implementation is specifically optimized for NVIDIA GPUs with Tensor Core s
 from std.sys import size_of, bit_width_of
 from std.sys._assembly import inlined_assembly
 
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.mma import (
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,

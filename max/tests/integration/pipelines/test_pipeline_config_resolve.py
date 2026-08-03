@@ -37,6 +37,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -253,6 +254,13 @@ def _resolve_config(config: PipelineConfig) -> None:
             " model architecture to MAX."
         )
     config.resolve(arch)
+    # resolve() no longer mutates model_config.quantization_encoding — the
+    # field keeps the raw user value (often None). Mirror the resolved encoding
+    # back onto the config so tests can assert the effective encoding.
+    resolved_encoding = _select_quantization_encoding(
+        _model(config), arch.default_encoding
+    )
+    _model(config).quantization_encoding = resolved_encoding
     # Overlap-scheduler/DGC resolution now lives in the registry, after
     # memory planning. Tests that call resolve() directly must replicate it.
     from max.pipelines.lib.registry import _run_memory_planning
@@ -401,12 +409,13 @@ class TestDefaultEncodingFallback:
 
     @prepare_registry
     def test_default_encoding_used_when_ambiguous_on_cpu(self) -> None:
-        """When multiple non-quantized encodings are ambiguous on CPU,
-        the architecture default_encoding is used as the fallback.
+        """A mixed-dtype checkpoint on CPU resolves to the architecture default.
 
-        A repo with mixed BF16+F32 tensors on CPU is ambiguous for
-        MAXModelConfig.resolve(). The architecture validation then
-        falls back to the architecture's default_encoding.
+        The checkpoint's own weight dtype (bfloat16) is GPU-only, so inference
+        must not select it for a CPU target; resolution falls back to the
+        CPU-valid architecture default (float32). This holds regardless of
+        whether weight_path defaults have been discovered yet, so every
+        consumer resolves the same value.
         """
         from max.graph.weights import WeightsFormat
         from max.pipelines.context import TextContext
@@ -428,8 +437,8 @@ class TestDefaultEncodingFallback:
         )
         PIPELINE_REGISTRY.register(cpu_arch)
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Mixed BF16+F32 is ambiguous on CPU — encoding stays None
-            # after MAXModelConfig.resolve(), so arch default kicks in.
+            # Mixed BF16+F32 on CPU: bfloat16 is GPU-only, so resolution can't
+            # pick it and falls back to the arch default (float32).
             _make_local_repo(
                 tmpdir,
                 safetensors_files={

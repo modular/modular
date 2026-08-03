@@ -898,7 +898,7 @@ def _get_tuning_list_sm100_fp32() -> List[TuningConfigSM100]:
 def _get_tuning_list_sm100_fp8[
     mma_k: Int, bk: Int
 ]() -> List[TuningConfigSM100]:
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-FP8----------------
         # Automatically generated from [tuning_table_sm100_fp8.yaml]
         # index: [0]
@@ -2085,7 +2085,7 @@ def _get_tuning_list_sm100_fp8[
 
 
 def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-NVFP4----------------
         # Automatically generated from [tuning_table_sm100_nvfp4.yaml]
         # index: [0]
@@ -2348,7 +2348,7 @@ def _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
 def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
     # MXFP4 uses SF_VEC=32 like MXFP8 and KIND_MXF4 at the hardware level.
     # Start with MXFP8 tuning configs; tune later.
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-MXFP4----------------
         # Automatically generated from [tuning_table_sm100_mxfp4.yaml]
         # index: [0]
@@ -2378,7 +2378,7 @@ def _get_tuning_list_sm100_mxfp4() -> List[TuningConfigSM100]:
 
 
 def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-MXFP8----------------
         # Automatically generated from [tuning_table_sm100_mxfp8.yaml]
         # index: [0]
@@ -2408,7 +2408,7 @@ def _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
 
 
 def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-BATCHED-BF16----------------
         # Automatically generated from [tuning_table_sm100_batched_bf16.yaml]
         # index: [0]
@@ -2438,7 +2438,7 @@ def _get_tuning_list_sm100_batched_bf16() -> List[TuningConfigSM100]:
 
 
 def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
-    comptime config_list = [
+    comptime config_list: List[TuningConfigSM100] = [
         # ----------------BEGIN-TUNING-LIST-SM100-BATCHED-FP8----------------
         # Automatically generated from [tuning_table_sm100_batched_fp8.yaml]
         # index: [0]

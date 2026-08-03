@@ -168,7 +168,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             self._data = copy._data
 
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the `IntArray` and free its memory if owned.
 
         Only frees memory for owned arrays (positive _size) to prevent
@@ -2166,10 +2166,9 @@ def weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
         False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return True
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[lambda (a: IntTuple, b: IntTuple) -> Bool: True](
+        a, b
+    )
 
 
 @always_inline("nodebug")
@@ -2190,10 +2189,9 @@ def compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is compatible with shape B, False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return Int(a) == size(b)
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[
+        lambda (a: IntTuple, b: IntTuple) -> Bool: Int(a) == size(b)
+    ](a, b)
 
 
 @always_inline("nodebug")
@@ -2215,10 +2213,9 @@ def weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
         True if shape A is weakly compatible with shape B, False otherwise.
     """
 
-    def predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return size(b) % Int(a) == 0
-
-    return apply_predicate[predicate](a, b)
+    return apply_predicate[
+        lambda (a: IntTuple, b: IntTuple) -> Bool: size(b) % Int(a) == 0
+    ](a, b)
 
 
 @always_inline("nodebug")

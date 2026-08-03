@@ -31,8 +31,8 @@ from std.algorithm import vectorize
 from std.bit import log2_floor
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
-from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_dim,
     block_idx,
@@ -45,7 +45,7 @@ from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_shape
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
 from .int_tuple import (
@@ -441,11 +441,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
     ):
         """Create a `LayoutTensor` with a `Span`.
 
@@ -460,11 +456,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
         """Create a `LayoutTensor` with a `Span` and a runtime layout
@@ -485,11 +477,7 @@ struct LayoutTensor[
     @always_inline
     def __init__(
         out self: Self.GenericAddressSpaceLayoutTensor,
-        span: Span[
-            Scalar[Self.dtype],
-            Self.origin,
-            ...,
-        ],
+        span: Span[Scalar[Self.dtype], Self.origin],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
@@ -668,7 +656,7 @@ struct LayoutTensor[
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
-        [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext) to
+        [`DeviceContext`](https://mojolang.org/docs/std/gpu/host/device_context/DeviceContext) to
         allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
         that can be accessed on the GPU. You cannot directly access data in the
         `DeviceBuffer` or `LayoutTensor` from the CPU.
@@ -677,7 +665,7 @@ struct LayoutTensor[
         to construct a `LayoutTensor` that you can use on the GPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, DeviceBuffer
+        from max.gpu.host import DeviceContext, DeviceBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -723,7 +711,7 @@ struct LayoutTensor[
         The resulting tensor's data can only be accessed on the CPU.
 
         ```mojo
-        from std.gpu.host import DeviceContext, HostBuffer
+        from max.gpu.host import DeviceContext, HostBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -741,8 +729,10 @@ struct LayoutTensor[
         Args:
             host_buffer: Contains the underlying data to point to.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
         )
 
     @always_inline
@@ -790,8 +780,10 @@ struct LayoutTensor[
             host_buffer: The `HostBuffer` containing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
         )
 
@@ -839,8 +831,10 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """
+        # TODO(MOCO-4435): remove this temporary variable.
+        var host_ptr = Optional(host_buffer.unsafe_ptr())
         self = Self.GenericLayoutTensorType(
-            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
+            unsafe_cast[origin=Self.origin](host_ptr),
             runtime_layout,
             element_runtime_layout,
         )
@@ -1932,7 +1926,7 @@ struct LayoutTensor[
         """Computes element-wise exponential function.
 
         Returns a new tensor containing the
-        [element-wise exponential](/docs/std/math/math/exp/) of the input tensor.
+        [element-wise exponential](https://mojolang.org/docs/std/math/math/exp/) of the input tensor.
 
         Returns:
             A new tensor containing the element-wise exponential.
@@ -2683,8 +2677,8 @@ struct LayoutTensor[
         )
 
         return Self.StackTensorType(
-            stack_allocation[
-                Self.layout.size() * Self.element_layout.size(),
+            unsafe_stack_allocation[
+                Self.layout.cosize() * Self.element_layout.size(),
                 Self.dtype,
                 alignment=stack_alignment,
                 address_space=Self.address_space,
@@ -5512,12 +5506,12 @@ struct LayoutTensor[
         performance.
 
         For optimal performance, you need to arrange the copy correctly. Use the
-        [`distribute()`](/docs/layout/layout_tensor/LayoutTensor/#distribute)
+        [`distribute()`](/api/mojo/layout/layout_tensor/LayoutTensor/#distribute)
         method to create thread-local fragments of the source and
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`](/docs/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/api/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -5529,9 +5523,9 @@ struct LayoutTensor[
         ```
 
         The copy operation is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
 
         Constraints:
@@ -6505,9 +6499,9 @@ def cp_async_k_major[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - K-major layout is particularly beneficial for matrix multiplication
         operations where the inner dimension (K) is accessed contiguously.
@@ -6753,9 +6747,9 @@ def copy_dram_to_sram_async[
     - The destination tensor must be in SHARED address space (SRAM).
     - Both tensors must have the same data type.
     - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/docs/std/gpu/memory/memory/async_copy_wait_all/)
+        [`async_copy_wait_all()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_all/)
         or
-        [`async_copy_wait_group()`](/docs/std/gpu/memory/memory/async_copy_wait_group/)
+        [`async_copy_wait_group()`](https://mojolang.org/docs/std/gpu/memory/memory/async_copy_wait_group/)
         to ensure the copy has completed before using the data.
     - The maximum size of each element that can be copied is 16 bytes.
     """

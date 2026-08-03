@@ -21,7 +21,7 @@ core path) and K=8 (TMA with OOB zero-fill).
 """
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,

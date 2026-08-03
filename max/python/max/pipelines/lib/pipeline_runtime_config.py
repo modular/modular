@@ -55,6 +55,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts written by an earlier run's "
+            "``--export-mefs``. Every graph is initialized from its artifact "
+            "instead of being compiled, so the compiling and the executing run "
+            "can happen on different machines. The runs must build the same "
+            "graphs; a mismatch is an error rather than a silent recompile."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "this run compiles, for a later run to reuse via "
+            "``--precompiled-mefs``. Compilation itself is unaffected."
+        ),
+    )
+
     max_queue_size_tg: int | None = Field(
         default=None,
         description=(
@@ -156,16 +176,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "per GPU; total redundant slots = k * ep_size (so num_redundant "
             "is always a multiple of the device count, which the rebalance "
             "algorithm requires)."
-        ),
-    )
-
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported; "
-            "the pipeline always runs single-step decode. Values other than "
-            "``1`` (including the legacy default ``-1``) are ignored after "
-            "logging a warning."
         ),
     )
 
@@ -353,7 +363,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """Occupancy threshold (0-1) that schedules CE work without deferral."""
 
     dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether a below-threshold CE step with work on 2+ replicas "
             "runs immediately with each replica's chunk size reduced to "

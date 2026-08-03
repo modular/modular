@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -86,11 +86,7 @@ def test_fused_qk_rope[
     kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
-    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
-    var kv_cache_block_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(kv_cache_block_buffer)
-    ] = kv_cache_block_buffer.unsafe_ptr()
+    var kv_cache_block_ptr = kv_cache_block_buffer.unsafe_ptr()
     kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_cache_block_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),

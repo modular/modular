@@ -42,7 +42,7 @@
 # receive buffer where the redzone/memcheck oracle guards it.
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.random import randint, randn, seed
 from std.sys import size_of
@@ -107,7 +107,7 @@ def si_dist_name(d: Int) -> String:
 
 def corrupt_src_info_kernel(
     src_info: UnsafePointer[Int32, MutAnyOrigin],
-    n_rows: Int,
+    n_rows_dev: Int32,
     bad_src_idx: Int32,
     bad_topk_idx: Int32,
 ):
@@ -116,6 +116,8 @@ def corrupt_src_info_kernel(
     Models the production failure mode: dispatch leaves a row holding stale /
     garbled values that combine then uses as a write offset.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var n_rows = Int(n_rows_dev)
     var gid = Int(global_idx.x)
     if gid < n_rows:
         src_info[gid * 2] = bad_src_idx
@@ -360,7 +362,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         var pair = bad_indices(spec.dist)
         ctx.enqueue_function[corrupt_src_info_kernel](
             src_info_dev.unsafe_ptr(),
-            max_recv_num_tokens,
+            Int32(max_recv_num_tokens),
             pair[0],
             pair[1],
             grid_dim=ceildiv(max_recv_num_tokens, 256),

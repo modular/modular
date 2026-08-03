@@ -23,7 +23,7 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
 from std.gpu.memory import external_memory
 

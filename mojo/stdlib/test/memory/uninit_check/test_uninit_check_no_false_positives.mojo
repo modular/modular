@@ -69,15 +69,19 @@ def test_masked_load_poison_in_masked_off_lane() raises:
     # masked_load requires a contiguous buffer, so alloc is needed here.
     var ptr = alloc[Float32](4)
 
-    ptr.store(0, Float32(1.0))
-    ptr.store(1, Float32(2.0))
-    ptr.store(2, Float32(3.0))
-    ptr.store(3, Float32(4.0))
+    ptr.unsafe_store(0, Float32(1.0))
+    ptr.unsafe_store(1, Float32(2.0))
+    ptr.unsafe_store(2, Float32(3.0))
+    ptr.unsafe_store(3, Float32(4.0))
 
     # Poison lanes 2 and 3 with the debug allocator poison pattern
     # (FLT_MAX bits = 0x7F7FFFFF). Masked-off lanes must not trigger.
-    (ptr + 2).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
-    (ptr + 3).bitcast[UInt32]().store(UInt32(0x7F7FFFFF))
+    ptr.unsafe_offset(2).unsafe_bitcast[UInt32]().unsafe_store(
+        UInt32(0x7F7FFFFF)
+    )
+    ptr.unsafe_offset(3).unsafe_bitcast[UInt32]().unsafe_store(
+        UInt32(0x7F7FFFFF)
+    )
 
     # mask=False for lanes 2,3 means those lanes use passthrough, not memory.
     var mask = SIMD[DType.bool, 4](True, True, False, False)
@@ -87,7 +91,7 @@ def test_masked_load_poison_in_masked_off_lane() raises:
     assert_true(val[0] == 1.0)
     assert_true(val[1] == 2.0)
 
-    ptr.free()
+    ptr.unsafe_free()
 
 
 def test_normal_float64() raises:

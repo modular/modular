@@ -36,8 +36,8 @@ from std.math import ceildiv
 from std.random import seed
 from std.sys import has_nvidia_gpu_accelerator
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

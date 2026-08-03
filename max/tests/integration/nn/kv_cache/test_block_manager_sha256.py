@@ -38,7 +38,6 @@ from max.pipelines.kv_cache.connectors.dkv.connector import DKVConnector
 from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVHashAlgo
 from max.pipelines.modeling.types import RequestID
@@ -76,7 +75,6 @@ def _make_block_manager(
     kv_hash_seed: bytes | None = None,
 ) -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=total_blocks,
         block_size=block_size,
         connector=cast(object, NullConnector()),  # type: ignore[arg-type]
@@ -321,7 +319,6 @@ def test_block_manager_capability_guard(
 
     def _construct() -> BlockManager:
         return BlockManager(
-            device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
             total_num_blocks=32,
             block_size=8,
             connector=cast(object, connector),  # type: ignore[arg-type]
@@ -345,7 +342,6 @@ def test_block_manager_capability_check_runs_even_without_host_blocks() -> None:
     connector = _StubConnector(supported_hash_algos=_LEGACY, num_host_blocks=0)
     with pytest.raises(ValueError, match="not supported by"):
         BlockManager(
-            device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
             total_num_blocks=32,
             block_size=8,
             connector=cast(object, connector),  # type: ignore[arg-type]
@@ -411,7 +407,6 @@ def test_block_manager_accepts_dkv_advertised_algos(
         supported_hash_algos=dkv_advertised, num_host_blocks=4
     )
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=32,
         block_size=8,
         connector=cast(object, connector),  # type: ignore[arg-type]

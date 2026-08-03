@@ -51,6 +51,10 @@ fi
 bazelrc_lines=("# Generated from tools/bazel, do not edit.")
 bazelrc_lines+=("build --build_metadata=USER=${GITHUB_ACTOR:-${USER:-unknown}}")
 
+if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
+  bazelrc_lines+=("build --config=disk-cache")
+fi
+
 if [[ $OSTYPE == darwin* ]]; then
   if (( EUID == 0 )); then
     echo "error: bazel should not be run as with sudo." >&2

@@ -6,7 +6,7 @@ synchronization](https://docs.modular.com/mojo/manual/gpu/block-and-warp)
 section of the [Mojo Manual](https://docs.modular.com/mojo/manual).
 
 **Note:** These examples require a [supported
-GPU](https://docs.modular.com/max/faq/#gpu-requirements) to compile and run the
+GPU](https://docs.modular.com/faq/#gpu-requirements) to compile and run the
 kernels. If your system doesn't have a supported GPU, you can compile the
 programs but the only output you'll see when you run them is the message:
 

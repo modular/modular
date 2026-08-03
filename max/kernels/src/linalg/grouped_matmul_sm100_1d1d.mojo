@@ -24,9 +24,9 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from std.gpu import (
     block_id_in_cluster,
     lane_id,
@@ -45,9 +45,9 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
@@ -56,7 +56,7 @@ from std.gpu.sync import (
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     IntTuple,
     Layout,
@@ -116,7 +116,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     register_epilogue,
     accum_arrive,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from std.math.uutils import ufloordiv
 
@@ -1904,7 +1904,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         workspace = {}
 
     ctx.enqueue_function[kernel](
-        num_active_experts,
+        Int32(num_active_experts),
         a_tma_op,
         b_tma_op,
         c_tma_op,
@@ -1987,7 +1987,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     pdl_level: PDLLevel = PDLLevel.ON,
     max_profiled_tiles_per_SM: UInt32 = 0,
 ](
-    num_active_experts: Int,
+    num_active_experts: Int32,
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[
@@ -2014,69 +2014,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     mnk: StaticTuple[UInt32, 3],
     workspace: Span[UInt64, MutAnyOrigin],
 ):
-    """Runs the warp-specialized block-scaled grouped matmul kernel on SM100.
-
-    Splits work across three warp roles (load, MMA, and epilogue) that
-    communicate through producer/consumer pipelines. The load warp issues
-    multicast TMA loads of A, B, and their scale factors into shared memory;
-    the MMA warp issues block-scaled UMMA instructions accumulating into
-    TMEM; and the epilogue warps drain the accumulator from TMEM, apply the
-    per-expert scale and optional fused elementwise epilogue, and store the
-    result to global memory via TMA. A tile scheduler distributes expert
-    group work tiles across the grid.
-
-    Parameters:
-        a_type: The data type of input tensor A.
-        b_type: The data type of input tensor B.
-        c_type: The data type of the output tensor C.
-        sfa_dtype: The data type of the A scale factors.
-        sfb_dtype: The data type of the B scale factors.
-        a_tile_rank: The rank of the A TMA tile.
-        a_tile_shape: The shape of the A TMA tile.
-        a_desc_shape: The descriptor shape of the A TMA tile.
-        b_tile_rank: The rank of the B TMA tile.
-        b_tile_shape: The shape of the B TMA tile.
-        b_desc_shape: The descriptor shape of the B TMA tile.
-        c_tile_rank: The rank of the C TMA tile.
-        c_tile_shape_param: The shape of the C TMA tile.
-        c_tensor_layout: The layout of the output LayoutTensor.
-        c_desc_shape: The descriptor shape of the C TMA tile.
-        sfa_tile_rank: The rank of the A scale factor TMA tile.
-        sfa_tile_shape: The shape of the A scale factor TMA tile.
-        sfa_desc_shape: The descriptor shape of the A scale factor TMA tile.
-        sfb_tile_rank: The rank of the B scale factor TMA tile.
-        sfb_tile_shape: The shape of the B scale factor TMA tile.
-        sfb_desc_shape: The descriptor shape of the B scale factor TMA tile.
-        group_offsets_layout: The layout of the group offsets tensor.
-        group_scale_offsets_layout: The layout of the group scale offsets
-            tensor.
-        expert_ids_layout: The layout of the expert IDs tensor.
-        expert_scales_layout: The layout of the expert scales tensor.
-        transpose_b: Whether B is stored transposed (K-major).
-        config: The block-scaled matmul configuration.
-        expert_n: The N (column) dimension of the output tensor.
-        cluster_shape: The cluster dimensions for the kernel launch grid.
-        elementwise_compute_lambda_fn: Optional fused elementwise epilogue.
-        pdl_level: The program-dependent launch level for the kernel grid.
-        max_profiled_tiles_per_SM: The maximum number of tiles profiled per
-            SM (0 disables profiling).
-
-    Args:
-        num_active_experts: The number of active experts in this batch.
-        a_tma_op: The TMA tensor tile descriptor for A.
-        b_tma_op: The TMA tensor tile descriptor for B.
-        c_tma_op: The TMA tensor tile descriptor for C.
-        c: The output LayoutTensor in global memory.
-        sfa_tma_op: The TMA tensor tile descriptor for A scale factors.
-        sfb_tma_op: The TMA tensor tile descriptor for B scale factors.
-        group_offsets: The starting token index for each expert group.
-        group_scale_offsets: The starting scale index for each expert group.
-        expert_ids: The expert ID for each group.
-        expert_scales: The per-expert scaling factors applied in the epilogue.
-        cluster_dim: The cluster dimensions for the launch grid.
-        mnk: The (M, N, K) problem dimensions.
-        workspace: The profiling workspace span (empty when profiling is off).
-    """
+    var _num_active_experts = Int(num_active_experts)
     comptime register_based_epilogue = config.register_based_epilogue
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
@@ -2301,7 +2239,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             config.block_tile_shape[2],
         ),
         swapAB=config.AB_swapped,
-    ](num_active_experts, group_offsets)
+    ](_num_active_experts, group_offsets)
 
     var work_info = scheduler.fetch_next_work()
 

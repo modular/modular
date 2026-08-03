@@ -39,7 +39,7 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
@@ -88,16 +88,19 @@ def _reducescatter_rmsnorm_kernel[
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rows: Int,
-    cols: Int,
+    rows_dev: Int32,
+    cols_dev: Int32,
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
+    my_rank_dev: Int32,
 ):
     """Reduce-scatter each owned row in f32, then RMSNorm it in registers.
 
     Blocks stride over the ragged partition's local rows; `normed_out`/`sum_out`
     are this rank's `[rank_units, cols]` shards, indexed by local row.
     """
+    var rows = Int(rows_dev)
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     # 2D stores below use Coord(local_row, col_idx).
     comptime assert normed_out.flat_rank >= 2
@@ -250,10 +253,10 @@ def _reducescatter_rmsnorm_launch[
         sum_out,
         epsilon,
         weight_offset,
-        rows,
-        cols,
+        Int32(rows),
+        Int32(cols),
         rank_sigs,
-        my_rank,
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=block_dim,
     )

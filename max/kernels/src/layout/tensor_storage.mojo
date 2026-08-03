@@ -15,7 +15,7 @@
 
 from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index
-from std.gpu.host import DevicePointer
+from max.gpu.host import DevicePointer
 from std.math import exp
 from std.os import abort
 from std.sys import align_of, simd_width_of, size_of
@@ -2407,18 +2407,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def add(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs + rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, add)
+        ](storage, other, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
     def imul[
@@ -2464,18 +2458,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def mul(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs * rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, mul)
+        ](storage, other, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
     def isub[
@@ -2521,18 +2509,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def sub(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs - rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, sub)
+        ](storage, other, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
     def ifloordiv[
@@ -2578,18 +2560,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def floordiv(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs // rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, floordiv)
+        ](storage, other, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
     def itruediv[
@@ -2635,18 +2611,12 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def truediv(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs / rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, truediv)
+        ](storage, other, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
     def imin[
@@ -2692,18 +2662,18 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def min_fn(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return min(lhs, rhs)
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, min_fn)
+        ](
+            storage,
+            other,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): min(lhs, rhs),
+        )
 
     @staticmethod
     def imax[
@@ -2749,18 +2719,18 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def max_fn(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return max(lhs, rhs)
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, max_fn)
+        ](
+            storage,
+            other,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): max(lhs, rhs),
+        )
 
     @always_inline
     @staticmethod
@@ -2824,11 +2794,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             layout: The layout describing the storage's elements.
         """
 
-        @always_inline
-        def abs_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
-            return abs(val)
-
-        Self._elementwise_unary(storage, layout, abs_fn)
+        Self._elementwise_unary(
+            storage,
+            layout,
+            lambda (val: SIMD[dtype, Self.element_width]) -> type_of(val): abs(
+                val
+            ),
+        )
 
     @staticmethod
     def irecip[
@@ -2854,11 +2826,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dtype.is_floating_point()
         ), "recip requires a floating-point dtype"
 
-        @always_inline
-        def recip_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
-            return 1 / val
-
-        Self._elementwise_unary(storage, layout, recip_fn)
+        Self._elementwise_unary(
+            storage,
+            layout,
+            lambda (val: SIMD[dtype, Self.element_width]) -> type_of(val): (
+                1 / val
+            ),
+        )
 
     @staticmethod
     def iexp[
@@ -2978,19 +2952,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def add_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left + right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, add_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
     def mul[
@@ -3054,19 +3022,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def mul_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left * right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, mul_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
     def sub[
@@ -3130,19 +3092,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def sub_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left - right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, sub_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
     def floordiv[
@@ -3206,19 +3162,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def floordiv_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left // right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, floordiv_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
     def truediv[
@@ -3282,19 +3232,13 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def truediv_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left / right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, truediv_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
     def min[
@@ -3358,19 +3302,20 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def min_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return min(left, right)
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, min_fn)
+        ](
+            dst,
+            lhs,
+            rhs,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): min(lhs, rhs),
+        )
 
     @staticmethod
     def max[
@@ -3434,19 +3379,20 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def max_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return max(left, right)
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, max_fn)
+        ](
+            dst,
+            lhs,
+            rhs,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): max(lhs, rhs),
+        )
 
     @staticmethod
     def abs[
@@ -3491,16 +3437,18 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             src: A tuple of the source storage and its layout.
         """
 
-        @always_inline
-        def abs_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
-            return abs(val)
-
         _elementwise_unary_out[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
             DstStorage=Self,
-        ](dst, src, abs_fn)
+        ](
+            dst,
+            src,
+            lambda (val: SIMD[dtype, Self.element_size]) -> type_of(val): abs(
+                val
+            ),
+        )
 
     @staticmethod
     def recip[
@@ -3548,16 +3496,18 @@ struct PointerStorage[*, element_width: Int = 1](TensorOps):
             dtype.is_floating_point()
         ), "recip requires a floating-point dtype"
 
-        @always_inline
-        def recip_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
-            return 1 / val
-
         _elementwise_unary_out[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
             DstStorage=Self,
-        ](dst, src, recip_fn)
+        ](
+            dst,
+            src,
+            lambda (val: SIMD[dtype, Self.element_size]) -> type_of(val): (
+                1 / val
+            ),
+        )
 
     @staticmethod
     def exp[
@@ -4207,18 +4157,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def add(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs + rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, add)
+        ](storage, other, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
     def imul[
@@ -4264,18 +4208,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def mul(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs * rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, mul)
+        ](storage, other, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
     def isub[
@@ -4321,18 +4259,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def sub(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs - rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, sub)
+        ](storage, other, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
     def ifloordiv[
@@ -4378,18 +4310,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def floordiv(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs // rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, floordiv)
+        ](storage, other, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
     def itruediv[
@@ -4435,18 +4361,12 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def truediv(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return lhs / rhs
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, truediv)
+        ](storage, other, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
     def imin[
@@ -4492,18 +4412,18 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def min_fn(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return min(lhs, rhs)
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, min_fn)
+        ](
+            storage,
+            other,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): min(lhs, rhs),
+        )
 
     @staticmethod
     def imax[
@@ -4549,18 +4469,18 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             other: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def max_fn(
-            lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
-        ) -> type_of(lhs):
-            return max(lhs, rhs)
-
         _elementwise_binary_with_broadcast[
             width=Self.element_size,
             self_address_space=self_address_space,
             other_address_space=other_address_space,
             DstStorage=Self,
-        ](storage, other, max_fn)
+        ](
+            storage,
+            other,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): max(lhs, rhs),
+        )
 
     @always_inline
     @staticmethod
@@ -4632,11 +4552,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             layout: The layout describing the storage's elements.
         """
 
-        @always_inline
-        def abs_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
-            return abs(val)
-
-        Self._elementwise_unary(storage, layout, abs_fn)
+        Self._elementwise_unary(
+            storage,
+            layout,
+            lambda (val: SIMD[dtype, Self.element_width]) -> type_of(val): abs(
+                val
+            ),
+        )
 
     @staticmethod
     def irecip[
@@ -4663,11 +4585,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dtype.is_floating_point()
         ), "recip requires a floating-point dtype"
 
-        @always_inline
-        def recip_fn(val: SIMD[dtype, Self.element_width]) -> type_of(val):
-            return 1 / val
-
-        Self._elementwise_unary(storage, layout, recip_fn)
+        Self._elementwise_unary(
+            storage,
+            layout,
+            lambda (val: SIMD[dtype, Self.element_width]) -> type_of(val): (
+                1 / val
+            ),
+        )
 
     @staticmethod
     def iexp[
@@ -4789,19 +4713,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def add_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left + right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, add_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__add__)
 
     @staticmethod
     def mul[
@@ -4865,19 +4783,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def mul_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left * right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, mul_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__mul__)
 
     @staticmethod
     def sub[
@@ -4941,19 +4853,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def sub_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left - right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, sub_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__sub__)
 
     @staticmethod
     def floordiv[
@@ -5017,19 +4923,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def floordiv_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left // right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, floordiv_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__floordiv__)
 
     @staticmethod
     def truediv[
@@ -5093,19 +4993,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def truediv_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return left / right
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, truediv_fn)
+        ](dst, lhs, rhs, SIMD[dtype, Self.element_size].__truediv__)
 
     @staticmethod
     def min[
@@ -5169,19 +5063,20 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def min_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return min(left, right)
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, min_fn)
+        ](
+            dst,
+            lhs,
+            rhs,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): min(lhs, rhs),
+        )
 
     @staticmethod
     def max[
@@ -5245,19 +5140,20 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             rhs: A tuple of the right-hand storage operand and its layout.
         """
 
-        @always_inline
-        def max_fn(
-            left: SIMD[dtype, Self.element_size], right: type_of(left)
-        ) -> type_of(left):
-            return max(left, right)
-
         _elementwise_binary_out_with_broadcast[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             lhs_address_space=lhs_address_space,
             rhs_address_space=rhs_address_space,
             DstStorage=Self,
-        ](dst, lhs, rhs, max_fn)
+        ](
+            dst,
+            lhs,
+            rhs,
+            lambda (
+                lhs: SIMD[dtype, Self.element_size], rhs: type_of(lhs)
+            ) -> type_of(lhs): max(lhs, rhs),
+        )
 
     @staticmethod
     def abs[
@@ -5302,16 +5198,18 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             src: A tuple of the source storage and its layout.
         """
 
-        @always_inline
-        def abs_fn(val: SIMD[dtype, Self.element_size]) -> type_of(val):
-            return abs(val)
-
         _elementwise_unary_out[
             width=Self.element_size,
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
             DstStorage=Self,
-        ](dst, src, abs_fn)
+        ](
+            dst,
+            src,
+            lambda (val: SIMD[dtype, Self.element_size]) -> type_of(val): abs(
+                val
+            ),
+        )
 
     @staticmethod
     def recip[
@@ -5368,7 +5266,13 @@ struct DevicePointerStorage[*, element_width: Int = 1](TensorOps):
             dst_address_space=dst_address_space,
             src_address_space=src_address_space,
             DstStorage=Self,
-        ](dst, src, recip_fn)
+        ](
+            dst,
+            src,
+            lambda (val: SIMD[dtype, Self.element_size]) -> type_of(val): (
+                1 / val
+            ),
+        )
 
     @staticmethod
     def exp[

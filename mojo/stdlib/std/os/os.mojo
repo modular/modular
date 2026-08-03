@@ -116,7 +116,7 @@ struct _DirHandle:
 
         self._handle = handle.value()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
@@ -146,7 +146,7 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span[Byte, origin_of(name)](
@@ -176,7 +176,7 @@ struct _DirHandle:
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.unsafe_value().take_pointee().name
+            ref name = ep.unsafe_value().unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 unsafe_from_utf8=Span[Byte, origin_of(name)](

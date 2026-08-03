@@ -31,7 +31,7 @@ is then released for the entire GPU-work region.
 from std.collections import Array
 from std.memory import OpaquePointer, UnsafePointer
 from std.os import abort
-from std.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
+from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from std.python import Python, PythonObject
 from std.python._cpython import GILReleased
 from std.python.bindings import PythonModuleBuilder
@@ -199,12 +199,13 @@ def copy_h2d(
                 ](unsafe_from_address=aux_buf_arr[j])
                 var dev_buf = DeviceBuffer[DType.uint8](
                     aux_ctxs[j],
-                    dev_base + dst_v * stride,
+                    dev_base.unsafe_offset(dst_v * stride),
                     stride,
                     owning=False,
                 )
                 aux_ctxs[j].enqueue_copy(
-                    dev_buf, host_base + src_v * host_stride_v + host_off
+                    dev_buf,
+                    host_base.unsafe_offset(src_v * host_stride_v + host_off),
                 )
                 host_off += stride
 
@@ -262,7 +263,7 @@ def _do_broadcast_units[
         var ctx_array_ptr: UnsafePointer[
             DeviceContext, origin_of(ctx_array)
         ] = ctx_array.unsafe_ptr()
-        (ctx_array_ptr + i).unsafe_write(
+        ctx_array_ptr.unsafe_offset(i).unsafe_write(
             DeviceContext(
                 OpaquePointer[MutUntrackedOrigin](
                     unsafe_from_address=main_ctx_addr_arr[i]
@@ -373,12 +374,14 @@ def copy_d2h(
                 ](unsafe_from_address=buf_arr[j])
                 var dev_buf = DeviceBuffer[DType.uint8](
                     dev_ctxs[j],
-                    dev_base + src_arr[i] * stride,
+                    dev_base.unsafe_offset(src_arr[i] * stride),
                     stride,
                     owning=False,
                 )
                 dev_ctxs[j].enqueue_copy(
-                    host_base + dst_arr[i] * host_stride_v + host_off,
+                    host_base.unsafe_offset(
+                        dst_arr[i] * host_stride_v + host_off
+                    ),
                     dev_buf,
                 )
                 host_off += stride

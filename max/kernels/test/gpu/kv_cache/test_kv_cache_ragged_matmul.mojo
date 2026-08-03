@@ -15,7 +15,7 @@ from std.random import random_ui64, seed
 from std.math.uutils import udivmod
 from std.sys.defines import get_defined_string
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

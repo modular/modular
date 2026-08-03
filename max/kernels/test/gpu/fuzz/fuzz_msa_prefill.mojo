@@ -64,7 +64,7 @@ from std.sys import (
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
-from std.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand

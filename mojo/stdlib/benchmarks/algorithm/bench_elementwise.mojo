@@ -13,9 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList

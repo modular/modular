@@ -14,9 +14,9 @@
 from std.math import log, log2, log10
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.testing import assert_almost_equal, TestSuite
 
 from std.utils import IndexList

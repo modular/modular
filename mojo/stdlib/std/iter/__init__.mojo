@@ -45,10 +45,8 @@ for num, letter in zip(numbers, letters):
     print(num, letter)
 
 # Map a function over an iterable
-def square(x: Int) -> Int:
-    return x * x
 var values = [1, 2, 3, 4]
-for squared in map[square](values):
+for squared in map[lambda (x: Int) -> Int: x * x](values):
     print(squared)
 ```
 """
@@ -358,7 +356,9 @@ struct _Once[T: Movable & ImplicitlyDeletable](
         return self.copy()
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        return next(self._inner)
+        if not self._inner:
+            raise StopIteration()
+        return self._inner.unsafe_take()
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
@@ -712,9 +712,7 @@ def map[
 
     ```mojo
     var l = [1, 2, 3]
-    def add_one(x: Int) -> Int:
-        return x + 1
-    var m = map[add_one](l)
+    var m = map[lambda (x: Int) -> Int: x + 1](l)
 
     # outputs:
     # 2

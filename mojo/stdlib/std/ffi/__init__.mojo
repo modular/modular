@@ -56,7 +56,6 @@ from std.sys._libc_errno import ErrNo, get_errno, set_errno
 from std.memory import OwnedPointer, Pointer
 from std.memory.alloc import dealloc, ThinAllocation
 from std.memory.unsafe_pointer import unsafe_cast
-from std.reflection import reflect
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from .cstring import CStringSlice
@@ -211,12 +210,9 @@ struct _DLCallable[
             from, preventing ASAP destruction of the handle across the call.
 
     Notes:
-        Argument forwarding uses the Mojo calling convention rather than
-        strict `abi("C")`, matching the behavior of `OwnedDLHandle.call`.
-        This is safe in practice for scalar and register-passable arguments
-        where Mojo and C conventions agree, but may silently corrupt struct
-        arguments or return values; multi-field argument types are rejected
-        at compile time. Strict-C-ABI support is tracked in MOCO-3692.
+        Each call reinterprets the symbol as a C function pointer whose
+        signature is the call's argument types and forwards the arguments
+        individually, using the C ABI (`abi("C")`).
     """
 
     var _opaque: Pointer[NoneType, MutUntrackedOrigin]
@@ -239,39 +235,22 @@ struct _DLCallable[
         Returns:
             The return value of the C function.
         """
-        # Reject aggregate (multi-field) argument types at comptime: the
-        # Mojo ABI path here passes them via a kgen pack, which can disagree
-        # with the C ABI's struct-passing rules (SSE-pair / HFA-2 / sret),
-        # silently corrupting the call. Single-field wrappers — `Int`,
-        # `Float64`, `SIMD[*, n]`, `UnsafePointer`, etc. — are accepted
-        # since they round-trip through a register the same way in both
-        # ABIs. Strict-C-ABI struct support is tracked in MOCO-3692.
-        comptime for i in range(args.__len__()):
-            comptime if reflect[type_of(args[i])].is_struct():
-                comptime assert reflect[type_of(args[i])].field_count() == 1, (
-                    "OwnedDLHandle.get_function: aggregate (multi-field)"
-                    " argument types are unsafe through the Mojo ABI and"
-                    " are not supported."
-                )
-        var v = args.get_loaded_kgen_pack()
-        # Mojo ABI path: the variadic pack is loaded into a kgen pack and
-        # passed as a single struct-shaped argument. Struct args/returns
-        # can silently corrupt here, which is why multi-field aggregates
-        # are rejected above.
+        # Spelling the callee type over the argument pack `T`, rather than as
+        # a single kgen-pack aggregate, is what makes codegen expand the pack
+        # and apply the C calling convention per argument.
         #
-        # The bitcast goes via `Pointer(to=self._opaque)` — taking
-        # the address of the field and reinterpreting it as pointing to a
-        # function-pointer type, then loading — because an
-        # `UnsafePointer[NoneType]` value cannot be directly reinterpreted
-        # as a function-pointer value (`.unsafe_bitcast` only changes the
-        # pointee type).
+        # The bitcast goes via `Pointer(to=self._opaque)` — taking the address
+        # of the field, reinterpreting it as pointing to a function-pointer
+        # type, then loading — because a `Pointer[NoneType]` value
+        # cannot be directly reinterpreted as a function-pointer value
+        # (`.unsafe_bitcast` only changes the pointee type).
         var typed_fn = Pointer(to=self._opaque).unsafe_bitcast[
-            def(type_of(v)) thin -> Self.return_type
+            def(* a: * T) thin abi("C") -> Self.return_type
         ]()[]
         # The `_lib` field's origin parameter keeps `OwnedDLHandle` borrowed
         # for the lifetime of `self`, which spans this entire method — so
         # `dlclose` cannot run before `typed_fn` returns.
-        return typed_fn(v)
+        return typed_fn(*args)
 
 
 struct OwnedDLHandle(Movable):
@@ -336,7 +315,7 @@ struct OwnedDLHandle(Movable):
     def __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = _DLHandle({})
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Unload the associated dynamic library.
 
         This automatically calls `dlclose()` on the underlying library handle.
@@ -391,17 +370,7 @@ struct OwnedDLHandle(Movable):
         if the raw function pointer were returned directly and ASAP
         destruction ran `dlclose` between `dlsym` and the call.
 
-        Warning:
-            Argument forwarding uses the Mojo calling convention, not
-            strict `abi("C")`. This path is safe **only** for scalar and
-            single-field register-passable arguments where Mojo and C
-            conventions happen to agree (integers, floats, raw pointers).
-            For any C function that takes or returns a struct by value,
-            this path would silently corrupt the call without raising or
-            aborting. Multi-field structs are rejected at comptime;
-            single-field wrappers around aggregates are not, and are the
-            most likely silent-corruption case. Strict-C-ABI support is
-            tracked in MOCO-3692 / MOCO-3709.
+        Argument forwarding uses the C ABI (see the `_DLCallable` notes).
 
         Missing symbols raise `Error("symbol not found: ...")` rather than
         aborting the process, so callers can probe for optional symbols.
@@ -872,15 +841,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             return self.check_symbol(String(name))
 
         debug_assert[_check_symbol]("symbol not found: ", name)
-        var v = args.get_loaded_kgen_pack()
-        # TODO(MOCO-3692): This uses Mojo calling convention instead of C ABI.
-        # We cannot add abi("C") here because `type_of(v)` is a kgen pack type,
-        # not the expanded individual argument types, and Mojo function type
-        # syntax has no variadic parameter form. Safe in practice only for
-        # scalar/register-passable arguments where Mojo and C conventions agree.
-        return self._get_function[name, def(type_of(v)) thin -> return_type]()(
-            v
-        )
+        # The callee type is spelled over the argument pack so that codegen
+        # applies the C calling convention per argument, as in
+        # `_DLCallable.__call__`. The call is synchronous, so the handle stays
+        # alive across it without a borrow.
+        return self._get_function[
+            name, def(* a: * T) thin abi("C") -> return_type
+        ]()(*args)
 
 
 @always_inline
@@ -1050,7 +1017,9 @@ struct _Global[
         #   with the ABI destination result pointer already set to `ptr`?
         var ptr = OwnedPointer(Self.init_fn())
 
-        return ptr^.steal_data().bitcast[NoneType]()
+        var storage = ptr^.unsafe_take_allocation().unsafe_leak()
+        var opaque = storage.unsafe_bitcast[NoneType]()
+        return opaque
 
     @staticmethod
     def _deinit_wrapper(
@@ -1060,7 +1029,7 @@ struct _Global[
         if opaque_ptr:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=opaque_ptr.unsafe_value().bitcast[
+                    unsafe_assume_ownership=opaque_ptr.unsafe_value().unsafe_bitcast[
                         Self.StorageType
                     ]()
                 ).unsafe_with_layout({count = 1})
@@ -1141,7 +1110,7 @@ def _get_global_or_null(
 
 comptime _CPointer[
     mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
-] = Optional[UnsafePointer[T, origin]]
+] = OptionalPointer[T, origin]
 
 
 @always_inline("nodebug")
@@ -1163,6 +1132,15 @@ def external_call[
     Returns:
         The external call result.
     """
+
+    comptime if types.contains[String]():
+        comptime assert False, (
+            "Passing a `String` to `external_call` is never correct. Instead,"
+            " first call `as_c_string_slice()` to pass a C-FFI compatible"
+            " `CStringSlice` type (synonymous with C's `const char*`). Example"
+            ' `external_call["foo", NoneType]("some'
+            ' string".as_c_string_slice())'
+        )
 
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load

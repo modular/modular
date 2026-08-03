@@ -13,7 +13,7 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TileTensor,

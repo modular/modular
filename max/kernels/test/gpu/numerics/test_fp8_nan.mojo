@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.simd import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import bitcast
 
 

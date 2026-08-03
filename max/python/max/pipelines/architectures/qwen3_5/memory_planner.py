@@ -15,9 +15,11 @@
 
 from __future__ import annotations
 
-from max.dtype import DType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
@@ -58,12 +60,10 @@ class Qwen3_5MemoryPlanner(PagedMemoryPlanner):
 
         conv_dim = 2 * kd * nk + vd * nv
         # Determine state dtype bytes: states stored in model dtype (typically bfloat16).
-        encoding = pipeline_config.model.quantization_encoding
-        state_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, Qwen3_5Config.DEFAULT_ENCODING
         )
+        state_dtype = supported_encoding_dtype(encoding)
         dtype_bytes = state_dtype.size_in_bytes
         bytes_per_layer = (
             conv_dim * (kernel - 1) * dtype_bytes + nv * kd * vd * dtype_bytes

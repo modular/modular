@@ -15,8 +15,8 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -56,7 +56,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:

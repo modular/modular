@@ -20,8 +20,8 @@
 # ===----------------------------------------------------------------------=== #
 from std.math import align_up, ceildiv
 from std.sys import size_of
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand
 
@@ -48,7 +48,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def _test_impl[

@@ -3,6 +3,7 @@
 load("@llvm-project//mlir:tblgen.bzl", _gentbl_cc_library = "gentbl_cc_library", _td_library = "td_library")
 load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
+load("//bazel:mojo_aliases.bzl", "INTERNAL_PACKAGES")
 load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:dialect_checksum.bzl", _dialect_checksum = "dialect_checksum")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:kgen.bzl", _kgen_kernel = "kgen_kernel")  # buildifier: disable=bzl-visibility
@@ -117,7 +118,7 @@ def _process_mojo_deps(deps):
     # TODO: This will break in the presence of select()s
     new_deps = []
     for dep in deps:
-        if dep.startswith("//Kernels"):
+        if dep in INTERNAL_PACKAGES:
             new_deps.append("@modular_wheel//:" + dep.split("/")[-1])
         else:
             new_deps.append(dep)
@@ -138,7 +139,7 @@ def modular_cc_binary(data = [], deps = [], internal_deps = [], defines = [], lo
 # Ignore internal_deps for public builds
 # buildifier: disable=unused-variable
 def modular_cc_library(name, data = [], deps = [], internal_deps = [], defines = [], local_defines = [], **kwargs):
-    if name in ["Profiling", "ProfilingHeaders"]:
+    if name in ["Profiling", "ProfilerHostGlue"]:
         # Provide TimeProfiler for now since that may be what they're actually after
         _modular_cc_library(name = name, deps = ["//Support:TimeProfiler"])
         return
@@ -198,8 +199,11 @@ def mojo_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
 
 # Ignore use_production_compiler_for_asan for public builds
 # buildifier: disable=unused-variable
-def mojo_shared_library(use_production_compiler_for_asan = None, **kwargs):
-    _mojo_shared_library(**kwargs)
+def mojo_shared_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
+    _mojo_shared_library(
+        deps = _process_mojo_deps(deps),
+        **kwargs
+    )
 
 def modular_py_binary(mojo_deps = [], **kwargs):
     _modular_py_binary(mojo_deps = _process_mojo_deps(mojo_deps), **kwargs)

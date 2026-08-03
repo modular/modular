@@ -23,7 +23,7 @@ This file tests various code paths in nn/concat.mojo:
 6. Edge cases: empty outer dims, single element inputs, etc.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
 from nn.concat import (
     _concat_inner,

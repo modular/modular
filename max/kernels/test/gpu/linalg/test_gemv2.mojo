@@ -16,7 +16,7 @@
 from std.random import random_si64
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 from std.utils import IndexList
@@ -153,9 +153,9 @@ def test[
         c_tt,
         a_tt,
         b_tt,
-        m,
-        n,
-        k,
+        Int32(m),
+        Int32(n),
+        Int32(k),
         grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -238,6 +238,17 @@ def main() raises:
         test_gemv_split_k[DType.float8_e4m3fn](ctx)
 
         # BF16-only tests for other GEMV paths (FP8 not supported here)
+
+        # GEMV_KERNEL_VECTOR: M = 1, N wider than the split-K grid limit and
+        # K shallow enough that the kernel packs several rows per warp.
+        test[
+            in_type=DType.bfloat16,
+            out_type=DType.bfloat16,
+            transpose_b=True,
+            M=None,
+            N=Int(262144),
+            K=Int(256),
+        ](ctx, 1, 262144, 256)
 
         # GEMV_KERNEL_VECTOR: N = 1, K % simd_width == 0, transpose_b = False
         test[

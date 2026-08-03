@@ -15,9 +15,9 @@
 from std.math import ceil, floor
 
 
-from std.algorithm.functional import elementwise
-from std.algorithm.reduction import _get_nd_indices_from_flat_index
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.algorithm.reduction import _get_nd_indices_from_flat_index
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,

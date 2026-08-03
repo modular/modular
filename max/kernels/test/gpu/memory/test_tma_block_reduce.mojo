@@ -17,8 +17,8 @@ from std.sys import argv
 from std.sys.info import simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import (
     block_dim,
     block_idx,
@@ -38,7 +38,7 @@ from std.gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -51,10 +51,10 @@ from layout import TileTensor, Coord, Idx, row_major
 def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
-    var m2_shared = stack_allocation[
+    var m2_shared = unsafe_stack_allocation[
         max_warps_per_block, dtype, address_space=AddressSpace.SHARED
     ]()
-    var m2_broadcast = stack_allocation[
+    var m2_broadcast = unsafe_stack_allocation[
         1, dtype, address_space=AddressSpace.SHARED
     ]()
 
@@ -94,7 +94,9 @@ def global_reduction_kernel[
     input_fn: def[width: Int, _rank: Int](
         idx: IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
-](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols: Int):
+](d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin], num_cols_dev: Int32,):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_cols = Int(num_cols_dev)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * simd_width
@@ -122,11 +124,14 @@ def tma_reduction_kernel[
     simd_width: Int,
 ](
     descriptor: TMADescriptor,
-    rows: Int,
-    cols: Int,
+    rows_dev: Int32,
+    cols_dev: Int32,
     d_data: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     d_out: UnsafePointer[Scalar[accum_type], MutAnyOrigin],
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var rows = Int(rows_dev)
+    var cols = Int(cols_dev)
     var shmem = external_memory[
         Scalar[dtype], address_space=AddressSpace.SHARED, alignment=128
     ]()
@@ -134,7 +139,9 @@ def tma_reduction_kernel[
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = stack_allocation[1, Int64, address_space=AddressSpace.SHARED]()
+    var mbar = unsafe_stack_allocation[
+        1, Int64, address_space=AddressSpace.SHARED
+    ]()
 
     var descriptor_ptr = UnsafePointer(to=descriptor).bitcast[NoneType]()
     mbarrier_init(mbar, 1)
@@ -213,8 +220,8 @@ def test_tma_block_reduce[
             ]
             ctx.enqueue_function[kernel](
                 tma_desc,
-                rows,
-                cols,
+                Int32(rows),
+                Int32(cols),
                 d_data,
                 d_out,
                 grid_dim=grid_dim,
@@ -245,7 +252,7 @@ def test_tma_block_reduce[
 
             ctx.enqueue_function[kernel](
                 d_out,
-                cols,  # num_cols
+                Int32(cols),  # num_cols
                 grid_dim=grid_dim,
                 block_dim=block_dim,
             )

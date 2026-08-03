@@ -15,17 +15,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -34,10 +38,14 @@ from typing_extensions import Self, override
 class DeepseekV2Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV2 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+
     # MAX specific fields
     dtype: DType
     kv_params: KVCacheParams
     devices: list[DeviceRef]
+    quantization_encoding: SupportedEncoding | None = None
 
     # Default values lifted from Transformers DeepseekV2Config
     vocab_size: int = 102400
@@ -165,9 +173,9 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             for spec in model_config.device_specs
         ]
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
         )
@@ -234,4 +242,5 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             kv_params=kv_params,
             devices=devices,
             graph_mode=graph_mode,
+            quantization_encoding=quantization_encoding,
         )

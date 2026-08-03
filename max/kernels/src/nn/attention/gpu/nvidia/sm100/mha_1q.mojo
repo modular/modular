@@ -38,13 +38,13 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import external_memory, fence_async_view_proxy
-from std.gpu.compute.mma import MMAOperandDescriptor
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.mma import MMAOperandDescriptor
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
@@ -52,7 +52,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
 )
 from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -1626,7 +1626,12 @@ def mha_sm100_dispatch[
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
-    q = rebind[UnsafePointer[Scalar[KVType.dtype], MutAnyOrigin]](q_arg)
+
+    q = (
+        q_arg.unsafe_ptr()
+        .bitcast[Scalar[KVType.dtype]]()
+        .unsafe_origin_cast[MutAnyOrigin]()
+    )
 
     # Persistent kernels not currently supported with partitioning
     # This doesn't seem useful: we partition to make SMs more busy,

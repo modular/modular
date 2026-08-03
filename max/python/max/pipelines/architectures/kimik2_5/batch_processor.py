@@ -124,16 +124,23 @@ class KimiK2_5BatchProcessor(DeepseekV3BatchProcessor):
             tuple[KimiK2_5TextAndVisionContext, Sequence[ImageMetadata]]
         ],
     ) -> list[dict[str, npt.NDArray[Any]]]:
-        """Collect per-image numpy inputs for the cache-selected images."""
+        """Collect per-image numpy inputs for the cache-selected images.
+
+        Miss images are matched to ``ctx.images`` by ``start_idx`` (image
+        spans within a context are non-overlapping, so it uniquely names
+        an image) rather than object identity: ``miss_images`` may hold
+        reconstructed ``ImageMetadata`` instances for the same logical
+        image, and an identity match would silently collect nothing.
+        """
         per_image: list[dict[str, npt.NDArray[Any]]] = []
         for ctx, miss_images in selection:
-            uncached_ids = {id(img) for img in miss_images}
+            uncached_start_indices = {img.start_idx for img in miss_images}
             pos_offset = 0
             for i, img in enumerate(ctx.images):
                 thw = ctx.grid_thws[i]
                 n_pos = int(thw[0] * thw[1] * thw[2])
 
-                if id(img) in uncached_ids:
+                if img.start_idx in uncached_start_indices:
                     per_image.append(
                         {
                             "pixel_values": img.pixel_values,

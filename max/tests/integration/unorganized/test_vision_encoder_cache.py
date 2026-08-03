@@ -38,6 +38,7 @@ from max.pipelines.context.eos_tracking import EOSTracker
 from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
+    VideoEncoderMetrics,
     VisionEncoderCache,
     VisionEncodeResult,
     derive_counts_from_spans,
@@ -1282,6 +1283,29 @@ def test_pop_metrics_disabled_cache_counts_all_as_encoded() -> None:
     assert m.num_tokens_encoded == 5
 
 
+def test_video_encoder_metrics_defaults_are_zero() -> None:
+    m = VideoEncoderMetrics()
+    assert m.num_clips_total == 0
+    assert m.num_clips_encoded == 0
+    assert m.num_clips_cached == 0
+    assert m.frame_counts == []
+    assert m.num_tokens_encoded == 0
+    assert m.encoding_time_ms == 0.0
+    assert m.cache_hit_rate == 0.0
+
+
+def test_video_encoder_metrics_cache_hit_rate() -> None:
+    m = VideoEncoderMetrics(
+        num_clips_total=4,
+        num_clips_encoded=1,
+        num_clips_cached=3,
+        frame_counts=[16],
+        num_tokens_encoded=64,
+        encoding_time_ms=12.5,
+    )
+    assert m.cache_hit_rate == 0.75
+
+
 def test_derive_counts_from_spans_single_context() -> None:
     """Per-image count is the placeholder span of the selected images."""
     ctx = FakeContext(
@@ -1442,6 +1466,28 @@ def test_manager_select_skips_fully_cached_context() -> None:
     ctx = FakeContext(
         request_id=RequestID("r1"),
         images=[_make_image_meta(0, 2, image_hash=0xA)],
+    )
+    selection = manager.select(_as_vlm_batch([ctx]))
+    assert selection == []
+    assert _ref_count(manager, 0xA) == 1
+
+
+def test_manager_select_excludes_contexts_with_no_window_misses() -> None:
+    """A context whose only misses are ahead of the window is not selected.
+
+    Regression test for MXSERV-330: a cache hit inside the window plus an
+    uncached image ahead of it produced a selection entry with an empty
+    miss list, which reached the model encode path and tripped its
+    non-empty assertion.
+    """
+    manager = _make_manager()
+    manager.insert(0xA, [_make_buffer(2)], num_tokens=2)
+    hit = _make_image_meta(0, 2, image_hash=0xA)
+    ahead = _make_image_meta(10, 14, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=RequestID("r1"),
+        images=[hit, ahead],
+        next_images=[hit],
     )
     selection = manager.select(_as_vlm_batch([ctx]))
     assert selection == []

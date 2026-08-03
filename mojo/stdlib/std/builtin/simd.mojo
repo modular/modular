@@ -601,6 +601,12 @@ struct SIMD[dtype: DType, size: SIMDLength](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device type mapping is the identity function."""
+        # `where` clause on the conformance would be cleaner but triggers a
+        # KGEN parameter-evaluator crash when instantiated in certain scopes.
+        comptime assert Self.dtype != DType.int and Self.dtype != DType.uint, (
+            "Int and UInt do not conform to DevicePassable; use a "
+            "fixed-width type such as Int32 or Int64 instead"
+        )
         encoder.encode(self, target)
 
     @staticmethod
@@ -2320,21 +2326,24 @@ struct SIMD[dtype: DType, size: SIMDLength](
             writer: The object to write to.
         """
 
-        # Write an opening `[`.
+        # `write_string` rather than `write`: `write` promotes each literal to a
+        # `String`, so every literal costs a stack slot, the small-string branch
+        # and a refcount decrement, all of which are re-elaborated for every
+        # `SIMD[dtype, size]` that gets printed.
         comptime if Self.size > 1:
-            writer.write("[")
+            writer.write_string("[")
 
         # Write each element.
         for i in range(Self.size):
             var element = self[i]
             # Write separators between each element.
             if i != 0:
-                writer.write(", ")
+                writer.write_string(", ")
             _write_scalar(writer, element)
 
         # Write a closing `]`.
         comptime if Self.size > 1:
-            writer.write("]")
+            writer.write_string("]")
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -2352,7 +2361,9 @@ struct SIMD[dtype: DType, size: SIMDLength](
         else:
             writer.write_string("SIMD[")
             Self.dtype.write_repr_to(writer)
-            writer.write(", ", Int(Self.size), "](")
+            writer.write_string(", ")
+            writer.write(Int(Self.size))
+            writer.write_string("](")
         # Write each element.
         for i in range(Self.size):
             var element = self[i]
@@ -2378,7 +2389,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
 
         # Write an opening `[`.
         comptime if Self.size > 1:
-            writer.write("[")
+            writer.write_string("[")
 
         # Write each element.
         for i in range(Self.size):
@@ -2392,18 +2403,18 @@ struct SIMD[dtype: DType, size: SIMDLength](
 
             # Write separators between each element.
             if i != 0:
-                writer.write(",")
+                writer.write_string(",")
 
             # TODO: Assumes user wants right-aligned content.
             if int_width < width:
                 for _ in range(width - int_width):
-                    writer.write(" ")
+                    writer.write_string(" ")
 
             _write_scalar(writer, element)
 
         # Write a closing `]`.
         comptime if Self.size > 1:
-            writer.write("]")
+            writer.write_string("]")
 
     @always_inline
     def to_bits[
@@ -2626,7 +2637,7 @@ struct SIMD[dtype: DType, size: SIMDLength](
         return self._shuffle_variadic[*mask](other)
 
     @always_inline("nodebug")
-    def shuffle[mask: IndexList[Self.size, ...]](self) -> Self:
+    def shuffle[mask: IndexList[Self.size, element_type=_]](self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -2641,7 +2652,9 @@ struct SIMD[dtype: DType, size: SIMDLength](
         return self._shuffle_list[Self.size, mask.as_index_tuple()](self)
 
     @always_inline("nodebug")
-    def shuffle[mask: IndexList[Self.size, ...]](self, other: Self) -> Self:
+    def shuffle[
+        mask: IndexList[Self.size, element_type=_]
+    ](self, other: Self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -4364,9 +4377,31 @@ def _write_scalar[
 ](mut writer: W, value: Scalar[dtype]):
     comptime if dtype == DType.bool:
         if value:
-            writer.write("True")
+            writer.write_string("True")
         else:
-            writer.write("False")
+            writer.write_string("False")
+
+    elif dtype.is_half_float():
+        # `_write_float` widens everything but `float64` and the `float8`
+        # variants to `Float32` before running dragonbox, so a half float and
+        # its `Float32` widening already format to identical text. Widening here
+        # instead lets `float16` and `bfloat16` share one `_write_float`
+        # instantiation with `float32` rather than each getting their own copy of
+        # the formatter, which dominates the compile cost of printing SIMD
+        # values. `test_simd.test_write_half_float_matches_float32` pins the
+        # equivalence.
+        _write_float(writer, value.cast[DType.float32]())
+
+    elif dtype.is_half_float():
+        # `_write_float` widens everything but `float64` and the `float8`
+        # variants to `Float32` before running dragonbox, so a half float and
+        # its `Float32` widening already format to identical text. Widening here
+        # instead lets `float16` and `bfloat16` share one `_write_float`
+        # instantiation with `float32` rather than each getting their own copy of
+        # the formatter, which dominates the compile cost of printing SIMD
+        # values. `test_simd.test_write_half_float_matches_float32` pins the
+        # equivalence.
+        _write_float(writer, value.cast[DType.float32]())
 
     elif dtype.is_floating_point():
         _write_float(writer, value)

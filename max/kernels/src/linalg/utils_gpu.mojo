@@ -29,9 +29,8 @@ from std.os import getenv
 
 from std.gpu import WARP_SIZE
 from std.gpu.primitives.grid_controls import PDLLevel
-from std.gpu.host import DeviceContext
-from std.gpu.host.device_context import DeviceBuffer
-from std.gpu.host.info import A100
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
 from std.utils.index import Index, IndexList
@@ -587,7 +586,7 @@ def create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_deletable()
+    var host = alloc(AllocLayout[UInt32](count=num_blocks)).into_managed()
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -626,7 +625,7 @@ def create_hilbert_lut(
     # Allocate device buffer and copy.
     var device_buf = ctx.enqueue_create_buffer[DType.uint32](num_blocks)
     ctx.enqueue_copy(device_buf, host.unsafe_span())
-    dealloc(host^.into_allocation())
+    dealloc(host^)
     return device_buf
 
 
@@ -647,7 +646,7 @@ def get_hilbert_lut_with_cache(
     var cached_ptr = _get_global_or_null(key_str)
 
     if cached_ptr:
-        var device_ptr = cached_ptr.unsafe_value().bitcast[UInt32]()
+        var device_ptr = cached_ptr.unsafe_value().unsafe_bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](

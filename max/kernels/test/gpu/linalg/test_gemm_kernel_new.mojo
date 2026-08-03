@@ -14,7 +14,7 @@
 from std.math import ceildiv, isclose
 from std.sys import argv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, global_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
@@ -238,9 +238,9 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         c_tensor_ref,
         mat_a.as_immut(),
         mat_b.as_immut(),
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -380,9 +380,9 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
         c_tensor_ref,
         mat_a.as_immut(),
         mat_b.as_immut(),
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -497,10 +497,14 @@ def matmul_kernel_naive[
     c: TileTensor[c_dtype, CLayoutType, MutUntrackedOrigin],
     a: TileTensor[a_dtype, ALayoutType, ImmUntrackedOrigin],
     b: TileTensor[b_dtype, BLayoutType, ImmUntrackedOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ) where (c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     var x = global_idx.x
     var y = global_idx.y
 

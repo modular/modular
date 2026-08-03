@@ -43,7 +43,6 @@ from max.pipelines.kv_cache.kv_connector import (
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
@@ -197,7 +196,6 @@ class BlockManager:
     @traced
     def __init__(
         self,
-        device_memory_tier: MemoryTier,
         total_num_blocks: int,
         block_size: int,
         connector: KVConnector,
@@ -277,9 +275,7 @@ class BlockManager:
         # One pool of device blocks per replica.
         self.device_block_pools: list[BlockPool] = [
             BlockPool(
-                device_memory_tier,
                 total_num_blocks,
-                enable_prefix_caching,
                 enable_runtime_checks=enable_runtime_checks,
             )
             for _ in range(self.num_replicas)
@@ -620,6 +616,7 @@ class BlockManager:
             if local_block is not None:
                 local_pool.touch(local_block)
                 blocks.append(local_block)
+                self._metrics.device_blocks_served += 1
                 continue
 
             # Local miss: a cross-replica hit can only be served when
@@ -674,6 +671,9 @@ class BlockManager:
         dst_units = self._replica_kv_memory[dst_replica]
         for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
             src_unit.copy_block_to(dst_unit, dst_block_id, src_block_id)
+            self._metrics.cross_replica_bytes_copied += src_unit.buffer.shape[
+                1
+            ] * len(src_unit.all_buffers)
 
     @traced
     def _get_full_blocks_from_host_prefix_cache(

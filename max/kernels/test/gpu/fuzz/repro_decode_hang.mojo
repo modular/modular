@@ -26,7 +26,7 @@
 
 from std.sys import argv
 from std.random import rand
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalPaddingMask

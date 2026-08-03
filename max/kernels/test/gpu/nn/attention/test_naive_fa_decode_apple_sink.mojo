@@ -35,7 +35,7 @@ combine.
 """
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp
 from std.random import seed
 from std.sys import has_apple_gpu_accelerator

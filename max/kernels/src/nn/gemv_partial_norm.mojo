@@ -38,6 +38,7 @@ expresses this.
 """
 
 from std.math import ceildiv, rsqrt
+from std.builtin.device_passable import DevicePassable
 from std.memory import AddressSpace
 from std.atomic import Atomic, Ordering, fence
 from std.sys.info import _is_sm_100x_or_newer, simd_width_of, size_of
@@ -54,7 +55,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.memory import cp_async_bulk_prefetch
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -152,9 +153,9 @@ def gemv_partial_norm_kernel[
     finish_counter: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     trace_buf: TraceBufT,
     eps: Float32,
-    n: Int,
-    k: Int,
-    n_normed: Int,
+    n: Int32,
+    k: Int32,
+    n_normed: Int32,
     num_normed_blocks: Int32,
 ):
     """Fused GEMV (M=1) + partial RMS norm, single launch.
@@ -206,14 +207,17 @@ def gemv_partial_norm_kernel[
         n: Full output width `N` (normed + unnormed).
         k: Activation / weight inner dimension.
         n_normed: Length of the normed region.
-        num_normed_blocks: `n_normed / tile_n`, used by the global-
+        num_normed_blocks: `_n_normed / tile_n`, used by the global-
             last election (`prev == num_normed_blocks - 1`).
 
     Constraints:
-        - `n_normed` must be divisible by `tile_n`.
-        - `n_normed` must be divisible by `simd_width` (apply-norm
+        - `_n_normed` must be divisible by `tile_n`.
+        - `_n_normed` must be divisible by `simd_width` (apply-norm
           uses vectorized loads).
     """
+    var _n = Int(n)
+    var _k = Int(k)
+    var _n_normed = Int(n_normed)
     comptime assert normed_output.flat_rank == 2
     comptime assert unnormed_output.flat_rank == 2
     comptime assert act.flat_rank == 2
@@ -253,7 +257,7 @@ def gemv_partial_norm_kernel[
 
     # K-reduction.
     var iteration = 0
-    for _ in range(tid * simd_width, k, tile_k):
+    for _ in range(tid * simd_width, _k, tile_k):
         var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
         var act_tile = act.tile[1, tile_k](0, iteration)
 
@@ -298,7 +302,7 @@ def gemv_partial_norm_kernel[
                 UInt64(global_perf_counter_ns()),
             )
 
-    var is_normed_block = tile_id_n + tile_n <= n_normed
+    var is_normed_block = tile_id_n + tile_n <= _n_normed
     var is_last_block: Bool = False
 
     # Gamma prefetch to L2: any single normed block issues an async bulk
@@ -317,7 +321,7 @@ def gemv_partial_norm_kernel[
         # redundant prefetches (L2 coalesces but the issues are wasted).
         if block_idx.y == 0 and tid == 0:
             cp_async_bulk_prefetch(
-                gamma.ptr, Int32(n_normed * size_of[a_type]())
+                gamma.ptr, Int32(_n_normed * size_of[a_type]())
             )
 
     if tid == 0:
@@ -354,8 +358,10 @@ def gemv_partial_norm_kernel[
         else:
             comptime for ni in range(tile_n):
                 var col = tile_id_n + ni
-                if col < n:
-                    unnormed_output[0, col - n_normed] = vals[ni].cast[c_type]()
+                if col < _n:
+                    unnormed_output[0, col - _n_normed] = vals[ni].cast[
+                        c_type
+                    ]()
 
     # Post-atomic broadcast of `is_last_block` from tid=0 to the whole
     # block via shmem + barrier. Only tid=0 saw the fetch_add result.
@@ -393,7 +399,7 @@ def gemv_partial_norm_kernel[
             var idx = Int(tid) * simd_width
             var vec_data = SIMD[accum_type, simd_width](0)
             var gamma_val = SIMD[a_type, simd_width](0)
-            if idx < n_normed:
+            if idx < _n_normed:
                 vec_data = normed_output.load[simd_width](
                     Coord(Idx[0], idx)
                 ).cast[accum_type]()
@@ -417,10 +423,10 @@ def gemv_partial_norm_kernel[
                     )
 
             var norm_factor = rsqrt(
-                row_m2 / Scalar[accum_type](n_normed) + eps.cast[accum_type]()
+                row_m2 / Scalar[accum_type](_n_normed) + eps.cast[accum_type]()
             )
 
-            if idx < n_normed:
+            if idx < _n_normed:
                 var gamma_accum = gamma_val.cast[accum_type]()
                 var out = (vec_data * norm_factor * gamma_accum).cast[c_type]()
                 normed_output.store[simd_width](Coord(Idx[0], idx), out)
@@ -536,10 +542,10 @@ def _gemv_partial_norm_fused[
         gamma,
         finish_counter,
         trace_buf,
-        eps,
-        n,
-        k,
-        n_normed,
+        eps.cast[DType.float32](),
+        Int32(n),
+        Int32(k),
+        Int32(n_normed),
         Int32(num_normed_blocks),
         grid_dim=(1, num_blocks),
         block_dim=num_threads,

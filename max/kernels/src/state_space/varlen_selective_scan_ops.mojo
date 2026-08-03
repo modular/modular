@@ -20,8 +20,8 @@ This module registers operations for variable-length selective scan:
 from std.math import ceildiv
 
 import extensibility
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
@@ -283,9 +283,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -337,9 +337,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -391,9 +391,9 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    dim,
-                    ngroups,
-                    batch,
+                    Int32(dim),
+                    Int32(ngroups),
+                    Int32(batch),
                     PAD_SLOT_ID,
                     delta_softplus_int8,
                     u_tt,
@@ -718,11 +718,11 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),
@@ -771,11 +771,11 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),
@@ -824,11 +824,11 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_kernel,
-                    total_threads,
-                    batch,
-                    nheads,
-                    dim,
-                    nheads_ngroups_ratio,
+                    Int32(total_threads),
+                    Int32(batch),
+                    Int32(nheads),
+                    Int32(dim),
+                    Int32(nheads_ngroups_ratio),
                     PAD_SLOT_ID,
                     dt_softplus_int8,
                     Int8(has_state_batch_indices),

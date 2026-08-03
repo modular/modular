@@ -21,7 +21,7 @@ from std.sys import (
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax, softmax_with_temperature

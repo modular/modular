@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm.functional import (
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 

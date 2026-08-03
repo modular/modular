@@ -57,6 +57,20 @@ from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
 
 
+comptime MutStringSlice[origin: MutOrigin] = StringSlice[origin]
+"""A string slice providing mutable access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
+comptime ImmStringSlice[origin: ImmOrigin] = StringSlice[origin]
+"""A string slice providing read-only access to the string data it views.
+
+Parameters:
+    origin: The origin of the string data.
+"""
+
 comptime StaticString = StringSlice[ImmStaticOrigin]
 """An immutable static string slice.
 
@@ -260,38 +274,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         self._slice = unsafe_from_utf8.as_bytes()
 
-    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
-    def __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[
-            mut=Self.mut,
-            Byte,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-    ):
-        """Construct a new StringSlice from a `UnsafePointer[Byte]` pointing to
-        null-terminated UTF-8 encoded bytes.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
-                bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST point to data that is valid for
-                `origin`.
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-
-        var byte_slice = Span(
-            unsafe_ptr=unsafe_from_utf8_ptr,
-            length=Int(_unsafe_strlen(unsafe_from_utf8_ptr)),
-        )
-        self = Self(unsafe_from_utf8=byte_slice)
-
     def __init__(out self, *, from_utf8: Span[Byte, Self.origin]) raises:
         """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
         data.
@@ -307,65 +289,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             raise Error("StringSlice: buffer is not valid UTF-8")
 
         self = Self(unsafe_from_utf8=from_utf8)
-
-    @deprecated("Use the `unsafe_from_utf8: CStringSlice` constructor instead")
-    def __init__(
-        out self,
-        *,
-        unsafe_from_utf8_ptr: UnsafePointer[
-            mut=Self.mut,
-            c_char,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-    ):
-        """Construct a new StringSlice from a `UnsafePointer[c_char]` pointing
-        to null-terminated UTF-8 encoded bytes.
-
-        Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[c_char]` of null-terminated
-                bytes encoded in UTF-8.
-
-        Safety:
-            - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
-            - `unsafe_from_utf8_ptr` MUST be null terminated.
-        """
-        var ptr = unsafe_from_utf8_ptr.bitcast[Byte]()
-        var byte_slice = Span(
-            unsafe_ptr=ptr,
-            length=Int(_unsafe_strlen(ptr)),
-        )
-        self = Self(unsafe_from_utf8=byte_slice)
-
-    @always_inline("builtin")
-    @deprecated("Use the `unsafe_from_utf8: Span[Byte, _]` constructor instead")
-    def __init__(
-        out self,
-        *,
-        ptr: UnsafePointer[
-            mut=Self.mut,
-            Byte,
-            origin=Self.origin,
-            address_space=AddressSpace.GENERIC,
-            ...,
-        ],
-        length: Int,
-    ):
-        """Construct a `StringSlice` from a pointer to a sequence of UTF-8
-        encoded bytes and a length.
-
-        Args:
-            ptr: A pointer to a sequence of bytes encoded in UTF-8.
-            length: The number of bytes of encoded data.
-
-        Safety:
-            - `ptr` MUST point to at least `length` bytes of valid UTF-8 encoded
-                data.
-            - `ptr` must point to data that is live for the duration of
-                `origin`.
-        """
-        self = Self(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=length))
 
     @implicit
     def __init__(out self, ref[Self.origin] value: String):
@@ -2696,15 +2619,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(
-        v: StringSlice[O],
-    ) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: StringSlice[O]) -> Int:
-        return v.byte_length()
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: StringSlice[O]) -> Int: v.byte_length(),
+        lambda (v: StringSlice[O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2723,13 +2641,10 @@ def _to_string_list[
         The list of created strings.
     """
 
-    def unsafe_ptr_fn(v: Span[Byte, O]) -> Pointer[Byte, O]:
-        return v.unsafe_ptr()
-
-    def len_fn(v: Span[Byte, O]) -> Int:
-        return len(v)
-
-    return _to_string_list[len_fn, unsafe_ptr_fn](items)
+    return _to_string_list[
+        lambda (v: Span[Byte, O]) -> Int: len(v),
+        lambda (v: Span[Byte, O]) -> Pointer[Byte, O]: v.unsafe_ptr(),
+    ](items)
 
 
 @always_inline
@@ -2756,13 +2671,13 @@ def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
 def _memchr[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]
+    source: Span[mut=False, Scalar[dtype], _], char: Scalar[dtype]
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
     ):
-        var ptr: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+        var ptr = source.unsafe_ptr()
 
         for i in range(len(source)):
             if ptr[unsafe_offset=i] == char:
@@ -2776,10 +2691,10 @@ def _memchr[
 def _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], ...],
+    source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
 ) -> OptionalPointer[Scalar[dtype], source.origin]:
-    var haystack: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
+    var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var first_needle = SIMD[dtype, bool_mask_width](char)
@@ -2806,12 +2721,8 @@ def _memchr_impl[
 def _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     if (
         __is_run_in_comptime_interpreter
@@ -2847,12 +2758,8 @@ def _memmem[
 def _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], ...],
-    needle_span: Span[
-        mut=False,
-        Scalar[dtype],
-        ...,
-    ],
+    haystack_span: Span[mut=False, Scalar[dtype], _],
+    needle_span: Span[mut=False, Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin

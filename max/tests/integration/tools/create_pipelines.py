@@ -1599,6 +1599,7 @@ class WanGenerationOracle(ImageGenerationOracle):
         """Create MAX Wan pixel generation pipeline."""
         models = ModelManifest.from_model_path(
             self.model_path,
+            revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_specs=device_specs,
         )
         config = pipelines.PipelineArgs(models=models)
@@ -1947,16 +1948,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-1124-13B": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["float32"],
-            "cpu": ["float32"],
-        },
-    ),
     "allenai/OLMo-2-1124-13B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct",
         config_params={
@@ -1967,38 +1958,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-1124-13B-Instruct-RLVR1": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR1",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/OLMo-2-1124-13B-Instruct-RLVR2": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR2",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
     "allenai/OLMo-2-0325-32B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-0325-32B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "tngtech/OLMo-2-Instruct-Math-32B": GenericOracle(
-        model_path="tngtech/OLMo-2-Instruct-Math-32B",
         config_params={
             "max_length": 4096,
         },
@@ -2249,18 +2210,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
-    "deepseek-ai/DeepSeek-R1": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-R1",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
         config_params={
@@ -2285,18 +2234,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "kv_cache_format": "float8_e4m3fn",
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
-    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
-        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
-        config_params={
-            "max_length": 1028,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 1024,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
         add_bos_token=True,
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),

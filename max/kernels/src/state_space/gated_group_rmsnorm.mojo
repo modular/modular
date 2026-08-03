@@ -52,7 +52,7 @@ with no host-side stride plumbing.
 """
 
 from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, rsqrt
 import std.gpu.primitives.warp as warp
 
@@ -79,11 +79,14 @@ def gated_group_rmsnorm_kernel[
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin],
     gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin],
     weight: TileTensor[DType.float32, WeightLayout, ImmutAnyOrigin],
-    n_rows: Int,
-    num_groups: Int,
-    group_size: Int,
+    n_rows_dev: Int32,
+    num_groups_dev: Int32,
+    group_size_dev: Int32,
     eps: Float32,
 ):
+    var n_rows = Int(n_rows_dev)
+    var num_groups = Int(num_groups_dev)
+    var group_size = Int(group_size_dev)
     comptime assert output.flat_rank == 2 and y.flat_rank == 2
     comptime assert gate.flat_rank == 2 and weight.flat_rank == 1
 
@@ -162,9 +165,9 @@ def gated_group_rmsnorm_gpu[
         y,
         gate,
         weight,
-        n_rows,
-        num_groups,
-        group_size,
+        Int32(n_rows),
+        Int32(num_groups),
+        Int32(group_size),
         eps,
         grid_dim=grid,
         block_dim=BLK,

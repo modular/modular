@@ -294,8 +294,8 @@ struct _DictEntryIterOwned[
     var _index: Int
 
     @always_inline
-    def __del__(deinit self):
-        # Dict.__del__ handles destroying remaining occupied slots.
+    def __deinit__(deinit self):
+        # Dict.__deinit__ handles destroying remaining occupied slots.
         pass
 
     @always_inline
@@ -874,8 +874,8 @@ struct Dict[
         self._table = SwissTable[Self.K, Self.V, Self.H](copy=copy._table)
         self._order = copy._order.copy()
 
-    # TODO(MOCO-4228): remove this __del__
-    def __del__(
+    # TODO(MOCO-4228): remove this __deinit__
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
         Self.V, ImplicitlyDeletable
@@ -887,7 +887,7 @@ struct Dict[
             the dictionary has no implicit destructor and must be torn down with
             `deinit_with()`.
         """
-        # _table.__del__ handles destroying occupied slots and freeing memory.
+        # _table.__deinit__ handles destroying occupied slots and freeing memory.
         # _order is cleaned up by List destructor.
         pass
 
@@ -1902,15 +1902,15 @@ struct Dict[
         ).unsafe_leak()
         unsafe_memset(relocated_set, 0, old_capacity)
         for i in range(len(relocations)):
-            slot_map[relocations[i][0]] = Int32(relocations[i][1])
-            relocated_set[relocations[i][0]] = 1
+            slot_map.unsafe_store(relocations[i][0], Int32(relocations[i][1]))
+            relocated_set.unsafe_store(relocations[i][0], UInt8(1))
 
         # Rebuild _order preserving insertion order, skipping stale entries
         self._order = List[Int32](capacity=self._table._len)
         for i in range(len(old_order)):
             var old_slot = Int(old_order[i])
-            if relocated_set[old_slot] != 0:
-                self._order.append(slot_map[old_slot])
+            if relocated_set.unsafe_load(old_slot) != 0:
+                self._order.append(slot_map.unsafe_load(old_slot))
 
         assert (
             len(self._order) == self._table._len
@@ -2016,8 +2016,8 @@ struct StringDict[V: Movable](
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, Self.V, default_comp_time_hasher]()
 
-    # TODO(MOCO-4228): remove this __del__ once an explicit __del__ is synthesized
-    def __del__(deinit self) where conforms_to(Self.V, ImplicitlyDeletable):
+    # TODO(MOCO-4228): remove this __deinit__ once an explicit __deinit__ is synthesized
+    def __deinit__(deinit self) where conforms_to(Self.V, ImplicitlyDeletable):
         """Destroy all values in the dictionary and free memory.
 
         Constraints:

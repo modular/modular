@@ -21,7 +21,7 @@ from std.algorithm.functional import vectorize
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.int_tuple import size
 from layout.layout import expand_modes_alike, flatten
-from std.memory import alloc, stack_allocation
+from std.memory import alloc, unsafe_stack_allocation
 from std.testing import assert_false
 
 from std.utils import StaticTuple
@@ -628,7 +628,7 @@ def matmulb2b[
     var pa = A.ptr
     var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB = stack_allocation[Mc * Nc, elt, alignment=64]()
+    var AB = unsafe_stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the

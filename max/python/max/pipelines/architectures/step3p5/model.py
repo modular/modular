@@ -26,6 +26,9 @@ from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.pipelines.weights.quant import parse_quant_config
@@ -123,12 +126,10 @@ class Step3p5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             data_parallel_degree=data_parallel_degree,
         )
 
-        encoding = self.pipeline_config.model.quantization_encoding
-        dispatch_dtype = (
-            supported_encoding_dtype(encoding)
-            if encoding is not None
-            else DType.bfloat16
+        encoding = _select_quantization_encoding(
+            self.pipeline_config.model, Step3p5Config.DEFAULT_ENCODING
         )
+        dispatch_dtype = supported_encoding_dtype(encoding)
 
         dispatch_quant_config = None
         if dispatch_dtype != DType.bfloat16 and state_dict is not None:

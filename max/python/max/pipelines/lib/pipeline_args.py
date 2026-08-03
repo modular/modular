@@ -254,6 +254,22 @@ class PipelineArgs(ConfigFileModel):
         description=("Maximum batch size to execute with the model."),
     )
 
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts to initialize instead of "
+            "compiling."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "compiled."
+        ),
+    )
+
     max_queue_size_tg: int | None = Field(
         default=None,
         description=("Maximum number of requests in decode queue."),
@@ -330,13 +346,6 @@ class PipelineArgs(ConfigFileModel):
         default=0,
         description=(
             "Number of redundant expert replicas to add per GPU when EPLB is active."
-        ),
-    )
-
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported."
         ),
     )
 
@@ -466,7 +475,7 @@ class PipelineArgs(ConfigFileModel):
     )
 
     dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether below-threshold multi-replica CE steps run immediately "
             "with chunk sizes reduced to the balance level (False = hold "
@@ -604,47 +613,6 @@ class PipelineArgs(ConfigFileModel):
     gpu_profiling: GPUProfilingMode = Field(
         default="off",
         description="Whether to enable GPU profiling of the model.",
-    )
-
-    profiling_enabled: bool = Field(
-        default=False,
-        description=(
-            "Master switch for the libkineto-backed HTA/Dynolog profiler."
-        ),
-    )
-
-    profiling_output_path: str | None = Field(
-        default=None,
-        description=("Where to write the Chrome-trace JSON."),
-    )
-
-    profiling_dynolog_enabled: bool = Field(
-        default=True,
-        description=(
-            "Whether to listen for Dynolog IPC on-demand-profile requests."
-        ),
-    )
-
-    profiling_warmup_steps: int = Field(
-        default=0,
-        ge=0,
-        description=(
-            "Number of Model::execute() iterations to skip before recording."
-        ),
-    )
-
-    profiling_active_steps: int = Field(
-        default=10,
-        ge=1,
-        description=("Number of Model::execute() iterations to record."),
-    )
-
-    profiling_periodic_flush_seconds: int = Field(
-        default=60,
-        ge=1,
-        description=(
-            "Periodically flush in-flight trace chunks to disk every N seconds."
-        ),
     )
 
     # ------------------------------------------------------------------ #
@@ -806,6 +774,8 @@ class PipelineArgs(ConfigFileModel):
             # PipelineRuntimeConfig fields
             pipeline_role=runtime.pipeline_role,
             max_batch_size=runtime.max_batch_size,
+            precompiled_mefs=runtime.precompiled_mefs,
+            export_mefs=runtime.export_mefs,
             max_queue_size_tg=runtime.max_queue_size_tg,
             min_batch_size_tg=runtime.min_batch_size_tg,
             ep_size=runtime.ep_size,
@@ -817,7 +787,6 @@ class PipelineArgs(ConfigFileModel):
             chunked_prefill_min_chunk_size=runtime.chunked_prefill_min_chunk_size,
             enable_in_flight_batching=runtime.enable_in_flight_batching,
             eplb_replicas_per_gpu=runtime.eplb_replicas_per_gpu,
-            max_num_steps=runtime.max_num_steps,
             max_batch_input_tokens=runtime.max_batch_input_tokens,
             use_experimental_kernels=runtime.use_experimental_kernels,
             use_vendor_blas=runtime.use_vendor_blas,
@@ -857,12 +826,6 @@ class PipelineArgs(ConfigFileModel):
             sample_on_host=sampling.sample_on_host,
             # ProfilingConfig fields
             gpu_profiling=profiling.gpu_profiling,
-            profiling_enabled=profiling.profiling_enabled,
-            profiling_output_path=profiling.profiling_output_path,
-            profiling_dynolog_enabled=profiling.profiling_dynolog_enabled,
-            profiling_warmup_steps=profiling.profiling_warmup_steps,
-            profiling_active_steps=profiling.profiling_active_steps,
-            profiling_periodic_flush_seconds=profiling.profiling_periodic_flush_seconds,
             # sub-configs
             lora=pipeline_config.lora.model_copy(deep=True)
             if pipeline_config.lora

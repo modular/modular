@@ -13,8 +13,10 @@
 """The module implements matrix band part functions."""
 
 
-from std.algorithm.functional import elementwise, unswitch
-from std.gpu.host import DeviceContext
+from std.algorithm.functional import unswitch
+
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
 from layout import TileTensor
 
 

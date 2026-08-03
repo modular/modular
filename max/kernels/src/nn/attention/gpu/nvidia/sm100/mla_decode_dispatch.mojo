@@ -15,7 +15,7 @@ from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
 from std.math import ceildiv, clamp, gcd
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
@@ -32,7 +32,7 @@ from layout.tma_async import (
     TMATensorTile,
     _gather4_box_width,
 )
-from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from std.logger import Logger
 from std.memory import bitcast
 
@@ -1529,6 +1529,12 @@ def mla_decode_sm100_sink_split_k[
     # bare name).
     comptime _fold_shared_index = fold_shared_index
     comptime _has_attn_sink = has_attn_sink
+    # Scoped to the sparse native-FP8 kernel ONLY: this same mla_config
+    # object is also read by the dense native_fp8 branch below (`elif
+    # _native_fp8:`) and by mla_config_g (Layout G); both keep their
+    # existing single-buffer SW64-gather kernel bodies, so
+    # native_fp8_unified_gather must be False there.
+    comptime _native_fp8_unified_gather = sparse and _native_fp8
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
@@ -1544,6 +1550,7 @@ def mla_decode_sm100_sink_split_k[
         scale_block_size=_scale_block_size,
         native_fp8=_native_fp8,
         per_token_scale_rope_aware=_per_token_scale_rope_aware,
+        native_fp8_unified_gather=_native_fp8_unified_gather,
     )
     var num_rows_q = num_matrix_view_rows_decode(q)
 
@@ -1739,24 +1746,12 @@ def mla_decode_sm100_sink_split_k[
                     depth=mla_config.q_depth,
                 ](ctx, q_ptr, num_rows_q)
 
-                k_gather4_tma_native = k.create_gather4_tma_tile[
-                    tile_width=mla_config.padded_q_depth,
-                    tile_stride=mla_config.padded_q_depth,
-                    swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-                    tile_height=mla_config.BK_PV,
-                    tma_dtype=DType.float8_e4m3fn,
-                    l2_promotion=TensorMapL2Promotion.L2_128B,
-                ](ctx)
-                extra_k_gather4_tma_native = (
-                    extra_k_val_fp8.create_gather4_tma_tile[
-                        tile_width=mla_config.padded_q_depth,
-                        tile_stride=mla_config.padded_q_depth,
-                        swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
-                        tile_height=mla_config.BK_PV,
-                        tma_dtype=DType.float8_e4m3fn,
-                        l2_promotion=TensorMapL2Promotion.L2_128B,
-                    ](ctx)
-                )
+                # Unified gather: reuse the SAME contiguous INT64/
+                # SWIZZLE_NONE gather4 descriptor the old FP8 KV path built
+                # above (k_gather4_tma / extra_k_gather4_tma) -- the native
+                # kernel's own re-swizzle warpgroup now reproduces the SW64
+                # layout in SMEM instead of TMA hardware doing it directly,
+                # so no separate SW64/FP8 gather4 descriptor is needed here.
 
                 @parameter
                 @always_inline
@@ -1788,7 +1783,7 @@ def mla_decode_sm100_sink_split_k[
                             q_len_fold=_q_len_fold_val,
                         ](
                             q_tma_sparse_fp8,
-                            k_gather4_tma_native,
+                            k_gather4_tma,
                             o_tma_op,
                             k,
                             lse_accum_split_ptr,
@@ -1804,7 +1799,7 @@ def mla_decode_sm100_sink_split_k[
                             topk_lengths,
                             scales_ptr,
                             attn_sink_ptr,
-                            extra_k_gather4_tma_native,
+                            extra_k_gather4_tma,
                             extra_kv_lut_val_fp8,
                             extra_d_indices,
                             extra_topk_lengths,
@@ -1833,7 +1828,7 @@ def mla_decode_sm100_sink_split_k[
                             q_len_fold=_q_len_fold_val,
                         ](
                             q_tma_sparse_fp8,
-                            k_gather4_tma_native,
+                            k_gather4_tma,
                             o_tma_op,
                             k,
                             lse_accum_split_ptr,
@@ -1849,7 +1844,7 @@ def mla_decode_sm100_sink_split_k[
                             topk_lengths,
                             scales_ptr,
                             attn_sink_ptr,
-                            extra_k_gather4_tma_native,
+                            extra_k_gather4_tma,
                             extra_kv_lut_val_fp8,
                             extra_d_indices,
                             extra_topk_lengths,
@@ -3351,7 +3346,7 @@ def launch_mla_sm100_decode_sparse[
         scale,
         mla_decode_pack,
         d_indices,
-        indices_stride,
+        Int32(indices_stride),
         topk_lengths,
         scales_ptr,
         attn_sink_ptr,
@@ -3360,7 +3355,7 @@ def launch_mla_sm100_decode_sparse[
         extra_kv_lut,
         extra_d_indices,
         extra_topk_lengths,
-        extra_indices_stride,
+        Int32(extra_indices_stride),
         extra_scales_ptr,
         scalar_args_buf,
         grid_dim=grid_dim,
@@ -3534,7 +3529,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         scale,
         mla_decode_pack,
         d_indices,
-        indices_stride,
+        Int32(indices_stride),
         topk_lengths,
         scales_ptr,
         attn_sink_ptr,
@@ -3542,7 +3537,7 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
         extra_kv_lut,
         extra_d_indices,
         extra_topk_lengths,
-        extra_indices_stride,
+        Int32(extra_indices_stride),
         extra_scales_ptr,
         scalar_args_buf,
         grid_dim=grid_dim,
@@ -3701,14 +3696,14 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
         scale,
         mla_decode_pack,
         d_indices,
-        indices_stride,
+        Int32(indices_stride),
         topk_lengths,
         attn_sink_ptr,
         extra_k_tma,
         extra_kv_lut,
         extra_d_indices,
         extra_topk_lengths,
-        extra_indices_stride,
+        Int32(extra_indices_stride),
         scalar_args_buf,
         grid_dim=grid_dim,
         block_dim=block_dim,
@@ -3743,23 +3738,28 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         BK=config.BK_QK,
         swizzle_mode=config.kv_tma_swizzle_mode,
     ],
+    # Single K gather4 TMA covering the full 576-byte row: INT64,
+    # SWIZZLE_NONE, tile_width=72 INT64 (matches the old FP8-KV kernel's
+    # efficient contiguous gather -- 16 gather4 instructions/tile instead
+    # of the SW64-fragmented 144/tile). The re-swizzle warpgroup reproduces
+    # the SW64 layout the native FP8 MMA operand expects from this in SMEM.
     k_tma: TMATensorTile[
-        DType.float8_e4m3fn,
+        DType.int64,
         2,
         tile_shape=IndexList[2](
             config.BK_PV,
             _gather4_box_width[
-                DType.float8_e4m3fn,
-                config.padded_q_depth,
-                TensorMapSwizzle.SWIZZLE_64B,
+                DType.int64,
+                config.padded_q_depth // 8,
+                TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
         desc_shape=IndexList[2](
             1,
             _gather4_box_width[
-                DType.float8_e4m3fn,
-                config.padded_q_depth,
-                TensorMapSwizzle.SWIZZLE_64B,
+                DType.int64,
+                config.padded_q_depth // 8,
+                TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
     ],
@@ -3786,22 +3786,22 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ],
     extra_k_tma: TMATensorTile[
-        DType.float8_e4m3fn,
+        DType.int64,
         2,
         tile_shape=IndexList[2](
             config.BK_PV,
             _gather4_box_width[
-                DType.float8_e4m3fn,
-                config.padded_q_depth,
-                TensorMapSwizzle.SWIZZLE_64B,
+                DType.int64,
+                config.padded_q_depth // 8,
+                TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
         desc_shape=IndexList[2](
             1,
             _gather4_box_width[
-                DType.float8_e4m3fn,
-                config.padded_q_depth,
-                TensorMapSwizzle.SWIZZLE_64B,
+                DType.int64,
+                config.padded_q_depth // 8,
+                TensorMapSwizzle.SWIZZLE_NONE,
             ](),
         ),
     ],
@@ -3855,11 +3855,17 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         q_len_fold=q_len_fold,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
-    # Extra SMEM beyond config.smem_used (native FP8, no cvt_blk_bars):
-    #   - idx_bars: 4 barriers (4 * mbar_size bytes)
+    # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
+    # cvt_blk_bars -- the second KV buffer + its pipeline are already
+    # folded into config.smem_used via native_fp8_unified_gather):
+    #   - idx_bars: 2*N barriers (depth matches config.num_kv_stages, N)
     #   - ptr_tmem_addr (4 bytes, UInt32)
-    #   - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN_QK * 4
+    #   - idx_smem, N-deep (N * BN_QK * sizeof(Int32))
+    comptime sparse_extra_smem = (
+        2 * config.num_kv_stages * config.mbar_size
+        + 4
+        + config.num_kv_stages * config.BN_QK * 4
+    )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
     ctx.enqueue_function[kernel](
@@ -3870,7 +3876,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         scale,
         mla_decode_pack,
         d_indices,
-        indices_stride,
+        Int32(indices_stride),
         topk_lengths,
         scales_ptr,
         attn_sink_ptr,
@@ -3878,7 +3884,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         extra_kv_lut,
         extra_d_indices,
         extra_topk_lengths,
-        extra_indices_stride,
+        Int32(extra_indices_stride),
         extra_scales_ptr,
         scalar_args_buf,
         grid_dim=grid_dim,

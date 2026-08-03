@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Generates tensors filled with values drawn from a uniform distribution for CPU and GPU."""
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
 from std.random import Random
 from extensibility import _dot_prod
 

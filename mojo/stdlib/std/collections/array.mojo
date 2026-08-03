@@ -179,7 +179,7 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
         )
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Move fields out of self so we can manage their lifetimes.
         var idx = self._index
         var array = self._array^
@@ -190,7 +190,7 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
             array.unsafe_ptr().unsafe_offset(idx), Self.length - idx
         )
 
-        # Mark the array as destroyed so Array.__del__ doesn't
+        # Mark the array as destroyed so Array.__deinit__ doesn't
         # double-destroy the elements we already handled.
         forget_deinit(array^)
 
@@ -218,15 +218,14 @@ struct _ArrayIterOwned[T: Movable & ImplicitlyDeletable, length: Int](
     "Use `deinit_with()` to explicitly destroy an `Array` of"
     " non-`ImplicitlyDeletable` elements"
 )
+@stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
-    Defaultable,
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
@@ -350,17 +349,6 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#
-
-    @always_inline
-    def __init__(out self):
-        """This constructor will always cause a compile time error if used.
-        It is used to steer users away from uninitialized memory.
-        """
-        comptime assert False, (
-            "Initialize with either a variadic list of arguments, a default"
-            " fill element or pass the keyword argument"
-            " 'uninitialized=True'."
-        )
 
     @always_inline
     def __init__(out self, *, uninitialized: Bool):
@@ -536,6 +524,7 @@ struct Array[T: AnyType, length: Int](
         # FIXME: Why doesn't consume_elements work here?
         elems^._annihilate()
 
+    @stable(since="1.0")
     def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         """Copy constructs the array from another array.
 
@@ -557,6 +546,7 @@ struct Array[T: AnyType, length: Int](
             for idx in range(Self.length):
                 base.unsafe_offset(idx).unsafe_write(copy=copy.unsafe_get(idx))
 
+    @stable(since="1.0")
     def __init__(
         out self, *, deinit move: Self
     ) where conforms_to(Self.T, Movable):
@@ -579,7 +569,8 @@ struct Array[T: AnyType, length: Int](
                     other_ptr
                 )
 
-    def __del__(
+    @stable(since="1.0")
+    def __deinit__(
         deinit self,
     ) where conforms_to(Self.T, ImplicitlyDeletable):
         """Destroys the array's elements."""
@@ -609,6 +600,23 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
     # Operator dunders
     # ===------------------------------------------------------------------===#
+
+    @always_inline
+    def __getitem__(ref self, idx: Int) -> ref[self] Self.T:
+        """Gets a reference to the element at the given index.
+
+        Args:
+            idx: The index to access (0 to len-1).
+
+        Returns:
+            A reference to the element at the specified index.
+
+        Notes:
+            This method provides array-style indexing access to elements in the
+            Array. The index is bounds-checked at runtime.
+        """
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
     @always_inline
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
@@ -703,6 +711,7 @@ struct Array[T: AnyType, length: Int](
         return Self.length
 
     @always_inline
+    @stable(since="1.0")
     def __eq__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for equality.
 
@@ -718,6 +727,7 @@ struct Array[T: AnyType, length: Int](
         return True
 
     @always_inline
+    @stable(since="1.0")
     def __ne__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Compares two arrays for inequality.
 
@@ -823,6 +833,7 @@ struct Array[T: AnyType, length: Int](
         )
 
     @always_inline
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T
     ) -> Bool where conforms_to(Self.T, Equatable):

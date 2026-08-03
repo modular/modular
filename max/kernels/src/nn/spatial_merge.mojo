@@ -13,7 +13,7 @@
 """Implements spatial merge, which compresses vision token grids by merging spatial blocks before attention."""
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
@@ -32,9 +32,9 @@ def spatial_merge_kernel[
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     input: TileTensor[dtype, InputLayoutType, input_origin],
     grid_thw: TileTensor[DType.int64, GridThwLayoutType, grid_thw_origin],
-    batch_size: Int,
-    hidden_size: Int,
-    merge_size: Int,
+    batch_size: Int32,
+    hidden_size: Int32,
+    merge_size: Int32,
 ):
     """
     Spatial merge kernel.
@@ -60,6 +60,9 @@ def spatial_merge_kernel[
         hidden_size: Hidden dimension size.
         merge_size: Size of spatial merge blocks.
     """
+    var _batch_size = Int(batch_size)
+    var _hidden_size = Int(hidden_size)
+    var _merge_size = Int(merge_size)
     comptime assert grid_thw.flat_rank == 2
 
     # Global patch index.
@@ -72,12 +75,12 @@ def spatial_merge_kernel[
     # Simultaneously find which batch item this patch belongs to.
     var b = 0
     var found = False
-    for i in range(batch_size):
+    for i in range(_batch_size):
         var t = grid_thw[i, 0]
         var h = grid_thw[i, 1]
         var w = grid_thw[i, 2]
-        var h_out = h // Int64(merge_size)
-        var w_out = w // Int64(merge_size)
+        var h_out = h // Int64(_merge_size)
+        var w_out = w // Int64(_merge_size)
         var num_output_patches = t * h_out * w_out
 
         # Check if patch_idx falls in this batch item.
@@ -101,9 +104,9 @@ def spatial_merge_kernel[
     var T = grid_thw[b, 0]
     var H = grid_thw[b, 1]
     var W = grid_thw[b, 2]
-    var H_out = H // Int64(merge_size)
-    var W_out = W // Int64(merge_size)
-    var C_out = hidden_size * merge_size * merge_size
+    var H_out = H // Int64(_merge_size)
+    var W_out = W // Int64(_merge_size)
+    var C_out = _hidden_size * _merge_size * _merge_size
 
     # Create a RuntimeLayout for the patch space [T, H_out, W_out]
     # to convert linear patch_local_idx to (t, ho, wo) coordinates.
@@ -118,20 +121,21 @@ def spatial_merge_kernel[
     )
 
     # Create a tiled layout for input representing
-    # [H_out, merge_size, W_out, merge_size, hidden_size].
+    # [H_out, _merge_size, W_out, _merge_size, _hidden_size].
     # This allows us to index the input as a 5D tiled tensor.
-    # Physical memory: [H, W, hidden_size] row-major.
-    # Logical view: [H_out, merge_size, W_out, merge_size, hidden_size].
+    # Physical memory: [H, W, _hidden_size] row-major.
+    # Logical view: [H_out, _merge_size, W_out, _merge_size, _hidden_size].
     var input_tiled_shape = IndexList[5](
-        Int(H_out), merge_size, Int(W_out), merge_size, hidden_size
+        Int(H_out), _merge_size, Int(W_out), _merge_size, _hidden_size
     )
     var input_tiled_stride = IndexList[5](
-        merge_size
+        _merge_size
         * Int(W)
-        * hidden_size,  # stride for H_out: skip merge_size full rows.
-        Int(W) * hidden_size,  # stride for dh: move one row within block.
-        merge_size * hidden_size,  # stride for W_out: skip merge_size columns.
-        hidden_size,  # stride for dw: move one column within block.
+        * _hidden_size,  # stride for H_out: skip _merge_size full rows.
+        Int(W) * _hidden_size,  # stride for dh: move one row within block.
+        _merge_size
+        * _hidden_size,  # stride for W_out: skip _merge_size columns.
+        _hidden_size,  # stride for dw: move one column within block.
         1,  # stride for c: move one channel.
     )
 
@@ -141,7 +145,7 @@ def spatial_merge_kernel[
     )
 
     var input_tensor = TileTensor(
-        input.ptr + Int(offset_in * Int64(hidden_size)),
+        input.ptr + Int(offset_in * Int64(_hidden_size)),
         input_tiled_layout,
     )
 
@@ -155,11 +159,11 @@ def spatial_merge_kernel[
     )
 
     # Create layout for the merged channel dimension structure.
-    # C_out represents [merge_size, merge_size, hidden_size] flattened row-major.
-    var channel_layout = row_major((merge_size, merge_size, hidden_size))
+    # C_out represents [_merge_size, _merge_size, _hidden_size] flattened row-major.
+    var channel_layout = row_major((_merge_size, _merge_size, _hidden_size))
 
     # Copy patch - threads loop over output channels.
-    # Each c_out in [0, C_out) corresponds to [merge_size, merge_size, hidden_size]
+    # Each c_out in [0, C_out) corresponds to [_merge_size, _merge_size, _hidden_size]
     # flattened in the permute(0, 1, 3, 2, 4, 5) order.
     for c_out in range(thread_idx.x, C_out, block_dim.x):
         # Decompose c_out into (dh, dw, c) using the channel layout.
@@ -223,9 +227,9 @@ def spatial_merge[
         output,
         input.as_immut(),
         grid_thw.as_immut(),
-        batch_size,
-        hidden_size,
-        merge_size,
+        Int32(batch_size),
+        Int32(hidden_size),
+        Int32(merge_size),
         grid_dim=(num_blocks, 1, 1),
         block_dim=(threads_per_block, 1, 1),
     )

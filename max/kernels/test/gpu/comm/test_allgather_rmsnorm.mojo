@@ -39,7 +39,7 @@ from std.sys import (
 )
 
 from std.math import rsqrt
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.testing import assert_true
@@ -175,7 +175,7 @@ def _run_case[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -248,7 +248,7 @@ def _run_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_shards = InlineArray[ShardType, ngpus](uninitialized=True)
+    var in_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_shards[i] = ShardType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -497,7 +497,7 @@ def _allgather_full[
     ngpus: Int,
     num_cols: Int,
 ](
-    in_shards: InlineArray[
+    in_shards: Array[
         TileTensor[
             in_dtype,
             type_of(row_major(Coord(Index(0, num_cols)))),
@@ -507,7 +507,7 @@ def _allgather_full[
     ],
     out_full: DeviceBuffer[in_dtype],
     config: ReduceScatterConfig[in_dtype, ngpus],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     my_rank: Int,
 ) raises:
@@ -524,7 +524,7 @@ def _allgather_full[
     var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
         out_full.unsafe_ptr()
     )
-    var out_views = InlineArray[OutViewType, ngpus](uninitialized=True)
+    var out_views = Array[OutViewType, ngpus](uninitialized=True)
     comptime for src in range(ngpus):
         var start = config.rank_unit_start(src)
         out_views[src] = OutViewType(
@@ -570,7 +570,7 @@ def _run_prod_oracle_case[
     var ag_ref = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var prod = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -638,7 +638,7 @@ def _run_prod_oracle_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_shards = InlineArray[ShardType, ngpus](uninitialized=True)
+    var in_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_shards[i] = ShardType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](

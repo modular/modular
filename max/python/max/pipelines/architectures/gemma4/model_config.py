@@ -14,12 +14,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
@@ -30,11 +31,15 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
@@ -128,6 +133,14 @@ class Gemma4TextConfig(Gemma3Config):
     sliding_window_rope_theta: float = 10000.0
     """Rope theta used for the RoPE embeddings used in sliding window attention."""
 
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states the text model returns alongside logits."""
+
+    target_layer_ids: list[int] | None = None
+    """For ``ReturnHiddenStates.SELECTED_LAYERS``, the zero-based layer
+    indices whose post-block hidden states are captured and concatenated
+    along the feature dimension (used by spec-decode drafters)."""
+
     layer_types: list[str]
 
     max_seq_len: int
@@ -191,9 +204,9 @@ class Gemma4TextConfig(Gemma3Config):
             An initialized Gemma4TextConfig instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding,
@@ -295,6 +308,7 @@ class Gemma4TextConfig(Gemma3Config):
             global_rope_theta=global_rope_theta,
             sliding_window_rope_theta=sliding_window_rope_theta,
             layer_types=huggingface_config.layer_types,
+            quantization_encoding=quantization_encoding,
         )
 
 
@@ -426,6 +440,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     Model-specific parameters live in the respective sub-configs.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float16",
+        "float4_e2m1fnx2",
+    }
+
     devices: list[DeviceRef]
     """Devices to run the model with."""
 
@@ -454,6 +475,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -593,9 +617,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             for spec in pipeline_config.model.device_specs
         ]
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding,
@@ -649,6 +673,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             video_token_index=getattr(
                 huggingface_config, "video_token_id", 262_144
             ),
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

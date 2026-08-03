@@ -44,7 +44,7 @@ in-place-FP32 helpers are not wired, so the kernel will not compile.
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import get_defined_int, get_defined_string
 
 from layout import LayoutTensor, TileTensor
@@ -277,11 +277,11 @@ def _mla_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         _work_indptr,
         _work_info,
-        0,
+        Int32(0),
         grid_dim=(
             config.num_heads,
             ceildiv(seq_len, kernel.BM),

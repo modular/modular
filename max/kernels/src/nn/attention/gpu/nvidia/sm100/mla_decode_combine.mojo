@@ -32,14 +32,14 @@ from std.math.constants import log2e
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, warp_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -705,17 +705,17 @@ def mla_combine_kernel_split_parallel[
     # Shared memory for tree reduction.
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
-    var smem_result = stack_allocation[
+    var smem_result = unsafe_stack_allocation[
         NUM_WARPS * head_dim,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_m = stack_allocation[
+    var smem_m = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_l = stack_allocation[
+    var smem_l = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,

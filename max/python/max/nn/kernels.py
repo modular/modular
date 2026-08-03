@@ -2795,6 +2795,12 @@ def msa_sparse_indexer(
         rank=3,
         device=index_q.device,
     )
+    scratch_heads = score_scratch.shape[0]
+    if int(scratch_heads) != num_index_heads:
+        raise ValueError(
+            "score_scratch must carry one plane per index head: expected "
+            f"shape[0] == {num_index_heads}, got {int(scratch_heads)}"
+        )
     if topk <= 0:
         raise ValueError(f"topk must be greater than 0, got {topk}")
 
@@ -5180,6 +5186,26 @@ def grouped_matmul_ragged(
             f" {hidden_states.shape[1]}] but got {weight.shape}"
         )
 
+    if expert_usage_stats.device != hidden_states.device:
+        # This is a graph DeviceRef (``is_cpu()`` method) when building a Graph
+        # and a driver Device (``is_host`` property) on the experimental-tensor
+        # path.
+        src_device = expert_usage_stats.device
+        src_is_cpu = (
+            src_device.is_cpu()
+            if isinstance(src_device, DeviceRef)
+            else src_device.is_host
+        )
+        if not src_is_cpu:
+            raise ValueError(
+                "grouped_matmul_ragged expected expert_usage_stats to be"
+                " host-resident (CPU) or already on the compute device, but got"
+                f" {src_device} with hidden_states on {hidden_states.device}; a"
+                " device-to-device transfer of the expert-usage metadata is not"
+                " supported."
+            )
+        expert_usage_stats = expert_usage_stats.to(hidden_states.device)
+
     output = ops.custom(
         "mo.grouped.matmul.ragged",
         device=hidden_states.device,
@@ -5414,17 +5440,17 @@ def grouped_dynamic_scaled_mxfp4_matmul(
 
 
 def grouped_matmul_block_scaled(
-    hidden_states: TensorValue,
-    weight: TensorValue,
-    a_scales: TensorValue,
-    b_scales: TensorValue,
-    expert_start_indices: TensorValue,
-    a_scale_offsets: TensorValue,
-    expert_ids: TensorValue,
-    expert_scales: TensorValue,
-    expert_usage_stats_host: TensorValue,
+    hidden_states: TensorValueLike,
+    weight: TensorValueLike,
+    a_scales: TensorValueLike,
+    b_scales: TensorValueLike,
+    expert_start_indices: TensorValueLike,
+    a_scale_offsets: TensorValueLike,
+    expert_ids: TensorValueLike,
+    expert_scales: TensorValueLike,
+    expert_usage_stats_host: TensorValueLike,
     out_type: DType = DType.bfloat16,
-    estimated_total_m: TensorValue | None = None,
+    estimated_total_m: TensorValueLike | None = None,
 ) -> TensorValue:
     """Performs grouped NVFP4 matmul for MoE layers.
 
@@ -5462,6 +5488,17 @@ def grouped_matmul_block_scaled(
     Returns:
         The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
     """
+    hidden_states = TensorValue(hidden_states)
+    weight = TensorValue(weight)
+    a_scales = TensorValue(a_scales)
+    b_scales = TensorValue(b_scales)
+    expert_start_indices = TensorValue(expert_start_indices)
+    a_scale_offsets = TensorValue(a_scale_offsets)
+    expert_ids = TensorValue(expert_ids)
+    expert_scales = TensorValue(expert_scales)
+    expert_usage_stats_host = TensorValue(expert_usage_stats_host)
+    if estimated_total_m:
+        estimated_total_m = TensorValue(estimated_total_m)
 
     _check_rank(2, hidden_states=hidden_states)
     _check_rank(3, weight=weight)
@@ -7667,18 +7704,35 @@ def merge_ragged_tensors(
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
 
+    The following example interleaves two ragged tensors that share a batch
+    size of 2. Row ``a = [1, 2, 3, 4, 5, 6]`` with offsets ``[0, 2, 6]`` and
+    row ``b = [7, 8, 9, 10]`` with offsets ``[0, 3, 4]`` merge into
+    ``[1, 2, 7, 8, 9, 3, 4, 5, 6, 10]`` with offsets ``[0, 5, 10]``:
+
     .. code-block:: python
 
-        a = [1, 2, 3, 4, 5, 6]
-        a_row_offsets = [0, 2, 6]
-        b = [7, 8, 9, 10]
-        b_row_offsets = [0, 3, 4]
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn.kernels import merge_ragged_tensors
 
-        merged_tensor, merged_row_offsets = merge_ragged_tensors(
-            a, a_row_offsets, b, b_row_offsets)
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
 
-        merged_tensor = [1, 2, 7, 8, 9, 3, 4, 5, 6, 10]
-        merged_row_offsets = [0, 5, 10]
+        with Graph(
+            "merge_ragged_tensors_example",
+            input_types=(
+                TensorType(DType.int32, ["a_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+                TensorType(DType.int32, ["b_seq_len"], device=device_ref),
+                TensorType(DType.uint32, ["offsets_len"], device=device_ref),
+            ),
+        ) as graph:
+            a, a_row_offsets, b, b_row_offsets = (v.tensor for v in graph.inputs)
+            merged_tensor, merged_row_offsets = merge_ragged_tensors(
+                a, a_row_offsets, b, b_row_offsets
+            )
+            graph.output(merged_tensor, merged_row_offsets)
     """
     if a.dtype != b.dtype:
         raise ValueError("a and b must have the same dtype")
