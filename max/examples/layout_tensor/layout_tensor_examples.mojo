@@ -34,7 +34,7 @@ from layout.layout import (
     coalesce,
 )
 from layout.int_tuple import flatten
-from std.memory import UnsafePointer, unsafe_memset
+from std.memory import Pointer, unsafe_memset
 from std.testing import assert_equal
 from std.utils import Index, IndexList
 

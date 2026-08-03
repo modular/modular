@@ -29,8 +29,8 @@ from std.testing import assert_equal, TestSuite
 def _match_all_probe[
     dtype: DType,
 ](
-    values: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    out_masks: UnsafePointer[UInt64, MutAnyOrigin],
+    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
     out_masks[unsafe_offset=lane] = match_all(values[unsafe_offset=lane]).cast[

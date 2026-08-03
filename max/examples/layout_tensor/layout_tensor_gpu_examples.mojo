@@ -25,7 +25,7 @@ from std.gpu.memory import async_copy_wait_all
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
-from std.memory import UnsafePointer
+from std.memory import Pointer
 from std.sys import has_accelerator
 from std.sys.info import (
     has_apple_gpu_accelerator,

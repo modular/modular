@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``Driver``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort, getenv
 from std.python import PythonObject
 from std.python.bindings import check_arguments_arity
@@ -48,7 +48,7 @@ struct Driver(Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

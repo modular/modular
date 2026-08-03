@@ -34,7 +34,7 @@ def _tile_sum(tile: Span[Float32, _, address_space=_]) -> Float32:
     return acc
 
 
-def _kernel(out_ptr: UnsafePointer[Float32, MutAnyOrigin]):
+def _kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
     var smem = unsafe_stack_allocation[
         TILE_SIZE, Float32, address_space=AddressSpace.SHARED
     ]()

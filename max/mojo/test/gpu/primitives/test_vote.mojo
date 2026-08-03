@@ -45,8 +45,8 @@ comptime _TARGET_VENDOR = GPUInfo.from_name[_accelerator_arch()]().vendor
 def _vote_probe[
     ret_type: DType
 ](
-    preds: UnsafePointer[Scalar[DType.uint8], MutAnyOrigin],
-    out_masks: UnsafePointer[UInt64, MutAnyOrigin],
+    preds: Pointer[Scalar[DType.uint8], MutAnyOrigin],
+    out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
     out_masks[unsafe_offset=lane] = vote[ret_type](

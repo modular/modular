@@ -192,7 +192,7 @@ var tensor = LayoutTensor[DType.float32, layout](storage).fill(0)
 efficient way to allocate storage for most kinds of `LayoutTensor`. There are
 target-dependent limits on how much memory can be allocated this way, however.
 
-You can also create a `LayoutTensor` using an `UnsafePointer`. This may be
+You can also create a `LayoutTensor` using a `Pointer`. This may be
 preferable for very large tensors.
 
 ```mojo
@@ -233,7 +233,7 @@ kernel itself:
   memory is on the GPU.
 - On the GPU: When a `DeviceBuffer` is passed in to
   `enqueue_function()`, the kernel receives a corresponding
-  `UnsafePointer` in place of the `DeviceBuffer.` The kernel can then create a
+  `Pointer` in place of the `DeviceBuffer.` The kernel can then create a
   `LayoutTensor` using the `pointer`.
 
 In both cases, if you want to initialize data for the tensor from the CPU, you

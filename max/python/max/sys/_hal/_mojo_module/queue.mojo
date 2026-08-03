@@ -13,7 +13,7 @@
 """Python projection of HAL ``Queue``."""
 
 from std.collections import List
-from std.memory import ArcPointer, OpaquePointer, UnsafePointer
+from std.memory import ArcPointer, OpaquePointer, Pointer
 from std.os import abort
 from std.python import PythonObject
 from _hal.device import get_device_spec
@@ -42,7 +42,7 @@ struct Queue(Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
@@ -87,7 +87,7 @@ struct Queue(Movable, Writable):
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
         var dst_view = dst_obj.downcast_value_ptr[BufferView]()
-        var src_ptr = UnsafePointer[UInt8, ImmutAnyOrigin](
+        var src_ptr = Pointer[UInt8, ImmutAnyOrigin](
             unsafe_from_address=Int(py=src_addr_obj)
         )
         self_ptr[]._arc[].copy_to_device(dst_view[]._hal, src_ptr)
@@ -100,7 +100,7 @@ struct Queue(Movable, Writable):
     ) raises:
         var self_ptr = Self._self_ptr(py_self)
         var src_view = src_obj.downcast_value_ptr[BufferView]()
-        var dst_ptr = UnsafePointer[UInt8, MutAnyOrigin](
+        var dst_ptr = Pointer[UInt8, MutAnyOrigin](
             unsafe_from_address=Int(py=dst_addr_obj)
         )
         self_ptr[]._arc[].copy_from_device(dst_ptr, src_view[]._hal)

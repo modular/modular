@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``FunctionHandle``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
 from _hal.context import (
@@ -46,7 +46,7 @@ struct Function(Deinitable, Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

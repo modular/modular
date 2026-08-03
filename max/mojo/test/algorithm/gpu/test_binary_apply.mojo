@@ -19,12 +19,9 @@ from std.testing import assert_equal, TestSuite
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    in0: UnsafePointer[Float32, MutAnyOrigin],
-    in1: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, MutAnyOrigin],
+    in1: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
