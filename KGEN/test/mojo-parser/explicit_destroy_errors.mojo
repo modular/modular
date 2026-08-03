@@ -112,11 +112,11 @@ struct ExplicitWithDeinit(Deinitable where False, Movable where False):
 
 
 def testExplicitWithDeinit():
-    a = ExplicitWithDeinit()
+    var a = ExplicitWithDeinit()
     a.method()
     a^.__deinit__()  # ok
 
-    b = ExplicitWithDeinit()
+    var b = ExplicitWithDeinit()
     b.method()  # expected-error {{'b' abandoned without being explicitly destroyed: must use __deinit__() explicitly}}
 
 

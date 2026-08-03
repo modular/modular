@@ -863,7 +863,7 @@ trait FooTrait:
 
 
 def bar[foo: FooTrait]():
-    p0 = Zcalar[foo.dtype]()
+    var p0 = Zcalar[foo.dtype]()
     foo.foo(p0)
 
 

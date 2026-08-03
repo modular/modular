@@ -96,7 +96,7 @@ struct MyStruct(Defaultable, IntConstructable, TrivialRegisterPassable):
 
 
 def main():
-    s123 = Struct123()
+    var s123 = Struct123()
 
     # CHECK: f1
     use1(s123)

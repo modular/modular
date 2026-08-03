@@ -52,7 +52,7 @@ def use12Direct[T: Trait1 & Trait2](x: T):
 
 # CHECK: lit.fn @"main_use()"
 def main_use():
-    s4 = Struct4()
+    var s4 = Struct4()
 
     # expected-error @below {{invalid call to 'use1': value passed to 'x' cannot be converted from 'Struct4' to 'T', argument type 'Struct4' does not conform to trait 'Trait1'}}
     use1(s4)

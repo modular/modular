@@ -544,7 +544,7 @@ struct SimpleSIMD[arg1: Int, size: Int](TrivialRegisterPassable):
 
 def dont_miss_inference_conflict(b: SimpleSIMD[40, 1]):
     # expected-error @below {{no matching function in initialization}}
-    x = SimpleSIMD[50, 4](b)
+    var x = SimpleSIMD[50, 4](b)
 
 # expected-note @below {{function declared here}}
 def takes4(x: HasSize[4]): pass

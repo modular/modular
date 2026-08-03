@@ -815,7 +815,7 @@ def walrus_implicit_decl() raises:
 
 # CHECK-LABEL: lit.fn @"literals
 def literals() raises:
-    a = 5             # CHECK: 5
+    var a = 5             # CHECK: 5
     a = 55            # CHECK: 55
     a = 10500         # CHECK: 10500
     a = 12_500        # CHECK: 12500
@@ -834,7 +834,7 @@ def literals() raises:
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
     comptime b = 1_2.3__1e+1_1 # CHECK: #pop.float_literal<1231000000000|1>
-    c = False         # CHECK: !Bool = <{:scalar<bool> false}>
+    var c = False         # CHECK: !Bool = <{:scalar<bool> false}>
     c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 
 # CHECK-LABEL: lit.fn @"_strings

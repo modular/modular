@@ -25,8 +25,8 @@ def main() raises:
     # compile myCompiledFn into a shared object binary
     var myShared = compile_info[myCompiledFn, emission_kind="object"]()
 
-    idx = 0
-    args = argv()
+    var idx = 0
+    var args = argv()
     for arg in argv():
         idx = idx + 1
         if arg == "-o":

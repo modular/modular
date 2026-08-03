@@ -1106,7 +1106,7 @@ def caught_eh_cleanup():
 # https://linear.app/modularml/issue/MOCO-1251
 def test_ref_field(var mem: MemPair):
   # Pointer to subfield.
-  r = Pointer(to=mem.a)
+  var r = Pointer(to=mem.a)
 
   # Subfield reference keeps entire value alive.
   _ = r[].x
@@ -1127,7 +1127,7 @@ def use_inner_pointer[origin: Origin[mut=True]](ptr: UnsafePointer[UInt8, origin
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime1
 def handleAnyLifetime1():
-  str = String()
+  var str = String()
   # Make sure this keeps alive str until after the call.
   # CHECK: lit.call {{.*}}use_inner_pointer
   use_inner_pointer(get_inner_ptr(str))
@@ -1136,7 +1136,7 @@ def handleAnyLifetime1():
 
 # CHECK-LABEL: lit.fn @"handleAnyLifetime2
 def handleAnyLifetime2():
-  ui8 = UInt8()
+  var ui8 = UInt8()
 
   # Make sure this keeps 'ui8' alive until after the call even though
   # the element is trivial.
@@ -1170,8 +1170,8 @@ def take_pack[*Ts: AnyType](*values: *Ts): pass
 # VariadicPack's need to extend the lifetime in the pack
 # https://github.com/modular/mojo/issues/3559
 def handleAnyLifetime4():
-  str = String()
-  ptr = UnsafePointer(to=str)
+  var str = String()
+  var ptr = UnsafePointer(to=str)
 
   # Should extend the lifetime of 'str'.
   take_pack(ptr)
@@ -1192,7 +1192,7 @@ def use_int(a: Int): pass
 # CHECK-LABEL: lit.fn @"handleAnyLifetime5
 def handleAnyLifetime5():
     # lit.ref.load needs to extend the lifetime of A.
-    a = A[AnyOrigin[mut=True]]()
+    var a = A[AnyOrigin[mut=True]]()
     # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
     # CHECK-NOT: lit.call {{.*}}__deinit__
     # CHECK: lit.ref.load [[INT_REF]]
@@ -1456,7 +1456,7 @@ struct ParametricTask[T1: Movable & Deinitable,
 
 # https://github.com/modular/modular/issues/4518
 def issue4518():
-    val1 = 0
+    var val1 = 0
 
     try:
         val1 = issue4518_fn_that_raises()

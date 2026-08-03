@@ -15,7 +15,7 @@ def test_trace_context_with_dynamic_name() raises:
         pass
 
     # Also exercise start()/end() explicitly.
-    tr = Trace[level=TraceLevel.OP](name="trace_start_end_dynamic")
+    var tr = Trace[level=TraceLevel.OP](name="trace_start_end_dynamic")
     tr.start()
     tr.end()
 

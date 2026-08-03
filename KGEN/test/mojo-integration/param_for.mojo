@@ -8,21 +8,21 @@
 
 
 def test_for_list():
-    cnt = 0
+    var cnt = 0
 
     comptime for i in [1, 2, 3]:
         cnt += i
     assert cnt == 6
 
     # Test for floating point numbers.
-    fp_cnt = 0.0
+    var fp_cnt = 0.0
 
     comptime for i in [1.0, 2.0, 3.0]:
         fp_cnt += i
     assert fp_cnt == 6.0
 
     # Test for strings
-    concated = ""
+    var concated = ""
 
     # MOCO-2091
     comptime for str in ["a", "b", "c"]:
