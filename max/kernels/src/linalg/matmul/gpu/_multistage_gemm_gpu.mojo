@@ -905,6 +905,21 @@ def multistage_gemm_kernel[
     var c_gmem_tile = c.tile[BM, BN](block_idx_swizzle[1], block_idx_swizzle[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
+    # The NVIDIA C store below writes 2 elements at a time along N, which needs
+    # every row of C to be aligned to that vector. A row starts at a multiple of
+    # N * size_of[c_type](), so an odd fp32 N (e.g. GPT-2's 50257 vocab
+    # projection) leaves every other row 4B-misaligned and the store faults.
+    # AMD vectorizes along M instead, one column at a time, so it is exempt.
+    var c_rows_aligned = not is_nvidia_gpu() or (
+        N * size_of[c_type]() % align_of[SIMD[c_type, 2]]() == 0
+    )
+    var warp_row = Int(block_idx_swizzle[1]) * BM + Int(warp_y) * WM
+    var warp_col = Int(block_idx_swizzle[0]) * BN + Int(warp_x) * WN
+    comptime store_vec_rows = 1 if is_nvidia_gpu() else 4
+    var c_tile_in_range = (
+        warp_row < M and warp_col + WN <= N and M % store_vec_rows == 0
+    )
+
     @always_inline
     @parameter
     def apply_epilogue():
@@ -950,11 +965,64 @@ def multistage_gemm_kernel[
                 comptime if dst_simd_width_x == 1:
                     epilogue[alignment=alignment]((m, n), vec)
                 else:
+                    # One element per row, so the vector's alignment does not
+                    # carry over to the individual stores.
                     comptime for j in range(dst_simd_width_x):
                         if m + j < M:
-                            epilogue[alignment=alignment](
+                            epilogue[alignment=align_of[Scalar[c_type]]()](
                                 (m + j, n), vec[j].cast[c_type]()
                             )
+
+    @always_inline
+    @parameter
+    def store_c_scalar():
+        """Writes C one element at a time, bounded by the real (row, col).
+
+        Used for the C tiles the vectorized stores cannot handle: an odd fp32 N
+        (misaligned rows), a warp whose columns run past N, and on AMD a 4-row
+        group that runs past M. Those fragments carry a linear offset that
+        lands on the next row, so they must be rejected on their true
+        coordinates rather than on the ones a linear offset implies.
+        """
+        # Mirrors the vectorized stores this replaces: NVIDIA distributes
+        # `row_major(8, 4)` over 2-element vectors along N, AMD distributes
+        # `row_major(4, 16)` over 4-element vectors along M.
+        comptime threads_m = 8 if is_nvidia_gpu() else 4
+        comptime threads_n = 4 if is_nvidia_gpu() else 16
+        comptime vec_width = 2 if is_nvidia_gpu() else 4
+        comptime rows_per_vec = 1 if is_nvidia_gpu() else vec_width
+        comptime cols_per_vec = vec_width if is_nvidia_gpu() else 1
+        comptime row_step = threads_m * rows_per_vec
+        comptime col_step = threads_n * cols_per_vec
+        comptime frag_rows = WM // row_step
+        comptime frag_cols = WN // col_step
+
+        var c_reg_frag = c_reg_tile.vectorize[1, vec_width]().transpose()
+        var thread_row = warp_row + (Int(ln_id) // threads_n) * rows_per_vec
+        var thread_col = warp_col + (Int(ln_id) % threads_n) * cols_per_vec
+
+        comptime for frag_col in range(frag_cols):
+            comptime for frag_row in range(frag_rows):
+                # `layout()` walks the leading mode fastest.
+                comptime src_idx = c_reg_frag.layout(
+                    frag_col * frag_rows + frag_row
+                )
+                var row = thread_row + frag_row * row_step
+                var col = thread_col + frag_col * col_step
+                var vec = (c_reg_frag.ptr + src_idx).load[width=vec_width]()
+
+                comptime for j in range(vec_width):
+                    var row_j = row + (0 if is_nvidia_gpu() else j)
+                    var col_j = col + (j if is_nvidia_gpu() else 0)
+
+                    if row_j < M and col_j < N:
+                        comptime if elementwise_lambda_fn:
+                            comptime epilogue = elementwise_lambda_fn.value()
+                            epilogue[alignment=align_of[Scalar[c_type]]()](
+                                (row_j, col_j), vec[j].cast[c_type]()
+                            )
+                        else:
+                            c[row_j, col_j] = vec[j].cast[c_type]()
 
     # Store FP32 mma results to half precision buffer in global memory.
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
@@ -1046,39 +1114,49 @@ def multistage_gemm_kernel[
             )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
-        comptime if elementwise_lambda_fn:
-            apply_epilogue()
+        if c_tile_in_range:
+            comptime if elementwise_lambda_fn:
+                apply_epilogue()
 
-        else:
-            var c_reg_tile_out = LayoutTensor[
-                c_type,
-                c_reg_tile.layout,
-                MutAnyOrigin,
-                address_space=AddressSpace.LOCAL,
-            ].stack_allocation()
-
-            comptime for i in range(c_reg_tile.shape[0]()):
-                comptime for j in range(c_reg_tile.shape[1]()):
-                    c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
-            copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
-                c_gmem_warp_tile.vectorize[4, 1](),
-                c_reg_tile_out.vectorize[1, 4](),
-            )
-    # Store FP32 results to FP32 buffer in global memory.
-    else:
-        comptime if elementwise_lambda_fn:
-            apply_epilogue()
-        else:
-            comptime if is_nvidia_gpu():
-                copy_local_to_dram[dst_thread_layout=Layout.row_major(8, 4)](
-                    c_gmem_warp_tile.vectorize[1, 2](),
-                    c_reg_tile.vectorize[1, 2]().transpose(),
-                )
             else:
+                var c_reg_tile_out = LayoutTensor[
+                    c_type,
+                    c_reg_tile.layout,
+                    MutAnyOrigin,
+                    address_space=AddressSpace.LOCAL,
+                ].stack_allocation()
+
+                comptime for i in range(c_reg_tile.shape[0]()):
+                    comptime for j in range(c_reg_tile.shape[1]()):
+                        c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
                 copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                     c_gmem_warp_tile.vectorize[4, 1](),
-                    c_reg_tile.vectorize[1, 4](),
+                    c_reg_tile_out.vectorize[1, 4](),
                 )
+        else:
+            store_c_scalar()
+    # Store FP32 results to FP32 buffer in global memory.
+    else:
+        if c_rows_aligned and c_tile_in_range:
+            comptime if elementwise_lambda_fn:
+                apply_epilogue()
+            else:
+                comptime if is_nvidia_gpu():
+                    copy_local_to_dram[
+                        dst_thread_layout=Layout.row_major(8, 4)
+                    ](
+                        c_gmem_warp_tile.vectorize[1, 2](),
+                        c_reg_tile.vectorize[1, 2]().transpose(),
+                    )
+                else:
+                    copy_local_to_dram[
+                        dst_thread_layout=Layout.row_major(4, 16)
+                    ](
+                        c_gmem_warp_tile.vectorize[4, 1](),
+                        c_reg_tile.vectorize[1, 4](),
+                    )
+        else:
+            store_c_scalar()
 
 
 @__llvm_metadata(
