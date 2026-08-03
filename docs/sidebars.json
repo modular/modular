@@ -54,7 +54,8 @@
         },
         "serve/prefix-caching",
         "serve/lora-adapters",
-        "serve/speculative-decoding"
+        "serve/speculative-decoding",
+        "serve/recipes"
       ]
     },
     {
