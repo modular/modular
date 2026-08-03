@@ -358,6 +358,57 @@ static bool isByReferenceCapture(CaptureConvention c) {
   return false;
 }
 
+static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
+                                        SharedState &shared);
+
+static FailureOr<Type>
+getReboundCaptureDeviceFieldType(ASTType captureStorageHostType,
+                                 ASTDecl &scopeDecl, SharedState &shared) {
+  FailureOr<ASTType> deviceCaptureType =
+      getDeviceType(captureStorageHostType, scopeDecl, shared);
+  if (failed(deviceCaptureType))
+    return failure();
+
+  ArrayRef<TypedAttr> captureBindings =
+      captureStorageHostType.getParamBindings();
+  if (captureBindings.empty())
+    return getCanonicalType(*deviceCaptureType);
+  ASTDecl *captureTypeDecl = captureStorageHostType.getDecl(shared);
+  assert(captureTypeDecl && "expected declared type for parametric capture");
+  auto structOp =
+      dyn_cast_or_null<StructDeclOp>(captureTypeDecl->getIfOperation());
+  assert(structOp && !structOp.getInputParams().empty() &&
+         "expected parametric struct for rebound capture device field type");
+  ParameterEvaluator evaluator =
+      shared.getParameterEvaluator(structOp.getInputParams(), captureBindings);
+  return getCanonicalType(evaluator.getReboundType(*deviceCaptureType));
+}
+
+static FailureOr<LIT::StructType>
+createDeviceTypeStruct(SharedState &shared, ASTDecl &moduleDecl,
+                       ASTDecl &storageStructDecl,
+                       ArrayRef<Type> deviceFieldTypes) {
+  MLIRContext *ctx = shared.getContext();
+  auto storageStruct = cast<StructDeclOp>(storageStructDecl.getIfOperation());
+  ArrayRef<ParamDeclAttr> structParams = storageStruct.getInputParams();
+  StringAttr deviceStructName = StringAttr::get(
+      ctx, Twine(storageStruct.getSymName()).concat("::__device_type"));
+  auto [deviceStructDecl, deviceStructOp] =
+      createStruct(shared, moduleDecl, deviceStructName, structParams,
+                   storageStructDecl.getLoc());
+  OpBuilder b(deviceStructOp.getRegion());
+  b.setInsertionPointToStart(&deviceStructOp.getFields().front());
+  for (auto [field, image] :
+       llvm::zip(storageStruct.getFieldDecls(), deviceFieldTypes))
+    addFieldOpAndDecl(field.getNameAttr(), image, deviceStructOp,
+                      deviceStructDecl, b, *shared.declResolver);
+  SmallVector<TypedAttr> structBindings =
+      llvm::map_to_vector(structParams, [](ParamDeclAttr param) -> TypedAttr {
+        return ParamDeclRefAttr::get(param);
+      });
+  return deviceStructOp.bindReference(structBindings);
+}
+
 /// Given a signature of a function, create a FuncType by inserting a closure
 /// argument at index 0 with the given convention.
 static FnTypeGeneratorType
@@ -631,8 +682,8 @@ static SymbolConstantAttr buildSymbolWithBoundPrependedParams(
 
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
 ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
-                                          bool synthetic,
-                                          StringAttr customName) {
+                                          bool synthetic, StringAttr customName,
+                                          bool redirectWitnessToImplParam) {
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp.getLoc(), structDeclOp);
   b.setInsertionPointToEnd(&structDeclOp.getFields().front());
@@ -643,9 +694,11 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
   FnTypeGeneratorType wrapperSignature = specializeSignature(
       traitFnOp, structDecl.getTypeDeclSelf(), *shared.declResolver);
 
-  wrapperSignature = replaceTraitWitnessLookupsWithParamWitnessLookups(
-      wrapperSignature, structDecl.getTypeDeclSelf().extractMetaType(),
-      structDeclOp.getParams().front());
+  if (redirectWitnessToImplParam) {
+    wrapperSignature = replaceTraitWitnessLookupsWithParamWitnessLookups(
+        wrapperSignature, structDecl.getTypeDeclSelf().extractMetaType(),
+        structDeclOp.getParams().front());
+  }
 
   // Calculate the argument types and result types in terms of the named
   // parameters. Since the name of the parameters have not changed from the
@@ -845,12 +898,10 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
   return result;
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
-                                             StringRef name, ASTDecl &traitDecl,
-                                             SMLoc smLocation,
-                                             TypeConvention typeConvention,
-                                             bool isCopyable, bool isStateless,
-                                             FnTypeGeneratorType sig) {
+ASTDecl *ClosureEmitter::createStructWrapper(
+    ASTDecl &moduleDecl, StringRef name, ASTDecl &traitDecl, SMLoc smLocation,
+    TypeConvention typeConvention, bool isCopyable, bool isStateless,
+    bool capturesEncodable, FnTypeGeneratorType sig) {
   StringRef implName = "impl";
   StringRef originSet = "origin_set";
   TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
@@ -1149,9 +1200,9 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     return nullptr;
   declOp.setCanonicalTrait(traitType);
 
-  if (typeConvention == TypeConvention::RegisterPassableTrivial)
-    addConformanceToDevicePassable(structDecl, wrappedField, implType,
-                                   originSetParam);
+  if (capturesEncodable)
+    addWrapperConformanceToDevicePassable(structDecl, wrappedField, implType,
+                                          originSetParam);
   // Generate is-trivial special aliases
   bool trivialValue = typeConvention == TypeConvention::RegisterPassableTrivial;
   generateIsTrivialSpecialAlias("__del__is_trivial", trivialValue, shared,
@@ -2194,6 +2245,59 @@ static KGEN::StructType getMlirType(MLIRContext *ctx,
   return KGEN::StructType::get(ctx, mlirFieldTypes, isMemOnly);
 }
 
+bool ClosureEmitter::provenConformsToTrait(
+    ASTType type, ASTDecl *traitDecl, SharedState &shared,
+    ArrayRef<ConstraintAttr> callerAssumptions) {
+  assert(traitDecl && "expected a trait declaration");
+  auto trait = cast<TraitDeclOp>(traitDecl->getIfOperation());
+  return type
+      .doesConformTo(TraitType::get(getFullyResolvedSymbolRef(trait)), shared,
+                     callerAssumptions)
+      .isTrue();
+}
+
+static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
+                                        SharedState &shared) {
+  ASTDecl *devicePassableDecl =
+      shared.getBuiltinDevicePassableTrait(scope.getLoc());
+  assert(devicePassableDecl && "could not find device passable dependency");
+
+  SmallVector<ConstraintAttr> assumptions =
+      ASTDecl::getAssumptionsFromScope(&scope);
+
+  // A capture is device-encodable only if it conforms to DevicePassable;
+  // resolve its device_type via GetWitness + fold attempt.
+  if (!ClosureEmitter::provenConformsToTrait(hostType, devicePassableDecl,
+                                             shared, assumptions))
+    return failure();
+
+  if (failed(shared.declResolver->resolveBody(*devicePassableDecl,
+                                              scope.getLoc())))
+    return failure();
+
+  ArrayRef<ASTDecl *> aliasDecls = devicePassableDecl->lookupInCurrentScope(
+      StringAttr::get(shared.getContext(), kDeviceType));
+  if (aliasDecls.empty())
+    return failure();
+
+  auto aliasOp =
+      dyn_cast_or_null<AliasDeclOp>(aliasDecls.front()->getIfOperation());
+  if (!aliasOp || !aliasOp.getType())
+    return failure();
+
+  MLIRContext *ctx = shared.getContext();
+  StringAttr traitName = StringAttr::get(
+      ctx, getFlattenedSymbolName(devicePassableDecl->getSymbolRef()));
+  TypedAttr deviceTypeWitness =
+      shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
+          PValue(hostType), traitName, StringAttr::get(ctx, kDeviceType),
+          aliasOp.getType());
+
+  if (!deviceTypeWitness || !LIT::isTypeExpr(deviceTypeWitness))
+    return failure();
+  return ASTType(deviceTypeWitness);
+}
+
 static TypedAttr getRefLikeOrigin(Type type) {
   if (auto refType = dyn_cast<RefType>(type))
     return refType.getOrigin();
@@ -2312,11 +2416,16 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     SmallVector<CaptureConvention> &&concreteFieldCaptureConventions,
     SmallVector<ParamDeclAttr> &&concreteParams,
     SmallVector<TypedAttr> &&concreteStructBindings, StringAttr name,
-    TypeConvention convention, ASTDecl &nestedFnDecl) {
+    TypeConvention convention, SmallVector<Type> &&deviceCaptureFieldTypes,
+    bool capturesEncodable, ASTDecl &nestedFnDecl) {
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
+  FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
       ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
+
+  SmallVector<Type> promotedDeviceCaptureFieldTypes =
+      std::move(deviceCaptureFieldTypes);
 
   mlir::AttrTypeReplacer promoteOriginRefs;
   promoteOriginRefs.addReplacement(
@@ -2332,7 +2441,6 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       });
 
   if (!promotedOriginNames.empty()) {
-    FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
     promoteOriginRefs.recursivelyReplaceElementsIn(nestedFn,
                                                    /*replaceAttrs=*/true,
                                                    /*replaceLocs=*/true,
@@ -2343,7 +2451,10 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       fieldDecl =
           StructDefFieldAttr::get(fieldDecl.getName(), promotedTypeValue);
     }
+    for (Type &deviceFieldType : promotedDeviceCaptureFieldTypes)
+      deviceFieldType = cast<Type>(promoteOriginRefs.replace(deviceFieldType));
   }
+
   SmallVector<TypedAttr> selfRefParamValues = llvm::map_to_vector(
       concreteParams, [](ParamDeclAttr declAttr) -> TypedAttr {
         return ParamDeclRefAttr::get(declAttr);
@@ -2670,8 +2781,16 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                                   structDecl, copyParent, moduleDecl);
   LIT::StructType boundClosureStructType =
       structOp.bindReference(concreteStructBindings);
-  auto typeParamAttr =
+  TypedAttr typeParamAttr =
       TypeParamAttr::get(boundClosureStructType, kgenStructType, traitType);
+  if (capturesEncodable) {
+    unsigned numStorageFields = std::distance(structOp.getFieldDecls().begin(),
+                                              structOp.getFieldDecls().end());
+    assert(promotedDeviceCaptureFieldTypes.size() == numStorageFields &&
+           "device field types must match storage struct fields");
+    addStorageConformanceToDevicePassable(
+        structDecl, promotedDeviceCaptureFieldTypes, name.getValue());
+  }
   return Closure{&structDecl, promotedCallDecl, typeParamAttr};
 }
 
@@ -2753,12 +2872,14 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<StructDefFieldAttr> fieldDecls;
   SmallVector<ParamDeclAttr> allStructParams;
   SmallVector<TypedAttr> structParamBindings;
+  SmallVector<Type> deviceCaptureFieldTypes;
 
   SmallPtrSet<StringAttr, 8> byValueCapturedOriginParamNames;
   auto updateCaptureConvention = [&](TypeConvention captureConventionMet) {
     highestCaptureConvention =
         meetCaptureConvention(highestCaptureConvention, captureConventionMet);
   };
+  bool allCapturesEncodable = true;
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
@@ -2778,6 +2899,9 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     auto captureTypeAttr = cast<TypedAttr>(captureTypeValue.get());
     auto captureName = StringAttr::get(ctx, capture.getSpelling());
     auto captureConvention = capture.getCaptureConvention();
+    Type mlirType = value.getType();
+    if (auto refType = dyn_cast<LIT::RefType>(mlirType))
+      mlirType = refType.getElementType();
     switch (captureConvention) {
     case CaptureConvention::kConventionUnspecified:
     case CaptureConvention::kConventionMut:
@@ -2798,14 +2922,10 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       break;
     case CaptureConvention::kConventionCopy:
     case CaptureConvention::kConventionMove: {
-      Type mlirType;
       if (auto refType = dyn_cast<LIT::RefType>(value.getType())) {
-        mlirType = refType.getElementType();
         if (auto captureOriginParam = dyn_cast<ParamDeclRefAttr>(
                 OriginType::stripMutCastAndRebind(refType.getOrigin())))
           byValueCapturedOriginParamNames.insert(captureOriginParam.getName());
-      } else {
-        mlirType = value.getType();
       }
       // Copy/move captures materialize storage for the captured value itself,
       // not for a reference wrapper. Use the pointee as the field type.
@@ -2827,7 +2947,28 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     }
     }
     fieldDecls.push_back(StructDefFieldAttr::get(captureName, captureTypeAttr));
+    if (allCapturesEncodable) {
+      // A by-reference capture stores a host pointer (LIT::RefType) as its
+      // storage field, while its device field type is computed from the
+      // pointee. The two disagree in `encode_fields` (ref != pointee device
+      // type), so a reference is not device-encodable.
+      if (isByReferenceCapture(captureConvention)) {
+        allCapturesEncodable = false;
+      } else {
+        FailureOr<Type> deviceFieldType = getReboundCaptureDeviceFieldType(
+            ASTType(mlirType), nestedFnDecl, shared);
+        if (failed(deviceFieldType))
+          allCapturesEncodable = false;
+        else
+          deviceCaptureFieldTypes.push_back(*deviceFieldType);
+      }
+    }
   }
+  // TODO(MOCO-4045): DevicePassable conformance currently requires a
+  // register-passable storage struct.
+  if (allCapturesEncodable &&
+      highestCaptureConvention == TypeConvention::MemoryOnly)
+    allCapturesEncodable = false;
   FnTypeGeneratorType wrapperSig = FnTypeGeneratorType::get(
       closureSig.getInputParamTypes(), closureSig.getValues(),
       closureSig.getArgConventions(), closureSig.getFnEffects(),
@@ -2839,7 +2980,8 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                 ->getIfOperation());
   ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
       nestedFnDecl.getLoc(), wrapperSig, &moduleDecl, isCopyable,
-      highestCaptureConvention, captures.empty());
+      highestCaptureConvention, captures.empty(), allCapturesEncodable);
+
   if (!closureWrapperDecl)
     return {};
   StructDeclOp wrapper =
@@ -2903,7 +3045,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       aliases, std::move(fieldDecls), std::move(captureValues),
       std::move(captureConventions), std::move(allStructParams),
       std::move(structParamBindings), fnName, highestCaptureConvention,
-      nestedFnDecl);
+      std::move(deviceCaptureFieldTypes), allCapturesEncodable, nestedFnDecl);
   TypedAttr witnessTable = liftedClosure.typeAttr;
 
   // Promoting the nested closure function moves it to module scope.
@@ -3746,173 +3888,114 @@ LogicalResult ClosureEmitter::isCompatibleWith(ASTType structType,
   return checkStructCompatibility(structType, traitDecl, false);
 }
 
+static void populateDevicePassableTypeName(FnOp implementation,
+                                           ASTDecl &structDecl,
+                                           TypedAttr closureName) {
+  MLIRContext *ctx = structDecl.getContext();
+  Block &block = implementation.getBodyRegion().front();
+  ImplicitLocOpBuilder b(implementation.getLoc(), implementation);
+  b.setInsertionPointToStart(&block);
+  IREmitter emitter(structDecl, b);
+  SyntheticNode loc(structDecl.getLoc());
+
+  ASTType strLitType = structDecl.getShared().lookupBuiltinType(
+      "StringLiteral", structDecl, structDecl.getLoc());
+  auto strLitDecl = cast<StructDeclOp>(
+      strLitType.getDecl(structDecl.getShared())->getIfOperation());
+  Type boundStrLitType = strLitDecl.bindReference({closureName});
+  CValue literalValue = emitter.emitConstructorCall(
+      ASTType(boundStrLitType),
+      CallOperands(CallSyntax::kTypeCall, &loc, EC_CallArgValue));
+
+  ASTType stringType = structDecl.getShared().lookupBuiltinType(
+      "String", structDecl, structDecl.getLoc());
+  ExprDest resultDest(MLValue(block.getArguments().back()), EC_ReturnValue);
+  CallOperands ctorOperands(CallSyntax::kTypeCall, &loc, std::move(resultDest));
+  ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
+  emitter.emitConstructorCall(stringType, std::move(ctorOperands));
+  auto noneAttr = KGEN::ParamConstantOp::create(b, KGEN::NoneAttr::get(ctx));
+  IREmitter::emitNormalReturn(b, noneAttr);
+}
+
+static void emitIsConvertibleToDeviceTypeBody(
+    FnOp implementation, ArrayRef<ParamDeclAttr> parameters,
+    ImplicitLocOpBuilder &b, TypedAttr deviceTypeAttr) {
+  b.setInsertionPointToStart(&implementation.getBodyRegion().front());
+  assert(!parameters.empty() &&
+         "expected _is_convertible_to_device_type to have type parameter");
+  TypedAttr targetType = ParamDeclRefAttr::get(parameters.front());
+  TypedAttr isConvertible =
+      ParamOperatorAttr::get(POC::EQ, targetType, deviceTypeAttr);
+  auto isConvertibleValue = KGEN::ParamConstantOp::create(b, isConvertible);
+  IREmitter::emitNormalReturn(b, isConvertibleValue);
+}
+
+static AliasDeclOp getDeviceTypeAlias(SharedState &shared, llvm::SMLoc loc) {
+  ASTDecl *devicePassableTrait = shared.getBuiltinDevicePassableTrait(loc);
+  assert(devicePassableTrait && "DevicePassable trait should be present");
+  ArrayRef<ASTDecl *> aliasDecls = devicePassableTrait->lookupInCurrentScope(
+      StringAttr::get(shared.getContext(), kDeviceType));
+  assert(aliasDecls.size() == 1 &&
+         "DevicePassable trait should define one device_type alias");
+  return cast<AliasDeclOp>(aliasDecls.front()->getIfOperation());
+}
+
 void ClosureEmitter::addConformanceToDevicePassable(
-    ASTDecl &structDecl, StructFieldOp devicePassedField, ParamDeclAttr impl,
-    ParamDeclAttr originSet) {
+    ASTDecl &structDecl, const DevicePassablePopulators &populators) {
   ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
   ASTDecl *devicePassableTrait =
       shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
   if (!devicePassableTrait)
     return;
-  // Ensure body is parsed and unresolved decls pulled in
   if (failed(shared.declResolver->resolveBody(*devicePassableTrait,
                                               devicePassableTrait->getLoc())))
     return;
   TraitDeclOp trait = cast<TraitDeclOp>(devicePassableTrait->getIfOperation());
   SymbolRefAttr devicePassableSymbol = devicePassableTrait->getSymbolRef();
-  Type deviceTypeAliasType;
 
-  // Resolve top-level members and collect the `device_type` alias type.
   for (auto &nameGroup : devicePassableTrait->getDeclsInScope()) {
     for (ASTDecl *funcFieldOrAlias : nameGroup.second) {
       if (failed(shared.declResolver->resolveBody(*funcFieldOrAlias,
                                                   funcFieldOrAlias->getLoc())))
         return;
-      if (auto aliasOp = dyn_cast_if_present<AliasDeclOp>(
-              funcFieldOrAlias->getIfOperation());
-          aliasOp && aliasOp.getDeclName().getValue() == kDeviceType)
-        deviceTypeAliasType = aliasOp.getType();
     }
   }
 
-  assert(deviceTypeAliasType &&
-         "DevicePassable trait should define device_type alias");
   SmallVector<std::pair<StringRef, TypedAttr>> devicePassableWitnesses;
-  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
+  TypedAttr deviceTypeWitness = populators.deviceType();
 
   for (Operation &member : trait.getFields().getOps()) {
     if (auto function = dyn_cast<FnOp>(member)) {
-      if (function.getSourceName() == kIsDeviceTypeConvertible) {
-        auto [implementation, parameters, result] =
-            pushBackTraitFunctionImpl(function, structDecl);
-        b.setInsertionPointToStart(&implementation.getBodyRegion().front());
-        assert(
-            !parameters.empty() &&
-            "expected _is_convertible_to_device_type to have type parameter");
-        TypedAttr targetType = ParamDeclRefAttr::get(parameters.front());
-        TypedAttr selfType =
-            cast<TypedAttr>(PValue(structDecl.getTypeDeclSelf()).get());
-        StringAttr traitName =
-            b.getStringAttr(getFlattenedSymbolName(devicePassableSymbol));
-        TypedAttr selfDeviceType = GetWitnessAttr::get(
-            selfType, traitName, StringAttr::get(ctx, kDeviceType),
-            deviceTypeAliasType);
-        TypedAttr isConvertible =
-            ParamOperatorAttr::get(POC::EQ, targetType, selfDeviceType);
-        auto isConvertibleValue =
-            KGEN::ParamConstantOp::create(b, isConvertible);
-        IREmitter::emitNormalReturn(b, isConvertibleValue);
-        devicePassableWitnesses.push_back({
-            *function.getSymName(),
-            buildSymbol(implementation, impl, originSet),
-        });
-        continue;
-      }
-      /// We already have AnyType members implemented, only implement those
-      /// that are defined by DevicePassable.
       auto parent = function.getInheritedFrom();
       if (parent && parent != devicePassableSymbol)
         continue;
-      if (function.getSourceName() == kToDeviceType) {
-        auto [toDevice, params, result] =
-            pushBackTraitFunctionImpl(function, structDecl);
-        b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
-        assert(toDevice.getBodyRegion().getNumArguments() == 3);
-
-        Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
-        Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
-        Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
-
-        // self.<impl-field> — a ref to the wrapped closure value (Impl).
-        Value closureMemberRef =
-            RefStructGEROp::create(b, selfArgument, devicePassedField)
-                ->getResults()
-                .front();
-
-        // Forward to `encoder.encode_closure_state(closureMemberRef, target)`,
-        // which invokes `DevicePassable._to_device_type()` for each capture.
-        // It encodes a single capture directly rather than reflecting it with
-        // `field_ref`: a one-field closure-state struct flattens to its sole
-        // field, so the reflected access would lower to an invalid identity
-        // GEP into the flattened struct.
-        IREmitter emitter(structDecl, b);
-        SyntheticNode syntheticNode(structDecl.getLoc());
-        ExprDest dest(EC_ReturnValue);
-        CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,
-                                  std::move(dest));
-        callOperands.add({CValue::getMValueForRef(encoderRef), &syntheticNode});
-        callOperands.add(
-            {CValue::getMValueForRef(closureMemberRef), &syntheticNode});
-        callOperands.add({SRValue(targetArgument), &syntheticNode});
-        CValue callResult = emitter.emitNamedMethodCall(
-            "encode_closure_state", std::move(callOperands));
-        if (!callResult)
-          return;
-        auto noneAttr = KGEN::ParamConstantOp::create(
-            b, KGEN::NoneAttr::get(b.getContext()));
-        IREmitter::emitNormalReturn(b, noneAttr);
-
-        devicePassableWitnesses.push_back(
-            {*function.getSymName(), buildSymbol(toDevice, impl, originSet)});
-        continue;
-      }
-      /// If this is a static method that returns a string, return the trait's
-      /// source name.
-      if (function.getIsStatic() &&
-          function.getUserResultType() ==
-              shared.lookupBuiltinType("String", structDecl,
-                                       structDecl.getLoc())) {
-        auto [implementation, parameters, result] =
-            pushBackTraitFunctionImpl(function, structDecl);
-        b.setInsertionPointToStart(&implementation.getBodyRegion().front());
-        // Initialize the byref String result with the literal "closure".
-        Block &block = implementation.getBodyRegion().front();
-        OpBuilder ob(&block, block.begin());
-        IREmitter emitter(structDecl, ob);
-        SyntheticNode loc(structDecl.getLoc());
-
-        // Build a StringLiteral["closure"] value.
-        auto closureStr = StringAttr::get("closure", StringType::get(ctx));
-        ASTType strLitType = shared.lookupBuiltinType(
-            "StringLiteral", structDecl, structDecl.getLoc());
-        auto strLitDecl =
-            cast<StructDeclOp>(strLitType.getDecl(shared)->getIfOperation());
-        Type boundStrLitType = strLitDecl.bindReference({closureStr});
-        CValue literalValue = emitter.emitConstructorCall(
-            ASTType(boundStrLitType),
-            CallOperands(CallSyntax::kTypeCall, &loc, EC_CallArgValue));
-
-        // Call String.__init__(literal) into the result slot.
-        ASTType stringType =
-            shared.lookupBuiltinType("String", structDecl, structDecl.getLoc());
-        ExprDest resultDest(MLValue(block.getArguments().back()),
-                            EC_ReturnValue);
-        CallOperands ctorOperands(CallSyntax::kTypeCall, &loc,
-                                  std::move(resultDest));
-        ctorOperands.add(ASTExprAnd<CValue>{literalValue, &loc});
-        emitter.emitConstructorCall(stringType, std::move(ctorOperands));
-        auto noneAttr = KGEN::ParamConstantOp::create(
-            b, KGEN::NoneAttr::get(b.getContext()));
-        IREmitter::emitNormalReturn(b, noneAttr);
-        devicePassableWitnesses.push_back(
-            {*function.getSymName(),
-             buildSymbol(implementation, impl, originSet)});
-
-        continue;
-      }
+      FailureOr<SymbolConstantAttr> witness =
+          [&]() -> FailureOr<SymbolConstantAttr> {
+        if (function.getSourceName() == kIsDeviceTypeConvertible)
+          return populators.isConvertible(function);
+        if (function.getSourceName() == kToDeviceType)
+          return populators.toDeviceType(function);
+        if (function.getIsStatic() &&
+            function.getUserResultType() ==
+                shared.lookupBuiltinType("String", structDecl,
+                                         structDecl.getLoc()))
+          return populators.typeName(function);
+        llvm_unreachable("unexpected function in DevicePassable trait");
+      }();
+      if (failed(witness))
+        return;
+      devicePassableWitnesses.push_back(
+          {*function.getSymName(), std::move(*witness)});
+      continue;
     }
 
     if (auto alias = dyn_cast<AliasDeclOp>(member)) {
       auto parent = alias.getInheritedFrom();
       if (parent && parent != devicePassableSymbol)
         continue;
-      assert(alias.getDeclName().getValue().contains(kDeviceType) &&
-             "we assume we are implementing device_type.");
-      devicePassableWitnesses.push_back(
-          {kDeviceType,
-           TypeParamAttr::get(structDecl.getTypeDeclSelf().mlirType,
-                              KGEN::TypeType::get(ctx))});
+      assert(alias.getDeclName().getValue() == kDeviceType &&
+             "unexpected alias in DevicePassable trait");
+      devicePassableWitnesses.push_back({kDeviceType, deviceTypeWitness});
       continue;
     }
     llvm_unreachable(("unexpected member type '" +
@@ -3925,10 +4008,183 @@ void ClosureEmitter::addConformanceToDevicePassable(
                       fileModule);
 }
 
+void ClosureEmitter::addStorageConformanceToDevicePassable(
+    ASTDecl &structDecl, ArrayRef<Type> deviceCaptureFieldTypes,
+    StringRef name) {
+  ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+  MLIRContext *ctx = structDecl.getContext();
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
+  FailureOr<LIT::StructType> deviceType = createDeviceTypeStruct(
+      shared, fileModule, structDecl, deviceCaptureFieldTypes);
+  if (failed(deviceType))
+    return;
+
+  TypedAttr deviceTypeValue;
+  auto populateIsConvertible =
+      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
+        function, structDecl, /*synthetic=*/true, /*customName=*/{},
+        /*redirectWitnessToImplParam=*/false);
+    emitIsConvertibleToDeviceTypeBody(implementation, parameters, b,
+                                      deviceTypeValue);
+    return buildSymbol(implementation, structDeclOp.getInputParams());
+  };
+  auto populateToDeviceType =
+      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [toDevice, params, result] = pushBackTraitFunctionImpl(
+        function, structDecl, /*synthetic=*/true, /*customName=*/{},
+        /*redirectWitnessToImplParam=*/false);
+    b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
+    assert(toDevice.getBodyRegion().getNumArguments() == 3);
+
+    Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
+    Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
+    Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
+
+    IREmitter emitter(structDecl, b);
+    SyntheticNode syntheticNode(structDecl.getLoc());
+    ExprDest dest(EC_ReturnValue);
+    CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,
+                              std::move(dest));
+    CValue encoderValue = CValue::getMValueForRef(encoderRef);
+    callOperands.add({encoderValue, &syntheticNode});
+    callOperands.add({CValue::getMValueForRef(selfArgument), &syntheticNode});
+    callOperands.add({SRValue(targetArgument), &syntheticNode});
+    OverloadSet overloads = OverloadSet::lookup(
+        structDecl, encoderValue.getRValueType(), "encode_closure_state",
+        &syntheticNode, CallSyntax::kMethodCall);
+    overloads.paramBindings.add(&syntheticNode, PValue(deviceTypeValue),
+                                StringAttr::get(ctx, "DeviceStructType"));
+    PValue callee = overloads.filterOverloadSet(
+        callOperands, /*emitDiagnosticOnFailure=*/true, emitter);
+    if (!callee)
+      return failure();
+    CValue callResult =
+        emitter.emitIndirectCall(callee, std::move(callOperands));
+    if (!callResult)
+      return failure();
+    auto noneAttr =
+        KGEN::ParamConstantOp::create(b, KGEN::NoneAttr::get(b.getContext()));
+    IREmitter::emitNormalReturn(b, noneAttr);
+
+    return buildSymbol(toDevice, structDeclOp.getInputParams());
+  };
+  auto populateTypeName = [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
+        function, structDecl, /*synthetic=*/true, /*customName=*/{},
+        /*redirectWitnessToImplParam=*/false);
+    auto closureName = StringAttr::get(name, StringType::get(ctx));
+    populateDevicePassableTypeName(implementation, structDecl, closureName);
+    return buildSymbol(implementation, structDeclOp.getInputParams());
+  };
+  auto populateDeviceType = [&]() {
+    deviceTypeValue = TypeParamAttr::get(
+        *deviceType, getDeviceTypeAlias(shared, structDecl.getLoc()).getType());
+    return deviceTypeValue;
+  };
+  DevicePassablePopulators populators{populateIsConvertible,
+                                      populateToDeviceType, populateTypeName,
+                                      populateDeviceType};
+  addConformanceToDevicePassable(structDecl, populators);
+}
+
+void ClosureEmitter::addWrapperConformanceToDevicePassable(
+    ASTDecl &structDecl, StructFieldOp implField, ParamDeclAttr implType,
+    ParamDeclAttr originSet) {
+  MLIRContext *ctx = structDecl.getContext();
+  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
+  TypedAttr implDeviceType;
+  ASTDecl *devicePassableTrait =
+      shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
+  assert(devicePassableTrait && "DevicePassable trait should be present");
+  StringAttr traitName = StringAttr::get(
+      ctx, getFlattenedSymbolName(devicePassableTrait->getSymbolRef()));
+
+  auto populateIsConvertible =
+      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [implementation, parameters, result] =
+        pushBackTraitFunctionImpl(function, structDecl);
+    emitIsConvertibleToDeviceTypeBody(implementation, parameters, b,
+                                      implDeviceType);
+    return buildSymbol(implementation, implType, originSet);
+  };
+  auto populateToDeviceType =
+      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [toDevice, params, result] =
+        pushBackTraitFunctionImpl(function, structDecl);
+    b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
+    assert(toDevice.getBodyRegion().getNumArguments() == 3);
+
+    Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
+    Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
+    Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
+    Value implMemberRef = RefStructGEROp::create(b, selfArgument, implField)
+                              ->getResults()
+                              .front();
+
+    IREmitter emitter(structDecl, b);
+    SyntheticNode syntheticNode(structDecl.getLoc());
+    ExprDest dest(EC_ReturnValue);
+    CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,
+                              std::move(dest));
+    CValue encoderValue = CValue::getMValueForRef(encoderRef);
+    callOperands.add({encoderValue, &syntheticNode});
+    callOperands.add({CValue::getMValueForRef(implMemberRef), &syntheticNode});
+    callOperands.add({SRValue(targetArgument), &syntheticNode});
+    OverloadSet overloads = OverloadSet::lookup(
+        structDecl, encoderValue.getRValueType(), "encode_closure_state",
+        &syntheticNode, CallSyntax::kMethodCall);
+    overloads.paramBindings.add(&syntheticNode, PValue(implDeviceType),
+                                StringAttr::get(ctx, "DeviceStructType"));
+    PValue callee = overloads.filterOverloadSet(
+        callOperands, /*emitDiagnosticOnFailure=*/true, emitter);
+    if (!callee)
+      return failure();
+    CValue callResult =
+        emitter.emitIndirectCall(callee, std::move(callOperands));
+    if (!callResult)
+      return failure();
+    auto noneAttr =
+        KGEN::ParamConstantOp::create(b, KGEN::NoneAttr::get(b.getContext()));
+    IREmitter::emitNormalReturn(b, noneAttr);
+
+    return buildSymbol(toDevice, implType, originSet);
+  };
+  auto populateTypeName = [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+    auto [implementation, parameters, result] =
+        pushBackTraitFunctionImpl(function, structDecl);
+    b.setInsertionPointToStart(&implementation.getBodyRegion().front());
+    TypedAttr symbol = GetWitnessAttr::get(
+        ParamDeclRefAttr::get(implType), traitName, function.getSymNameAttr(),
+        implementation.getFuncTypeGenerator());
+    SmallVector<Value> operands(
+        implementation.getBodyRegion().front().getArguments());
+    if (failed(emitForwardingCall(b, structDecl, symbol,
+                                  implementation.getFuncTypeGenerator(), result,
+                                  operands)))
+      return failure();
+    return buildSymbol(implementation, implType, originSet);
+  };
+  auto populateDeviceType = [&]() {
+    implDeviceType = GetWitnessAttr::get(
+        ParamDeclRefAttr::get(implType), traitName,
+        StringAttr::get(ctx, kDeviceType),
+        getDeviceTypeAlias(shared, structDecl.getLoc()).getType());
+    return implDeviceType;
+  };
+  DevicePassablePopulators populators{populateIsConvertible,
+                                      populateToDeviceType, populateTypeName,
+                                      populateDeviceType};
+  addConformanceToDevicePassable(structDecl, populators);
+}
+
 TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
                                               ASTDecl &moduleDecl,
                                               bool isCopyable,
-                                              TypeConvention typeConvention) {
+                                              TypeConvention typeConvention,
+                                              bool capturesEncodable) {
   SmallVector<SymbolRefAttr> symbols;
   symbols.push_back(traitDecl.getSymbolRef());
   symbols.push_back(moveParent.getSymbolRef(moduleDecl));
@@ -3941,12 +4197,14 @@ TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
   if (typeConvention == TypeConvention::RegisterPassableTrivial) {
     symbols.push_back(trivialRegisterTypeParent.getSymbolRef(moduleDecl));
     symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
+  } else if (typeConvention == TypeConvention::RegisterPassable) {
+    symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
+  }
+  if (capturesEncodable) {
     ASTDecl *devicePassableTrait =
         shared.getBuiltinDevicePassableTrait(traitDecl.getLoc());
     if (devicePassableTrait)
       symbols.push_back(devicePassableTrait->getSymbolRef());
-  } else if (typeConvention == TypeConvention::RegisterPassable) {
-    symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
   }
   canonicalizeTraitCompositionSymbols(shared, symbols);
   return TraitType::get(moduleDecl.getContext(), symbols);

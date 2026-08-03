@@ -87,6 +87,11 @@ public:
                                        ArrayRef<TypedAttr> paramValues,
                                        ASTDecl &moduleDecl, SMLoc loc);
 
+  /// Return true if \p type provably conforms to \p traitDecl.
+  static bool provenConformsToTrait(ASTType type, ASTDecl *traitDecl,
+                                    SharedState &shared,
+                                    ArrayRef<ConstraintAttr> callerAssumptions);
+
   /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
   /// parametric field. Both the field and the struct must conform to the
   /// associated closure trait characterized by the signature of the closure.
@@ -161,7 +166,8 @@ public:
   ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
                                ASTDecl &traitDecl, SMLoc location,
                                TypeConvention typeConvention, bool isCopyable,
-                               bool isStateless, FnTypeGeneratorType sig = {});
+                               bool isStateless, bool capturesEncodable,
+                               FnTypeGeneratorType sig = {});
 
   /// Given a trait decl and a function signature, generate a struct that can
   /// wrap a function pointer to be used as a closure.
@@ -236,7 +242,8 @@ public:
   };
 
   TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
-                                bool isCopyable, TypeConvention typeConvention);
+                                bool isCopyable, TypeConvention typeConvention,
+                                bool capturesEncodable);
 
   /// Append a deterministic suffix encoding the conformance traits present in
   /// \p wrapperTraitType.
@@ -281,7 +288,8 @@ private:
                       SmallVector<ParamDeclAttr> &&allStructParams,
                       SmallVector<TypedAttr> &&structParamBindings,
                       StringAttr name, TypeConvention typeConvention,
-                      ASTDecl &nestedFnDecl);
+                      SmallVector<Type> &&deviceCaptureFieldTypes,
+                      bool capturesEncodable, ASTDecl &nestedFnDecl);
 
   /// Given a trait function, specialize it and add it to the struct.
   /// Returns
@@ -292,13 +300,31 @@ private:
   /// parameters instead of indices.
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
   pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
-                            bool synthetic = true, StringAttr customName = {});
-  /// Given the wrapper struct, add to the conformance table to enable the
-  /// closure to be used with kernel functions
-  void addConformanceToDevicePassable(ASTDecl &structDecl,
-                                      StructFieldOp devicePassedField,
-                                      ParamDeclAttr impl,
-                                      ParamDeclAttr originSet);
+                            bool synthetic = true, StringAttr customName = {},
+                            bool redirectWitnessToImplParam = true);
+  struct DevicePassablePopulators {
+    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
+    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;
+    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> typeName;
+    llvm::function_ref<TypedAttr()> deviceType;
+  };
+  /// Add DevicePassable conformance using callbacks that populate each
+  /// interface member and return its witness.
+  void
+  addConformanceToDevicePassable(ASTDecl &structDecl,
+                                 const DevicePassablePopulators &populators);
+  /// Add DevicePassable conformance to closure storage (__storage), whose
+  /// device_type reflects the device representations of its captures.
+  void
+  addStorageConformanceToDevicePassable(ASTDecl &structDecl,
+                                        ArrayRef<Type> deviceCaptureFieldTypes,
+                                        StringRef name);
+  /// Forward DevicePassable from the wrapper to its impl parameter via
+  /// GetWitness lookups.
+  void addWrapperConformanceToDevicePassable(ASTDecl &structDecl,
+                                             StructFieldOp implField,
+                                             ParamDeclAttr implType,
+                                             ParamDeclAttr originSet);
 
   /// AnyType is the base metatype for all types.
   ClosureParent anyParent;

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-from std.builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 trait MyInterface:
     def thing(self):
@@ -296,3 +296,41 @@ def capture_by_move_no_refinement[T: NotMovable](var z: T):
         _ = z
 
     h()
+
+
+# ===----------------------------------------------------------------------=== #
+# A closure capturing a DevicePassable value by reference is not DevicePassable
+# ===----------------------------------------------------------------------=== #
+# COM: A by-reference capture stores a host pointer (LIT::RefType) as its
+# COM: storage field, so the closure cannot be device-encoded even though the
+# COM: capture's type is itself DevicePassable (MOCO-4045). .
+
+
+@fieldwise_init
+struct RegPassableDevice(
+    DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
+):
+    comptime device_type: AnyType = Int
+    var value: Int
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self.value, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "RegPassableDevice"
+
+
+# expected-note @below {{function declared here}}
+def takeDevicePassableByRef[T: DevicePassable](impl: T):
+    pass
+
+
+def capture_device_passable_by_reference(value: RegPassableDevice) raises:
+    def closure(argument: Int) {imm value} -> Int:
+        return argument + value.value
+
+    # expected-error-re @below {{'{{.*}}' does not conform to trait 'DevicePassable'}}
+    takeDevicePassableByRef(closure)
