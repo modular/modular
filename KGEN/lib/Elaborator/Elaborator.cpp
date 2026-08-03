@@ -1757,8 +1757,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   ArrayRef<TypedAttr> inputParamValues = genNode->inputParams.getValue();
   ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
 
-  VerboseCompilerTimeTraceScope traceScope("specializeGenerator: " +
-                                           gen.getName().str());
+  VerboseCompilerTimeTraceScope traceScope(
+      "specializeGenerator", [name = gen.getName()] { return name.str(); });
 
   // TODO (low prio): Some day we could mangle "instantiated from here"
   // information into the location.
