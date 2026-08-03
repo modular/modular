@@ -395,11 +395,20 @@ This version is still a work in progress.
   - `def extend(mut self, var other: Self):`
   - `def __contains__[dtype: DType, //](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Bool`
   - `def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable)`
+  - `def __getitem__(ref self, idx: Int, /) -> ref[_] Self.T:`
 
 - Bool
 - Span
   - `def __init__(out self):`
   - `def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):`
+  - `def __getitem__(ref self, idx: Int, /) -> ref[self.origin, self.address_space] Self.T:`
+
+- Array
+  - `def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:`
+  - `def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:`
+
+- ImmPointer
+- MutPointer
 
 <!-- rumdl-enable MD013 -->
 
