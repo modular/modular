@@ -1596,8 +1596,8 @@ def rebind[
     //,
     dest_type: AnyType,
 ](ref src: src_type) -> ref[src] dest_type:
-    lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
+    var lit = __get_mvalue_as_litref(src)
+    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
     return __get_litref_as_mvalue(rebound)
 
 

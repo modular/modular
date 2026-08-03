@@ -713,7 +713,7 @@ struct CutDownDict[V: Copyable](Movable where False):
 
 def test_cut_down_dict() raises:
     var dict: CutDownDict[Int]
-    ptr = Pointer(to=dict[])
+    var ptr = Pointer(to=dict[])
     ptr[] = 17 # should be mutable.
 
 # MOCO-2997: Remapping of implicit origins into typed errors.

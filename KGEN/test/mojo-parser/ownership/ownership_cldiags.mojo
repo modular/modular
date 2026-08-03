@@ -366,7 +366,7 @@ struct SP[n: Int](Movable where False):
 
 def test_no_unused_warning() -> Int:
     # expected-warning @+1 {{assignment to 's' was never used; assign to '_' instead?}}
-    s = SP[2]()
+    var s = SP[2]()
     # This is syntactically a use, but n is a parameter, so the warning does show up.
     return s.n
 

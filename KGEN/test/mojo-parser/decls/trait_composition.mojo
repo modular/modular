@@ -112,7 +112,7 @@ def use123[T: Trait1 & Trait2 & Trait3](x: T):
 
 # CHECK-LABEL: lit.fn @"main_use()"
 def main_use():
-    s123 = Struct123()
+    var s123 = Struct123()
 
     # CHECK: lit.call {{.*}}@"useAny
     # CHECK-SAME: <:!AnyType !Struct123>
@@ -133,7 +133,7 @@ def main_use():
     # CHECK-SAME: <:!AnyType_Trait1_Trait2_Trait3 !Struct123>
     use123(s123)
 
-    s12direct = Struct12Direct()
+    var s12direct = Struct12Direct()
     # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Direct>
     use12(s12direct)
@@ -141,7 +141,7 @@ def main_use():
     # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Direct>
     use12[Struct12Direct](s12direct)
 
-    s12alias = Struct12Alias()
+    var s12alias = Struct12Alias()
     # CHECK: lit.call {{.*}}@"use12
     # CHECK-SAME: <:!AnyType_Trait1_Trait2 !Struct12Alias>
     use12(s12alias)
@@ -300,7 +300,7 @@ def trait_param[A: type_of(Trait1), T: A & Trait2](x: T):
 
 
 def use_trait_param():
-    s1c = Struct1C()
+    var s1c = Struct1C()
     trait_param[Trait1C, Struct1C](s1c)
 
 

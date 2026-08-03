@@ -133,6 +133,6 @@ def test[
 
 
 def main():
-    f1 = FromType(1)
-    f2 = FromType(2)
+    var f1 = FromType(1)
+    var f2 = FromType(2)
     test(f1, f2)

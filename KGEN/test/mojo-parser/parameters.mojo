@@ -1161,7 +1161,7 @@ def test_param_inference_contextual_fold():
     # CHECK-SAME: <:!WithAnAlias_AnyType !SomeStruct,
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int),
     # CHECK-SAME: :!AnyType sugar_member_alias(!SomeStruct, "A", !Int)>
-    sw = SomeWrapper[SomeStruct]()
+    var sw = SomeWrapper[SomeStruct]()
 
 
 ##===----------------------------------------------------------------------===##
@@ -1650,7 +1650,7 @@ struct Ex1[self_a: Int, //, self_param: StructWithIntParam[self_a]](Movable wher
         pass
 
 def testEx1(imm_data: HasAutoParam[StructWithIntParam[1]()]):
-    parSpecializedTest = Ex1(imm_data)
+    var parSpecializedTest = Ex1(imm_data)
 
 # MOCO-1826: Improve parameter inference from other parameter bindings
 struct MyTypeWithOrigin[

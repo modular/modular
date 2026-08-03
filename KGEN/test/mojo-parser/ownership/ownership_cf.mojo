@@ -653,7 +653,7 @@ def test_elif(cond: Bool, cond2: Bool):
 # CHECK-LABEL: lit.fn @"loop_any_origin
 def loop_any_origin(var mem: MemExample, cond: Bool):
     # CHECK: lit.call {{.*}}unsafe_ptr
-    ptr = mem.unsafe_ptr()
+    var ptr = mem.unsafe_ptr()
 
     # The "mem" destructor must be in the loop exit, not ahead of the loop because
     # there is an access through AnyOrigin within the loop.

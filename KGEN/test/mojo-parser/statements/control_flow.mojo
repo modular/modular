@@ -253,7 +253,7 @@ def test_else_outside_while(a: Bool, b: Bool) raises -> Bool:
         # CHECK:   [[V1_SB:%.*]] = lit.call {{.*}}@Bool::@"__mlir_bool__({{.*}}Bool)"(%a)
         while a:
             # CHECK: lit.ref.store {{.+}}, %inside_a
-            inside_a = 0
+            var inside_a = 0
             # CHECK: lit.loop.continue
             # CHECK: } else {
             # CHECK:   lit.loop.yield
@@ -261,7 +261,7 @@ def test_else_outside_while(a: Bool, b: Bool) raises -> Bool:
     # CHECK: } else {
     else:
         # CHECK: lit.ref.store {{.+}}, %inside_else
-        inside_else = 2
+        var inside_else = 2
     # CHECK: }
     # CHECK: lit.return
     return a
@@ -281,7 +281,7 @@ def test_break_continue_inside_while(a: Bool) raises -> Bool:
             break
             # CHECK:   lit.ref.store
             # CHECK-NEXT:   hlcf.yield
-            c = 1
+            var c = 1
         else:
             # CHECK-NEXT: } else {
             # CHECK-NEXT:   lit.continue
@@ -301,14 +301,14 @@ def test_early_return() raises:
         # CHECK: lit.return
         return
         # CHECK: lit.ref.store
-        b = 2
+        var b = 2
         # CHECK-NEXT: hlcf.yield
     # CHECK: else
     # CHECK-NEXT: yield
     # CHECK: lit.return
     return
     # CHECK: lit.ref.store
-    c = 3
+    var c = 3
     # CHECK: lit.return
     return
     # CHECK: lit.end_fn
@@ -517,7 +517,7 @@ def induction_var_scope_def() raises:
 # https://github.com/modular/mojo/issues/3805
 def weird_llvm_dialect_op():
     # CHECK: %0 = llvm.mlir.zero : !llvm.ptr
-   x = __mlir_op.`llvm.mlir.zero`[_type = __mlir_type.`!llvm.ptr<0>`]()
+   var x = __mlir_op.`llvm.mlir.zero`[_type = __mlir_type.`!llvm.ptr<0>`]()
 
 
 ##===----------------------------------------------------------------------===##
