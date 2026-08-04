@@ -254,7 +254,7 @@ struct TileScheduler[
             )
         else:
             var m, n = self._index_to_mn()
-            is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
+            var is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
             return WorkInfo(
                 UInt32(m),
                 UInt32(n),
@@ -287,13 +287,13 @@ struct TileScheduler[
     @always_inline
     def _index_to_mn_tile1d(self) -> Tuple[Int, Int]:
         # Grid dim as if there is no persist kernel
-        logical_grid_dim = Index[dtype=DType.uint32](
+        var logical_grid_dim = Index[dtype=DType.uint32](
             ceildiv(self.prob_shape[1], Self.tile_shape[1]),
             ceildiv(self.prob_shape[0], Self.tile_shape[0]),
         )
 
-        by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
-        block_xy_swizzle = block_swizzle(
+        var by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
+        var block_xy_swizzle = block_swizzle(
             Index[dtype=DType.uint32](bx, by), logical_grid_dim
         )
 
@@ -310,23 +310,23 @@ struct TileScheduler[
 
         comptime FastUInt = Scalar[FastDiv[DType.uint32].uint_type]
 
-        num_waves_executed = FastUInt(self.idx) / log_num_grids
-        idx_in_wave = FastUInt(self.idx) % log_num_grids
+        var num_waves_executed = FastUInt(self.idx) / log_num_grids
+        var idx_in_wave = FastUInt(self.idx) % log_num_grids
 
-        num_waves_executed_m = (
+        var num_waves_executed_m = (
             FastUInt(num_waves_executed) / self.log_num_waves_n
         )
-        num_waves_executed_n = (
+        var num_waves_executed_n = (
             FastUInt(num_waves_executed) % self.log_num_waves_n
         )
 
         # The wave maps to a BM x grid_shape[1] by BN x grid_shape[0]
         # submatrix in C.
-        wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
-        wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
+        var wave_m = num_waves_executed_m * FastUInt(Self.wave_shape[0])
+        var wave_n = num_waves_executed_n * FastUInt(Self.wave_shape[1])
 
-        m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
-        n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
+        var m_in_wave = FastUInt(idx_in_wave) / log_grid_shape
+        var n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
 
         return (
             Int(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),

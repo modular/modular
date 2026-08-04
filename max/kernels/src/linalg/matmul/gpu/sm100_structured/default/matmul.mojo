@@ -223,7 +223,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     comptime KernelType = type_of(matmul_kernel)
 
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
         a_tma_tile_shape,
@@ -236,7 +236,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
         b_tma_tile_shape,
@@ -585,14 +585,14 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     # Create 2D TMA descriptors using kernel's _splitk layout types
     comptime KernelType = type_of(matmul_kernel)
 
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         KernelType.ATileLayout_splitk,
         KernelType.ADescLayout_splitk,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         KernelType.BTileLayout_splitk,
         KernelType.BDescLayout_splitk,
         Index(
@@ -927,13 +927,13 @@ def matmul_sm100_fallback[
     comptime kernel = fallback_kernel.run
 
     # Create TMA descriptors using kernel-derived layout types
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         FallbackKernelType.ATileLayout,
         FallbackKernelType.ADescLayout,
         Index(BM, BK),
         swizzle_mode=a_swizzle,
     ](ctx, a)
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         FallbackKernelType.BTileLayout,
         FallbackKernelType.BDescLayout,
         Index(BN, BK) if transpose_b else Index(BK, BN),

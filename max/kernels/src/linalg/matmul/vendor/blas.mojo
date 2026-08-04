@@ -1150,8 +1150,8 @@ def _cublasLt_matmul[
         if a_scales or b_scales:
             if not (a_scales and b_scales):
                 raise Error("a_scales and b_scales must be provided together")
-            a_scale_tensor = a_scales.value()
-            b_scale_tensor = b_scales.value()
+            var a_scale_tensor = a_scales.value()
+            var b_scale_tensor = b_scales.value()
 
             comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if scales_type == NVFP4_SF_DTYPE else MXFP8_SF_VECTOR_SIZE
 
@@ -1592,8 +1592,8 @@ def _hipblasLt_matmul[
     if a_scales or b_scales:
         if not (a_scales and b_scales):
             raise Error("a_scales and b_scales must be provided together")
-        a_scale_tensor = a_scales.value()
-        b_scale_tensor = b_scales.value()
+        var a_scale_tensor = a_scales.value()
+        var b_scale_tensor = b_scales.value()
 
         if comptime (scales_type != MXFP8_SF_DTYPE):
             raise Error("Only float8_e8m0fnu(scale type: MXFP8) supported")

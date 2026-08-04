@@ -2354,7 +2354,7 @@ def foreach_out_func[
 
     @always_inline
     def out_func_shim[_width: Int, _alignment: Int = 1](index: Coord) {var}:
-        idx = rebind[IndexList[rank]](coord_to_index_list(index))
+        var idx = rebind[IndexList[rank]](coord_to_index_list(index))
         out_func[_width](idx)
 
     elementwise[

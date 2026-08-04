@@ -116,7 +116,7 @@ struct Table[type: TuningConfig](Writable):
         var search_domain = _get_search_domain()
 
         for idx in search_domain:
-            value = rule(self.configs[idx])
+            var value = rule(self.configs[idx])
             if value not in result:
                 result.append(value)
 

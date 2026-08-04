@@ -1220,7 +1220,7 @@ struct Transpose:
             ]()
         ],
     ):
-        shape, strides = Self.transpose_in_place(input, permutations)
+        var shape, strides = Self.transpose_in_place(input, permutations)
         return {input.unsafe_ptr(), shape, strides}
 
     @staticmethod
@@ -1263,7 +1263,7 @@ struct Transpose:
                     " rank)"
                 )
 
-        shape, _ = Self.transpose_in_place(input, permutations)
+        var shape, _ = Self.transpose_in_place(input, permutations)
         var out = IndexList[input.rank]()
 
         comptime for i in range(input.rank):

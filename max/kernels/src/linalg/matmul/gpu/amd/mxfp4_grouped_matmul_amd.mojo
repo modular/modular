@@ -103,8 +103,8 @@ struct PreShuffledBGroupedGEMM[
         # block_idx.x: 0 2 4 5 6 7 8 9
         # continued:   1 3
 
-        xcd_idx = linear_idx % Self.num_xcd
-        xcd_linear_idx = linear_idx // Self.num_xcd
+        var xcd_idx = linear_idx % Self.num_xcd
+        var xcd_linear_idx = linear_idx // Self.num_xcd
         return xcd_idx * Self.wg_per_xcd + xcd_linear_idx
 
     @staticmethod

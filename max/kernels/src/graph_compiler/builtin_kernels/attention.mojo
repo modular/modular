@@ -464,7 +464,9 @@ struct PaddedFlashAttentionGPU:
         comptime valid_length_t = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
-        _valid_length = rebind[valid_length_t](valid_length.to_layout_tensor())
+        var _valid_length = rebind[valid_length_t](
+            valid_length.to_layout_tensor()
+        )
 
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
@@ -550,7 +552,7 @@ struct RaggedFlashAttentionGPU:
         comptime input_row_offsets_t = LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ]
-        _input_row_offsets = rebind[input_row_offsets_t](
+        var _input_row_offsets = rebind[input_row_offsets_t](
             input_row_offsets.to_layout_tensor()
         )
 
