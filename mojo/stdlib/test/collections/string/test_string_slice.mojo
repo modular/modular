@@ -1087,6 +1087,12 @@ def test_codepoint_indexing() raises:
     assert_equal(StringSlice("🔄🔥🔄")[codepoint=1], "🔥")
     assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
 
+    # ASCII followed by a multi-byte codepoint: the codepoint index no
+    # longer lines up with the byte index once `🙂` (4 bytes) is reached.
+    var mixed = StringSlice("ab🙂cd")
+    assert_equal(mixed[codepoint=2], "🙂")
+    assert_equal(mixed[codepoint=3], "c")
+
 
 def test_codepoint_slicing() raises:
     assert_equal(StringSlice("abc")[codepoint=0:1], "a")
@@ -1120,9 +1126,16 @@ def test_codepoint_slicing() raises:
     assert_equal(elems[codepoint=1:1], "")
     assert_equal(elems[codepoint=2:2], "")
 
+    # `start == count_codepoints()` is a valid (empty) boundary; a start
+    # past that, or a start greater than end, aborts (see
+    # test_string_slice_codepoint_grapheme_bounds_abort.mojo).
     assert_equal(elems[codepoint=3:], "")
-    assert_equal(elems[codepoint=3:2], "")
-    assert_equal(elems[codepoint=2:1], "")
+
+    # ASCII followed by a multi-byte codepoint: the codepoint index no
+    # longer lines up with the byte index once `🙂` (4 bytes) is reached.
+    var mixed = StringSlice("ab🙂cd")
+    assert_equal(mixed[codepoint=2:3], "🙂")
+    assert_equal(mixed[codepoint=3:4], "c")
 
 
 def test_grapheme_indexing() raises:

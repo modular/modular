@@ -537,11 +537,13 @@ This version is still a work in progress.
   equality, and writing) are still restricted to the default address space,
   for any element type.
 
-- `List`, `Span`, and `String`/`StringSlice` (`byte=`) indexing with a
-  contiguous (non-strided) slice now aborts on an invalid slice instead of
-  silently clamping it. `start`/`end` must each be in `0` to `len(container)`
-  (inclusive), with `start <= end`; a negative index is always invalid for a
-  contiguous slice.
+- `List`, `Span`, and `String`/`StringSlice` (`byte=`, `codepoint=`, and
+  `grapheme=`) indexing with a contiguous (non-strided) slice now aborts on
+  an invalid slice instead of silently clamping it. `start`/`end` must each
+  be in `0` to the container's length (`len(container)` for `List`/`Span`,
+  `self.byte_length()` for `byte=`, `self.count_codepoints()` for
+  `codepoint=`, `self.count_graphemes()` for `grapheme=`), inclusive, with
+  `start <= end`; a negative index is always invalid for a contiguous slice.
 
   ```mojo
   var lst: List = [1, 2, 3]
@@ -551,8 +553,10 @@ This version is still a work in progress.
   lst[:-1]    # previously wrapped to `lst[0:2]`; now aborts
 
   var s = "hello"
-  s[byte=0:100]  # previously clamped to `s[byte=0:5]`; now aborts
-  s[byte=-1:]    # previously wrapped to the last byte; now aborts
+  s[byte=0:100]       # previously clamped to `s[byte=0:5]`; now aborts
+  s[byte=-1:]         # previously wrapped to the last byte; now aborts
+  s[codepoint=0:100]  # previously clamped to `s[codepoint=0:5]`; now aborts
+  s[grapheme=3:1]     # previously returned an ill-defined result; now aborts
   ```
 
   The common "all but the last element" idiom must now spell the end index

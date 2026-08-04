@@ -298,20 +298,21 @@ def test_grapheme_slice_empty_ranges() raises:
     assert_equal(s[grapheme=5:5], "")
 
 
-def test_grapheme_slice_out_of_range_clamps() raises:
+def test_grapheme_slice_at_end_boundary() raises:
     var s = StringSlice("Hi")
-    # End past the string clamps to the end.
-    assert_equal(s[grapheme=0:99], "Hi")
-    # Start at/after the end yields empty.
-    assert_equal(s[grapheme=2:99], "")
-    assert_equal(s[grapheme=5:], "")
+    # `start`/`end` exactly at the grapheme count is a valid (empty)
+    # boundary, matching `byte=` slicing. An end past the count, or a start
+    # past the count, aborts instead of clamping (see
+    # test_string_slice_codepoint_grapheme_bounds_abort.mojo).
+    assert_equal(s[grapheme=2:2], "")
+    assert_equal(s[grapheme=2:], "")
+    assert_equal(s[grapheme=0:2], "Hi")
 
 
 def test_grapheme_slice_empty_string() raises:
     var s = StringSlice("")
     assert_equal(s[grapheme=:], "")
     assert_equal(s[grapheme=0:0], "")
-    assert_equal(s[grapheme=0:5], "")
 
 
 def test_grapheme_slice_combining_mark() raises:
