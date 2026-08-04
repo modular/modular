@@ -23,15 +23,30 @@ so you can compare it against the original model's published scores. Once the
 model runs correctly, the [`profile-model`](/gpu-system-profiling) skill
 helps you find where it spends time and whether the GPU is saturated.
 
-## Install the MAX skills
+## Install MAX skills
 
 To equip your AI coding agent with the model bring-up workflow, you must install
 the MAX skills.
 
+### Install with Claude Code
+
+Add the Modular plugin marketplace to Claude Code and install the MAX skills
+plugin:
+
+```text
+/plugin marketplace add modular/skills
+/plugin install max-skills@modular
+```
+
+The `max-skills` plugin includes the model lifecycle skills used on this page
+(`import-model`, `debug-model`, and `eval-model`) along with skills to serve,
+benchmark, and profile models. To install all Modular skills, including the
+Mojo skills, use `skills@modular` instead.
+
 ### Install with npx
 
-If you have Node.js installed, you can add all MAX skills to your
-assistant with a single command:
+With Codex and other agents, install the skills with
+[Node.js](https://nodejs.org/en/download):
 
 ```bash
 npx skills add modular/skills
