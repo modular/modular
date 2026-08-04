@@ -194,22 +194,11 @@ def _flush(file: FileDescriptor = stdout):
 def _printf_cpu[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C printf call. Load
-    # all the members of the pack.
-
     with _fdopen(file) as fd:
-        # FIXME: external_call should handle this
-        _ = __mlir_op.`pop.external_call`[
-            func="KGEN_CompilerRT_fprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<none>,`,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !kgen.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        # int fprintf(FILE *restrict stream, const char *restrict fmt, ...);
+        # The pack is loaded so the variadic arguments are the values
+        # themselves rather than references to them.
+        _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
             # Guarantee this is nul terminated.
             get_static_string[fmt]().unsafe_ptr().unsafe_bitcast[c_char](),
@@ -351,29 +340,16 @@ def _snprintf[
         The number of bytes written into the output string.
     """
 
-    # The argument pack will contain references for each value in the pack,
-    # but we want to pass their values directly into the C snprintf call. Load
-    # all the members of the pack.
-    var loaded_pack = args.get_loaded_kgen_pack()
-
-    # FIXME: external_call should handle this
+    # int snprintf(char *restrict s, size_t n, const char *restrict fmt, ...);
+    # The pack is loaded so the variadic arguments are the values themselves
+    # rather than references to them.
     return Int(
-        __mlir_op.`pop.external_call`[
-            func="snprintf".value,
-            fnType=__mlir_attr[
-                `(`,
-                `!kgen.pointer<scalar<si8>>,`,
-                `!kgen.scalar<index>, `,
-                `!kgen.pointer<scalar<si8>>`,
-                `) -> !kgen.scalar<si32>`,
-            ],
-            _type=Int32,
-        ](
+        external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
             # Guarantee this is nul terminated.
             get_static_string[fmt]().unsafe_ptr(),
-            loaded_pack,
+            args.get_loaded_kgen_pack(),
         )
     )
 

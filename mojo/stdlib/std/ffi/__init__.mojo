@@ -44,6 +44,7 @@ def main() raises:
 ```
 """
 
+from std.collections.optional import OptionalReg
 from std.collections.string.string_slice import (
     _get_kgen_string,
     get_static_string,
@@ -1115,8 +1116,28 @@ def external_call[
     callee: StaticString,
     return_type: RegisterPassable,
     *types: AnyType,
+    num_fixed_args: OptionalReg[Int] = None,
 ](*args: *types) -> return_type:
     """Calls an external function.
+
+    By default every argument is a fixed argument of a non-variadic callee.
+    Pass `num_fixed_args` to call a C variadic function such as `open()` or
+    `snprintf()`, giving how many of the first arguments are fixed arguments of
+    the callee; the arguments after those are passed as variadic arguments.
+    This matters because ABIs such as AAPCS on ARM64 macOS pass variadic
+    arguments differently from fixed ones.
+
+    Examples:
+
+    ```mojo
+    from std.ffi import c_char, c_int, external_call
+
+    # int open(const char *path, int oflag, ...);
+    var path_str = path
+    var fd = external_call["open", c_int, num_fixed_args=2](
+        path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
+    )
+    ```
 
     Args:
         args: The arguments to pass to the external function.
@@ -1125,10 +1146,24 @@ def external_call[
         callee: The name of the external function.
         return_type: The return type.
         types: The argument types.
+        num_fixed_args: The number of fixed arguments of a C variadic callee,
+            or `None` for a non-variadic callee. A count of `0` declares a
+            callee whose every argument is variadic, which `None` cannot
+            express. An argument pack is flattened into one argument per
+            element, so the count must cover the elements rather than the
+            pack, and the fixed arguments must precede any pack.
+
+    Constraints:
+        `num_fixed_args` must not be negative.
 
     Returns:
         The external call result.
     """
+
+    comptime assert num_fixed_args.or_else(0) >= 0, (
+        "`num_fixed_args` counts the fixed arguments of the C variadic callee,"
+        " so it cannot be negative; use `None` for a non-variadic callee"
+    )
 
     comptime if types.contains[String]():
         comptime assert False, (
@@ -1145,16 +1180,47 @@ def external_call[
     var loaded_pack = args.get_loaded_kgen_pack()
     comptime callee_kgen_string = _get_kgen_string[callee]()
 
+    # The presence of the `numFixedArgs` attribute — not its value — is what
+    # declares the callee variadic, so `None` maps to the attribute being
+    # absent while `num_fixed_args=0` maps to a count of zero, which the op
+    # reads as a callee whose every argument is variadic. Hence the duplicated
+    # calls. A negative count takes the attribute-free path too, since the
+    # assert above has already failed the build and emitting the attribute
+    # would bury that message under the op verifier's error.
+    comptime declares_variadic = num_fixed_args.or_else(-1) >= 0
+    # The count is `OptionalReg`, not `Optional`, and is read through `or_else`
+    # rather than `value()`: allocation calls `external_call`, so anything this
+    # function's parameter domain reaches which allocates — `Optional`'s
+    # `Variant` storage, or the `String` that `value()`'s empty-case `abort()`
+    # formats — makes that domain recursively require itself. Elaboration
+    # deadlocks on such a cycle instead of reporting it, so the whole stdlib
+    # stops compiling under `-D ASSERT=all`.
+    comptime fixed_args = num_fixed_args.or_else(0)
+
     comptime if return_type == NoneType:
-        __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
-            loaded_pack
-        )
+        comptime if declares_variadic:
+            __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                numFixedArgs=fixed_args.__mlir_index__(),
+                _type=None,
+            ](loaded_pack)
+        else:
+            __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
+                loaded_pack
+            )
         return rebind_var[return_type](NoneType())
     else:
-        return __mlir_op.`pop.external_call`[
-            func=callee_kgen_string,
-            _type=return_type,
-        ](loaded_pack)
+        comptime if declares_variadic:
+            return __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                numFixedArgs=fixed_args.__mlir_index__(),
+                _type=return_type,
+            ](loaded_pack)
+        else:
+            return __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                _type=return_type,
+            ](loaded_pack)
 
 
 # ===-----------------------------------------------------------------------===#

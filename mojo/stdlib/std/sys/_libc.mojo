@@ -313,7 +313,11 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
     """[`fcntl()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/fcntl.html)
     — file control.
     """
-    return external_call["fcntl", c_int](fd, cmd, args)
+    # The pack is loaded so the variadic arguments are the values themselves
+    # rather than references to them.
+    return external_call["fcntl", c_int, num_fixed_args=2](
+        fd, cmd, args.get_loaded_kgen_pack()
+    )
 
 
 # ===-----------------------------------------------------------------------===#
