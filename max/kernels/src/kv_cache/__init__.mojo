@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Contains implementations for several types of key-value caches.
 
-[KV caches](https://handbook.modular.com/llm-inference-basics/how-does-llm-inference-work/#what-is-kv-cache)
-are used in transformer models to store
+KV caches are used in transformer models to store
 key-value tensors output from self-attention layers, allowing previously
 computed results to be reused across decoding steps.
 
