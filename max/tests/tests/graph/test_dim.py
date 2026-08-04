@@ -18,15 +18,7 @@ import numpy as np
 import pytest
 from max._core.dialects import builtin, kgen
 from max.dtype import DType
-from max.graph import (
-    AlgebraicDim,
-    Dim,
-    DynamicDim,
-    Graph,
-    StaticDim,
-    SymbolicDim,
-    ops,
-)
+from max.graph import AlgebraicDim, Dim, Graph, StaticDim, SymbolicDim, ops
 from max.graph.type import DeviceRef
 
 
@@ -565,28 +557,3 @@ class TestDimTensorValueInterop:
             )
             result = tv // Dim(3)
             assert isinstance(result, type(tv))
-
-
-class TestDynamicDim:
-    """Tests for Dim.dynamic."""
-
-    def test_dim_dynamic_is_a_symbolic_dim(self) -> None:
-        d = Dim.dynamic("k")
-        assert isinstance(d, DynamicDim)
-        assert d.name == "k"
-        # DynamicDim subclasses SymbolicDim, so same-name equality still holds.
-        assert d == Dim("k")
-
-    def test_dim_dynamic_survives_rewrapping(self) -> None:
-        # `isinstance` is the only channel that distinguishes a dynamic dim,
-        # so every path that re-wraps a dim has to preserve the subclass.
-        d = Dim.dynamic("k")
-        assert isinstance(Dim(d), DynamicDim)
-        assert isinstance(SymbolicDim(d), DynamicDim)
-
-    def test_dim_dynamic_does_not_survive_mlir(self) -> None:
-        # `to_mlir` emits a plain symbolic parameter ref, so the marker is
-        # lost on the way back and only holds for Python-side dims.
-        roundtripped = Dim.from_mlir(Dim.dynamic("k").to_mlir())
-        assert roundtripped == Dim("k")
-        assert not isinstance(roundtripped, DynamicDim)

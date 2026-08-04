@@ -13,14 +13,7 @@
 """APIs to build inference graphs for MAX."""
 
 from . import dtype_promotion, ops
-from .dim import (
-    AlgebraicDim,
-    Dim,
-    DimLike,
-    DynamicDim,
-    StaticDim,
-    SymbolicDim,
-)
+from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from .graph import (
     DevicePlacementPolicy,
     Graph,

@@ -691,13 +691,6 @@ This version is still a work in progress.
   the compiler's own attribute evaluation. Unmapped symbols are left
   intact, and a static dimension is always returned unchanged.
 
-- Added `max.graph.Dim.dynamic` and `max.graph.DynamicDim` for a custom op
-  output dimension whose real size is known only once the kernel runs. The
-  graph compiler allocates such an output through the kernel's registered
-  shape function rather than deriving the size from the input shapes, so
-  declaring one for a kernel that registers no shape function is refused up
-  front.
-
 - Added `max.graph.KernelLibrary.has_shape_function`, which reports whether
   a kernel in a loaded library registered a shape function.
 
