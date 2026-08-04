@@ -1,7 +1,5 @@
 {
   "maxConceptsSidebar": [
-    "intro",
-    "faq",
     {
       "label": "Get started",
       "className": "sidebar-heading",

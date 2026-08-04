@@ -10,6 +10,16 @@
     "status": 302
   },
   {
+    "source": "/intro/",
+    "dest": "https://www.modular.com/open-source/max",
+    "status": 302
+  },
+  {
+    "source": "/faq/",
+    "dest": "https://www.modular.com/open-source/max",
+    "status": 302
+  },
+  {
     "source": "/serving/(.*)",
     "dest": "/serve/",
     "status": 302
