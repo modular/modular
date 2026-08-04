@@ -85,6 +85,7 @@ modular_py_library(
         requirement("msgspec"),
         requirement("psutil"),
         requirement("pydantic"),
+        requirement("typing-extensions"),
         "//max/python/max:_core",
         "//max/python/max/_core_mojo",
         "//max/python/max/_distributed_ops",
