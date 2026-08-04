@@ -24,11 +24,14 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from max.algorithm import max as reduce_max
-from max.algorithm import mean
-from max.algorithm import min as reduce_min
-from max.algorithm import product, sum
 from max.algorithm.reduction import _reduce_generator
+from algorithm.reductions import (
+    reduce_max,
+    reduce_mean,
+    reduce_min,
+    reduce_product,
+    reduce_sum,
+)
 
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
@@ -244,32 +247,28 @@ struct Mean:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        mean[
+        reduce_mean[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), Coord(output.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mean")
@@ -564,32 +563,28 @@ struct ReduceAdd:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        sum[
+        reduce_sum[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.add")
@@ -647,32 +642,28 @@ struct ReduceMul:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        product[
+        reduce_product[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -731,20 +722,18 @@ struct ReduceMax:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -752,11 +741,9 @@ struct ReduceMax:
 
         reduce_max[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.max")
@@ -814,20 +801,18 @@ struct ReduceMin:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -835,11 +820,9 @@ struct ReduceMin:
 
         reduce_min[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.min")
