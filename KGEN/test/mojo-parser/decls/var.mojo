@@ -94,6 +94,7 @@ def test_shadowing_reference_shadowed(cond: Bool):
 def var_decls_implicit() raises -> None:
     # Implicit declaration is mutable.
     # CHECK: %x = lit.var.decl "x" imp
+    # expected-warning @+1 {{implicit declaration of 'x' is deprecated; add 'var' before the name}}
     x = 123
 
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <{:scalar<index> 42}>
@@ -114,10 +115,12 @@ def use_int(x: Int):
 def walrus_control_flow(a: Int) raises:
     # CHECK: %b = lit.var.decl
     # CHECK: %curr = lit.var.decl "curr"
+    # expected-warning @+1 {{implicit declaration of 'curr' is deprecated; add 'var' before the name}}
     curr = a
 
     # CHECK: lit.loop {
     # CHECK-NEXT: lit.ref.load %curr
+    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; declare it with 'var' in the function body}}
     while b := curr + 1:
         # lit.loop.break.else
         # CHECK: lit.ref.load %b
@@ -133,6 +136,7 @@ def reuse_implicit(a: Int, cond: __mlir_type.`!kgen.scalar<bool>`) raises:
     # CHECK: hlcf.elif
     if cond:
         # CHECK: lit.ref.store %a, %implicit :
+        # expected-warning @+1 {{implicit declaration of 'implicit' is deprecated; declare it with 'var' in the function body}}
         implicit = a
         # CHECK: lit.ref.load %implicit :
         use_int(implicit)

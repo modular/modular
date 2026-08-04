@@ -36,8 +36,8 @@ def testAlwaysInlineNoDebug():
 
 # CHECK-LABEL: lit.fn @"testImplicitVarDeclScope
 def testImplicitVarDeclScope() raises:
-    # CHECK-DAG: lit.var.decl "outer" {{.*}} loc(#[[LOC_OUTER:.+]])
-    # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER:.+]])
+    # CHECK-DAG: lit.var.decl "outer" imp {{.*}} loc(#[[LOC_OUTER:.+]])
+    # CHECK-DAG: lit.var.decl "inner" imp {{.*}} loc(#[[LOC_INNER:.+]])
     outer = 8
     if True:
         inner = 5
@@ -47,7 +47,7 @@ def testImplicitVarDeclScope() raises:
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
 def testImplicitVarDeclScopeNoDebug() raises:
-    # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER_NODEBUG:.+]])
+    # CHECK-DAG: lit.var.decl "inner" imp {{.*}} loc(#[[LOC_INNER_NODEBUG:.+]])
     if True:
         inner = 5
 

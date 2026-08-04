@@ -70,7 +70,8 @@ from test_package.unknown_nested_module import bar
 import test_package
 
 def assignPackageModule():
-  # expected-error @below {{cannot use package name 'test_package' as a runtime value}}
+  # expected-error @+2 {{cannot use package name 'test_package' as a runtime value}}
+  # expected-warning @+1 {{implicit declaration of 'test_package' is deprecated; add 'var' before the name}}
   test_package = test_package
 
 # // -----

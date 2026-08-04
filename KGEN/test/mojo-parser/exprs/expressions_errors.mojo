@@ -134,7 +134,8 @@ import std.builtin
 def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
     # the package.
-    # expected-error @+1 {{dynamic type values not permitted yet}}
+    # expected-error @+2 {{dynamic type values not permitted yet}}
+    # expected-warning @+1 {{implicit declaration of 'localvar' is deprecated; add 'var' before the name}}
     localvar = std.builtin.Int
 
 ##===----------------------------------------------------------------------===##
@@ -553,6 +554,7 @@ def bad_assignment2():
 
 def bad_walrus_implicit_decl_in_fn():
   # Implicit definition in an 'def' is ok.
+  # expected-warning @+1 {{implicit declaration of 'a' is deprecated; declare it with 'var' in the function body}}
   if a := 4:
     pass
 
