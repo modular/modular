@@ -152,9 +152,9 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     comptime size_per_copy = 16 // size_of[DType.float32]()
     comptime size_per_stage = size_per_copy * 128
 
-    warpgroup_idx, warpgroup_tid = udivmod(thread_idx.x, 128)
+    var warpgroup_idx, warpgroup_tid = udivmod(thread_idx.x, 128)
 
-    smem = unsafe_stack_allocation[
+    var smem = unsafe_stack_allocation[
         size_per_stage * num_stages,
         DType.float32,
         alignment=16,
@@ -164,7 +164,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     # Initialize smem buffer
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * size_per_copy
+            var offset = i * size_per_stage + thread_idx.x * size_per_copy
 
             comptime for j in range(size_per_copy):
                 smem[offset + j] = -1000.0
@@ -195,7 +195,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
     # producer group
     if warpgroup_idx == 0:
         for i in range(num_stages):
-            offset = i * size_per_stage + thread_idx.x * size_per_copy
+            var offset = i * size_per_stage + thread_idx.x * size_per_copy
             async_copy[16](
                 (src.unsafe_ptr() + offset).address_space_cast[
                     AddressSpace.GLOBAL
@@ -212,7 +212,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
         for i in range(num_stages):
             produced_mbar[i].wait(read_pipeline_states.phase())
 
-            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+            var offset = i * size_per_stage + warpgroup_tid * size_per_copy
 
             comptime for j in range(size_per_copy):
                 smem[offset + j] += Float32(i)
@@ -221,7 +221,7 @@ def cpaysnc_producer_consumer_pipeline_kernel[
 
         # write back to global memory.
         for i in range(num_stages):
-            offset = i * size_per_stage + warpgroup_tid * size_per_copy
+            var offset = i * size_per_stage + warpgroup_tid * size_per_copy
 
             comptime for j in range(size_per_copy):
                 dst[offset + j] = smem[offset + j]
@@ -266,7 +266,7 @@ def test_cpasync_producer_consumer_pipeline[
         with dst_device_buffer.map_to_host() as dst:
             for i in range(num_stages):
                 for j in range(size_per_stage):
-                    idx = i * size_per_stage + j
+                    var idx = i * size_per_stage + j
                     if src[idx] + Float32(i) != dst[idx]:
                         print(idx, src[idx], dst[idx])
                         return

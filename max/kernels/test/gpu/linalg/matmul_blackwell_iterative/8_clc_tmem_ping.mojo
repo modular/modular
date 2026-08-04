@@ -590,7 +590,7 @@ def kernel_8[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = external_memory[
+    var base_ptr_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -659,18 +659,18 @@ def kernel_8[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_response = clc_response_ptr.bitcast[UInt128]()
-    clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_response = clc_response_ptr.bitcast[UInt128]()
+    var clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
         SharedMemBarrier
     ]()
-    clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
+    var clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
         SharedMemBarrier
     ]()
 
@@ -852,7 +852,7 @@ def kernel_8[
                 )
 
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -872,11 +872,11 @@ def kernel_8[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             clc_pipe_consumer_state.step()
@@ -928,7 +928,7 @@ def kernel_8[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             # WAIT FOR MMA TO FINISH AND STORE RESULT
@@ -954,7 +954,7 @@ def kernel_8[
             )
             accum_pipeline_consumer_state.step()
 
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             work_info = next_work_info
@@ -1000,11 +1000,11 @@ def blackwell_kernel_8[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(

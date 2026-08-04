@@ -255,17 +255,21 @@ def execute_fused_qk_rope_ragged(
                 mixed_ce_q_ragged_host, mixed_ce_q_ragged_runtime_layout
             )
             for bs_idx in range(batch_size):
-                mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
-                true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
-                mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])
-                mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
+                var mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
+                var true_ce_row_offset = Int(
+                    true_ce_row_offsets_host_ptr[bs_idx]
+                )
+                var mixed_ce_row_offset = Int(
+                    mixed_ce_row_offsets_host_ptr[bs_idx]
+                )
+                var mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
-                true_ce_src_offset = (
+                var true_ce_src_offset = (
                     (true_ce_row_offset + mixed_ce_cache_len)
                     * num_q_heads
                     * kv_params.head_size
                 )
-                mixed_ce_dest_offset = (
+                var mixed_ce_dest_offset = (
                     mixed_ce_row_offset * num_q_heads * kv_params.head_size
                 )
 
@@ -310,9 +314,9 @@ def execute_fused_qk_rope_ragged(
         var paged_lut_tensor = LayoutTensor[DType.uint32, paged_lut_layout](
             paged_lut_host, paged_lut_runtime_layout
         )
-        paged_lut_set = Set[Int]()
+        var paged_lut_set = Set[Int]()
         for bs in range(batch_size):
-            seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
+            var seq_len = true_ce_cache_lens[bs] + true_ce_prompt_lens[bs]
             for block_idx in range(0, ceildiv(seq_len, page_size)):
                 var randval = Int(random_ui64(0, num_paged_blocks - 1))
                 while randval in paged_lut_set:
@@ -475,13 +479,13 @@ def execute_fused_qk_rope_ragged(
 
             print("comparing Q")
             for bs_idx in range(batch_size):
-                true_ce_batch_start_idx = Int(
+                var true_ce_batch_start_idx = Int(
                     true_ce_row_offsets_host_ptr[bs_idx]
                 )
-                mixed_ce_batch_start_idx = Int(
+                var mixed_ce_batch_start_idx = Int(
                     mixed_ce_row_offsets_host_ptr[bs_idx]
                 )
-                mixed_ce_cache_len = Int(
+                var mixed_ce_cache_len = Int(
                     mixed_ce_cache_lengths_host_ptr[bs_idx]
                 )
 
@@ -583,7 +587,7 @@ def execute_fused_qk_rope_ragged(
 
     print("comparing K")
     for bs_idx in range(batch_size):
-        mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
+        var mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
         for tok_idx in range(mixed_ce_prompt_lens[bs_idx]):
             for head_idx in range(kv_params.num_heads):

@@ -164,7 +164,7 @@ def test_kernel[
                     clc_pipe_producer_state
                 )
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -182,7 +182,7 @@ def test_kernel[
         while work_info.is_valid():
             # DO MMA
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -194,7 +194,7 @@ def test_kernel[
             # WAIT FOR MMA TO FINISH AND STORE RESULT
             # scheduler fetch next work
 
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             work_info = next_work_info

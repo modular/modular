@@ -70,7 +70,7 @@ def _test_dispatch[
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
     comptime transpose_b = True
 
-    total_num_tokens = 0
+    var total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
     var M = total_num_tokens
@@ -164,14 +164,14 @@ def _test_dispatch[
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
-    a_scale_dim0 = 0
+    var a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         a_scale_offsets_ptr[i] = UInt32(
             a_scale_dim0
             - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        local_m = num_tokens_by_expert[i]
+        var local_m = num_tokens_by_expert[i]
         a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(local_m)
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
@@ -235,13 +235,13 @@ def _test_dispatch[
 
     # Set a_scales for active expert regions
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        local_m = end - start
-        actual_start = (
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var local_m = end - start
+        var actual_start = (
             start // SF_MN_GROUP_SIZE + Int(a_scale_offsets_ptr[i])
         ) * SF_MN_GROUP_SIZE
-        actual_end = actual_start + local_m
+        var actual_end = actual_start + local_m
         for idx0 in range(actual_start, actual_end):
             for idx1 in range(
                 0,
@@ -258,7 +258,7 @@ def _test_dispatch[
 
     # Zero unused b_scales regions
     for e in range(num_experts):
-        expert_slice_size = (
+        var expert_slice_size = (
             Int(b_scales_host.dim(1))
             * Int(b_scales_host.dim(2))
             * Int(b_scales_host.dim(3))
@@ -361,9 +361,9 @@ def _test_dispatch[
     ] * SF_ATOM_K
 
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        expert_id = expert_ids_host_ptr[i]
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var expert_id = expert_ids_host_ptr[i]
 
         if expert_id < 0 or end - start == 0:
             continue
@@ -433,8 +433,8 @@ def _test_dispatch[
 
     # Zero output regions for skipped experts (expert_id == -1 or 0 tokens)
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
         if expert_ids_host_ptr[i] < 0 or end - start == 0:
             for j in range(start * N, end * N):
                 c_host_ptr[j] = Scalar[c_type](0)

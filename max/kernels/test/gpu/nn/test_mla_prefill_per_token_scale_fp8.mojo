@@ -231,8 +231,8 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    q_bf16_value = q_bf16[Coord(i * seq_len + j, h, d)]
-                    q_scale_value = q_scale[
+                    var q_bf16_value = q_bf16[Coord(i * seq_len + j, h, d)]
+                    var q_scale_value = q_scale[
                         Coord(i * seq_len + j, Idx[0])
                     ].cast[DType.bfloat16]()
                     if d < kv_depth:
@@ -263,8 +263,8 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    k_bf16_value = k_bf16[Coord(i * num_keys + j, h, d)]
-                    k_scale_value = k_scale[
+                    var k_bf16_value = k_bf16[Coord(i * num_keys + j, h, d)]
+                    var k_scale_value = k_scale[
                         Coord(i * num_keys + j, Idx[0])
                     ].cast[DType.bfloat16]()
                     k[Coord(i * num_keys + j, h, d)] = (
@@ -275,7 +275,7 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    v_bf16_value = v_bf16[Coord(i * num_keys + j, h, d)]
+                    var v_bf16_value = v_bf16[Coord(i * num_keys + j, h, d)]
                     v[Coord(i * num_keys + j, h, d)] = (v_bf16_value).cast[
                         qkv_type
                     ]()
@@ -285,8 +285,8 @@ def test_prefill[
         for j in range(num_keys):
             for h in range(cache_num_heads):
                 for d in range(cache_depth):
-                    cache_bf16_value = cache_bf16[Coord(i, j, h, d)]
-                    k_scale_value = k_scale[
+                    var cache_bf16_value = cache_bf16[Coord(i, j, h, d)]
+                    var k_scale_value = k_scale[
                         Coord(i * num_keys + j, Idx[0])
                     ].cast[DType.bfloat16]()
                     cache[Coord(i, j, h, d)] = (
@@ -595,8 +595,8 @@ def test_prefill[
         for j in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    lhs = output[Coord(i * seq_len + j, h, d)]
-                    rhs = output_ref_host[Coord(i, j, h, d)]
+                    var lhs = output[Coord(i * seq_len + j, h, d)]
+                    var rhs = output_ref_host[Coord(i, j, h, d)]
                     if abs(lhs - rhs) > 5e-2:
                         print("[", i, j, h, d, "]", lhs, rhs, lhs / rhs)
                     assert_almost_equal(
