@@ -309,10 +309,21 @@ modular_py_test(
     ],
 )
 
-# Row-wise reduction correctness tests (CPU). Each of the ~31 parametrizations
-# builds and compiles one symbolic-dimension graph, so the wall time is
-# compile-dominated; shard_count parallelizes those compiles across CI workers
-# (see the "Avoid Per-Test Graph Recompilation" guidance in max/CLAUDE.md).
+# Row-wise reduction correctness tests. Each parametrization builds and compiles
+# one symbolic-dimension graph, so the wall time is compile-dominated;
+# shard_count parallelizes those compiles across CI workers (see the "Avoid
+# Per-Test Graph Recompilation" guidance in max/CLAUDE.md). Measured 17m11s
+# unsharded for the ~85 parametrizations on a B200 box (~12.6s each), so 8 shards
+# land near 130s -- enough margin under the 600s `ci-persistent` clamp for a
+# contended worker, which 4 shards (~260s) would not have.
+#
+# Needs a GPU lane: every case is parametrized over CPU and GPU, and the GPU half
+# is the priority -- the cooperative tiers, the cross-thread combine and the
+# split-K path exist only there, and a fault in them can be silent memory
+# corruption rather than a crash. The CPU half pins DeviceRef.CPU() explicitly,
+# so one target on a GPU worker covers both devices with no duplicated compiles.
+# Apple is excluded because `syncwarp` there is execution-only (no shared-memory
+# fence), which the combine's shmem tree relies on.
 modular_py_test(
     name = "test_rowwise_reductions",
     size = "large",
@@ -320,7 +331,15 @@ modular_py_test(
         "conftest.py",
         "test_rowwise_reductions.py",
     ],
-    shard_count = 4,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    shard_count = 8,
+    tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
