@@ -149,16 +149,19 @@ struct Deque[ElementType: Movable](
             destroyed during the initial fill. To build a deque of
             non-`Deinitable` elements, use the variadic constructor.
         """
+        var deque_capacity: Int
         if capacity <= 0:
             deque_capacity = self.default_capacity
         else:
             deque_capacity = next_power_of_two(capacity)
 
+        var min_deque_capacity: Int
         if min_capacity <= 0:
             min_deque_capacity = self.default_capacity
         else:
             min_deque_capacity = next_power_of_two(min_capacity)
 
+        var max_deque_len: Int
         if maxlen <= 0:
             max_deque_len = -1
         else:
@@ -194,6 +197,7 @@ struct Deque[ElementType: Movable](
         """
         var args_length = len(values)
 
+        var capacity: Int
         if args_length < self.default_capacity:
             capacity = self.default_capacity
         else:
@@ -776,10 +780,7 @@ struct Deque[ElementType: Movable](
         """
         var start_normalized = start
 
-        if stop is None:
-            stop_normalized = len(self)
-        else:
-            stop_normalized = stop.value()
+        var stop_normalized = len(self) if stop is None else stop.value()
 
         if start_normalized < 0:
             start_normalized += len(self)
