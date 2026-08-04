@@ -15,7 +15,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import thread_idx, warp_id
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import barrier
+from max.gpu.sync import barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor

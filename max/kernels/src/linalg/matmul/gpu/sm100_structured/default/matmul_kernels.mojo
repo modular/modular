@@ -33,7 +33,8 @@ from std.math import ceildiv
 from std.sys import align_of, size_of
 
 from std.memory import UnsafePointer
-from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
+from std.gpu import WARP_SIZE, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -55,7 +56,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import async_copy_arrive, syncwarp
+from max.gpu.sync import async_copy_arrive, syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     ComptimeInt,

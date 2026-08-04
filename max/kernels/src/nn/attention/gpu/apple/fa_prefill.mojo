@@ -43,9 +43,9 @@ from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
-    syncwarp,
     warp_id,
 )
+from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.mma_apple import (
     _apple_frag_layout,
     _mma_apple_transposable,
@@ -82,7 +82,7 @@ comptime NEG_INF = Float32(-3.0e38)
 def _threadgroup_barrier_mem_none():
     """Threadgroup execution barrier with no memory fence.
 
-    `std.gpu.barrier()` hardcodes `mem_threadgroup` (a full LDS fence); this
+    `max.gpu.barrier()` hardcodes `mem_threadgroup` (a full LDS fence); this
     emits `llvm.air.wg.barrier` with the fence cleared. Apple/M5-only.
 
     Do NOT delete as vestigial: though a runtime no-op for this no-SMEM,

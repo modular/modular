@@ -51,7 +51,7 @@ from std.gpu import (
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.sync import schedule_barrier, s_waitcnt
+from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle

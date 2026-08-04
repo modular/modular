@@ -35,12 +35,12 @@ from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
 from max.gpu.memory import (

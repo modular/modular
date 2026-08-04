@@ -25,19 +25,19 @@ from extensibility import register
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
-from std.gpu.sync import AMDScheduleBarrierMask
-from std.gpu.sync import schedule_barrier as amd_schedule_barrier
-from std.gpu.sync import schedule_group_barrier
+from max.gpu.sync import AMDScheduleBarrierMask
+from max.gpu.sync import schedule_barrier as amd_schedule_barrier
+from max.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 

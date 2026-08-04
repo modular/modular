@@ -13,7 +13,8 @@
 
 from std.math import align_down
 
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import MI355X

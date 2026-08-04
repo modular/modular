@@ -38,15 +38,15 @@ from std.sys import simd_width_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import CacheOperation
-from std.gpu.sync import s_waitcnt
+from max.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 
 from layout import Coord, TensorLayout, TileTensor

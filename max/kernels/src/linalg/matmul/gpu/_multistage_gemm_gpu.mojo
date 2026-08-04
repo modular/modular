@@ -26,12 +26,12 @@ import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,

@@ -14,12 +14,14 @@
 from std.math import exp
 
 from std.gpu import (
-    AMDScheduleBarrierMask,
-    barrier,
     thread_idx,
     block_dim,
     grid_dim,
     lane_id,
+)
+from max.gpu.sync import (
+    AMDScheduleBarrierMask,
+    barrier,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,

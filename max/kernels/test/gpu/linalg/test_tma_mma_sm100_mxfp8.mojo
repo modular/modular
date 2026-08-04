@@ -14,12 +14,12 @@
 from std.sys import size_of, argv
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     warp_id as get_warp_id,
     block_idx,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import external_memory
@@ -47,7 +47,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from std.collections import Optional
 from linalg.utils import elementwise_epilogue_type
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from std.random import random_ui64
 from linalg.fp4_utils import (
     convert_ref_scales_to_mxfp8_format,

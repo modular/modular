@@ -39,7 +39,7 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type

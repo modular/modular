@@ -32,12 +32,12 @@ CDNA4 ISA section 7.2.1.
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import AddressSpace

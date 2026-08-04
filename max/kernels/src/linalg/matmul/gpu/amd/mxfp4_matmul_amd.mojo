@@ -56,14 +56,14 @@ from std.sys import simd_width_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.sync import (
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,

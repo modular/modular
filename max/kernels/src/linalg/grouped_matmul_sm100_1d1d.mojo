@@ -50,7 +50,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,

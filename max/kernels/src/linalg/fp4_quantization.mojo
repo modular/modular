@@ -70,7 +70,7 @@ from linalg.utils import (
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from std.gpu.intrinsics import warpgroup_reg_dealloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import (
@@ -81,7 +81,7 @@ from layout.tma_async import (
 )
 from layout.layout_tensor import LayoutTensorIter
 from max.gpu.memory import external_memory, fence_async_view_proxy
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from std.sys import size_of, align_of, simd_width_of, get_defined_int
 from layout.swizzle import make_swizzle
 from max.algorithm import elementwise

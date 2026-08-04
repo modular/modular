@@ -25,12 +25,12 @@ from std.benchmark import (
 )
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
     warp_id as get_warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import async_copy_wait_all
 from layout import Layout, LayoutTensor

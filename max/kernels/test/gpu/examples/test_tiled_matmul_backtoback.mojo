@@ -21,12 +21,12 @@ from std.sys.info import align_of, simd_width_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE

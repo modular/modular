@@ -49,7 +49,6 @@ from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     global_idx,
@@ -57,6 +56,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim as LaunchDim
 from max.gpu.host import FuncAttribute

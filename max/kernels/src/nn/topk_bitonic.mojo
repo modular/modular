@@ -20,7 +20,8 @@ champion, selecting `K ≤ TILE` out of arbitrarily large `N`.
 
 from std.sys import align_of, size_of
 
-from std.gpu import barrier, block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
 import std.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceAttribute
 from std.memory import unsafe_stack_allocation

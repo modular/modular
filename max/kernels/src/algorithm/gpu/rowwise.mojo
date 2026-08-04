@@ -40,17 +40,17 @@ from std.bit import log2_floor, next_power_of_two
 from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
-    syncwarp,
     thread_idx,
     warp_id,
 )
+from max.gpu import barrier, syncwarp
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.primitives import block
 from std.gpu.intrinsics import threadfence
-from std.gpu.primitives import block, warp
+from std.gpu.primitives import warp
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

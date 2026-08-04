@@ -23,12 +23,12 @@ from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer
 from max.gpu.memory import (
     async_copy_commit_group,

@@ -31,7 +31,8 @@ from std.math import ceildiv, exp, recip
 from std.sys import size_of
 from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
+from std.gpu import WARP_SIZE, warp_id as get_warp_id
+from max.gpu.sync import barrier
 from std.gpu import block_id_in_cluster, lane_id
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -47,7 +48,7 @@ from max.gpu.memory import (
     fence_async_view_proxy,
     cp_async_bulk_tensor_global_shared_cta,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     async_copy_arrive,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,

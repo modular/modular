@@ -36,9 +36,10 @@ from std.sys import align_of, size_of
 from std.atomic import Atomic
 from std.collections import Array
 
-from std.gpu import WARP_SIZE, barrier, block_idx, grid_dim, thread_idx
+from std.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,

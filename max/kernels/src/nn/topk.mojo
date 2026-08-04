@@ -24,13 +24,13 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_dim,
     block_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.info import is_cpu

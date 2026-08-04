@@ -26,12 +26,12 @@ from std.sys import size_of
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu import (
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from std.gpu.sync import named_barrier
+from max.gpu.sync import barrier
+from max.gpu.sync import named_barrier
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
 
 

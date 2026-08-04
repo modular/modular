@@ -59,7 +59,8 @@ genuine consumer of the slice-1 primitive.
 """
 
 from std.atomic import Ordering, fence
-from std.gpu import barrier, block_idx, global_idx, thread_idx
+from std.gpu import block_idx, global_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import bitcast
 from std.sys import has_amd_gpu_accelerator

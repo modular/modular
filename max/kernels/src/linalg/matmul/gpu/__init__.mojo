@@ -31,10 +31,10 @@ from std.algorithm.functional import tile_and_unswitch
 from max.algorithm.functional import elementwise
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     global_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo

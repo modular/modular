@@ -59,7 +59,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Layout
 from layout.tensor_core_async import (

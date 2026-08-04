@@ -24,7 +24,8 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,

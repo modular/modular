@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx

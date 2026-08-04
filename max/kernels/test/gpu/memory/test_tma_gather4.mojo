@@ -52,7 +52,7 @@ from max.gpu.memory import (
     cp_async_bulk_tensor_2d_gather4,
     external_memory,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,

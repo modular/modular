@@ -37,8 +37,10 @@ from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
-from . import warp
+from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from std.gpu.primitives import warp
+
+from max.gpu import barrier
 
 # ===-----------------------------------------------------------------------===#
 # Block Reduction Core

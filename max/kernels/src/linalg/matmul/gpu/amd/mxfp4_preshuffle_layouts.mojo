@@ -43,10 +43,10 @@ Layout reference (canonical):
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, HostBuffer
 from std.math import align_up
 from std.math.uutils import udivmod, uceildiv

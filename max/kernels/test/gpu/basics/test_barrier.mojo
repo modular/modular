@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, global_idx
+from std.gpu import global_idx
+from max.gpu.sync import barrier
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal

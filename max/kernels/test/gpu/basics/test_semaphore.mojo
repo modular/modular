@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import NamedBarrierSemaphore
+from max.gpu.sync import NamedBarrierSemaphore
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE

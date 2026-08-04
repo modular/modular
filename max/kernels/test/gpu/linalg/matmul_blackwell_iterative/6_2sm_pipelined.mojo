@@ -19,7 +19,8 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.bit import prev_power_of_two
-from std.gpu import WARP_SIZE, barrier
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -38,7 +39,7 @@ from std.gpu import (
 from max.gpu.memory import fence_async_view_proxy, external_memory
 from max.gpu.compute.mma import st_matrix
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (

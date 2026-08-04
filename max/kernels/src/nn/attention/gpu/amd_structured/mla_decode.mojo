@@ -43,7 +43,7 @@ from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
-from std.gpu.sync import s_waitcnt
+from max.gpu.sync import s_waitcnt
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from nn.attention.mha_mask import TileMaskStatus

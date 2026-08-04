@@ -96,12 +96,11 @@ from algorithm.reduce_op import ReduceOp, Reducer
 from std.collections import InlineArray, Optional
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     lane_id,
-    syncwarp,
     thread_idx,
     warp_id,
 )
+from max.gpu import barrier, syncwarp
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.memory import external_memory
 from std.gpu.host.info import is_cpu, is_gpu

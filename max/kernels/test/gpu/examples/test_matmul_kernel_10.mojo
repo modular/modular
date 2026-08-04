@@ -36,12 +36,12 @@ from layout import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type

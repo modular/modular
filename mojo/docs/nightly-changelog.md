@@ -1403,6 +1403,7 @@ This version is still a work in progress.
   - `std.gpu.compute` -> `max.gpu.compute`
   - `std.gpu.host` -> `max.gpu.host`
   - `std.gpu.memory` -> `max.gpu.memory`
+  - `std.gpu.sync` -> `max.gpu.sync`
 
 - `AddressSpace` is now target-extensible rather than a fixed, portable enum.
   The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,

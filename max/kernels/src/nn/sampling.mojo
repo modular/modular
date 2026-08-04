@@ -16,7 +16,7 @@ from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.math import isfinite
-import std.gpu.primitives.block as block
+import max.gpu.primitives.block as block
 from max.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext

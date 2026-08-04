@@ -21,11 +21,11 @@ from max.algorithm import parallelize_over_rows
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives import warp
 from max.gpu.memory import external_memory
 from std.collections import Span

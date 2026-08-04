@@ -21,7 +21,8 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod_unchecked
 from std.sys import align_of, size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
@@ -45,7 +46,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     async_copy_arrive,
     umma_arrive_peer_cta,
     named_barrier,

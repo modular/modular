@@ -56,13 +56,13 @@ from max.algorithm.functional import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_idx,
     global_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceContext,
     FuncAttribute,

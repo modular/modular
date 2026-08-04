@@ -20,7 +20,8 @@ from std.sys import align_of, size_of, simd_width_of
 from max.gpu.host.info import B200, H100, _is_sm10x_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_slice import get_static_string
-from std.gpu import WARP_SIZE, barrier
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -41,7 +42,7 @@ from max.gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,

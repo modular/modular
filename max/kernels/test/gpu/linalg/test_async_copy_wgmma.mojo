@@ -14,7 +14,7 @@
 from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx

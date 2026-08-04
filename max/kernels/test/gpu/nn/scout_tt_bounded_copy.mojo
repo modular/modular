@@ -28,7 +28,7 @@ from layout.tile_io import copy_dram_to_sram_async
 from layout.coord import ComptimeInt, Coord, Idx
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.sync import barrier
+from max.gpu.sync import barrier
 from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,

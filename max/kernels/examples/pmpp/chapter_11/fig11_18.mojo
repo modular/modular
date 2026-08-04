@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, WARP_SIZE
+from std.gpu import thread_idx, WARP_SIZE
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id

@@ -19,7 +19,7 @@ from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
-import std.gpu.primitives.block as block
+import max.gpu.primitives.block as block
 from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

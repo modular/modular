@@ -2010,7 +2010,7 @@ struct PerKConsumerStage[
         # Signal the consumer barrier to tell MMA we're done with this stage.
         # This is critical for per-K synchronization - MMA waits on this
         # barrier before each K iteration.
-        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from max.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(
@@ -2158,7 +2158,7 @@ struct EpilogueKContext[
         self.input_pipeline_ptr[].consumer_step()
 
         # Signal output pipeline consumer barrier (for MMA synchronization)
-        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from max.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(

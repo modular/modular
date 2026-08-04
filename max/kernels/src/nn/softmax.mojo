@@ -38,16 +38,16 @@ from std.gpu.primitives.grid_controls import (
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
     ComptimeInt,

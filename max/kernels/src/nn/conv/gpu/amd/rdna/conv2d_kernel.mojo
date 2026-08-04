@@ -24,12 +24,12 @@ load width as the standard matmul kernel's A-tile loader.
 
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.math import ceildiv

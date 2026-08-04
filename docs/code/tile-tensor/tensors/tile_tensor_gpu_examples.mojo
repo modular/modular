@@ -17,10 +17,10 @@ from std.gpu import (
     global_idx,
     block_dim,
     grid_dim,
-    barrier,
     lane_id,
     WARP_SIZE,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
 from layout.tile_layout import row_major, blocked_product

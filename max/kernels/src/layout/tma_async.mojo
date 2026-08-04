@@ -64,7 +64,7 @@ from max.gpu.memory import (
     cp_async_bulk_tensor_2d_gather4,
     CacheEviction,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     mbarrier_arrive,

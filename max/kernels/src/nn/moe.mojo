@@ -27,12 +27,12 @@ from std.bit import pop_count, log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     warp_id,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu.primitives.grid_controls import (
     PDL,

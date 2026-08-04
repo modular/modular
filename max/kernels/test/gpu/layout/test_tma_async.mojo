@@ -14,11 +14,11 @@
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from max.gpu.memory import ReduceOp, fence_async_view_proxy
-from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
+from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor

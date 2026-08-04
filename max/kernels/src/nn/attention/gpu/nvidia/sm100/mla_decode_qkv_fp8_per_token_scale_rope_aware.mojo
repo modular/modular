@@ -67,7 +67,8 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
 from std.sys import size_of
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, block_idx, warp_id
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import launch_dependent_grids

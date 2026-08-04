@@ -17,11 +17,11 @@ from std.gpu import (
     PDL,
     PDLLevel,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     cluster_sync_acquire,
     cluster_sync_release,
@@ -35,7 +35,7 @@ from std.gpu.primitives.grid_controls import (
 )  # @doc_hidden
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
-from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
+from max.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp
 from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation

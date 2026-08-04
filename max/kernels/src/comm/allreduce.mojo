@@ -109,12 +109,12 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_dim,
     global_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

@@ -15,7 +15,7 @@
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from max.gpu.memory import CacheEviction, async_copy
-from std.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
+from max.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_true
 

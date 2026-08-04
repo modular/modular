@@ -13,8 +13,8 @@
 
 import std.time
 
-from max.gpu import memory
-from std.gpu import sync, thread_idx
+from max.gpu import memory, sync
+from std.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 

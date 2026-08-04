@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""GPU programming primitives: thread blocks, async memory, barriers, and sync.
+"""GPU programming primitives.
 
 These low level constructs allow you to write code that runs on the GPU with
 traditional programming style--partitioning work across threads that are mapped
@@ -66,23 +66,3 @@ from .primitives import (
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
-from .sync import (
-    NamedBarrierSemaphore,
-    Semaphore,
-    AMDScheduleBarrierMask,
-    async_copy_arrive,
-    barrier,
-    cp_async_bulk_commit_group,
-    cp_async_bulk_wait_group,
-    mbarrier_arrive,
-    mbarrier_arrive_expect_tx_shared,
-    mbarrier_init,
-    mbarrier_test_wait,
-    mbarrier_try_wait_parity_shared,
-    named_barrier,
-    schedule_barrier,
-    schedule_group_barrier,
-    syncwarp,
-    s_waitcnt,
-    s_waitcnt_barrier,
-)

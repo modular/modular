@@ -40,7 +40,7 @@ from max.gpu.memory import (
     fence_mbarrier_init,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import Layout, TensorLayout, TileTensor
 

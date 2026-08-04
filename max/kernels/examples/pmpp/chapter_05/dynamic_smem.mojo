@@ -16,7 +16,8 @@
 # Uses parameterized tile width with shared memory
 
 from std.math import ceildiv, sqrt
-from std.gpu import block_idx, thread_idx, barrier
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import external_memory
 

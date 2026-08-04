@@ -22,7 +22,8 @@ from std.sys.info import (
     has_apple_gpu_accelerator,
 )
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100, _is_sm10x_gpu, is_gpu

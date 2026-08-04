@@ -19,11 +19,11 @@ from std.algorithm import vectorize
 from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.host.info import is_gpu
 from max.gpu.memory import external_memory

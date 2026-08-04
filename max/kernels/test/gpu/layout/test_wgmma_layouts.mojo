@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, thread_idx, warp_id, lane_id
+from std.gpu import thread_idx, warp_id, lane_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import (
     WGMMADescriptor,

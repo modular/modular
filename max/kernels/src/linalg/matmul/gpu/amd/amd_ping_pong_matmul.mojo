@@ -29,7 +29,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.sync import schedule_barrier, s_waitcnt
+from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 

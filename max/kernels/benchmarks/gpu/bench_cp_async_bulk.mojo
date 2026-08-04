@@ -42,12 +42,12 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import (
-    barrier,
     block_idx,
     grid_dim as gpu_grid_dim,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
@@ -57,7 +57,7 @@ from max.gpu.memory import (
     fence_mbarrier_init,
 )
 from std.gpu.primitives import elect_one_sync
-from std.gpu.sync import (
+from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )

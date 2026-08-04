@@ -19,7 +19,7 @@ from std.gpu import block_idx
 from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,

@@ -29,7 +29,7 @@ from std.benchmark import (
 )
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from max.gpu.host import DeviceContext
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,

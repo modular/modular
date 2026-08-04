@@ -16,9 +16,9 @@ from std.gpu import (
     thread_idx,
     block_idx,
     global_idx,
-    barrier,
     WARP_SIZE,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation, row_major

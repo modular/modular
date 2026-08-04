@@ -33,7 +33,7 @@ from max.gpu.memory import (
     cp_async_bulk_tensor_reduce_global_shared_cta,
     ReduceOp,
 )
-from std.gpu.sync import cp_async_bulk_commit_group
+from max.gpu.sync import cp_async_bulk_commit_group
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
@@ -126,11 +126,11 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
         """Signal accumulator arrival on pipeline barrier."""
 
         comptime if Self.cta_group == 1:
-            from std.gpu.sync import mbarrier_arrive
+            from max.gpu.sync import mbarrier_arrive
 
             _ = mbarrier_arrive(rebind[MbarPtr](pipeline.consumer_mbar(stage)))
         else:
-            from std.gpu.sync import umma_arrive_leader_cta
+            from max.gpu.sync import umma_arrive_leader_cta
 
             umma_arrive_leader_cta(
                 rebind[MbarPtr](pipeline.consumer_mbar(stage))

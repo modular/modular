@@ -67,7 +67,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import WARP_SIZE, barrier
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,

@@ -14,7 +14,8 @@
 from std.math import ceildiv
 
 from std.gpu import global_idx
-from std.gpu.primitives import block, warp
+from max.gpu.primitives import block
+from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal

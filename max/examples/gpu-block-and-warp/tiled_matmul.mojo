@@ -33,8 +33,8 @@ This example uses only open source Mojo libraries.
 from std.math import ceildiv
 from std.sys import exit, has_accelerator
 
-# GPU programming imports from the MAX accelerator library and stdlib
-from std.gpu.sync import barrier
+# GPU programming imports from the MAX accelerator library
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx
 

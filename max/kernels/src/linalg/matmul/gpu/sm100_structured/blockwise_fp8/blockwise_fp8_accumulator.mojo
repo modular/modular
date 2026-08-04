@@ -27,7 +27,7 @@ from std.math import gcd
 from std.math.uutils import umod, ufloordiv
 
 from std.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from layout import (
     Coord,
     Idx,

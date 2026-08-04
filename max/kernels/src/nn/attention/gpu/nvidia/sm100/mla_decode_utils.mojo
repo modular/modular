@@ -22,7 +22,8 @@ from std.collections import OptionalReg
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-from std.gpu import barrier, thread_idx, block_idx, warp_id
+from std.gpu import thread_idx, block_idx, warp_id
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -34,9 +35,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
 )
 
-from std.gpu.sync import (
-    named_barrier,
-)
+from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_ld,

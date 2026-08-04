@@ -31,13 +31,13 @@ from .._multistage_gemm_gpu import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.sync import (
+from max.gpu.sync import barrier
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,

@@ -64,7 +64,7 @@ from linalg.fp4_utils import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 
 
 def _verify_buffers_gpu[

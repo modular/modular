@@ -30,12 +30,12 @@ from std.sys.info import _is_amd_rdna2_or_earlier
 
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
 from std.memory import unsafe_stack_allocation
