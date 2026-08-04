@@ -10,9 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines some type aliases.
+"""Defines Mojo's origin types.
 
-These are Mojo built-ins, so you don't need to import them.
+An origin is a compile-time value that names the variable a reference
+borrows from, and whether that reference permits mutation. The compiler uses
+origins to check that a reference never outlives the value it points to,
+enforce mutable exclusivity between references, and destroy values as soon as
+their last use.
+
+Most origins are inferred automatically—from `ref` arguments, from parametric
+types like `Pointer` and `Span`, or from `origin_of()`. Reach for `Origin` and
+its aliases (`ImmOrigin`, `MutOrigin`, `ImmUntrackedOrigin`,
+`MutUntrackedOrigin`, `ImmStaticOrigin`) when an API needs to name an origin
+explicitly.
+
+For the full picture, see the
+[lifetimes guide](https://mojolang.org/docs/manual/values/lifetimes/).
 """
 
 comptime ImmOrigin = Origin[mut=False]
@@ -153,13 +166,6 @@ comptime StaticConstantOrigin = ImmStaticOrigin
 
 comptime OriginSet = __mlir_type.`!lit.origin.set`
 """A set of origin parameters."""
-
-comptime Never = __mlir_type.`!kgen.never`
-"""A type that can never have an instance constructed, used as a function result
-by functions that never return."""
-
-comptime EllipsisType = __mlir_type.`!lit.ellipsis`
-"""The type of the `...` literal."""
 
 
 comptime _lit_origin_type_of_mut[mut: Bool] = __mlir_type[
