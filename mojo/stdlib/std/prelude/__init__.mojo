@@ -134,30 +134,6 @@ from std.builtin.sort import partition, sort
 from std.builtin.string_literal import StringLiteral
 from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
-from std.builtin.type_aliases import (
-    AnyOrigin,
-    ImmutAnyOrigin,
-    ImmOrigin,
-    ImmutOrigin,
-    MutAnyOrigin,
-    MutOrigin,
-    Never,
-    Origin,
-    OriginSet,
-    ImmStaticOrigin,
-    StaticConstantOrigin,
-    ExternalOrigin,
-    ImmutExternalOrigin,
-    MutExternalOrigin,
-    UntrackedOrigin,
-    ImmUntrackedOrigin,
-    ImmutUntrackedOrigin,
-    MutUntrackedOrigin,
-    UnsafeAnyOrigin,
-    MutUnsafeAnyOrigin,
-    ImmUnsafeAnyOrigin,
-    ImmutUnsafeAnyOrigin,
-)
 from std.builtin.value import (
     Copyable,
     Defaultable,
@@ -201,5 +177,29 @@ from std.memory import (
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,
+)
+from std.origin import (
+    AnyOrigin,
+    ImmutAnyOrigin,
+    ImmOrigin,
+    ImmutOrigin,
+    MutAnyOrigin,
+    MutOrigin,
+    Never,
+    Origin,
+    OriginSet,
+    ImmStaticOrigin,
+    StaticConstantOrigin,
+    ExternalOrigin,
+    ImmutExternalOrigin,
+    MutExternalOrigin,
+    UntrackedOrigin,
+    ImmUntrackedOrigin,
+    ImmutUntrackedOrigin,
+    MutUntrackedOrigin,
+    UnsafeAnyOrigin,
+    MutUnsafeAnyOrigin,
+    ImmUnsafeAnyOrigin,
+    ImmutUnsafeAnyOrigin,
 )
 from std.reflection import reflect
