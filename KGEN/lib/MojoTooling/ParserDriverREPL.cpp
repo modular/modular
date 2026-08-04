@@ -395,7 +395,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
 
   // Insert a preamble of imports used by the expression wrapper.
   if (isFirstREPLCell) {
-    exprOS << "from std.memory import UnsafePointer as "
+    exprOS << "from std.memory import Pointer as "
            << "__mojo_repl_UnsafePointer\n"
            << "from std.python.python import Python as __mojo_repl_Python\n"
            << "from std.memory import UnsafePointer\n";
