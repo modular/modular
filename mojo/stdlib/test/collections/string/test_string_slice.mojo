@@ -930,6 +930,13 @@ def test_lower() raises:
     assert_equal(StringSlice("É").lower(), "é")
     assert_equal(StringSlice("é").lower(), "é")
 
+    assert_equal(StringSlice("").lower(), "")
+    # Deseret, whose case mappings are 4-byte sequences.
+    assert_equal(StringSlice("𐐀").lower(), "𐐨")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR.lower(), "߷കൈ🔄!")
+    # U+023A lowercases to U+2C65, one byte longer than the input.
+    assert_equal(StringSlice("Ⱥ").lower(), "ⱥ")
+
 
 def test_upper() raises:
     assert_equal(StringSlice("hello").upper(), "HELLO")
@@ -940,6 +947,30 @@ def test_upper() raises:
 
     assert_equal(StringSlice("É").upper(), "É")
     assert_equal(StringSlice("é").upper(), "É")
+
+    assert_equal(StringSlice("").upper(), "")
+    assert_equal(StringSlice("𐐨").upper(), "𐐀")
+    assert_equal(EVERY_CODEPOINT_LENGTH_STR.upper(), "߷കൈ🔄!")
+
+    # Codepoints whose uppercase form is a sequence of 2 or 3 codepoints:
+    # `ß` (U+00DF) becomes "SS", and `ΐ` (U+0390) becomes the decomposed
+    # sequence U+0399 U+0308 U+0301.
+    assert_equal(StringSlice("straße").upper(), "STRASSE")
+    var upper_0390 = String(
+        Codepoint.from_u32(0x0399).value(),
+        Codepoint.from_u32(0x0308).value(),
+        Codepoint.from_u32(0x0301).value(),
+    )
+    assert_equal(StringSlice("ΐ").upper(), upper_0390)
+
+    # `ΐ` is 2 bytes but uppercases to 6, so a run of them outgrows the
+    # capacity `to_uppercase` estimates from the input length.
+    var input = String()
+    var expected = String()
+    for _ in range(64):
+        input += "ΐ"
+        expected += upper_0390
+    assert_equal(StringSlice(input).upper(), expected)
 
 
 def test_is_ascii_digit() raises:

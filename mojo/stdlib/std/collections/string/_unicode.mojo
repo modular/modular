@@ -175,7 +175,7 @@ def is_lowercase(s: StringSlice[mut=False, _]) -> Bool:
 
 
 def to_lowercase(s: StringSlice[mut=False, _]) -> String:
-    """Returns a new string with all characters converted to uppercase.
+    """Returns a new string with all characters converted to lowercase.
 
     Args:
         s: Input string.
@@ -183,21 +183,15 @@ def to_lowercase(s: StringSlice[mut=False, _]) -> String:
     Returns:
         A new string where cased letters have been converted to lowercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var input = s.as_bytes()
+    var result = String(capacity=_estimate_needed_size(len(input)))
     var input_offset = 0
-    while input_offset < s.byte_length():
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
+    while input_offset < len(input):
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            input[input_offset:]
         )
-        var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
-        if lowercase_char_opt is None:
-            result.write_string(
-                s[byte = input_offset : input_offset + rune_and_size[1]]
-            )
-        else:
-            result += String(lowercase_char_opt.unsafe_value())
-
-        input_offset += rune_and_size[1]
+        result.append(_get_lowercase_mapping(char).or_else(char))
+        input_offset += num_bytes
 
     return result^
 
@@ -211,13 +205,14 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
     Returns:
         A new string where cased letters have been converted to uppercase.
     """
-    var result = String(capacity=_estimate_needed_size(s.byte_length()))
+    var input = s.as_bytes()
+    var result = String(capacity=_estimate_needed_size(len(input)))
     var input_offset = 0
-    while input_offset < s.byte_length():
-        var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
+    while input_offset < len(input):
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            input[input_offset:]
         )
-        var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
+        var uppercase_replacement_opt = _get_uppercase_mapping(char)
 
         if uppercase_replacement_opt:
             var count: Int
@@ -229,13 +224,11 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
                 uppercase_replacement_opt.unsafe_value()
             )
             for char_idx in range(count):
-                result += String(uppercase_replacement_chars[char_idx])
+                result.append(uppercase_replacement_chars[char_idx])
         else:
-            result.write_string(
-                s[byte = input_offset : input_offset + rune_and_size[1]]
-            )
+            result.append(char)
 
-        input_offset += rune_and_size[1]
+        input_offset += num_bytes
 
     return result^
 
