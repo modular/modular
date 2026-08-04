@@ -623,8 +623,8 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
         # Thus, iter `i` is fulle <= row if `row >= (i + 1)*BN - 1`.
         # `x`, the number of unmasked iters, is thus
         # x = i+1 = (row + 1) // BN
-        num_unmasked = (row + 1) // UInt32(BN)
-        partial_mask_end = self.total_iters[BM, BN, page_size](
+        var num_unmasked = (row + 1) // UInt32(BN)
+        var partial_mask_end = self.total_iters[BM, BN, page_size](
             seq_id, row, num_cols
         )
         return {num_unmasked, partial_mask_end}
@@ -871,11 +871,11 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         var k_start_idx = coord.data[3]
         var k_end_idx = k_start_idx + Scalar[element_type](width) - 1
 
-        q_chunk_idx = Int(
+        var q_chunk_idx = Int(
             coord.data[2] // Scalar[element_type](Self.local_window_size)
         )
-        k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
-        k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
+        var k_start_chunk_idx = Int(k_start_idx) // Self.local_window_size
+        var k_end_chunk_idx = Int(k_end_idx) // Self.local_window_size
 
         if q_chunk_idx == k_start_chunk_idx == k_end_chunk_idx:
             # fully unmasked, return the value
@@ -955,7 +955,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
     def total_iters[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
         # `end_col` is 1 past the last potentially-visible column: the end of
         # the chunk the last query row belongs to, clamped to the cache length.
         # The clamp matters for the NO_MASK partition below: `status()` is
@@ -1315,7 +1315,7 @@ struct SlidingWindowCausalMask[window_size: Int](
         # Thus, we will have unmasked iters when
         # (window_size) // BN - (BM + BN - 2) // BN > 0
         #
-        end_tile = ceildiv(partial_exit_end_col - start_col, UInt32(BN))
+        var end_tile = ceildiv(partial_exit_end_col - start_col, UInt32(BN))
 
         comptime if ((Self.window_size) // BN) > ((BM + BN - 2) // BN):
             # the partial entry region ends when row + BM - 1 is unmasked
@@ -1324,7 +1324,7 @@ struct SlidingWindowCausalMask[window_size: Int](
                 partial_entry_end_col -= UInt32(Self.window_size)
             else:
                 partial_entry_end_col = 0
-            unmasked_end_col = row + 1
+            var unmasked_end_col = row + 1
             return {
                 ceildiv(partial_entry_end_col - start_col, UInt32(BN)),
                 (unmasked_end_col - start_col) // UInt32(BN),
@@ -1537,7 +1537,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
     ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
         # Lower bound shifted by the window; no upper bound (iterate to
         # num_cols) since every tile from start_column on is non-FULL.
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
         return ceildiv(num_cols - start_col, UInt32(BN))
 
     @staticmethod
@@ -1559,7 +1559,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         # Monotonic scan from start_column: PARTIAL tiles (window edge) then
         # NO_MASK (above the band). PARTIAL run is `start_col <= k0 < thresh`,
         # thresh = row + BM - window_size, computed underflow-safe.
-        start_col = self.start_column[BM, BN, page_size](seq_id, row)
+        var start_col = self.start_column[BM, BN, page_size](seq_id, row)
         var total = self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
 
         var row_plus_bm: UInt32 = row + UInt32(BM)

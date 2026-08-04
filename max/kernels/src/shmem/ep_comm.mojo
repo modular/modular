@@ -813,7 +813,7 @@ struct BlockwiseFP8TokenFormat[
             # The first thread in each group stores the scale factor.
             comptime scale_bytes = size_of[Self.scales_dtype]()
             if umod(lane_id(), n_threads_per_group) == 0:
-                scale_idx = ufloordiv(i * src_width, Self.group_size)
+                var scale_idx = ufloordiv(i * src_width, Self.group_size)
                 buf_p.store[alignment=scale_bytes](
                     Self.scales_offset() + scale_idx * scale_bytes,
                     bitcast[DType.uint8, scale_bytes](scale_factor),
@@ -1969,7 +1969,7 @@ struct EPDispatchKernel[
         ),
     ](coord: Coord, out offset: Scalar[out_dtype]):
         comptime if Self.skip_a2a:
-            _coord = Coord((coord[0], Idx[0], coord[2], coord[3]))
+            var _coord = Coord((coord[0], Idx[0], coord[2], coord[3]))
             offset = Self._recv_layout[linear_idx_type=out_dtype](_coord)
         else:
             offset = Self._recv_layout[linear_idx_type=out_dtype](coord)
@@ -1978,7 +1978,7 @@ struct EPDispatchKernel[
     @always_inline
     def recv_count_layout(coord: Coord, out offset: Scalar[DType.int32]):
         comptime if Self.skip_a2a:
-            _coord = Coord((coord[0], Idx[0]))
+            var _coord = Coord((coord[0], Idx[0]))
             offset = Self._recv_count_layout[linear_idx_type=DType.int32](
                 _coord
             )
