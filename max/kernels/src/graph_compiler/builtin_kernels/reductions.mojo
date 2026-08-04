@@ -24,23 +24,20 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
+from max.algorithm import max as reduce_max
+from max.algorithm import mean
+from max.algorithm import min as reduce_min
+from max.algorithm import product, sum
 from max.algorithm.reduction import _reduce_generator
-from algorithm.reductions import (
-    reduce_argmax,
-    reduce_argmin,
-    reduce_max,
-    reduce_mean,
-    reduce_min,
-    reduce_product,
-    reduce_sum,
-)
 
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
 from nn import arg_nonzero
+from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.cumsum import cumsum
-from nn.gather_scatter import _unsafe_normalize_neg_index
+from nn.gather_scatter import _unsafe_normalize_neg_index, normalize_neg_index
 from nn.normalization import (
     apply_qk_rms_norm,
     group_norm,
@@ -88,10 +85,10 @@ struct ArgMax:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: OutputTensor[rank=rank, ...],
+        input: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
@@ -108,32 +105,27 @@ struct ArgMax:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
-        # the new impl handles CPU + GPU and any axis.
-        comptime reduce_dim = axis if axis >= 0 else axis + rank
+        var axis_val = normalize_neg_index(axis, rank)
 
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+        comptime if target == "cpu":
+            argmax(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+                Optional[DeviceContext](ctx),
             )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
 
-        @always_inline
-        def output_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
-            output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
+            # Has no static shape info
+
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            argmax_gpu(
+                ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
             )
-
-        reduce_argmax[
-            input.dtype,
-            target=target,
-            reduce_dim=reduce_dim,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register("mo.reduce.arg_min")
@@ -147,10 +139,10 @@ struct ArgMin:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: OutputTensor[rank=rank, ...],
+        input: InputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
@@ -167,32 +159,25 @@ struct ArgMin:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
-        # the new impl handles CPU + GPU and any axis.
-        comptime reduce_dim = axis if axis >= 0 else axis + rank
+        var axis_val = normalize_neg_index(axis, rank)
 
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[input.rank]](coords)
+        comptime if target == "cpu":
+            argmin(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+                Optional[DeviceContext](ctx),
             )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
 
-        @always_inline
-        def output_fn[
-            width: SIMDLength, _rank: Int
-        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
-            output._lambda_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            argmin_gpu(
+                ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
             )
-
-        reduce_argmin[
-            input.dtype,
-            target=target,
-            reduce_dim=reduce_dim,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register("mo.arg_nonzero")
@@ -259,28 +244,32 @@ struct Mean:
             Error: If the operation parameters are invalid.
         """
 
+        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        reduce_mean[
+        mean[
             output.dtype,
+            input_fn,
+            output_fn,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](Coord(input.shape()), Coord(output.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mean")
@@ -575,28 +564,32 @@ struct ReduceAdd:
             Error: If the operation parameters are invalid.
         """
 
+        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        reduce_sum[
+        sum[
             output.dtype,
+            input_fn,
+            output_fn,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.add")
@@ -654,28 +647,32 @@ struct ReduceMul:
             Error: If the operation parameters are invalid.
         """
 
+        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        reduce_product[
+        product[
             output.dtype,
+            input_fn,
+            output_fn,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -734,18 +731,20 @@ struct ReduceMax:
             Error: If the operation parameters are invalid.
         """
 
+        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -753,9 +752,11 @@ struct ReduceMax:
 
         reduce_max[
             output.dtype,
+            input_fn,
+            output_fn,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.max")
@@ -813,18 +814,20 @@ struct ReduceMin:
             Error: If the operation parameters are invalid.
         """
 
+        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int, rank: Int
-        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
+        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -832,9 +835,11 @@ struct ReduceMin:
 
         reduce_min[
             output.dtype,
+            input_fn,
+            output_fn,
             target=target,
             reduce_dim=axis,
-        ](input_fn, output_fn, Coord(input.shape()), ctx)
+        ](Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.min")
