@@ -1262,6 +1262,7 @@ struct Bench(Writable):
             ref result = run.result
 
             # TODO: remove when kbench adds the spec column
+            var name: String
             if self.config.format == Format.csv:
                 name = String(t'"{run.name}"')
             else:

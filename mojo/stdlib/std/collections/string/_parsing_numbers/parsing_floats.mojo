@@ -372,6 +372,7 @@ def _atof(x: StringSlice) raises -> Float64:
         return FloatLiteral.nan
     elif _is_inf(stripped):
         return FloatLiteral.infinity * sign
+    var w_and_q: Tuple[UInt64, Int64]
     try:
         w_and_q = _get_w_and_q_from_float_string(stripped)
     except e:

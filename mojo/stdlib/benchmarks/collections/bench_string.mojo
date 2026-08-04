@@ -122,6 +122,7 @@ def bench_string_split[
 # ===-----------------------------------------------------------------------===#
 @parameter
 def bench_string_join[short: Bool](mut b: Bencher) raises:
+    var count: Int
     comptime if short:
         count = 100
     else:
