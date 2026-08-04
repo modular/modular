@@ -256,6 +256,7 @@ struct ExternalCubinVecAdd:
         comptime assert target == "gpu"
         gpu_ctx = ctx
 
+        var external_func: DeviceExternalFunction
         with open(getenv("CUBIN_PATH"), "r") as file:
             cubin_data = file.read_bytes()
 

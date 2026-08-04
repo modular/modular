@@ -280,6 +280,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         ) and sm_90
         var sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
+        var num_smem_elements: Int
         comptime if shared_kv:
             num_smem_elements = (
                 self.q_smem_size(sm_90_fa3, persistent)

@@ -205,6 +205,8 @@ struct TileScheduler[
             normalized_m * FastUInt(cluster_dim[1]) + normalized_n
         )
 
+        var new_normalized_m: FastUInt
+        var new_normalized_n: FastUInt
         # CLC rasterize along M by default.
         comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
@@ -213,6 +215,8 @@ struct TileScheduler[
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
+        var new_m_global: FastUInt
+        var new_n_global: FastUInt
         comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
                 FastUInt(cluster_dim[0]) / log_block_swizzle_size

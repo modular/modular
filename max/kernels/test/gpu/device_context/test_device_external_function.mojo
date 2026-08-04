@@ -23,6 +23,7 @@ from std.testing import assert_equal
 
 def test_external_cubin_vec_add(ctx: DeviceContext) raises:
     """Test loading and executing an external cubin for vector addition."""
+    var cubin_data: List[UInt8]
     with open(getenv("CUBIN_PATH"), "r") as file:
         cubin_data = file.read_bytes()
 
@@ -66,6 +67,7 @@ def test_external_cubin_vec_add(ctx: DeviceContext) raises:
 
 def test_external_cubin_vec_add_graph(ctx: DeviceContext) raises:
     """Test adding an external cubin function as a device graph node."""
+    var cubin_data: List[UInt8]
     with open(getenv("CUBIN_PATH"), "r") as file:
         cubin_data = file.read_bytes()
 

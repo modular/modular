@@ -489,6 +489,8 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> Tuple[UInt32, UInt32]:
+        var num_keys: UInt32
+        var start_pos: UInt32
         comptime if _ndbuffer_mha_operand:
             num_keys = UInt32(
                 warp.broadcast(
@@ -732,6 +734,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     # make sure all the fp8_regs are loaded
     named_barrier[64](6)
 
+    var scale: Scalar[KRopeType.scale_dtype]
     comptime for i in range(num_regs // 4):
         var row = UInt32(i * 2) + t_row
         var col = t_col * 4

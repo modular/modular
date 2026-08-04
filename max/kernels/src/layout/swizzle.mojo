@@ -685,6 +685,7 @@ def eval_composed[
     comptime shape_a = flatten(composed_layout.layout_a.shape)
     comptime stride_a = flatten(composed_layout.layout_a.stride)
 
+    var coord_i: Int
     comptime for i in range(len(stride_a)):
         comptime s = shape_a[i].value()
         comptime st = stride_a[i].value()

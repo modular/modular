@@ -223,6 +223,7 @@ def _test_rope_ragged_gpu_impl[
         q_layout.static_product
     )
     ctx.synchronize()
+    var expected_q_out_buffer: List[Scalar[dtype]]
     comptime if has_position_ids:
         expected_q_out_buffer = q_out_golden_with_position_ids[dtype]()
     else:

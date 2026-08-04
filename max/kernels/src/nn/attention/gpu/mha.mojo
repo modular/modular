@@ -2658,6 +2658,7 @@ def mha[
     def q_block_idx() -> Int:
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
+    var q_batch_offset: Int
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
         var start_of_seq = Int(valid_length[batch_idx])
@@ -3386,6 +3387,7 @@ def mha_single_batch[
             v_smem_iter.layout.stride[0].value() // simd_size,
         )
 
+        var v_tensor: type_of(v_gmem_iter[])
         # load V tile into smem
         comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
@@ -5088,6 +5090,7 @@ def mha_decoding_single_batch[
             k_smem_iter.layout.stride[0].value() // simd_size,
         )
 
+        var k_tensor: type_of(k_gmem_iter[])
         # load K tile into smem
         comptime for k_id in range(depth // BK):
             var k_smem_tile = k_smem_iter.next_unsafe(
@@ -5218,6 +5221,7 @@ def mha_decoding_single_batch[
             BN // simd_size,
         )
 
+        var v_tensor: type_of(v_gmem_iter[])
         # load V tile into smem
         comptime for v_id in range(BN // BK):
             var v_smem_tile = v_smem_iter.next_unsafe(
