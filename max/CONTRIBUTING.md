@@ -47,7 +47,7 @@ summarizes code paths and contribution status for more significant changes.
 
 | Path                                | Description                       | Status                                                                     |
 |-------------------------------------|-----------------------------------|----------------------------------------------------------------------------|
-| `max/compiler/src`, `include/max/c` | Closed source bindings            | N/A                                                                        |
+| `max/include/max/c`                 | Closed source bindings            | N/A                                                                        |
 | `max/docs`                          | Developer documentation           | Contributions welcome                                                      |
 | `max/examples`                      | Code examples                     | Contributions welcome                                                      |
 | `max/kernels`                       | Public MAX kernels                | See `max/kernels/CONTRIBUTING.md`                                          |
@@ -59,9 +59,9 @@ For code under `max/python/max`:
 | Path                                           | Description                   | Status                               |
 |------------------------------------------------|-------------------------------|--------------------------------------|
 | `benchmark`                                    | Benchmarking scripts          |                                      |
-| `config`, `interfaces`                         | Core MAX Serve infrastructure | Under active development             |
+| `config`                                       | Core MAX Serve infrastructure | Under active development             |
 | `driver`, `dtype`, `engine`, `mlir`, `support` | Low-level APIs                |                                      |
-| `entrypoints`, `profiler`                      | Tools and high-level APIs     |                                      |
+| `_entrypoints`, `profiler`                     | Tools and high-level APIs     |                                      |
 | `experimental`                                 | APIs under development        | Under active development             |
 | `graph`                                        | Stable MAX graph API          | Discuss before adding nontrivial ops |
 | `kv_cache`                                     | LLM KV cache APIs             | Under active development             |
