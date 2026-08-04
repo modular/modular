@@ -600,7 +600,9 @@ def gemv_split_k[
     var tile_id_n = block_idx.y * tile_n
     var tid = thread_idx.x
     var tile_w = tt_stack_allocation[
-        dtype=b_type, address_space=AddressSpace.LOCAL
+        dtype=b_type,
+        address_space=AddressSpace.LOCAL,
+        alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
     # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector

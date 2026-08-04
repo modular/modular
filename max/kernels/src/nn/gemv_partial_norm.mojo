@@ -236,7 +236,9 @@ def gemv_partial_norm_kernel[
             )
 
     var tile_w = tt_stack_allocation[
-        dtype=b_type, address_space=AddressSpace.LOCAL
+        dtype=b_type,
+        address_space=AddressSpace.LOCAL,
+        alignment=simd_width * size_of[b_type](),
     ](row_major[tile_n, simd_width]())
     var acc = tt_stack_allocation[
         dtype=accum_type, address_space=AddressSpace.LOCAL
