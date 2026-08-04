@@ -703,21 +703,23 @@ class PipelineConfig(ConfigFileModel):
         speculative_kwargs = PipelineConfig._extract_kwargs_for_config(
             kwargs, SpeculativeConfig
         )
-        # Only create speculative config if speculative_method is explicitly set
-        if not (
-            speculative_kwargs
-            and speculative_kwargs.get("speculative_method") is not None
-        ):
-            return
-
-        # Remove None values to use defaults
         filtered_kwargs = {
             k: v for k, v in speculative_kwargs.items() if v is not None
         }
-        if not filtered_kwargs:
-            return
 
-        self.speculative = SpeculativeConfig(**filtered_kwargs)
+        if self.speculative is not None:
+            # Merge CLI overrides onto the config-file's speculative config so a
+            # partial override (e.g. --num-speculative-tokens) wins over the
+            # recipe instead of being dropped (mirrors the kv_cache merge).
+            if not filtered_kwargs:
+                return
+            self.speculative = SpeculativeConfig(
+                **{**self.speculative.model_dump(), **filtered_kwargs}
+            )
+        elif filtered_kwargs.get("speculative_method") is not None:
+            self.speculative = SpeculativeConfig(**filtered_kwargs)
+        else:
+            return
         # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
         if self.speculative.is_eagle() and self.draft_model is not None:
             if len(self.draft_model.huggingface_config.architectures) != 1:

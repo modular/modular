@@ -346,6 +346,89 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
     assert result.output.strip() == "local|0.8|False"
 
 
+def test_speculative_flag_preserves_yaml_recipe_speculative_fields(
+    tmp_path: Path,
+) -> None:
+    """A speculative CLI flag must merge into (not be dropped by) a YAML-loaded
+    ``speculative`` config: --num-speculative-tokens overrides the recipe value
+    while the recipe's ``speculative_method`` survives (regression, MXF-594)."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "speculative:\n"
+        "  speculative_method: mtp\n"
+        "  num_speculative_tokens: 3\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(
+        config_file=str(config_path),
+        num_speculative_tokens=2,
+    )
+
+    assert config.speculative is not None
+    assert config.speculative.num_speculative_tokens == 2
+    assert config.speculative.speculative_method == "mtp"
+
+
+def test_speculative_flag_via_cli_preserves_config_file_fields(
+    tmp_path: Path,
+) -> None:
+    """Same as above, but through Click so the default-stripping step the
+    flat-kwargs path skips is exercised for the exact reported invocation."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "speculative:\n"
+        "  speculative_method: mtp\n"
+        "  num_speculative_tokens: 3\n",
+        encoding="utf-8",
+    )
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs: Any) -> None:
+        spec = PipelineConfig.from_flat_kwargs(**kwargs).speculative
+        assert spec is not None
+        click.echo(f"{spec.speculative_method}|{spec.num_speculative_tokens}")
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "--config-file",
+            str(config_path),
+            "--num-speculative-tokens",
+            "2",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "mtp|2"
+
+
+def test_recipe_speculative_intact_without_speculative_flags(
+    tmp_path: Path,
+) -> None:
+    """A recipe-only speculative config is preserved verbatim when no
+    speculative CLI flag is passed."""
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(
+        "model:\n"
+        "  model_path: fake/model\n"
+        "speculative:\n"
+        "  speculative_method: mtp\n"
+        "  num_speculative_tokens: 3\n",
+        encoding="utf-8",
+    )
+
+    config = PipelineConfig.from_flat_kwargs(config_file=str(config_path))
+
+    assert config.speculative is not None
+    assert config.speculative.speculative_method == "mtp"
+    assert config.speculative.num_speculative_tokens == 3
+
+
 def test_model_path_override_warns_about_mismatched_recipe(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,

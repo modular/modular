@@ -904,6 +904,12 @@ This version is still a work in progress.
   other unnamed `kv_cache` field) to its default, disabling the connector.
   KV-cache flags now merge onto the recipe's values, so a partial override
   changes only what it names.
+- Fixed speculative-decoding CLI flags being silently dropped when a
+  `--config-file` recipe already set a `speculative` section. For example,
+  passing `--num-speculative-tokens 2` alongside a recipe that sets
+  `speculative_method: mtp` used to keep the recipe's token count and ignore
+  the flag. Speculative flags now merge onto the recipe's values, so a partial
+  override changes only what it names.
 - Fixed MAX Serve container pods ignoring `SIGTERM` during the model
   cold-start window. The serving image ran Python directly as PID 1, and the
   Linux kernel silently discards a default-disposition signal sent to a
