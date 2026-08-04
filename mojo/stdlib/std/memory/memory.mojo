@@ -415,10 +415,11 @@ def _memset_impl(ptr: Pointer[mut=True, Byte, ...], value: Byte, count: Int):
 def unsafe_memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
-    For memory in the generic address space, prefer the safe, bounds-carrying
-    `Span.fill()` (for example, `my_span.fill(value)` on a `Span[Byte]`). This
-    raw entry point remains for pointers in non-generic address spaces (for
-    example, GPU shared or local memory), which `Span` cannot yet represent.
+    Prefer the safe, bounds-carrying `Span.fill()` (for example,
+    `my_span.fill(value)` on a `Span[Byte]`), which works in every address
+    space. This raw entry point fills at byte granularity, so unlike
+    `Span.fill()` it applies to elements of any type, including types that
+    cannot cross an address-space boundary as a value.
 
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
@@ -450,10 +451,10 @@ def memset(ptr: Pointer[mut=True, ...], value: Byte, count: Int):
 def unsafe_memset_zero(ptr: Pointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
-    For memory in the generic address space, prefer the safe, bounds-carrying
-    `Span.fill(0)`. This raw entry point remains for pointers in non-generic
-    address spaces (for example, GPU shared or local memory), which `Span`
-    cannot yet represent.
+    Prefer the safe, bounds-carrying `Span.fill(0)`, which works in every
+    address space. This raw entry point fills at byte granularity, so unlike
+    `Span.fill()` it applies to elements of any type, including types that
+    cannot cross an address-space boundary as a value.
 
     Args:
         ptr: Pointer to the beginning of the memory block to fill.
