@@ -1047,12 +1047,9 @@ struct Span[
             This function does not do bounds checking and assumes the current
             span contains the specified subspan.
         """
-        debug_assert(
-            0 <= offset < len(self),
-            "offset out of bounds: ",
-            offset,
-        )
-        assert 0 <= offset + length <= len(self), "subspan out of bounds."
+        assert (
+            0 <= offset and 0 <= length and offset + length <= len(self)
+        ), "subspan out of bounds."
         return Self(unsafe_ptr=self._data.unsafe_offset(offset), length=length)
 
     @__allow_legacy_custom_self_type
