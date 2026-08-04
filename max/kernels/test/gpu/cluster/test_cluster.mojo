@@ -44,32 +44,32 @@ def cluster_launch_control(
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
-    result = unsafe_stack_allocation[
+    var result = unsafe_stack_allocation[
         1,
         UInt128,
         address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
-    mbar = unsafe_stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
-    bx = UInt32(block_idx.x)
-    tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
+    var bx = UInt32(block_idx.x)
+    var tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
     if tidx < UInt32(n):
         data[tidx] = 1.0
 
-    phase: UInt32 = 0
+    var phase: UInt32 = 0
 
     # Single thread barrier.
     if thread_idx.x == 0:
         mbar[0].init(1)
 
-    alpha = Int64(thread_idx.x)
+    var alpha = Int64(thread_idx.x)
 
     # Work-straling loop.
     while True:
@@ -199,7 +199,7 @@ def pipeline_test_kernel[
 def test_cluster_launch_control(ctx: DeviceContext) raises:
     comptime n = 4000
 
-    data = ctx.enqueue_create_buffer[DType.float32](n)
+    var data = ctx.enqueue_create_buffer[DType.float32](n)
 
     comptime kernel = cluster_launch_control
     ctx.enqueue_function[kernel](

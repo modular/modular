@@ -223,7 +223,7 @@ def b2b_gemm[
     ) if swizzle_block else Index(block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = udivmod(warp_id, num_warps_n)
+    var warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare shared memory buffers for A, B, and C.
     # We load our entire local `A` block into shared

@@ -211,7 +211,7 @@ struct BF16DispatchTest[
         hid_dim_idx: Int,
         expected_val: BFloat16,
     ) raises -> None:
-        device_val = self.host_output_bufs_list[dev_idx][
+        var device_val = self.host_output_bufs_list[dev_idx][
             slot_idx * Self.max_recv_num_tokens * Self.hidden_size
             + token_idx * Self.hidden_size
             + hid_dim_idx

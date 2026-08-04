@@ -26,7 +26,7 @@ def test_external_cubin_vec_add(ctx: DeviceContext) raises:
     with open(getenv("CUBIN_PATH"), "r") as file:
         cubin_data = file.read_bytes()
 
-    external_func = DeviceExternalFunction(
+    var external_func = DeviceExternalFunction(
         ctx,
         function_name="vec_add",  # matches extern "C" name
         # DeviceExternalFunction takes a StringSlice, which is probably wrong.
@@ -35,12 +35,12 @@ def test_external_cubin_vec_add(ctx: DeviceContext) raises:
     )
 
     comptime length = 1024
-    block_dim = 32
-    grid_dim = length // block_dim
+    var block_dim = 32
+    var grid_dim = length // block_dim
 
-    in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    in1 = ctx.enqueue_create_buffer[DType.float32](length)
-    out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):
@@ -69,7 +69,7 @@ def test_external_cubin_vec_add_graph(ctx: DeviceContext) raises:
     with open(getenv("CUBIN_PATH"), "r") as file:
         cubin_data = file.read_bytes()
 
-    external_func = DeviceExternalFunction(
+    var external_func = DeviceExternalFunction(
         ctx,
         function_name="vec_add",  # matches extern "C" name
         # DeviceExternalFunction takes a StringSlice, which is probably wrong.
@@ -78,12 +78,12 @@ def test_external_cubin_vec_add_graph(ctx: DeviceContext) raises:
     )
 
     comptime length = 1024
-    block_dim = 32
-    grid_dim = length // block_dim
+    var block_dim = 32
+    var grid_dim = length // block_dim
 
-    in0 = ctx.enqueue_create_buffer[DType.float32](length)
-    in1 = ctx.enqueue_create_buffer[DType.float32](length)
-    out = ctx.enqueue_create_buffer[DType.float32](length)
+    var in0 = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1 = ctx.enqueue_create_buffer[DType.float32](length)
+    var out = ctx.enqueue_create_buffer[DType.float32](length)
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):

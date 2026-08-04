@@ -164,12 +164,12 @@ def execute_ragged_flash_attention[
     # copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
-        unpadded_seq_len = valid_lengths[bs]
-        ragged_start_idx = Int(input_row_offsets_host[bs])
-        padded_ptr = q_padded_host.ptr + (
+        var unpadded_seq_len = valid_lengths[bs]
+        var ragged_start_idx = Int(input_row_offsets_host[bs])
+        var padded_ptr = q_padded_host.ptr + (
             bs * max_prompt_length * num_q_heads * kv_params.head_size
         )
-        ragged_ptr = q_ragged_host.ptr + (
+        var ragged_ptr = q_ragged_host.ptr + (
             ragged_start_idx * num_q_heads * kv_params.head_size
         )
         unsafe_memcpy(
@@ -317,13 +317,13 @@ def execute_ragged_flash_attention[
         sink_weights=sink_weights_device_tensor,
     )
     # Verify results
-    row_offsets_tensor = input_row_offsets.tensor()
+    var row_offsets_tensor = input_row_offsets.tensor()
     var test_out_tensor = test_output.tensor()
     var ref_out_tensor = ref_output.tensor()
 
     for bs in range(batch_size):
-        prompt_len = valid_lengths[bs]
-        ragged_offset = Int(row_offsets_tensor[bs])
+        var prompt_len = valid_lengths[bs]
+        var ragged_offset = Int(row_offsets_tensor[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -357,10 +357,10 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
         comptime for dtype_idx in range(len(dtypes)):
             comptime dtype = dtypes[dtype_idx]
 
-            ce_cache_sizes = List[Int]()
-            ce_seq_lens = List[Int]()
-            tg_cache_sizes = List[Int]()
-            tg_seq_lens = List[Int]()
+            var ce_cache_sizes = List[Int]()
+            var ce_seq_lens = List[Int]()
+            var tg_cache_sizes = List[Int]()
+            var tg_seq_lens = List[Int]()
             for _ in range(bs):
                 tg_seq_lens.append(1)
                 tg_cache_sizes.append(Int(random_ui64(512, 1024)))

@@ -57,8 +57,8 @@ def execute_flash_attention[
         ")",
     )
 
-    max_prompt_len = 0
-    max_context_len = 0
+    var max_prompt_len = 0
+    var max_context_len = 0
 
     for i in range(batch_size):
         max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
