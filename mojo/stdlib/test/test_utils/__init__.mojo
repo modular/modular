@@ -19,6 +19,7 @@ from .test_utils import libm_call, check_write_to
 from .types import (
     AbortOnCopy,
     AbortOnDel,
+    CopyableExplicitDestroyKey,
     CopyCountedStruct,
     CopyCounter,
     DelCounter,

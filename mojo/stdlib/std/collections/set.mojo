@@ -86,7 +86,7 @@ struct Set[
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = _DictKeyIter[
-        downcast[Self.T, KeyElement & Copyable & Deinitable],
+        downcast[Self.T, KeyElement & Copyable],
         NoneType,
         Self.H,
         iterable_origin,
@@ -510,7 +510,7 @@ struct Set[
             Self.T, Copyable
         ), "Set iteration requires the element type to be `Copyable`."
         comptime DictCopyable = Dict[
-            downcast[Self.T, KeyElement & Copyable & Deinitable],
+            downcast[Self.T, KeyElement & Copyable],
             NoneType,
             Self.H,
         ]

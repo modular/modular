@@ -96,6 +96,53 @@ struct ExplicitDestroyKey(Deinitable where False, Equatable, Hashable, Movable):
 
 
 # ===----------------------------------------------------------------------=== #
+# CopyableExplicitDestroyKey
+# ===----------------------------------------------------------------------=== #
+
+
+@explicit_destroy("Use .destroy() to consume `CopyableExplicitDestroyKey`")
+@fieldwise_init
+struct CopyableExplicitDestroyKey(
+    Copyable, Deinitable where False, Equatable, Hashable
+):
+    """Linear key type that is nonetheless `Copyable`: `Copyable`, `Hashable`,
+    and `Equatable`, but explicitly-destroyed (not `Deinitable`).
+
+    Separates bounds that genuinely need `Deinitable` from those that
+    only need `Copyable`, which `ExplicitDestroyKey` cannot distinguish because
+    it is move-only."""
+
+    var value: Int
+    """Int data."""
+
+    def __eq__(self, other: Self) -> Bool:
+        """Compare two keys on their payload.
+
+        Args:
+            other: The other key to compare against.
+
+        Returns:
+            `True` if the payloads are equal, `False` otherwise.
+        """
+        return self.value == other.value
+
+    def __hash__[H: Hasher](self, mut hasher: H):
+        """Hash the payload using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        self.value.__hash__(hasher)
+
+    def destroy(deinit self):
+        """Destroys self."""
+        pass
+
+
+# ===----------------------------------------------------------------------=== #
 # MoveOnly
 # ===----------------------------------------------------------------------=== #
 

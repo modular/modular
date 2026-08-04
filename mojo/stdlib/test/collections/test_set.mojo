@@ -14,7 +14,12 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import ExplicitDestroyKey, MoveOnly, check_write_to
+from test_utils import (
+    CopyableExplicitDestroyKey,
+    ExplicitDestroyKey,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import (
     assert_false,
     assert_equal,
@@ -591,6 +596,30 @@ def test_set_iter_owned() raises:
     assert_true(1 in elems)
     assert_true(2 in elems)
     assert_true(3 in elems)
+
+
+def test_set_iter_copyable_linear_element() raises:
+    # Borrowing iteration only reads elements, so it requires `Copyable` but
+    # not `Deinitable` -- a linear element type still iterates.
+    var s = Set[CopyableExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: CopyableExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    s.insert(CopyableExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(CopyableExplicitDestroyKey(2)).deinit_with(dispose)
+
+    var seen = List[Int]()
+    for element in s:
+        seen.append(element.value)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len(seen), 2)
+    assert_true(1 in seen)
+    assert_true(2 in seen)
 
 
 def test_set_iter_owned_bounds() raises:
