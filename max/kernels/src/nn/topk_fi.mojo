@@ -946,6 +946,15 @@ def TopKSamplingFromProbKernel[
             var low: Float32 = 0.0
             var high: Float32 = 1.0
 
+            # Seeded once, because the slot deliberately persists across
+            # iterations as the "last index above `low`" fallback. It is
+            # written only when some element qualifies, so without this seed a
+            # row that is degenerate on the FIRST iteration reads whatever the
+            # previous workgroup left in shared memory and uses it as an index.
+            if tx == 0:
+                last_valid_id_sram[0] = -1
+            barrier()
+
             while low < high:
                 if tx == 0:
                     sampled_id_sram[0] = _d
@@ -995,6 +1004,14 @@ def TopKSamplingFromProbKernel[
                     # sum of probabilities is smaller than u. In this case
                     # we use the last valid index as the sampled id.
                     sampled_id = last_valid_id_sram[0]
+
+                if sampled_id < 0:
+                    # Degenerate row: nothing ever exceeded `low`, so there is
+                    # no candidate to sample and the bracket cannot narrow
+                    # (`low` would stay put and this would spin). Emit an
+                    # in-range index and stop.
+                    sampled_id = 0
+                    break
 
                 var pivot_0 = Float32(
                     probs_row.load[width=1]((Idx[0], sampled_id))
@@ -1565,6 +1582,12 @@ def TopKTopPSamplingFromProbKernel[
             var low: Float32 = 0.0
             var high: Float32 = 1.0
 
+            # Seeded once; see the top-k kernel above for why the slot cannot
+            # be left to whatever the previous workgroup wrote.
+            if tx == 0:
+                last_valid_id_sram[0] = -1
+            barrier()
+
             while low < high:
                 if tx == 0:
                     sampled_id_sram[0] = _d
@@ -1610,6 +1633,14 @@ def TopKTopPSamplingFromProbKernel[
                 sampled_id = sampled_id_sram[0]
                 if sampled_id == _d:
                     sampled_id = last_valid_id_sram[0]
+
+                if sampled_id < 0:
+                    # Degenerate row: nothing ever exceeded `low`. From logits,
+                    # one non-finite value does it -- `row_max` goes +inf, so
+                    # every weight is exp(inf-inf)=NaN or exp(-inf)=0 and no
+                    # comparison can be true. Emit an in-range index and stop.
+                    sampled_id = 0
+                    break
 
                 var pivot_0 = Float32(load_dist[1](sampled_id))
                 var pivot_1 = (pivot_0 + high) / 2.0
