@@ -141,7 +141,7 @@ The code lives in the `transformers` package, which is read-only by default.
 Make it editable with this script:
 
 ```bash
-bash utils/local_transformers_setup/setup_local_transformers.sh
+bash oss/modular/utils/local_transformers_setup/setup_local_transformers.sh
 ```
 
 To find the model's source code, refer to the `torch_tensors.log` from the first
@@ -247,7 +247,7 @@ issue, or you have enough information to submit a detailed bug report.
 When you're done, remember to restore the read-only transformers installation:
 
 ```bash
-bash utils/local_transformers_setup/cleanup_local_transformers.sh
+bash oss/modular/utils/local_transformers_setup/cleanup_local_transformers.sh
 ```
 
 ## Common issues
