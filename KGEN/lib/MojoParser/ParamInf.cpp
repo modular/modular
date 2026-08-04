@@ -1724,8 +1724,12 @@ LogicalResult CallParamInf::inferOptionalLiteralSize() {
               .emitInt({ASTExprAnd<AnyValue>(size, &dummyNode)},
                        ExprContext::EC_ParameterList)
               .getIfPValue();
-      if (!literalSize)
+      if (!literalSize) {
+        getMojoDiag(callOperands.getExprLoc())
+            << "cannot infer the size of the list literal with a previously "
+               "diagnosed error";
         return failure();
+      }
 
       setInferredValue(idx, literalSize);
       return success();
