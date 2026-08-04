@@ -278,7 +278,7 @@ column. This will come into play later when we implement the algorithm for
 calculating each subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
-[`Int`](/docs/std/builtin/int/Int/), which represents a signed integer of the
+[`Int`](/docs/std/builtin/simd/#int), which represents a signed integer of the
 [word size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the
 CPU, typically 32 or 64 bits.
 
@@ -1074,7 +1074,7 @@ signed 64-bit integer value. As described in [Numeric
 types](/docs/manual/types#numeric-types), this is *not* the same as the `Int`
 type, whose precision is dependent on the native word size of the system.
 Therefore, we're passing this value to the
-[`Int()`](/docs/std/builtin/int/Int/#__init__) constructor, which explicitly
+[`Int()`](/docs/std/builtin/simd/SIMD/#__init__) constructor, which explicitly
 converts a numeric value to an `Int`.
 
 After creating a complete row of random values, we append it to `data`. The
