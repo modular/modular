@@ -1253,6 +1253,11 @@ This version is still a work in progress.
   mutability follows the handle's, so a symbol read through an immutable
   handle is read-only.
 
+- The `cstr_name` overload of `OwnedDLHandle.get_symbol` now takes a
+  `CStringSlice` rather than a `Pointer[mut=False, Int8]`, so the
+  nul-termination it requires is stated by the type instead of assumed. Drop
+  the `unsafe_ptr()` after `as_c_string_slice()` when calling it.
+
 ## Tooling changes
 
 - Crash reporting now defaults to the `telemetry.enabled` setting, so the two
