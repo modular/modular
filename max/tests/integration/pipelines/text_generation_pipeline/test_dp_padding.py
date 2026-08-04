@@ -194,7 +194,7 @@ def _make_batch_constructor(
     """Creates a TextBatchConstructor wired to a DPBatchPadder."""
     pipeline = MagicMock()
     pipeline.release = MagicMock()
-    # Prevent LoRAManager.get_lora_manager() from detecting a LoRA manager
+    # Prevent get_lora_manager() from detecting a LoRA manager
     # on the mock pipeline (MagicMock responds to hasattr checks).
     del pipeline._pipeline_model
     del pipeline.speech_lm_pipeline

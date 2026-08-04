@@ -25,6 +25,7 @@ from max.pipelines.context.context import TextContext
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lib import LoRAManager
+from max.pipelines.lora import get_lora_manager
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -438,9 +439,7 @@ class TextBatchConstructor:
         self.batch_scheduling_strategy = batch_scheduling_strategy
         self._get_inflight_kv_transfer_count = get_inflight_kv_transfer_count
 
-        self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
-            pipeline
-        )
+        self._lora_manager: LoRAManager | None = get_lora_manager(pipeline)
 
         self.num_replicas = self.scheduler_config.data_parallel_degree
         if self._lora_manager and self.num_replicas > 1:
