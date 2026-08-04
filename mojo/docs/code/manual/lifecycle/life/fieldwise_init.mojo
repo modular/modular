@@ -25,8 +25,8 @@ struct MyPet(Copyable):
 
 
 def main():
-    spot = MyPet("Spot")  # Use new constructor
-    willow = MyPet("Willow", 4)  # Use the field-wise constructor
+    var spot = MyPet("Spot")  # Use new constructor
+    var willow = MyPet("Willow", 4)  # Use the field-wise constructor
     # end-fieldwise-init-example
     _ = spot^
     _ = willow^

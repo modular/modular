@@ -43,6 +43,6 @@ def main() raises:
     # start-dependent-type-infer-only-call
     dependent_type[Float64(2.2)]()
     # end-dependent-type-infer-only-call
-    s = String("Robinson Crusoe surfed the interwebs.")
+    var s = String("Robinson Crusoe surfed the interwebs.")
     mutate_span(s.unsafe_as_bytes_mut())
     print(s)

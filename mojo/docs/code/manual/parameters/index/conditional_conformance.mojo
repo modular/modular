@@ -24,7 +24,7 @@ struct Container[ElementType: Movable & Deinitable]:
 
 
 def main():
-    float_container = Container(5.0)
-    string_container = Container("Hello")
+    var float_container = Container(5.0)
+    var string_container = Container("Hello")
     print(float_container.__str__())
     print(string_container.__str__())

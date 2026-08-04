@@ -28,9 +28,9 @@ def my_sort[
     # keyword-only parameter
     reverse: Bool = False,
 ]() -> SIMD[dtype, width]:
-    sorted = SIMD[dtype, width](values)
+    var sorted = SIMD[dtype, width](values)
     for output_position in range(width):
-        lowest = output_position
+        var lowest = output_position
         for compare_position in range(output_position + 1, width):
             if compare(sorted[lowest], sorted[compare_position]) == 1:
                 lowest = compare_position

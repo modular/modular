@@ -143,7 +143,7 @@ def test_positional_only() raises:
 
 def sum_kw(*values: Int, name: String) -> Int:
     print(name, end=": ")
-    total = 0
+    var total = 0
     for value in values:
         total += value
     return total

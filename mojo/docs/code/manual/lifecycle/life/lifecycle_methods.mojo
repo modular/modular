@@ -35,11 +35,11 @@ struct MyPet(Copyable):
 
 
 def main():
-    pet = MyPet("Fido", 3)
-    pet2 = pet.copy()
+    var pet = MyPet("Fido", 3)
+    var pet2 = pet.copy()
     print(pet2.name)
     print(pet2.age)
-    pet3 = pet.copy()
+    var pet3 = pet.copy()
     print(pet3.name)
-    pet4 = pet^
+    var pet4 = pet^
     print(pet4.name)

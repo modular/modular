@@ -16,11 +16,11 @@ from std.python import Python
 
 
 def main() raises:
-    py_module = """
+    var py_module = """
 def type_printer(value):
     print(type(value))
 """
-    py_utils = Python.evaluate(py_module, file=True, name="py_utils")
+    var py_utils = Python.evaluate(py_module, file=True, name="py_utils")
 
     py_utils.type_printer(4)
     py_utils.type_printer(3.14)

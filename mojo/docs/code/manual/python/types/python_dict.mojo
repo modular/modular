@@ -16,7 +16,7 @@ from std.python import Python
 
 
 def main() raises:
-    py_dict = Python.dict()
+    var py_dict = Python.dict()
     py_dict["item_name"] = "whizbang"
     py_dict["price"] = 11.75
     py_dict["inventory"] = 100

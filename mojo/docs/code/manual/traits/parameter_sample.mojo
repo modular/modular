@@ -31,6 +31,6 @@ struct ExampleStruct:
 
 
 def main():
-    s = ExampleStruct()
-    result = s.example[String, 3]("Value: ", "42")
+    var s = ExampleStruct()
+    var result = s.example[String, 3]("Value: ", "42")
     print(result)  # Expected output: "Value: 424242"

@@ -47,7 +47,7 @@ struct Parrot(Bird, Copyable, NamedAnimal):
 
 
 def main():
-    parrot = Parrot()
+    var parrot = Parrot()
     parrot.make_sound()
     parrot.fly()
     parrot.emit_name_and_sound()

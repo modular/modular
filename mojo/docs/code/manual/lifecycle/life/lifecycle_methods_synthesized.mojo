@@ -25,15 +25,15 @@ struct Pair(ImplicitlyCopyable):
 
 
 def main():
-    pet = MyPet("Fido", 3)
-    pet2 = pet
+    var pet = MyPet("Fido", 3)
+    var pet2 = pet
     print(pet2.name)
     print(pet2.age)
-    pet3 = pet.copy()
+    var pet3 = pet.copy()
     print(pet3.name)
-    pet4 = pet^
+    var pet4 = pet^
     print(pet4.name)
 
-    pair = Pair(3, 4)
-    pair_copy = pair
+    var pair = Pair(3, 4)
+    var pair_copy = pair
     print(pair.first, pair_copy.second)
