@@ -112,7 +112,7 @@ def _get_fft_plan[
     var work_size: Int = 0
     # Get the precise size of the plan, assert that it is less than the allocated size
     check_error(cufftGetSize(plan, UnsafePointer(to=work_size)))
-    work_space_ptr = _get_fft_workarea(workspace_size, ctx)
+    var work_space_ptr = _get_fft_workarea(workspace_size, ctx)
 
     if work_size > workspace_size:
         raise Error(
@@ -167,21 +167,21 @@ def _irfft[
     ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
-    EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
-    ALLOCATED_WORKSPACE_SIZE = (buffer_size_mb + 64) * 1024 * 1024
+    var EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
+    var ALLOCATED_WORKSPACE_SIZE = (buffer_size_mb + 64) * 1024 * 1024
 
-    axis = input.rank - 1
-    cuda_stream = CUDA(ctx.stream())
+    var axis = input.rank - 1
+    var cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = coord_to_index_list(input.layout.shape_coord())
+    var input_shape = coord_to_index_list(input.layout.shape_coord())
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
-    input_size = input_shape[axis] // 2
-    output_size = n if n > 0 else 2 * (input_size - 1)
+    var input_size = input_shape[axis] // 2
+    var output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = coord_to_index_list(output.layout.shape_coord())
+    var output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "

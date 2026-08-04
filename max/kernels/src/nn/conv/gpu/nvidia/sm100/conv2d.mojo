@@ -230,7 +230,7 @@ def conv2d_fprop[
     comptime KernelType = type_of(conv_kernel)
 
     # Create TMA descriptors using kernel-derived layout types
-    act_tma_op = create_tensor_tile_im2col[
+    var act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
@@ -254,7 +254,7 @@ def conv2d_fprop[
         filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
 
-    filter_tma_op = create_tma_tile[
+    var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
         KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
@@ -271,7 +271,7 @@ def conv2d_fprop[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tma_tile[
+    var out_tma_op = create_tma_tile[
         KernelType.OutTileLayout,
         KernelType.OutDescLayout,
         c_tma_tile_shape,
@@ -458,7 +458,7 @@ def conv2d_fprop_with_residual[
     comptime KernelType = type_of(conv_kernel)
 
     # Create TMA descriptors using kernel-derived layout types
-    act_tma_op = create_tensor_tile_im2col[
+    var act_tma_op = create_tensor_tile_im2col[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
@@ -481,7 +481,7 @@ def conv2d_fprop_with_residual[
     var filter_tensor = TileTensor(
         filter.ptr, row_major(Coord(IndexList[2](N, K)))
     )
-    filter_tma_op = create_tma_tile[
+    var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
         KernelType.FilterDescLayout,
         Index(BN // (cluster_shape[0] // config.cta_group), BK),
@@ -497,7 +497,7 @@ def conv2d_fprop_with_residual[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    out_tma_op = create_tma_tile[
+    var out_tma_op = create_tma_tile[
         KernelType.OutTileLayout,
         KernelType.OutDescLayout,
         c_tma_tile_shape,
@@ -508,7 +508,7 @@ def conv2d_fprop_with_residual[
     var src_tensor = TileTensor(
         source.ptr, row_major(Coord(IndexList[2](M, N)))
     )
-    src_tma_op = create_tma_tile[
+    var src_tma_op = create_tma_tile[
         KernelType.SrcTileLayout,
         KernelType.SrcDescLayout,
         c_tma_tile_shape,

@@ -309,9 +309,9 @@ def _index_tensor_impl[
             data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
 
         # fill in the last slices in the input
-        num_tail_elems = data.rank - batch_dims - indices_last_dim
-        output_start = output.rank - num_tail_elems
-        src_start = indices_last_dim + batch_dims
+        var num_tail_elems = data.rank - batch_dims - indices_last_dim
+        var output_start = output.rank - num_tail_elems
+        var src_start = indices_last_dim + batch_dims
         for i in range(0, num_tail_elems):
             data_idx[src_start + i] = output_idx[output_start + i]
 
@@ -497,7 +497,7 @@ def advanced_indexing_getitem[
         width: Int,
         alignment: Int = 1,
     ](output_index: Coord) {var}:
-        input_index = IndexList[input_rank]()
+        var input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
         comptime for input_dim in range(input_rank):

@@ -283,10 +283,10 @@ def fp8_index_kernel[
             )
             k_s_reg = ks_ptr[0].cast[DType.float32]()
 
-        q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
+        var q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
             thread_idx.y, 0
         )
-        k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
+        var k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
             thread_idx.x, 0
         )
 

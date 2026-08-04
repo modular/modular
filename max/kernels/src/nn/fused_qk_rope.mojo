@@ -60,8 +60,8 @@ def rope_value[
     Returns:
         The RoPE-transformed SIMD vector in the original dtype.
     """
-    x_re, x_im = val.cast[freq_dtype]().deinterleave()
-    f_re, f_im = freq.deinterleave()
+    var x_re, x_im = val.cast[freq_dtype]().deinterleave()
+    var f_re, f_im = freq.deinterleave()
     var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
     return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
 
@@ -209,7 +209,7 @@ def rope_q_proj[
         )
 
         var res = rope_value(val, freq_val).cast[output_dtype]()
-        output_re, output_im = res.deinterleave()
+        var output_re, output_im = res.deinterleave()
         output.store[alignment=half_alignment](coord_re, output_re)
         output.store[alignment=half_alignment](coord_im, output_im)
 
@@ -281,7 +281,7 @@ def rope_k_cache[
         else:
             split_size = head_size
 
-        h_re, h_im = get_safetensors_idx(d_idx, split_size)
+        var h_re, h_im = get_safetensors_idx(d_idx, split_size)
 
         var val = rebind[SIMD[accum_type, width]](
             k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re)
@@ -294,7 +294,7 @@ def rope_k_cache[
         )
 
         var res = rope_value(val, freq_val).cast[cache_type]()
-        output_re, output_im = res.deinterleave()
+        var output_re, output_im = res.deinterleave()
         k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
         k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
 

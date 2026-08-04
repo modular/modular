@@ -917,13 +917,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             )
             return
 
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var h_idx: Int
         var hd_idx: Int
@@ -1056,13 +1058,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             )
             return
 
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var h_idx: Int
         var hd_idx: Int
@@ -1236,13 +1240,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             )
             return
 
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var h_idx: Int
         var hd_idx: Int
@@ -1379,13 +1385,15 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             )
             return
 
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
         var batch_idx: Int = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
 
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         var h_idx: Int
         var hd_idx: Int
@@ -2631,9 +2639,9 @@ def _matmul_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
     """
     var cuda_ctx: Optional[DeviceContext] = None
-    layer_idx_cast = Int(layer_idx)
-    k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
         cuda_ctx = context
@@ -2696,11 +2704,11 @@ def _matmul_kv_cache_ragged_impl[
 
     comptime kv_params = cache_t.kv_params
 
-    batch_size = input_row_offsets.dim[0]() - 1
+    var batch_size = input_row_offsets.dim[0]() - 1
 
     # Set the matmul_common output lambda to write to K cache for the first N
     # elements and V cache for the next N.
-    k_offset = kv_params.head_size * kv_params.num_heads
+    var k_offset = kv_params.head_size * kv_params.num_heads
 
     @parameter
     @__copy_capture(input_row_offsets, k_offset, batch_size)
@@ -2720,12 +2728,14 @@ def _matmul_kv_cache_ragged_impl[
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
-        batch_idx = get_batch_from_row_offsets(
+        var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         if idx[1] < k_offset:
             # Write this element to the K cache.
@@ -2736,8 +2746,8 @@ def _matmul_kv_cache_ragged_impl[
             cache = v_cache
             h_idx, hd_idx = udivmod(idx[1] - k_offset, kv_params.head_size)
 
-        cache_length = cache.cache_length(batch_idx)
-        cache_token_idx = token_idx + cache_length
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
             h_idx,
@@ -2747,8 +2757,8 @@ def _matmul_kv_cache_ragged_impl[
         )
 
     # Cast to a register passable dtype so the function closure works on GPU.
-    k_cache_reg = rebind[cache_t](k_cache)
-    v_cache_reg = rebind[cache_t](v_cache)
+    var k_cache_reg = rebind[cache_t](k_cache)
+    var v_cache_reg = rebind[cache_t](v_cache)
 
     @parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
@@ -2881,8 +2891,8 @@ def _matmul_k_cache_ragged[
         context: Pointer containing the runtime context for the target device.
     """
     var cuda_ctx: Optional[DeviceContext] = None
-    layer_idx_cast = Int(layer_idx)
-    k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
 
     comptime if is_gpu[target]():
         cuda_ctx = context
@@ -2933,7 +2943,7 @@ def _matmul_k_cache_ragged_impl[
 
     comptime kv_params = cache_t.kv_params
 
-    batch_size = input_row_offsets.dim[0]() - 1
+    var batch_size = input_row_offsets.dim[0]() - 1
 
     @parameter
     @__copy_capture(batch_size)
@@ -2948,17 +2958,19 @@ def _matmul_k_cache_ragged_impl[
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
-        batch_idx = get_batch_from_row_offsets(
+        var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
-        h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
 
-        cache_length = k_cache.cache_length(batch_idx)
-        cache_token_idx = token_idx + cache_length
+        var cache_length = k_cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
         k_cache.store(
             batch_idx,
             h_idx,
@@ -3328,9 +3340,9 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     ],
     context: DeviceContext,
 ) raises:
-    layer_idx_cast = Int(layer_idx)
-    k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    var layer_idx_cast = Int(layer_idx)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     comptime cache_t = PagedKVCache[
         DType.float32,
@@ -3341,8 +3353,8 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
         kv_collection.lookup_table_origin,
         kv_collection.scales_origin,
     ]
-    k_cache_reg = rebind[cache_t](k_cache)
-    v_cache_reg = rebind[cache_t](v_cache)
+    var k_cache_reg = rebind[cache_t](k_cache)
+    var v_cache_reg = rebind[cache_t](v_cache)
 
     _matmul_kv_cache_ragged_gguf_quantized_impl[
         cache_t,
@@ -3449,7 +3461,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 ) raises:
     comptime kv_params = cache_t.kv_params
 
-    batch_size = input_row_offsets.dim[0]() - 1
+    var batch_size = input_row_offsets.dim[0]() - 1
 
     @parameter
     @__copy_capture(input_row_offsets, batch_size)
@@ -3464,19 +3476,21 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
         ), "Mismatch in dtype between hidden state and KV tensors"
 
         # Token index in the "ragged" combined sequence dimension.
-        global_token_idx = idx[0]
+        var global_token_idx = idx[0]
 
-        batch_idx = get_batch_from_row_offsets(
+        var batch_idx = get_batch_from_row_offsets(
             input_row_offsets, global_token_idx
         )
-        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
 
         # Write this element to the K or V cache.
-        cache = k_or_v_cache
-        h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
+        var cache = k_or_v_cache
+        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
 
-        cache_length = cache.cache_length(batch_idx)
-        cache_token_idx = token_idx + cache_length
+        var cache_length = cache.cache_length(batch_idx)
+        var cache_token_idx = token_idx + cache_length
 
         cache.store(
             batch_idx,

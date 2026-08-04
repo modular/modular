@@ -1754,7 +1754,7 @@ def conv_transposed_gpu[
         ](coords: Coord) {var}:
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout(coords)
-            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
+            var vec = output_tmp.raw_load[width=_width, alignment=align](idx)
             epilogue(coord_to_index_list(coords), vec)
 
         elementwise[simd_width_of[output_type](), target="gpu"](
