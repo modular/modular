@@ -1010,7 +1010,7 @@ def flash_attention_dispatch[
                     or (is_sm100 and (q_fp8_depth512 or q_fp8_2q))
                 )
             ):
-                num_rows_q = q_num_matrix_view_rows(q)
+                var num_rows_q = q_num_matrix_view_rows(q)
 
                 comptime if is_sm90:
                     mha_sm90_dispatch[
@@ -1684,7 +1684,7 @@ def flash_attention_dispatch[
 
                     if num_partitions_value == 1:
                         comptime if use_fa3_kernel:
-                            num_rows_q = q_num_matrix_view_rows(q)
+                            var num_rows_q = q_num_matrix_view_rows(q)
 
                             comptime if is_sm90:
                                 mha_sm90_dispatch[
@@ -1823,7 +1823,7 @@ def flash_attention_dispatch[
                         )
 
                         comptime if use_fa3_kernel:
-                            num_rows_q = q_num_matrix_view_rows(q)
+                            var num_rows_q = q_num_matrix_view_rows(q)
 
                             comptime if is_sm90:
                                 mha_sm90_dispatch[
@@ -2660,8 +2660,8 @@ def mha[
 
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = Int(valid_length[batch_idx])
-        end_of_seq = Int(valid_length[batch_idx + 1])
+        var start_of_seq = Int(valid_length[batch_idx])
+        var end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
 
         if seq_len < q_block_idx() * config.block_m():
@@ -2674,9 +2674,9 @@ def mha[
         # from kv_input_row_offsets. This is when num_keys != seq_len
         if kv_input_row_offsets:
             var kv_row_offsets = kv_input_row_offsets.value()
-            kv_seq_start = Int(kv_row_offsets[batch_idx])
-            kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
-            cur_kv_len = kv_seq_end - kv_seq_start
+            var kv_seq_start = Int(kv_row_offsets[batch_idx])
+            var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+            var cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = cur_kv_len + Int(start_pos)
         else:
             num_keys = seq_len + Int(start_pos)
@@ -3310,7 +3310,7 @@ def mha_single_batch[
                         )
                         var score_col = mask_frag_col
 
-                        score_row_with_start_pos = score_row + start_pos
+                        var score_row_with_start_pos = score_row + start_pos
 
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
@@ -4424,8 +4424,8 @@ def mha_decoding[
 
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = Int(valid_length[batch_idx])
-        end_of_seq = Int(valid_length[batch_idx + 1])
+        var start_of_seq = Int(valid_length[batch_idx])
+        var end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * depth * num_heads
         # Rows are already packed by `input_row_offsets`, so this sequence's row
@@ -5012,7 +5012,7 @@ def mha_decoding_single_batch[
     )
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    start, end = get_start_and_end_for_partitions[BN](
+    var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -5737,7 +5737,7 @@ def mha_decoding_single_batch_pipelined[
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
     # Loop over Key and Value tiles
-    start, end = get_start_and_end_for_partitions[BN](
+    var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -6404,8 +6404,8 @@ def _bmm0_bs[
         comptime if not _is_cache_length_accurate:
             start_pos = UInt32(k.cache_length(batch))
 
-        seq_start = Int(valid_length[batch])
-        seq_end = Int(valid_length[batch + 1])
+        var seq_start = Int(valid_length[batch])
+        var seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
         q_offset = _depth * (seq_start * _num_heads + head)
         cur_cache_len = Int(start_pos) + cur_query_len
@@ -6538,8 +6538,8 @@ def _bmm1_bs[
         comptime if not _is_cache_length_accurate:
             start_pos = UInt32(v.cache_length(batch))
 
-        seq_start = Int(valid_length[batch])
-        seq_end = Int(valid_length[batch + 1])
+        var seq_start = Int(valid_length[batch])
+        var seq_end = Int(valid_length[batch + 1])
         cur_query_len = seq_end - seq_start
         output_offset = (seq_start * _num_heads + head) * _depth
         cur_cache_len = cur_query_len + Int(start_pos)
