@@ -394,7 +394,10 @@ protected:
     bool contains(int64_t addr) { return addr >= minAddr && addr < maxAddr; }
 
     /// Reset the table.
-    void reset() { blobs.clear(); }
+    void reset() {
+      blobs.clear();
+      handleToAddr.clear();
+    }
 
     /// The kind of contained memory.
     MemoryKind kind;
@@ -404,6 +407,10 @@ protected:
     int64_t maxAddr;
     /// The memory blobs in the table.
     std::vector<MemoryBlob> blobs;
+    /// The base address of each handle-backed blob, keyed by its handle.
+    /// Handle-backed blobs are never freed individually, so entries stay
+    /// valid until reset().
+    DenseMap<MemoryHandleAttr, int64_t> handleToAddr;
   };
 
 private:

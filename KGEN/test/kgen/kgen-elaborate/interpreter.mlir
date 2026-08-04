@@ -925,6 +925,32 @@ kgen.generator @callIt()->!kgen.pointer<struct<(array<1, scalar<ui128>>)>> {
 
 // -----
 
+// COM: Check a pop.global_constant whose value embeds a string: writing the
+// COM: aggregate re-enters constant-global mapping for the string while the
+// COM: aggregate's blob has no handle yet, and must neither assert nor
+// COM: invalidate the blob reference held across the write (MOCO-4493).
+
+kgen.generator @global_const_with_string() -> index {
+  %idx1 = index.constant 1
+  %0 = pop.global_constant: struct<(string)> = <{"a string nobody mapped yet"}>
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<struct<(string)>> to !kgen.pointer<index>
+  %2 = pop.offset %1[%idx1] : !kgen.pointer<index>
+  %3 = pop.load %2 : !kgen.pointer<index>
+  kgen.return %3 : index
+}
+
+// CHECK-LABEL: kgen.func @string_global_constant_size
+kgen.generator @string_global_constant_size() -> index {
+  kgen.param.declare S: index = <apply(:() -> index @global_const_with_string)>
+  // COM: The KGEN string is laid out as a {ptr, size}. Here we load the second
+  // field of that struct and so return the string's length.
+  // CHECK: kgen.param.constant = <26>
+  %0 = kgen.param.constant: index = <S>
+  kgen.return %0 : index
+}
+
+// -----
+
 kgen.generator @memcpy_1(%arg0: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1

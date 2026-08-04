@@ -144,9 +144,13 @@ ErrorOr<InterpreterState::MemoryBlob &> InterpreterState::MemoryTable::addBlob(
   if (LLVM_UNLIKELY(baseAddr + static_cast<int64_t>(size) >= maxAddr))
     return Error("interpreter is out of memory!");
 
-  // Create the blob with aligned memory.
+  // Create the blob with aligned memory. Index handle-backed blobs by their
+  // handle; if the same handle is added twice, the first blob keeps the
+  // mapping.
   blobs.emplace_back(allocator, baseAddr, size, align, addressSpace, hdl,
                      (resetRefCount ? 0 : 1));
+  if (hdl)
+    handleToAddr.try_emplace(hdl, baseAddr);
   return blobs.back();
 }
 
@@ -212,26 +216,35 @@ ErrorOr<int64_t> InterpreterState::allocateHeapMemory(size_t size,
 ErrorOr<int64_t> InterpreterState::writeAttributeToConstantGlobalMemory(
     TypedAttr attr, size_t size, size_t align) {
   // Get a memory blob
-  ErrorOr<MemoryBlob &> blob =
-      getTable(MemoryKind::ConstGlobal).addBlob(allocator, size, align);
+  MemoryTable &table = getTable(MemoryKind::ConstGlobal);
+  ErrorOr<MemoryBlob &> newBlob = table.addBlob(allocator, size, align);
 
-  if (blob.isError())
-    return blob.takeError();
+  if (newBlob.isError())
+    return newBlob.takeError();
+  int64_t baseAddr = newBlob->baseAddr;
+  size_t blobIndex = table.blobs.size() - 1;
 
   // Flatten the content of attr to the memory.
   // This has to happen before creating the MemoryHandleAttr so that
   // MemoryHandle uniquing (content-based) can work properly.
-  ErrorOrSuccess result = writeAttributeToMemory(blob->baseAddr, attr);
+  ErrorOrSuccess result = writeAttributeToMemory(baseAddr, attr);
   if (result.isError())
     return result.takeError();
 
-  // Add a memory handle and map it back to the blob.
+  // Re-fetch the blob by index: writing the attribute can map new
+  // constant-global blobs (e.g. embedded strings), growing the table and
+  // invalidating the reference returned by addBlob. The table is append-only,
+  // so the index remains valid.
+  MemoryBlob &blob = table.blobs[blobIndex];
+
+  // Add a memory handle, map it back to the blob, and index the blob by it.
   MemoryHandleAttr hdl = MemoryHandleAttr::get(
       attr.getContext(), align,
-      ArrayRef<char>(reinterpret_cast<char *>(blob->getMemory()), size));
-  blob->memory = hdl;
+      ArrayRef<char>(reinterpret_cast<char *>(blob.getMemory()), size));
+  blob.memory = hdl;
+  table.handleToAddr.try_emplace(hdl, baseAddr);
 
-  return blob->baseAddr;
+  return baseAddr;
 }
 
 ErrorOr<int64_t>
@@ -261,12 +274,12 @@ ErrorOrSuccess InterpreterState::freeHeapMemory(int64_t addr) {
 }
 
 ErrorOr<int64_t> InterpreterState::mapConstGlobalMemory(MemoryHandleAttr hdl) {
-  // Look for an existing mapped blob for the handle.
+  // Look for an existing mapped blob for the handle. This must not inspect
+  // the blobs themselves: writing an aggregate to constant-global memory can
+  // re-enter here while its still-handle-less blob is in the table.
   MemoryTable &table = getTable(MemoryKind::ConstGlobal);
-  for (const MemoryBlob &blob : table.blobs) {
-    if (blob.getHandle() == hdl)
-      return blob.baseAddr;
-  }
+  if (auto it = table.handleToAddr.find(hdl); it != table.handleToAddr.end())
+    return it->second;
 
   // Otherwise, try to map it in.
   ErrorOr<MemoryBlob &> blob = table.addBlob(
