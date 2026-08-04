@@ -16,8 +16,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
-from typing import Any, Literal, overload
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Generic, Literal, Protocol, TypeVar, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -25,6 +26,7 @@ from max._core_mojo import block_hasher, block_hasher_sha256
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.pipelines.context import TokenHashOverride
 from max.profiler import traced
+from typing_extensions import Self
 
 __all__ = ["KVHashAlgo"]
 
@@ -223,6 +225,18 @@ def hash_request_tokens(
             token_ids[idx] = token
 
 
+class FreeListNode(Protocol):
+    """Structural requirements for membership in a free block queue.
+
+    A queue only ever links nodes of its own element type, which ``Self``
+    states: an implementer's links point at its own type, not at any node.
+    """
+
+    bid: int
+    prev_free_block: Self | None
+    next_free_block: Self | None
+
+
 @dataclass
 class KVCacheBlock:
     """KV-cache block metadata."""
@@ -246,8 +260,59 @@ class KVCacheBlock:
         return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash!r})"
 
 
-class FreeKVCacheBlockQueue:
-    """Organizes KVCacheBlock objects as a doubly linked list of free blocks.
+@dataclass
+class HugeKVCacheBlock:
+    bid: int
+    little_blocks: dict[str, Sequence[LittleKVCacheBlock]] = field(
+        default_factory=dict
+    )
+    little_block_type: str | None = None
+
+    # Used to construct a doubly linked list for free blocks.
+    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
+    prev_free_block: HugeKVCacheBlock | None = None
+    next_free_block: HugeKVCacheBlock | None = None
+
+    @property
+    def ref_cnt(self) -> int:
+        if self.little_block_type is None:
+            return 0
+        else:
+            return sum(
+                block.ref_cnt
+                for block in self.little_blocks[self.little_block_type]
+            )
+
+
+@dataclass
+class LittleKVCacheBlock:
+    # Block ID, ranging from 0 to total_num_blocks - 1. It is also this block's
+    # page index into its cache's view of the pool buffer: the little blocks of
+    # huge block ``h`` are ``[h * ratio, (h + 1) * ratio)``.
+    bid: int
+    cache_id: str
+    # The huge block whose bytes this block occupies. It backs this block only
+    # while its ``little_block_type`` is this block's ``cache_id``.
+    huge_block: HugeKVCacheBlock
+    # Reference count.
+    ref_cnt: int = 0
+    # The hash of the block composed of (block hash, tuple of token IDs).
+    # It is only available when the block is full.
+    block_hash: bytes | None = None
+    # Whether the block is the null block.
+    is_null: bool = False
+
+    # Used to construct a doubly linked list for free blocks.
+    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
+    prev_free_block: LittleKVCacheBlock | None = None
+    next_free_block: LittleKVCacheBlock | None = None
+
+
+BlockT = TypeVar("BlockT", bound=FreeListNode)
+
+
+class _FreeKVCacheBlockQueue(Generic[BlockT]):
+    """Organizes block objects as a doubly linked list of free blocks.
 
     We implement this class instead of using Python
     builtin deque to support removing a block in the middle of the queue
@@ -266,16 +331,17 @@ class FreeKVCacheBlockQueue:
     blocks of a request. This operation is outside of this class.
 
     Args:
-        blocks: A list of KVCacheBlock objects.
+        blocks: The blocks to start out free, or none for an empty queue (a
+            pool that hands out its blocks lazily).
     """
 
-    def __init__(self, blocks: list[KVCacheBlock]) -> None:
+    def __init__(self, blocks: Sequence[BlockT] = ()) -> None:
         self.num_free_blocks = len(blocks)
         self.free_blocks = set(block.bid for block in blocks)
 
         # Initialize the doubly linked list of free blocks.
-        self.free_list_head: KVCacheBlock | None = blocks[0]
-        self.free_list_tail: KVCacheBlock | None = blocks[-1]
+        self.free_list_head: BlockT | None = blocks[0] if blocks else None
+        self.free_list_tail: BlockT | None = blocks[-1] if blocks else None
         for i in range(self.num_free_blocks):
             if i > 0:
                 blocks[i].prev_free_block = blocks[i - 1]
@@ -285,8 +351,10 @@ class FreeKVCacheBlockQueue:
     def __len__(self) -> int:
         return self.num_free_blocks
 
-    @traced
-    def popleft(self) -> KVCacheBlock:
+    def __contains__(self, block: BlockT) -> bool:
+        return block.bid in self.free_blocks
+
+    def popleft(self) -> BlockT:
         """Pop the first free block and reduce num_free_blocks by 1.
 
         Returns:
@@ -299,8 +367,7 @@ class FreeKVCacheBlockQueue:
         self.remove(block)
         return block
 
-    @traced
-    def remove(self, block: KVCacheBlock) -> None:
+    def remove(self, block: BlockT) -> None:
         """Removes a block from the free list and reduces num_free_blocks by 1.
 
         Args:
@@ -325,8 +392,7 @@ class FreeKVCacheBlockQueue:
         self.num_free_blocks -= 1
         self.free_blocks.remove(block.bid)
 
-    @traced
-    def append(self, block: KVCacheBlock) -> None:
+    def append(self, block: BlockT) -> None:
         """Puts a block back into the free list and increases num_free_blocks by 1.
 
         Args:
@@ -345,3 +411,8 @@ class FreeKVCacheBlockQueue:
         block.next_free_block = None
         self.num_free_blocks += 1
         self.free_blocks.add(block.bid)
+
+
+FreeKVCacheBlockQueue = _FreeKVCacheBlockQueue[KVCacheBlock]
+FreeHugeKVCacheBlockQueue = _FreeKVCacheBlockQueue[HugeKVCacheBlock]
+FreeLittleKVCacheBlockQueue = _FreeKVCacheBlockQueue[LittleKVCacheBlock]
