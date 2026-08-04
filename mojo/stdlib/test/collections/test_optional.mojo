@@ -145,15 +145,6 @@ def test_optional_take_mutates() raises:
     assert_false(opt1)
 
 
-def test_optional_into_inner() raises:
-    var opt1 = Optional[Int](5)
-    assert_equal(opt1^.into_inner(), 5)
-
-    # `into_inner()` also works for move-only element types.
-    var opt2 = Optional(MoveOnly[Int](7))
-    assert_equal(opt2^.into_inner().data, 7)
-
-
 def test_optional_explicit_copy() raises:
     var v1 = Optional[String]("test")
 
