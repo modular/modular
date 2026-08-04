@@ -1824,8 +1824,8 @@ def mla_decoding[
 
     comptime if ragged:
         # treat valid_lengths as a input_row_offsets
-        start_of_seq = Int(valid_length[batch_idx])
-        end_of_seq = Int(valid_length[batch_idx + 1])
+        var start_of_seq = Int(valid_length[batch_idx])
+        var end_of_seq = Int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
         q_batch_offset = start_of_seq * depth * num_heads
 
@@ -2192,7 +2192,7 @@ def mla_decoding_single_batch[
     var q_gmem_block = LayoutTensor[q_type, q_gmem_layout](q_ptr + q_offset)
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    start, end = get_start_and_end_for_partitions[BN](
+    var start, end = get_start_and_end_for_partitions[BN](
         num_keys, num_partitions, block_idx.x
     )
 
@@ -3629,8 +3629,8 @@ def mla_prefill[
     var cache_start_pos: UInt32 = 0
 
     # treat valid_lengths as a input_row_offsets
-    start_of_seq = Int(valid_length[batch_idx])
-    end_of_seq = Int(valid_length[batch_idx + 1])
+    var start_of_seq = Int(valid_length[batch_idx])
+    var end_of_seq = Int(valid_length[batch_idx + 1])
     seq_len = end_of_seq - start_of_seq
 
     @always_inline
@@ -3656,8 +3656,8 @@ def mla_prefill[
         var cache_offsets_nd = cache_offsets.value()
         cache_start_pos = cache_offsets_nd[batch_idx][0]
 
-    q_batch_offset = start_of_seq * q_depth * config.num_heads
-    o_batch_offset = start_of_seq * depth * config.num_heads
+    var q_batch_offset = start_of_seq * q_depth * config.num_heads
+    var o_batch_offset = start_of_seq * depth * config.num_heads
 
     comptime if is_nvidia_gpu():
         mla_prefill_single_batch[
@@ -4253,8 +4253,8 @@ def mla_prefill_single_batch[
                         )
                         var score_col = mask_frag_col
 
-                        score_row_with_start_pos = score_row + start_pos
-                        score_col_with_cache_start_pos = (
+                        var score_row_with_start_pos = score_row + start_pos
+                        var score_col_with_cache_start_pos = (
                             score_col + cache_start_pos
                         )
 

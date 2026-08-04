@@ -480,8 +480,8 @@ __extension SM100MLA:
         comptime assert Self.KRopeType.dtype == config.rope_gmem_dtype
         comptime assert not Self.SchedulerType.may_advance
 
-        mask = pack.mask
-        max_seq_len = pack.max_seq_len
+        var mask = pack.mask
+        var max_seq_len = pack.max_seq_len
 
         # Matches the thin entrypoint's switch predicate; see the generic
         # kernel for the rationale. A 1Q instantiation has
@@ -534,7 +534,7 @@ __extension SM100MLA:
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_nope_tma_op.prefetch_descriptor()
             if e != 0:
@@ -856,7 +856,7 @@ __extension SM100MLA:
             seq_info, max_seq_len
         )
         var q_head_idx: UInt32 = seq_info.head_idx
-        e = elect()
+        var e = elect()
 
         var kv_row: UInt32 = mask.start_column[
             Self.BM, Self.BN, Self.page_size
@@ -1739,7 +1739,7 @@ __extension SM100MLA:
                 var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
                     k_elements_per_stage
                 )
-                k_nope_smem_local, k_rope_smem_local = split_smem[
+                var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
@@ -2127,7 +2127,7 @@ def mla_sm100_prefill_per_token_scale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    q_nope_tma_op = q_tma[
+    var q_nope_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.nope_depth,
@@ -2140,7 +2140,7 @@ def mla_sm100_prefill_per_token_scale[
         num_rows_q,
     )
 
-    q_rope_tma_op = q_tma[
+    var q_rope_tma_op = q_tma[
         fa4_config.rope_gmem_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.rope_depth,
@@ -2154,27 +2154,27 @@ def mla_sm100_prefill_per_token_scale[
     )
 
     # Per-Q-tile box (128 in both 1Q/2Q modes); 2Q issues two TMAs.
-    q_scale_tma_op = q_scale_tma[BM=fa4_config.q_tile_rows()](ctx, q_scale)
+    var q_scale_tma_op = q_scale_tma[BM=fa4_config.q_tile_rows()](ctx, q_scale)
 
-    k_nope_tma_op = k_nope.create_tma_tile[
+    var k_nope_tma_op = k_nope.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KType.page_size),
         depth=fa4_config.nope_depth,
     ](ctx)
 
-    k_rope_tma_op = k_rope.create_tma_tile[
+    var k_rope_tma_op = k_rope.create_tma_tile[
         fa4_config.rope_gmem_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         depth=cache_depth,
         BK=fa4_config.rope_depth,
     ](ctx)
 
-    k_scale_tma_op = k_nope.create_scale_tma_tile[
+    var k_scale_tma_op = k_nope.create_scale_tma_tile[
         kv_sub_tile_rows(fa4_config.BN, KType.page_size)
     ](ctx)
 
     # V gmem width is ov_depth (= v_head_dim).
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KType.page_size),
         depth=ov_depth,

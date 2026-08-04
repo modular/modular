@@ -446,7 +446,7 @@ struct MLA_SM100_Decode_Config:
         self.dtype_size = dtype_size
         self.swizzle_mode = swizzle_mode
         self.kv_mma_swizzle_mode = kv_mma_swizzle_mode
-        swizzle_elems = swizzle_mode.bytes() // dtype_size
+        var swizzle_elems = swizzle_mode.bytes() // dtype_size
         self.padded_depth = align_up(depth, swizzle_elems)
         self.padded_q_depth = align_up(q_depth, swizzle_elems)
 
@@ -4266,7 +4266,7 @@ struct MLA_SM100_Decode_Common[
             tcgen05_load_wait()
             c_cons.release()
             var scale_value = scale_value_tuple[0]
-            change = _vote_nvidia_helper(scale_value < 1.0) != 0
+            var change = _vote_nvidia_helper(scale_value < 1.0) != 0
             comptime num_o_tiles = Self.config.MMA_PV_N // (
                 Self.output_tile_width * 2
             )
@@ -4397,7 +4397,7 @@ struct MLA_SM100_Decode_Common[
         var out_cons = DecodeOutConsumer[Self.output_dtype, Self.config](
             out_pipeline, out_smem
         )
-        elect_mask = elect()
+        var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: Int = offset_position.out_row_offset
 

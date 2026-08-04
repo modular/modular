@@ -91,13 +91,13 @@ def _bmm0_bs[
     var padded_num_keys = _kv_max_seq_len + _max_cache_size
     var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
-    q_seq_start = Int(q_input_row_offsets[batch])
-    q_seq_end = Int(q_input_row_offsets[batch + 1])
+    var q_seq_start = Int(q_input_row_offsets[batch])
+    var q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
     q_offset = (q_seq_start * _num_heads + head) * _depth
 
-    kv_seq_start = Int(kv_input_row_offsets[batch])
-    kv_seq_end = Int(kv_input_row_offsets[batch + 1])
+    var kv_seq_start = Int(kv_input_row_offsets[batch])
+    var kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
     # _num_heads * _kv_max_seq_len * batch * _depth + _depth * head
     num_keys = cur_kv_len + k_cache.cache_length(batch)
@@ -202,14 +202,14 @@ def _bmm1_bs[
     var padded_num_keys = _kv_max_seq_len + _max_cache_size
     var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
-    q_seq_start = Int(q_input_row_offsets[batch])
-    q_seq_end = Int(q_input_row_offsets[batch + 1])
+    var q_seq_start = Int(q_input_row_offsets[batch])
+    var q_seq_end = Int(q_input_row_offsets[batch + 1])
     cur_query_len = q_seq_end - q_seq_start
 
     output_offset = (q_seq_start * _num_heads + head) * _depth
 
-    kv_seq_start = Int(kv_input_row_offsets[batch])
-    kv_seq_end = Int(kv_input_row_offsets[batch + 1])
+    var kv_seq_start = Int(kv_input_row_offsets[batch])
+    var kv_seq_end = Int(kv_input_row_offsets[batch + 1])
     cur_kv_len = kv_seq_end - kv_seq_start
 
     assert cur_query_len <= _q_max_seq_len, "Invalid cur_query_len"

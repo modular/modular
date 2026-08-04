@@ -252,7 +252,7 @@ def mha_sm100_dispatch[
             rows=num_rows_q,
         )
 
-        q_tma_op = q_tma[
+        var q_tma_op = q_tma[
             swizzle_mode,
             BM=BM_per_mma,
             depth=fa4_config.qk_depth,
@@ -293,7 +293,7 @@ def mha_sm100_dispatch[
         comptime assert (not k_row_major) or (
             k_fold_chunks > 1
         ), "k_row_major() implies the K row-major fold; predicate drift"
-        k_tma_op = k.create_tma_tile[
+        var k_tma_op = k.create_tma_tile[
             fa4_config.swizzle_mode,
             BN=k_sub_BN,
             depth=fa4_config.qk_depth,
@@ -336,7 +336,7 @@ def mha_sm100_dispatch[
         comptime assert (not v_row_major) or (
             v_fold_chunks > 1
         ), "v_row_major() implies the V row-major fold; predicate drift"
-        v_tma_op = v.create_tma_tile[
+        var v_tma_op = v.create_tma_tile[
             fa4_config.swizzle_mode,
             BN=v_sub_BN,
             depth=fa4_config.ov_depth,

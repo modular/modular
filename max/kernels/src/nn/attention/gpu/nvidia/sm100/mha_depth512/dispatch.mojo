@@ -185,7 +185,7 @@ def mha_sm100_depth512_dispatch[
     )
 
     # Q: BM per CTA (not halved like 2Q).
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
         depth=d512_config.qk_depth,
@@ -212,7 +212,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BN // 2,
         page_size=KVType.page_size,
     ]()
-    k_tma_op = k.create_tma_tile[
+    var k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
         BN=k_sub_BN,
         depth=d512_config.qk_depth,
@@ -237,7 +237,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BK1,
         page_size=KVType.page_size,
     ]()
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=v_sub_BN,
         depth=d512_config.ov_depth,

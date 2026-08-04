@@ -446,7 +446,7 @@ def depth512_softmax[
     var mask_iters: StaticTuple[UInt32, num_sets] = {}
 
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-        mask_ends = mask.masked_set_ends[
+        var mask_ends = mask.masked_set_ends[
             BM=PairBM_mask, BN=BN, page_size=page_size
         ](seq_id, score_row, num_keys)
         mask_iters[0] = mask_ends[0]
@@ -507,7 +507,7 @@ def depth512_softmax[
         # Step 2: Upper half reads partner, computes combined, writes back.
         var combined: Float32
         if not is_lower:
-            partner_val = correction_smem[m_row]
+            var partner_val = correction_smem[m_row]
             comptime if op == "max":
                 combined = max_ftz(partial_val, partner_val)
             else:
@@ -541,19 +541,19 @@ def depth512_softmax[
         # Base TMEM address: both row groups read the same physical columns.
         # Pair-CTA layout maps rows 0-63 → first logical N half, rows 64-127 →
         # second logical N half, but both use the same MMA_N/2 physical cols.
-        base_tmem = s_tmem
+        var base_tmem = s_tmem
         # KV column base for masking.
-        kv_col_base = kv_row + col_offset
+        var kv_col_base = kv_row + col_offset
 
         # --- Pipelined load: load batch 0, start batch 1, process batch 0 ---
-        s0 = TMemTile[accum_dtype, BM, first_cols](base_tmem).load_async()
+        var s0 = TMemTile[accum_dtype, BM, first_cols](base_tmem).load_async()
 
-        s1 = TMemTile[accum_dtype, BM, batch_size](
+        var s1 = TMemTile[accum_dtype, BM, batch_size](
             base_tmem + UInt32(first_cols)
         ).load_async()
 
         mask_batch[mask_strategy=mask_strategy](s0, kv_col_base)
-        vrow_max = maximum[width=max_unroll](s0)
+        var vrow_max = maximum[width=max_unroll](s0)
         comptime for _i in range(first_cols):
             s[_i] = s0[_i]
 
@@ -574,7 +574,7 @@ def depth512_softmax[
                     s[offset0 + _i] = s1[_i]
             else:
                 # Load next batch (s2) while processing current (s1).
-                s2 = TMemTile[accum_dtype, BM, batch_size](
+                var s2 = TMemTile[accum_dtype, BM, batch_size](
                     base_tmem + UInt32(offset1)
                 ).load_async()
                 mask_batch[mask_strategy=mask_strategy](
@@ -785,7 +785,7 @@ def depth512_softmax[
     @always_inline
     def main_loop_body[mask_strategy: MaskStrategy]():
         """One iteration of the main softmax loop."""
-        old_max = row_max
+        var old_max = row_max
 
         # Wait for S, load, mask, compute partial max.
         s_cur_pipeline.wait()
@@ -802,7 +802,7 @@ def depth512_softmax[
         else:
             new_row_max = partial_max
 
-        diff = sub_ftz(old_max, new_row_max)
+        var diff = sub_ftz(old_max, new_row_max)
         diff = mul_ftz(diff, scale_log2e)
 
         var correction: Float32
@@ -859,7 +859,7 @@ def depth512_softmax[
             kv_row += UInt32(BN)
             if kv_row >= num_keys:
                 break
-            cur_mask_status = mask.status(
+            var cur_mask_status = mask.status(
                 seq_id,
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                 Index[dtype=DType.int32](PairBM_mask, BN),

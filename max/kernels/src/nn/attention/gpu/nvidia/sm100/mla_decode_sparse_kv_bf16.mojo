@@ -290,8 +290,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
         var num_partitions = mla_decode_pack.num_partitions
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         # OffsetPosition[sparse=True] overrides num_keys with topk
         # (clamped to actual_tokens by `OffsetPosition.__init__`).
@@ -386,7 +386,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
 
                 return
 
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.q_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -476,7 +476,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         var idx_smem_base = (ptr_tmem_addr + 1).bitcast[Int32]()
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
         if warp_idx == 8:
             if is_leader:
                 mbar_q[].init(1)
@@ -895,7 +895,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
 
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
         if num_k_tiles == 0:
@@ -921,7 +921,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -969,7 +969,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
         if num_k_tiles == 0:
