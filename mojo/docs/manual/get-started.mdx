@@ -236,22 +236,31 @@ checking](https://en.wikipedia.org/wiki/Type_system#Static_type_checking), which
 means you'll encounter a compile-time error if your code tries to assign a
 value of one type to a variable of a different type.
 
-Mojo also supports implicitly declared variables, where you simply assign a
-value to a new variable without using the `var` keyword or indicating its type.
-We can replace the code we just entered with the following, and it works
-exactly the same.
+Mojo also lets you declare a variable by assigning a value to a new name,
+without the `var` keyword and without indicating its type. The following prints
+the same greeting:
 
-```mojo title="life.mojo"
+<!-- The block below is deliberately NOT mirrored by a compiled example: it
+     shows the spelling this passage advises against, so a compiled twin would
+     be a first-party use of it. -->
+
+```mojo
 def main() raises:
     name = input("Who are you? ")
     greeting = "Hi, " + name + "!"
     print(greeting)
 ```
 
-However, implicitly declared variables still have a fixed type, which Mojo
-automatically infers from the initial value assignment. In this example, both
-`name` and `greeting` are inferred as `String` type variables. If you then try
-to assign an integer value like 42 to the `name` variable, you'll get a
+The two forms aren't interchangeable, though. A `var` declaration belongs to the
+block it appears in, whereas assigning to a new name declares a variable that
+belongs to the whole function. In a program with nested blocks, that difference
+changes which code can see the variable. Prefer `var`: it says on the line that
+a declaration is happening.
+
+Either way, the variable has a fixed type: the annotation gives it when there is
+one, and otherwise Mojo infers it from the initial value assignment. In both
+versions above, `name` and `greeting` are `String` variables. If you then try to
+assign an integer value like 42 to the `name` variable, you'll get a
 compile-time error because of the type mismatch. You can learn more about Mojo
 variables in the [Variables](/docs/manual/variables/) section of the Mojo
 manual.
