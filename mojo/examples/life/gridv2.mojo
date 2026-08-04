@@ -52,7 +52,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
         else:
             random.seed()
 
-        grid = Self()
+        var grid = Self()
         random.randint(grid.data, grid.num_cells, 0, 1)
 
         return grid^
@@ -86,20 +86,20 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def evolve(self) -> Self:
-        next_generation = Self()
+        var next_generation = Self()
 
         for row in range(Self.rows):
             # Calculate neighboring row indices, handling "wrap-around"
-            row_above = (row - 1) % Self.rows
-            row_below = (row + 1) % Self.rows
+            var row_above = (row - 1) % Self.rows
+            var row_below = (row + 1) % Self.rows
 
             for col in range(Self.cols):
                 # Calculate neighboring column indices, handling "wrap-around"
-                col_left = (col - 1) % Self.cols
-                col_right = (col + 1) % Self.cols
+                var col_left = (col - 1) % Self.cols
+                var col_right = (col + 1) % Self.cols
 
                 # Determine number of populated cells around the current cell
-                num_neighbors = (
+                var num_neighbors = (
                     self[row_above, col_left]
                     + self[row_above, col]
                     + self[row_above, col_right]

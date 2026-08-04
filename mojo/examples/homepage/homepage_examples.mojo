@@ -131,10 +131,10 @@ def mojo_square_array(array_obj: PythonObject) raises:
 
 
 def run_python_interop_example() raises:
-    np = Python.import_module("numpy")
+    var np = Python.import_module("numpy")
     # values: List[Int64] = [1, 3, 5, 7, 11]
-    pylist = Python.list(1, 3, 5, 7, 11)
-    nparray = np.array(pylist, np.int64)
+    var pylist = Python.list(1, 3, 5, 7, 11)
+    var nparray = np.array(pylist, np.int64)
     mojo_square_array(nparray)
     print(nparray)
 
@@ -161,9 +161,9 @@ struct EqTest(Copyable, FauxEquatable):
 
 
 def run_metaprogramming_example():
-    v1 = EqTest(1, "Lucy")
-    v2 = EqTest(1, "Lucy")
-    v3 = EqTest(2, "Linus")
+    var v1 = EqTest(1, "Lucy")
+    var v2 = EqTest(1, "Lucy")
+    var v3 = EqTest(2, "Linus")
     print(v1 == v2)
     print(v1 == v3)
 

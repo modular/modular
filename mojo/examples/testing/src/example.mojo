@@ -15,7 +15,7 @@ from my_math import dec, inc
 
 
 def main() raises:
-    i = 0
+    var i = 0
     print("Incrementing")
     while i < 5:
         i = inc(i)
