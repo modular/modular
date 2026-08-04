@@ -1722,7 +1722,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
             if (succeeded(shared.closureEmitter->isCompatibleWith(
                     fromType, &symbolDecl)) ||
                 succeeded(shared.closureEmitter->isTraitCompatibleWith(
-                    fromType, traitDeclOp))) {
+                    fromType, traitDeclOp, declScope))) {
               return TriState::yes();
             }
           }
@@ -1782,7 +1782,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
           if (succeeded(shared.closureEmitter->isCompatibleWith(concreteType,
                                                                 &symbolDecl)) ||
               succeeded(shared.closureEmitter->isTraitCompatibleWith(
-                  concreteType, traitDeclOp)))
+                  concreteType, traitDeclOp, declScope)))
             return TriState::yes();
         }
       }
@@ -2110,6 +2110,32 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
   return failure();
 }
 
+static ASTDecl *getFileModuleForValue(SharedState &shared, ASTDecl &declScope,
+                                      const CValue &value) {
+  if (ASTDecl *fileModule = declScope.getNearestDeclOfType<FileModuleOp>())
+    return fileModule;
+
+  Value mlirValue = value.getMlirValue();
+  if (!mlirValue)
+    return nullptr;
+
+  Operation *op = mlirValue.getDefiningOp();
+  if (!op) {
+    if (Block *block = mlirValue.getParentBlock())
+      op = block->getParentOp();
+  }
+  if (!op)
+    return nullptr;
+
+  auto fileMod = op->getParentOfType<FileModuleOp>();
+  if (!fileMod)
+    return nullptr;
+
+  SymbolRefAttr fileSym = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(fileMod.getOperation()));
+  return shared.getDeclResolver().getDeclForTypeSymbolIfExists(fileSym);
+}
+
 /// This emits an implicit conversion to the specified type if the types
 /// differ, including emitting any implicit constructor calls as well as
 /// implicit promotions like origin conversions.
@@ -2189,10 +2215,14 @@ CValue IREmitter::emitImplicitConversionToType(
     if (sugarIsa<AnyTraitType>(rvType.extractMetaType())) {
       if (std::optional<TraitDeclOp> targetTrait =
               ClosureEmitter::getClosureDecl(shared, anyTrait.getTraitType())) {
-        if (CValue extension = shared.getClosureEmitter().createExtensionType(
-                getDeclScope(), valueExpr.ir, anyTrait.getTraitType(),
-                *targetTrait))
-          return extension;
+        ASTDecl *fileModule =
+            getFileModuleForValue(shared, getDeclScope(), valueExpr.ir);
+        if (fileModule) {
+          if (CValue extension = shared.getClosureEmitter().createExtensionType(
+                  *fileModule, valueExpr.ir, anyTrait.getTraitType(),
+                  *targetTrait))
+            return extension;
+        }
       }
     }
   }

@@ -22,6 +22,7 @@
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/SymbolTable.h"
+#include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -952,8 +953,47 @@ static TypedAttr getNotOperand(TypedAttr prop) {
   return {};
 }
 
-TriState LIT::isPropositionImplied(TypedAttr proposition,
-                                   TypedAttr assumption) {
+/// Ingest the top-level `eq` facts of `assumption` (and of its AND conjuncts).
+static void addEqualityFacts(TypedAttr assumption,
+                             llvm::EquivalenceClasses<TypedAttr> &classes) {
+  auto op = dyn_cast<ParamOperatorAttr>(assumption);
+  if (!op)
+    return;
+  if (op.getOpcode() == POC::EQ && op.getOperands().size() == 2) {
+    classes.unionSets(stripIdentityWrappers(
+                          getCanonicalAttr(cast<TypedAttr>(op.getOperand(0)))),
+                      stripIdentityWrappers(
+                          getCanonicalAttr(cast<TypedAttr>(op.getOperand(1)))));
+    return;
+  }
+  if (op.getOpcode() == POC::And)
+    for (TypedAttr operand : op.getOperands())
+      addEqualityFacts(operand, classes);
+}
+
+namespace {
+/// The `eq` facts of an assumption, closed under symmetry and transitivity.
+class AssumptionEqualities {
+  llvm::EquivalenceClasses<TypedAttr> classes;
+  TypedAttr builtFor;
+
+public:
+  /// True when `eq(lhs, rhs)` follows from the `eq` facts of `assumption`.
+  bool provesEqual(TypedAttr lhs, TypedAttr rhs, TypedAttr assumption) {
+    if (builtFor != assumption) {
+      classes = llvm::EquivalenceClasses<TypedAttr>();
+      addEqualityFacts(assumption, classes);
+      builtFor = assumption;
+    }
+    return classes.isEquivalent(stripIdentityWrappers(getCanonicalAttr(lhs)),
+                                stripIdentityWrappers(getCanonicalAttr(rhs)));
+  }
+};
+} // namespace
+
+static TriState isPropositionImplied(TypedAttr proposition,
+                                     TypedAttr assumption,
+                                     AssumptionEqualities &assumptionEqs) {
   // Canonicalize and decompose multi-trait conforms_to into AND of single-trait
   // ones so the general conjunction rules handle subsumption uniformly.
   proposition = getCanonicalAttr(proposition);
@@ -1003,6 +1043,15 @@ TriState LIT::isPropositionImplied(TypedAttr proposition,
     }
   }
 
+  if (auto propositionOp = dyn_cast<ParamOperatorAttr>(proposition);
+      propositionOp && propositionOp.getOpcode() == POC::EQ &&
+      propositionOp.getOperands().size() == 2) {
+    if (assumptionEqs.provesEqual(cast<TypedAttr>(propositionOp.getOperand(0)),
+                                  cast<TypedAttr>(propositionOp.getOperand(1)),
+                                  assumption))
+      return TriState::yes();
+  }
+
   // Conjunction elimination: (A AND B) implies B if any conjunct implies B.
   // AND decomposition: (A AND B) contradicts Z if any conjunct contradicts Z.
   //
@@ -1013,7 +1062,7 @@ TriState LIT::isPropositionImplied(TypedAttr proposition,
       bool anyDisproves = false;
       for (Attribute operand : assumptionOp.getOperands()) {
         TriState result =
-            isPropositionImplied(proposition, cast<TypedAttr>(operand));
+            LIT::isPropositionImplied(proposition, cast<TypedAttr>(operand));
         if (result.isFalse())
           anyDisproves = true;
         else if (result.isTrue())
@@ -1027,7 +1076,8 @@ TriState LIT::isPropositionImplied(TypedAttr proposition,
   // Negation rule: A contradicts NOT(A).
   // If B = NOT(inner) and A implies inner, then A contradicts B.
   if (TypedAttr innerProposition = getNotOperand(proposition))
-    if (isImplicationProven(innerProposition, assumption))
+    if (isPropositionImplied(innerProposition, assumption, assumptionEqs)
+            .isTrue())
       return TriState::no();
   // Symmetric: if A = NOT(inner) and B implies inner, then A contradicts B.
   if (TypedAttr innerAssumption = getNotOperand(assumption))
@@ -1038,7 +1088,9 @@ TriState LIT::isPropositionImplied(TypedAttr proposition,
     // Weakening: A implies (A OR B) for any B.
     if (propositionOp.getOpcode() == POC::Or) {
       for (Attribute operand : propositionOp.getOperands())
-        if (isImplicationProven(cast<TypedAttr>(operand), assumption))
+        if (isPropositionImplied(cast<TypedAttr>(operand), assumption,
+                                 assumptionEqs)
+                .isTrue())
           return TriState::yes();
     }
     // Conjunction introduction: A implies (B AND C) iff A implies every
@@ -1046,8 +1098,8 @@ TriState LIT::isPropositionImplied(TypedAttr proposition,
     if (propositionOp.getOpcode() == POC::And) {
       TriState result = TriState::yes();
       for (Attribute operand : propositionOp.getOperands()) {
-        TriState operandResult =
-            isPropositionImplied(cast<TypedAttr>(operand), assumption);
+        TriState operandResult = isPropositionImplied(
+            cast<TypedAttr>(operand), assumption, assumptionEqs);
         if (operandResult.isFalse())
           return TriState::no();
         if (operandResult.isUnknown())
@@ -1097,6 +1149,12 @@ TriState LIT::isPropositionImplied(ConstraintAttr proposition,
   return isPropositionImplied(reboundProposition, canonAssumptions);
 }
 
+TriState LIT::isPropositionImplied(TypedAttr proposition,
+                                   TypedAttr assumption) {
+  AssumptionEqualities assumptionEqs;
+  return ::isPropositionImplied(proposition, assumption, assumptionEqs);
+}
+
 /// Visit each TypeConformsToTraitAttr found in a constraint proposition.
 /// Canonical AND is already flattened to a single n-ary node, so a single
 /// top-level loop over its operands is sufficient. OR / NOT are not visited
@@ -1128,6 +1186,7 @@ TypedAttr LIT::stripIdentityWrappers(TypedAttr attr) {
     TypedAttr stripped = ParamOperatorAttr::stripRebind(attr);
     stripped = UpcastAttr::strip(stripped);
     stripped = DowncastAttr::strip(stripped);
+    stripped = ExtensionAttr::strip(stripped);
     if (stripped == attr)
       return attr;
     attr = stripped;
