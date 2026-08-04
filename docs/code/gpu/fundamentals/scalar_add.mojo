@@ -43,7 +43,7 @@ def scalar_add(
     # block_idx.x: index of the current thread block.
     # block_dim.x: number of threads per block.
     # thread_idx.x: index of the current thread within its block.
-    idx = block_idx.x * block_dim.x + thread_idx.x
+    var idx = block_idx.x * block_dim.x + thread_idx.x
 
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
@@ -60,10 +60,10 @@ def main() raises:
         exit(0)
     else:
         # Initialize GPU context for device 0 (default GPU device).
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
+        var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
             num_elements
         )
 
@@ -75,13 +75,15 @@ def main() raises:
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        device_buffer = ctx.enqueue_create_buffer[DType.float32](num_elements)
+        var device_buffer = ctx.enqueue_create_buffer[DType.float32](
+            num_elements
+        )
 
         # Copy data from host memory to device memory for GPU processing.
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add]()
+        var scalar_add_kernel = ctx.compile_function[scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #

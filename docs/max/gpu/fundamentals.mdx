@@ -143,7 +143,7 @@ def scalar_add(
     # block_idx.x: index of the current thread block.
     # block_dim.x: number of threads per block.
     # thread_idx.x: index of the current thread within its block.
-    idx = block_idx.x * block_dim.x + thread_idx.x
+    var idx = block_idx.x * block_dim.x + thread_idx.x
 
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
@@ -160,10 +160,10 @@ def main() raises:
         exit(0)
     else:
         # Initialize GPU context for device 0 (default GPU device).
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
 
         # Create a buffer in host (CPU) memory to store our input data
-        host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
+        var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](
             num_elements
         )
 
@@ -175,13 +175,15 @@ def main() raises:
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
-        device_buffer = ctx.enqueue_create_buffer[DType.float32](num_elements)
+        var device_buffer = ctx.enqueue_create_buffer[DType.float32](
+            num_elements
+        )
 
         # Copy data from host memory to device memory for GPU processing.
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add]()
+        var scalar_add_kernel = ctx.compile_function[scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #
@@ -363,7 +365,7 @@ def main() raises:
         print("No compatible GPU found")
     else:
         # Initialize GPU context for device 0 (default GPU device).
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
 
         print("block_idx\t\tthread_idx\t\tglobal_idx\t\tcalculated global_idx")
         print("x\ty\tz", "x\ty\tz", "x\ty\tz", "x\ty\tz", sep="\t")
@@ -532,7 +534,7 @@ size of the buffer as a run-time argument. So to create a buffer for 1,024
 would execute:
 
 ```mojo
-device_buffer = ctx.enqueue_create_buffer[DType.float32](1024)
+var device_buffer = ctx.enqueue_create_buffer[DType.float32](1024)
 ```
 
 As the method name implies, this method is asynchronous and enqueues the
@@ -560,7 +562,7 @@ method to ensure that the operation has completed before you write to or read
 from the `HostBuffer` object.
 
 ```mojo
-device_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
+var device_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
 
 # Synchronize to wait until buffer is created before attempting to write to it
 ctx.synchronize()
@@ -623,10 +625,10 @@ automatically copied back to the `DeviceBuffer` when the `with` statement exits.
 For example:
 
 ```mojo
-ctx = DeviceContext()
-length = 1024
+var ctx = DeviceContext()
+var length = 1024
 
-input_device = ctx.enqueue_create_buffer[DType.float32](length)
+var input_device = ctx.enqueue_create_buffer[DType.float32](length)
 
 # Initialize the input
 
@@ -639,11 +641,11 @@ However, you should not use this in most production code because of the
 bidirectional copies and synchronization. The example above is equivalent to:
 
 ```mojo
-ctx = DeviceContext()
-length = 1024
+var ctx = DeviceContext()
+var length = 1024
 
-input_device = ctx.enqueue_create_buffer[DType.float32](length)
-input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
+var input_device = ctx.enqueue_create_buffer[DType.float32](length)
+var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
 
 input_device.enqueue_copy_to(input_host)
 ctx.synchronize()
@@ -684,7 +686,7 @@ demonstrated this pattern:
 
 ```mojo title="scalar_add.mojo"
 ...
-scalar_add_kernel = ctx.compile_function[scalar_add]()
+var scalar_add_kernel = ctx.compile_function[scalar_add]()
 
 ctx.enqueue_function(
     scalar_add_kernel,
