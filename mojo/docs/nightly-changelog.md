@@ -396,6 +396,7 @@ This version is still a work in progress.
   - `def __contains__[dtype: DType, //](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Bool`
   - `def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable)`
   - `def __getitem__(ref self, idx: Int, /) -> ref[_] Self.T:`
+  - `def __eq__(self, other: Self, /) -> Bool where conforms_to(Self.T, Equatable):`
 
 - Bool
 - Span
@@ -409,9 +410,15 @@ This version is still a work in progress.
   - `def __ne__(self, other: StringSlice) -> Bool:`
   - `def __getitem__(ref self, idx: Int, /) -> ref[self.origin, self.address_space] Self.T:`
 
+- Optional
+  - `def __init__(out self):`
+  - `def __init__(out self, var value: Self.T) where conforms_to(Self.T, Movable):`
+  - `def __bool__(self) -> Bool:`
+
 - Array
   - `def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:`
   - `def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:`
+  - `def unsafe_ptr[...](ref[origin, address_space] self) -> Pointer[...]:`
 
 - ImmPointer
 - MutPointer

@@ -567,6 +567,7 @@ struct List[T: Movable, /](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
     def __eq__(
         self, other: Self, /
@@ -611,6 +612,7 @@ struct List[T: Movable, /](
         for element in self:
             element.__hash__(hasher)
 
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T, /
     ) -> Bool where conforms_to(Self.T, Equatable):

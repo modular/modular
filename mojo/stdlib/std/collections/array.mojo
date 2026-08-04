@@ -823,6 +823,7 @@ struct Array[T: AnyType, length: Int](
         return self._unchecked_get(idx)
 
     @always_inline
+    @stable(since="1.0")
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
     ](ref[origin, address_space] self) -> Pointer[
