@@ -137,6 +137,7 @@ modular_cc_library(
         "//Support:Base",
         "//Support:Compiler",
         "//Support:CrashReporting",
+        "//Support:DebugInfoDialect",
         "//Support:Driver",
         "//Support:Filesystem",
         "//Support:Globals",
