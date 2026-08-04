@@ -271,6 +271,7 @@ def test_ternary_chained_right_assoc() raises:
 def test_walrus_in_if() raises:
     var items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     var captured: Int = -1
+    var n: Int
     if (n := len(items)) > 10:
         captured = n
     assert_equal(captured, 11)
@@ -279,6 +280,7 @@ def test_walrus_in_if() raises:
 def test_walrus_in_while() raises:
     var i = 0
     var last_seen: Int = -1
+    var j: Int
     while (j := i) < 3:
         last_seen = j
         i += 1
