@@ -352,3 +352,14 @@ kgen.generator @global_alloc_initializer_count_not_1() {
   %0 = pop.global_alloc "bad" 4 x !kgen.scalar<si32> = <42>
   kgen.return
 }
+
+// -----
+
+// A count above the operand count cannot be a verifier error, because argument
+// packs expand into operands after this runs; see pop-to-llvm/globals-error.mlir.
+kgen.func @external_call_negative_num_fixed_args(%a: !kgen.simd<1, ui32>) {
+  // expected-error @below {{'pop.external_call' op 'numFixedArgs' must be non-negative, found -1}}
+  pop.external_call @bar(%a) attributes {numFixedArgs = -1 : index}
+    : (!kgen.simd<1, ui32>) -> ()
+  kgen.return
+}

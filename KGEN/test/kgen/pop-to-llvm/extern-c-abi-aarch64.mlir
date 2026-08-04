@@ -407,8 +407,7 @@ llvm.func @variadic_hfa_linux(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
   // HFA struct remains identity on Linux — passed as struct, not coerced to i64.
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, !llvm.struct<(f32, f32)>) -> ()
   // CHECK-NOT: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i64)
-  pop.external_call @c_g1(%fixed, %s)
-    (i32) -> ()
+  pop.external_call @c_g1(%fixed, %s) attributes {numFixedArgs = 1 : index}
     : (i32, !llvm.struct<(f32, f32)>) -> ()
   llvm.return
 }
@@ -427,8 +426,7 @@ llvm.func @variadic_float_linux(%fixed: i32, %f: f32) {
   // No bitcast on Linux — f32 is passed as f32 directly.
   // CHECK-NOT: llvm.bitcast %{{.*}} : f32 to i32
   // CHECK: llvm.call @c_g2(%{{.*}}, %{{.*}}) : (i32, f32) -> ()
-  pop.external_call @c_g2(%fixed, %f)
-    (i32) -> ()
+  pop.external_call @c_g2(%fixed, %f) attributes {numFixedArgs = 1 : index}
     : (i32, f32) -> ()
   llvm.return
 }
@@ -448,8 +446,7 @@ llvm.func @variadic_hfa_darwin(%fixed: i32, %s: !llvm.struct<(f32, f32)>) {
   // HFA struct coerced to i64 on Darwin so va_arg reads from GP save area.
   // CHECK: llvm.call @c_g3(%{{.*}}, %{{.*}}) : (i32, i64) -> ()
   // CHECK-NOT: llvm.call @c_g3(%{{.*}}, %{{.*}}) : (i32, !llvm.struct
-  pop.external_call @c_g3(%fixed, %s)
-    (i32) -> ()
+  pop.external_call @c_g3(%fixed, %s) attributes {numFixedArgs = 1 : index}
     : (i32, !llvm.struct<(f32, f32)>) -> ()
   llvm.return
 }
@@ -468,8 +465,7 @@ module attributes {M.target_info = #M.target<triple="aarch64-apple-macosx12.0.0"
 llvm.func @variadic_float_darwin(%fixed: i32, %f: f32) {
   // CHECK: [[BITS:%.*]] = llvm.bitcast %{{.*}} : f32 to i32
   // CHECK: llvm.call @c_g4(%{{.*}}, [[BITS]])
-  pop.external_call @c_g4(%fixed, %f)
-    (i32) -> ()
+  pop.external_call @c_g4(%fixed, %f) attributes {numFixedArgs = 1 : index}
     : (i32, f32) -> ()
   llvm.return
 }

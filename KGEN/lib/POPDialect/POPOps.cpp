@@ -594,16 +594,16 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
                            StringRef func, ValueRange operands) {
   build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
+        mlir::IntegerAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
         mlir::DictionaryAttr(), Attribute());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
                            StringRef func, ValueRange operands,
-                           FunctionType variadicType) {
+                           int64_t numFixedArgs) {
   build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        TypeAttr::get(variadicType), mlir::ArrayAttr(), mlir::ArrayAttr(),
+        b.getIndexAttr(numFixedArgs), mlir::ArrayAttr(), mlir::ArrayAttr(),
         mlir::DictionaryAttr(), Attribute());
 }
 
@@ -613,10 +613,20 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult ExternalCallOp::verify() {
+  // `numFixedArgs` may still be an unresolved parameter expression here, so
+  // only a materialized count can be checked. The operand count is not an
+  // upper bound either: argument packs are expanded into individual operands
+  // later, by LowerArgConventions, so the post-expansion bound is checked when
+  // lowering to LLVM.
+  auto fixedArgCount = dyn_cast_or_null<IntegerAttr>(getNumFixedArgsAttr());
+  if (fixedArgCount && fixedArgCount.getInt() < 0)
+    return emitOpError("'numFixedArgs' must be non-negative, found ")
+           << fixedArgCount.getInt();
+
   if (mlir::ArrayAttr argAttrs = getArgAttrsAttr()) {
     size_t numArgs;
-    if (std::optional<FunctionType> fnType = getFnType())
-      numArgs = fnType->getNumInputs();
+    if (fixedArgCount)
+      numArgs = fixedArgCount.getInt();
     else
       numArgs = getNumOperands();
     if (argAttrs.size() != numArgs) {

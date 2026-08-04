@@ -8,7 +8,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_variadic_mixed_structs
 # RUN: %t.dir/test_variadic_mixed_structs | FileCheck %s
 
-# Note: Variadic C functions require the variadicType attribute on
+# Note: Variadic C functions require the numFixedArgs attribute on
 # pop.external_call to generate correct LLVM IR with isVarArg=true.
 
 
@@ -24,7 +24,7 @@ def test_variadic_mixed_if_8byte():
     var s = MixedIntFloat8(10, 10.5)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed_if_8byte".value,
-        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
+        numFixedArgs=__mlir_attr[`1 : index`],
         _type=MixedIntFloat8,
     ](Int(999), s)
     print("variadic_mixed_if_8byte:", result.i, result.f)
@@ -42,7 +42,7 @@ def test_variadic_mixed_di_16byte():
     var s = MixedDoubleInt16(100.5, 10)
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_mixed_di_16byte".value,
-        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<si64>`,],
+        numFixedArgs=__mlir_attr[`1 : index`],
         _type=MixedDoubleInt16,
     ](Int(999), s)
     print("variadic_mixed_di_16byte:", result.d, result.i)
