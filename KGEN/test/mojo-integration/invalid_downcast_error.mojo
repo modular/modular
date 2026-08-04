@@ -14,7 +14,7 @@
 from std.builtin.rebind import downcast
 
 # CHECK: error: function instantiation failed
-# CHECK: note: constraint failed: variadic pack element type is not Writable
+# CHECK: note: struct 'invalid_downcast_error::Foo' does not have witness table for trait 'std::format::__init__::Writable'
 
 
 @fieldwise_init
