@@ -1,12 +1,15 @@
 # Mojo Calling Conventions: The `abi` Effect
 
+**Status**: Implemented, except where noted under
+[Open questions](#open-questions).
+
 ## TL;DR
 
-Mojo currently has no way to annotate a function — or a function pointer type —
-with a specific calling convention. This creates silent ABI mismatches when
-interfacing with C, and leaves `@export` semantically incomplete. This proposal
-introduces `abi` as a first-class function effect keyword, analogous to `raises`
-or `async`, and tightens the `@export` decorator to require an explicit ABI
+Mojo had no way to annotate a function — or a function pointer type — with a
+specific calling convention. This created silent ABI mismatches when interfacing
+with C, and left `@export` semantically incomplete. This proposal introduces
+`abi` as a first-class function effect keyword, analogous to `raises` or
+`async`, and tightens the `@export` decorator to require an explicit ABI
 declaration.
 
 The syntax follows the pattern established by Rust's `extern "C"` and Swift's
@@ -28,22 +31,21 @@ cannot appear inside type expressions.
 
 ### `@export(abi="C")` is syntactically accepted but semantically wrong
 
-`@export("my_func", abi="C")` is supposed to produce a symbol that any C program
-can call without a special header. In practice, `processCExportedFunction`
-implements a custom struct-flattening scheme instead of following the platform C
-ABI (System V x86-64 / ARM64 AAPCS). Concretely:
+`@export("my_func", abi="C")` was supposed to produce a symbol that any C
+program can call without a special header. Instead it implemented a custom
+struct-flattening scheme rather than following the platform C ABI (System V
+x86-64 / ARM64 AAPCS). Concretely:
 
-- A `{Int, Int}` return is lowered to two output pointer parameters instead
+- A `{Int, Int}` return was lowered to two output pointer parameters instead
   of being returned in `RAX:RDX` (x86-64) or `X0:X1` (ARM64) as C expects.
-- A `{Float32, Float32}` argument becomes two `XMM` registers instead of one
+- A `{Float32, Float32}` argument became two `XMM` registers instead of one
   packed `Float64` register on x86-64.
 
-The generated header is self-consistent with the implementation, so code
-compiled *against the generated header* works. But any C code that writes a
-natural struct declaration for the same function will silently get the wrong
-calling convention. PR [#78709](https://github.com/modularml/modular/pull/78709)
-fixes the lowering; this proposal provides the language-level contract that
-makes the fix meaningful.
+The generated header was self-consistent with the implementation, so code
+compiled *against the generated header* worked. But any C code that wrote a
+natural struct declaration for the same function silently got the wrong calling
+convention. This proposal provides the language-level contract, and section 6
+specifies the classification rules that replace the flattening scheme.
 
 ### There is no way to mark a function as C-ABI without exporting it
 
@@ -231,6 +233,73 @@ enforcing the invariant that dynamically-loaded symbols are always called with
 C ABI. A deprecation warning for bare `fn` types in `DLHandle` is appropriate
 during the transition period.
 
+### 6. Struct representation at the boundary
+
+Sections 1 through 5 say a struct is "classified and passed exactly as a C
+compiler would". This section says what that means when the struct is a Mojo
+type with its own conventions.
+
+**The classification rule.** At an `abi("C")` boundary a struct is passed and
+returned according to the platform C ABI, determined solely by its size,
+alignment, and field types. The choice of registers, stack slots, and hidden
+return pointers follows the platform document exactly as a C compiler would
+compute it for a struct of the same shape. The rule is symmetric: it governs
+Mojo calling C and C calling Mojo alike, so the C signature of an `abi("C")`
+function is predictable from its Mojo declaration alone.
+
+**`RegisterPassable` does not participate.** Mojo historically made the C ABI
+depend on the `RegisterPassable` trait: such structs were exploded into
+individual fields, while non-register-passable structs were always passed by
+pointer and returned through a hidden out-parameter regardless of size. Neither
+matches a C compiler, and the mismatches produced a stream of bug reports.
+
+`RegisterPassable` is a Mojo-ABI concept only. It governs how a value moves
+between Mojo functions and has no effect on how that value crosses an `abi("C")`
+boundary. There is no way to express it in C, so a call from Mojo to C behaves
+as if it were a C-to-C call.
+
+**Mojo treats a struct passed to C analogously to an immutable borrow.** The
+caller keeps ownership. What C receives is a bitwise copy of the struct's bytes.
+
+No constructor, copy constructor, or destructor runs at the boundary. An
+argument type therefore carries no trait requirements: a struct that is not
+`Copyable`, or that owns an allocation, or that is linear, may be passed by
+value.
+
+Receiving a struct back from C is a different matter; the current
+implementation is unsafe, and requires future design. See
+[Open questions](#open-questions).
+
+**Generated C headers.** `kgen --emit=header` writes a C header for the
+`abi("C")` functions in a module. It is an internal tool, not exposed via
+`mojo`, and its output is not yet stable. A struct in a signature should be
+declared as a C struct type; until the generator does that, it refuses the
+signatures it cannot spell correctly rather than emit a declaration a C caller
+would get wrong.
+
+**Example.** Exposing a Mojo function to C with a struct parameter, where the
+struct carries no register-passable conformance:
+
+```mojo
+@fieldwise_init
+struct Rect:
+    var w: Int32
+    var h: Int32
+
+
+@export("mojo_area")
+def mojo_area(r: Rect) abi("C") -> Int32:
+    return r.w * r.h
+```
+
+The matching C declaration is the natural one. `Rect` is eight bytes of integer
+fields, so it arrives in one register on both SysV AMD64 and ARM64 AAPCS:
+
+```c
+typedef struct { int32_t w, h; } Rect;
+extern int32_t mojo_area(Rect r);
+```
+
 ---
 
 ## Prior Art
@@ -251,6 +320,57 @@ stub backed by an external implementation) while remaining self-documenting.
 
 ---
 
+## Open questions
+
+### A struct returned from C is not validated
+
+Receiving a struct back from C differs in kind from passing one, and it is not
+safe.
+
+Mojo acquires ownership of a value that no Mojo constructor produced. Its bytes
+are whatever C wrote. Mojo then treats it as a fully constructed value of that
+type: the destructor will run on it, and methods that rely on invariants the
+constructor establishes will operate on it.
+
+Consider a struct whose constructor validates a file handle and whose other
+methods use that handle without rechecking it. A C function returning that
+struct can produce a value the constructor would have rejected, and the
+resulting unchecked use is invisible at the call site. Nothing in the Mojo
+source is spelled unsafe.
+
+Mojo does not diagnose this, and cannot express the condition that would let it.
+There is no predicate for "values of this type may be built from arbitrary
+bytes". `__del__is_trivial` and `__copy_ctor_is_trivial` are the closest
+available bits, and both miss the case above: a struct wrapping a validated
+index has a trivial destructor and a trivial copy constructor, and is still
+unsafe to fabricate. Encoding the condition soundly requires an explicit opt-in
+from the type's author, which is future work.
+
+Until that design lands, treat a struct returned from C as unchecked. Returning
+a scalar or a pointer, and constructing the Mojo value explicitly, keeps the
+validation in Mojo where it can run.
+
+### A function type cannot declare a C variadic callee
+
+Section 2 gives a function type an `abi` effect, but no way to say the callee is
+variadic. The arity of a type spelled over an argument pack is fixed, so every
+argument is emitted as a named one. ARM64 AAPCS passes variadic arguments
+differently from named ones, so a variadic callee reads the wrong slots. The
+failure is silent: `snprintf("%d-%d", 7, 9)` called through a `DLHandle`
+function pointer writes `1-0`.
+
+A direct `external_call` can carry the fixed-argument count on the call itself,
+which covers that path. A call through a function pointer has nowhere to put
+such a count, and the same gap applies to a Mojo `abi("C")` function that C
+invokes as a variadic callee.
+
+Closing this needs a design choice: a per-call fixed-argument count on the
+indirect call, or variadic syntax in the function type — for example
+`def(Int32, ...) abi("C") -> Int32` — which puts the contract in the type so
+`get_function` can be checked against it.
+
+---
+
 ## Summary of Changes
 
 | Location                     | Before                          | After                                   |
@@ -262,6 +382,9 @@ stub backed by an external implementation) while remaining self-documenting.
 | Extern C library function    | *(broken — wrong CC)*           | `@extern("f") def f() abi("C") -> T`    |
 | Extern Mojo bitcode function | *(implicit Mojo CC)*            | `@extern("f") def f() abi("Mojo") -> T` |
 | DLHandle                     | returns bare `fn` ptr           | requires `abi("C")` in type param       |
+| Struct classification        | depends on `RegisterPassable`   | platform C ABI, from size and fields    |
+| Non-RP struct argument       | always a pointer                | classified like any other struct        |
+| Non-RP struct return         | hidden out-parameter            | register or `sret` per platform rules   |
 
 ---
 
