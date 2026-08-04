@@ -7,7 +7,7 @@
 # RUN: kgen-doc %s | FileCheck %s
 
 
-# CHECK: "default": "StringSlice(\"\\n\")",
+# CHECK: "default": "StringSpan(\"\\n\")",
 def testFn(stringArgument: StaticString = "\n"):
     """Function description text.
 

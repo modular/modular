@@ -1359,14 +1359,14 @@ def test_optional_inference(value: ParamType[3]):
 # allows callers to infer O from the default value.
 
 # CHECK-LABEL: lit.fn @"default_inferring_param
-# CHECK: (%str: !lit.struct<#StringSlice <{{.*}} O>> = :!alias_StaticString1 apply
-def default_inferring_param[O: ImmOrigin](str: StringSlice[O] = StaticString("")):
+# CHECK: (%str: !lit.struct<#StringSpan <{{.*}} O>> = :!alias_StaticString1 apply
+def default_inferring_param[O: ImmOrigin](str: StringSpan[O] = StaticString("")):
     pass
 
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
 def test_default_inferring_param(b: String):
     # Infers O to default value.
-    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSlice <:!Bool {:scalar<bool> false}, :origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSpan <:!Bool {:scalar<bool> false}, :origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
     default_inferring_param()
     default_inferring_param(StaticString("a"))

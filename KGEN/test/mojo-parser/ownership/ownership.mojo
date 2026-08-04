@@ -1360,7 +1360,7 @@ def test_min2(a: String):
     # CHECK: lit.call {{.*}}String::@"__init__
     var y = String()
     # CHECK: [[REF:%.*]] = lit.call {{.*}}my_min2
-    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSpan::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}String::@"__iadd__{{.*}}([[REF]], [[SLICE]])
     my_min2(x, y) += a
     # CHECK-NEXT: lit.call {{.*}}String::@"__deinit__{{.*}}(%y)

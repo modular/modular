@@ -71,6 +71,7 @@ struct MySpan[
 ]():
     pass
 
+
 # // -----
 
 
@@ -79,10 +80,10 @@ def defaulted_slice_param[param: StringSlice = "world"]() -> String:
 
 
 def use_defaulted_slice_param():
-    # Binding the default installs the static-origin `StringSlice` for `param`.
+    # Binding the default installs the static-origin `StringSpan` for `param`.
     # CHECK: lit.call @parameter_binding::@"defaulted_slice_param[{{.*}}]()"
     # CHECK-SAME: <:!Bool {:scalar<bool> false},
-    # CHECK-SAME: :!lit.struct<#StringSlice {{.*}}#alias_ImmStaticOrigin>>
+    # CHECK-SAME: :!lit.struct<#StringSpan {{.*}}#alias_ImmStaticOrigin>>
     var _ = defaulted_slice_param()
 
 

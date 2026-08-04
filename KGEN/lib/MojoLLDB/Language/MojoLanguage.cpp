@@ -292,9 +292,9 @@ mlirValueElisionFrontEndCreator(CXXSyntheticChildren *,
   return new MlirValueElisionFrontEnd(*valobjSP);
 }
 
-/// Summary provider for StringSlice, StaticString, and their underlying
+/// Summary provider for StringSpan, StaticString, and their underlying
 /// Span[Byte, ...] types. Two cases:
-///   1. Struct field: LLDB type is StringSlice, which has `_slice: Span[Byte]`.
+///   1. Struct field: LLDB type is StringSpan, which has `_slice: Span[Byte]`.
 ///      Navigate via _slice._data and _slice._len.
 ///   2. Top-level variable: KGEN flattens TrivialRegisterPassable types in
 ///      DWARF, so the LLDB type is Span[Byte] directly with _data and _len.
@@ -306,7 +306,7 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
     return true;
   };
 
-  // Case 1: valobj is StringSlice — navigate to _slice (the Span[Byte] field).
+  // Case 1: valobj is StringSpan — navigate to _slice (the Span[Byte] field).
   // Case 2: valobj is already the Span[Byte] (flattened top-level variable).
   //
   // We detect the case via the type name rather than probing for _slice,
@@ -315,12 +315,12 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
   //
   // This function is registered for two type patterns (see
   // LoadLibMojoFormatters):
-  //   - StringSlice.*  → type name contains "StringSlice" → case 1
+  //   - StringSpan.*  → type name contains "StringSpan" → case 1
   //   - Span[Byte]     → type name does not              → case 2
   // The type name check here must remain consistent with those registrations.
   ValueObjectSP span;
   llvm::StringRef typeName = valobj.GetTypeName().GetStringRef();
-  if (typeName.contains("StringSlice")) {
+  if (typeName.contains("StringSpan")) {
     ValueObjectSP slice = valobj.GetChildMemberWithName("_slice");
     if (!slice || !slice->GetError().Success())
       return onError("; could not find _slice field");
@@ -562,23 +562,23 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
       summaryFlags, /*regex=*/true);
 
   // Must be registered AFTER String (reverse-order matching means this takes
-  // priority for StringSlice types, which have a distinct type name).
+  // priority for StringSpan types, which have a distinct type name).
   AddCXXSummary(
       mojoCategorySP, stringSliceSummaryProvider,
-      "collections::string::string_slice::StringSlice summary provider",
-      R"(!lit.struct<(@std::)?@collections::@string::@string_slice::@StringSlice.*>)",
+      "collections::string::string_span::StringSpan summary provider",
+      R"(!lit.struct<(@std::)?@collections::@string::@string_span::@StringSpan.*>)",
       summaryFlags, /*regex=*/true);
 
-  // TrivialRegisterPassable types like StringSlice and StaticString are
+  // TrivialRegisterPassable types like StringSpan and StaticString are
   // flattened to their inner Span[Byte] type in DWARF for top-level variables.
   // Register a formatter for Span[Byte, ...] (element type ui8) so these
   // variables get summaries. Restricted to ui8 to avoid matching non-byte
-  // spans. The two regexes (StringSlice and Span[Byte]) are non-overlapping by
+  // spans. The two regexes (StringSpan and Span[Byte]) are non-overlapping by
   // construction, so registration order only matters relative to other
   // formatters. Registered last so it is tried first in the reverse list.
   AddCXXSummary(
       mojoCategorySP, stringSliceSummaryProvider,
-      "memory::span::Span[Byte] summary provider (flattened StringSlice)",
+      "memory::span::Span[Byte] summary provider (flattened StringSpan)",
       R"(!lit.struct<(@std::)?@collections::@span::@.Span\[.*ui8.*>)",
       summaryFlags,
       /*regex=*/true);

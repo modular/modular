@@ -283,10 +283,10 @@ def imm_ref_to[origin: Origin[]](ref[origin] to: String):
 
 # CHECK-LABEL: lit.fn @"test_in
 def test_in(a: String, b: String):
-    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK-NEXT: [[SLICE:%.*]] = lit.call {{.*}}StringSpan::@"__init__{{.*}}(%a)
     # CHECK-NEXT: lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     _ = a in b
-    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}StringSlice::@"__init__{{.*}}(%a)
+    # CHECK: [[SLICE:%.*]] = lit.call {{.*}}StringSpan::@"__init__{{.*}}(%a)
     # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__contains__{{.*}}(%b, [[SLICE]])
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])

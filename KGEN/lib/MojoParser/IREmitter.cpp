@@ -366,7 +366,7 @@ static LogicalResult emitErrorIfUnmaterializableValue(IREmitter &emitter,
   }
 
   // We cannot emit a value that contains an origin in its type (e.g. a
-  // StringSlice or UnsafePointer) because the origin will be incorrect -
+  // StringSpan or UnsafePointer) because the origin will be incorrect -
   // referring to immortal compile-time memory.
   if (ASTType(attr.getType()).containsUnmaterializableOrigins(emitter.shared)) {
     const ExprNode *expr = value.expr;

@@ -10,9 +10,9 @@
 using namespace M;
 using namespace lldb;
 
-TEST(StringsTest, testStringSlice) {
-  // Ensures that StaticString (= StringSlice[False, ImmStaticOrigin]) is
-  // shown as a quoted string by the StringSlice summary formatter.
+TEST(StringsTest, testStringSpan) {
+  // Ensures that StaticString (= StringSpan[False, ImmStaticOrigin]) is
+  // shown as a quoted string by the StringSpan summary formatter.
   StopContext ctx = buildAndLaunch("string_slice.mojo");
 
   SBValue s1 = ctx.frame.FindVariable("s1");

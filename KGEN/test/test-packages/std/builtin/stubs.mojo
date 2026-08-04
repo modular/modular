@@ -499,7 +499,10 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return {}
 
 
-struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
+comptime StringSlice = StringSpan
+
+
+struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
     TrivialRegisterPassable
 ):
     var _slice: Span[Byte, Self.origin]
