@@ -609,9 +609,13 @@ def causal_conv1d_varlen_fwd_cpu[
                         )
                         val = Scalar[conv_states_dtype](x.raw_load(x_offset))
                     elif use_initial_state:
-                        # Carry over from initial state
-                        var state_idx = width_minus_1 + src_l - (width_minus_1)
-                        if state_idx >= 0 and state_idx < width_minus_1:
+                        # Carry over from initial state. `src_l` is negative
+                        # here, and the same mapping the convolution above uses
+                        # for negative positions applies: state index
+                        # `width_minus_1 + src_l`, which is in range because
+                        # `src_l >= -width_minus_1`.
+                        var state_idx = width_minus_1 + src_l
+                        if state_idx >= 0:
                             var state_offset = (
                                 UInt32(cache_idx) * conv_states_batch_stride
                                 + UInt32(d) * conv_states_dim_stride
@@ -1092,6 +1096,26 @@ def causal_conv1d_varlen_fwd_gpu[
                     + UInt32((seq_start + src_l)) * x_seqlen_stride
                 )
                 val = Scalar[conv_states_dtype](x.raw_load(x_offset))
+            elif use_initial_state:
+                # A chunk shorter than WIDTH_MINUS_1 does not contain the whole
+                # new state: the oldest entries have to come from the state
+                # being continued, under the same negative-position mapping the
+                # convolution above uses. Zero here would silently restart the
+                # sequence on every decode step.
+                #
+                # This reads the pool it is writing, which is safe because the
+                # index read simplifies to `seqlen + s` -- strictly AHEAD of the
+                # `s` being written, and this loop runs `s` upwards. Reordering
+                # it would turn the carry-over into a read of a just-written
+                # entry.
+                var state_idx = WIDTH_MINUS_1 + src_l
+                if state_idx >= 0:
+                    var prev_offset = (
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
+                    )
+                    val = conv_states.raw_load(prev_offset)
 
             var state_offset = (
                 UInt32(cache_idx) * conv_states_batch_stride
@@ -1306,6 +1330,19 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
                     + UInt32((seq_start + src_l)) * x_seqlen_stride
                 )
                 val = Scalar[conv_states_dtype](x.raw_load(x_offset))
+            elif use_initial_state:
+                # See the same carry-over in `causal_conv1d_varlen_fwd_gpu`: a
+                # chunk shorter than WIDTH_MINUS_1 takes its oldest state
+                # entries from the state being continued, and the index read is
+                # `seqlen + s`, ahead of the `s` written here.
+                var state_idx = WIDTH_MINUS_1 + src_l
+                if state_idx >= 0:
+                    var prev_offset = (
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
+                    )
+                    val = conv_states.raw_load(prev_offset)
 
             var state_offset = (
                 UInt32(cache_idx) * conv_states_batch_stride
