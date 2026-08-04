@@ -55,7 +55,7 @@ from std.gpu import (
 )
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import (
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,

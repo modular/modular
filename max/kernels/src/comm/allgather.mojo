@@ -45,8 +45,7 @@ from std.gpu import (
     grid_dim,
     warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_shared_cluster_global,
     external_memory,

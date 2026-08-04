@@ -50,7 +50,7 @@ from max.gpu.host.nvidia.tma import (
     prefetch_tma_descriptor,
 )
 from std.gpu.intrinsics import Scope
-from std.gpu.memory import (
+from max.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,

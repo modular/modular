@@ -37,8 +37,7 @@ from std.math.constants import log2e
 from std.gpu.primitives import elect_one_sync
 from std.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,

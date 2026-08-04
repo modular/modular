@@ -27,7 +27,6 @@ import extensibility
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-from std.gpu.memory import AddressSpace
 from layout import (
     Coord,
     Idx,

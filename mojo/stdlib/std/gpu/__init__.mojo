@@ -66,31 +66,6 @@ from .primitives import (
     warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
-from .memory import (
-    AddressSpace,
-    CacheEviction,
-    CacheOperation,
-    Consistency,
-    Fill,
-    ReduceOp,
-    async_copy,
-    async_copy_commit_group,
-    async_copy_wait_all,
-    async_copy_wait_group,
-    cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_global_shared_cta_elect,
-    cp_async_bulk_tensor_reduce_global_shared_cta,
-    cp_async_bulk_tensor_shared_cluster_global,
-    cp_async_bulk_tensor_shared_cluster_global_multicast,
-    external_memory,
-    fence_async_view_proxy,
-    fence_mbarrier_init,
-    fence_proxy_tensormap_generic_sys_acquire,
-    fence_proxy_tensormap_generic_sys_release,
-    load,
-    multimem_ld_reduce,
-    multimem_st,
-)
 from .sync import (
     NamedBarrierSemaphore,
     Semaphore,

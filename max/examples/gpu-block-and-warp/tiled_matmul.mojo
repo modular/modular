@@ -37,7 +37,6 @@ from std.sys import exit, has_accelerator
 from std.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx
-from std.gpu.memory import AddressSpace
 
 # TileTensor support from open source layout package
 from layout import TileTensor, stack_allocation

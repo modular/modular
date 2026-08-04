@@ -38,7 +38,6 @@ the helpers above.
 from std.atomic import Atomic
 from std.bit import log2_floor, next_power_of_two
 from std.gpu import (
-    AddressSpace,
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

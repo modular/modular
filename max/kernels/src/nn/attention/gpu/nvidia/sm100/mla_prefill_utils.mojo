@@ -50,7 +50,7 @@ from linalg.arch.sm100.mma import smem_descriptor
 
 from max.gpu.host.info import B200
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,

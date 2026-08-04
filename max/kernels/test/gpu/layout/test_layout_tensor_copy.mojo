@@ -17,8 +17,7 @@ from std.sys import simd_width_of
 from std.gpu import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )

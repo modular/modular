@@ -46,8 +46,7 @@ Coverage:
 
 from std.gpu import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )

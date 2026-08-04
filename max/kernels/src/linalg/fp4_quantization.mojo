@@ -79,7 +79,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from layout.layout_tensor import LayoutTensorIter
-from std.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
 from std.sys import size_of, align_of, simd_width_of, get_defined_int
 from layout.swizzle import make_swizzle

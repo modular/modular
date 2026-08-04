@@ -26,7 +26,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.host.info import is_gpu
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

@@ -32,7 +32,7 @@ from std.gpu import (
     lane_id,
     thread_idx,
 )
-from std.gpu.memory import (
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,

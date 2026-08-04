@@ -49,8 +49,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )

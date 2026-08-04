@@ -21,3 +21,29 @@ This package is moving from the Mojo standard library. Only the subpackages
 listed below have moved so far; the remaining `gpu` APIs are still documented in
 the Mojo standard library reference.
 """
+
+from .memory import (
+    AddressSpace,
+    CacheEviction,
+    CacheOperation,
+    Consistency,
+    Fill,
+    ReduceOp,
+    async_copy,
+    async_copy_commit_group,
+    async_copy_wait_all,
+    async_copy_wait_group,
+    cp_async_bulk_tensor_global_shared_cta,
+    cp_async_bulk_tensor_global_shared_cta_elect,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
+    cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_multicast,
+    external_memory,
+    fence_async_view_proxy,
+    fence_mbarrier_init,
+    fence_proxy_tensormap_generic_sys_acquire,
+    fence_proxy_tensormap_generic_sys_release,
+    load,
+    multimem_ld_reduce,
+    multimem_st,
+)

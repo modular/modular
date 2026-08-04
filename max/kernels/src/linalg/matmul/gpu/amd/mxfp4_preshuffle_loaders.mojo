@@ -27,7 +27,7 @@ fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
 """
 
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.memory import CacheOperation
+from max.gpu.memory import CacheOperation
 from std.memory.unsafe import bitcast
 
 from layout import Coord, Idx, TileTensor

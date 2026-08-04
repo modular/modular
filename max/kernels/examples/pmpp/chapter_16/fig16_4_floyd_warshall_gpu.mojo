@@ -17,7 +17,6 @@
 from std.math import ceildiv
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.itertools import product
 from std.memory import unsafe_stack_allocation
 

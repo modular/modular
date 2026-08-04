@@ -37,7 +37,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAInsDescriptor,

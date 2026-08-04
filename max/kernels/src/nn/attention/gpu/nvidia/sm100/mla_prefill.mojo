@@ -25,7 +25,6 @@ from nn.attention.mha_utils import MHAConfig, OptionallyStaticInt
 from nn.attention.mha_mask import MHAMask
 from max.gpu.host import DeviceContext
 from layout import TileTensor
-from std.gpu.memory import AddressSpace
 from .mla_prefill_generic import mla_sm100_prefill_generic
 from .mla_prefill_blockscale import mla_sm100_prefill_blockscale
 from .mla_prefill_sparse_utils import MLASparseConfig

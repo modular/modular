@@ -21,7 +21,7 @@ from std.sys.info import _accelerator_arch
 import std.gpu.primitives.warp as warp
 from std.gpu import block_idx
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,

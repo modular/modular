@@ -28,7 +28,6 @@ path is a possible future optimization.
 """
 
 from std.gpu import barrier, block_dim, thread_idx
-from std.gpu.memory import AddressSpace
 from std.math import min
 from std.memory import unsafe_stack_allocation
 

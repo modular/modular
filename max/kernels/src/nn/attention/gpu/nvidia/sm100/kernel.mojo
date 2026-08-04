@@ -35,7 +35,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.memory import fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

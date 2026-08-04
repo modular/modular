@@ -37,7 +37,7 @@ from std.gpu import (
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from max.gpu.memory import external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,

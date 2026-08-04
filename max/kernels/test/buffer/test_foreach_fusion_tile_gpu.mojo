@@ -35,7 +35,6 @@ from layout.tile_layout import TensorLayout
 from std.memory import unsafe_stack_allocation as raw_stack_allocation
 
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.testing import assert_equal
 from std.utils.index import IndexList
 

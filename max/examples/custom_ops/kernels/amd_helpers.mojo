@@ -26,7 +26,6 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import AddressSpace
 from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import (
     Layout,

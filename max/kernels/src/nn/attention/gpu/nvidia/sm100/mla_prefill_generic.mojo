@@ -47,7 +47,6 @@ from nn.attention.gpu.nvidia.common import (
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from std.gpu.memory import AddressSpace
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id

@@ -51,7 +51,7 @@ from max.gpu.host import (
     get_gpu_target,
 )
 from max.gpu.host.info import B200
-from std.gpu.memory import AddressSpace, async_copy, external_memory
+from max.gpu.memory import async_copy, external_memory
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,

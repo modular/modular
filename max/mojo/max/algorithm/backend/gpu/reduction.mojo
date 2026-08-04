@@ -29,7 +29,6 @@ from std.gpu import (
     lane_id,
     thread_idx,
     warp_id,
-    AddressSpace,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,

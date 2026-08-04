@@ -36,7 +36,7 @@ from std.memory import bitcast
 from std.sys import size_of
 import std.gpu.primitives.warp as warp
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,

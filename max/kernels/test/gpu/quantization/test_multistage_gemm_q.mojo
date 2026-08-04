@@ -25,7 +25,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
 from std.random import rand

@@ -14,7 +14,7 @@
 
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu.memory import CacheEviction
+from max.gpu.memory import CacheEviction
 from std.gpu.primitives.id import cluster_dim
 from layout.tma_async import SharedMemBarrier
 from layout import TileTensor

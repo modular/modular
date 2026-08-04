@@ -26,7 +26,7 @@ from std.sys import (
 from std.memory.unsafe_pointer import unsafe_cast
 from std.sys.intrinsics import PrefetchOptions, readfirstlane
 
-import std.gpu.memory as gpu_memory
+import max.gpu.memory as gpu_memory
 from std.algorithm import vectorize
 from std.bit import log2_floor
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -40,7 +40,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
+from max.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
@@ -5557,7 +5557,7 @@ struct LayoutTensor[
         ```mojo
         from layout import LayoutTensor, Layout
         from std.gpu import thread_idx, block_idx, block_dim
-        from std.gpu.memory import async_copy_wait_all
+        from max.gpu.memory import async_copy_wait_all
 
         comptime dtype = DType.float32
         comptime in_size = 128

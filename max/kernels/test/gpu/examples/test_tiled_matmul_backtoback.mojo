@@ -28,7 +28,7 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout.layout import size

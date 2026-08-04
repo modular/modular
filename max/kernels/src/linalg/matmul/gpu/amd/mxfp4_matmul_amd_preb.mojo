@@ -45,7 +45,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.memory import CacheOperation
+from max.gpu.memory import CacheOperation
 from std.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 

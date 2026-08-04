@@ -18,7 +18,7 @@ from std.gpu.primitives.cluster import (
 )
 from max.gpu.host import DeviceContext
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from std.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler

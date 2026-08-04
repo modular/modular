@@ -42,7 +42,7 @@ from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import external_memory, fence_async_view_proxy
+from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.compute.mma import MMAOperandDescriptor
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,

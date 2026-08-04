@@ -29,7 +29,6 @@ Usage:
     # TileTensor tiles are passed directly to TMA ops
 """
 
-from std.gpu.memory import AddressSpace
 from layout import (
     TensorLayout,
     TileTensor,

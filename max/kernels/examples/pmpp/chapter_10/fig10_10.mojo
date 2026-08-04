@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.random import random_float64
 from std.math import abs

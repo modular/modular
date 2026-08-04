@@ -30,8 +30,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceBuffer
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )

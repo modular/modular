@@ -18,7 +18,7 @@ from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
 from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.memory import async_copy_wait_all
+from max.gpu.memory import async_copy_wait_all
 from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (

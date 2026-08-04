@@ -30,7 +30,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import fence_async_view_proxy, external_memory
+from max.gpu.memory import fence_async_view_proxy, external_memory
 from max.gpu.compute.mma import st_matrix
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier

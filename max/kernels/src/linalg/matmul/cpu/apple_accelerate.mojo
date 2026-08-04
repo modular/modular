@@ -36,7 +36,6 @@ from std.utils.index import Index
 from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from std.gpu.memory import AddressSpace
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
 from ...utils import (
