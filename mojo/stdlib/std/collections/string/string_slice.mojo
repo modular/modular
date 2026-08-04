@@ -437,54 +437,21 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         )
         return Self(unsafe_from_utf8=self._slice[byte])
 
-    def _get_codepoint(self, codepoint: Some[Indexer]) -> Self:
-        var c_idx = index(codepoint)
-        debug_assert[assert_mode="safe"](
-            c_idx >= 0, "negative indexing is not supported"
-        )
-        # NOTE: Edge case: when the element at idx 0 in a string is fetched and
-        # it's a multi-byte sequence, the code would assume it's an ascii
-        # sequence. Fetch 1 more byte (when not OOB) just to have a continuation
-        # byte and force the code to go into the clipped branch
-        var i0_multi_case = Int(c_idx == 0 and self.byte_length() > 1)
+    def _codepoint_byte_offset(self, count: Int) -> Int:
+        # Byte offset of the boundary before the `count`-th codepoint.
+        # Requires `0 <= count <= self.count_codepoints()`.
         var ptr = self.unsafe_ptr()
-        var span = self._slice[: c_idx + 1 + i0_multi_case]
-        var c_count = len(span) - _count_utf8_continuation_bytes(span)
-        if likely(c_count == len(span)):  # ASCII
-            return Self(
-                unsafe_from_utf8=Span[Byte, Self.origin](
-                    unsafe_ptr=ptr.unsafe_offset(c_idx), length=1
-                )
+        var offset = 0
+        for _ in range(count):
+            offset += _utf8_first_byte_sequence_length(
+                ptr[unsafe_offset=offset]
             )
-        elif c_count == c_idx + 1:  # clipped the multi-byte sequence
-            var b_idx = c_idx
-            while _is_utf8_continuation_byte(ptr[unsafe_offset=b_idx]):
-                b_idx -= 1
-            var length = Int(
-                _utf8_first_byte_sequence_length(ptr[unsafe_offset=b_idx])
-            )
-            return self[byte = b_idx : b_idx + length]
-        else:  # keep going forward
-            var b_idx = c_idx + 1
-            while _is_utf8_continuation_byte(ptr[unsafe_offset=b_idx]):
-                b_idx += 1
-            for s in self[byte=b_idx:].codepoint_slices():
-                if c_count == c_idx:
-                    return s
-                c_count += 1
-            return {
-                unsafe_from_utf8 = Span[Byte, Self.origin](
-                    unsafe_ptr=ptr.unsafe_offset(self.byte_length() - 1),
-                    length=0,
-                )
-            }
+        return offset
 
     def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
         """Gets the character at the specified position.
 
-        Aborts if `codepoint` is out of bounds, though the error message may
-        not always be codepoint-scoped (see the `codepoint=` slice overload's
-        note).
+        Aborts if `codepoint` is out of bounds.
 
         Args:
             codepoint: The codepoint index.
@@ -493,17 +460,26 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A `StringSlice` view containing the unicode codepoint at the
             specified position.
         """
-        var cp = self._get_codepoint(codepoint)
-        if cp.byte_length() == 0:
-            abort(t"codepoint index is out of bounds: {index(codepoint)}")
-        return cp
+        var c_idx = index(codepoint)
+        if c_idx < 0 or c_idx >= self.count_codepoints():
+            abort(t"codepoint index is out of bounds: {c_idx}")
+        var ptr = self.unsafe_ptr()
+        var start = self._codepoint_byte_offset(c_idx)
+        var length = _utf8_first_byte_sequence_length(ptr[unsafe_offset=start])
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=ptr.unsafe_offset(start), length=length
+            )
+        )
 
+    @always_inline
     def __getitem__(self, *, codepoint: ContiguousSlice) -> Self:
         """Gets a substring at the specified codepoint positions.
 
-        Note: some out-of-bounds indices already abort today, but not with a
-        codepoint-scoped message. Proper abort semantics matching `byte=`
-        slicing are planned as a follow-up.
+        Aborts if `codepoint`'s start or end index is out of bounds (valid
+        range is `0` to `self.count_codepoints()`, inclusive), or if start
+        is greater than end. Negative indices are not supported and always
+        abort.
 
         Args:
             codepoint: A slice that specifies codepoint positions of the new
@@ -512,37 +488,17 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             A new StringSlice containing the codepoints in the specified range.
         """
-
-        var res: Self
-        if not codepoint.start:
-            res = self
-        else:
-            var cp = self._get_codepoint(codepoint.start.value())
-            var cp_ptr = cp.unsafe_ptr()
-            var offset = Int(cp_ptr) - Int(self.unsafe_ptr())
-            var length = self.byte_length() - offset
-            res = {
-                unsafe_from_utf8 = Span[Byte, Self.origin](
-                    unsafe_ptr=cp_ptr,
-                    length=length - Int(cp.byte_length() == 0),
-                )
-            }
-
-        if codepoint.end:
-            var idx = codepoint.end.value() - (codepoint.start.or_else(0) + 1)
-            if idx < 0:
-                res = {}
-            else:
-                var cp = res[codepoint=idx]
-                var r_ptr = res.unsafe_ptr()
-                var offset = Int(cp.unsafe_ptr()) - Int(r_ptr)
-                res = {
-                    unsafe_from_utf8 = Span[Byte, Self.origin](
-                        unsafe_ptr=r_ptr, length=offset + cp.byte_length()
-                    )
-                }
-
-        return res
+        var start, end = check_slice_bounds(codepoint, self.count_codepoints())
+        var start_bytes = self._codepoint_byte_offset(start)
+        var end_bytes = (
+            start_bytes if end == start else self._codepoint_byte_offset(end)
+        )
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                unsafe_ptr=self.unsafe_ptr().unsafe_offset(start_bytes),
+                length=end_bytes - start_bytes,
+            )
+        )
 
     @always_inline
     def __getitem__(self, *, grapheme: Some[Indexer]) -> Self:
@@ -851,6 +807,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self._check_valid_index(idx)
         return self._unchecked_get_byte(idx)
 
+    @always_inline
     def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
         """Gets a substring at the specified grapheme-cluster positions.
 
@@ -860,10 +817,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         byte length; use `byte=` slicing when you already have byte
         offsets.
 
-        Out-of-range ends are clamped to the end of the string. Negative
-        indices are not supported. Unlike `byte=` slicing, this does not
-        abort on an out-of-range end -- aligning it with `byte=`'s abort
-        semantics is planned as a follow-up.
+        Aborts if `grapheme`'s start or end index is out of bounds (valid
+        range is `0` to `self.count_graphemes()`, inclusive), or if start is
+        greater than end. Negative indices are not supported and always
+        abort. Counting the total number of graphemes to report a precise
+        out-of-bounds message is itself an O(n) scan, so it is only done
+        once a bad index is detected, not on every call.
 
         Args:
             grapheme: A slice specifying the grapheme-cluster range of the
@@ -887,9 +846,16 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         var start_idx = grapheme.start.or_else(0)
-        debug_assert[assert_mode="safe"](
-            start_idx >= 0, "grapheme start index must be non-negative"
-        )
+        var end_opt = grapheme.end
+
+        # A negative index, or an explicit end before start, is invalid
+        # regardless of the actual grapheme count. Recompute the count --
+        # an O(n) scan -- only on this error path, and let
+        # `check_slice_bounds` raise with a properly scoped message.
+        if start_idx < 0 or (
+            end_opt and end_opt.unsafe_value() < max(start_idx, 0)
+        ):
+            _ = check_slice_bounds(grapheme, self.count_graphemes())
 
         var total_bytes = len(self._slice)
         var iter = self.graphemes()
@@ -900,11 +866,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         # summing each grapheme's `byte_length()` per iteration.
         while i < start_idx:
             if not iter.next():
+                # Exhausted before reaching `start_idx`; `i` is the real
+                # grapheme count, only known now that we've hit it.
+                _ = check_slice_bounds(grapheme, i)
                 break
             i += 1
         var start_bytes = total_bytes - iter.remaining_byte_length()
 
-        if not grapheme.end:
+        if not end_opt:
             return Self(
                 unsafe_from_utf8=Span[Byte, Self.origin](
                     unsafe_ptr=self._slice.unsafe_ptr().unsafe_offset(
@@ -914,14 +883,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 )
             )
 
-        var end_idx = grapheme.end.unsafe_value()
-        debug_assert[assert_mode="safe"](
-            end_idx >= start_idx,
-            "grapheme end index must be >= start index",
-        )
-
+        var end_idx = end_opt.unsafe_value()
         while i < end_idx:
             if not iter.next():
+                _ = check_slice_bounds(grapheme, i)
                 break
             i += 1
         var end_bytes = total_bytes - iter.remaining_byte_length()
