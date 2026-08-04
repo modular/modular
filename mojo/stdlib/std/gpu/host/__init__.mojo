@@ -13,5 +13,3 @@
 """Implements the gpu host package."""
 
 from .info import get_gpu_target
-from .dim import Dim
-from .launch_attribute import LaunchAttribute
