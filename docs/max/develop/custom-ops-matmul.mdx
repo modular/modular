@@ -269,8 +269,8 @@ be the same.
 ### Layouts, `TileTensor`, and `LayoutTensor`
 
 The `matrix_multiplication` custom operation uses
-[layouts](https://mojolang.org/docs/layout/layout/) and
-[`TileTensor`](https://mojolang.org/docs/layout/tile_tensor/TileTensor) to
+[layouts](/api/mojo/layout/layout/) and
+[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
 
@@ -465,7 +465,7 @@ The kernel then iterates across the input matrices, loading tiles into shared
 memory.
 
 The
-[`GenericToSharedAsyncTileCopier`](https://mojolang.org/docs/layout/tile_io/GenericToSharedAsyncTileCopier)
+[`GenericToSharedAsyncTileCopier`](/api/mojo/layout/tile_io/GenericToSharedAsyncTileCopier)
 type deserves special note. This takes the place of the CUDA pattern of
 instructing each thread which value or values to copy to shared memory. The
 `thread_layout` parameter associates individual threads with values, and the
@@ -660,7 +660,7 @@ algorithm.
 As a final optimization to our block-tiling kernel, memory accesses can be
 vectorized to improve memory access bandwidth. The new tool in this kernel is
 the
-[`TileTensor.vectorize()`](https://mojolang.org/docs/layout/tile_tensor/TileTensor#vectorize)
+[`TileTensor.vectorize()`](/api/mojo/layout/tile_tensor/TileTensor#vectorize)
 method, which produces a vectorized view of a tile so that multiple values can
 be loaded or stored as a single SIMD vector. The `B` tile copies straight into
 row-major shared memory, but `a_smem` switches to column-major so the inner loop

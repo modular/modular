@@ -64,7 +64,7 @@ For tensors with simple row-major or column-major layouts, you can address a
 layout tensor like a multidimensional array to access elements:
 
 ```mojo
-element = tensor2d[x, y]
+var element = tensor2d[x, y]
 tensor2d[x, y] = z
 ```
 
@@ -75,8 +75,8 @@ number of indices is incorrect, you may see a cryptic runtime error.
 
 ```mojo
 # Indexing into a 2D tensor requires two indices
-el1 = tensor2d[x, y]  # Works
-el2 = tensor2d[x]  # Runtime error
+var el1 = tensor2d[x, y]  # Works
+var el2 = tensor2d[x]  # Runtime error
 ```
 
 For more complicated "nested" layouts, such as tiled layouts, the
@@ -90,7 +90,7 @@ because some APIs can only accept scalar values (SIMD vectors of width 1). For
 example, consider the following code:
 
 ```mojo
-i: Int = SIMD[DType.int32, width](15)
+var i: Int = SIMD[DType.int32, width](15)
 ```
 
 If `width` is 1, the vector can be implicitly converted to an `Int`, but if
@@ -108,7 +108,6 @@ You can also access elements using the `load()` and `store()` methods, which
 let you specify the vector width explicitly:
 
 ```mojo
-var elements: SIMD[DType.float32, 4]
 var elements = tensor.load[4](row, col)
 elements = elements * 2
 tensor.store(row, col, elements)
@@ -139,7 +138,7 @@ pass a flattened version of the coordinates. For example:
 
 ```mojo
 # retrieve the value at ((1, 0), (0, 1))
-element = nested_tensor[1, 0, 0, 1][0]
+var element = nested_tensor[1, 0, 0, 1][0]
 ```
 
 The number of indices passed to the subscript operator must match the *flattened
