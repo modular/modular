@@ -122,7 +122,7 @@ def test_grouped_tensormap_update_kernel[
     ]()
 
     # Allocate SMEM for tiles
-    tile_a = LayoutTensor[
+    var tile_a = LayoutTensor[
         dtype,
         tile_layout,
         MutAnyOrigin,
@@ -130,7 +130,7 @@ def test_grouped_tensormap_update_kernel[
         alignment=128,
     ].stack_allocation()
 
-    tile_b = LayoutTensor[
+    var tile_b = LayoutTensor[
         dtype,
         tile_layout,
         MutAnyOrigin,
