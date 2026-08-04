@@ -381,13 +381,18 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
     // Qualified references rooted at the package resolve through the
     // parser's scoping rather than MLIR symbol tables, so rewrite them
     // directly rather than through SymbolTable::replaceAllSymbolUses.
+    //
+    // Only a reference's root names a package; its nested components name
+    // declarations within one, and a module nested in another package may
+    // share the source directory's name. Skip, or the replacer walks into
+    // those components and revisits each as a reference rooted at itself.
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
         [&](SymbolRefAttr ref) -> std::pair<Attribute, WalkResult> {
           if (ref.getRootReference() != sourceName)
-            return {ref, WalkResult::advance()};
+            return {ref, WalkResult::skip()};
           return {SymbolRefAttr::get(newName, ref.getNestedReferences()),
-                  WalkResult::advance()};
+                  WalkResult::skip()};
         });
     // Debug-info source names snapshot the symbol lineage as plain strings at
     // parse time, so the package appears in them as a name, not a symbol
@@ -395,17 +400,25 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
     // chained from it; these live in scoped locations, hence replaceLocs.
     // Source names for types and parameter values are rendered text, so
     // package-rooted references inside them are substrings: rewrite the
-    // root token (its `::` terminator keeps longer names unmatched).
+    // root token (its `::` terminator keeps longer names unmatched) wherever
+    // it roots a reference. Preceded by `::` it is instead a nested component
+    // of a reference rooted elsewhere, and names a module, not the package.
     std::string sourceToken = "@" + precompileArgs.sourceName + "::";
     std::string newToken = "@" + precompileArgs.name + "::";
     auto rewriteNameText = [&](StringAttr str) -> StringAttr {
-      if (!str.getValue().contains(sourceToken))
+      StringRef text = str.getValue();
+      if (!text.contains(sourceToken))
         return str;
-      std::string text = str.getValue().str();
-      for (size_t pos = text.find(sourceToken); pos != std::string::npos;
-           pos = text.find(sourceToken, pos + newToken.size()))
-        text.replace(pos, sourceToken.size(), newToken);
-      return StringAttr::get(ctx, text);
+      std::string rewritten;
+      for (size_t pos = text.find(sourceToken); pos != StringRef::npos;
+           pos = text.find(sourceToken)) {
+        StringRef prefix = text.take_front(pos);
+        rewritten += prefix;
+        rewritten += prefix.ends_with("::") ? sourceToken : newToken;
+        text = text.drop_front(pos + sourceToken.size());
+      }
+      rewritten += text;
+      return StringAttr::get(ctx, rewritten);
     };
     replacer.addReplacement([&](DebugInfo::SourceNameAttr attr)
                                 -> std::pair<Attribute, WalkResult> {
