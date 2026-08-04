@@ -310,9 +310,9 @@ def test_load_store[
     # TODO: replace the following with simd.mojo:insert (after resolving its issue).
     @always_inline
     def simd_insert(mut x: SIMD[type, _], y: SIMD[type, _]):
-        comptime assert x.size >= y.size
+        comptime assert x.length >= y.length
 
-        comptime for i in range(y.size):
+        comptime for i in range(y.length):
             x[i] = y[i]
 
     simd_insert(tile1[0, 2], residual_vec1)

@@ -102,7 +102,7 @@ struct Element[
         index_type: The integer type of the index pointing to each element.
     """
 
-    comptime element_data_type = SIMD[Self.dtype, size=Self.layout.size()]
+    comptime element_data_type = SIMD[Self.dtype, length=Self.layout.size()]
     """The SIMD type used to store and process the element data.
 
     This type alias defines a SIMD vector with the specified data type and size
@@ -195,7 +195,7 @@ struct Element[
                 comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
-                        width=Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.length, alignment=alignment
                     ]()
                 )
 
@@ -285,7 +285,7 @@ struct Element[
 
                 return Self(
                     ptr.load[
-                        width=Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.length, alignment=alignment
                     ](0)
                 )
 

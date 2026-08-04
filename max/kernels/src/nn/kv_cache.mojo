@@ -375,7 +375,7 @@ def _fused_qkv_matmul_kv_cache_impl[
 
         # Skip writing to cache for padded positions
         var valid_len_for_batch_vec = valid_lengths[b_idx]
-        comptime assert valid_len_for_batch_vec.size == 1
+        comptime assert valid_len_for_batch_vec.length == 1
         var valid_len_for_batch: UInt32 = valid_len_for_batch_vec[0]
         if t_idx >= Int(valid_len_for_batch):
             return

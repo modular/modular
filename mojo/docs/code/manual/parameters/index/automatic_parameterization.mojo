@@ -15,7 +15,7 @@
 # start-take-simd
 def take_simd(vec: SIMD[...]):
     print(vec.dtype)
-    print(Int(vec.size))
+    print(Int(vec.length))
 
 
 # end-take-simd
@@ -27,10 +27,10 @@ def take_simd2[t: DType, s: SIMDLength, //](vec: SIMD[t, s]):
 
 
 # start-interleave
-def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
-    var result = SIMD[v1.dtype, v1.size * 2]()
+def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.length * 2]:
+    var result = SIMD[v1.dtype, v1.length * 2]()
 
-    comptime for i in range(v1.size):
+    comptime for i in range(v1.length):
         result[i * 2] = v1[i]
         result[i * 2 + 1] = v2[i]
     return result

@@ -58,7 +58,7 @@ struct Fnv1a(Defaultable, Hasher):
         comptime rounds = max(1, size_of[value.dtype]() // 8)
         var bits = value.to_bits()
 
-        comptime for i in range(value.size):
+        comptime for i in range(value.length):
             var v = bits[i]
 
             comptime for r in range(rounds):

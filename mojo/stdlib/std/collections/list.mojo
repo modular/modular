@@ -1011,7 +1011,7 @@ struct List[T: Movable, /](
             value: The value to append.
 
         Notes:
-            If there is no capacity left, resizes to `len(self) + value.size`.
+            If there is no capacity left, resizes to `len(self) + value.length`.
 
         Examples:
 
@@ -1025,10 +1025,10 @@ struct List[T: Movable, /](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        self.reserve(self._len + value.size)
-        self._annotate_increase(value.size)
+        self.reserve(self._len + value.length)
+        self._annotate_increase(value.length)
         self._unsafe_next_uninit_ptr().unsafe_store(value)
-        self._len += value.size
+        self._len += value.length
 
     @__allow_legacy_custom_self_type
     def extend[
@@ -1042,7 +1042,7 @@ struct List[T: Movable, /](
         Args:
             value: The value to append.
             count: The amount of items to append. Must be less than or equal to
-                `value.size`.
+                `value.length`.
 
         Notes:
             If there is no capacity left, resizes to `len(self) + count`.
@@ -1059,7 +1059,7 @@ struct List[T: Movable, /](
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        assert count <= value.size, "count must be <= value.size"
+        assert count <= value.length, "count must be <= value.length"
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = Pointer(to=value).unsafe_bitcast[Scalar[dtype]]()

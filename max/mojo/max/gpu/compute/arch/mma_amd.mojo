@@ -69,13 +69,13 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime bf8_dtype = get_amd_bf8_dtype().value()
 
     @parameter
-    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
+    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.length]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
             (32, 32, 4, 4)
         ](
-            a.size, b.size, c.size, d.size
+            a.length, b.length, c.length, d.length
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
         @parameter
@@ -85,7 +85,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
                 == fp8_dtype else _AMD_F8F6F4_MATRIX_FORMAT.float8_e5m2
             )
 
-        return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.size]](
+        return llvm_intrinsic[intrinsic_name, SIMD[d.dtype, d.length]](
             bitcast[DType.int32, 8](a),
             bitcast[DType.int32, 8](b),
             c,
@@ -110,42 +110,42 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks).
             d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.size]
+                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.length]
             ](a, b, c, zero, zero, zero)
         else:
             d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.size]
+                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.length]
             ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.32x32x8f16", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x32.f16", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.16x16x32.f16", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x16.f16", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.32x32x16.f16", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
 
     # ===------------------------------------------------------------------===#
@@ -154,12 +154,12 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks)
             d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.size]
+                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.length]
             ](
                 bitcast[DType.int16, 4](a),
                 bitcast[DType.int16, 4](b),
@@ -170,7 +170,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             )
         else:
             d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.size]
+                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
             ](
                 bitcast[DType.int16, 4](a),
                 bitcast[DType.int16, 4](b),
@@ -182,10 +182,10 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.32x32x8bf16.1k", SIMD[d.dtype, d.length]
         ](
             bitcast[DType.int16, 4](a),
             bitcast[DType.int16, 4](b),
@@ -197,20 +197,20 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 4, 4)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x32.bf16", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.16x16x32.bf16", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(8, 8, 16, 16)](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ):
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.32x32x16.bf16", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.32x32x16.bf16", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
 
     # ===------------------------------------------------------------------===#
@@ -218,9 +218,9 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     elif _has_type[DType.float32](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(1, 1, 4, 4)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(1, 1, 4, 4)](a.length, b.length, c.length, d.length):
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[d.dtype, d.length]
         ](a, b, c, zero, zero, zero)
 
     # ===------------------------------------------------------------------===#
@@ -228,9 +228,9 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(8, 8, 4, 4)](a.length, b.length, c.length, d.length):
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x32.fp8.fp8", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.16x16x32.fp8.fp8", SIMD[d.dtype, d.length]
         ](
             bitcast[DType.int64, 1](a),
             bitcast[DType.int64, 1](b),
@@ -241,11 +241,11 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
     elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(32, 32, 4, 4)](a.length, b.length, c.length, d.length):
         d = _f8f6f4_intrinsic()
     elif _has_type[(fp8_dtype, fp8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(32, 32, 16, 16)](a.length, b.length, c.length, d.length):
         d = _f8f6f4_intrinsic()
 
     # ===------------------------------------------------------------------===#
@@ -253,9 +253,9 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(8, 8, 4, 4)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(8, 8, 4, 4)](a.length, b.length, c.length, d.length):
         d = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x32.bf8.bf8", SIMD[d.dtype, d.size]
+            "llvm.amdgcn.mfma.f32.16x16x32.bf8.bf8", SIMD[d.dtype, d.length]
         ](
             bitcast[DType.int64, 1](a),
             bitcast[DType.int64, 1](b),
@@ -266,11 +266,11 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         )
     elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(32, 32, 4, 4)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(32, 32, 4, 4)](a.length, b.length, c.length, d.length):
         d = _f8f6f4_intrinsic()
     elif _has_type[(bf8_dtype, bf8_dtype, DType.float32, DType.float32)](
         a.dtype, b.dtype, c.dtype, d.dtype
-    ) and _has_shape[(32, 32, 16, 16)](a.size, b.size, c.size, d.size):
+    ) and _has_shape[(32, 32, 16, 16)](a.length, b.length, c.length, d.length):
         d = _f8f6f4_intrinsic()
 
     else:

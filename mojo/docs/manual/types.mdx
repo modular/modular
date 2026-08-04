@@ -391,7 +391,7 @@ types listed in [Table 1](#table-1), like `Int`, `Int8`, and `Float32`, are type
 aliases for scalar values:
 
 ```mojo
-comptime Scalar = SIMD[size=1]
+comptime Scalar = SIMD[length=1]
 comptime Int = Scalar[DType.int]
 comptime Int8 = Scalar[DType.int8]
 comptime Float32 = Scalar[DType.float32]

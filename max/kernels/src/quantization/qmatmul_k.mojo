@@ -201,7 +201,7 @@ struct _packed_bit_array[bit_width: Int, block_m: Int, block_n: Int]:
             var dst_col_ptr = dst_ptr
 
             comptime for col in range(Self._tile_n):
-                var hi_bytes = SIMD[DType.uint8, size=Self._simd_width](0)
+                var hi_bytes = SIMD[DType.uint8, length=Self._simd_width](0)
 
                 comptime for i in range(3):
                     var packed_bits = bits_ptr.load[width=Self._simd_width]()
@@ -894,14 +894,14 @@ def _apply_zero_point_correction[
                         SIMD[DType.int32, simd_width],
                     ](
                         q_mins_lo_hi[0],
-                        SIMD[size=simd_width](group_sums[row * 2 + 0]),
+                        SIMD[length=simd_width](group_sums[row * 2 + 0]),
                     )
                     corrections[row, col] += llvm_intrinsic[
                         "llvm.aarch64.neon.smull.v4i32",
                         SIMD[DType.int32, simd_width],
                     ](
                         q_mins_lo_hi[1],
-                        SIMD[size=simd_width](group_sums[row * 2 + 1]),
+                        SIMD[length=simd_width](group_sums[row * 2 + 1]),
                     )
 
         else:
@@ -1244,7 +1244,9 @@ def _matmul_group_packed_Q6_K[
         ]
     ):
         comptime for col in range(tile_n):
-            var hi_bytes = SIMD[DType.uint8, size=SIMDLength(simd_width) * 4](0)
+            var hi_bytes = SIMD[DType.uint8, length=SIMDLength(simd_width) * 4](
+                0
+            )
 
             comptime for i in range(3):
                 var packed_bits = b_q_bits_ptr.load[

@@ -209,7 +209,7 @@ def _sqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime assert x.dtype == DType.float32, "must be DType.float32"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn["llvm.nvvm.sqrt.approx.ftz.f"](x[i])
 
 
@@ -271,7 +271,7 @@ def _rsqrt_nvvm(x: SIMD, out res: type_of(x)):
     comptime instruction = "llvm.nvvm.rsqrt.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rsqrt.approx.d"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[instruction](x[i])
 
 
@@ -328,7 +328,7 @@ def _recip_nvvm(x: SIMD, out res: type_of(x)):
     comptime instruction = "llvm.nvvm.rcp.approx.ftz.f" if x.dtype == DType.float32 else "llvm.nvvm.rcp.approx.ftz.d"
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[instruction](x[i])
 
 
@@ -454,7 +454,7 @@ def _exp2_float32(x: SIMD[DType.float32, _]) -> type_of(x):
         from_bits=r.to_bits[u32]()
         + (
             m.cast[u32]()
-            << SIMD[DType.uint32, x.size](
+            << SIMD[DType.uint32, x.length](
                 FPUtils[DType.float32].mantissa_width()
             )
         )
@@ -3492,7 +3492,7 @@ def _call_ptx_intrinsic[
 def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
     res = {}
 
-    comptime for i in range(x.size):
+    comptime for i in range(x.length):
         res[i] = _llvm_unary_fn[intrin](x[i])
 
 

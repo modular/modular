@@ -133,17 +133,17 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = type_of(self._words)(fill=0)
 
-    def __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
+    def __init__(init: SIMD[DType.bool, _], out self: BitSet[init.length]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
             init: A SIMD vector of booleans to initialize the bitset with.
         """
         comptime assert (
-            max(Int(init.size), _WORD_BITS) // _WORD_BITS == Self._words_size
+            max(Int(init.length), _WORD_BITS) // _WORD_BITS == Self._words_size
         )
         self._words = type_of(self._words)(uninitialized=True)
-        comptime step = min(Int(init.size), _WORD_BITS)
+        comptime step = min(Int(init.length), _WORD_BITS)
 
         comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(

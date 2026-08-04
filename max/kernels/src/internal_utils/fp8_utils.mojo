@@ -98,7 +98,7 @@ def fp8_quantize[
     *,
     use_clamp: Bool = True,
 ](values: SIMD, scale_recip: Scalar[values.dtype]) -> SIMD[
-    out_dtype, values.size
+    out_dtype, values.length
 ]:
     """Quantize values to FP8, clamping to the representable range.
 
@@ -132,10 +132,10 @@ def fp8_quantize[
     var result = values * scale_recip
 
     comptime if use_clamp:
-        comptime min_val = SIMD[values.dtype, values.size](
+        comptime min_val = SIMD[values.dtype, values.length](
             min_finite[out_dtype]()
         )
-        comptime max_val = SIMD[values.dtype, values.size](
+        comptime max_val = SIMD[values.dtype, values.length](
             max_finite[out_dtype]()
         )
         return clamp(result, min_val, max_val).cast[out_dtype]()
@@ -171,6 +171,10 @@ def cast_saturating[
     comptime if in_dtype == out_dtype or not out_dtype.is_float8():
         return values.cast[out_dtype]()
 
-    comptime min_val = SIMD[values.dtype, values.size](min_finite[out_dtype]())
-    comptime max_val = SIMD[values.dtype, values.size](max_finite[out_dtype]())
+    comptime min_val = SIMD[values.dtype, values.length](
+        min_finite[out_dtype]()
+    )
+    comptime max_val = SIMD[values.dtype, values.length](
+        max_finite[out_dtype]()
+    )
     return clamp(values, min_val, max_val).cast[out_dtype]()

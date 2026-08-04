@@ -229,7 +229,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
         var result_vector = _to_b64_ascii(input_vector)
         res_ptr.unsafe_offset(res_offset).unsafe_store(result_vector)
-        res_offset += result_vector.size
+        res_offset += result_vector.length
         input_index += input_simd_width
 
     # We handle the last 0, 1 or 2 chunks
@@ -283,17 +283,17 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
 
 
 def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
-    comptime assert width >= v.size, "width must be at least v.size"
+    comptime assert width >= v.length, "width must be at least v.length"
 
-    comptime if width == v.size:
+    comptime if width == v.length:
         return v._refine[new_size=width]()
     return _repeat_until[width](v.join(v))
 
 
 def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
-    var u16 = bitcast[DType.uint16, input.size // 2](input)
+    var u16 = bitcast[DType.uint16, input.length // 2](input)
     var res = rotate_bits_right[shift](u16)
-    return bitcast[DType.uint8, input.size](res)
+    return bitcast[DType.uint8, input.length](res)
 
 
 @always_inline

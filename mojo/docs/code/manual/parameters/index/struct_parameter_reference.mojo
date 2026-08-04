@@ -19,7 +19,7 @@ struct Circle[radius: Float64]:
 
 # start-reference-parameter-on-type
 def on_type():
-    print(Int(SIMD[DType.float32, 2].size))  # prints 2
+    print(Int(SIMD[DType.float32, 2].length))  # prints 2
     # end-reference-parameter-on-type
 
 

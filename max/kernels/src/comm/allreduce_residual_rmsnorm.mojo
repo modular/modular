@@ -1007,7 +1007,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
         _width: SIMDLength,
         *,
         _alignment: Int,
-    ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+    ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
         var il = coord_to_index_list(coords)
         var flat_idx = il[0] * _cols + il[1]
         var res = residual.raw_load[width=_width, alignment=_alignment](

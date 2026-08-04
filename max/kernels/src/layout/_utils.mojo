@@ -193,7 +193,7 @@ def load_to_simd(
     comptime assert (
         tensor.layout.all_dims_known()
     ), "load_to_simd is supported only for tensors with known layout"
-    comptime size = type_of(res).size
+    comptime size = type_of(res).length
     return rebind[type_of(res)](
         tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )

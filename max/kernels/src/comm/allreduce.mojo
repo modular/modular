@@ -159,7 +159,7 @@ from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
-](Coord, SIMD[dtype, size=width]) capturing -> None
+](Coord, SIMD[dtype, length=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
 
