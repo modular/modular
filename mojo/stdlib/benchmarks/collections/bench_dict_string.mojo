@@ -42,7 +42,7 @@ def make_small_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
         var content = f.read()
         return _to_string_list(content.split())
@@ -62,7 +62,7 @@ def make_long_keys(filename: String = "UN_charter_EN.txt") -> List[String]:
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
         var content = f.read()
         return _to_string_list(content.split("\n"))

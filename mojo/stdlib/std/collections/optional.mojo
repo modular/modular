@@ -182,7 +182,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String]()
+        var instance = Optional[String]()
         print(instance) # Output: None
         ```
         """
@@ -200,7 +200,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String]("Hello")
+        var instance = Optional[String]("Hello")
         print(instance) # Output: 'Hello'
         ```
         """
@@ -264,7 +264,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String](None)
+        var instance = Optional[String](None)
         print(instance) # Output: None
         ```
         """
@@ -280,7 +280,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional[String](None)
+        var instance = Optional[String](None)
         print(instance) # Output: None
         ```
         """
@@ -384,7 +384,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         for value in instance:
             print(value) # Output: Hello
         instance = None
@@ -425,8 +425,8 @@ struct Optional[T: AnyType](
 
         ```mojo
         def bounds():
-            empty_instance = Optional[Int]()
-            populated_instance = Optional[Int](50)
+            var empty_instance = Optional[Int]()
+            var populated_instance = Optional[Int](50)
 
             # Bounds returns a tuple: (`bounds`, `Optional` version of `bounds`)
             # with the length of the `Optional`.
@@ -574,8 +574,8 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        x = instance.value()
+        var instance = Optional("Hello")
+        var x = instance.value()
         print(x) # Hello
         # instance = Optional[String]() # Uncomment both lines to crash
         # print(instance.value())       # Attempts to take value from `None`
@@ -607,14 +607,14 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        x = instance.unsafe_value()
+        var instance = Optional("Hello")
+        var x = instance.unsafe_value()
         print(x) # Hello
         instance = Optional[String](None)
 
         # Best practice:
         if instance:
-            y = instance.unsafe_value() # Will not reach this line
+            var y = instance.unsafe_value() # Will not reach this line
             print(y)
 
         # In debug builds, this will deterministically abort:
@@ -638,9 +638,9 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         print(instance.bounds()[0])  # Output: 1
-        x = instance.take() # Moves value from `instance` to `x`
+        var x = instance.take() # Moves value from `instance` to `x`
         print(x)  # Output: Hello
 
         # `instance` is now `Optional(None)`
@@ -649,7 +649,7 @@ struct Optional[T: AnyType](
 
         # Best practice
         if instance:
-            y = instance.take()  # Won't reach this line
+            var y = instance.take()  # Won't reach this line
             print(y)
 
         # Used directly
@@ -678,23 +678,23 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        print(instance.bounds()[0]) # Output: 1
-        x = instance.unsafe_take()  # Moves value from `instance` to `x`
-        print(x)                    # Output: Hello
+        var instance = Optional("Hello")
+        print(instance.bounds()[0])     # Output: 1
+        var x = instance.unsafe_take()  # Moves value from `instance` to `x`
+        print(x)                        # Output: Hello
 
         # `instance` is now `Optional(None)`
-        print(instance.bounds()[0]) # Output: 0
-        print(instance)             # Output: None
+        print(instance.bounds()[0])     # Output: 0
+        print(instance)                 # Output: None
 
         # Best practice:
         if instance:
-            y = instance.unsafe_take() # Won't reach this line
+            var y = instance.unsafe_take() # Won't reach this line
             print(y)
 
         # In debug builds, this will deterministically abort:
-        y = instance.unsafe_take()  # ABORT: `Optional.take()` called on empty `Optional` (via `debug_assert`)
-        print(y)                    # Does not reach this line
+        y = instance.unsafe_take()      # ABORT: `Optional.take()` called on empty `Optional` (via `debug_assert`)
+        print(y)                        # Does not reach this line
         ```
         """
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
@@ -715,14 +715,14 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
-        x = instance^.into_inner()  # `instance` is consumed
-        print(x)                    # Output: Hello
+        var instance = Optional("Hello")
+        var x = instance^.into_inner()  # `instance` is consumed
+        print(x)                        # Output: Hello
 
         # Best practice
-        instance2 = Optional[String](None)
+        var instance2 = Optional[String](None)
         if instance2:
-            y = instance2^.into_inner()  # Won't reach this line
+            var y = instance2^.into_inner()  # Won't reach this line
             print(y)
 
         # Used directly
@@ -821,7 +821,7 @@ struct Optional[T: AnyType](
         Examples:
 
         ```mojo
-        instance = Optional("Hello")
+        var instance = Optional("Hello")
         print(instance)                  # Output: 'Hello'
         print(instance.or_else("Bye"))   # Output: Hello
         instance = None

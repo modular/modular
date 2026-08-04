@@ -27,7 +27,7 @@ def make_string[
     length: Int = 0
 ](filename: String = "UN_charter_EN.txt") -> String:
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length == 0:

@@ -39,12 +39,12 @@ def make_string[
     """
 
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length > 0:
             var items = f.read_bytes(length)
-            i = 0
+            var i = 0
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0

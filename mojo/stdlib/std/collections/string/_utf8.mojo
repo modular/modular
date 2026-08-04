@@ -163,8 +163,8 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
     """
 
-    ptr = span.unsafe_ptr()
-    length = len(span)
+    var ptr = span.unsafe_ptr()
+    var length = len(span)
     comptime simd_size = simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()

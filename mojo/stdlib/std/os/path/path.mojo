@@ -778,8 +778,8 @@ def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
     var buf = String()
 
     # Byte scanning should be fine, ${} is ASCII.
-    i = 0
-    j = 0
+    var i = 0
+    var j = 0
     while j < len(bytes):
         if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
@@ -796,7 +796,7 @@ def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:
                 buf.write_string(path_str[byte = j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
-                value = getenv(String(name))
+                var value = getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:
