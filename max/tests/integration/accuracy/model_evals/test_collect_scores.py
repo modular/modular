@@ -28,7 +28,25 @@ AIME_SUMMARY = {
     "mean_output_tokens": 16552,
     "p50_output_tokens": 12657,
 }
-SCICODE_SUMMARY = {"score": 0.4545, "total": 338}
+# SciCode names its headline metric ``pass_at_1`` and writes no ``accuracy`` or
+# ``score`` at all, so a fixture carrying either would assert against a shape no
+# run produces.
+SCICODE_SUMMARY = {
+    "pass_at_1": 0.4545,
+    "passed": 154,
+    "total": 338,
+    "mean_output_tokens": 2841,
+    "p50_output_tokens": 2233,
+}
+# AA-Omniscience writes both fields; the composite is the metric it is scored
+# on, and it sits well above raw accuracy.
+OMNISCIENCE_SUMMARY = {
+    "accuracy": 0.3500,
+    "hallucination_rate": 0.4950,
+    "omniscience_score": 0.4275,
+    "total": 1000,
+    "errors": 0,
+}
 
 
 def make_tree(root: Path) -> None:
@@ -117,6 +135,43 @@ def test_malformed_score_json_is_skipped(tmp_path: Path) -> None:
     make_tree(tmp_path)
     rows = collect_scores.collect(tmp_path, ["text-", "scicode-"])
     assert {r["benchmark"] for r in rows} == {"aime25", "scicode"}
+
+
+def test_omniscience_score_preferred_over_raw_accuracy() -> None:
+    # Reporting accuracy (0.35) instead of the composite (0.4275) understates
+    # AA-Omniscience by ~8 points and reads as a regression at parity.
+    assert collect_scores.extract_score(OMNISCIENCE_SUMMARY) == 0.4275
+
+
+def test_accuracy_still_wins_without_a_composite() -> None:
+    # A benchmark reporting a plain accuracy must be unaffected.
+    assert collect_scores.extract_score(AIME_SUMMARY) == 0.9062
+
+
+def test_scicode_is_reported_on_pass_at_1() -> None:
+    # SciCode's only headline metric; before it was named, the real shape hit
+    # none of the keys and the suite reported the benchmark as scoreless.
+    assert collect_scores.extract_score(SCICODE_SUMMARY) == 0.4545
+
+
+def test_non_numeric_composite_falls_through_to_accuracy() -> None:
+    # A null composite (an eval that could not compute it) must not shadow a
+    # usable accuracy.
+    summary = {"omniscience_score": None, "accuracy": 0.42}
+    assert collect_scores.extract_score(summary) == 0.42
+
+
+def test_collect_reports_composite_for_omniscience(tmp_path: Path) -> None:
+    results = tmp_path / "aa-omniscience-non-agentic-text-eval-results"
+    results.mkdir(parents=True)
+    (results / "score.json").write_text(json.dumps(OMNISCIENCE_SUMMARY))
+
+    rows = collect_scores.collect(tmp_path, ["aa-omniscience-"])
+
+    assert len(rows) == 1
+    assert rows[0]["score"] == 0.4275
+    # The raw fields stay in the payload for anyone who needs them.
+    assert rows[0]["summary"]["accuracy"] == 0.3500
 
 
 def test_compare_joins_both_sides() -> None:
