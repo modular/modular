@@ -35,7 +35,7 @@ purpose. The current libraries are:
 - [Profiling](Profiling.md)
 - [Telemetry](Telemetry.md)
 - [Threading](Threading.md)
-- [Tracy](Tracy.md)
+- [Tracy](../../docs/internal/Tracy.md)
 
 The `Support/` directory also includes a number of stand-alone libraries that
 are not in subdirectories.
