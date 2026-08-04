@@ -36,7 +36,7 @@ Using bazel:
 ./bazelw test mojo/stdlib/test/...
 
 # Run specific test file
-./bazelw test //mojo/stdlib/test/memory:test_span.mojo.test
+./bazelw test //mojo/stdlib/test/collections:test_span.mojo.test
 
 # Run tests in specific directory
 ./bazelw test mojo/stdlib/test/collections/...
@@ -51,10 +51,10 @@ are some equivalent examples:
 ./mojo/stdlib/scripts/run-tests.sh
 
 # Run specific test file
-./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/utils/test_span.mojo
+./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/collections/test_span.mojo
 
 # Run tests in specific directory
-./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/utils
+./mojo/stdlib/scripts/run-tests.sh ./mojo/stdlib/test/collections
 
 # Run specific test suites with lit directly
 lit -sv stdlib/test/builtin stdlib/test/collections
@@ -116,7 +116,8 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 #### Memory Management
 
 - Follow value semantics and ownership conventions
-- Use `Reference` types and lifetimes in APIs
+- Use `Origin` parameters (`ImmOrigin`/`MutOrigin`) with
+  `Pointer`/`UnsafePointer` in APIs
 - Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow
