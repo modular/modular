@@ -103,8 +103,8 @@ struct MoveOnlyList[T: Movable & Deinitable]:
         if self._len >= self._capacity:
             var new_cap = self._capacity * 2 if self._capacity > 0 else 4
             var new_data: Pointer[Self.T, MutUntrackedOrigin] = alloc[Self.T](
-                new_cap
-            )
+                {count = new_cap}
+            ).unsafe_leak()
             for i in range(self._len):
                 new_data.unsafe_offset(i).unsafe_write(
                     self._data.unsafe_offset(i).unsafe_take_pointee()

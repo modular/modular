@@ -30,8 +30,8 @@ def main():
     # CHECK: invalid call to 'offset_from'
     _ = p.offset_from(p_float)
 
-    var u = alloc[Int](1)
-    var u_float = alloc[Float64](1)
+    var u = alloc[Int]({count = 1}).unsafe_leak()
+    var u_float = alloc[Float64]({count = 1}).unsafe_leak()
 
     # CHECK: no matching method in call to '__sub__'
     _ = u - u_float

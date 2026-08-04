@@ -22,7 +22,7 @@ struct CacheAligned:
 
 
 def demonstrate_array_stride() raises:
-    var arr = alloc[CacheAligned](4)
+    var arr = alloc[CacheAligned]({count = 4}).unsafe_leak()
 
     # print(align_of[CacheAligned]())  # 64
     # print(size_of[CacheAligned]())  # 64

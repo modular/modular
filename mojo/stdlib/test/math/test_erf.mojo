@@ -42,14 +42,14 @@ def test_erf_libm() raises:
     comptime test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32 = alloc[Scalar[test_dtype]](N)
+    var x32 = alloc[Scalar[test_dtype]]({count = N}).unsafe_leak()
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = alloc[Scalar[test_dtype]](N)
+    var y32 = alloc[Scalar[test_dtype]]({count = N}).unsafe_leak()
     for i in range(N):
         y32[unsafe_offset=i] = erf(x32[unsafe_offset=i])  # math.erf
 
@@ -62,7 +62,7 @@ def test_erf_libm() raises:
     ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return libm_call["erff", "err"](arg)
 
-    var libm_out = alloc[Scalar[test_dtype]](N)
+    var libm_out = alloc[Scalar[test_dtype]]({count = N}).unsafe_leak()
     for i in range(N):
         libm_out[unsafe_offset=i] = erf_libm(x32[unsafe_offset=i])
 

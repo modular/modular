@@ -32,7 +32,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable & Deinitable](Movable):
     # returns a pointer to the new `Node`.
     @staticmethod
     def make_node(value: Self.ElementType) -> Self.NodePointer:
-        var node_ptr = alloc[Self](1)
+        var node_ptr = alloc[Self]({count = 1}).unsafe_leak()
         node_ptr.unsafe_write(Self(value))
         return node_ptr
 

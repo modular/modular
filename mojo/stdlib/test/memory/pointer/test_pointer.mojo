@@ -100,7 +100,7 @@ def test_unsafepointer_of_move_only_type() raises:
 
     comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
-    var ptr = alloc[ObserveType](1)
+    var ptr = alloc[ObserveType]({count = 1}).unsafe_leak()
     ptr.unsafe_write(ObserveType(42, actions_ptr))
     assert_equal(len(actions_ptr[]), 2)
     assert_equal(actions_ptr[][0], "__init__")
@@ -122,7 +122,7 @@ def test_unsafepointer_of_move_only_type() raises:
 
 
 def test_unsafepointer_move_pointee_move_count() raises:
-    var ptr = alloc[MoveCounter[Int]](1)
+    var ptr = alloc[MoveCounter[Int]]({count = 1}).unsafe_leak()
 
     var value = MoveCounter(5)
     assert_equal(0, value.move_count)
@@ -134,14 +134,14 @@ def test_unsafepointer_move_pointee_move_count() raises:
 
     assert_equal(1, ptr[].move_count)
 
-    var ptr_2 = alloc[MoveCounter[Int]](1)
+    var ptr_2 = alloc[MoveCounter[Int]]({count = 1}).unsafe_leak()
     ptr_2.unsafe_write_move_from(ptr)
 
     assert_equal(2, ptr_2[].move_count)
 
 
 def test_unsafepointer_unsafe_write() raises:
-    var ptr = alloc[ExplicitCopyOnly](1)
+    var ptr = alloc[ExplicitCopyOnly]({count = 1}).unsafe_leak()
 
     var orig = ExplicitCopyOnly(5)
     assert_equal(orig.copy_count, 0)
@@ -154,7 +154,7 @@ def test_unsafepointer_unsafe_write() raises:
 
 
 def test_refitem() raises:
-    var ptr = alloc[Int](1)
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     ptr[] = 0
     ptr[] += 1
     assert_equal(ptr[], 1)
@@ -162,7 +162,7 @@ def test_refitem() raises:
 
 
 def test_refitem_offset() raises:
-    var ptr = alloc[Int](5)
+    var ptr = alloc[Int]({count = 5}).unsafe_leak()
     for i in range(5):
         ptr[unsafe_offset=i] = i
     for i in range(5):
@@ -211,7 +211,7 @@ def test_bitcast() raises:
 
 
 def test_unsafepointer_string() raises:
-    var ptr = alloc[Int](1)
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.unsafe_free()
@@ -235,7 +235,7 @@ def test_eq() raises:
 
 
 def test_comparisons() raises:
-    var p1 = alloc[Int](1)
+    var p1 = alloc[Int]({count = 1}).unsafe_leak()
 
     assert_true(p1.unsafe_offset(-1) < p1)
     assert_true(p1.unsafe_offset(-1) <= p1)
@@ -248,28 +248,36 @@ def test_comparisons() raises:
 
 
 def test_unsafepointer_address_space() raises:
-    var p1 = alloc[Int](1).unsafe_address_space_cast[AddressSpace(0)]()
+    var p1 = (
+        alloc[Int]({count = 1})
+        .unsafe_leak()
+        .unsafe_address_space_cast[AddressSpace(0)]()
+    )
     p1.unsafe_free()
 
-    var p2 = alloc[Int](1).unsafe_address_space_cast[AddressSpace.GENERIC]()
+    var p2 = (
+        alloc[Int]({count = 1})
+        .unsafe_leak()
+        .unsafe_address_space_cast[AddressSpace.GENERIC]()
+    )
     p2.unsafe_free()
 
 
 def test_unsafepointer_aligned_alloc() raises:
     comptime alignment_1 = 32
-    var ptr = alloc[UInt8](1, alignment=alignment_1)
+    var ptr = alloc[UInt8]({count = 1, alignment = alignment_1}).unsafe_leak()
     var ptr_uint64 = UInt64(Int(ptr))
     ptr.unsafe_free()
     assert_equal(ptr_uint64 % alignment_1, 0)
 
     comptime alignment_2 = 64
-    var ptr_2 = alloc[UInt8](1, alignment=alignment_2)
+    var ptr_2 = alloc[UInt8]({count = 1, alignment = alignment_2}).unsafe_leak()
     var ptr_uint64_2 = UInt64(Int(ptr_2))
     ptr_2.unsafe_free()
     assert_equal(ptr_uint64_2 % alignment_2, 0)
 
     comptime alignment_3 = 128
-    var ptr_3 = alloc[UInt8](1, alignment=alignment_3)
+    var ptr_3 = alloc[UInt8]({count = 1, alignment = alignment_3}).unsafe_leak()
     var ptr_uint64_3 = UInt64(Int(ptr_3))
     ptr_3.unsafe_free()
     assert_equal(ptr_uint64_3 % alignment_3, 0)
@@ -285,7 +293,7 @@ def test_unsafepointer_alloc_origin() raises:
     var did_del_1 = False
 
     # Allocate pointer with MutAnyOrigin.
-    var ptr_1 = alloc[Int](1).as_unsafe_any_origin()
+    var ptr_1 = alloc[Int]({count = 1}).unsafe_leak().as_unsafe_any_origin()
 
     var obj_1 = ObservableDel(Pointer(to=did_del_1))
 
@@ -304,7 +312,7 @@ def test_unsafepointer_alloc_origin() raises:
     var did_del_2 = False
 
     # Allocate pointer with empty origin.
-    var ptr_2 = alloc[Int](1)
+    var ptr_2 = alloc[Int]({count = 1}).unsafe_leak()
 
     # Note: Set ObservableDel origin explicitly since it otherwise contains a
     #   MutAnyOrigin pointer that interferes with this test.
@@ -330,7 +338,7 @@ def test_unsafepointer_alloc_origin() raises:
 
 
 def test_indexing() raises:
-    var ptr = alloc[Int](4)
+    var ptr = alloc[Int]({count = 4}).unsafe_leak()
     for i in range(4):
         ptr[unsafe_offset=i] = i
 
@@ -341,7 +349,7 @@ def test_indexing() raises:
 
 
 def test_indexing_simd() raises:
-    var ptr = alloc[Int](4)
+    var ptr = alloc[Int]({count = 4}).unsafe_leak()
     for i in range(4):
         ptr[unsafe_offset=UInt8(i)] = i
 
@@ -366,17 +374,17 @@ def test_indexing_simd() raises:
 
 
 def test_alignment() raises:
-    var ptr = alloc[Int64](8, alignment=64)
+    var ptr = alloc[Int64]({count = 8, alignment = 64}).unsafe_leak()
     assert_equal(Int(ptr) % 64, 0)
     ptr.unsafe_free()
 
-    var ptr_2 = alloc[UInt8](32, alignment=32)
+    var ptr_2 = alloc[UInt8]({count = 32, alignment = 32}).unsafe_leak()
     assert_equal(Int(ptr_2) % 32, 0)
     ptr_2.unsafe_free()
 
 
 def test_offset() raises:
-    var ptr = alloc[Int](5)
+    var ptr = alloc[Int]({count = 5}).unsafe_leak()
     for i in range(5):
         ptr[unsafe_offset=i] = i
     var x = UInt(3)
@@ -384,7 +392,7 @@ def test_offset() raises:
     assert_equal(ptr.unsafe_offset(x)[], 3)
     assert_equal(ptr.unsafe_offset(y)[], 4)
 
-    var ptr2 = alloc[Int](5)
+    var ptr2 = alloc[Int]({count = 5}).unsafe_leak()
     var ptr3 = ptr2
     ptr2 = ptr2.unsafe_offset(UInt(3))
     assert_equal(ptr2, ptr3.unsafe_offset(3))
@@ -398,7 +406,7 @@ def test_offset() raises:
 
 
 def test_offset_from() raises:
-    var ptr = alloc[Int32](8)
+    var ptr = alloc[Int32]({count = 8}).unsafe_leak()
     var end = ptr.unsafe_offset(8)
 
     assert_equal(end.offset_from(ptr), 8)
@@ -411,7 +419,7 @@ def test_offset_from() raises:
 
     ptr.unsafe_free()
 
-    var wide = alloc[SIMD[DType.int64, 4]](3)
+    var wide = alloc[SIMD[DType.int64, 4]]({count = 3}).unsafe_leak()
     assert_equal(wide.unsafe_offset(2) - wide, 2)
     assert_equal(wide - wide.unsafe_offset(2), -2)
     wide.unsafe_free()
@@ -429,7 +437,7 @@ def test_offset_from() raises:
 
 
 def test_load_and_store_simd() raises:
-    var ptr = alloc[Int8](16)
+    var ptr = alloc[Int8]({count = 16}).unsafe_leak()
     for i in range(16):
         ptr[unsafe_offset=i] = Int8(i)
     for i in range(0, 16, 4):
@@ -440,7 +448,7 @@ def test_load_and_store_simd() raises:
         )
     ptr.unsafe_free()
 
-    var ptr2 = alloc[Int8](16)
+    var ptr2 = alloc[Int8]({count = 16}).unsafe_leak()
     for i in range(0, 16, 4):
         ptr2.unsafe_store(i, SIMD[DType.int8, 4](i))
     for i in range(16):
@@ -451,7 +459,7 @@ def test_load_and_store_simd() raises:
 def test_load_and_store_simd_bool() raises:
     # Regression test: storing SIMD[DType.bool, N] with width > 1 then
     # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
-    var p = alloc[Scalar[DType.bool]](4)
+    var p = alloc[Scalar[DType.bool]]({count = 4}).unsafe_leak()
 
     p.unsafe_store(0, SIMD[DType.bool, 2](True, False))
     assert_true(p[unsafe_offset=0])
@@ -492,7 +500,7 @@ def test_unsafe_methods_on_safe_pointer() raises:
 
 
 def test_volatile_load_and_store_simd() raises:
-    var ptr = alloc[Int8](16)
+    var ptr = alloc[Int8]({count = 16}).unsafe_leak()
     for i in range(16):
         ptr[unsafe_offset=i] = Int8(i)
     for i in range(0, 16, 4):
@@ -503,7 +511,7 @@ def test_volatile_load_and_store_simd() raises:
         )
     ptr.unsafe_free()
 
-    var ptr2 = alloc[Int8](16)
+    var ptr2 = alloc[Int8]({count = 16}).unsafe_leak()
     for i in range(0, 16, 4):
         ptr2.unsafe_store[volatile=True](i, SIMD[DType.int8, 4](i))
     for i in range(16):

@@ -30,11 +30,11 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __init__(out self):
-        self.data = alloc[Int8](self.num_cells)
+        self.data = alloc[Int8]({count = self.num_cells}).unsafe_leak()
         unsafe_memset_zero(self.data, self.num_cells)
 
     def __init__(out self, *, copy: Self):
-        self.data = alloc[Int8](self.num_cells)
+        self.data = alloc[Int8]({count = self.num_cells}).unsafe_leak()
         unsafe_memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 

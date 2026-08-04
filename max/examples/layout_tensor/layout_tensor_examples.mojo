@@ -103,12 +103,13 @@ def layout_tensor_from_pointer_example() raises:
     comptime columns = 1024
     comptime buf_size = rows * columns
     comptime layout = Layout.row_major(rows, columns)
-    var ptr = alloc[Float32](buf_size)
+    var ptr = alloc[Float32]({count = buf_size}).unsafe_leak()
     unsafe_memset(ptr, 0, buf_size)
     var tensor = LayoutTensor[DType.float32, layout](ptr)
     # end-layout-tensor-from-pointer-example
     assert_equal(tensor.size(), rows * columns)
     _ = tensor
+    ptr.unsafe_free()
 
 
 def layout_tensor_tile_example() raises:

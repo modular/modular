@@ -25,7 +25,7 @@ def use_aligned():
     var _ = CacheAligned(42)  # `stack_value`
 
     # Heap allocation
-    var heap_ptr = alloc[CacheAligned](1)
+    var heap_ptr = alloc[CacheAligned]({count = 1}).unsafe_leak()
     heap_ptr.unsafe_free()
 
 

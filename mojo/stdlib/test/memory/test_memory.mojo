@@ -68,10 +68,10 @@ def test_memcpy() raises:
 
     @parameter
     def _test_memcpy_buf[size: Int]() raises:
-        var buf = alloc[UInt8](size * 2)
+        var buf = alloc[UInt8]({count = size * 2}).unsafe_leak()
         unsafe_memset_zero(buf.unsafe_offset(size), size)
-        var src = alloc[UInt8](size * 2)
-        var dst = alloc[UInt8](size * 2)
+        var src = alloc[UInt8]({count = size * 2}).unsafe_leak()
+        var dst = alloc[UInt8]({count = size * 2}).unsafe_leak()
         for i in range(size * 2):
             buf[unsafe_offset=i] = src[unsafe_offset=i] = 2
             dst[unsafe_offset=i] = 0
@@ -97,8 +97,8 @@ def test_memcpy() raises:
 
 
 def test_memcpy_dtype() raises:
-    var a = alloc[Int32](4)
-    var b = alloc[Int32](4)
+    var a = alloc[Int32]({count = 4}).unsafe_leak()
+    var b = alloc[Int32]({count = 4}).unsafe_leak()
     for i in range(4):
         a[unsafe_offset=i] = Int32(i)
         b[unsafe_offset=i] = -1
@@ -156,8 +156,8 @@ def test_memcmp_non_multiple_of_int32() raises:
 
 
 def test_memcmp_overflow() raises:
-    var p1 = alloc[Byte](1)
-    var p2 = alloc[Byte](1)
+    var p1 = alloc[Byte]({count = 1}).unsafe_leak()
+    var p2 = alloc[Byte]({count = 1}).unsafe_leak()
     p1.unsafe_store(-120)
     p2.unsafe_store(120)
 
@@ -174,8 +174,8 @@ def test_memcmp_overflow() raises:
 def test_memcmp_simd() raises:
     var length = simd_width_of[DType.int8]() + 10
 
-    var p1 = alloc[Int8](length)
-    var p2 = alloc[Int8](length)
+    var p1 = alloc[Int8]({count = length}).unsafe_leak()
+    var p2 = alloc[Int8]({count = length}).unsafe_leak()
     unsafe_memset_zero(p1, length)
     unsafe_memset_zero(p2, length)
     p1.unsafe_store(120)
@@ -210,11 +210,11 @@ def test_memcmp_simd() raises:
 def _test_memcmp_extensive[
     dtype: DType, extremes: StaticString = ""
 ](count: Int) raises:
-    var ptr1 = alloc[Scalar[dtype]](count)
-    var ptr2 = alloc[Scalar[dtype]](count)
+    var ptr1 = alloc[Scalar[dtype]]({count = count}).unsafe_leak()
+    var ptr2 = alloc[Scalar[dtype]]({count = count}).unsafe_leak()
 
-    var dptr1 = alloc[Scalar[dtype]](count)
-    var dptr2 = alloc[Scalar[dtype]](count)
+    var dptr1 = alloc[Scalar[dtype]]({count = count}).unsafe_leak()
+    var dptr2 = alloc[Scalar[dtype]]({count = count}).unsafe_leak()
 
     for i in range(count):
         ptr1[unsafe_offset=i] = Scalar[dtype](i)
@@ -303,8 +303,8 @@ def test_memcmp_simd_boundary() raises:
 
     # Test 1: Difference exactly at SIMD boundary
     comptime size = simd_width + 1
-    var ptr1 = alloc[Int8](size)
-    var ptr2 = alloc[Int8](size)
+    var ptr1 = alloc[Int8]({count = size}).unsafe_leak()
+    var ptr2 = alloc[Int8]({count = size}).unsafe_leak()
 
     # Fill with identical data
     for i in range(size):
@@ -343,8 +343,8 @@ def test_memcmp_simd_overlap() raises:
 
     for i in range(len(test_sizes)):
         var size = test_sizes[i]
-        var ptr1 = alloc[Int8](size)
-        var ptr2 = alloc[Int8](size)
+        var ptr1 = alloc[Int8]({count = size}).unsafe_leak()
+        var ptr2 = alloc[Int8]({count = size}).unsafe_leak()
 
         # Fill with identical data
         for j in range(size):
@@ -370,8 +370,8 @@ def test_memcmp_simd_index_finding() raises:
 
     # Test difference at each possible SIMD lane position
     for lane in range(simd_width):
-        var ptr1 = alloc[Int8](simd_width)
-        var ptr2 = alloc[Int8](simd_width)
+        var ptr1 = alloc[Int8]({count = simd_width}).unsafe_leak()
+        var ptr2 = alloc[Int8]({count = simd_width}).unsafe_leak()
 
         # Fill with identical data
         for i in range(simd_width):
@@ -402,8 +402,8 @@ def test_memcmp_simd_index_finding() raises:
 
 def test_memcmp_simd_signed_overflow() raises:
     """Test signed byte overflow cases in SIMD memcmp."""
-    var ptr1 = alloc[Int8](4)
-    var ptr2 = alloc[Int8](4)
+    var ptr1 = alloc[Int8]({count = 4}).unsafe_leak()
+    var ptr2 = alloc[Int8]({count = 4}).unsafe_leak()
 
     # Test extreme signed values
     ptr1[unsafe_offset=0] = -128  # Most negative
@@ -435,8 +435,8 @@ def test_memcmp_simd_signed_overflow() raises:
 def test_memcmp_simd_alignment() raises:
     """Test alignment-related bugs in SIMD memcmp."""
     var size = 64
-    var large_ptr1 = alloc[Int8](size)
-    var large_ptr2 = alloc[Int8](size)
+    var large_ptr1 = alloc[Int8]({count = size}).unsafe_leak()
+    var large_ptr2 = alloc[Int8]({count = size}).unsafe_leak()
 
     # Fill with pattern
     for i in range(size):
@@ -493,8 +493,8 @@ def test_memcmp_simd_width_edge_cases() raises:
 
     for i in range(len(critical_sizes)):
         var size = critical_sizes[i]
-        var ptr1 = alloc[Int8](size)
-        var ptr2 = alloc[Int8](size)
+        var ptr1 = alloc[Int8]({count = size}).unsafe_leak()
+        var ptr2 = alloc[Int8]({count = size}).unsafe_leak()
 
         # Fill with identical sequential data
         for j in range(size):
@@ -525,8 +525,8 @@ def test_memcmp_simd_width_edge_cases() raises:
 def test_memcmp_simd_zero_bytes() raises:
     """Test handling of zero bytes in SIMD memcmp."""
     comptime size = simd_width_of[DType.int8]() * 2
-    var ptr1 = alloc[Int8](size)
-    var ptr2 = alloc[Int8](size)
+    var ptr1 = alloc[Int8]({count = size}).unsafe_leak()
+    var ptr2 = alloc[Int8]({count = size}).unsafe_leak()
 
     # Fill with zeros
     unsafe_memset_zero(ptr1, size)
@@ -584,19 +584,19 @@ def test_memset() raises:
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
-    var buf0 = alloc[Int32](2)
+    var buf0 = alloc[Int32]({count = 2}).unsafe_leak()
     unsafe_memset(buf0, 1, 2)
     assert_equal(buf0.unsafe_load(0), 16843009)
     unsafe_memset(buf0, -1, 2)
     assert_equal(buf0.unsafe_load(0), -1)
     buf0.unsafe_free()
 
-    var buf1 = alloc[Int8](2)
+    var buf1 = alloc[Int8]({count = 2}).unsafe_leak()
     unsafe_memset(buf1, 5, 2)
     assert_equal(buf1.unsafe_load(0), 5)
     buf1.unsafe_free()
 
-    var buf3 = alloc[Int32](2)
+    var buf3 = alloc[Int32]({count = 2}).unsafe_leak()
     unsafe_memset(buf3, 1, 2)
     unsafe_memset_zero[count=2](buf3)
     assert_equal(buf3.unsafe_load(0), 0)
@@ -607,21 +607,21 @@ def test_memset() raises:
 
 
 def test_pointer_string() raises:
-    var ptr = alloc[Int](1)
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.unsafe_free()
 
 
 def test_dtypepointer_string() raises:
-    var ptr = alloc[Float32](1)
+    var ptr = alloc[Float32]({count = 1}).unsafe_leak()
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
     ptr.unsafe_free()
 
 
 def test_pointer_explicit_copy() raises:
-    var ptr = alloc[Int](1)
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     ptr[] = 42
     var copy = ptr.copy()
     assert_equal(copy[], 42)
@@ -629,7 +629,7 @@ def test_pointer_explicit_copy() raises:
 
 
 def test_pointer_refitem() raises:
-    var ptr = alloc[Int](1)
+    var ptr = alloc[Int]({count = 1}).unsafe_leak()
     ptr[] = 42
     assert_equal(ptr[], 42)
     ptr.unsafe_free()
@@ -637,7 +637,7 @@ def test_pointer_refitem() raises:
 
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
-    var ptr = alloc[String](1)
+    var ptr = alloc[String]({count = 1}).unsafe_leak()
     __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
     ptr[] = payload
     assert_equal(ptr[], payload)
@@ -645,7 +645,7 @@ def test_pointer_refitem_string() raises:
 
 
 def test_pointer_refitem_pair() raises:
-    var ptr = alloc[Pair](1)
+    var ptr = alloc[Pair]({count = 1}).unsafe_leak()
     ptr[].lo = 42
     ptr[].hi = 24
     #   NOTE: We want to write the below but we can't implement a generic assert_equal yet.
@@ -661,7 +661,7 @@ def test_address_space_str() raises:
 
 
 def test_dtypepointer_gather() raises:
-    var ptr = alloc[Float32](4)
+    var ptr = alloc[Float32]({count = 4}).unsafe_leak()
     ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
     @parameter
@@ -706,7 +706,7 @@ def test_dtypepointer_gather() raises:
 
 
 def test_dtypepointer_scatter() raises:
-    var ptr = alloc[Float32](4)
+    var ptr = alloc[Float32]({count = 4}).unsafe_leak()
     ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     @parameter
@@ -781,7 +781,7 @@ def test_dtypepointer_scatter() raises:
 
 
 def test_indexing() raises:
-    var ptr = alloc[Float32](4)
+    var ptr = alloc[Float32]({count = 4}).unsafe_leak()
     for i in range(4):
         ptr[unsafe_offset=i] = Float32(i)
 
@@ -818,12 +818,12 @@ def test_uninit_move_n_trivial() raises:
     # Test with trivial move type - should use unsafe_memcpy, not call move
     # constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
-    var src = alloc[Counter](3)
+    var src = alloc[Counter]({count = 3}).unsafe_leak()
     src.unsafe_offset(0).unsafe_write(Counter(10))
     src.unsafe_offset(1).unsafe_write(Counter(20))
     src.unsafe_offset(2).unsafe_write(Counter(30))
 
-    var dest = alloc[Counter](3)
+    var dest = alloc[Counter]({count = 3}).unsafe_leak()
 
     unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
@@ -845,12 +845,12 @@ def test_uninit_move_n_trivial() raises:
 
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
-    var src = alloc[MoveCounter[String]](3)
+    var src = alloc[MoveCounter[String]]({count = 3}).unsafe_leak()
     src.unsafe_offset(0).unsafe_write(MoveCounter("foo"))
     src.unsafe_offset(1).unsafe_write(MoveCounter("bar"))
     src.unsafe_offset(2).unsafe_write(MoveCounter("baz"))
 
-    var dest = alloc[MoveCounter[String]](3)
+    var dest = alloc[MoveCounter[String]]({count = 3}).unsafe_leak()
 
     unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
@@ -875,12 +875,12 @@ def test_uninit_move_n_nontrivial() raises:
 def test_uninit_copy_n_trivial() raises:
     # Test with trivial copy type - should use unsafe_memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
-    var src = alloc[Counter](3)
+    var src = alloc[Counter]({count = 3}).unsafe_leak()
     src.unsafe_write(Counter(0))
     src.unsafe_offset(1).unsafe_write(Counter(1))
     src.unsafe_offset(2).unsafe_write(Counter(2))
 
-    var dest = alloc[Counter](3)
+    var dest = alloc[Counter]({count = 3}).unsafe_leak()
 
     unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
@@ -903,12 +903,12 @@ def test_uninit_copy_n_trivial() raises:
 
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
-    var src = alloc[CopyCounter[String]](3)
+    var src = alloc[CopyCounter[String]]({count = 3}).unsafe_leak()
     src.unsafe_write(CopyCounter("alpha"))
     src.unsafe_offset(1).unsafe_write(CopyCounter("beta"))
     src.unsafe_offset(2).unsafe_write(CopyCounter("gamma"))
 
-    var dest = alloc[CopyCounter[String]](3)
+    var dest = alloc[CopyCounter[String]]({count = 3}).unsafe_leak()
 
     unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
@@ -942,7 +942,7 @@ def test_destroy_n_trivial() raises:
     var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
-    var ptr = alloc[Counter](3)
+    var ptr = alloc[Counter]({count = 3}).unsafe_leak()
     ptr.unsafe_offset(0).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(1).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(2).unsafe_write(Counter(counter_ptr))
@@ -961,7 +961,7 @@ def test_destroy_n_nontrivial() raises:
     var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count)]
 
-    var ptr = alloc[Counter](3)
+    var ptr = alloc[Counter]({count = 3}).unsafe_leak()
     ptr.unsafe_offset(0).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(1).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(2).unsafe_write(Counter(counter_ptr))
@@ -975,12 +975,12 @@ def test_destroy_n_nontrivial() raises:
 
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src = alloc[MoveCounter[String]](1)
+    var src = alloc[MoveCounter[String]]({count = 1}).unsafe_leak()
     # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
     unsafe_memcpy(dest=src, src=Pointer(to=tmp), count=1)
 
-    var dest = alloc[MoveCounter[String]](1)
+    var dest = alloc[MoveCounter[String]]({count = 1}).unsafe_leak()
 
     unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
 
@@ -995,10 +995,10 @@ def test_uninit_move_n_zero_count() raises:
 
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src = alloc[CopyCounter[String]](1)
+    var src = alloc[CopyCounter[String]]({count = 1}).unsafe_leak()
     src.unsafe_write(CopyCounter("test"))
 
-    var dest = alloc[CopyCounter[String]](1)
+    var dest = alloc[CopyCounter[String]]({count = 1}).unsafe_leak()
 
     unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
 
@@ -1017,7 +1017,7 @@ def test_destroy_n_zero_count() raises:
     var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
-    var ptr = alloc[Counter](1)
+    var ptr = alloc[Counter]({count = 1}).unsafe_leak()
     ptr.unsafe_write(Counter(counter_ptr))
 
     unsafe_destroy_n(ptr, count=0)

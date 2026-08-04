@@ -12,6 +12,7 @@ IGNORED_POINTER_DEPRECATIONS = [
     "UnsafePointer",
     "MutUnsafePointer",
     "ImmUnsafePointer",
+    "alloc",
     "Pointer.__add__",
     "Pointer.__sub__",
     "Pointer.__iadd__",
