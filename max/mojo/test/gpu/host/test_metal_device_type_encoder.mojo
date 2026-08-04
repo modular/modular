@@ -82,7 +82,7 @@ def test_closure_registers_captured_buffers() raises:
     def k(z: Int) {var pa, var pb} -> Int:
         return pa.offset() + pb.offset()
 
-    var storage = alloc[type_of(k)](1)
+    var storage = alloc[type_of(k)]({count = 1}).unsafe_leak()
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
         encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()
@@ -118,7 +118,7 @@ def test_closure_registers_buffers_via_nested_struct() raises:
     def k(z: Int) {var pair} -> Int:
         return pair.first.offset() + pair.second.offset()
 
-    var storage = alloc[type_of(k)](1)
+    var storage = alloc[type_of(k)]({count = 1}).unsafe_leak()
     var encoder = MetalDeviceTypeEncoder()
     k._to_device_type(
         encoder, storage.unsafe_bitcast[NoneType]().as_unsafe_any_origin()

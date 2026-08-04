@@ -630,7 +630,7 @@ struct HashableOnly(Deinitable, Hashable, Movable):
 
 
 def test_span_hashable_non_copyable() raises:
-    var ptr = alloc[HashableOnly](2)
+    var ptr = alloc[HashableOnly]({count = 2}).unsafe_leak()
     ptr.unsafe_write(HashableOnly(1))
     ptr.unsafe_offset(1).unsafe_write(HashableOnly(2))
     var span = Span(unsafe_ptr=ptr, length=2)
@@ -641,7 +641,7 @@ def test_span_hashable_non_copyable() raises:
 
 
 def test_span_with_move_only_type() raises:
-    var ptr = alloc[MoveOnly[Int]](1)
+    var ptr = alloc[MoveOnly[Int]]({count = 1}).unsafe_leak()
     ptr.unsafe_write(MoveOnly(42))
     var span = Span(unsafe_ptr=ptr, length=1)
     assert_equal(span[0].data, 42)
@@ -654,7 +654,7 @@ struct NonMovable:
 
 
 def test_span_with_non_movable_type() raises:
-    var ptr = alloc[NonMovable](1)
+    var ptr = alloc[NonMovable]({count = 1}).unsafe_leak()
     var _span = Span(unsafe_ptr=ptr, length=0)
     ptr.unsafe_free()
 

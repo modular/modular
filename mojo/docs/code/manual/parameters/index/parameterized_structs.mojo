@@ -18,7 +18,7 @@ struct ParameterizedArray[ElementType: Copyable & Deinitable]:
 
     def __init__(out self, var *elements: Self.ElementType):
         self.size = len(elements)
-        self.data = alloc[Self.ElementType](self.size)
+        self.data = alloc[Self.ElementType]({count = self.size}).unsafe_leak()
         for i in range(self.size):
             self.data.unsafe_offset(i).unsafe_write(elements[i].copy())
 

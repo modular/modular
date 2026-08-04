@@ -43,7 +43,7 @@ def test_snprintf_mixed_variadic_args() raises:
     conversions read unrelated memory.
     """
     comptime SIZE = 64
-    var buf = alloc[c_char](SIZE)
+    var buf = alloc[c_char]({count = SIZE}).unsafe_leak()
     var fmt = "[%d|%s|%d|%.2f|%c]".as_c_string_slice()
     var word = "mid".as_c_string_slice()
 

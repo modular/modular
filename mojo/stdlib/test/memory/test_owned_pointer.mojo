@@ -36,7 +36,7 @@ def test_basic_ref() raises:
 
 def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
-    var unsafe_ptr = alloc[ObservableDel[]](1)
+    var unsafe_ptr = alloc[ObservableDel[]]({count = 1}).unsafe_leak()
     unsafe_ptr.unsafe_write(
         ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
     )
