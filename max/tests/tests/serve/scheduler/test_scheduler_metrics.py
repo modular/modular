@@ -708,12 +708,20 @@ def test_spec_decode_metrics_properties() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _mock_inputs(batch_size: int, batch_type: BatchType) -> MagicMock:
-    inputs = MagicMock()
+def _mock_inputs(
+    batch_size: int, batch_type: BatchType
+) -> TextGenerationInputs[Any]:
+    contexts = [MagicMock() for _ in range(batch_size)]
+    for context in contexts:
+        context._is_padding_ctx = False
+        context.tokens.active_length = 0
+        context.tokens.processed_length = 0
+        context.tokens.generated_length = 1
+
+    inputs: TextGenerationInputs[Any] = TextGenerationInputs(batches=[contexts])
     inputs.input_tokens = 100
     inputs.batch_type = batch_type
     inputs.context_tokens = 500
-    inputs.flat_batch = [MagicMock()] * batch_size
     return inputs
 
 
@@ -814,6 +822,29 @@ def test_batch_metrics_create_no_spec_decode() -> None:
     assert metrics.avg_acceptance_length == 0.0
     assert metrics.max_acceptance_length == 0
     assert metrics.acceptance_rate_per_position == []
+
+
+def test_batch_metrics_create_excludes_padding_contexts() -> None:
+    inputs = _mock_inputs(batch_size=4, batch_type=BatchType.TG)
+    inputs.flat_batch[-1]._is_padding_ctx = True
+    spec_metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[3, 2, 1],
+        num_verifications=3,
+    )
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=inputs,
+        kv_cache=None,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        batch_spec_decode_metrics=spec_metrics,
+    )
+    assert metrics.batch_size == 3
+    assert metrics.generation_throughput == (6 + 3) / 0.1
 
 
 # ---------------------------------------------------------------------------

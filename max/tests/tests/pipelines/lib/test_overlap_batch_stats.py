@@ -50,6 +50,7 @@ def _fake_batch(
         enqueue_monotonic=enqueue_monotonic,
         inputs=SimpleNamespace(
             batch_type=batch_type,
+            batch_size=batch_size,
             flat_batch=[object()] * batch_size,
             input_tokens=input_tokens,
             context_tokens=context_tokens,

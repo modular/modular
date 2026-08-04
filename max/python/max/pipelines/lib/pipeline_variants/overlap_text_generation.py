@@ -1996,7 +1996,7 @@ class OverlapTextGenerationPipeline(
         inputs = batch.inputs
         self._completed_batch_stats = CompletedBatchStats(
             batch_type=inputs.batch_type,
-            batch_size=len(inputs.flat_batch),
+            batch_size=inputs.batch_size,
             num_input_tokens=inputs.input_tokens,
             num_context_tokens=inputs.context_tokens,
             execution_time_s=max(sync_monotonic - start_bound, 0.0),
