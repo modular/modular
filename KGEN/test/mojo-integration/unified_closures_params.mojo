@@ -6,7 +6,6 @@
 # RUN: %mojo %s 1 4 | FileCheck %s
 
 from std.sys import argv
-from std.memory.pointer import AddressSpace
 
 
 trait Config(Deinitable):
