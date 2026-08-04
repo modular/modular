@@ -1077,7 +1077,7 @@ def _mla_decode_sm100_dispatch_impl[
         # Create partial output buffer (same type as output - bfloat16)
         # Each split writes its partial attention result here
         # Note: Output dimension is v_depth (512), not depth (576)
-        o_accum_split_data = ctx.enqueue_create_buffer[output_type](
+        var o_accum_split_data = ctx.enqueue_create_buffer[output_type](
             Int(
                 num_partitions
                 * batch_size
@@ -1554,17 +1554,17 @@ def mla_decode_sm100_sink_split_k[
     )
     var num_rows_q = num_matrix_view_rows_decode(q)
 
-    k_tma_op = k.create_tma_tile[
+    var k_tma_op = k.create_tma_tile[
         BN=mla_config.BK_PV,  # tile_m =64
         depth=mla_config.q_depth,
         BK=mla_config.BK_QK,  # tile_n =576
         swizzle_mode=mla_config.kv_tma_swizzle_mode,
     ](ctx)
-    o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
+    var o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
         output.ptr
     )
     var num_rows_o = num_matrix_view_rows_decode(output)
-    o_tma_op = tma_tile_qo[
+    var o_tma_op = tma_tile_qo[
         swizzle_mode=mla_config.swizzle_mode,
         BM=mla_config.out_rows,
         BK=mla_config.BN_PV // 4,
@@ -1576,7 +1576,7 @@ def mla_decode_sm100_sink_split_k[
     # kernel instead of the standard page-table path.
     # =========================================================================
     comptime if sparse:
-        q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
+        var q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
             q.ptr
         )
 
@@ -1591,7 +1591,7 @@ def mla_decode_sm100_sink_split_k[
             # descriptor covering the full 576-element row (1152 bytes).
             comptime if k_t.dtype == DType.bfloat16:
                 comptime _kv_bf16_tile_width = mla_config.padded_q_depth
-                k_gather4_tma_bf16 = k.create_gather4_tma_tile[
+                var k_gather4_tma_bf16 = k.create_gather4_tma_tile[
                     tile_width=_kv_bf16_tile_width,
                     tile_stride=_kv_bf16_tile_width,
                     swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
@@ -1601,7 +1601,7 @@ def mla_decode_sm100_sink_split_k[
                 ](ctx)
 
                 var extra_k_val_bf16 = extra_k.or_else(k)
-                extra_k_gather4_tma_bf16 = (
+                var extra_k_gather4_tma_bf16 = (
                     extra_k_val_bf16.create_gather4_tma_tile[
                         tile_width=_kv_bf16_tile_width,
                         tile_stride=_kv_bf16_tile_width,
@@ -1612,7 +1612,7 @@ def mla_decode_sm100_sink_split_k[
                     ](ctx)
                 )
                 var extra_kv_lut_val_bf16 = extra_k_val_bf16
-                q_tma_sparse = tma_tile_qo[
+                var q_tma_sparse = tma_tile_qo[
                     swizzle_mode=mla_config.swizzle_mode,
                     BM=mla_config.BM,
                     BK=mla_config.BK_QK,
@@ -1718,7 +1718,7 @@ def mla_decode_sm100_sink_split_k[
             # Single K gather4 TMA covering full 576-byte row
             # (INT64, SWIZZLE_NONE, tile_width=72 INT64 = 576 B).
             comptime _kv_tile_width = mla_config.padded_q_depth // 8
-            k_gather4_tma = k.create_gather4_tma_tile[
+            var k_gather4_tma = k.create_gather4_tma_tile[
                 tile_width=_kv_tile_width,
                 tile_stride=_kv_tile_width,
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1728,7 +1728,7 @@ def mla_decode_sm100_sink_split_k[
             ](ctx)
 
             var extra_k_val_fp8 = extra_k.or_else(k)
-            extra_k_gather4_tma = extra_k_val_fp8.create_gather4_tma_tile[
+            var extra_k_gather4_tma = extra_k_val_fp8.create_gather4_tma_tile[
                 tile_width=_kv_tile_width,
                 tile_stride=_kv_tile_width,
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1739,7 +1739,7 @@ def mla_decode_sm100_sink_split_k[
             var extra_kv_lut_val_fp8 = extra_k_val_fp8
 
             comptime if _native_fp8:
-                q_tma_sparse_fp8 = tma_tile_qo[
+                var q_tma_sparse_fp8 = tma_tile_qo[
                     swizzle_mode=mla_config.kv_tma_swizzle_mode,
                     BM=mla_config.BM,
                     BK=mla_config.BK_QK,
@@ -1889,7 +1889,7 @@ def mla_decode_sm100_sink_split_k[
             # get instantiated for FP8-Q and ICE.
             comptime if not _native_fp8:
                 # SWIZZLE_128B is safe: 576 BF16 bytes = 1152B, divisible by 128B.
-                q_tma_sparse = tma_tile_qo[
+                var q_tma_sparse = tma_tile_qo[
                     swizzle_mode=mla_config.swizzle_mode,
                     BM=mla_config.BM,
                     BK=mla_config.BK_QK,
@@ -2034,7 +2034,7 @@ def mla_decode_sm100_sink_split_k[
             comptime _nope_tile_stride = (
                 mla_config.padded_depth + mla_config.rope_depth * 2
             ) // 8
-            k_nope_gather4_tma = k.create_gather4_tma_tile[
+            var k_nope_gather4_tma = k.create_gather4_tma_tile[
                 tile_width=_nope_tile_width,
                 tile_stride=_nope_tile_stride,
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -2048,7 +2048,7 @@ def mla_decode_sm100_sink_split_k[
             comptime _rope_gather4_tile_width = (
                 mla_config.padded_depth + mla_config.rope_depth * 2
             ) // 2
-            k_rope_gather4_tma = k.create_rope_gather4_tma_tile[
+            var k_rope_gather4_tma = k.create_rope_gather4_tma_tile[
                 tile_width=_rope_gather4_tile_width,
                 padded_depth=mla_config.padded_depth,
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
@@ -2060,7 +2060,7 @@ def mla_decode_sm100_sink_split_k[
             # When extra_k is None, we create dummy descriptors from k (they won't
             # be used since has_extra_kv=False eliminates all extra code paths).
             var extra_k_val = extra_k.or_else(k)
-            extra_k_nope_gather4_tma = extra_k_val.create_gather4_tma_tile[
+            var extra_k_nope_gather4_tma = extra_k_val.create_gather4_tma_tile[
                 tile_width=_nope_tile_width,
                 tile_stride=_nope_tile_stride,
                 swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -2068,15 +2068,17 @@ def mla_decode_sm100_sink_split_k[
                 tma_dtype=DType.int64,
                 l2_promotion=TensorMapL2Promotion.L2_128B,
             ](ctx)
-            extra_k_rope_gather4_tma = extra_k_val.create_rope_gather4_tma_tile[
-                tile_width=_rope_gather4_tile_width,
-                padded_depth=mla_config.padded_depth,
-                swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-                tile_height=mla_config.BK_PV,
-                l2_promotion=TensorMapL2Promotion.L2_128B,
-            ](ctx)
+            var extra_k_rope_gather4_tma = (
+                extra_k_val.create_rope_gather4_tma_tile[
+                    tile_width=_rope_gather4_tile_width,
+                    padded_depth=mla_config.padded_depth,
+                    swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
+                    tile_height=mla_config.BK_PV,
+                    l2_promotion=TensorMapL2Promotion.L2_128B,
+                ](ctx)
+            )
             var extra_kv_lut_val = extra_k_val
-            q_tma_sparse = tma_tile_qo[
+            var q_tma_sparse = tma_tile_qo[
                 swizzle_mode=mla_config.swizzle_mode,
                 BM=mla_config.BM,
                 BK=mla_config.BK_QK,
@@ -2201,10 +2203,10 @@ def mla_decode_sm100_sink_split_k[
         comptime _q_row_bf16 = _q_row_bytes // 2  # 320
 
         # Q_nope TMA: FP8 content, SWIZZLE_64B, BM x padded_depth (512)
-        q_ptr_fp8_content = rebind[
+        var q_ptr_fp8_content = rebind[
             UnsafePointer[Scalar[DType.float8_e4m3fn], origin=MutAnyOrigin]
         ](q.ptr)
-        q_nope_tma = tma_tile_qo[
+        var q_nope_tma = tma_tile_qo[
             swizzle_mode=mla_config.content_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config.BM,
             BK=mla_config.padded_depth,  # 512
@@ -2213,10 +2215,10 @@ def mla_decode_sm100_sink_split_k[
 
         # Q_rope TMA: BF16 rope, SWIZZLE_128B, BM x rope_depth (64)
         # Rope starts at byte offset padded_depth (512) from Q row start.
-        q_ptr_bf16_rope = rebind[
+        var q_ptr_bf16_rope = rebind[
             UnsafePointer[Scalar[DType.bfloat16], origin=MutAnyOrigin]
         ](q.ptr + mla_config.padded_depth)
-        q_rope_tma = tma_tile_qo[
+        var q_rope_tma = tma_tile_qo[
             swizzle_mode=mla_config.rope_swizzle_mode,  # SWIZZLE_128B
             BM=mla_config.BM,
             BK=mla_config.rope_depth,  # 64
@@ -2226,7 +2228,7 @@ def mla_decode_sm100_sink_split_k[
         # K_content TMA: FP8 content from KV cache, SWIZZLE_64B, BK_PV x padded_depth (512).
         # The KV cache has 640 bytes/row layout (512 FP8 content + 128 BF16 rope).
         # create_tma_tile reads only the first 512 bytes (FP8 content) per row.
-        k_content_tma = k.create_tma_tile[
+        var k_content_tma = k.create_tma_tile[
             BN=mla_config.BK_PV,  # 64
             depth=mla_config.padded_depth,  # 512
             BK=mla_config.padded_depth,  # 512
@@ -2237,7 +2239,7 @@ def mla_decode_sm100_sink_split_k[
         # The KV cache row layout is padded_depth FP8 bytes followed by
         # rope_depth BF16 elements.  create_rope_tma_tile offsets the base
         # pointer by padded_depth bytes and reinterprets as BF16.
-        k_rope_tma = k.create_rope_tma_tile[
+        var k_rope_tma = k.create_rope_tma_tile[
             BN=mla_config.BK_PV,  # 64
             BK=mla_config.rope_depth,  # 64
             padded_depth=mla_config.padded_depth,  # 512
@@ -2249,7 +2251,7 @@ def mla_decode_sm100_sink_split_k[
         # indexed by row_idx (same paging as KV cache blocks).
         # We treat it as a flat [1, total_elements] 2D tensor for TMA.
         var _total_scale_elements = k.num_kv_rows()
-        scale_tma = tma_tile_scales[BN_QK=mla_config.BN_QK](
+        var scale_tma = tma_tile_scales[BN_QK=mla_config.BN_QK](
             ctx, scales_ptr, _total_scale_elements
         )
 
@@ -2324,10 +2326,10 @@ def mla_decode_sm100_sink_split_k[
                 ctx,
             )
     elif _native_fp8:
-        q_ptr_fp8 = rebind[
+        var q_ptr_fp8 = rebind[
             UnsafePointer[Scalar[k_t.dtype], origin=MutAnyOrigin]
         ](q.ptr)
-        q_tma_fp8 = tma_tile_qo[
+        var q_tma_fp8 = tma_tile_qo[
             swizzle_mode=mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config.BM,
             BK=mla_config.BK_QK,
@@ -2354,7 +2356,7 @@ def mla_decode_sm100_sink_split_k[
             per_token_scale_rope_aware=mla_config.per_token_scale_rope_aware,
             decode_layout_g=True,
         )
-        q_tma_fp8_g = tma_tile_qo[
+        var q_tma_fp8_g = tma_tile_qo[
             swizzle_mode=mla_config_g.kv_tma_swizzle_mode,  # SWIZZLE_64B
             BM=mla_config_g.BM,  # 32
             BK=mla_config_g.BK_QK,
@@ -2569,10 +2571,10 @@ def mla_decode_sm100_sink_split_k[
             return
     else:
         # BF16 / old FP8 converter path: Q is BF16, create BF16 Q TMA.
-        q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
+        var q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
             q.ptr
         )
-        q_tma_op = tma_tile_qo[
+        var q_tma_op = tma_tile_qo[
             swizzle_mode=mla_config.swizzle_mode,
             BM=mla_config.BM,
             BK=mla_config.BK_QK,

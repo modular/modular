@@ -206,17 +206,17 @@ def fa4_mma[
     # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
-    s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
-    s1_tmem = tmem_addr + UInt32(config.TMEM_S1)
-    o0_tmem = tmem_addr + UInt32(config.TMEM_O0)
-    o1_tmem = tmem_addr + UInt32(config.TMEM_O1)
+    var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
+    var s1_tmem = tmem_addr + UInt32(config.TMEM_S1)
+    var o0_tmem = tmem_addr + UInt32(config.TMEM_O0)
+    var o1_tmem = tmem_addr + UInt32(config.TMEM_O1)
 
     # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
     var pipeline_s0 = mbars.producer_s0()
     var pipeline_s1 = mbars.producer_s1()
     # Keep consumer pointers for acquire operations (shared phase tracking)
-    consumer_s0 = pipeline_s0.consumer_mbar_base
-    consumer_s1 = pipeline_s1.consumer_mbar_base
+    var consumer_s0 = pipeline_s0.consumer_mbar_base
+    var consumer_s1 = pipeline_s1.consumer_mbar_base
 
     # O pipelines (producer side only; consumer wait is merged into S barriers)
     var pipeline_o0 = mbars.producer_o0()
@@ -229,13 +229,13 @@ def fa4_mma[
     # (mirrors the load_warp.mojo Q-TMA invariance).
     comptime q0_size = (BM // num_q) * config.padded_qk_depth
     comptime q0_bytes = q0_size * size_of[config.qkv_dtype]()
-    q0 = smem_descriptor[
+    var q0 = smem_descriptor[
         BMN=config.BM // config.num_q,
         BK=config.BK0,
         swizzle_mode=config.swizzle_mode,
         is_k_major=True,
     ](q_smem)
-    q1 = q0 + UInt32(q0_bytes)
+    var q1 = q0 + UInt32(q0_bytes)
 
     comptime q_sub_bytes = HalfBM * config.BK0 * size_of[config.qkv_dtype]()
 
@@ -247,7 +247,7 @@ def fa4_mma[
     # (=HalfBM*BK0*size, the 2Q row-half stride on the wrong axis).
     comptime q_chunk_bytes = q0_bytes // config.num_qk_stages
 
-    e = elect()
+    var e = elect()
 
     # BLASST (arXiv 2512.12087): skip P@V (UMMA1) when all 4 of a WG's softmax
     # warps voted to skip; QK' (UMMA0) and the V load are never skipped. `and
@@ -482,7 +482,7 @@ def fa4_mma[
                 ) == config.BK0, "WS uniform sub-tile: depth_tile == BK0"
 
         # K descriptor: k_major for Q@K' (BK0=64 -> one depth-half sub-tile).
-        kv_desc_k = smem_descriptor[
+        var kv_desc_k = smem_descriptor[
             BMN=config.k_rows_per_cta(),
             BK=config.BK0,
             swizzle_mode=config.swizzle_mode,
@@ -498,7 +498,7 @@ def fa4_mma[
             pv_mma_n if config.use_ws else config.v_cols_per_cta()
         )
         comptime v_desc_bk = pv_bk if config.use_ws else config.BN
-        kv_desc_v = smem_descriptor[
+        var kv_desc_v = smem_descriptor[
             BMN=v_desc_bmn,
             BK=v_desc_bk,
             swizzle_mode=config.swizzle_mode,
@@ -814,7 +814,7 @@ def fa4_mma[
         # ---- Peeled iteration ----
         # Stage 0 = K0 (K_e[0]_d0)
         kv_pipeline.consumer_wait()
-        k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+        var k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
         UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
         _qk_extra(q0, s0_tmem)  # WS: K_e[0]_d1..; non-WS: no-op
         _commit(pipeline_s0.producer_mbar())
@@ -950,7 +950,9 @@ def fa4_mma[
 
             # Kn (K_e[n]_d0, depth-split across sub-slots for WS)
             kv_pipeline.consumer_wait()
-            kn = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            var kn = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
             UMMA0Type.mma[stage_idx=0](q0, kn, s0_tmem, elect=e, c_scale=0)
             _qk_extra(q0, s0_tmem)  # WS: K_e[n]_d1..
             _commit(pipeline_s0.producer_mbar())
@@ -1174,7 +1176,7 @@ def fa4_mma[
         var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
         # Q_0 @ K_0' (2Q) / Q @ K_e[0]' (1Q), staged over num_qk_stages
-        k0 = pipeline_k.get_k()
+        var k0 = pipeline_k.get_k()
 
         comptime for qk_stage in range(num_qk_stages):
             pipeline_k.wait_k[qk_stage=qk_stage]()  # [kv0]
@@ -1243,7 +1245,7 @@ def fa4_mma[
 
         # V_0 (2Q held for first main iter) / V_e[0] (1Q single use,
         # then V_o[0] loaded and held).
-        vlatest = pipeline_v.get_v()  # [kv1]
+        var vlatest = pipeline_v.get_v()  # [kv1]
         pipeline_v.wait_v()  # [kv1]
 
         # For the first V tile in the current KV stage buffer:
@@ -1294,7 +1296,7 @@ def fa4_mma[
             iter_count -= 1
             # Q_0 @ K_n' (2Q) / Q @ K_e[n]' (1Q), staged over
             # num_qk_stages.
-            kn = pipeline_k.get_k()  # kv_{2n-1}->[kv_{2n}]
+            var kn = pipeline_k.get_k()  # kv_{2n-1}->[kv_{2n}]
 
             comptime for qk_stage in range(num_qk_stages):
                 pipeline_k.wait_k[qk_stage=qk_stage]()  # kv_{2n-1}->[kv_{2n}]

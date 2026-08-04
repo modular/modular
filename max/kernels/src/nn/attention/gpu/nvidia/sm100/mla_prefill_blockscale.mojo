@@ -240,11 +240,11 @@ __extension SM100MLA:
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
-        mask = pack.mask
-        scheduler = pack.scheduler
-        valid_length = pack.valid_length
-        max_seq_len = pack.max_seq_len
-        partition = pack.partition
+        var mask = pack.mask
+        var scheduler = pack.scheduler
+        var valid_length = pack.valid_length
+        var max_seq_len = pack.max_seq_len
+        var partition = pack.partition
 
         comptime num_q = Self.config.num_q()
         # TODO: We may want to support num_q>2 for depth=64?
@@ -319,7 +319,7 @@ __extension SM100MLA:
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
@@ -580,7 +580,7 @@ __extension SM100MLA:
             seq_info, max_seq_len
         )
         var q_head_idx: UInt32 = seq_info.head_idx
-        e = elect()
+        var e = elect()
 
         # Sub-tile paging: when page_size < BN, each BN-row load is split
         # into num_kv_pages sub-tile loads of kv_sub_BN rows each.
@@ -1109,7 +1109,7 @@ __extension SM100MLA:
                 var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
                     k_elements_per_stage
                 )
-                k_nope_smem_local, k_rope_smem_local = split_smem[
+                var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
@@ -1353,8 +1353,10 @@ __extension SM100MLA:
             var bf16_base = k_rope_smem_ptr.bitcast[
                 Scalar[Self.KVLUTType.dtype]
             ]()
-            k_rope_tile_fp8 = SmemFP8(fp8_base + tile_offset, tile_layout)
-            k_rope_tile_bf16 = SmemBF16(bf16_base + tile_offset, tile_layout)
+            var k_rope_tile_fp8 = SmemFP8(fp8_base + tile_offset, tile_layout)
+            var k_rope_tile_bf16 = SmemBF16(
+                bf16_base + tile_offset, tile_layout
+            )
 
             cvt_block_fp8_to_bf16_with_scale[
                 swizzle_fp8=swizzle_fp8,
@@ -1396,17 +1398,17 @@ __extension SM100MLA:
         comptime BlockscaleSmemType = SM100AttentionSMem[Self.config.fa4_config]
         var mbars = BlockscaleSmemType().misc_mbars()
 
-        s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
-        s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
-        o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
-        o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
+        var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
+        var s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
+        var o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
+        var o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
 
         # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
         var pipeline_s0 = mbars.producer_s0()
         var pipeline_s1 = mbars.producer_s1()
         # Keep consumer pointers for acquire operations (shared phase tracking)
-        consumer_s0 = pipeline_s0.consumer_mbar_base
-        consumer_s1 = pipeline_s1.consumer_mbar_base
+        var consumer_s0 = pipeline_s0.consumer_mbar_base
+        var consumer_s1 = pipeline_s1.consumer_mbar_base
 
         # O pipelines (producer side only; consumer wait is merged into S barriers)
         var pipeline_o0 = mbars.producer_o0()
@@ -1414,8 +1416,8 @@ __extension SM100MLA:
 
         comptime q0_size = (Self.config.BM // 2) * Self.config.padded_qk_depth
         comptime q0_bytes = UInt32(q0_size * size_of[Self.KVLUTType.dtype]())
-        q0 = Self.descriptor_q(q_smem)
-        q1 = q0 + q0_bytes
+        var q0 = Self.descriptor_q(q_smem)
+        var q1 = q0 + q0_bytes
 
         comptime if Self.config.fa4_config.use_shared_kv:
             # ---- Shared KV mode ----
@@ -1437,7 +1439,7 @@ __extension SM100MLA:
 
             # K_nope descriptor: k_major for Q@K_nope'. Width is the K_nope
             # depth (`padded_nope_depth`), the Q@K' contraction dim.
-            kv_desc_k = smem_descriptor[
+            var kv_desc_k = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.fa4_config.padded_nope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
@@ -1445,14 +1447,14 @@ __extension SM100MLA:
             ](k_smem_base)
             # V descriptor: mn_major for P@V. Width is the V head dim
             # (`padded_ov_depth`).
-            kv_desc_v = smem_descriptor[
+            var kv_desc_v = smem_descriptor[
                 BMN=Self.config.fa4_config.padded_ov_depth,
                 BK=Self.config.BN,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
                 is_k_major=False,
             ](k_smem_base)
             # K_rope descriptor: k_major for Q@K_rope' (BF16 after CVT)
-            rope_desc = smem_descriptor[
+            var rope_desc = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.rope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
@@ -1462,8 +1464,8 @@ __extension SM100MLA:
             # Q_rope offset: Q_nope occupies first MMA_M * padded_v_depth
             # elements in Q's column-major tiled layout.
             comptime q_rope_off = UInt32(Self.q_rope_byte_offset)
-            q0_rope = q0 + q_rope_off
-            q1_rope = q1 + q_rope_off
+            var q0_rope = q0 + q_rope_off
+            var q1_rope = q1 + q_rope_off
 
             comptime KVPipeType = StagedPipeline[
                 Self.config.fa4_config.num_kv_stages, 1
@@ -1477,7 +1479,7 @@ __extension SM100MLA:
                 - 1
             )
 
-            e = elect()
+            var e = elect()
 
             # Rope stage counter: tracks which cvt_to_mma stage contains the
             # current K_rope BF16 data. Cycles 0,1,...,num_rope_buffers-1.
@@ -1490,10 +1492,12 @@ __extension SM100MLA:
             # Stage 0 = K0 (K_nope0 + K_rope0 via CVT)
             kv_pipeline.consumer_wait()
             cvt_to_mma_pipeline.consumer_wait()
-            k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            var k0 = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
             Self.UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
             # K_rope0: from CVT pipeline at rope_stage=0
-            r0 = rope_desc + UInt32(rope_stage_bytes) * rope_stage
+            var r0 = rope_desc + UInt32(rope_stage_bytes) * rope_stage
             Self.UMMA0RopeType.mma[stage_idx=0](
                 q0_rope, r0, s0_tmem, elect=e, c_scale=1
             )
@@ -1514,7 +1518,7 @@ __extension SM100MLA:
             # Stage 1 = V0
             kv_pipeline.consumer_wait()
             var v_prev_idx: UInt32 = kv_pipeline.state.index()
-            v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s0[pv_stage].wait(0)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1535,21 +1539,21 @@ __extension SM100MLA:
                 # Kn (K_nope_n via KV pipeline + K_rope_n via CVT pipeline)
                 kv_pipeline.consumer_wait()
                 cvt_to_mma_pipeline.consumer_wait()
-                kn = (
+                var kn = (
                     kv_desc_k
                     + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
                 )
                 Self.UMMA0Type.mma[stage_idx=0](
                     q0, kn, s0_tmem, elect=e, c_scale=0
                 )
-                rn = rope_desc + UInt32(rope_stage_bytes) * rope_stage
+                var rn = rope_desc + UInt32(rope_stage_bytes) * rope_stage
                 Self.UMMA0RopeType.mma[stage_idx=0](
                     q0_rope, rn, s0_tmem, elect=e, c_scale=1
                 )
                 pipeline_s0.commit_mma(e)
 
                 # P1 @ V_{n-1}
-                v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s1[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1577,7 +1581,7 @@ __extension SM100MLA:
                 # Vn
                 kv_pipeline.consumer_wait()
                 v_prev_idx = kv_pipeline.state.index()
-                vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s0[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1586,7 +1590,7 @@ __extension SM100MLA:
                 pipeline_o0.commit_mma(e)
 
             # ---- Epilogue ----
-            v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s1[pv_stage].wait(phase)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1621,8 +1625,8 @@ __extension SM100MLA:
             pipeline_k.wait_k()
             cvt_to_mma_pipeline.consumer_wait()
 
-            k0 = pipeline_k.get_k()
-            e = elect()
+            var k0 = pipeline_k.get_k()
+            var e = elect()
 
             Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
             pipeline_s0.commit_mma(e)
@@ -1637,7 +1641,7 @@ __extension SM100MLA:
 
             # Wait V0
             pipeline_v.wait_v()
-            vlatest = pipeline_v.get_v()
+            var vlatest = pipeline_v.get_v()
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s0[pv_stage].wait(0)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1652,7 +1656,7 @@ __extension SM100MLA:
                 iter_count -= 1
 
                 # Q_0 @ K_n'
-                kn = pipeline_k.get_k()
+                var kn = pipeline_k.get_k()
                 pipeline_k.wait_k()
                 cvt_to_mma_pipeline.consumer_wait()
 
@@ -1829,7 +1833,7 @@ def mla_sm100_prefill_blockscale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
@@ -1843,14 +1847,14 @@ def mla_sm100_prefill_blockscale[
     )
 
     # [batch_size * num_keys, num_heads, kv_depth]
-    k_nope_tma_op = k.create_tma_tile[
+    var k_nope_tma_op = k.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=fa4_config.nope_depth,
     ](ctx)
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
-    k_rope_tma_op = k_rope.create_tma_tile[
+    var k_rope_tma_op = k_rope.create_tma_tile[
         fa4_config.rope_gmem_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         depth=cache_depth,
@@ -1858,7 +1862,7 @@ def mla_sm100_prefill_blockscale[
     ](ctx)
 
     # [batch_size * num_keys, num_heads, v_depth] — V gmem width is ov_depth.
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=ov_depth,
