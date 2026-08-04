@@ -52,7 +52,12 @@ from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
 )
-from max.pipelines.lora import LoRAInputs, LoRAManager
+from max.pipelines.lora import (
+    LoRAInputs,
+    LoRAManager,
+    LoRAManagerV3,
+    LoRATargetModule,
+)
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -209,6 +214,12 @@ class ModelInputs:
     lora: LoRAInputs | None = None
     """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
 
+    lora_buffers: tuple[Buffer, ...] = ()
+    """ModuleV3 LoRA graph inputs (routing triple + per-slot adapter stacks)
+    in ``LoRAManagerV3.symbolic_inputs`` order, set by the ModuleV3 batch
+    processor; empty when ModuleV3 LoRA is off. The arch's ``buffers``
+    property splices these onto the positional ABI tail."""
+
     vision_embeddings: list[Buffer] = field(default_factory=list)
     """Per-device vision-merge embedding inputs for the language graph, set
     by the pipeline's vision seam (``finalize_vision_inputs``) on every
@@ -338,6 +349,12 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = None
     #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
     model_config_cls: ClassVar[type[Any] | None] = None
+    #: Whether this arch serves LoRA via the ModuleV3 adapters-as-inputs path
+    #: (``LoRAManagerV3``), rather than the V2 alias-buffer ``LoRAManager``.
+    lora_modulev3: ClassVar[bool] = False
+    #: The ModuleV3 LoRA target projections this arch wraps. Read by the base
+    #: to construct ``LoRAManagerV3``; empty for non-ModuleV3-LoRA archs.
+    lora_targets: ClassVar[tuple[LoRATargetModule, ...]] = ()
 
     def __init__(
         self,
@@ -366,8 +383,17 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             pipeline_config, self.huggingface_config
         )
 
-        self._lora_manager: LoRAManager | None = (
-            LoRAManager(
+        if pipeline_config.lora and kv_cache_config.enable_prefix_caching:
+            raise ValueError(
+                "LoRA is incompatible with prefix caching; serve with "
+                "prefix caching disabled (`--no-enable-prefix-caching`)."
+            )
+
+        self._lora_manager: LoRAManager | LoRAManagerV3 | None
+        if not pipeline_config.lora:
+            self._lora_manager = None
+        else:
+            common_args = (
                 pipeline_config.lora,
                 pipeline_config.model.model_name,
                 self.dtype,
@@ -376,9 +402,18 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.head_dim,
                 self.max_seq_len * max_batch_size,
             )
-            if pipeline_config.lora
-            else None
-        )
+            if type(self).lora_modulev3:
+                self._lora_manager = LoRAManagerV3(
+                    *common_args, targets=type(self).lora_targets
+                )
+            else:
+                self._lora_manager = LoRAManager(*common_args)
+
+        if isinstance(self._lora_manager, LoRAManagerV3):
+            assert self.adapter is not None, (
+                "ModuleV3 LoRA requires a base weight adapter to wrap"
+            )
+            self.adapter = self._lora_manager.lora_weight_adapter(self.adapter)
 
         self._batch_processor: BatchProcessor[Any, Any] | None = None
         batch_processor_cls = type(self).batch_processor_cls
@@ -437,7 +472,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return config
 
     @property
-    def lora_manager(self) -> LoRAManager | None:
+    def lora_manager(self) -> LoRAManager | LoRAManagerV3 | None:
         """Returns the LoRA manager if LoRA is enabled, otherwise None."""
         return self._lora_manager
 
@@ -1072,6 +1107,11 @@ class ModuleV3PipelineModelWithKVCache(
         )
         with F.lazy(), default_dtype(module_default_dtype):
             nn_model = self._instantiate_module(model_config)
+            if isinstance(self._lora_manager, LoRAManagerV3):
+                nn_model = self._lora_manager.wrap(nn_model)
+                self._modulev3_extra_input_types = (
+                    self._lora_manager.symbolic_inputs(self.device_refs[0])
+                )
         compile_input_types = self._get_compile_input_types(model_config)
         self._wire_batch_processor(nn_model, model_config)
         return nn_model.compile(*compile_input_types, weights=state_dict)

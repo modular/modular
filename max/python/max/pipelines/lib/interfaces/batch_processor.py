@@ -51,6 +51,7 @@ from max.pipelines.lib.interfaces.pipeline_model import (
     ModelOutputs,
     UnifiedSpecDecodeInputs,
 )
+from max.pipelines.lora import LoRAManagerV3
 from max.pipelines.modeling.dataprocessing import collate_batch
 
 if TYPE_CHECKING:
@@ -80,7 +81,7 @@ class BatchProcessorRuntime:
     return_logits: ReturnLogits
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     signal_buffers: Sequence[Buffer] = ()
-    lora_manager: LoRAManager | None = None
+    lora_manager: LoRAManager | LoRAManagerV3 | None = None
     pad_token_id: int = 0
     max_batch_size: int | None = None
 
@@ -363,7 +364,11 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InputsT:
-        """Prepares ragged token inputs for a single-replica ModuleV3 batch."""
+        """Prepares ragged token inputs for a single-replica ModuleV3 batch.
+
+        Appends the per-call ModuleV3 LoRA buffers when the runtime's manager
+        is a :class:`LoRAManagerV3`, reusing the row offsets already built here.
+        """
         context_batch = single_replica_context_batch(
             replica_batches,
             processor_name=type(self).__qualname__,
@@ -373,7 +378,7 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             cast(Sequence[RaggableContext], context_batch)
         )
         device0 = self.runtime.devices[0]
-        return self._make_inputs(
+        inputs = self._make_inputs(
             tokens=Buffer.from_numpy(tokens_np).to(device0),
             input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
             return_n_logits=Buffer.from_numpy(
@@ -381,6 +386,11 @@ class ModuleV3SingleReplicaBatchProcessor(BatchProcessor[ContextT, InputsT]):
             ),
             kv_cache_inputs=kv_cache_inputs,
         )
+        if isinstance(self.runtime.lora_manager, LoRAManagerV3):
+            inputs.lora_buffers = self.runtime.lora_manager.input_buffers(
+                context_batch, offsets_np, device0
+            )
+        return inputs
 
     def _make_inputs(
         self,

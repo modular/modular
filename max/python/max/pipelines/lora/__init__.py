@@ -24,18 +24,26 @@ from .lora_types import (
     LoRAStatus,
     LoRAType,
 )
+from .modulev3 import (
+    NUM_ROUTING_INPUTS,
+    LoRAManagerV3,
+    LoRATargetModule,
+)
 
 __all__ = [
     "ADAPTER_CONFIG_FILE",
     "LORA_REQUEST_ENDPOINT",
     "LORA_RESPONSE_ENDPOINT",
+    "NUM_ROUTING_INPUTS",
     "LoRAConfig",
     "LoRAInputs",
     "LoRAManager",
+    "LoRAManagerV3",
     "LoRAModel",
     "LoRAOperation",
     "LoRARequest",
     "LoRAResponse",
     "LoRAStatus",
+    "LoRATargetModule",
     "LoRAType",
 ]

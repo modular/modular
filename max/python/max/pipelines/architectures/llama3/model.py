@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lora import LoRAManager
 
 from .batch_processor import Llama3BatchProcessor
 from .data_parallel_llama import create_graph as create_data_parallel_graph
@@ -280,8 +281,11 @@ class LlamaModelBase(
         assert isinstance(model_config, Llama3Config)
         single_model: Llama3 = Llama3(model_config)
 
-        if self._lora_manager:
-            self._lora_manager.init_weights(single_model, state_dict)
+        lora_manager = self._lora_manager
+        assert lora_manager is None or isinstance(lora_manager, LoRAManager)
+
+        if lora_manager:
+            lora_manager.init_weights(single_model, state_dict)
 
         single_model.load_state_dict(
             state_dict,
@@ -293,9 +297,7 @@ class LlamaModelBase(
 
         with Graph(
             "llama3",
-            input_types=single_model.input_types(
-                self.kv_params, self._lora_manager
-            ),
+            input_types=single_model.input_types(self.kv_params, lora_manager),
         ) as graph:
             (
                 tokens,
@@ -303,8 +305,8 @@ class LlamaModelBase(
                 return_n_logits,
                 *rest,
             ) = graph.inputs
-            if self._lora_manager:
-                rest = self._lora_manager.bind_graph_inputs(rest)
+            if lora_manager:
+                rest = lora_manager.bind_graph_inputs(rest)
             kv_collections = self._unflatten_kv_inputs(rest)
             outputs = single_model(
                 tokens.tensor,
