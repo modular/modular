@@ -37,7 +37,7 @@ import math
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import msgspec
 from max.driver import Buffer, Device
@@ -252,6 +252,64 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 _DEFAULT_ADMISSION_TIMEOUT_S = 120.0
 _ADMISSION_INITIAL_BACKOFF_S = 1.0
 _ADMISSION_MAX_BACKOFF_S = 10.0
+
+
+# Env-var overrides for the Rust client's background heartbeat poller, mapped to
+# the constructor keywords they feed. Every one is optional: an unset variable is
+# omitted from the call so the Rust default applies, which keeps the poller on the
+# timings it has always used. A shorter interval detects a dKV restart sooner at
+# the cost of one more probe per interval from every replica.
+_HEARTBEAT_ENV_KWARGS = {
+    "MODULAR_DKV_HEARTBEAT_INTERVAL_MS": "heartbeat_interval_ms",
+    "MODULAR_DKV_HEARTBEAT_REQUEST_TIMEOUT_MS": "heartbeat_request_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_TIMEOUT_MS": "heartbeat_reconnect_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_COOLDOWN_MS": (
+        "heartbeat_reconnect_cooldown_ms"
+    ),
+    "MODULAR_DKV_HEARTBEAT_MAX_FAILURES": "heartbeat_max_failures",
+    "MODULAR_DKV_HEARTBEAT_DEGRADED_WARN_EVERY": (
+        "heartbeat_degraded_warn_every"
+    ),
+}
+
+
+def _heartbeat_overrides() -> dict[str, int]:
+    """Collects the heartbeat-poller overrides set in the environment.
+
+    Returns:
+        The Rust client constructor keywords for the variables in
+        :data:`_HEARTBEAT_ENV_KWARGS` that are set, keyed by keyword name. An
+        unset variable is absent, leaving the Rust default in place.
+
+    Raises:
+        ValueError: If a variable is set to something other than a non-negative
+            integer. Failing model load beats silently polling on an unintended
+            cadence, and a negative value is worth catching here rather than at
+            the extension, whose keywords are unsigned and so reject it with an
+            ``OverflowError`` about converting a negative int that names no
+            variable. Which non-negative values are meaningful is deliberately
+            not checked here, because that is per-field and belongs to
+            ``HeartbeatConfig::validate`` on the Rust side, where the reasons
+            live: a zero cooldown means no spacing between reconnects and is
+            legitimate, while a zero interval would spin the poll loop.
+    """
+    overrides: dict[str, int] = {}
+    for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_var} must be an integer number, got {raw!r}"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{env_var} must not be negative, got {value}")
+
+        overrides[keyword] = value
+
+    return overrides
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -674,6 +732,13 @@ class DKVConnector:
             )
         )
 
+        heartbeat_overrides = _heartbeat_overrides()
+        if heartbeat_overrides:
+            _logger.info(
+                "dKV heartbeat poller overridden from the environment: %s",
+                heartbeat_overrides,
+            )
+
         # Each client's connect + handshake ("admission") is retried on transient
         # failures (dKV still starting); model readiness is gated on ALL clients
         # admitting, so a client whose retry budget is exhausted raises here and
@@ -716,6 +781,7 @@ class DKVConnector:
                 replica_id=replica_id,
                 tenant_gpu_count=tenant_gpu_count,
                 tenant_gpu_device_ids=tenant_gpu_device_ids,
+                heartbeat_overrides=heartbeat_overrides,
             )
             self._clients.append(
                 _admit_with_retry(
@@ -776,6 +842,7 @@ class DKVConnector:
         replica_id: int,
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
+        heartbeat_overrides: Mapping[str, int],
     ) -> object:
         # Group the flat to_memory() units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -840,6 +907,7 @@ class DKVConnector:
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            **heartbeat_overrides,
         )
 
     @property
