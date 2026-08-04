@@ -431,6 +431,45 @@ requirements.
 Every trait implicitly refines `AnyType`.
 :::
 
+## `Some[]` as constraint sugar
+
+`Some[Trait(s)]` is shorthand for a type parameter constrained to that
+trait or composition. It's syntax sugar, not a new mechanism. It moves
+the constraint onto the argument instead of declaring a parameter in one
+place and using it in another. The compiler infers the concrete type at
+the call site, just as it does for an explicit parameter. If inference
+fails, the compiler asks for an explicit parameter instead.
+
+<!-- markdownlint-disable MD013 -->
+
+| Context             | With a parameter                                 | With `Some`                                   |
+|---------------------|--------------------------------------------------|-----------------------------------------------|
+| Argument            | `def foo[T: Intable, //](x: T)`                  | `def foo(x: Some[Intable])`                   |
+| Function type       | `def f[F: def(Int) -> None](func: F)`            | `def f(func: Some[def(Int) -> None])`         |
+| Variadic            | `def show[*Ts: Writable](*pack: *Ts)`            | `def show(*pack: *SomeTypeList[Writable])`    |
+| Operator overload   | `def __getitem__[I: Indexer, //](self, idx: I)`  | `def __getitem__(self, idx: Some[Indexer])`   |
+
+<!-- markdownlint-enable MD013 -->
+
+### Where `Some` doesn't work
+
+The compiler can't infer a concrete type for a struct field:
+
+```mojo
+@fieldwise_init
+struct Struct(Writable):
+    var x: Some[Copyable & ImplicitlyDeletable & Writable]
+    # Error: a `Some` struct field has no concrete type to infer
+```
+
+Use an explicit type parameter instead:
+
+```mojo
+@fieldwise_init
+struct Struct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+    var x: Self.T
+```
+
 ## Trait restrictions
 
 Traits don't support parameter lists:
