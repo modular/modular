@@ -917,11 +917,7 @@ def take_while[
     Returns:
         An iterator that yields elements while predicate returns True.
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
-    return _TakeWhileIterator[predicate=predicate](
-        rebind_var[IterableType.IteratorOwnedType](iter(iterable^))
-    )
+    return _TakeWhileIterator[predicate=predicate](iter(iterable^))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1071,11 +1067,7 @@ def drop_while[
         An iterator that drops elements while predicate returns True, then
         yields all remaining elements.
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
-    return _DropWhileIterator[predicate=predicate](
-        rebind_var[IterableType.IteratorOwnedType](iter(iterable^))
-    )
+    return _DropWhileIterator[predicate=predicate](iter(iterable^))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1436,9 +1428,7 @@ def drop[
         An iterator that drops the first `count` elements.
     """
     assert count >= 0, "The `count` argument must be non-negative"
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return _DropIterator(
-        rebind_var[IterableType.IteratorOwnedType](iter(iterable^)),
+        iter(iterable^),
         count=count,
     )

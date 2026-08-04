@@ -283,9 +283,9 @@ struct LinkedList[ElementType: Movable](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _LinkedListIterOwned[
-        downcast[Self.ElementType, Deinitable]
-    ]
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.ElementType, Deinitable
+    ) = _LinkedListIterOwned[Self.ElementType]
 
     """The owned iterator type for this linked list."""
 
@@ -920,12 +920,7 @@ struct LinkedList[ElementType: Movable](
             - O(1) for iterator construction.
             - O(n) in len(self) for a complete iteration of the list.
         """
-        # TODO(MOCO-4205): Remove `trait_downcast` and `downcast`.
-        return Self.IteratorOwnedType(
-            rebind_var[LinkedList[downcast[Self.ElementType, Deinitable]]](
-                self^
-            )
-        )
+        return Self.IteratorOwnedType(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.

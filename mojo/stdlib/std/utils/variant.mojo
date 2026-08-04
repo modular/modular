@@ -677,7 +677,6 @@ struct Variant[*Ts: AnyType](
         """
         comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
-            comptime assert conforms_to(T, Equatable)
             if self.isa[T]():
                 if not other.isa[T]():
                     return False
@@ -712,7 +711,6 @@ struct Variant[*Ts: AnyType](
         """
         comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
-            comptime assert conforms_to(T, Hashable)
             if self.isa[T]():
                 hasher.update(UInt8(i))
                 self.unsafe_get[T]().__hash__(hasher)
@@ -727,7 +725,6 @@ struct Variant[*Ts: AnyType](
     ](self, mut writer: Some[Writer]) where Self.Ts.all_conforms_to[Writable]():
         comptime for i in range(Self.Ts.length):
             comptime T = Self.Ts[i]
-            comptime assert conforms_to(T, Writable)
             if self.isa[T]():
                 ref value = self.unsafe_get[T]()
 
