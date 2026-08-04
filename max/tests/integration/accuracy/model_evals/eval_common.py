@@ -81,7 +81,7 @@ class GenParams:
     seed: int | None = None
 
 
-def make_client(base_url: str) -> OpenAI:
+def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
     """Builds the OpenAI-compatible client used by every eval.
 
     No client timeout: a request must only ever end by the server hitting
@@ -89,10 +89,16 @@ def make_client(base_url: str) -> OpenAI:
     longest-reasoning problems and inflate accuracy). ``max_retries=0``: a retry
     opens a new request while the original generation keeps running and holding
     KV cache, piling the server up toward OOM.
+
+    Args:
+        base_url: Server base URL; ``/v1`` is appended.
+        api_key: Credential for an authenticated endpoint. Falls back to
+            ``$OPENAI_API_KEY``, then to ``"dummy"`` — a local MAX Serve
+            ignores it, but an authenticated deployment 401s without it.
     """
     return OpenAI(
         base_url=base_url.rstrip("/") + "/v1",
-        api_key="dummy",
+        api_key=api_key or os.environ.get("OPENAI_API_KEY") or "dummy",
         timeout=None,
         max_retries=0,
     )
