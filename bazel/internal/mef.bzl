@@ -14,6 +14,7 @@ MOJO_DEPS = [
     # matmul_rs). The open-source build has no mega_ffn package, so the OSS
     # `mef` wrapper in //oss/modular/bazel:api.bzl drops this entry.
     "//Kernels/src/mega_ffn",
+    "//max:algorithm",
     "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",
