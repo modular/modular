@@ -119,11 +119,17 @@ def _process_cc_deps(data, deps):
 def _process_mojo_deps(deps):
     # TODO: This will break in the presence of select()s
     new_deps = []
+    imports_max = False
     for dep in deps:
         if dep in INTERNAL_PACKAGES:
             new_deps.append("@modular_wheel//:" + dep.split("/")[-1])
+            imports_max = True
         else:
             new_deps.append(dep)
+
+    if imports_max and "//max:max_mojo" not in new_deps:
+        new_deps.append("//max:max_mojo")
+
     return new_deps
 
 # Ignore internal_deps for public builds
