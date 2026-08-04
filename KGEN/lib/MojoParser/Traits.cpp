@@ -1195,12 +1195,21 @@ static TriState doesNominalTypeConformToUncached(
     // Symbol is not provided (absent, or its condition is disproven). If the
     // type's concrete identity is unknown, i.e. its metatype is a trait bound
     // rather than a concrete struct metatype, then a missing trait is not
-    // definitively absent: a `where conforms_to(...)` assumption could supply
-    // it. Report `unknown`.
+    // definitively absent: a `where conforms_to(...)` assumption can supply it.
+    // Consult those assumptions here — prove the required symbol and treat it
+    // as provided; otherwise stay at `unknown` rather than answering `no`.
     if (concreteType) {
       Type meta = ASTType(getCanonicalType(concreteType)).extractMetaType();
-      if (sugarIsa<AnyTraitType, TraitType>(meta))
+      if (sugarIsa<AnyTraitType, TraitType>(meta)) {
+        auto singleTrait = TraitType::get(self->getContext(), {required});
+        if (isPropositionImplied(
+                TypeConformsToTraitAttr::get(PValue(concreteType).get(),
+                                             singleTrait.getPValue()),
+                assumptions)
+                .isTrue())
+          continue;
         return TriState::unknown();
+      }
     }
     return TriState::no();
   }
