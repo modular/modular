@@ -136,10 +136,13 @@ def check_slice_bounds[
     # TODO(MSTDL-3004): Figure out if we can enable bounds checking
     # on GPU.
     comptime if _assert_enabled[mode, True]():
-        do_asserts(
-            location.unsafe_value() if location else call_location[
-                inline_count=2
-            ]()
-        )
+        # Combine the failure conditions here so valid slices avoid the
+        # no-inline assertion helper, while invalid slices still bounds check.
+        if UInt(start) > UInt(len) or UInt(end) > UInt(len) or start > end:
+            do_asserts(
+                location.unsafe_value() if location else call_location[
+                    inline_count=2
+                ]()
+            )
 
     return start, end
