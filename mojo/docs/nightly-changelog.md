@@ -444,6 +444,34 @@ This version is still a work in progress.
   `ComplexSIMD`'s matching `size` parameter has been renamed to `length` as
   well, so the two types stay consistent.
 
+- `external_call()` can now call C variadic functions. The new keyword-only
+  `num_fixed_args` parameter gives how many of the first arguments are fixed
+  arguments of the callee; the arguments after those are passed as variadic
+  arguments:
+
+  ```mojo
+  # int open(const char *path, int oflag, ...);
+  var path_str = path
+  var fd = external_call["open", c_int, num_fixed_args=2](
+      path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
+  )
+  ```
+
+  Left at its `None` default, the callee is declared non-variadic, which
+  miscompiles variadic calls on targets whose ABI passes variadic arguments
+  differently from fixed ones. On ARM64 macOS, for example, the `open()` call
+  above would silently create the file with unrelated permission bits. A count
+  of `0` is distinct from `None`: it declares a callee whose every argument is
+  variadic.
+
+- Files opened through `open()` with mode `"w"`, `"rw"` or `"a"` no longer have
+  their permissions rewritten to `0o666`. `open()` used to follow the `open(2)`
+  call with an unconditional `fchmod(0o666)` to work around the dropped mode
+  argument, and `fchmod()` ignores `umask` and applies to an existing file too.
+  Now that the mode argument arrives, a newly created file is `0o666 & ~umask`
+  (`0o644` under the common `umask` of `022`, matching Python) and an existing
+  file keeps the permissions it already had.
+
 - The `MutSpan` and `ImmSpan` aliases are now exported from the prelude, so
   they no longer need an explicit import from `std.collections`. This matches
   the `Mut`/`Imm` aliases for `Pointer`, which the prelude already exported.
