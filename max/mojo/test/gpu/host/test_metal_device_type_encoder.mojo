@@ -17,11 +17,12 @@
 # buffer's handle in `MetalDeviceTypeEncoder._buffers`. The Metal launch path
 # relies on that list to bind the buffers a kernel touches.
 #
-# A closure cannot capture a `DeviceBuffer` directly: `DeviceBuffer` is neither
-# `DevicePassable` nor register-passable, so the closure would never receive the
-# synthesized `DevicePassable` conformance. `DevicePointer` is both, and its
-# `_to_device_type` dispatches to `encode_device_ptr`, which appends the owning
-# buffer's handle.
+# A closure cannot capture a `DeviceBuffer` directly. `DeviceBuffer` is itself
+# `DevicePassable`, but the synthesized closure conformance also requires
+# register-passable capture storage (the MOCO-4045 guard in `ClosureEmitter`)
+# and `DeviceBuffer` is memory-only. `DevicePointer` is the register-passable
+# borrow of one, and its `_to_device_type` dispatches to `encode_device_ptr`,
+# which appends the owning buffer's handle.
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.testing import assert_equal, assert_true, TestSuite
