@@ -23,6 +23,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_modulev3_lora_manager",
+    size = "small",
+    srcs = ["test_modulev3_lora_manager.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lora",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_model_config_encoding_resolution",
     size = "medium",
     srcs = ["test_model_config_encoding_resolution.py"],
@@ -144,6 +159,7 @@ modular_py_test(
         exclude = [
             "**/*_gpu.py",
             "test_autoconfig_error_propagation.py",
+            "test_modulev3_lora_manager.py",
             "test_device_graph_capture_release.py",
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",

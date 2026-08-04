@@ -369,6 +369,20 @@ class LoRA(TransparentModule[[Tensor], Tensor]):
             )
         return _sliced_add(base, delta, routing.end_idx)
 
+    def _qualify_name(self, prefix: str, name: str) -> str:
+        """Names the wrapped module's params as if this LoRA were absent.
+
+        The wrapper holds no parameters of its own, so it must stay invisible
+        to naming: the base weights keep the exact checkpoint paths they'd have
+        unwrapped. Drop the ``module`` holder segment this wrapper introduces,
+        then delegate to the wrapped module's own (possibly name-transparent)
+        qualification at this LoRA's position -- so an opaque leaf keeps its
+        native leaf name (``o_proj.weight``, not ``module.weight``) and a
+        transparent ``QKVLinear`` still exposes native ``q_proj``/``k_proj``/
+        ``v_proj``.
+        """
+        return self.module._qualify_name(prefix, name.removeprefix("module."))
+
 
 def lora_layers(model: Module[..., Any]) -> Iterator[tuple[str, LoRA]]:
     """Yields ``(qualified_name, layer)`` for every :class:`LoRA` in ``model``.
