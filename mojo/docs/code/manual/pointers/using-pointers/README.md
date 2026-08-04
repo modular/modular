@@ -1,7 +1,7 @@
-# Code examples and tests for unsafe pointers
+# Code examples and tests for using pointers
 
 This directory contains code examples and tests for the
-[Unsafe pointers](../../../../manual/pointers/unsafe-pointers.mdx)
+[Using pointers](../../../../manual/pointers/using-pointers.mdx)
 section of the Mojo Manual.
 
 Contents:

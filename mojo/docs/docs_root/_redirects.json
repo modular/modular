@@ -15,6 +15,11 @@
     "status": 301
   },
   {
+    "source": "/docs/manual/pointers/unsafe-pointers/",
+    "dest": "/docs/manual/pointers/using-pointers/",
+    "status": 301
+  },
+  {
     "source": "/docs/layout",
     "dest": "https://docs.modular.com/api/mojo/layout/",
     "status": 302

@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.memory.alloc import alloc, dealloc, Layout
 
 
 def main():
     # start-alloc-multiple
-    var float_ptr = alloc[Float64](6)
+    var allocation = alloc(Layout[Float64](count=6))
+    var float_ptr = allocation.unsafe_ptr()
     for offset in range(6):
         float_ptr.unsafe_offset(offset).unsafe_write(0.0)
     # end-alloc-multiple
@@ -34,7 +36,7 @@ def main():
 
     print(third_ptr[])
 
-    # In-place pointer advance
+    # Advance a pointer to the next element
     var ptr = float_ptr
     # start-pointer-advance
     # Advance the pointer one element:
@@ -45,4 +47,4 @@ def main():
 
     for offset in range(6):
         float_ptr.unsafe_offset(offset).unsafe_deinit_pointee()
-    float_ptr.unsafe_free()
+    dealloc(allocation^)

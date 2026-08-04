@@ -17,7 +17,7 @@ can point to any type of value, and the value type is specified as a parameter.
 For example, the following code creates an `OwnedPointer` that points to an
 `Int` value:
 
-```mojo no-test
+```mojo
 from std.memory import OwnedPointer
 
 var ptr: OwnedPointer[Int]
@@ -32,10 +32,10 @@ to_ a value of type `Int`, as shown in Figure 1.
 
 ![A local variable, ptr, points to an OwnedPointer[Int] which points to an Int
 pointee. The value of the OwnedPointer is the address of the Int
-pointee.](../images/owned-pointer-diagram.png#light)
+pointee.](../images/pointers/owned-pointer-diagram.png#light)
 ![A local variable, ptr, points to an OwnedPointer[Int] which points to an Int
 pointee. The value of the OwnedPointer is the address of the Int
-pointee.](../images/owned-pointer-diagram-dark.png#dark)
+pointee.](../images/pointers/owned-pointer-diagram-dark.png#dark)
 
 <figcaption><b>Figure 1.</b> Pointer and pointee</figcaption>
 </figure>
@@ -54,7 +54,7 @@ print(ptr[])
 
 ## Pointer terminology
 
-Before we jump into the pointer types, here are a few terms you'll run across.
+Before jumping into the pointer types, here are a few terms you'll run across.
 Some of them may already be familiar to you.
 
 - **Safe pointers**: are designed to prevent memory errors. Unless you use one
@@ -67,24 +67,20 @@ Some of them may already be familiar to you.
   None of the Mojo standard library pointer types are nullable.
   To model a nullable pointer, use the
   [`Optional`](/docs/std/collections/optional/Optional/) type. For example,
-  `Optional[UnsafePointer]` or `Optional[OwnedPointer]`.
+  `Optional[Pointer]` or `Optional[OwnedPointer]`.
 
-- **Smart pointers**: own their pointees, which means that the value they point
-  to may be deallocated when the pointer itself is destroyed. Non-owning
-  pointers may point to values owned elsewhere, or may require some manual
-  management of the value lifecycle.
-
-- **Memory allocation**: some pointer types can allocate memory to store their
-  pointees, while other pointers can only point to pre-existing values. Memory
-  allocation can either be implicit (that is, performed automatically when
-  initializing a pointer with a value) or explicit.
+- **Owning pointers**: own their pointees, which means that the value they point
+  to may be deallocated when the pointer itself is destroyed. Owning pointers
+  (or _smart pointers_) are responsible for allocating and deallocating memory
+  to hold their pointees. Non-owning pointers may point to values owned
+  elsewhere, or may point to dynamically-allocated memory.
 
 - **Uninitialized memory**: refers to memory locations that haven't been
   initialized with a value, which may therefore contain random data.
-  Newly-allocated memory is uninitialized. The safe pointer types don't allow
-  users to access memory that's uninitialized. Unsafe pointers can allocate a
-  block of uninitialized memory locations and then initialize them one at a
-  time. Being able to access uninitialized memory is unsafe by definition.
+  Newly-allocated memory is uninitialized. The safe pointer APIs don't let you
+  access memory that's uninitialized. The unsafe APIs can access a block of
+  uninitialized memory locations and then initialize them one at a time. Being
+  able to access uninitialized memory is unsafe by definition.
 
 - **Copyability**: many pointer types can be copied implicitly (for example,
   by assigning a value to a variable):
@@ -102,8 +98,9 @@ Some of them may already be familiar to you.
 The Mojo standard library includes several pointer types with different
 characteristics:
 
-- [`Pointer`](/docs/std/memory/pointer/Pointer/) is a safe pointer that points
-  to a single value that it doesn't own.
+- [`Pointer`](/docs/std/memory/pointer/Pointer/) is Mojo's primary pointer type.
+  It points to one or more contiguous memory locations, and can refer to
+  uninitialized memory.
 
 - [`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer/) is a smart
   pointer that points to a single value, and maintains exclusive ownership of
@@ -113,35 +110,34 @@ characteristics:
   reference-counted smart pointer that points to an owned value with ownership
   potentially shared with other instances of `ArcPointer`.
 
-- [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) points to
-  one or more consecutive memory locations, and can refer to uninitialized
-  memory.
-
 Table 1 summarizes the different types of pointers:
 
 <!-- markdownlint-disable MD013 MD033 -->
 
 <figure>
 
-|                                                  | `Pointer` | `OwnedPointer`          | `ArcPointer`            | `UnsafePointer` |
-|--------------------------------------------------|-----------|-------------------------|-------------------------|-----------------|
-| Safe                                             | Yes       | Yes                     | Yes                     | No              |
-| Allocates memory                                 | No        | Implicitly <sup>1</sup> | Implicitly <sup>1</sup> | Explicitly      |
-| Owns pointee(s)                                  | No        | Yes                     | Yes                     | No <sup>2</sup> |
-| Implicitly copyable                              | Yes       | No                      | Yes                     | Yes             |
-| Nullable                                         | No        | No                      | No                      | No              |
-| Can point to uninitialized memory                | No        | No                      | No                      | Yes             |
-| Can point to multiple values (array-like access) | No        | No                      | No                      | Yes             |
+|                                                  | `Pointer`                  | `OwnedPointer`          | `ArcPointer`            |
+|--------------------------------------------------|----------------------------|-------------------------|-------------------------|
+| Safe                                             | Conditionally <sup>1</sup> | Yes                     | Yes                     |
+| Memory allocation                                | Manual via `alloc()`       | Implicit <sup>2</sup>   | Implicit <sup>2</sup>   |
+| Owns pointee(s)                                  | No <sup>3</sup>            | Yes                     | Yes                     |
+| Implicitly copyable                              | Yes                        | No                      | Yes                     |
+| Nullable                                         | No                         | No                      | No                      |
+| Can point to uninitialized memory                | Yes                        | No                      | No                      |
+| Can point to multiple values (array-like access) | Yes                        | No                      | No                      |
 
 <figcaption><b>Table 1.</b> Pointer types</figcaption>
 </figure>
 
-<sup>1</sup> `OwnedPointer` and `ArcPointer` implicitly allocate memory when you
+<sup>1</sup> `Pointer` has both safe and unsafe methods. Unsafe methods are
+named with the `unsafe_` prefix (or require an `unsafe_` keyword argument).
+
+<sup>2</sup> `OwnedPointer` and `ArcPointer` implicitly allocate memory when you
 initialize the pointer with a value.
 
-<sup>2</sup> `UnsafePointer` provides unsafe methods for initializing and
-destroying instances of the stored type. The user is responsible for managing
-the lifecycle of stored values.
+<sup>3</sup> `Pointer` provides unsafe methods for initializing and destroying
+instances of the stored type. The user is responsible for managing the lifecycle
+of stored values.
 
 <!-- markdownlint-enable MD013 MD033 -->
 
@@ -149,33 +145,38 @@ The following sections provide more details on each pointer type.
 
 ## `Pointer`
 
-The [`Pointer`](/docs/std/memory/pointer/Pointer/) type is a safe pointer that
-points to an initialized value that it doesn't own. Some example use cases for a
-`Pointer` include:
+The [`Pointer`](/docs/std/memory/pointer/Pointer/) type is Mojo's primary
+pointer type. It can access a block of contiguous memory locations, which might
+be uninitialized. Heap-allocated memory is accessed through a `Pointer`; the
+other pointer types wrap a `Pointer` to access heap memory.
 
-- Storing a reference to a related type. For example, a list's iterator object
-might hold a `Pointer` back to the original list.
+The `Pointer` type is _safe_ when used to point to an existing value:
 
-- Passing the memory location for a single value to external code via
-`external_call()`.
-
-- Where you need an API to return a long-lived reference to a value. (Currently
-the iterators for standard library collection types like `List` return
-pointers.)
-
-You can construct a `Pointer` to an existing value by calling the constructor
-with the `to` keyword argument:
-
-```mojo no-test
-from std.memory import Pointer
-
+```mojo
 var ptr = Pointer(to=some_value)
+print(ptr[])
 ```
 
-You can also create a `Pointer` by copying an existing `Pointer`.
+When used this way, the `Pointer` type carries the origin of the value it points
+to. It can be used to store a reference in a struct field.
 
-A `Pointer` carries an [`origin`](/docs/manual/values/lifetimes/) for the stored
-value, so Mojo can track the lifetime of the referenced value.
+The `Pointer` type also provides a number of unsafe methods you can use to
+access dynamically-allocated memory, initialize and destroy stored values, and
+more. These features are useful for low-level systems programming tasks, but you
+need to use them with care. Some examples of _unsafe_ pointer uses include:
+
+- Building high-performance array-like collections, such as `List`. A single
+  `Pointer` can access many values, and gives you a lot of control over how you
+  allocate, use, and deallocate memory. Being able to access uninitialized
+  memory means that you can preallocate a block of memory, and initialize values
+  incrementally as they are added to the collection.
+
+- Interacting with external libraries including C++ and Python. You can
+  use `Pointer` to pass a buffer full of data to or from an external
+  library.
+
+For more information, see [Using
+pointers](/docs/manual/pointers/using-pointers).
 
 ## `OwnedPointer`
 
@@ -210,7 +211,7 @@ for a given value may not be clear. Like an `OwnedPointer`, it points to a
 single value, and it allocates memory when you initialize the `ArcPointer` with
 a value:
 
-```mojo no-test
+```mojo
 from std.memory import ArcPointer
 
 var attributesDict: Dict[String, String] = {}
@@ -231,6 +232,7 @@ store a dictionary. Copying an instance of `SharedDict` only copies the
 ```mojo
 from std.memory import ArcPointer
 
+
 struct SharedDict(ImplicitlyCopyable):
     var attributes: ArcPointer[Dict[String, String]]
 
@@ -247,6 +249,7 @@ struct SharedDict(ImplicitlyCopyable):
     def __getitem__(self, key: String) -> String:
         return self.attributes[].get(key, default="")
 
+
 def main():
     var thing1 = SharedDict()
     var thing2 = thing1
@@ -260,32 +263,5 @@ def main():
 to the stored value are not—callers are responsible for synchronization.
 
 :::
-
-## UnsafePointer
-
-[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) is a
-low-level pointer that can access a block of contiguous memory locations, which
-might be uninitialized. It's analogous to a raw pointer in the C and C++
-programming languages. `UnsafePointer` provides unsafe methods for initializing
-and destroying stored values, as well as for accessing the values once they're
-initialized.
-
-As the name suggests, `UnsafePointer` doesn't provide any memory safety
-guarantees, so you should reserve it for cases when none of the other pointer
-types will do the job. Here are some use cases where you might want to use an
-`UnsafePointer`:
-
-- Building a high-performance array-like structure, such as `List` or `Tensor`.
-  A single `UnsafePointer` can access many values, and gives you a lot of
-  control over how you allocate, use, and deallocate memory. Being able to
-  access uninitialized memory means that you can preallocate a block of memory,
-  and initialize values incrementally as they are added to the collection.
-
-- Interacting with external libraries including C++ and Python. You can
-  use`UnsafePointer` to pass a buffer full of data to or from an external
-  library.
-
-For more information, see [Unsafe
-pointers](/docs/manual/pointers/unsafe-pointers).
 
 <!-- markdownlint-enable MD033 -->

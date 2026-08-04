@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
 
 
 def test_unsafe_dangling():
@@ -31,8 +32,11 @@ def main():
         var p = ptr.value()
         print(p[])
 
-    # Assign a real value to test the non-None path.
-    var x_ptr = alloc[Int](1)
+    # Assign a real value to test the non-None path. The `Optional` holds an
+    # untracked raw pointer, so leak the allocation and pair the pointer back
+    # with its layout to release it.
+    comptime layout = Layout[Int].single()
+    var x_ptr: Pointer[Int, MutUntrackedOrigin] = alloc(layout).unsafe_leak()
     x_ptr.unsafe_write(42)
     ptr = x_ptr
     if ptr:
@@ -40,6 +44,8 @@ def main():
         var p = ptr.value()
         print(p[])
     x_ptr.unsafe_deinit_pointee()
-    x_ptr.unsafe_free()
+    dealloc(
+        ThinAllocation(unsafe_assume_ownership=x_ptr).unsafe_with_layout(layout)
+    )
 
     test_unsafe_dangling()
