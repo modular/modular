@@ -1261,7 +1261,6 @@ _MHA_CAUSAL_MASK_CONFIGS = [
 ]
 
 # test_mha_causal_mask_amd.mojo split by dtype via -D USE_FP8.
-# FP8 is prefill-only on AMD.
 _MHA_CAUSAL_MASK_AMD_DTYPES = {
     "bf16": [],
     "fp8": [

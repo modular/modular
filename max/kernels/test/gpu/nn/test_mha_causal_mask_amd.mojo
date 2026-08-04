@@ -296,6 +296,9 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     test[dtype, depth=depth, num_heads=24, group=3](1024, 1024, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](128, 128, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1024, 1024, ctx)
+    comptime if depth == 128:
+        # MiniMax-M3 shape: head_dim=128, 64 query heads, 4 KV heads.
+        test[dtype, depth=depth, num_heads=64, group=16](1024, 1024, ctx)
     # Sequence length not multiple of 128
     test[dtype, depth=depth, num_heads=3, group=3](128, 128, ctx)
     test[dtype, depth=depth, num_heads=3, group=3](102, 102, ctx)
@@ -315,6 +318,9 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     test[dtype, depth=depth, num_heads=16, group=16](1, 128, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1, 1024, ctx)
     test[dtype, depth=depth, num_heads=16, group=16](1, 5000, ctx)
+    comptime if depth == 128:
+        # MiniMax-M3 shape: head_dim=128, 64 query heads, 4 KV heads.
+        test[dtype, depth=depth, num_heads=64, group=16](1, 1024, ctx)
     # Speculative-verify query lengths. On AMD these take the decode kernel's
     # query-token fold, one instantiation per S; elsewhere, and outside the fold's
     # bf16 / depth <= 128 window, they take prefill. The num_keys span a single
