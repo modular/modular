@@ -148,8 +148,8 @@ def bench_grouped_matmul[
     comptime c_type = out_type
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for num_tokens in num_tokens_by_expert:
         total_num_tokens += num_tokens
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, num_tokens)
@@ -209,7 +209,7 @@ def bench_grouped_matmul[
     )
 
     # Setup offsets and expert ids
-    a_scale_dim0 = 0
+    var a_scale_dim0 = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
         a_scale_offsets_ptr[i] = UInt32(
