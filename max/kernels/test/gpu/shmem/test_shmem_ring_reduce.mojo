@@ -31,10 +31,10 @@ comptime chunk_size = 1024 * 256
 
 
 def ring_reduce(
-    dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
-    src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
+    dst_ptr: Pointer[c_int, MutAnyOrigin],
+    src_ptr: Pointer[c_int, ImmutAnyOrigin],
     nreduce_dev: Int32,
-    signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
+    signal_ptr: Pointer[UInt64, MutAnyOrigin],
     chunk_size_dev: Int32,
 ):
     """Perform Allreduce using ring algorithm.

@@ -17,7 +17,7 @@ comptime ListNode = Node[Element]  # Constructing a LinkedList
 
 
 struct Node[ElementType: ImplicitlyCopyable & Writable & Deinitable](Movable):
-    comptime NodePointer = UnsafePointer[Self, MutUntrackedOrigin]
+    comptime NodePointer = Pointer[Self, MutUntrackedOrigin]
 
     var value: Optional[Self.ElementType]  # The `Node`'s value
     var next: Optional[Self.NodePointer]  # Pointer to the next `Node`

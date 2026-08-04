@@ -1106,6 +1106,23 @@ This version is still a work in progress.
   `gather()`, `scatter()`, `bitcast()`, `address_space_cast()`,
   `take_pointee()`, and `free()` — now emit a deprecation warning when called.
 
+- The pre-unification pointer aliases `UnsafePointer`, `MutUnsafePointer`,
+  `ImmUnsafePointer`, `ImmutUnsafePointer`, and `OptionalUnsafePointer` are
+  now deprecated in favor of `Pointer`, `MutPointer`, `ImmPointer`, and
+  `OptionalPointer`. The two pointer types were unified some time ago; the
+  old names only existed for source compatibility with code written before
+  that unification, and now emit a deprecation warning when used. Update
+  type annotations and constructor calls to use the `Pointer` family
+  instead:
+
+  ```mojo
+  # Deprecated:
+  var ptr: UnsafePointer[Int, MutUntrackedOrigin]
+
+  # Use instead:
+  var ptr: Pointer[Int, MutUntrackedOrigin]
+  ```
+
 - `Pointer` now supports subtracting two pointers to compute the signed
   distance between them in elements of the pointee type, via the new
   `offset_from()` method (analogous to Rust's `offset_from`). The `-`

@@ -14,7 +14,7 @@
 
 # start-unsafe-from-address
 def write_to_address(mmio_address: Int, value: Int32):
-    var ptr = UnsafePointer[Int32, MutUntrackedOrigin](
+    var ptr = Pointer[Int32, MutUntrackedOrigin](
         unsafe_from_address=mmio_address
     )
 
@@ -31,7 +31,7 @@ def main():
     # Test opaque pointer creation via bitcast.
     # start-opaque-pointer
     var str = "Hello, world!"
-    var str_ptr = UnsafePointer(to=str)
+    var str_ptr = Pointer(to=str)
     var opaque_ptr = str_ptr.unsafe_bitcast[NoneType]()
     # ... call some foreign function that takes a void pointer
     # end-opaque-pointer

@@ -57,8 +57,8 @@ def _histogram_gpu(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
     def kernel(
-        output: UnsafePointer[Int64, MutAnyOrigin],
-        input: UnsafePointer[UInt8, MutAnyOrigin],
+        output: Pointer[Int64, MutAnyOrigin],
+        input: Pointer[UInt8, MutAnyOrigin],
         n_dev: Int32,
     ):
         var n = Int(n_dev)

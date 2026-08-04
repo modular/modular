@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of
-from std.memory import UnsafePointer
 
 
 @fieldwise_init

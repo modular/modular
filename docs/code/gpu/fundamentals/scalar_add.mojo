@@ -22,7 +22,7 @@ comptime num_elements = 20
 
 
 def scalar_add(
-    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
+    vector: Pointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
 ):
     """
     Kernel function to add a scalar to all elements of a vector.

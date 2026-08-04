@@ -44,12 +44,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var data: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var nd: Int
 
-    var dimensions: UnsafePointer[Int, MutUntrackedOrigin]
+    var dimensions: Pointer[Int, MutUntrackedOrigin]
 
-    var strides: UnsafePointer[Int, MutUntrackedOrigin]
+    var strides: Pointer[Int, MutUntrackedOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -70,7 +70,7 @@ def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
+    py_array_object_ptr: Pointer[PyArrayObject[dtype], _],
     block_size: Int,
 ) -> PythonObject:
     # Compute number of hashes
@@ -113,7 +113,7 @@ def mojo_block_hasher(
     block_size_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32]](
+    var py_array_object_ptr = Pointer[PyArrayObject[DType.int32]](
         unchecked_downcast_value=py_array_object
     )
 

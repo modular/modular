@@ -33,7 +33,7 @@ def test_alloc_and_init():
 def test_pointer_to_value():
     # start-pointer-to-value
     var counter: Int = 5
-    var ptr = UnsafePointer(to=counter)
+    var ptr = Pointer(to=counter)
     # end-pointer-to-value
 
     # start-dereference-read-mutate
@@ -69,7 +69,7 @@ def test_unsafe_write_owned():
 def test_pointer_to_string():
     # start-pointer-to-string
     var s = "Testing"
-    var s_ptr = UnsafePointer(to=s)
+    var s_ptr = Pointer(to=s)
     # end-pointer-to-string
 
     _ = s_ptr

@@ -118,7 +118,7 @@ def correlation[
     len: Int,
     ctx: DeviceContext,
     *,
-    w: OptionalUnsafePointer[mut=True, u.T, _] = Optional[
+    w: OptionalPointer[mut=True, u.T, _] = Optional[
         UnsafePointer[u.T, MutUntrackedOrigin]
     ](),
     centered: Bool = True,

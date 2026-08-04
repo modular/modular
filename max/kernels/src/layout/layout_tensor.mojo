@@ -502,7 +502,7 @@ struct LayoutTensor[
     @doc_hidden
     def __init__(
         out self,
-        unsafe_ptr: OptionalUnsafePointer[
+        unsafe_ptr: OptionalPointer[
             Scalar[Self.dtype],
             Self.origin,
             address_space=Self.address_space,
@@ -545,7 +545,7 @@ struct LayoutTensor[
     @doc_hidden
     def __init__(
         out self,
-        unsafe_ptr: OptionalUnsafePointer[
+        unsafe_ptr: OptionalPointer[
             Scalar[Self.dtype],
             Self.origin,
             address_space=Self.address_space,
@@ -590,7 +590,7 @@ struct LayoutTensor[
     @doc_hidden
     def __init__(
         out self,
-        unsafe_ptr: OptionalUnsafePointer[
+        unsafe_ptr: OptionalPointer[
             Scalar[Self.dtype],
             Self.origin,
             address_space=Self.address_space,

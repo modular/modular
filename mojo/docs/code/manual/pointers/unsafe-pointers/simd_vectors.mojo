@@ -14,9 +14,7 @@ from std.testing import assert_equal
 
 
 # start-invert-red-channel
-def invert_red_channel(
-    ptr: UnsafePointer[mut=True, UInt8, _], pixel_count: Int
-):
+def invert_red_channel(ptr: Pointer[mut=True, UInt8, _], pixel_count: Int):
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size

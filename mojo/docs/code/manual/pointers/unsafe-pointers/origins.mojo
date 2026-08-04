@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafePointer
+from std.memory import Pointer
 
 
 # start-print-bytes
-def print_bytes(bytes: UnsafePointer[mut=False, Byte, _], count: Int):
+def print_bytes(bytes: Pointer[mut=False, Byte, _], count: Int):
     for i in range(count):
         print(hex(bytes[unsafe_offset=i]), end=" ")
     print()
