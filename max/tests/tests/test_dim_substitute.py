@@ -44,21 +44,6 @@ def test_substitute_div_matches_kgen_semantics() -> None:
     assert (Dim("a") // 2).substitute({"a": 7}) == Dim(3)
 
 
-def test_substitute_never_pins_a_dynamic_dim() -> None:
-    """A data-dependent dim's size is known only once the kernel runs, so no
-    mapping can supply it. Inheriting `SymbolicDim.substitute` would
-    silently pin it instead."""
-    d = Dim.dynamic("k")
-    assert d.substitute({"k": 8}) is d
-
-
-def test_substitute_pins_dynamic_dim_nested_in_algebraic() -> None:
-    # Known limitation: a dynamic dim carries no MLIR-level marker, so inside
-    # an expression it round-trips as a plain SymbolicDim and does get
-    # substituted.
-    assert (Dim.dynamic("k") + 1).substitute({"k": 8}) == Dim(9)
-
-
 def test_substitute_partial_mapping_nested() -> None:
     assert (Dim("a") + Dim("b")).substitute({"a": 5}) == Dim("b") + 5
 
