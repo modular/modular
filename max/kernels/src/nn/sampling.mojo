@@ -287,7 +287,7 @@ def update_frequency_data[
     comptime if is_gpu[target]():
         comptime block_size = 128
 
-        dev_ctx = ctx
+        var dev_ctx = ctx
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin=compressed_frequency_data.origin,
             FreqDataLayoutType=compressed_frequency_data.LayoutType,

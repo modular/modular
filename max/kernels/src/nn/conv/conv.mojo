@@ -5556,7 +5556,7 @@ def conv_gpu[
                     _width: Int, alignment: Int = 1
                 ](coords: Coord) {var}:
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
-                    vec = output_tmp_lt.load[width=_width](idx)
+                    var vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
 
                 elementwise[simd_width_of[output_type](), target="gpu"](

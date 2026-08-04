@@ -375,7 +375,7 @@ def radix_sort_pairs_kernel[
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
     if tid < NUM_BUCKETS:
         var sum = Int32(0)
-        bucket_offset = tid
+        var bucket_offset = tid
 
         comptime for t in range(BLOCK_SIZE):
             sum += s_counts[t * NUM_BUCKETS + bucket_offset]

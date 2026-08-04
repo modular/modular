@@ -446,7 +446,7 @@ def fused_token_sampling_cpu[
         "fused_token_sampling",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
-        bound_max_k = 255 if max_k == -1 else max_k
+        var bound_max_k = 255 if max_k == -1 else max_k
 
         # materialize the out_vals which is of shape [input[:-1]] + [k]
         var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
@@ -556,8 +556,8 @@ def _top_k_sampling[
     else:
         raise Error("Unsupported input rank. Must be >= 1.")
 
-    internal_out_shape = IndexList[internal_rank](internal_bs, max_k)
-    internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
+    var internal_out_shape = IndexList[internal_rank](internal_bs, max_k)
+    var internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
 
     var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
     var reshaped_out_vals = reshape(out_vals, internal_out_shape)
@@ -1002,16 +1002,16 @@ def _topk_stage1[
     var _num_elements = Int(num_elements)
     var _num_blocks_per_input = Int(num_blocks_per_input)
 
-    tid = thread_idx.x
-    bid = block_idx.x
-    block_size = block_dim.x
+    var tid = thread_idx.x
+    var bid = block_idx.x
+    var block_size = block_dim.x
 
-    batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
+    var batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
 
     var block_offset = block_lane * block_size
     var stride = block_size * _num_blocks_per_input
 
-    _in_buffer_tmp = in_buffer_tmp + batch_id * _num_elements
+    var _in_buffer_tmp = in_buffer_tmp + batch_id * _num_elements
 
     # Hoist per-block output base pointers out of the k loop.
     var out_vals = local_topk_vals + bid * _max_k
@@ -1690,7 +1690,7 @@ def topk_gpu[
         var last_idx_dim = 1 if sampling else max_k
 
         # Clamp max_k
-        bound_max_k = 255 if max_k == -1 else max_k
+        var bound_max_k = 255 if max_k == -1 else max_k
 
         # heuristic to set block size
         var block_size_: Int

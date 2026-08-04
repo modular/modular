@@ -1398,7 +1398,7 @@ def _fused_qk_rms_norm_rope_process_row[
             Coord(Index(post_seq_idx, idx))
         )
 
-        h_re, h_im = get_safetensors_idx(idx, split_size)
+        var h_re, h_im = get_safetensors_idx(idx, split_size)
 
         var val = rebind[SIMD[accum_type, simd_width]](
             s_norm.load[width=width_2](Coord(h_re)).interleave(
@@ -1410,7 +1410,7 @@ def _fused_qk_rms_norm_rope_process_row[
         # infer their width from the value (matches `rope_q_proj` /
         # `rope_k_cache`) rather than binding an explicit `width=width_2`, which
         # the comptime ternary in `store`'s default would fail to unify.
-        output_re, output_im = res.deinterleave()
+        var output_re, output_im = res.deinterleave()
 
         if is_k:
             k_cache.store(

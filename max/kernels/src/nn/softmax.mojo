@@ -2910,7 +2910,7 @@ def _online_softmax_correction[
 
     comptime for col_tile in range(num_colwise_tiles):
         # Corrention since previous max may be updated.
-        sfr = score_frag_rowmax[col_tile]
+        var sfr = score_frag_rowmax[col_tile]
         score_frag_rowmax[col_tile] = exp_function(
             rowmax_tensor[col_tile] - sfr
         )
