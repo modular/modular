@@ -272,6 +272,8 @@ private:
 /// Determine whether an assumption proves or disproves a proposition.
 ///
 /// An internally inconsistent assumption proves the proposition vacuously.
+/// Top-level `eq` facts in the assumption are closed under symmetry and
+/// transitivity via union-find, so e.g. `(A == C) ∧ (B == C)` proves `A == B`.
 TriState isPropositionImplied(TypedAttr proposition, TypedAttr assumption);
 
 /// Returns true if `assumption` implies `proposition`.
@@ -301,7 +303,7 @@ TraitType getTraitBoundFromAssumptions(
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
 /// Peel off transparent wrappers that do not change type identity: rebind,
-/// upcast, and downcast.
+/// upcast, downcast, and extension.
 TypedAttr stripIdentityWrappers(TypedAttr attr);
 
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper

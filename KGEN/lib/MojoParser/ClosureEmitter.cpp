@@ -303,6 +303,7 @@ static std::pair<ASTDecl &, StructDeclOp>
 createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
              ArrayRef<ParamDeclAttr> params, SMLoc loc) {
   auto module = cast_or_null<FileModuleOp>(moduleDecl.getIfOperation());
+  assert(module && "extension/wrapper structs require a FileModuleOp parent");
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames;
 #ifndef NDEBUG // Only used for assertion checks below.
@@ -3657,11 +3658,10 @@ static SmallVector<AliasDeclOp> collectClosureAliases(TraitDeclOp trait) {
 }
 
 /// Compute associated types of targetTrait in terms of sourceTrait
-static LogicalResult inferClosureTraitExtension(SharedState &shared,
-                                                TraitDeclOp sourceTrait,
-                                                TraitDeclOp targetTrait,
-                                                TypedAttr anchor,
-                                                AdapteeParts &parts) {
+static LogicalResult
+inferClosureTraitExtension(SharedState &shared, TraitDeclOp sourceTrait,
+                           TraitDeclOp targetTrait, TypedAttr anchor,
+                           AdapteeParts &parts, ASTDecl &declScope) {
   FnOp sourceCall = getFnOpNamed(sourceTrait, "__call__");
   FnOp targetCall = getFnOpNamed(targetTrait, "__call__");
   if (!sourceCall || !targetCall)
@@ -3700,9 +3700,9 @@ static LogicalResult inferClosureTraitExtension(SharedState &shared,
   if (sourceExplicitParams.size() != targetExplicitParams.size())
     return failure();
 
-  SMLoc loc = shared.getTopLevelDecl().getLoc();
+  SMLoc loc = declScope.getLoc();
   SyntheticNode syntheticExpr(loc);
-  SpecializeInf inference(shared.getTopLevelDecl(), &syntheticExpr,
+  SpecializeInf inference(declScope, &syntheticExpr,
                           targetSignature.getInputParamTypes(),
                           targetSignature.getParamListAttrs(), loc,
                           /*discardError=*/true);
@@ -4031,7 +4031,8 @@ LogicalResult ClosureEmitter::isCompatibleWith(ASTType structType,
 }
 
 LogicalResult ClosureEmitter::isTraitCompatibleWith(ASTType sourceTraitType,
-                                                    TraitDeclOp targetTrait) {
+                                                    TraitDeclOp targetTrait,
+                                                    ASTDecl *declScope) {
   if (!targetTrait || !targetTrait.getDefinesClosure())
     return failure();
   std::optional<TraitDeclOp> sourceOp =
@@ -4042,12 +4043,13 @@ LogicalResult ClosureEmitter::isTraitCompatibleWith(ASTType sourceTraitType,
   // Compatibility is a property of the two signatures, not of the type value
   // that will eventually anchor the extension, so probe with the source's
   // `Self`.
+  ASTDecl &scope = declScope ? *declScope : shared.getTopLevelDecl();
   AdapteeParts extension;
   return inferClosureTraitExtension(
       shared, *sourceOp, targetTrait,
       cast<TypedAttr>(
           PValue(ASTDecl::computeSelfTypeForTrait(*sourceOp)).get()),
-      extension);
+      extension, scope);
 }
 
 ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
@@ -4080,7 +4082,7 @@ ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
   // are solved against the source's rather than paired positionally.
   AdapteeParts extension;
   if (failed(inferClosureTraitExtension(shared, sourceTrait, targetTrait,
-                                        anchorRef, extension))) {
+                                        anchorRef, extension, moduleDecl))) {
     shared.diags.emitError(
         location, "internal error: incompatible closure traits extended");
     return nullptr;
@@ -4140,19 +4142,21 @@ ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
   return &structDecl;
 }
 
-CValue ClosureEmitter::createExtensionType(ASTDecl &declScope,
+CValue ClosureEmitter::createExtensionType(ASTDecl &fileModule,
                                            CValue sourceValue,
                                            Type targetMetaType,
                                            TraitDeclOp targetTrait) {
+  assert(isa_and_nonnull<FileModuleOp>(fileModule.getIfOperation()) &&
+         "extension structs must be emitted into a FileModuleOp");
+
   ASTType sourceType = sourceValue.getRValueType();
   std::optional<TraitDeclOp> sourceTraitOp =
       getClosureDecl(shared, sourceType.mlirType);
   if (!sourceTraitOp)
     return {};
-  if (failed(isTraitCompatibleWith(sourceType, targetTrait)))
+  if (failed(isTraitCompatibleWith(sourceType, targetTrait, &fileModule)))
     return {};
 
-  ASTDecl &moduleDecl = *declScope.getNearestDeclOfType<FileModuleOp>();
   SMLoc loc = shared.diags.convertLocToSMLoc(targetTrait.getLoc());
   MLIRContext *ctx = shared.getContext();
 
@@ -4173,7 +4177,7 @@ CValue ClosureEmitter::createExtensionType(ASTDecl &declScope,
   // trait-typed value bound below.
   ASTDecl *extensionDecl = shared.getOrCreateExtension(
       loc, *sourceTraitOp, targetTrait,
-      ASTType(sourceTraitOp->getCanonicalTrait()), &moduleDecl);
+      ASTType(sourceTraitOp->getCanonicalTrait()), &fileModule);
   if (!extensionDecl)
     return {};
   auto extensionOp = cast<StructDeclOp>(extensionDecl->getIfOperation());

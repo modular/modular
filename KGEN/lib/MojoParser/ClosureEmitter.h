@@ -217,7 +217,7 @@ public:
   /// Extend a source closure value/type constrained by one closure trait to a
   /// structurally compatible target closure trait, without changing the
   /// source's physical type.
-  CValue createExtensionType(ASTDecl &declScope, CValue sourceValue,
+  CValue createExtensionType(ASTDecl &fileModule, CValue sourceValue,
                              Type targetMetaType, TraitDeclOp targetTrait);
 
   /// Checks if the wrapper struct type conforms to a trait that is compatible
@@ -226,7 +226,8 @@ public:
 
   /// Returns true if sourceTraitType can conform to targetTrait.
   LogicalResult isTraitCompatibleWith(ASTType sourceTraitType,
-                                      TraitDeclOp targetTrait);
+                                      TraitDeclOp targetTrait,
+                                      ASTDecl *declScope = nullptr);
 
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)
