@@ -211,7 +211,7 @@ def _topp_minp_sampling[
             for i in range(vocab_size):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
         else:
@@ -235,7 +235,7 @@ def _topp_minp_sampling[
             for i in range(num_filtered_tokens):
                 r -= sorted_probs[batch, i]
                 if r <= 0 or i == vocab_size - 1:
-                    sid = sorted_ids[batch, i]
+                    var sid = sorted_ids[batch, i]
                     out_token_ids[batch, 0] = sid
                     break
 

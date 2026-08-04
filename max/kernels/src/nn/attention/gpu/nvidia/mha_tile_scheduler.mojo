@@ -114,16 +114,16 @@ struct SeqInfo(TrivialRegisterPassable):
 
         comptime if not ValidLengthType.is_null:
             # treat valid_lengths as a input_row_offsets
-            ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
+            var ptr = rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](
                 valid_length.value()
             )
-            seq = ptr.load[width=2](batch_idx)
-            start_of_seq = warp.broadcast(seq[0])
-            end_of_seq = warp.broadcast(seq[1])
-            seq_len = end_of_seq - start_of_seq
+            var seq = ptr.load[width=2](batch_idx)
+            var start_of_seq = warp.broadcast(seq[0])
+            var end_of_seq = warp.broadcast(seq[1])
+            var seq_len = end_of_seq - start_of_seq
             return SeqInfo(seq_len, start_of_seq, work)
         else:
-            seq_len = max_seq_len
+            var seq_len = max_seq_len
             return SeqInfo(seq_len, 0, work)
 
 
@@ -254,14 +254,14 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         # Thus, we have head_idx vary fastest.
         #
         # self.idx's max-value = self.max_num_prompt_tiles*num_heads*batch_size
-        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
+        var quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # max value = num_heads-1
         # head index
         # changes kv whenever head_idx//group changes
         # max value = batch_size-1
         # prompt index
         # changes kv
-        prompt_idx, head_idx = divmod(quotient, num_heads)
+        var prompt_idx, head_idx = divmod(quotient, num_heads)
 
         return (prompt_tile_idx, head_idx, prompt_idx)
 
@@ -270,10 +270,10 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32
     ](self, idx: UInt32) -> Tuple[UInt32, UInt32, UInt32]:
         # First dim, offset in prompt length
-        quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
+        var quotient, prompt_tile_idx = divmod(idx, self.max_num_prompt_tiles)
         # head index
         # prompt index
-        prompt_idx, head_idx = divmod(quotient, num_heads)
+        var prompt_idx, head_idx = divmod(quotient, num_heads)
         # Switch the traverse direction in prompt for odd head.
         prompt_tile_idx = (
             prompt_tile_idx if head_idx % 2
@@ -288,10 +288,10 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32,
         schedule: MHASchedule,
     ](self, idx: UInt32) -> WorkInfo:
-        prompt_tile_idx, head_idx, prompt_idx = self._index_to_coords[
+        var prompt_tile_idx, head_idx, prompt_idx = self._index_to_coords[
             num_heads, schedule
         ](idx)
-        is_valid = (
+        var is_valid = (
             prompt_tile_idx < self.max_num_prompt_tiles
             and head_idx < num_heads
             and prompt_idx < self.batch_size
@@ -310,7 +310,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32,
         schedule: MHASchedule,
     ](self, idx: UInt32) -> WorkInfo:
-        prompt_tile_idx, head_idx, prompt_idx = self._index_to_coords[
+        var prompt_tile_idx, head_idx, prompt_idx = self._index_to_coords[
             num_heads, schedule
         ](idx)
 
@@ -356,7 +356,7 @@ struct MHATileSummary[ValidLengthType: OptionalPointer](
         num_heads: UInt32,
         schedule: MHASchedule,
     ](self, idx: UInt32) -> SeqInfo:
-        work = self.unsafe_get_current_work_info[
+        var work = self.unsafe_get_current_work_info[
             tile_shape, num_heads, schedule
         ](idx)
         return SeqInfo.create(work, self.valid_length, self.max_seq_len)
@@ -792,10 +792,10 @@ struct TileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
-        size = min(Int(Self.num_ctas), bx * by * bz)
+        var size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
@@ -960,10 +960,10 @@ struct QueuedTileScheduler[
         # NOTE: mha_sm90 assumes `grid_dim` limits the grid
         # size for persistent kernels, so that it doesn't
         # need to check the first `work_info` for validity.
-        bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
+        var bx, by, bz = MHATileSummary[NullPointer[DType.uint32]].grid_dim[
             Self.num_heads
         ](max_num_prompt_tiles, batch_size)
-        size = min(Int(Self.num_ctas), bx * by * bz)
+        var size = min(Int(Self.num_ctas), bx * by * bz)
         return (size, 1, 1)
 
     @always_inline
@@ -977,7 +977,7 @@ struct QueuedTileScheduler[
         ],
         tile_summary: MHATileSummary[ValidLengthType],
     ) -> MHATileState:
-        state = MHATileState(
+        var state = MHATileState(
             UInt32(block_idx.x), ptr, tile_summary.max_idx(Self.num_heads)
         )
 

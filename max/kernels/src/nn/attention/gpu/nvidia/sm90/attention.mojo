@@ -171,9 +171,9 @@ def _get_position[
             num_keys = seq_len + UInt32(Int(start_pos))
         else:
             var kv_row_offsets = kv_input_row_offsets.value()
-            kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
-            kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
-            cur_kv_len = kv_seq_end - kv_seq_start
+            var kv_seq_start = Int(kv_row_offsets[Int(batch_idx)])
+            var kv_seq_end = Int(kv_row_offsets[Int(batch_idx) + 1])
+            var cur_kv_len = kv_seq_end - kv_seq_start
             num_keys = UInt32(cur_kv_len + Int(start_pos))
         q_row = seq_info.start_of_seq
 
@@ -323,14 +323,14 @@ def _apply_mask[
         comptime for m_mma in range(num_m_mmas):
             comptime for n_mma in range(num_n_mmas):
                 # Coordinates in mask for current mma tile.
-                mask_frag_row = mask_warp_row + UInt32(m_mma * WM)
-                mask_frag_col = mask_warp_col + UInt32(n_mma * WN)
+                var mask_frag_row = mask_warp_row + UInt32(m_mma * WM)
+                var mask_frag_col = mask_warp_col + UInt32(n_mma * WN)
 
                 comptime for i in range(num_groups_per_thread):
                     var q_head_idx: UInt32 = position.head_idx
 
                     comptime if decoding:
-                        group_idx = UInt32(i * 8) + fragment_row
+                        var group_idx = UInt32(i * 8) + fragment_row
                         q_head_idx = UInt32(group) * q_head_idx + group_idx
                     # The row in score matrix of shape seq_len x num_keys.
                     # Mask col is score col since we don't partition in col.
@@ -351,8 +351,8 @@ def _apply_mask[
                         )
 
                     comptime for j in range(WN // 8):
-                        score_col = mask_frag_col + UInt32(j * 8)
-                        p = p_reg_tile[i, m_mma, j, n_mma]
+                        var score_col = mask_frag_col + UInt32(j * 8)
+                        var p = p_reg_tile[i, m_mma, j, n_mma]
 
                         comptime if masked:
                             p = mask.mask(
@@ -597,8 +597,8 @@ def produce[
     comptime q_copy_rows = max(group, 8) if decoding else BM
     comptime qk_bytes = (q_copy_rows + BN) * padded_depth * size_of[qkv_type]()
 
-    tile_state = tile_state_arg
-    position = initial_position
+    var tile_state = tile_state_arg
+    var position = initial_position
 
     @parameter
     @always_inline("nodebug")
@@ -787,11 +787,11 @@ def produce[
             kv_input_row_offsets,
         )
 
-    write_pipeline_states = PipelineState[pipeline_stages]()
-    q_pipeline_state = PipelineState[2 if persistent else 1]()
+    var write_pipeline_states = PipelineState[pipeline_stages]()
+    var q_pipeline_state = PipelineState[2 if persistent else 1]()
 
     comptime if PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[
+        var startend = position.get_start_and_end_for_partitions[
             page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
@@ -836,7 +836,7 @@ def produce[
         )
 
     comptime if not PartitionType.do_partition:
-        startend = position.get_start_and_end_for_partitions[
+        var startend = position.get_start_and_end_for_partitions[
             page_size=KVLUTType.page_size
         ](partition, mask)
         start = startend[0]
@@ -913,7 +913,7 @@ def produce[
                 # we must wait before advancing, as this mbar
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
-                docontinue = scheduler.advance[
+                var docontinue = scheduler.advance[
                     producer=True, sync=MHASchedulerSynchronization.DEFAULT
                 ](tile_summary, tile_state, q_idx_old)
                 # FIXME: persistent kernel that uses a counter
@@ -1122,7 +1122,7 @@ def output_reg_to_smem[
         output_reg_tile: Local register tile holding the accumulator output
             fragments.
     """
-    accum_smem_tile = LayoutTensor[
+    var accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),
         address_space=AddressSpace.SHARED,
@@ -1145,7 +1145,9 @@ def output_reg_to_smem[
         )
     else:
         comptime mma_thread_layout = Layout.row_major(8, 4)
-        accum_smem_warp_tile = accum_smem_tile.tile[16, BN](Int(warp_y), Int(0))
+        var accum_smem_warp_tile = accum_smem_tile.tile[16, BN](
+            Int(warp_y), Int(0)
+        )
         copy_local_to_shared[thread_layout=mma_thread_layout, swizzle=swizzle](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),

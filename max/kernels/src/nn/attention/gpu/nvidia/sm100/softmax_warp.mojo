@@ -1760,7 +1760,7 @@ def fa4_splitk_combine_write[
 
     # Per-thread (max,sum) slot. combine runs WG0-only, so tid == local_row;
     # kept general to match how the caller wrote maxsum (`maxsum[tid*2]`).
-    tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + local_row
+    var tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + local_row
 
     # --- Loop A: gather every partition's (max,sum) for THIS thread's row,
     # indexed by GLOBAL cluster rank r in [0, np). r == own_rank uses this
@@ -1783,7 +1783,7 @@ def fa4_splitk_combine_write[
     psum[0] = own_sum
     comptime for p in range(P - 1):
         var r = p if p < b else p + 1
-        ms = load_cluster_smem[DType.float32, 2](
+        var ms = load_cluster_smem[DType.float32, 2](
             maxsum_smem + tid * 2, UInt32(r)
         )
         pmax[p + 1] = ms[0]
@@ -1806,9 +1806,9 @@ def fa4_splitk_combine_write[
             d = d * scale_log2e
         w[p] = psum[p] * exp2(d)
         gsum = gsum + w[p]
-    inv_gsum = recip(gsum)
+    var inv_gsum = recip(gsum)
     comptime for p in range(0, P, 2):
-        wp = SIMD[DType.float32, 2](w[p], w[p + 1]) * inv_gsum
+        var wp = SIMD[DType.float32, 2](w[p], w[p + 1]) * inv_gsum
         w[p] = wp[0]
         w[p + 1] = wp[1]
 
@@ -2317,11 +2317,11 @@ def fa4_softmax[
         )
     else:
         p_tmem = s_tmem
-    s_tile = UMMA0Type.CType(s_tmem)
-    p_tile = UMMA1Type.AType(p_tmem)
+    var s_tile = UMMA0Type.CType(s_tmem)
+    var p_tile = UMMA1Type.AType(p_tmem)
 
     var pipeline_s = mbars.consumer_s(warp_group_idx)
-    pipeline_c = mbars.producer_c(warp_group_idx)
+    var pipeline_c = mbars.producer_c(warp_group_idx)
     # Cross-stage P inplace handshake (2Q + non-WS only): `inplace_cons` waits
     # the peer's "S{1-wg} window free" signal before storing P{wg} there;
     # `inplace_prod` commits it after each LDTM (fire-and-forget, no acquire).
@@ -2452,7 +2452,7 @@ def fa4_softmax[
     comptime wg_row_offset_seq: Int = (
         wg_row_offset // group if fuse_gqa else wg_row_offset
     )
-    num_output_rows = min(
+    var num_output_rows = min(
         Int32(seq_info.seq_len)
         - Int32(seq_info.prompt_offset)
         - Int32(cta_q_offset)
@@ -2460,7 +2460,9 @@ def fa4_softmax[
         Int32(per_qo_BM_seq),
     )
 
-    gmem_row = PositionType.get_q_gmem_row[ragged=ragged](seq_info, max_seq_len)
+    var gmem_row = PositionType.get_q_gmem_row[ragged=ragged](
+        seq_info, max_seq_len
+    )
     # Per-row score scratch: one warp's own quarter is `score_cols` wide
     # (== config.BN for the non-WS m_pack==1 layout).
     var s = Array[Scalar[accum_dtype], score_cols](uninitialized=True)
@@ -2498,7 +2500,7 @@ def fa4_softmax[
                     .load[width=2](k_scale_off + UInt32(n + offset))
                     .cast[accum_dtype]()
                 )
-                sn = mul_ftz(k_sc, f32x2(s0[n], s0[n + 1]))
+                var sn = mul_ftz(k_sc, f32x2(s0[n], s0[n + 1]))
                 s0[n] = sn[0]
                 s0[n + 1] = sn[1]
 
@@ -2517,13 +2519,13 @@ def fa4_softmax[
         comptime first_cols = (
             score_cols % batch_size
         ) if has_remainder else batch_size
-        s0 = TMemTile[accum_dtype, BM, first_cols](s_tmem).load_async()
+        var s0 = TMemTile[accum_dtype, BM, first_cols](s_tmem).load_async()
         apply_k_scale[0](s0, k_scale_off)
-        s1 = TMemTile[accum_dtype, BM, batch_size](
+        var s1 = TMemTile[accum_dtype, BM, batch_size](
             s_tmem + UInt32(first_cols)
         ).load_async()
         mask_row[mask_strategy=mask_strategy](s0, kv_row)
-        vrow_max = maximum[width=max_unroll](s0)
+        var vrow_max = maximum[width=max_unroll](s0)
 
         comptime for _i in range(first_cols):
             s[_i] = s0[_i]
@@ -2544,7 +2546,7 @@ def fa4_softmax[
                 comptime for _i in range(batch_size):
                     s[offset0 + _i] = s1[_i]
             else:
-                s2 = TMemTile[accum_dtype, BM, batch_size](
+                var s2 = TMemTile[accum_dtype, BM, batch_size](
                     s_tmem + UInt32(offset1)
                 ).load_async()
                 apply_k_scale[offset0](s1, k_scale_off)
@@ -3036,7 +3038,7 @@ def fa4_softmax[
     var total_iters_combined: UInt32 = 0
 
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-        mask_ends = mask.masked_set_ends[
+        var mask_ends = mask.masked_set_ends[
             BM=BM_mask, BN=BN, page_size=page_size
         ](seq_info.prompt_idx, score_row, num_keys)
 
@@ -3063,7 +3065,7 @@ def fa4_softmax[
         # per-set counts when split-K is off (part_cb=0, part_ce=T).
         var _prev: UInt32 = part_cb
         comptime for i in range(num_sets):
-            _e = max(part_cb, min(mask_ends[i], part_ce))
+            var _e = max(part_cb, min(mask_ends[i], part_ce))
             mask_iters[i] = _e - _prev
             _prev = _e
 
@@ -3083,8 +3085,8 @@ def fa4_softmax[
                 # *BN) applied to kv_row above.
                 var cumulative: UInt32 = 0
                 comptime for i in range(num_sets):
-                    iters_combined_i = mask_iters[i]
-                    parity = cumulative & UInt32(1)
+                    var iters_combined_i = mask_iters[i]
+                    var parity = cumulative & UInt32(1)
                     if warp_group_idx == UInt32(0):
                         mask_iters[i] = (
                             iters_combined_i + UInt32(1) - parity
@@ -3215,8 +3217,8 @@ def fa4_softmax[
                         gmem_row + cta_q_offset,
                     )
                 elif splitk_combine_active:
-                    stage = smem.o_smem[DType.float32]()
-                    maxsum = stage + (config.BM * padded_ov_depth)
+                    var stage = smem.o_smem[DType.float32]()
+                    var maxsum = stage + (config.BM * padded_ov_depth)
                     # Neutral (max,sum): -inf never wins the cluster Gmax, and
                     # sum 0 zeroes this partition's combine weight regardless.
                     maxsum[row * 2] = min_or_neg_inf[DType.float32]()
@@ -3224,7 +3226,7 @@ def fa4_softmax[
                     # Zero-fill all depth columns (WG0 covers the full range at
                     # 1Q) so peers' weight-0 DSMEM read of this partition is a
                     # finite 0.
-                    own_o_empty = TMemTile[
+                    var own_o_empty = TMemTile[
                         accum_dtype, config.BM, padded_ov_depth
                     ](tmem_addr + UInt32(config.TMEM_O0))
                     # Reduce-scatter: stage this (empty) partition's neutral
@@ -3521,7 +3523,7 @@ def fa4_softmax[
                 iters -= 1
                 kv_row += UInt32(kv_row_stride)
                 # calculate rowmax
-                old_max = row_max
+                var old_max = row_max
                 var new_row_max: Float32
                 # WG-unanimous skip decision (comptime-False -> byte-identical
                 # OFF).
@@ -3587,7 +3589,7 @@ def fa4_softmax[
             kv_row += UInt32(kv_row_stride)
             if kv_row >= num_keys:
                 break
-            cur_mask_status = mask.status(
+            var cur_mask_status = mask.status(
                 seq_info.prompt_idx,
                 Index[dtype=DType.int32](Int(score_row), Int(kv_row)),
                 Index[dtype=DType.int32](BM_mask, BN),
@@ -3595,7 +3597,7 @@ def fa4_softmax[
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue
             # calculate rowmax
-            old_max = row_max
+            var old_max = row_max
             var new_row_max: Scalar[accum_dtype]
             # WG-unanimous skip decision (comptime-False -> byte-identical OFF).
             var blasst_wg_skip: Bool = False
@@ -3677,11 +3679,11 @@ def fa4_softmax[
 
     comptime if config.num_q == 2:
         # 2Q: each WG writes its row half independently.
-        inv_row_sum = recip(row_sum.reduce_add())
+        var inv_row_sum = recip(row_sum.reduce_add())
         # `BM // config.num_q` matches the helper's signature
         # (`config.BM // config.num_q`) at the comptime-expression level;
         # numerically identical to HalfBM = BM // 2 inside this 2Q branch.
-        o_tile = TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
+        var o_tile = TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
             + warp_group_idx * UInt32(padded_ov_depth)
@@ -4059,11 +4061,11 @@ def fa4_softmax[
             # in 1Q. For single-O, WG0 has accumulated ALL K-tiles' P@V
             # into the single O0 and holds the full `row_sum`, so this
             # writer produces the complete output; WG1 already returned.
-            row_sum_total = row_sum.reduce_add()
-            inv_row_sum = recip(row_sum_total)
-            o_tile = TMemTile[accum_dtype, BM // config.num_q, padded_ov_depth](
-                tmem_addr + UInt32(config.TMEM_O0)
-            )
+            var row_sum_total = row_sum.reduce_add()
+            var inv_row_sum = recip(row_sum_total)
+            var o_tile = TMemTile[
+                accum_dtype, BM // config.num_q, padded_ov_depth
+            ](tmem_addr + UInt32(config.TMEM_O0))
             # Only o0 is produced (MMA skipped the o1 commit at T==1).
             o_prod_mbar[0].wait(o_phase)
             tcgen05_fence_after()
@@ -4075,14 +4077,14 @@ def fa4_softmax[
                 # its OWN depth band from all peers and writes it. (The non-empty
                 # partition here carries the data; trailing empty partitions take
                 # the empty-partition path above and combine their bands from it.)
-                stage = smem.o_smem[DType.float32]()
-                maxsum = stage + (config.BM * padded_ov_depth)
+                var stage = smem.o_smem[DType.float32]()
+                var maxsum = stage + (config.BM * padded_ov_depth)
                 # o0 tile typed with `config.BM` exactly — `o_tile`'s
                 # `BM // config.num_q` does not fold to `config.BM` at parse
                 # time, so it can't convert to stage_partial's param type.
-                own_o_t1 = TMemTile[accum_dtype, config.BM, padded_ov_depth](
-                    tmem_addr + UInt32(config.TMEM_O0)
-                )
+                var own_o_t1 = TMemTile[
+                    accum_dtype, config.BM, padded_ov_depth
+                ](tmem_addr + UInt32(config.TMEM_O0))
                 # Publish this partition's (row_max, row_sum). WG0-only at
                 # T==1, so `row` (in-WG tid) is the full softmax tid; partition
                 # 0 already folded the sink into row_max/row_sum above.
@@ -4160,7 +4162,7 @@ def fa4_softmax[
         # rows; no per-WG row offset on the write side.
 
         # 1. WG-local LSE reduce.
-        row_sum_total = row_sum.reduce_add()
+        var row_sum_total = row_sum.reduce_add()
 
         # 2. Wait on OWN pipeline_o producer. After this, MMA1 has finished
         # its last V·P, so the last P in own's s_tmem has been consumed and
@@ -4191,15 +4193,15 @@ def fa4_softmax[
         tcgen05_fence_after()
 
         # 4. Read peer's slice from the peer WG's s_tmem.
-        peer_wg = UInt32(1) - warp_group_idx
+        var peer_wg = UInt32(1) - warp_group_idx
         var peer_s_tmem: UInt32 = (tmem_addr + UInt32(config.TMEM_S0)) + UInt32(
             config.BN
         ) * peer_wg
         var peer_lse = TMemTile[accum_dtype, BM, 2](peer_s_tmem).load_async()
-        peer_max = peer_lse[0]
-        peer_sum = peer_lse[1]
+        var peer_max = peer_lse[0]
+        var peer_sum = peer_lse[1]
 
-        global_max = max(row_max, peer_max)
+        var global_max = max(row_max, peer_max)
         # Match the per-WG online softmax convention: when `use_fma`,
         # `row_max` is tracked in raw (unscaled) score units and the
         # inner-loop correction diff is formed in the `scale_log2e` (log2)
@@ -4221,27 +4223,27 @@ def fa4_softmax[
             diffs = mul_ftz(diffs, f32x2(scale_log2e))
         var scales: f32x2 = exp2(diffs)  # (scale_local, scale_peer)
         # global_sum = row_sum_total*scale_local + peer_sum*scale_peer, fused.
-        global_sum = peer_sum.fma(scales[1], row_sum_total * scales[0])
+        var global_sum = peer_sum.fma(scales[1], row_sum_total * scales[0])
         var final_scales: f32x2 = scales * recip(global_sum)
-        final_scale_local = final_scales[0]
-        final_scale_peer = final_scales[1]
+        var final_scale_local = final_scales[0]
+        var final_scale_peer = final_scales[1]
 
         # 5. Wait on PEER pipeline_o producer so peer's TMEM_O is safe to
         # read. Per-pipeline iter counts differ by
         # `total_iters_combined & 1` for odd combined-T, so peer's phase
         # XORs in that bit. (Own's producer was already waited on above
         # before the LSE exchange.)
-        peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
+        var peer_phase = o_phase ^ (total_iters_combined & UInt32(1))
         o_prod_mbar[peer_wg].wait(peer_phase)
         tcgen05_fence_after()
 
         # 5. Build own + peer TMEM tiles at full-BM extent.
-        own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+        var own_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
             + warp_group_idx * UInt32(padded_ov_depth)
         )
-        peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
+        var peer_o_tile = TMemTile[accum_dtype, BM, padded_ov_depth](
             tmem_addr
             + UInt32(config.TMEM_O0)
             + peer_wg * UInt32(padded_ov_depth)
@@ -4281,7 +4283,7 @@ def fa4_softmax[
         comptime iters_per_wg1 = iters_total // 2
         # In 1Q both WGs write the same Q rows; no per-WG gmem-row
         # offset (the depth column j drives the gmem position).
-        out_row_idx = gmem_row + cta_q_offset
+        var out_row_idx = gmem_row + cta_q_offset
         comptime if splitk_combine_active:
             # Reduce-scatter: every partition stages its FULL normalized O_cta
             # (f32) + per-row (max,sum) into the dead Q+KV span and publishes via
@@ -4293,8 +4295,8 @@ def fa4_softmax[
                 config.BM * config.padded_ov_depth * 4 + 2 * 256 * 4
                 <= type_of(smem).q_bytes + type_of(smem).kv_bytes
             ), "split-K f32 O+(max,sum) staging must fit in the dead Q+KV span"
-            stage = smem.o_smem[DType.float32]()
-            maxsum = stage + (config.BM * config.padded_ov_depth)
+            var stage = smem.o_smem[DType.float32]()
+            var maxsum = stage + (config.BM * config.padded_ov_depth)
 
             # --- Publish (max,sum) for both WGs, then stage + reduce-scatter. ---
             tid = warp_group_idx * UInt32(WARPGROUP_SIZE) + row
