@@ -518,6 +518,35 @@ This version is still a work in progress.
   space, since copying a value into or out of another address space requires the
   element type to be trivially copyable.
 
+- `List`, `Span`, and `String`/`StringSlice` (`byte=`) indexing with a
+  contiguous (non-strided) slice now aborts on an invalid slice instead of
+  silently clamping it. `start`/`end` must each be in `0` to `len(container)`
+  (inclusive), with `start <= end`; a negative index is always invalid for a
+  contiguous slice.
+
+  ```mojo
+  var lst: List = [1, 2, 3]
+  lst[0:100]  # previously clamped to `lst[0:3]`; now aborts
+  lst[3:1]    # previously returned an ill-defined result; now aborts
+  lst[-1:]    # previously wrapped to the last element; now aborts
+  lst[:-1]    # previously wrapped to `lst[0:2]`; now aborts
+
+  var s = "hello"
+  s[byte=0:100]  # previously clamped to `s[byte=0:5]`; now aborts
+  s[byte=-1:]    # previously wrapped to the last byte; now aborts
+  ```
+
+  The common "all but the last element" idiom must now spell the end index
+  explicitly, since negative indices are no longer supported. Note that
+  `lst[0 : len(lst) - 1]` still aborts on an empty `lst` (`0 : -1`); guard
+  with `max` if `lst` may be empty:
+
+  ```mojo
+  lst[:-1]                     # aborts
+  lst[0 : len(lst) - 1]        # use this instead
+  lst[: max(len(lst) - 1, 0)]  # ...or this, if `lst` may be empty
+  ```
+
 - Any integer scalar can now be constructed from an `Intable` value, not just
   `Int`. This makes taking a pointer's address as an unsigned integer work
   directly:

@@ -814,7 +814,7 @@ def test_list_span() raises:
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = List(vs[:-1])
+    es = List(vs[0 : len(vs) - 1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -846,21 +846,11 @@ def test_list_span() raises:
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = List(vs[-50::])
-    assert_equal(3, len(es))
-    assert_equal(es[0], 1)
-    assert_equal(es[1], 2)
-    assert_equal(es[2], 3)
     es = vs[:-50:-1]
     assert_equal(3, len(es))
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = List(vs[:50:])
-    assert_equal(3, len(es))
-    assert_equal(es[0], 1)
-    assert_equal(es[1], 2)
-    assert_equal(es[2], 3)
     es = vs[::50]
     assert_equal(1, len(es))
     assert_equal(es[0], 1)

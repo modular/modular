@@ -22,8 +22,6 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 
-from std.reflection.type_info import _unqualified_type_name
-
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#

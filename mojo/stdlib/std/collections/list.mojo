@@ -20,7 +20,7 @@ from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.reflection import reflect
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
@@ -1446,12 +1446,17 @@ struct List[T: Movable, /](
 
     @__unsafe_nested_origins_read_only
     @stable(since="1.0")
+    @always_inline
     def __getitem__[
         origin: Origin, //
     ](ref[origin] self, slice: ContiguousSlice) -> Span[
         Self.T, origin_of(self)._get_owned_interior["element"]
     ]:
         """Gets the sequence of elements at the specified positions.
+
+        Aborts if `slice`'s start or end index is out of bounds (valid range
+        is `0` to `len(self)`, inclusive), or if start is greater than end.
+        Negative indices are not supported and always abort.
 
         Parameters:
             origin: The origin of `List`.
@@ -1464,7 +1469,7 @@ struct List[T: Movable, /](
             derived from `self`, so any subsequent mutation of the list
             (`append`, `pop`, and similar) invalidates it at compile time.
         """
-        var start, end = slice.indices(len(self))
+        var start, end = check_slice_bounds(slice, len(self))
         return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
             unsafe_ptr=Pointer(
                 to=self.unsafe_ptr()

@@ -101,7 +101,7 @@ def get_function_name[
 def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = reflect[type].name()
     comptime parameter_list_start = name.find("[")
-    if parameter_list_start == -1:
+    comptime if parameter_list_start == -1:
         # HACK: Split is evaluated twice because `List[StringSlice]` cannot
         # be materialized to runtime from a comptime context.
         comptime n = len(name.split("."))

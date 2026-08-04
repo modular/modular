@@ -684,7 +684,7 @@ struct Bench(Writable):
             var split = stem.split(".")
             if len(split) > 1:
                 current_suffix = String(split[len(split) - 1])
-                var new_stem = String(".".join(split[:-1]))
+                var new_stem = String(".".join(split[: len(split) - 1]))
                 stem = new_stem^
 
             self.config.out_file = Path(
