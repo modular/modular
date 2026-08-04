@@ -39,7 +39,10 @@ from .weight_adapters import convert_nemotron_h_state_dict
 nemotron_h_arch = SupportedArchitecture(
     name="NemotronHForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"],
+    example_repo_ids=[
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8",
+        "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8",
+    ],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=NemotronHConfig.DEFAULT_ENCODING,
     # modelopt per-tensor static FP8 on the (non-excluded) mamba in/out_proj and

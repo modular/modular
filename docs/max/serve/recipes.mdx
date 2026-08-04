@@ -12,7 +12,7 @@ In MAX, many [supported models](/models/) are packaged with recipes you can use
 when serving. You can also write your own recipes. This page describes how to
 use built-in model recipes and how to write your own.
 
-:::note
+:::experiment
 
 This feature is experimental and in ongoing development.
 
@@ -36,7 +36,7 @@ model:
   kv_cache:
     kv_cache_format: float8_e4m3fn
     kv_cache_page_size: 128
-    kv_connector: tiered
+    kv_connector: rust_tiered
 
 draft_model:
   model_path: google/gemma-4-26B-A4B-it-assistant
