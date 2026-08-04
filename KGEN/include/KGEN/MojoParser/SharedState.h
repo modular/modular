@@ -632,6 +632,11 @@ public:
                                      ASTDecl *moduleDecl, bool isCopyable,
                                      TypeConvention typeConvention,
                                      bool isStateless, bool capturesEncodable);
+  /// Get or create a struct that defines conformance of targetTrait in terms of
+  /// sourceTrait.
+  ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
+                                TraitDeclOp targetTrait, ASTType sourceMetaType,
+                                ASTDecl *moduleDecl);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.

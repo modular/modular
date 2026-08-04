@@ -174,12 +174,9 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
       return mlir::failure();
   }
 
-  Block &body = actualFn.getBodyRegion().front();
-  assert(body.getNumArguments() == actualSig.getNumArguments() &&
-         "fn body arguments should align with signature arguments");
+  ParamRefRemapper remapper(actualFn.getInputParams());
 
   if (!actualSig.hasMemoryOnlyResult()) {
-    ParamRefRemapper remapper(actualFn.getInputParams());
     Type actualResultType = remapper.replace(actualSig.getUserResultType());
     Type expectedResultType =
         evaluator.getReboundType(target.getUserResultType());
@@ -199,7 +196,7 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
         actualSig.getArgConventions()[expectedArgIdx];
     Type expectedType =
         evaluator.getReboundType(target.getArgument(expectedArgIdx));
-    Type actualType = body.getArgument(expectedArgIdx).getType();
+    Type actualType = remapper.replace(actualSig.getArgument(expectedArgIdx));
     if (failed(matchArgument(actualType, actualConvention, expectedArgIdx,
                              expectedType, expectedConvention, argPogs)))
       return mlir::failure();

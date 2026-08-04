@@ -368,6 +368,10 @@ struct SharedState::Impl {
   /// Copyable (if copyable), DevicePassable (if captures are device-encodable),
   /// and extern trait (if stateless).
   DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
+  /// Stateless closure extension structs, keyed by the (source trait,
+  /// target trait) operation pair and the owning file module.
+  DenseMap<std::pair<std::pair<Operation *, Operation *>, ASTDecl *>, ASTDecl *>
+      closureExtensions;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
@@ -2767,6 +2771,20 @@ ASTDecl *SharedState::getOrCreateClosureWrapper(
     impl->unifiedClosureWrappers[key] = wrapper;
 
   return wrapper;
+}
+
+ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
+                                           TraitDeclOp targetTrait,
+                                           ASTType sourceMetaType,
+                                           ASTDecl *moduleDecl) {
+  auto key = std::make_pair(
+      std::make_pair(sourceTrait.getOperation(), targetTrait.getOperation()),
+      moduleDecl);
+  auto &extension = impl->closureExtensions[key];
+  if (!extension)
+    extension = closureEmitter->createExtensionStruct(
+        *moduleDecl, sourceTrait, targetTrait, sourceMetaType, loc);
+  return extension;
 }
 
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
