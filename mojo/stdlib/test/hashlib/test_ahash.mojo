@@ -157,7 +157,7 @@ def test_fill_factor() raises:
 
 def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
-        hasher = hasher0()
+        var hasher = hasher0()
         hasher._update_with_simd(value)
         return hasher^.finish()
 

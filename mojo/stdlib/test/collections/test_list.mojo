@@ -278,7 +278,7 @@ def test_list_reverse() raises:
     # Test reversing the list ["one", "two", "three"]
     #
 
-    vec2: List = ["one", "two", "three"]
+    var vec2: List = ["one", "two", "three"]
 
     assert_equal(len(vec2), 3)
     assert_equal(vec2[0], "one")
@@ -361,7 +361,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3] created with insert
     #
 
-    v1 = List[Int]()
+    var v1 = List[Int]()
     v1.insert(len(v1), 1)
     v1.insert(len(v1), 3)
     v1.insert(1, 2)
@@ -375,7 +375,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
-    v2 = List[Int]()
+    var v2 = List[Int]()
     v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
@@ -393,7 +393,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
-    v3 = List[Int]()
+    var v3 = List[Int]()
     v3.insert(0, 4)
     v3.insert(0, 3)
     v3.insert(0, 2)
@@ -409,7 +409,7 @@ def test_list_insert() raises:
     # Test the list [1, 2, 3, 4, 5, 6, 7, 8] created with insert
     #
 
-    v4 = List[Int]()
+    var v4 = List[Int]()
     for i in range(4):
         v4.insert(0, 4 - i)
         v4.insert(len(v4), 4 + i + 1)
@@ -876,7 +876,7 @@ def test_list_span() raises:
 
 
 def test_list_realloc_trivial_types() raises:
-    a = List[Int]()
+    var a = List[Int]()
     for i in range(100):
         a.append(i)
 
@@ -884,7 +884,7 @@ def test_list_realloc_trivial_types() raises:
     for i in range(100):
         assert_equal(a[i], i)
 
-    b = List[Int8]()
+    var b = List[Int8]()
     for i in range(100):
         b.append(Int8(i))
 
@@ -1160,10 +1160,10 @@ def _test_copyinit_trivial_types[dt: DType]() raises:
 
     comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
-        x = List[Scalar[dt]]()
+        var x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(Scalar[dt](i))
-        y = x.copy()
+        var y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
         assert_not_equal(Int(x.unsafe_ptr()), Int(y.unsafe_ptr()))

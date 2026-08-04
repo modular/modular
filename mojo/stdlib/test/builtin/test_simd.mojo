@@ -1144,7 +1144,7 @@ def test_shuffle() raises:
     comptime dtype = DType.int32
     comptime width = 4
 
-    vec = SIMD[dtype, width](100, 101, 102, 103)
+    var vec = SIMD[dtype, width](100, 101, 102, 103)
 
     assert_equal(
         vec.shuffle[3, 2, 1, 0](), SIMD[dtype, width](103, 102, 101, 100)
@@ -1187,10 +1187,10 @@ def test_shuffle_dynamic_size_4_uint8() raises:
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
 
-    indices = SIMD[DType.uint8, 4](3, 3, 5, 5)
+    var indices = SIMD[DType.uint8, 4](3, 3, 5, 5)
 
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 4](30, 30, 50, 50)
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 4](30, 30, 50, 50)
     assert_equal(result, expected_result)
 
 
@@ -1200,10 +1200,10 @@ def test_shuffle_dynamic_size_8_uint8() raises:
     )
 
     # Let's use size 8
-    indices = SIMD[DType.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
+    var indices = SIMD[DType.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
 
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
     assert_equal(result, expected_result)
 
 
@@ -1214,8 +1214,8 @@ def test_shuffle_dynamic_size_16_uint8() raises:
     var indices = SIMD[DType.uint8, 16](
         3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15, 0, 1
     )
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 16](
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 16](
         30, 30, 50, 50, 70, 70, 90, 90, 110, 110, 130, 130, 150, 150, 0, 10
     )
     assert_equal(result, expected_result)
@@ -1232,9 +1232,9 @@ def test_shuffle_dynamic_size_32_uint8() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices)
+    var result = table_lookup._dynamic_shuffle(indices)
 
-    expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[DType.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1255,9 +1255,9 @@ def test_shuffle_dynamic_size_64_uint8() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices.join(indices))
+    var result = table_lookup._dynamic_shuffle(indices.join(indices))
 
-    expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[DType.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1279,9 +1279,9 @@ def test_shuffle_dynamic_size_32_float() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices)
+    var result = table_lookup._dynamic_shuffle(indices)
 
-    expected_result = SIMD[DType.float64, 32](
+    var expected_result = SIMD[DType.float64, 32](
         30. , 30. , 50. , 50. , 70. , 70. , 90. , 90. ,
         110., 110., 130., 130., 150., 150., 0.  , 10. ,
         0.  , 10. , 20. , 30. , 40. , 50. , 60. , 70. ,
@@ -1328,7 +1328,7 @@ def test_join() raises:
     comptime I4 = SIMD[DType.int32, 4]
     assert_equal(I2(5, 6).join(I2(9, 10)), I4(5, 6, 9, 10))
 
-    vec = I4(100, 101, 102, 103)
+    var vec = I4(100, 101, 102, 103)
     assert_equal(
         vec.join(vec),
         SIMD[DType.int32, 8](100, 101, 102, 103, 100, 101, 102, 103),

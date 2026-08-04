@@ -124,10 +124,10 @@ def test_dict_lazy_allocation() raises:
 
 
 def test_dict_literals() raises:
-    a = {"foo": 1, "bar": 2}
+    var a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
-    b = {1: 4, 2: 7, 3: 18}
+    var b = {1: 4, 2: 7, 3: 18}
     assert_equal(b[1], 4)
     assert_equal(b[2], 7)
     assert_equal(b[3], 18)
