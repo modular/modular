@@ -66,9 +66,9 @@ struct Data(ImplicitlyCopyable, Writable):
 
     def __deinit__(deinit self):
         dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=self._data
-            ).unsafe_with_layout({count = self._size})
+            ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                {count = self._size}
+            )
         )
 
 
