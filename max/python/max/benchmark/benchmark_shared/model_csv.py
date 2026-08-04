@@ -156,6 +156,7 @@ _SERVING_SUMMARY_COLUMNS: tuple[str, ...] = (
     "p99_tpot_ms",
     "mean_step_tpot_ms",
     "median_step_tpot_ms",
+    "p99_step_tpot_ms",
     "mean_itl_ms",
     "median_itl_ms",
     "p99_itl_ms",
