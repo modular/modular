@@ -128,7 +128,7 @@ def bench_broadcast[
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
-        out_multicast_buf = DeviceMulticastBuffer[dtype](
+        var out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
         out_multicast_ptr = (

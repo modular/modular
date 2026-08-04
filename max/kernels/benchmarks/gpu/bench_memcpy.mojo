@@ -104,7 +104,7 @@ def bench_memcpy(
     context: DeviceContext,
 ) raises:
     comptime dtype = DType.float32
-    length_in_elements = length_in_bytes // size_of[dtype]()
+    var length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
     ) if config.pinned_memory else DeviceContext(
@@ -146,7 +146,7 @@ def bench_memcpy(
     # then writing it back to a new address in vram. This means we're really
     # moving the tensor in/out of vram twice (one read + one write), and therefore
     # we need to double the size in order to calculate the correct bandwidth.
-    transferred_size_in_bytes = length_in_bytes
+    var transferred_size_in_bytes = length_in_bytes
     if config.direction == Config.DToD:
         transferred_size_in_bytes *= 2
 
@@ -174,7 +174,7 @@ def bench_p2p(
     ctx2: DeviceContext,
 ) raises:
     comptime dtype = DType.float32
-    length_in_elements = length_in_bytes // size_of[dtype]()
+    var length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
     var host_ptr = List(length=length_in_elements, fill=Scalar[dtype](0))

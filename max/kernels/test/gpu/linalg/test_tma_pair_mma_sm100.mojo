@@ -153,8 +153,8 @@ def tma_umma_kernel_pair_cta[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -179,7 +179,7 @@ def tma_umma_kernel_pair_cta[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     comptime b_canonical_layout = tile_to_descriptor[
@@ -196,10 +196,10 @@ def tma_umma_kernel_pair_cta[
         b_type
     ]()
 
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -474,10 +474,10 @@ def test_tma_umma_pair_cta[
         Layout.row_major(M, N),
     ](ctx)
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -555,8 +555,8 @@ def test_tma_umma_pair_cta[
 
     ctx.synchronize()
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
+    var c_host = c.tensor()
+    var c_host_ref = c_ref.tensor()
     for m in range(M):
         for n in range(N):
             # Increased tolerance for FP8/bfloat16 accumulation errors

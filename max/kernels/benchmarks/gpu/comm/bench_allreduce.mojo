@@ -173,7 +173,7 @@ def bench_reduce[
     var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
-        multicast_buf = DeviceMulticastBuffer[dtype](
+        var multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), cb_template.alloc_size()
         )
 

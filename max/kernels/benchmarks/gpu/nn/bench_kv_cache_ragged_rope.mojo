@@ -191,8 +191,10 @@ def execute_kv_cache_ragged_rope[
         freqs_cis_table_layout.static_product
     )
 
-    num_flops_per_elem = 6
-    num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
+    var num_flops_per_elem = 6
+    var num_elems = (
+        Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
+    )
     var flop_count = num_flops_per_elem * num_elems
 
     @parameter

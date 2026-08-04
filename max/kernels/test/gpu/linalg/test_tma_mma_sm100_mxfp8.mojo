@@ -233,8 +233,8 @@ def block_scaled_mxfp8_kernel[
     comptime b_scales_expected_bytes = b_scales_size * size_of[b_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes + b_scales_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -256,7 +256,7 @@ def block_scaled_mxfp8_kernel[
     # tensor memory allocation
     barrier()
 
-    tmem_addr = tmem_addr_ptr[0]
+    var tmem_addr = tmem_addr_ptr[0]
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = BN // 32
@@ -283,10 +283,10 @@ def block_scaled_mxfp8_kernel[
         b_type
     ]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
         accum_type,
         a_type,
         b_type,
@@ -454,17 +454,17 @@ def block_scaled_mxfp8_kernel[
     var warp_id_q, warp_id_r = udivmod(warp_id, 4)
     warp_id = 2 * warp_id_r + warp_id_q
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+            var c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
 
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
 
@@ -531,8 +531,10 @@ def sm100_block_scaled_mxfp8[
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a
+    )
+    var b_tma_op = create_tensor_tile[
         Index(BN, BK),
         swizzle_mode=b_swizzle,
     ](ctx, b)

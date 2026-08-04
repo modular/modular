@@ -246,8 +246,8 @@ def blockscaled_pair_cta_mxfp8[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -272,7 +272,7 @@ def blockscaled_pair_cta_mxfp8[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = MMA_N // 32
@@ -297,14 +297,14 @@ def blockscaled_pair_cta_mxfp8[
         b_type
     ]()
 
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
         accum_type,
         a_type,
         b_type,
@@ -447,8 +447,8 @@ def blockscaled_pair_cta_mxfp8[
             barrier()
 
             if elect_one_warp:
-                adesc = adesc_base
-                bdesc = bdesc_base
+                var adesc = adesc_base
+                var bdesc = bdesc_base
 
                 if k_iter == 0:
                     if elect_one_thread:
@@ -471,7 +471,7 @@ def blockscaled_pair_cta_mxfp8[
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
                         if elect_one_thread:
-                            runtime_desc = UMMAInsDescriptor[
+                            var runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
                             ].update_desc_with_sf_id[UInt32(j)](
                                 idesc,
@@ -608,10 +608,10 @@ def sm100_blockscaled_mxfp8_cta_pair[
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(

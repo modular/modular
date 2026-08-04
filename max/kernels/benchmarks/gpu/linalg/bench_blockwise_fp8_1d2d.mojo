@@ -87,8 +87,8 @@ def bench_blockwise_fp8_1d2d[
     comptime K = expert_shape[1]
 
     # Compute total tokens and max tokens per expert
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         var M = num_tokens_by_expert[i]
         total_num_tokens += M

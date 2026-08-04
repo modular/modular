@@ -168,7 +168,7 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = UInt32(cache_len)
 
-        curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
+        var curr_context_length = Int(curr_cache_length) + Int(curr_seq_length)
 
         max_context_length = max(max_context_length, curr_context_length)
         max_seq_length = max(max_seq_length, curr_seq_length)
@@ -242,9 +242,9 @@ def execute_kv_cache_ragged_flash_attention[
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
     )
-    paged_lut_set = Set[Int]()
+    var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
-        curr_seq_len = Int(cache_lengths_host_ptr[bs]) + valid_lengths[bs]
+        var curr_seq_len = Int(cache_lengths_host_ptr[bs]) + valid_lengths[bs]
         for block_idx in range(0, ceildiv(curr_seq_len, page_size)):
             var randval = Int(random_ui64(0, UInt64(num_pages - 1)))
             while randval in paged_lut_set:
@@ -309,7 +309,7 @@ def execute_kv_cache_ragged_flash_attention[
         ),
     )
 
-    kv_collection_device = CollectionType(
+    var kv_collection_device = CollectionType(
         # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache
         # views, which are disjoint kv_idx halves of one `blocks` buffer
         # sharing its (mutable) origin. The nested-origin exclusivity check
@@ -324,8 +324,8 @@ def execute_kv_cache_ragged_flash_attention[
         UInt32(max_context_length),
     )
 
-    k_cache_device = kv_collection_device.get_key_cache(layer_idx)
-    v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
+    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
@@ -472,7 +472,7 @@ def execute_kv_cache_ragged_flash_attention[
 
             bencher_iter_custom[kernel_launch](b, ctx)
 
-        flop_count = flops(
+        var flop_count = flops(
             batch_size,
             num_q_heads,
             seq_len,

@@ -274,7 +274,7 @@ def mma_throughput_kernel[
         a_type, BN, BK_DESC, swizzle_mode=b_swizzle
     ]()
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -325,8 +325,8 @@ def mma_throughput_kernel[
     comptime b_expected_bytes = b_size * size_of[a_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -360,14 +360,14 @@ def mma_throughput_kernel[
     comptime bSBO = b_stride01 * size_of[a_type]()
     comptime bLBO = b_stride11 * size_of[a_type]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
     comptime mma_kind = (
         UMMAKind.KIND_F8F6F4 if a_type
         == DType.float8_e4m3fn else UMMAKind.KIND_F16
     )
-    idesc = UMMAInsDescriptor[mma_kind].create[
+    var idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
         a_type,
         a_type,
@@ -552,10 +552,10 @@ def main() raises:
             accum_type, Layout.row_major(1, num_threads)
         ](ctx)
 
-        a_tma_op = create_tensor_tile[
+        var a_tma_op = create_tensor_tile[
             Index(BM, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, a.device_tensor())
-        b_tma_op = create_tensor_tile[
+        var b_tma_op = create_tensor_tile[
             Index(BN, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, b.device_tensor())
 
