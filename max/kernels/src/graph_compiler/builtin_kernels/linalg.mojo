@@ -1687,7 +1687,7 @@ struct Struct_lora_sgmv_ragged:
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), a.dim_size[0]()),
             lora_ids.dim_size[0](),
             context,
         )
@@ -1726,7 +1726,7 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             b.to_tile_tensor[DType.int64](),
             input_row_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), a.dim_size[0]()),
             lora_ids.dim_size[0](),
             context,
         )
@@ -1830,7 +1830,7 @@ struct Struct_lora_sgmv_qkv_expand_ragged:
             b.to_tile_tensor[DType.int64](),
             lora_grouped_offsets.to_tile_tensor[DType.int64](),
             lora_ids.to_tile_tensor[DType.int64](),
-            Int(max_seq_length),
+            min(Int(max_seq_length), p.dim_size[1]()),
             lora_ids.dim_size[0](),
             context,
         )
