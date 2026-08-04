@@ -791,11 +791,11 @@ def test_distribute_vectorized():
 
     # Fill the buffer first because we can't fill a vectorized tensor.
     # This will become easier when we can vectorize nested layout.
-    ptr = unsafe_stack_allocation[64 * 32, DType.float32, alignment=16]()
+    var ptr = unsafe_stack_allocation[64 * 32, DType.float32, alignment=16]()
     for i in range(64 * 32):
         ptr[i] = Float32(i)
 
-    tensor_4x16x64 = LayoutTensor[
+    var tensor_4x16x64 = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
         element_layout=Layout(2),

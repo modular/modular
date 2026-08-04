@@ -68,7 +68,7 @@ def test_rope_ragged[
         q_layout.static_product
     )
     ctx.synchronize()
-    q_buffer = q_input[dtype]()
+    var q_buffer = q_input[dtype]()
     assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Copy data from golden buffer to host buffer
@@ -93,7 +93,7 @@ def test_rope_ragged[
         freqs_cis_layout.static_product
     )
     ctx.synchronize()
-    freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
+    var freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     assert (
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
     ), "invalid freqs_cis_table init"
@@ -115,7 +115,7 @@ def test_rope_ragged[
         q_layout.static_product
     )
     ctx.synchronize()
-    expected_q_out_buffer = q_out_golden[dtype]()
+    var expected_q_out_buffer = q_out_golden[dtype]()
     assert len(expected_q_out_buffer) == len(
         q_buffer
     ), "invalid expected q out init"
@@ -167,7 +167,7 @@ def test_rope_ragged[
         for seq_idx in range(seq_len):
             for head_idx in range(num_heads):
                 # Calculate base offset for current head
-                base_offset = (
+                var base_offset = (
                     batch_idx * seq_len * dim  # batch offset
                     + seq_idx * dim  # sequence offset
                     + head_idx * head_dim  # head offset
@@ -184,7 +184,7 @@ def test_rope_ragged[
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
-                roped_offset = base_offset + (head_dim - rope_dim)
+                var roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
                     q_out_host_buffer.as_span()[
                         roped_offset : roped_offset + rope_dim
