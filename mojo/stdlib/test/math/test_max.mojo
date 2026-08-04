@@ -16,8 +16,8 @@ from std.testing import assert_equal
 
 
 def test_max() raises:
-    expected_result = SIMD[DType.bool, 4](True, True, False, True)
-    actual_result = max(
+    var expected_result = SIMD[DType.bool, 4](True, True, False, True)
+    var actual_result = max(
         SIMD[DType.bool, 4](
             True,
             True,

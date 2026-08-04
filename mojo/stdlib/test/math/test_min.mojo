@@ -16,8 +16,8 @@ from std.testing import assert_equal
 
 
 def test_min() raises:
-    expected_result = SIMD[DType.bool, 4](False, True, False, False)
-    actual_result = min(
+    var expected_result = SIMD[DType.bool, 4](False, True, False, False)
+    var actual_result = min(
         SIMD[DType.bool, 4](
             True,
             True,

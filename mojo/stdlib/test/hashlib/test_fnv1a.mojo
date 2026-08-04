@@ -83,7 +83,7 @@ def test_trailing_zeros() raises:
 
 
 def test_fill_factor() raises:
-    words = gen_word_pairs[words_ar]()
+    var words = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", Fnv1a](words, len(words), 0.63)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 2, 0.86)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 4, 0.98)
@@ -128,7 +128,7 @@ def test_fill_factor() raises:
 
 def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
-        hasher = Fnv1a()
+        var hasher = Fnv1a()
         hasher._update_with_simd(value)
         return hasher^.finish()
 

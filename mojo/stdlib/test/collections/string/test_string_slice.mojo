@@ -449,9 +449,9 @@ def test_slice_write_repr_to() raises:
 
 
 def test_find() raises:
-    haystack = StringSlice("abcdefg")
-    haystack_with_special_chars = StringSlice("abcdefg@#$")
-    haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
+    var haystack = StringSlice("abcdefg")
+    var haystack_with_special_chars = StringSlice("abcdefg@#$")
+    var haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
 
     assert_equal(haystack.find(StringSlice("a")), 0)
     assert_equal(haystack.find(StringSlice("ab")), 0)
@@ -653,10 +653,10 @@ def test_split() raises:
     # Multiple character delimiter
     assert_equal(S("hello").split("ll"), [StaticString("he"), "o"])
 
-    res: List = [StaticString(""), "bb", "", "", "", "bbb", ""]
+    var res: List = [StaticString(""), "bb", "", "", "", "bbb", ""]
     assert_equal(S("abbaaaabbba").split("a"), res)
     assert_equal(S("abbaaaabbba").split("a", 8), res)
-    s1 = S("abbaaaabbba").split("a", 5)
+    var s1 = S("abbaaaabbba").split("a", 5)
     assert_equal(s1, [StaticString(""), "bb", "", "", "", "bbba"])
     assert_equal(S("aaa").split("a", 0), [StaticString("aaa")])
     assert_equal(S("a").split("a"), [StaticString(""), ""])
@@ -669,9 +669,9 @@ def test_split() raises:
 
     assert_equal(S("Hello 🔥!").split(), [StaticString("Hello"), "🔥!"])
 
-    s2 = S("Лорем ипсум долор сит амет").split(" ")
+    var s2 = S("Лорем ипсум долор сит амет").split(" ")
     assert_equal(s2, [StaticString("Лорем"), "ипсум", "долор", "сит", "амет"])
-    s3 = S("Лорем ипсум долор сит амет").split("м")
+    var s3 = S("Лорем ипсум долор сит амет").split("м")
     assert_equal(s3, [StaticString("Лоре"), " ипсу", " долор сит а", "ет"])
 
     assert_equal(S("123").split(""), [StaticString(""), "1", "2", "3", ""])
@@ -698,8 +698,8 @@ def test_splitlines() raises:
     )
 
     # Test with multiple different line breaks
-    s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
-    hello_mojo: List = [StaticString("hello"), "world", "mojo", "language"]
+    var s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
+    var hello_mojo: List = [StaticString("hello"), "world", "mojo", "language"]
     assert_equal(s1.splitlines(), hello_mojo)
     assert_equal(
         s1.splitlines(keepends=True),
@@ -709,7 +709,7 @@ def test_splitlines() raises:
     # Test with an empty string
     assert_equal(S("").splitlines(), [])
     # test \v \f \x1c \x1d
-    s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
+    var s2 = S("hello\vworld\fmojo\x1clanguage\x1d")
     assert_equal(s2.splitlines(), hello_mojo)
     assert_equal(
         s2.splitlines(keepends=True),
@@ -717,7 +717,7 @@ def test_splitlines() raises:
     )
 
     # test \x1c \x1d \x1e
-    s3 = S("hello\x1cworld\x1dmojo\x1elanguage\x1e")
+    var s3 = S("hello\x1cworld\x1dmojo\x1elanguage\x1e")
     assert_equal(s3.splitlines(), hello_mojo)
     assert_equal(
         s3.splitlines(keepends=True),
@@ -734,7 +734,7 @@ def test_splitlines() raises:
     )
 
     for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
-        item = StaticString("").join(
+        var item = StaticString("").join(
             Span(["hello", u, "world", u, "mojo", u, "language", u])
         )
         assert_equal(item.splitlines(), hello_mojo)

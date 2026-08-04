@@ -386,8 +386,8 @@ def test_symmetric_difference() raises:
 
 def test_symmetric_difference_update() raises:
     # Test case 1
-    set1 = {1, 2, 3}
-    set2 = {2, 3, 4}
+    var set1 = {1, 2, 3}
+    var set2 = {2, 3, 4}
     set1.symmetric_difference_update(set2)
     assert_true({1, 4} == set1)
 
@@ -397,8 +397,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 4} == set1)
 
     # Test case 2
-    set3 = {1, 2, 3}
-    set4 = {4, 5, 6}
+    var set3 = {1, 2, 3}
+    var set4 = {4, 5, 6}
     set3.symmetric_difference_update(set4)
     assert_true({1, 2, 3, 4, 5, 6} == set3)
 
@@ -408,8 +408,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3, 4, 5, 6} == set3)
 
     # Test case 3
-    set5 = {1, 2, 3}
-    set6 = Set[Int]()
+    var set5 = {1, 2, 3}
+    var set6 = Set[Int]()
     set5.symmetric_difference_update(set6)
     assert_true({1, 2, 3} == set5)
 
@@ -419,8 +419,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3} == set5)
 
     # Test case 4
-    set7 = Set[Int]()
-    set8 = {1, 2, 3}
+    var set7 = Set[Int]()
+    var set8 = {1, 2, 3}
     set7.symmetric_difference_update(set8)
     assert_true({1, 2, 3} == set7)
 
@@ -430,8 +430,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3} == set7)
 
     # Test case 5
-    set9 = Set[Int]()
-    set10 = Set[Int]()
+    var set9 = Set[Int]()
+    var set10 = Set[Int]()
     set9.symmetric_difference_update(set10)
     assert_true(set9 == {})
 
@@ -441,8 +441,8 @@ def test_symmetric_difference_update() raises:
     assert_true(set9 == {})
 
     # Test case 6
-    set11 = {1, 2, 3}
-    set12 = {1, 2, 3}
+    var set11 = {1, 2, 3}
+    var set12 = {1, 2, 3}
     set11.symmetric_difference_update(set12)
     assert_true(set11 == {})
 
@@ -453,24 +453,24 @@ def test_symmetric_difference_update() raises:
 
 
 def test_discard() raises:
-    set1 = {1, 2, 3}
+    var set1 = {1, 2, 3}
     set1.discard(2)
     assert_true(set1 == {1, 3})
 
-    set2 = {1, 2, 3}
+    var set2 = {1, 2, 3}
     set2.discard(4)
     assert_true(set2 == {1, 2, 3})
 
-    set3 = Set[Int]()
+    var set3 = Set[Int]()
     set3.discard(1)
     assert_true(set3 == {})
 
-    set4 = {1, 2, 3, 4, 5}
+    var set4 = {1, 2, 3, 4, 5}
     set4.discard(2)
     set4.discard(4)
     assert_true(set4 == {1, 3, 5})
 
-    set5 = {1, 2, 3}
+    var set5 = {1, 2, 3}
     set5.discard(1)
     set5.discard(2)
     set5.discard(3)
@@ -479,31 +479,31 @@ def test_discard() raises:
 
 def test_clear() raises:
     # Shouldn't fail when clearing a 0 length set
-    set0 = Set[Int]()
+    var set0 = Set[Int]()
     set0.clear()
     assert_equal(0, len(set0))
 
-    set1 = {1, 2, 3}
+    var set1 = {1, 2, 3}
     set1.clear()
     assert_true(set1 == {})
 
-    set2 = Set[Int]()
+    var set2 = Set[Int]()
     set2.clear()
     assert_true(set2 == {})
 
-    set3 = {1, 2, 3}
+    var set3 = {1, 2, 3}
     set3.clear()
     set3.add(4)
     set3.add(5)
     assert_true(set3 == {4, 5})
 
-    set4 = {1, 2, 3}
+    var set4 = {1, 2, 3}
     set4.clear()
     set4.clear()
     set4.clear()
     assert_true(set4 == {})
 
-    set5 = {1, 2, 3}
+    var set5 = {1, 2, 3}
     set5.clear()
     assert_true(len(set5) == 0)
 

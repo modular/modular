@@ -409,7 +409,7 @@ def test_range_bounds() raises:
 
 
 def test_scalar_range() raises:
-    r = range(UInt8(2), 16, 4)
+    var r = range(UInt8(2), 16, 4)
     assert_equal(r.start, 2)
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
@@ -418,9 +418,9 @@ def test_scalar_range() raises:
         for value in values:
             list.append(value.copy())
 
-    expected_elements = List[UInt8]()
+    var expected_elements = List[UInt8]()
     append_many(expected_elements, 2, 6, 10, 14)
-    actual_elements = List[UInt8]()
+    var actual_elements = List[UInt8]()
     for e in r:
         actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)

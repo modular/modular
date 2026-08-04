@@ -156,8 +156,8 @@ def test_bool() raises:
 
 
 def test_contains() raises:
-    items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    span = Span(items)
+    var items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    var span = Span(items)
     assert_true(0 not in span)
     assert_true(16 not in span)
     for item in items:
@@ -326,9 +326,9 @@ def test_reverse() raises:
             2,
             1,
         ]
-        s = Span(forward)
+        var s = Span(forward)
         s.reverse()
-        i = 0
+        var i = 0
         for num in s:
             assert_equal(num, backward[i])
             i += 1
@@ -356,7 +356,7 @@ def test_apply() raises:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
-        items: List[Scalar[D]] = [
+        var items: List[Scalar[D]] = [
             1,
             2,
             3,
@@ -377,8 +377,8 @@ def test_apply() raises:
             18,
             19,
         ]
-        twice = items.copy()
-        span = Span(twice)
+        var twice = items.copy()
+        var span = Span(twice)
         span.apply[func=_twice[D, ...]]()
         for i, item in enumerate(items):
             assert_true(span[i] == item * 2)

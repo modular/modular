@@ -102,7 +102,7 @@ def test_optional_reg_basic() raises:
 
 
 def test_optional_is() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_false(a is None)
 
     a = Optional[Int](None)
@@ -110,7 +110,7 @@ def test_optional_is() raises:
 
 
 def test_optional_isnot() raises:
-    a = Optional(1)
+    var a = Optional(1)
     assert_true(a is not None)
 
     a = Optional[Int](None)
@@ -118,7 +118,7 @@ def test_optional_isnot() raises:
 
 
 def test_optional_reg_is() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_false(a is None)
 
     a = OptionalReg[Int](None)
@@ -126,7 +126,7 @@ def test_optional_reg_is() raises:
 
 
 def test_optional_reg_isnot() raises:
-    a = OptionalReg(1)
+    var a = OptionalReg(1)
     assert_true(a is not None)
 
     a = OptionalReg[Int](None)
@@ -258,8 +258,8 @@ def test_optional_hash() raises:
 
 
 def test_optional_equality() raises:
-    o = Optional(10)
-    n = Optional[Int]()
+    var o = Optional(10)
+    var n = Optional[Int]()
     assert_true(o == 10)
     assert_true(o != 11)
     assert_true(o != n)
