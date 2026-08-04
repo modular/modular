@@ -148,8 +148,14 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
         self._handle = handle
 
     @always_inline
-    def force_destroy(deinit self):
-        """Destroy the coroutine object."""
+    def _unsafe_force_deinit(deinit self):
+        """Destroy the coroutine object without running its body to completion.
+
+        This is unsafe: if the coroutine is mid-suspension, any linear values
+        still live inside its frame are dropped without cleanup. Only call this
+        when the coroutine has run to completion (or was never resumed and holds
+        no linear state).
+        """
         __mlir_op.`co.destroy`(self._handle)
 
     @always_inline
@@ -247,8 +253,14 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
         return self._handle
 
     @always_inline
-    def force_destroy(deinit self):
-        """Destroy the coroutine object."""
+    def _unsafe_force_deinit(deinit self):
+        """Destroy the coroutine object without running its body to completion.
+
+        This is unsafe: if the coroutine is mid-suspension, any linear values
+        still live inside its frame are dropped without cleanup. Only call this
+        when the coroutine has run to completion (or was never resumed and holds
+        no linear state).
+        """
         __mlir_op.`co.destroy`(self._handle)
 
     @always_inline
