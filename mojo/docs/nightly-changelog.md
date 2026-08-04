@@ -870,6 +870,9 @@ This version is still a work in progress.
 
 - `Span` has moved from `std.memory.span` to `std.collections.span`.
 
+- `AddressSpace` has moved from `std.memory.pointer` to
+  `std.memory.address_space`.
+
 - The container backing variadic `**kwargs` has been renamed from
   `OwnedKwargsDict` to `StringDict`. `StringDict` no longer
   requires its value type `V` to be `Deinitable`. A keyword dictionary

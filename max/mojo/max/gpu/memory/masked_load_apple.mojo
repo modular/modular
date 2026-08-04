@@ -29,7 +29,6 @@ on `compute_capability() == 5`.
 from std.collections.string import StaticString
 from std.ffi import external_call
 from std.memory import bitcast
-from std.memory.pointer import AddressSpace
 from std.sys import size_of
 
 
