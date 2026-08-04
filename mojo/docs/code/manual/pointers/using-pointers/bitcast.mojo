@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.bit import byte_swap
+from std.memory.alloc import alloc, dealloc, Layout
 
 
 # start-read-chunks
@@ -28,7 +29,7 @@ def read_chunks(
         var chunk = List[UInt32](capacity=chunk_size)
         for i in range(chunk_size):
             chunk.append(ui32_ptr[unsafe_offset=i])
-        # list is not implicitly copyable, so it needs the transfer sigil (^)
+        # List is not implicitly copyable, so it needs the transfer sigil (^)
         chunks.append(chunk^)
         # Move our pointer to the next byte after the current chunk
         ptr = ptr.unsafe_offset(1 + 4 * chunk_size)
@@ -45,7 +46,8 @@ def main():
     # Chunk 1: size=2, values=[10, 20] (as UInt32 little-endian)
     # Chunk 2: size=1, values=[30]
     # Terminator: size=0
-    var buf = alloc[UInt8](1 + 8 + 1 + 4 + 1)
+    var allocation = alloc(Layout[UInt8](count=1 + 8 + 1 + 4 + 1))
+    var buf = allocation.unsafe_ptr()
     var offset = 0
 
     # Chunk 1 header
@@ -73,4 +75,4 @@ def main():
     print(result[0][1])  # 20
     print(result[1][0])  # 30
 
-    buf.unsafe_free()
+    dealloc(allocation^)

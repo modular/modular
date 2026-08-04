@@ -10,15 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.memory.alloc import alloc, dealloc, Layout
 
 
-def test_alloc_and_init():
-    # start-alloc-and-init
+def test_intro():
+    # start-safe-example
+    var count: Int = 0
+    # Point to an existing value
+    var ptr = Pointer(to=count)  # ptr's type is Pointer[Int, ...]
+    # Mutate the value
+    ptr[] = 100
+    # end-safe-example
+
+
+def test_basics():
+    # start-basics-1
     # Allocate memory to hold a value
-    var ptr = alloc[Int](1)
+    var allocation = alloc(Layout[Int].single())
+    var ptr = allocation.unsafe_ptr()
     # Initialize the allocated memory
     ptr.unsafe_write(100)
-    # end-alloc-and-init
+    # end-basics-1
 
     # start-dereference
     # Update an initialized value
@@ -27,7 +39,7 @@ def test_alloc_and_init():
     print(ptr[])
     # end-dereference
 
-    ptr.unsafe_free()
+    dealloc(allocation^)
 
 
 def test_pointer_to_value():
@@ -39,31 +51,33 @@ def test_pointer_to_value():
     # start-dereference-read-mutate
     # Read from pointee
     print(ptr[])
-    # mutate pointee
+    # Mutate pointee
     ptr[] = 0
     # end-dereference-read-mutate
 
 
 def test_alloc_string():
     # start-alloc-string
-    var str_ptr = alloc[String](1)
+    var allocation = alloc[String]({count = 1})
+    var str_ptr = allocation.unsafe_ptr()
     # str_ptr[] = "Testing" # Undefined behavior!
     str_ptr.unsafe_write("Testing")
     str_ptr[] += " pointers"  # Works now
     # end-alloc-string
 
     str_ptr.unsafe_deinit_pointee()
-    str_ptr.unsafe_free()
+    dealloc(allocation^)
 
 
 def test_unsafe_write_owned():
-    var str_ptr = alloc[String](1)
+    var allocation = alloc[String]({count = 1})
+    var str_ptr = allocation.unsafe_ptr()
     # start-unsafe-write-owned
     str_ptr.unsafe_write("Owned string")
     # end-unsafe-write-owned
 
     str_ptr.unsafe_deinit_pointee()
-    str_ptr.unsafe_free()
+    dealloc(allocation^)
 
 
 def test_pointer_to_string():
@@ -76,7 +90,7 @@ def test_pointer_to_string():
 
 
 def main():
-    test_alloc_and_init()
+    test_basics()
     test_pointer_to_value()
     test_alloc_string()
     test_unsafe_write_owned()
