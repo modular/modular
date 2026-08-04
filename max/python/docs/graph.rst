@@ -81,6 +81,7 @@ Shapes and dimensions
    AlgebraicDim
    Dim
    DimLike
+   DynamicDim
    Shape
    ShapeLike
    StaticDim
