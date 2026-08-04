@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_equal
 
 def test_getsize() raises:
     with NamedTemporaryFile(delete=False) as tmp_file:
-        file_path = tmp_file.name
+        var file_path = tmp_file.name
         # No bytes written yet, 0 size.
         assert_equal(getsize(file_path), 0)
         var data_to_write = "test"

@@ -19,7 +19,7 @@ from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 def test_pwuid() raises:
     # Test current process user works
-    passwd = std.pwd.getpwuid(std.os.getuid())
+    var passwd = std.pwd.getpwuid(std.os.getuid())
     assert_true(passwd.pw_dir.byte_length() > 2)
     assert_true(passwd.pw_uid >= 0)
     assert_true(passwd.pw_name.byte_length() > 0)
@@ -36,7 +36,7 @@ def test_pwuid() raises:
 
 def test_pwnam() raises:
     # Test root user works
-    passwd = std.pwd.getpwnam("root")
+    var passwd = std.pwd.getpwnam("root")
     assert_true(passwd.pw_dir.byte_length() > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")

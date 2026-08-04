@@ -110,7 +110,7 @@ def get_current_home() -> String:
 
 
 def set_home(path: Path) raises:
-    path_str = String(path)
+    var path_str = String(path)
     _ = std.os.setenv("HOME", path_str)
 
 
@@ -120,8 +120,8 @@ def test_expand_user() raises:
     var original_home = get_current_home()
     set_home(user_path)
 
-    path = Path("~") / "test"
-    test_path = user_path / "test"
+    var path = Path("~") / "test"
+    var test_path = user_path / "test"
     assert_equal(test_path, std.os.path.expanduser(path))
     # Original path should remain unmodified
     assert_equal(path, std.os.path.join("~", "test"))

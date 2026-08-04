@@ -19,7 +19,7 @@ from std.testing import TestSuite, assert_equal
 def _split_extension_test(
     path: String, expected_head: String, expected_extension: String
 ) raises:
-    head, extension = split_extension(path)
+    var head, extension = split_extension(path)
     assert_equal(head, expected_head)
     assert_equal(extension, expected_extension)
 

@@ -268,7 +268,7 @@ comptime error_message_macos: List[Tuple[ErrNo, String]] = [
 
 def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]() raises:
     comptime for i in range(len(error_message)):
-        errno, msg = materialize[error_message[i]]()
+        var errno, msg = materialize[error_message[i]]()
         set_errno(errno)
         assert_equal(get_errno(), errno)
         assert_equal(String(errno), msg)

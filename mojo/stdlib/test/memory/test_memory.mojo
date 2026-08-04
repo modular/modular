@@ -156,12 +156,12 @@ def test_memcmp_non_multiple_of_int32() raises:
 
 
 def test_memcmp_overflow() raises:
-    p1 = alloc[Byte](1)
-    p2 = alloc[Byte](1)
+    var p1 = alloc[Byte](1)
+    var p2 = alloc[Byte](1)
     p1.unsafe_store(-120)
     p2.unsafe_store(120)
 
-    c = unsafe_memcmp(p1, p2, 1)
+    var c = unsafe_memcmp(p1, p2, 1)
     assert_equal(c, 1)
 
     c = unsafe_memcmp(p2, p1, 1)

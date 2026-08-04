@@ -27,8 +27,8 @@ from std.utils.numerics import inf, nan
 
 
 def test_assert_messages() raises:
-    assertion = "test_assertion.mojo:"
-    assertion_error = ": AssertionError:"
+    var assertion = "test_assertion.mojo:"
+    var assertion_error = ": AssertionError:"
     try:
         assert_true(False)
     except e:
@@ -220,9 +220,9 @@ def test_assert_custom_location() raises:
 
 
 def test_assert_equal_stringslice() raises:
-    str1 = StaticString("This is Mojo")
-    str2 = "This is Mojo"
-    str3 = StaticString("This is mojo")
+    var str1 = StaticString("This is Mojo")
+    var str2 = "This is Mojo"
+    var str3 = StaticString("This is mojo")
 
     def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
@@ -242,9 +242,9 @@ def test_assert_equal_stringslice() raises:
             )
         )
 
-    l1: List = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
-    l2: List = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
-    l3: List = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
+    var l1: List = [_build(str1, 0, 4), _build(str1, 5, 7), _build(str1, 8, 12)]
+    var l2: List = [_build(str2, 0, 4), _build(str2, 5, 7), _build(str2, 8, 12)]
+    var l3: List = [_build(str3, 0, 4), _build(str3, 5, 7), _build(str3, 8, 12)]
     assert_equal(l1, l1)
     assert_equal(l2, l2)
     assert_equal(l1, l2)
