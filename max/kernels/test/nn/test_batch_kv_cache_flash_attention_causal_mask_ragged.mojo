@@ -132,10 +132,12 @@ def execute_ragged_flash_attention[
     # copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
-        unpadded_seq_len = valid_lengths_list[bs]
-        ragged_start_idx = Int(input_row_offsets[bs])
-        padded_ptr = q_padded.ptr + q_padded._offset(IndexList[4](bs, 0, 0, 0))
-        ragged_ptr = q_ragged.ptr + q_ragged._offset(
+        var unpadded_seq_len = valid_lengths_list[bs]
+        var ragged_start_idx = Int(input_row_offsets[bs])
+        var padded_ptr = q_padded.ptr + q_padded._offset(
+            IndexList[4](bs, 0, 0, 0)
+        )
+        var ragged_ptr = q_ragged.ptr + q_ragged._offset(
             IndexList[3](ragged_start_idx, 0, 0)
         )
         unsafe_memcpy(
@@ -269,11 +271,11 @@ def execute_ragged_flash_attention[
         ref_output,
     )
 
-    ref_out = ref_output
-    test_out = test_output
+    var ref_out = ref_output
+    var test_out = test_output
     for bs in range(batch_size):
-        prompt_len = Int(valid_lengths[bs])
-        ragged_offset = Int(input_row_offsets[bs])
+        var prompt_len = Int(valid_lengths[bs])
+        var ragged_offset = Int(input_row_offsets[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
@@ -300,10 +302,10 @@ comptime dtype = DType.float32
 
 def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
-        ce_cache_sizes = List[Int]()
-        ce_seq_lens = List[Int]()
-        tg_cache_sizes = List[Int]()
-        tg_seq_lens = List[Int]()
+        var ce_cache_sizes = List[Int]()
+        var ce_seq_lens = List[Int]()
+        var tg_cache_sizes = List[Int]()
+        var tg_seq_lens = List[Int]()
         for _ in range(bs):
             tg_seq_lens.append(1)
             tg_cache_sizes.append(Int(random_ui64(1, 100)))

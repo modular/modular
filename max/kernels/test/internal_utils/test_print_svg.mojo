@@ -36,7 +36,7 @@ def test_svg_nvidia_shape() raises:
         )
 
     def color_map(t: Int, v: Int) -> String:
-        colors = [
+        var colors = [
             StaticString("red"),
             StaticString("blue"),
             StaticString("green"),
@@ -146,7 +146,7 @@ def test_svg_wgmma_shape() raises:
     ](3)
 
     def color_map(t: Int, v: Int) -> String:
-        colors = [
+        var colors = [
             StaticString("red"),
             StaticString("blue"),
             StaticString("green"),
