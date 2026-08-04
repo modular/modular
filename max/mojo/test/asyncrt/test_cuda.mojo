@@ -168,13 +168,13 @@ $L__BB0_2:
     comptime LEN = 1024
     comptime BLOCK_DIM = 32
 
-    lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     lhs.enqueue_fill(2.0)
-    rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     rhs.enqueue_fill(1.0)
-    out = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out = ctx.enqueue_create_buffer[DType.float32](LEN)
 
-    func = ctx.load_function[vec_add_sig](
+    var func = ctx.load_function[vec_add_sig](
         function_name="_Z9vectorAddPKfS0_Pfi",
         asm=ptx,
     )

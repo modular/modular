@@ -304,7 +304,7 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
         A list of strings naming the tracing systems that are enabled.
         Possible values: "AsyncRT", "GPU", "Tracy", "Op Logging".
     """
-    enabled_systems = List[String]()
+    var enabled_systems = List[String]()
 
     # Check AsyncRT profiling
     var asyncrt_level = _build_info_asyncrt_max_profiling_level()
@@ -438,7 +438,7 @@ struct Trace[
         ), "the AsyncRT profiler only supports `StaticString` names"
 
         # Validate that only one tracing system is enabled
-        enabled_systems = _get_enabled_tracing_systems[Self.level]()
+        var enabled_systems = _get_enabled_tracing_systems[Self.level]()
         debug_assert(
             len(enabled_systems) <= 1,
             "only one tracing system should be enabled at a time, got: ",
@@ -576,8 +576,8 @@ struct Trace[
 
         # Start a Tracy zone if the bridge is available.
         if _is_tracy_enabled():
-            name_str = self.name()
-            color_val = UInt32(Int(self.color.value())) if self.color else 0
+            var name_str = self.name()
+            var color_val = UInt32(Int(self.color.value())) if self.color else 0
             self._tracy_ctx = external_call[
                 "KGEN_CompilerRT_TracyZoneBegin", UInt64
             ](name_str.unsafe_ptr(), name_str.byte_length(), color_val)

@@ -128,8 +128,8 @@ def _tvm_ffi_error_move_from_raised(
     """Wraps TVMFFIErrorMoveFromRaised."""
     # Expects that `libtvm_ffi.so` is available, for instance loaded by python
     # importing `tvm_ffi`.
-    lib = OwnedDLHandle(path="libtvm_ffi.so")
-    fn_ptr = lib.get_function[NoneType]("TVMFFIErrorMoveFromRaised")
+    var lib = OwnedDLHandle(path="libtvm_ffi.so")
+    var fn_ptr = lib.get_function[NoneType]("TVMFFIErrorMoveFromRaised")
     fn_ptr(Pointer(to=result))
 
 
