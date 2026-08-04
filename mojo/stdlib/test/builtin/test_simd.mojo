@@ -448,9 +448,7 @@ def test_issue_20421() raises:
         .unsafe_bitcast[Int32]()
         .unsafe_load[width=4, alignment=1]()
     )
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(a_layout))
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),

@@ -660,9 +660,9 @@ struct ConvDirectNHWC[
                 ctx,
             )
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=output_ptr
-                ).unsafe_with_layout({count = scratch_size})
+                ThinAllocation(unsafe_owned_ptr=output_ptr).unsafe_with_layout(
+                    {count = scratch_size}
+                )
             )
         else:
             # Use sync to work around #12624

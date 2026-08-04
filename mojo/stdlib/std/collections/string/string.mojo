@@ -714,9 +714,7 @@ struct String(
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
                 dealloc(
-                    ThinAllocation(
-                        unsafe_assume_ownership=ptr
-                    ).unsafe_with_layout(
+                    ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
                             count=self.capacity() + Self.REF_COUNT_SIZE
                         )

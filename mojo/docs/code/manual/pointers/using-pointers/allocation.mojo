@@ -50,7 +50,7 @@ def leaky_function() raises:
     # ...
     raising_function(data_ptr)
     dealloc(
-        ThinAllocation(unsafe_assume_ownership=data_ptr).unsafe_with_layout(
+        ThinAllocation(unsafe_owned_ptr=data_ptr).unsafe_with_layout(
             {count = 64}
         )
     )

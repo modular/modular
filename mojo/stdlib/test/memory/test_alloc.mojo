@@ -149,17 +149,13 @@ def test_allocation_unsafe_leak_then_reconstruct() raises:
     ptr.unsafe_write(5)
     ptr.unsafe_offset(1).unsafe_write(6)
     var total = ptr[unsafe_offset=0] + ptr[unsafe_offset=1]
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
     assert_equal(total, 11)
 
 
 def test_thin_allocation_unsafe_with_layout_and_unsafe_ptr() raises:
     var layout = Layout[Int](count=1)
-    var thin = ThinAllocation(
-        unsafe_assume_ownership=alloc(layout).unsafe_leak()
-    )
+    var thin = ThinAllocation(unsafe_owned_ptr=alloc(layout).unsafe_leak())
     thin.unsafe_ptr().unsafe_write(7)
     var value = thin.unsafe_ptr()[]
     dealloc(thin^.unsafe_with_layout(layout))
@@ -244,9 +240,7 @@ def test_alloc_free_single_zst() raises:
         ptr[].unsafe_ptr().as_unsafe_any_origin(),
     )
 
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def test_single_zst_lifecycle() raises:
@@ -262,9 +256,7 @@ def test_single_zst_lifecycle() raises:
     ptr.unsafe_write(ZST(fill=0))
     assert_equal(0, len(ptr[]))
     ptr.unsafe_deinit_pointee()
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def test_alloc_free_many_zst() raises:
@@ -280,9 +272,7 @@ def test_alloc_free_many_zst() raises:
 
     assert_equal(ptr.unsafe_bitcast[Int](), ptr[].unsafe_ptr())
 
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def test_many_zst_lifecycle() raises:
@@ -301,9 +291,7 @@ def test_many_zst_lifecycle() raises:
 
     ptr.unsafe_bitcast[Array[ZST, Int.MAX]]().unsafe_deinit_pointee()
 
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def main() raises:

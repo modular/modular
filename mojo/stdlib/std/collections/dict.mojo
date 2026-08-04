@@ -1903,14 +1903,14 @@ struct Dict[
         ), "order length doesn't match _len after resize"
 
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=slot_map).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
                 {count = old_capacity}
             )
         )
         dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=relocated_set
-            ).unsafe_with_layout({count = old_capacity})
+            ThinAllocation(unsafe_owned_ptr=relocated_set).unsafe_with_layout(
+                {count = old_capacity}
+            )
         )
 
     def _rehash_in_place(mut self):
@@ -1936,7 +1936,7 @@ struct Dict[
         ), "order length doesn't match _len after in-place rehash"
 
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=slot_map).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=slot_map).unsafe_with_layout(
                 {count = self._table._capacity}
             )
         )

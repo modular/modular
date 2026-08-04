@@ -1676,7 +1676,7 @@ def conv_transposed_cpu[
         comptime if not filter_packed:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=packed_filter_ptr
+                    unsafe_owned_ptr=packed_filter_ptr
                 ).unsafe_with_layout(packed_filter_alloc_layout)
             )
 

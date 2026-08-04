@@ -384,9 +384,9 @@ def _test_capsule_api(cpy: CPython) raises:
     # `assert_equal` can raise, and the allocation must be freed on every path.
     var capsule_impl_addr = Int(capsule_impl_ptr)
     dealloc(
-        ThinAllocation(
-            unsafe_assume_ownership=capsule_impl_ptr
-        ).unsafe_with_layout(capsule_impl_layout)
+        ThinAllocation(unsafe_owned_ptr=capsule_impl_ptr).unsafe_with_layout(
+            capsule_impl_layout
+        )
     )
     assert_equal(capsule_impl_addr, Int(capsule_pointer))
     with assert_raises(contains="called with incorrect name"):

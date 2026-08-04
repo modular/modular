@@ -2299,7 +2299,7 @@ def _matmul_common[
 
     comptime if is_cpu[target]():
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=c_nd.ptr).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=c_nd.ptr).unsafe_with_layout(
                 c_alloc_layout
             )
         )
@@ -3551,7 +3551,7 @@ def _qmatmul_gguf_quantized_alloc_output[
     ](hidden_state, weight, c_nd)
 
     dealloc(
-        ThinAllocation(unsafe_assume_ownership=c_ptr).unsafe_with_layout(
+        ThinAllocation(unsafe_owned_ptr=c_ptr).unsafe_with_layout(
             AllocLayout[Float32](count=TOTAL_SEQ_LEN * N)
         )
     )

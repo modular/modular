@@ -226,9 +226,7 @@ struct _LinkedListIterOwned[T: Movable & Deinitable](
                 Self.T
             ]._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
-                {count = 1}
-            )
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
         )
         return node^._into_value()
 
@@ -368,7 +366,7 @@ struct LinkedList[ElementType: Movable](
             var next = nn[].next()
             destroy_func(nn.unsafe_take_pointee()._into_value())
             dealloc(
-                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )
@@ -486,9 +484,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
-                {count = 1}
-            )
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
         )
         return node^._into_value()
 
@@ -530,7 +526,7 @@ struct LinkedList[ElementType: Movable](
                 self._tail = node.prev()
 
             dealloc(
-                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )
@@ -559,9 +555,7 @@ struct LinkedList[ElementType: Movable](
         else:
             self._tail.value()[].next() = Self._NodePointer()
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
-                {count = 1}
-            )
+            ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout({count = 1})
         )
         return node^._into_value()
 
@@ -601,7 +595,7 @@ struct LinkedList[ElementType: Movable](
                 self._tail = node.prev()
 
             dealloc(
-                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )
@@ -622,7 +616,7 @@ struct LinkedList[ElementType: Movable](
             current = nn[].next()
             nn.unsafe_deinit_pointee()
             dealloc(
-                ThinAllocation(unsafe_assume_ownership=nn).unsafe_with_layout(
+                ThinAllocation(unsafe_owned_ptr=nn).unsafe_with_layout(
                     {count = 1}
                 )
             )

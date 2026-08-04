@@ -211,7 +211,7 @@ def call_with_pack_metal[
     if num_captures > num_captures_static:
         dealloc(
             ThinAllocation(
-                unsafe_assume_ownership=dense_args_is_device_ptr
+                unsafe_owned_ptr=dense_args_is_device_ptr
             ).unsafe_with_layout({count = num_captures + num_args})
         )
 
@@ -410,11 +410,11 @@ def call_with_pack_checked_metal[
     if num_captures > num_captures_static:
         dealloc(
             ThinAllocation(
-                unsafe_assume_ownership=dense_args_sizes
+                unsafe_owned_ptr=dense_args_sizes
             ).unsafe_with_layout({count = num_captures + num_passed_args})
         )
         dealloc(
             ThinAllocation(
-                unsafe_assume_ownership=dense_args_is_device_ptr
+                unsafe_owned_ptr=dense_args_is_device_ptr
             ).unsafe_with_layout({count = num_captures + num_passed_args})
         )
