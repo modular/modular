@@ -90,6 +90,7 @@ struct EmptyOptionalError[T: AnyType](
 # ===-----------------------------------------------------------------------===#
 
 
+@stable(since="1.0")
 struct Optional[T: AnyType](
     Boolable,
     Copyable where conforms_to(T, Copyable),
@@ -176,6 +177,7 @@ struct Optional[T: AnyType](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     def __init__(out self):
         """Construct an empty `Optional`.
 
@@ -188,6 +190,7 @@ struct Optional[T: AnyType](
         """
         self._value = Self._type(_NoneType())
 
+    @stable(since="1.0")
     @implicit
     def __init__(
         out self, var value: Self.T
@@ -439,6 +442,7 @@ struct Optional[T: AnyType](
         var len = 1 if self else 0
         return (len, {len})
 
+    @stable(since="1.0")
     @always_inline
     def __bool__(self) -> Bool:
         """Return true if the Optional has a value.
