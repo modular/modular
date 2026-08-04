@@ -122,7 +122,7 @@ comptime num_elements = 20
 
 
 def scalar_add(
-    vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
+    vector: Pointer[Float32, MutAnyOrigin], size: Int32, scalar: Float32
 ):
     """
     Kernel function to add a scalar to all elements of a vector.
@@ -196,7 +196,7 @@ def main() raises:
         ctx.enqueue_function(
             scalar_add_kernel,
             device_buffer,
-            num_elements,
+            Int32(num_elements),
             Float32(20.0),
             grid_dim=1,
             block_dim=num_elements,
@@ -467,7 +467,7 @@ process out-of-bounds elements:
 ```mojo
 from std.gpu import global_idx
 
-def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int32):
+def process_vector(vector: Pointer[Float32, MutAnyOrigin], size: Int32):
     if global_idx.x < Int(size):
         # Process vector[global_idx.x] in some way
 ```
@@ -484,10 +484,9 @@ corresponding type used on the GPU device.
 As an example,
 [`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/) is a
 host-side representation of a buffer located in the GPU's global memory space.
-But it defines its `device_type` member as `UnsafePointer`, so the data
-represented by a `DeviceBuffer` is actually passed to the kernel function as a
-value of type
-[`UnsafePointer`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/).
+But it defines its `device_type` member as `Pointer`, so the data represented
+by a `DeviceBuffer` is actually passed to the kernel function as a value of
+type [`Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/).
 The next section,
 [`DeviceBuffer` and `HostBuffer`](#devicebuffer-and-hostbuffer), describes in
 more detail how to allocate memory buffers on the host and device and to
@@ -496,11 +495,32 @@ exchange blocks of data between host and device.
 The following table lists the most commonly used types in the Mojo libraries
 that conform to the `DevicePassable` trait.
 
-| Host type                                                                                    | Device Type                                                                                           | Description                                                                                         |
-|----------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| [`SIMD[dtype, width]`](https://mojolang.org/docs/std/builtin/simd/SIMD/)                     | `SIMD[dtype, width]`                                                                                  | Small vector backed by a hardware vector element                                                    |
-| [`DeviceBuffer[dtype]`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/)                 | [`UnsafePointer[SIMD[dtype, 1]]`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                     |
-| [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/)                                     | `TileTensor`                                                                                          | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/tile-tensor/tensors/). |
+| Host type                                                                    | Device Type                                                                        | Description                                                                                         |
+|------------------------------------------------------------------------------|------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| [`SIMD[dtype, width]`](https://mojolang.org/docs/std/builtin/simd/SIMD/)     | `SIMD[dtype, width]`                                                               | Small vector backed by a hardware vector element                                                    |
+| [`DeviceBuffer[dtype]`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/) | [`Pointer[SIMD[dtype, 1]]`](https://mojolang.org/docs/std/memory/pointer/Pointer/) | Memory buffer of `dtype` values                                                                     |
+| [`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/)                     | `TileTensor`                                                                       | A powerful abstraction for multi-dimensional data. See [Using `TileTensor`](/tile-tensor/tensors/). |
+
+:::note Int and UInt are not device passable
+
+`Int` and `UInt` are the one exception to the `SIMD` row above. They're aliases
+for `Scalar[DType.int]` and `Scalar[DType.uint]`, but their width depends on the
+target device, so passing either one to a kernel function is a compile-time
+error. Use a fixed-width type such as `Int32` or `Int64` instead:
+
+```mojo
+# Error: Int and UInt do not conform to DevicePassable
+ctx.enqueue_function[scalar_add](device_buffer, num_elements, ...)
+
+# Correct
+ctx.enqueue_function[scalar_add](device_buffer, Int32(num_elements), ...)
+```
+
+This applies only to values you pass *into* a kernel. Using `Int` inside the
+kernel body is fine, as the `Int(size)` comparison in the `scalar_add` example
+above shows.
+
+:::
 
 ### `DeviceBuffer` and `HostBuffer`
 
@@ -521,8 +541,8 @@ As discussed in [Passing data between CPU and
 GPU](#passing-data-between-cpu-and-gpu), `DeviceBuffer` is the type used by the
 **host** to allocate the buffer and to copy data between the host and device.
 But when you pass a `DeviceBuffer` to a kernel function, the argument received
-by the function is of type `UnsafePointer`. Attempting to use the `DeviceBuffer`
-type directly from within a kernel function results in an error.
+by the function is of type `Pointer`. Attempting to use the `DeviceBuffer` type
+directly from within a kernel function results in an error.
 
 The
 [`DeviceContext.enqueue_create_buffer()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_create_buffer)
@@ -589,15 +609,13 @@ back from the device. However, you can allocate a separate `DeviceBuffer` and
 original data.
 
 In addition to copying data between a `HostBuffer` to a `DeviceBuffer`, you can
-use an
-[`UnsafePointer`](https://mojolang.org/docs/std/memory/unsafe_pointer/UnsafePointer/)
-as the source or destination of a copy. However, the `UnsafePointer` must
-reference host memory for this operation. Attempting to use an `UnsafePointer`
-referencing device memory results in an error. For example, this is useful if
-you have data already staged in a data structure on the host that can expose the
-data through an `UnsafePointer`. In that case you would not need to copy the
-data from the data structure to a `HostBuffer` before copying it to the
-`DeviceBuffer`.
+use a [`Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/) as the
+source or destination of a copy. However, the `Pointer` must reference host
+memory for this operation. Attempting to use a `Pointer` referencing device
+memory results in an error. For example, this is useful if you have data already
+staged in a data structure on the host that can expose the data through a
+`Pointer`. In that case you would not need to copy the data from the data
+structure to a `HostBuffer` before copying it to the `DeviceBuffer`.
 
 Both `DeviceBuffer` and `HostBuffer` also include
 [`enqueue_copy_to()`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/#enqueue_copy_to)
@@ -691,7 +709,7 @@ var scalar_add_kernel = ctx.compile_function[scalar_add]()
 ctx.enqueue_function(
     scalar_add_kernel,
     device_buffer,
-    num_elements,
+    Int32(num_elements),
     Float32(20.0),
     grid_dim=1,
     block_dim=num_elements,

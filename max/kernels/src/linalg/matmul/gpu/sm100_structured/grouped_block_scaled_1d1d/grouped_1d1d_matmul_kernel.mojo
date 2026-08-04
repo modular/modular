@@ -486,7 +486,7 @@ struct RealSwiGLUOutput[
     """Carries the three GMEM destinations (packed output, 5D SF tile,
     per-expert input scales) as raw pointers + comptime shape info.
 
-    Raw `UnsafePointer`s rather than `TileTensor`s sidestep a callsite
+    Raw `Pointer`s rather than `TileTensor`s sidestep a callsite
     type mismatch (TileTensor has many implicit parameters). `set_sf`
     inlines the 5D SF index. Layout is the same for NVFP4 and MXFP8,
     only the SF_VECTOR_SIZE divisor differs.

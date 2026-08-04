@@ -249,7 +249,7 @@ struct Signal:
         """Typed pointer to this `Signal`'s `lamport_state` block.
 
         Index it with the `Lamport.STATE_*` constants. The field is located by
-        its own address (`UnsafePointer(to=...)`), so there is no hand-computed
+        its own address (`Pointer(to=...)`), so there is no hand-computed
         byte offset to keep in sync with the field order.
         """
         return (
@@ -266,7 +266,7 @@ struct Signal:
 
         Parameters:
             dtype: The element type to reinterpret the raw region bytes as.
-                The returned pointer is typed `UnsafePointer[Scalar[dtype], ...]`
+                The returned pointer is typed `Pointer[Scalar[dtype], ...]`
                 so callers can read and write Lamport message packs in this
                 dtype without an extra cast.
         """

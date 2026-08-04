@@ -80,7 +80,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 

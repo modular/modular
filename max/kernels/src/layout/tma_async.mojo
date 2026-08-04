@@ -5376,7 +5376,7 @@ struct TMATensorTileArray[
             index: Index of the TMA descriptor.
 
         Returns:
-            `UnsafePointer` to the `TMATensorTile` at the specified index.
+            `Pointer` to the `TMATensorTile` at the specified index.
         """
         return (
             (self.tensormaps_ptr + index * self.descriptor_bytes)
