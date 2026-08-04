@@ -294,10 +294,10 @@ brackets like this:
 
 ```mojo
 # The List in row can contain only Int values
-row = List[Int]()
+var row = List[Int]()
 
 # The List in names can contain only String values
-names = List[String]()
+var names = List[String]()
 ```
 
 We can also create a `List` with an initial set of values and let the compiler
@@ -306,10 +306,13 @@ square brackets (`[]`):
 
 ```mojo
 # Create a List[Int] with the list literal syntax, inferring the type
-nums2 = [12, -7, 64]
+var nums2 = [12, -7, 64]
+```
 
-# which is equivalent to
-nums2: List[Int] = [12, -7, 64]
+which is equivalent to:
+
+```mojo
+var nums2: List[Int] = [12, -7, 64]
 ```
 
 The Mojo `List` type includes the ability to append to the list, pop values from
@@ -317,7 +320,7 @@ the list, and access list items using subscript notation. Here's a taste of
 those operations:
 
 ```mojo
-nums = [12, -7, 64]
+var nums = [12, -7, 64]
 nums.append(-937)
 print("Number of elements in the list:", len(nums))
 print("Popping last element off the list:", nums.pop())
@@ -337,7 +340,7 @@ Last element of the list: 64
 We can also nest `List`s:
 
 ```mojo
-grid = [
+var grid = [
     [11, 22],
     [33, 44]
 ]
@@ -370,9 +373,9 @@ any raising functions, we can omit it. For more about error handling, see
 
 ```mojo title="life.mojo"
 def main():
-    num_rows = 8
-    num_cols = 8
-    glider = [
+    var num_rows = 8
+    var num_cols = 8
+    var glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -395,8 +398,8 @@ like `Int` and `String` and more complex types like `List`:
   copy it like this:
 
   ```mojo
-  first = [1, 2, 3]
-  second = first.copy()  # explicit copy
+  var first = [1, 2, 3]
+  var second = first.copy()  # explicit copy
   ```
 
   This leaves `first` unchanged and assigns `second` its own, uniquely owned
@@ -408,8 +411,8 @@ like `Int` and `String` and more complex types like `List`:
   `one_value` is an `Int`, you can copy it like this:
 
   ```mojo
-  one_value = 15
-  another_value = one_value  # implicit copy
+  var one_value = 15
+  var another_value = one_value  # implicit copy
   ```
 
   Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
@@ -457,7 +460,7 @@ after `main()`, but the convention is to put `main()` at the end.
 ```mojo title="life.mojo"
 def grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(rows):
@@ -504,7 +507,7 @@ of iterating over the values of a `range()` and then accessing the `List`
 elements by their numeric index.
 
 ```mojo
-nums = [12, -7, 64]
+var nums = [12, -7, 64]
 for value in nums:
     print("Value:", value)
 ```
@@ -516,7 +519,7 @@ Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 ```mojo title="life.mojo"
 def main():
     ...
-    result = grid_str(num_rows, num_cols, glider)
+    var result = grid_str(num_rows, num_cols, glider)
     print(result)
 ```
 
@@ -615,7 +618,7 @@ struct's fields and appear in the same order. This means that given our original
 definition of `Grid`, we can create an instance of `Grid` like this:
 
 ```mojo
-my_grid = Grid(2, 2, [[0, 1], [1, 1]])
+var my_grid = Grid(2, 2, [[0, 1], [1, 1]])
 ```
 
 We can then access the field values with "dot" syntax like this:
@@ -675,7 +678,7 @@ from gridv1 import Grid
 
 def grid_str(grid: Grid) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(grid.rows):
@@ -690,7 +693,7 @@ def grid_str(grid: Grid) -> String:
     return str
 
 def main():
-    glider = [
+    var glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -700,8 +703,8 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    start = Grid(8, 8, glider^)
-    result = grid_str(start)
+    var start = Grid(8, 8, glider^)
+    var result = grid_str(start)
     print(result)
 ```
 
@@ -716,7 +719,7 @@ in `main()`—would be to create a copy of the `glider` list to pass to the `Gri
 constructor, like this:
 
 ```mojo
-    start = Grid(8, 8, glider.copy())
+    var start = Grid(8, 8, glider.copy())
 ```
 
 In our case, we don't need to use the `glider` variable again later, so we can
@@ -763,7 +766,7 @@ struct Grid(Copyable):
 
     def grid_str(self) -> String:
         # Create an empty String
-        writer = String()
+        var writer = String()
 
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
@@ -806,7 +809,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 from gridv1 import Grid
 
 def main():
-    glider = [
+    var glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -816,7 +819,7 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    start = Grid(8, 8, glider^)
+    var start = Grid(8, 8, glider^)
     print(start.grid_str())
 ```
 
@@ -881,7 +884,7 @@ Now let's verify that `String()` works with an instance of `Grid`.
 ```mojo title="life.mojo"
 def main():
     ...
-    start = Grid(8, 8, glider^)
+    var start = Grid(8, 8, glider^)
     print(String(start))
 ```
 
@@ -1096,7 +1099,7 @@ and print it.
 ...
 
 def main():
-    start = Grid.random(8, 16)
+    var start = Grid.random(8, 16)
     print(String(start))
 ```
 
@@ -1130,22 +1133,22 @@ we'll have `evolve()` return a new instance of `Grid` for the next generation.
 struct Grid(Copyable, Writable):
     ...
     def evolve(self) -> Self:
-        next_generation = List[List[Int]]()
+        var next_generation = List[List[Int]]()
 
         for row in range(self.rows):
-            row_data = List[Int]()
+            var row_data = List[Int]()
 
             # Calculate neighboring row indices, handling "wrap-around"
-            row_above = (row - 1) % self.rows
-            row_below = (row + 1) % self.rows
+            var row_above = (row - 1) % self.rows
+            var row_below = (row + 1) % self.rows
 
             for col in range(self.cols):
                 # Calculate neighboring column indices, handling "wrap-around"
-                col_left = (col - 1) % self.cols
-                col_right = (col + 1) % self.cols
+                var col_left = (col - 1) % self.cols
+                var col_right = (col + 1) % self.cols
 
                 # Determine number of populated cells around the current cell
-                num_neighbors = (
+                var num_neighbors = (
                     self[row_above, col_left]
                     + self[row_above, col]
                     + self[row_above, col_right]
@@ -1157,7 +1160,7 @@ struct Grid(Copyable, Writable):
                 )
 
                 # Determine the state of the current cell for the next generation
-                new_state = 0
+                var new_state = 0
                 if self[row, col] == 1 and (
                     num_neighbors == 2 or num_neighbors == 3
                 ):
@@ -1233,7 +1236,7 @@ def run_display(var grid: Grid) raises -> None:
         grid = grid.evolve()
 
 def main() raises:
-    start = Grid.random(16, 16)
+    var start = Grid.random(16, 16)
     run_display(start^)
 ```
 
@@ -1284,7 +1287,7 @@ from std.python import Python
 
 def run_display() raises:
     # This is roughly equivalent to Python's `import pygame`
-    pygame = Python.import_module("pygame")
+    var pygame = Python.import_module("pygame")
 
     # Initialize pygame modules
     pygame.init()
@@ -1322,22 +1325,24 @@ def run_display(
     pause: Float64 = 0.1,
 ) raises -> None:
     # Import the pygame Python package
-    pygame = Python.import_module("pygame")
+    var pygame = Python.import_module("pygame")
 
     # Initialize pygame modules
     pygame.init()
 
     # Create a window and set its title
-    window = pygame.display.set_mode(Python.tuple(window_width, window_height))
+    var window = pygame.display.set_mode(
+        Python.tuple(window_width, window_height)
+    )
     pygame.display.set_caption("Conway's Game of Life")
 
-    cell_height = Float64(window_height) / Float64(grid.rows)
-    cell_width = Float64(window_width) / Float64(grid.cols)
-    border_size = 1
-    cell_fill_color = pygame.Color(cell_color)
-    background_fill_color = pygame.Color(background_color)
+    var cell_height = Float64(window_height) / Float64(grid.rows)
+    var cell_width = Float64(window_width) / Float64(grid.cols)
+    var border_size = 1
+    var cell_fill_color = pygame.Color(cell_color)
+    var background_fill_color = pygame.Color(background_color)
 
-    running = True
+    var running = True
     while running:
         # Poll for events
         for event in pygame.event.get():
@@ -1356,10 +1361,10 @@ def run_display(
         for row in range(grid.rows):
             for col in range(grid.cols):
                 if grid[row, col]:
-                    x = Float64(col) * cell_width + Float64(border_size)
-                    y = Float64(row) * cell_height + Float64(border_size)
-                    width = cell_width - Float64(border_size)
-                    height = cell_height - Float64(border_size)
+                    var x = Float64(col) * cell_width + Float64(border_size)
+                    var y = Float64(row) * cell_height + Float64(border_size)
+                    var width = cell_width - Float64(border_size)
+                    var height = cell_height - Float64(border_size)
                     pygame.draw.rect(
                         window,
                         cell_fill_color,
@@ -1380,7 +1385,7 @@ def run_display(
 
 
 def main() raises:
-    start = Grid.random(128, 128)
+    var start = Grid.random(128, 128)
     run_display(start^)
 ```
 

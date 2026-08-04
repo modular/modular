@@ -50,5 +50,5 @@ def main() raises:
     var array = ParameterizedArray[Float64].splat(8, 0)
     # end-splat-usage
     for i in range(array.size):
-        end = ", " if i < array.size - 1 else "\n"
+        var end = ", " if i < array.size - 1 else "\n"
         print(array[i], end=end)

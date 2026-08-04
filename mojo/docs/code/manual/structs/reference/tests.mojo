@@ -57,7 +57,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable & Deinitable](Movable):
 
         var node_ptr = node.value()
 
-        current_value: Optional[Self.ElementType] = node_ptr[].value
+        var current_value: Optional[Self.ElementType] = node_ptr[].value
         if current_value:
             print(current_value.value(), end=" ")
 
@@ -71,7 +71,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable & Deinitable](Movable):
         var current = self.next
         while current:
             var current_ptr = current.value()
-            next_node = current_ptr[].next
+            var next_node = current_ptr[].next
             current_ptr.unsafe_deinit_pointee()
             current_ptr.unsafe_free()
             current = next_node

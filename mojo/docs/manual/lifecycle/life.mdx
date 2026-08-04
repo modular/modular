@@ -493,8 +493,8 @@ struct MyPair(ImplicitlyCopyable):
     var second: Int
 
 def main():
-    pair = MyPair(3, 4)
-    copy = pair
+    var pair = MyPair(3, 4)
+    var copy = pair
     print(pair.first, copy.second)
 ```
 
@@ -509,8 +509,8 @@ example, in the previous example, the compiler might generate code equivalent
 to:
 
 ```mojo
-pair = MyPair(3, 4)
-copy = pair.copy()
+var pair = MyPair(3, 4)
+var copy = pair.copy()
 ```
 
 A type should be implicitly copyable only if copying the type is inexpensive and

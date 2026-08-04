@@ -38,6 +38,6 @@ def main() raises:
     # start-generic-array-usage
     var array = ParameterizedArray(1, 2, 3)
     for i in range(array.size):
-        end = ", " if i < array.size - 1 else "\n"
+        var end = ", " if i < array.size - 1 else "\n"
         print(array[i], end=end)
     # end-generic-array-usage

@@ -50,13 +50,13 @@ def main() raises:
     print(len(MyList()))
 
     # Intable example
-    value = IntLike(42)
+    var value = IntLike(42)
     print(Int(value) == 42)
 
     # Writable example
-    dog = Dog("Rex", 5)
+    var dog = Dog("Rex", 5)
     print(repr(dog))
     print(dog)
 
-    dog_info = String("String: {!s}\nRepresentation: {!r}").format(dog, dog)
+    var dog_info = String("String: {!s}\nRepresentation: {!r}").format(dog, dog)
     print(dog_info)
