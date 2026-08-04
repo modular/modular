@@ -82,7 +82,7 @@ or point to a memory location:
   specified number of elements of the pointee's type.
 
   ```mojo
-  ptr = alloc[Int](1)
+  var ptr = alloc[Int](1)
   ```
 
   Trying to dereference a pointer to uninitialized memory results in undefined
@@ -343,8 +343,8 @@ from the origin of the pointee. For example, in the following code,
 `s_ptr.origin` is the same as the origin of `s`:
 
 ```mojo
-s = "Testing"
-s_ptr = UnsafePointer(to=s)
+var s = "Testing"
+var s_ptr = UnsafePointer(to=s)
 ```
 
 When allocating memory with the `alloc()` function, the returned pointer has an

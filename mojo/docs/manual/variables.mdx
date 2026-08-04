@@ -269,16 +269,16 @@ value at a time. To take this one step further, you can think of an assignment
 statement as assigning *ownership* of a value to a variable:
 
 ```mojo
-owning_variable = "Owned value"
+var owning_variable = "Owned value"
 ```
 
 This means the value on the right-hand side of the assignment statement must be
 transferrable to the new variable. Here's an example where that doesn't work:
 
 ```mojo
-first = [1, 2, 3]
-second = first  # error: 'List[Int]' is not implicitly copyable because it does
-                 # not conform to 'ImplicitlyCopyable'
+var first = [1, 2, 3]
+var second = first  # error: 'List[Int]' is not implicitly copyable because it does
+                     # not conform to 'ImplicitlyCopyable'
 ```
 
 The first assignment is no problem: the expression `[1, 2, 3]` creates a new
@@ -297,7 +297,7 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   the `copy()` method.
 
   ```mojo
-  second = first.copy()
+  var second = first.copy()
   ```
 
   This leaves `first` unchanged and assigns `second` its own, uniquely owned
@@ -307,8 +307,8 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   the user.
 
   ```mojo
-  one_value = 15
-  another_value = one_value  # implicit copy
+  var one_value = 15
+  var another_value = one_value  # implicit copy
   ```
 
   Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
@@ -321,7 +321,7 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   transfer:
 
   ```mojo
-  second = first^
+  var second = first^
   ```
 
   This moves the value to `second`, and leaves `first` uninitialized.
@@ -344,7 +344,7 @@ when you retrieve a value from a collection, the collection returns a reference,
 instead of a copy.
 
 ```mojo
-animals: List[String] = ["Cats", "Dogs", "Zebras"]
+var animals: List[String] = ["Cats", "Dogs", "Zebras"]
 print(animals[2])  # Prints "Zebras", does not copy the value.
 ```
 
@@ -352,8 +352,8 @@ But if you assign a reference to a *variable*, it creates a copy (if the value
 is implicitly copyable) or produces an error (if it isn't).
 
 ```mojo
-items = [99, 77, 33, 12]
-item = items[1]  # item is a copy of items[1]
+var items = [99, 77, 33, 12]
+var item = items[1]  # item is a copy of items[1]
 item += 1  # increments item
 print(items[1])  # prints 77
 ```

@@ -68,7 +68,7 @@ struct Point:
         )
 
 def main():
-    p = Point(3, 4)
+    var p = Point(3, 4)
     print(p.distance()) # 5.0
 ```
 
@@ -155,7 +155,7 @@ struct Color:
     var b: UInt8
 
 def main():
-    color = Color(255, 0, 0)
+    var color = Color(255, 0, 0)
     print(color.r, color.g, color.b)  # 255, 0, 0
 ```
 
@@ -220,7 +220,7 @@ struct MyInt(Writable, Copyable):
         writer.write(self.value)
 
 def main():
-    my_int = MyInt(42)
+    var my_int = MyInt(42)
     print(my_int)  # 42
 ```
 
@@ -517,7 +517,7 @@ struct Point:
         (self.x, self.y) = (x, y)
 
 def main():
-    p = Point(3.0, 4.0)
+    var p = Point(3.0, 4.0)
     print(p.x, p.y)  # 3.0 4.0
 ```
 

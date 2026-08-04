@@ -14,13 +14,13 @@
 
 def main():
     # start-returned-references-no-copy
-    animals: List[String] = ["Cats", "Dogs", "Zebras"]
+    var animals: List[String] = ["Cats", "Dogs", "Zebras"]
     print(animals[2])  # Prints "Zebras", does not copy the value.
     # end-returned-references-no-copy
 
     # start-returned-references-implicit-copy
-    items = [99, 77, 33, 12]
-    item = items[1]  # item is a copy of items[1]
+    var items = [99, 77, 33, 12]
+    var item = items[1]  # item is a copy of items[1]
     item += 1  # increments item
     print(items[1])  # prints 77
     # end-returned-references-implicit-copy

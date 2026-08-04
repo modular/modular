@@ -15,9 +15,9 @@ from std.python import Python
 
 
 def share_array() raises:
-    np = Python.import_module("numpy")
-    arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
-    ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
+    var np = Python.import_module("numpy")
+    var arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
+    var ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
     for i in range(9):
         print(ptr[unsafe_offset=i], end=", ")
     print()
