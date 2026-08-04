@@ -259,7 +259,7 @@ def fa4_load[
         k_row_offset = UInt32(BN // 2)
         v_col_offset = config.v_cols_per_cta()
 
-    e = elect()
+    var e = elect()
 
     # Default eviction_policy: pair-CTA disallows cache_hint with
     # cta_group=2 in the stdlib TMA intrinsic, so we fall back to
@@ -1130,7 +1130,7 @@ def fa4_load[
 
         # ---- First tile: K stages 1..num_qk_stages-1 (Q + K TMA) ----
         comptime for qk_stage in range(1, config.num_qk_stages):
-            mbark = pipeline_k.get_k[qk_stage=qk_stage]()  # no wait
+            var mbark = pipeline_k.get_k[qk_stage=qk_stage]()  # no wait
             _produce_k[partial=needs_partial, qk_stage=qk_stage, with_q=True](
                 kv_paged_rows, mbark.smem.ptr, mbark.mbar, k_nvp
             )
@@ -1165,7 +1165,7 @@ def fa4_load[
                 )
 
         # ---- V0 (reuses kv_paged_rows from stage-0 populate) ----
-        mbarv0 = pipeline_v.get_tile[qk_stage=0]()
+        var mbarv0 = pipeline_v.get_tile[qk_stage=0]()
         _produce_v[partial=needs_partial](
             kv_paged_rows, mbarv0.smem.ptr, mbarv0.mbar, v_nvp
         )
@@ -1212,7 +1212,7 @@ def fa4_load[
             # K stages 1..num_qk_stages-1 (full, no Q, reuse rows).
             comptime for k_stage in range(1, config.num_qk_stages):
                 pipeline_k.acquire_k[qk_stage=k_stage]()
-                mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
+                var mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
                 _produce_k[partial=False, qk_stage=k_stage](
                     kv_paged_rows,
                     mbarkn.smem.ptr,
@@ -1223,7 +1223,7 @@ def fa4_load[
 
             # V (full, reuses rows from K stage 0's populate).
             pipeline_v.acquire_v()
-            mbarvn = pipeline_v.get_tile[qk_stage=0]()
+            var mbarvn = pipeline_v.get_tile[qk_stage=0]()
             _produce_v[partial=False](
                 kv_paged_rows,
                 mbarvn.smem.ptr,
@@ -1268,7 +1268,7 @@ def fa4_load[
                     # K stages 1+ (partial, no Q).
                     comptime for k_stage in range(1, config.num_qk_stages):
                         pipeline_k.acquire_k[qk_stage=k_stage]()
-                        mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
+                        var mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
                         _produce_k[partial=True, qk_stage=k_stage](
                             kv_paged_rows,
                             mbarkn.smem.ptr,
@@ -1279,7 +1279,7 @@ def fa4_load[
 
                     # V (partial, reuses rows).
                     pipeline_v.acquire_v()
-                    mbarvn = pipeline_v.get_tile[qk_stage=0]()
+                    var mbarvn = pipeline_v.get_tile[qk_stage=0]()
                     _produce_v[partial=True](
                         kv_paged_rows,
                         mbarvn.smem.ptr,

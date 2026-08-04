@@ -409,8 +409,8 @@ struct UMMADescriptorSS[operand_type: DType](
 
 @always_inline
 def _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
-    row = 16 * m_mma
-    col = (MMA_N * n_mma * dtype_size) // 4
+    var row = 16 * m_mma
+    var col = (MMA_N * n_mma * dtype_size) // 4
     return (row << 16) + col
 
 
@@ -576,7 +576,7 @@ struct TMemAccumulator[
         self,
         src: type_of(Self._empty_tensor()),
     ):
-        frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
+        var frags = Self.rows_of_frags(src).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
         comptime assert dtype_size == 4
         comptime frag_size_b32 = Self.frag_size * dtype_size // 4
@@ -594,8 +594,10 @@ struct TMemAccumulator[
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
-                tmem = self.tmem_addr + UInt32(tmem_offset)
-                frag = bitcast[DType.uint32, frag_size_b32](frags[mma_id, 0])
+                var tmem = self.tmem_addr + UInt32(tmem_offset)
+                var frag = bitcast[DType.uint32, frag_size_b32](
+                    frags[mma_id, 0]
+                )
                 # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
                 var frag_st = Array[Scalar[DType.uint32], frag_size_b32](
                     uninitialized=True
@@ -618,7 +620,7 @@ struct TMemAccumulator[
         self,
         dst: type_of(Self._empty_tensor()),
     ):
-        frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
+        var frags = Self.rows_of_frags(dst).vectorize[1, Self.frag_size]()
         comptime dtype_size = size_of[Self.dtype]()
         comptime assert dtype_size == 4
         comptime frag_size_b32 = (Self.frag_size * dtype_size) // 4
@@ -639,7 +641,7 @@ struct TMemAccumulator[
                     m_mma=m_mma,
                     n_mma=n_mma,
                 )
-                tmem = self.tmem_addr + UInt32(tmem_offset)
+                var tmem = self.tmem_addr + UInt32(tmem_offset)
                 comptime if repeat > 16:
                     # Split into two halves to reduce register pressure.
                     comptime half_repeat = repeat // 2
@@ -794,7 +796,7 @@ struct TMemOperand[
             Self.num_m_mmas * Self.num_n_mmas * Self.frag_size
             == src_layout.size() * src_element_layout.size()
         )
-        frags = LayoutTensor[
+        var frags = LayoutTensor[
             src_type,
             Layout(
                 IntTuple(Self.num_m_mmas * Self.num_n_mmas),
@@ -811,8 +813,8 @@ struct TMemOperand[
         comptime assert Self.num_n_mmas == 1
 
         comptime for m_mma in range(Self.num_m_mmas):
-            tmem = self.offset[m_mma, 0]()
-            frag = bitcast[DType.uint32, frag_size_b32](
+            var tmem = self.offset[m_mma, 0]()
+            var frag = bitcast[DType.uint32, frag_size_b32](
                 frags[m_mma].cast[Self.dtype]()
             )
             # 16 x 256b results in repeated 8x4<1x64b> pattern
@@ -948,13 +950,13 @@ struct TMemOperand[
         # width == (repeat * bits * datapaths) // (32 * 32)
         comptime repeat = 64 * frag_size_b32 // bits
         #
-        frags = dst.vectorize[1, Self.frag_size]()
+        var frags = dst.vectorize[1, Self.frag_size]()
         # assume src loaded with 256 bits
         comptime assert src_size <= dst_size
         comptime assert Self.num_n_mmas == 1
 
         comptime for m_mma in range(Self.num_m_mmas):
-            tmem = self.offset[m_mma, 0]()
+            var tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
             var _ld_result2 = tcgen05_ld[
                 datapaths=16,  # first dimension of the shape
@@ -1190,7 +1192,9 @@ struct SM100TensorAccumulatorSS[
         comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[
             a_type
         ]()
-        adesc_base = MMASmemDescriptor.create[aSBO, aLBO, Self.swizzle_a](p_a)
+        var adesc_base = MMASmemDescriptor.create[aSBO, aLBO, Self.swizzle_a](
+            p_a
+        )
 
         comptime b_canonical_layout = Self.b_offset.canonical_layout
         comptime b_type = Self.operand_t
@@ -1202,7 +1206,9 @@ struct SM100TensorAccumulatorSS[
         comptime bLBO = (
             b_stride11 if Self.transpose_b else b_stride01
         ) * size_of[b_type]()
-        bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](p_b)
+        var bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, Self.swizzle_b](
+            p_b
+        )
 
         return Self.ab_t(adesc_base, bdesc_base)
 
@@ -1214,11 +1220,11 @@ struct SM100TensorAccumulatorSS[
         c_base: Self.c_t,
         scale_c: UInt32,
     ):
-        c = c_base[self.pipeline.index()]
+        var c = c_base[self.pipeline.index()]
 
         comptime for n_mma in range(Self.num_n_mmas):
             comptime for m_mma in range(Self.num_m_mmas):
-                c_tmem = c.offset[m_mma, n_mma]()
+                var c_tmem = c.offset[m_mma, n_mma]()
                 comptime for k_mma in range(Self.num_k_mmas):
                     comptime a_offset = Self.a_offset.layout(
                         IntTuple(Self.MMA_M * m_mma, Self.MMA_K * k_mma)
@@ -1226,12 +1232,12 @@ struct SM100TensorAccumulatorSS[
                     comptime a_offset_bytes = a_offset * size_of[
                         Self.operand_t
                     ]()
-                    a_desc = a + a_offset_bytes
+                    var a_desc = a + a_offset_bytes
 
                     comptime b_offset = Self.b_offset.layout(
                         IntTuple(Self.MMA_N * n_mma, Self.MMA_K * k_mma)
                     ) * size_of[Self.operand_t]()
-                    b_desc = b + b_offset
+                    var b_desc = b + b_offset
 
                     comptime if k_mma == 0:
                         mma[Self.cta_group](
@@ -1464,14 +1470,14 @@ struct SM100TensorAccumulatorTS[
     ):
         comptime for k_mma in range(Self.num_k_mmas):
             comptime for m_mma in range(Self.num_m_mmas):
-                a_tmem = a.offset[m_mma=m_mma, k_mma=k_mma]()
+                var a_tmem = a.offset[m_mma=m_mma, k_mma=k_mma]()
 
                 comptime for n_mma in range(Self.num_n_mmas):
-                    c_tmem = c.offset[m_mma=m_mma, n_mma=n_mma]()
+                    var c_tmem = c.offset[m_mma=m_mma, n_mma=n_mma]()
                     comptime b_offset = Self.b_offset.layout(
                         IntTuple(Self.MMA_N * n_mma, Self.MMA_K * k_mma)
                     ) * size_of[Self.operand_t]()
-                    b_desc = b + b_offset
+                    var b_desc = b + b_offset
 
                     comptime if k_mma == 0:
                         mma[Self.cta_group](
@@ -1627,7 +1633,7 @@ def mha_sm100_dispatch[
         config.dtype == KVType.dtype and config.dtype == q_type
     ), "config, kv, and q types must all match for FA3."
 
-    q = (
+    var q = (
         q_arg.unsafe_ptr()
         .bitcast[Scalar[KVType.dtype]]()
         .unsafe_origin_cast[MutAnyOrigin]()
@@ -1648,7 +1654,7 @@ def mha_sm100_dispatch[
     comptime swizzle_mode = (
         TensorMapSwizzle.SWIZZLE_64B if config.dtype.is_float8() else TensorMapSwizzle.SWIZZLE_128B
     )
-    q_tma_op = rebind[
+    var q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
@@ -1670,13 +1676,13 @@ def mha_sm100_dispatch[
     comptime kv_sub_BN = _kv_sub_tile_rows(
         new_config.block_n(), KVType.page_size
     )
-    k_tma_op = k.create_tma_tile[
+    var k_tma_op = k.create_tma_tile[
         swizzle_mode,
         BN=kv_sub_BN,
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         swizzle_mode,
         BN=kv_sub_BN,
         depth=new_config.depth,
@@ -2399,13 +2405,13 @@ def _mha_sm100[
         transpose_b=False,
         pipeline_stages=1,
     ]
-    mask = pack.mask
-    scheduler = pack.scheduler
-    valid_length = pack.valid_length
-    sink_weights = pack.sink_weights
-    kv_input_row_offsets = pack.kv_input_row_offsets
-    max_seq_len = pack.max_seq_len
-    partition = pack.partition
+    var mask = pack.mask
+    var scheduler = pack.scheduler
+    var valid_length = pack.valid_length
+    var sink_weights = pack.sink_weights
+    var kv_input_row_offsets = pack.kv_input_row_offsets
+    var max_seq_len = pack.max_seq_len
+    var partition = pack.partition
 
     # var warp_x: UInt32 = warp_id % num_warps_n
 
@@ -2422,7 +2428,7 @@ def _mha_sm100[
     )
     comptime q_or_out_kv_elems = size_of[output_type]() // size_of[kv_type]()
     comptime q_smem_size = BM * padded_depth * q_or_out_kv_elems
-    q_smem = external_memory[
+    var q_smem = external_memory[
         Scalar[kv_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -2431,11 +2437,11 @@ def _mha_sm100[
 
     # P buffer in SMEM for depth=512 decoding (softmax writes P here for SS MMA)
     comptime p_smem_elems = BM * MMA_N0 if use_p_smem else 0
-    p_smem = q_smem + q_smem_size
+    var p_smem = q_smem + q_smem_size
 
     # We have `num_pipeline_stages` instances of each
     comptime kv_smem_size = config.kv_smem_size(True)
-    kv_smem = q_smem + q_smem_size + p_smem_elems
+    var kv_smem = q_smem + q_smem_size + p_smem_elems
 
     # var head_idx: UInt32 = block_idx.y
     # var q_tile_idx: UInt32 = block_idx.x
@@ -2558,16 +2564,16 @@ def _mha_sm100[
         ](sink_weights.value())
 
     # actually 16 byte alignment
-    produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
-    producer_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
-    mma_mbar = producer_mbar_kv + pipeline_stages  # 16
-    umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())  # needs num_s
+    var produced_mbar_kv = (kv_smem + kv_smem_size).bitcast[SharedMemBarrier]()
+    var producer_mbar_kv = produced_mbar_kv + pipeline_stages  # 16
+    var mma_mbar = producer_mbar_kv + pipeline_stages  # 16
+    var umma_0 = UMMA0Type(mma_mbar.as_unsafe_any_origin())  # needs num_s
     # umma_1: TS for non-use_p_smem, SS for use_p_smem (both use same barrier layout)
-    umma_1_ts = UMMA1Type((mma_mbar + 2 * num_s).as_unsafe_any_origin())
-    umma_1_ss = UMMA1TypeSS((mma_mbar + 2 * num_s).as_unsafe_any_origin())
+    var umma_1_ts = UMMA1Type((mma_mbar + 2 * num_s).as_unsafe_any_origin())
+    var umma_1_ss = UMMA1TypeSS((mma_mbar + 2 * num_s).as_unsafe_any_origin())
     # P SMEM consumption barrier: warp 1 arrives after SS MMA finishes
     # reading P from SMEM, softmax waits before overwriting P SMEM.
-    ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
+    var ptr_tmem_addr = (mma_mbar + 2 * num_s + 2).bitcast[UInt32]()  # 8
 
     comptime USE_TMA = True
     # https://github.com/Dao-AILab/flash-attention/blob/3b5047d2ce742848f45d44b143d511f211eba2d2/hopper/flash_fwd_kernel_sm90.h#L81-L82
@@ -2598,7 +2604,7 @@ def _mha_sm100[
     # The persistent kernels limit the grid size.
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
-    initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
+    var initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
     comptime assert not SchedulerType.may_advance
 
     if tid == 0:
@@ -2642,7 +2648,7 @@ def _mha_sm100[
         )
 
     var position: PositionType = get_position(initial_seq_info)
-    startend = position.get_start_and_end_for_partitions[
+    var startend = position.get_start_and_end_for_partitions[
         page_size=KVLUTType.page_size
     ](partition, mask)
     var kv_tile_start_row: UInt32 = startend[0]
@@ -2732,15 +2738,15 @@ def _mha_sm100[
                 comptime assert tmem_cols <= max_tmem_cols
             tcgen05_alloc[cta_group](ptr_tmem_addr, max_tmem_cols)
 
-            qk_desc = UMMA0Type.mma_descriptors(
+            var qk_desc = UMMA0Type.mma_descriptors(
                 q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
             )
 
             named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
             if tid != 0:
                 return
-            q_desc = qk_desc.get_a()
-            k_desc = qk_desc.get_b()
+            var q_desc = qk_desc.get_a()
+            var k_desc = qk_desc.get_b()
             var tmem_addr: UInt32 = ptr_tmem_addr[0]
             var s_tmem: UInt32
             # var o_tmem: UInt32
@@ -2750,13 +2756,13 @@ def _mha_sm100[
             else:
                 s_tmem = tmem_addr
                 # o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
-            s_accumulator = UMMA0Type.c_t(s_tmem)
+            var s_accumulator = UMMA0Type.c_t(s_tmem)
 
             @parameter
             @always_inline
             def q_mul_k(read_idx: UInt32, read_phase: UInt32):
-                q = q_desc
-                k = k_desc + Int(
+                var q = q_desc
+                var k = k_desc + Int(
                     UInt32(BN * config.padded_depth * size_of[kv_type]())
                     * read_idx
                 )
@@ -2777,7 +2783,7 @@ def _mha_sm100[
                     break
                 kv_tile_start_row += UInt32(BN)
 
-            kv_pipeline_states = PipelineState[pipeline_stages]()
+            var kv_pipeline_states = PipelineState[pipeline_stages]()
             # s_pipeline_states = PipelineState[pipeline_stages]()
             q_mul_k(
                 kv_pipeline_states.index(),
@@ -2840,16 +2846,18 @@ def _mha_sm100[
                     comptime if use_p_smem:
                         comptime assert UMMA1TypeSS.num_n_mmas == 2
                         o_tmem = tmem_addr  # bank 0
-                        output_accumulator = UMMA1Type.c_t(o_tmem)
+                        var output_accumulator = UMMA1Type.c_t(o_tmem)
                         s_tmem = tmem_addr + UInt32(1 << 20)  # bank 1
                         # SS MMA: both P and V from SMEM
-                        pv_descs = UMMA1TypeSS.mma_descriptors(
+                        var pv_descs = UMMA1TypeSS.mma_descriptors(
                             p_smem.as_unsafe_any_origin(),
                             kv_smem.as_unsafe_any_origin(),
                         )
-                        p_desc_a = pv_descs.get_a()
-                        v_desc = pv_descs.get_b()
-                        v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
+                        var p_desc_a = pv_descs.get_a()
+                        var v_desc = pv_descs.get_b()
+                        var v = v_desc + Int(
+                            UInt32(offset_bytes_per) * read_idx
+                        )
                         umma_1_ts.wait_for_tmem()
                         produced_mbar_kv[read_idx].wait(read_phase)
                         umma_1_ss.mma(
@@ -2864,15 +2872,17 @@ def _mha_sm100[
                     else:
                         s_tmem = tmem_addr
                         o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
-                        output_accumulator = UMMA1Type.c_t(o_tmem)
+                        var output_accumulator = UMMA1Type.c_t(o_tmem)
                         p_tmem = (
                             tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
                         )
-                        p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
-                        v_desc = UMMA1Type.b_mma_descriptor(
+                        var p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
+                        var v_desc = UMMA1Type.b_mma_descriptor(
                             kv_smem.as_unsafe_any_origin()
                         )
-                        v = v_desc + Int(UInt32(offset_bytes_per) * read_idx)
+                        var v = v_desc + Int(
+                            UInt32(offset_bytes_per) * read_idx
+                        )
                         umma_1_ts.wait_for_tmem()
                         produced_mbar_kv[read_idx].wait(read_phase)
                         umma_1_ts.mma(
@@ -2889,7 +2899,7 @@ def _mha_sm100[
                         break
                     kv_tile_start_row += UInt32(BN)
 
-                kv_pipeline_states = PipelineState[pipeline_stages]()
+                var kv_pipeline_states = PipelineState[pipeline_stages]()
                 kv_pipeline_states.step()
                 comptime assert pipeline_stages >= 2
 
@@ -2957,7 +2967,7 @@ def _mha_sm100[
 
         # Mask global memory iterator.
 
-        mask_warp_row = warp_y * UInt32(WM)
+        var mask_warp_row = warp_y * UInt32(WM)
         var scale_log2e: Scalar[accum_type] = (
             scale.cast[
                 accum_type
@@ -2969,13 +2979,13 @@ def _mha_sm100[
         # shape  = (2, num_m_blocks_per_warp) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
 
-        rowmax = LayoutTensor[
+        var rowmax = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
             address_space=AddressSpace.LOCAL,
         ].stack_allocation()
-        rowsum = LayoutTensor[
+        var rowsum = LayoutTensor[
             UMMA0Type.accum_t,
             Layout.row_major(num_rows_per_warp),
             MutAnyOrigin,
@@ -2996,8 +3006,8 @@ def _mha_sm100[
             element_layout=element_layout,
         ]
 
-        p_reg_tile = UMMA0Type.c_t.allocate_register_tile()
-        output_reg_tile = UMMA1Type.c_t.allocate_register_tile()
+        var p_reg_tile = UMMA0Type.c_t.allocate_register_tile()
+        var output_reg_tile = UMMA1Type.c_t.allocate_register_tile()
 
         @parameter
         @always_inline
@@ -3055,7 +3065,7 @@ def _mha_sm100[
             # if we specialize and unswitch on `first_iter`
             # otherwise, the branch requires synchronization
             comptime for row in range(num_rows_per_warp):
-                c = SIMD[accum_type, element_layout.size()](
+                var c = SIMD[accum_type, element_layout.size()](
                     rebind[Scalar[accum_type]](correction[row])
                 )
 
@@ -3069,8 +3079,8 @@ def _mha_sm100[
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             comptime for row in range(num_rows_per_warp):
-                old = old_rowsum[row]
-                new = new_rowsum[row]
+                var old = old_rowsum[row]
+                var new = new_rowsum[row]
                 new_rowsum[row] = recip(old)[0]
                 old_rowsum[row] = new
 
@@ -3083,7 +3093,7 @@ def _mha_sm100[
         ):
             # Apply softmax denumerator.
             comptime for row in range(num_rows_per_warp):
-                rs_inv = vout.element_type(rowsum_inv[row][0])
+                var rs_inv = vout.element_type(rowsum_inv[row][0])
 
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
@@ -3098,7 +3108,7 @@ def _mha_sm100[
                     * batch_size
                     * position.prompt_offset
                 )
-            output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
+            var output_gmem_tile = position.q_out_gmem_tensor(output_ptr)
 
             # Write to global memory.
             comptime assert (
@@ -3109,12 +3119,12 @@ def _mha_sm100[
                 num_rows=WM // 2, row_size=BN, access_size=8
             ]()
             # Reuse a_smem for c tile in smem
-            accum_smem_tile = LayoutTensor[
+            var accum_smem_tile = LayoutTensor[
                 output_type,
                 Layout.row_major(BM, config.padded_depth),
                 address_space=AddressSpace.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
-            accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
+            var accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
                 Int(warp_y), Int(warp_x)
             )
 
@@ -3152,7 +3162,7 @@ def _mha_sm100[
                 if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
                 ):
-                    exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
+                    var exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                         partition, batch_size
                     )
                     var q_heads = get_q_head_idx(position, lane)
@@ -3185,16 +3195,16 @@ def _mha_sm100[
             s_tmem = tmem_addr
             o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
             p_tmem = tmem_addr + UInt32(MMA_N0 * num_s) + UInt32(MMA_N1)
-        p_accumulator = UMMA0Type.c_t(s_tmem)
+        var p_accumulator = UMMA0Type.c_t(s_tmem)
         # Use UMMA1Type.c_t for output_accumulator in all branches
         # (both TS and SS have the same c_t shape since MMA_N was aligned)
-        output_accumulator = UMMA1Type.c_t(o_tmem)
-        p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
+        var output_accumulator = UMMA1Type.c_t(o_tmem)
+        var p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
 
         @parameter
         @always_inline
         def wait_for_q_mul_k(read_idx: UInt32):
-            p_acc = umma_0.wait_for_mma(p_accumulator)  # P is available
+            var p_acc = umma_0.wait_for_mma(p_accumulator)  # P is available
             _ = producer_mbar_kv[read_idx].arrive()
             comptime if use_p_smem:
                 tcgen05_fence_after()
@@ -3217,7 +3227,7 @@ def _mha_sm100[
                 break
             kv_tile_start_row += UInt32(BN)
 
-        kv_pipeline_states = PipelineState[pipeline_stages]()
+        var kv_pipeline_states = PipelineState[pipeline_stages]()
         # q_mul_k must wait on fetching q and k
         # therefore, we find `kv_tile_start_row` first.
         var read_idx_q: UInt32 = kv_pipeline_states.index()
@@ -3310,12 +3320,14 @@ def _mha_sm100[
                         num_rows=WM // 2, row_size=MMA_N0, access_size=8
                     ]()
                 )
-                p_smem_tile = LayoutTensor[
+                var p_smem_tile = LayoutTensor[
                     kv_type,
                     Layout.row_major(BM, MMA_N0),
                     address_space=AddressSpace.SHARED,
                 ](p_smem.bitcast[Scalar[kv_type]]())
-                p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](Int(warp_y), 0)
+                var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](
+                    Int(warp_y), 0
+                )
                 copy_local_to_shared[
                     thread_layout=mma_thread_layout, swizzle=p_swizzle
                 ](
@@ -3358,8 +3370,8 @@ def _mha_sm100[
             # 256x P@V output is normalized by 1/rowsum -> exact cancel.
             scale_p_for_fp8()
 
-            score_frag_rowmax = current_rowmax
-            score_frag_rowsum = rebind[type_of(rowsum)](
+            var score_frag_rowmax = current_rowmax
+            var score_frag_rowsum = rebind[type_of(rowsum)](
                 _rowsum[mma_thread_layout](vectorize_p_reg_tile())
             )
 
@@ -3386,12 +3398,12 @@ def _mha_sm100[
                     num_rows=WM // 2, row_size=MMA_N0, access_size=8
                 ]()
             )
-            p_smem_tile = LayoutTensor[
+            var p_smem_tile = LayoutTensor[
                 kv_type,
                 Layout.row_major(BM, MMA_N0),
                 address_space=AddressSpace.SHARED,
             ](p_smem.bitcast[Scalar[kv_type]]())
-            p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](Int(warp_y), 0)
+            var p_smem_warp_tile = p_smem_tile.tile[WM, MMA_N0](Int(warp_y), 0)
             copy_local_to_shared[
                 thread_layout=mma_thread_layout, swizzle=p_swizzle
             ](
@@ -3418,7 +3430,7 @@ def _mha_sm100[
             if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                 4 * min(group, 8) + 128
             ):
-                exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
+                var exp_sum_ptr, qk_max_ptr = position.exp_sum_qk_max_ptr(
                     partition, batch_size
                 )
                 var q_heads = get_q_head_idx(position, lane)

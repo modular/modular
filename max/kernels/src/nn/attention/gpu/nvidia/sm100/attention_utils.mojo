@@ -127,8 +127,8 @@ comptime MBarType = SharedMemPointer[SharedMemBarrier]
 def extract_power_of_two(N: Int, i: Int) -> Int:
     """Returns the `i`-th power-of-two component when decomposing `N` into decreasing powers of two.
     """
-    pt = prev_power_of_two(N)
-    rem = N
+    var pt = prev_power_of_two(N)
+    var rem = N
     for _ in range(i):
         rem -= pt
         pt = prev_power_of_two(rem)
@@ -138,10 +138,10 @@ def extract_power_of_two(N: Int, i: Int) -> Int:
 def cumulative_power_of_two(N: Int, i: Int) -> Int:
     """Returns the cumulative sum of the first `i` power-of-two components of `N`.
     """
-    acc = 0
-    rem = N
+    var acc = 0
+    var rem = N
     for _ in range(i):
-        pt = prev_power_of_two(rem)
+        var pt = prev_power_of_two(rem)
         acc += pt
         rem -= pt
     return acc
@@ -555,8 +555,8 @@ def st_shared_v4_b32[
 
 @always_inline
 def _tmem_offset(dtype_size: Int, *, MMA_N: Int, m_mma: Int, n_mma: Int) -> Int:
-    row = 16 * m_mma
-    col = (MMA_N * n_mma * dtype_size) // 4
+    var row = 16 * m_mma
+    var col = (MMA_N * n_mma * dtype_size) // 4
     return (row << 16) + col
 
 
@@ -634,7 +634,7 @@ struct TMemTile[
         ].TensorType[Self.dtype],
     ):
         comptime assert Self.dtype_size <= 4
-        ptr = src.ptr.bitcast[UInt32]()
+        var ptr = src.ptr.bitcast[UInt32]()
         comptime st_mat_layout = STMatrixLayout[
             Self.BM,
             Self.BN,
@@ -658,7 +658,7 @@ struct TMemTile[
                         cumulative_repeat=offset,
                         m_mma=m_mma,
                     ]()
-                    tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
+                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
                     var frag = Array[
                         Scalar[DType.uint32], offsets.local_frag_size_b32
                     ](uninitialized=True)
@@ -767,8 +767,8 @@ struct TMemTile[
                         cumulative_repeat=start_repeat + local_offset,
                         m_mma=m_mma,
                     ]()
-                    tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
-                    frag = tcgen05_ld[
+                    var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
+                    var frag = tcgen05_ld[
                         datapaths=16,
                         bits=st_mat_layout.bits,
                         repeat=pow_two,
@@ -805,7 +805,7 @@ struct TMemTile[
         def load_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
                 comptime if dtype == Self.dtype:
-                    frag0 = tcgen05_ld[
+                    var frag0 = tcgen05_ld[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
                         repeat=pow_two,
@@ -817,7 +817,7 @@ struct TMemTile[
                     comptime for _i in range(pow_two):
                         dst[offset + _i] = frag0[_i]
                 else:
-                    frag1 = tcgen05_ld[
+                    var frag1 = tcgen05_ld[
                         datapaths=32,  # first dimension of the shape
                         bits=32,  # second dimension of the shape
                         repeat=pow_two,
@@ -1512,22 +1512,22 @@ def _build_mma[
     mma += "setp.eq.s32 %pj, $6, 0;\n"
 
     # Instruction mnemonic (no predicate prefix; that is applied per-block below).
-    instr = tcgen05_mma_type + kind if ws else (
+    var instr = tcgen05_mma_type + kind if ws else (
         "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
     )
     # Non-ws zero-column mask operand; absent for ws.
-    mask = (
+    var mask = (
         "{$1, $1, $1, $1}" if cta_group
         == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
     )
     # TMEM A column stride per k-mma (TS only).
-    a_stride = mma_k * operand_size // 4
+    var a_stride = mma_k * operand_size // 4
     # Operand slot holding the warp-uniform `valid_k_mmas` (partial only): A
     # consumes `$7,$8` for SS but only `$7` for TS, so the next free slot differs.
-    valid_op = 8 if a_tmem else 9
+    var valid_op = 8 if a_tmem else 9
 
     for k in range(num_k_mmas):
-        jj = k_start + k
+        var jj = k_start + k
         # Warp-uniform validity guard: true once an absolute k-index lands past
         # the loaded region. Block jj == 0 is always loaded (valid_k_mmas >= 1).
         if partial and jj != 0:
@@ -1541,16 +1541,18 @@ def _build_mma[
             # Absolute first block initializes the accumulator from c_scale ($3).
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
-            b_offset = (layout_b(IntTuple(0, mma_k * jj)) * operand_size) >> 4
+            var b_offset = (
+                layout_b(IntTuple(0, mma_k * jj)) * operand_size
+            ) >> 4
             if a_tmem:
-                a_offset = a_stride * jj
+                var a_offset = a_stride * jj
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
                 mma += "mov.b32 %rab, %ra;\n"
                 mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
                 mma += "mov.b64 %rdb, {%rb, $5};\n"
             elif partial:
                 # SS-partial interleaving: A descriptor, then B descriptor.
-                a_offset = (
+                var a_offset = (
                     layout_a(IntTuple(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
@@ -1559,7 +1561,7 @@ def _build_mma[
                 mma += "mov.b64 %rdb, {%rb, $5};\n"
             else:
                 # SS-full interleaving: both `add`s first, then both `mov`s.
-                a_offset = (
+                var a_offset = (
                     layout_a(IntTuple(0, mma_k * jj)) * operand_size
                 ) >> 4
                 mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
@@ -1573,7 +1575,7 @@ def _build_mma[
 
         # Result + operand list.
         if a_tmem:
-            a_op = "$7" if jj == 0 else "%rab"
+            var a_op = "$7" if jj == 0 else "%rab"
             operands = String(" [$0], [", a_op, "], %rdb, $2, ")
         else:
             operands = String(" [$0], %rda, %rdb, $2, ")
@@ -2573,17 +2575,17 @@ def exp2_emulation[
     """
     comptime if use_exp2_emulation:
         comptime fp32_round_int = SIMD[DType.float32, 2]((1 << 23) + (1 << 22))
-        clamped = max(x, -FP32_EXP_BIAS)
+        var clamped = max(x, -FP32_EXP_BIAS)
         # We want to round down here, so that the fractional part is in [0, 1)
-        rounded = add_ftz_rm(clamped, fp32_round_int)
-        rounded_back = sub_ftz(rounded, fp32_round_int)
-        frac = sub_ftz(clamped, rounded_back)
+        var rounded = add_ftz_rm(clamped, fp32_round_int)
+        var rounded_back = sub_ftz(rounded, fp32_round_int)
+        var frac = sub_ftz(clamped, rounded_back)
         # Degree-3 polynomial approximation of `2^x` on `x ∈ [0, 1)`.
         # Coefficients lifted from Tri Dao's FlashAttention-3
         # `exp2_emulated` (Dao-AILab/flash-attention, `flash_fwd_kernel*`)
         # — fit by minimax over the unit interval.
         # Tri Dao assumes x <= 127.0 and y <= 127.0
-        frac_ex2 = fma_ftz(
+        var frac_ex2 = fma_ftz(
             fma_ftz(
                 fma_ftz(
                     0.077119089663028717041015625,
@@ -2806,8 +2808,8 @@ def sum[
         x: Local tensor of `BN` elements to reduce.
     """
     comptime assert BN % width == 0
-    vx = x.vectorize[width]()
-    acc = vx[0]
+    var vx = x.vectorize[width]()
+    var acc = vx[0]
 
     # unroll (using SIMD) to break up dependency chain
     comptime for i in range(1, BN // width):
@@ -3070,7 +3072,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             qk_stage: K-loading sub-stage whose TMA destination to return
                 (defaults to 0).
         """
-        p_mbar = self.pipeline.producer_mbar[qk_stage]()
+        var p_mbar = self.pipeline.producer_mbar[qk_stage]()
         var smem = Self.PairType.SmemType(
             self.get_smem[qk_stage=qk_stage](),
             tt_row_major[Self.PairType.smem_elems](),
@@ -3089,7 +3091,7 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
             e: `elect()` result; when nonzero, issues `expect_bytes` on
                 the producer mbarrier before returning.
         """
-        p_mbar = self.pipeline.producer_mbar[qk_stage]()
+        var p_mbar = self.pipeline.producer_mbar[qk_stage]()
         if e != 0:
             p_mbar[].expect_bytes(Int32(Self.tile_bytes))
         var smem = Self.PairType.SmemType(
@@ -3444,7 +3446,7 @@ struct RolePipeline[
     @always_inline("nodebug")
     def commit_mma(self):
         """Commit via MMA arrive using elected thread. Producer-only."""
-        mbar = self.producer_mbar()
+        var mbar = self.producer_mbar()
         elect_mma_arrive[cta_group=Self.cta_group](mbar, elect())
 
     @always_inline("nodebug")
@@ -3454,7 +3456,7 @@ struct RolePipeline[
         Args:
             elect: `elect()` result selecting the single arriving thread.
         """
-        mbar = self.producer_mbar()
+        var mbar = self.producer_mbar()
         elect_mma_arrive[cta_group=Self.cta_group](mbar, elect)
 
     # Consumer methods
@@ -3569,7 +3571,7 @@ def apply_oob_mask[
         score_col: Starting column index of the score pair; columns from
             this index onward are compared to `num_keys`.
     """
-    s: SIMD[DType.float32, 2] = s_arg
+    var s: SIMD[DType.float32, 2] = s_arg
 
     comptime if apply_log2e_after_mask:
         s = mul_ftz(s, log2e)
@@ -4363,7 +4365,7 @@ struct FA4MiscMBars[
 
     @always_inline
     def producer_c(self, wg_idx: UInt32) -> ProducerPipeline[1]:
-        base = UInt32(Self.C0_offset) + 2 * wg_idx
+        var base = UInt32(Self.C0_offset) + 2 * wg_idx
         return {self.mbar_base + base, self.mbar_base + base + 1}
 
     @always_inline
