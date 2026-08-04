@@ -750,7 +750,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        name_copy = String(name)
+        var name_copy = String(name)
         return self.get_symbol[result_type](
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )

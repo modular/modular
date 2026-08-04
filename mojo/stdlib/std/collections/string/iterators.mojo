@@ -393,7 +393,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
-            codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
+            var codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
                 self._slice._slice
             )
             return codepoint

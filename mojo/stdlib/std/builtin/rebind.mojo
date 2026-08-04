@@ -70,8 +70,8 @@ def rebind[
     Returns:
         A reference to the value rebound as `dest_type`.
     """
-    lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
+    var lit = __get_mvalue_as_litref(src)
+    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
     return __get_litref_as_mvalue(rebound)
 
 

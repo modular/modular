@@ -72,7 +72,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        written = external_call["write", c_ssize_t](
+        var written = external_call["write", c_ssize_t](
             self.value.__mlir_index__(),
             bytes.unsafe_ptr(),
             len(bytes).__mlir_index__(),

@@ -200,11 +200,11 @@ def main() raises:
             BenchId(String("bench_dict_iter[", size, "]"))
         )
 
-    results = Dict[String, Tuple[Float64, Int]]()
+    var results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
-        n = info.name
-        time = info.result.mean("ms")
-        avg, amnt = results.get(n, (Float64(0), 0))
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = (
             (avg * Float64(amnt) + time) / Float64((amnt + 1)),
             amnt + 1,

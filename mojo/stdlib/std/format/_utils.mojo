@@ -522,7 +522,7 @@ struct _WriteBufferStack[
         self.pos = 0
 
     def write_string(mut self, string: StringSlice):
-        len_bytes = string.byte_length()
+        var len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.stack_buffer_bytes):
             self.flush()

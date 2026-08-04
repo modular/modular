@@ -36,9 +36,9 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
         A value which is similar in its bitpattern to result of a folded multiply.
     """
     # Extend to 128 bits and multiply.
-    m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
+    var m = lhs.cast[DType.uint128]() * rhs.cast[DType.uint128]()
     # Extract the high and low 64 bits.
-    res = bitcast[DType.uint64, 2](m)
+    var res = bitcast[DType.uint64, 2](m)
     return res[0] ^ res[1]
 
 

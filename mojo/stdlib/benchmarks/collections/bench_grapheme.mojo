@@ -40,7 +40,7 @@ def make_string[
         filename: The name of the file inside the `./data` directory.
     """
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length == 0:
