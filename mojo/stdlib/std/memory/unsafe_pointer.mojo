@@ -20,12 +20,8 @@ method surface.
 """
 
 from std.collections import OptionalReg
-from std.memory.pointer import (
-    AddressSpace,
-    ImmPointer,
-    OptionalPointer,
-    Pointer,
-)
+from std.memory.address_space import AddressSpace
+from std.memory.pointer import ImmPointer, OptionalPointer, Pointer
 
 # ===----------------------------------------------------------------------=== #
 # unsafe_cast

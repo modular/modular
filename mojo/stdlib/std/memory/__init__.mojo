@@ -53,8 +53,8 @@ from .memory import (
 )
 from .stack_allocation import stack_allocation, unsafe_stack_allocation
 from .owned_pointer import OwnedPointer
+from .address_space import AddressSpace
 from .pointer import (
-    AddressSpace,
     ImmOpaquePointer,
     ImmPointer,
     ImmutPointer,

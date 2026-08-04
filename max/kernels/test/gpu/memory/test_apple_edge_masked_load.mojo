@@ -24,7 +24,6 @@ from max.gpu.memory import (
     edge_masked_load,
     gmem_edge_masked_load,
 )
-from std.memory.pointer import AddressSpace
 
 from std.testing import assert_equal
 
