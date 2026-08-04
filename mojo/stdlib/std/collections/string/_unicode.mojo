@@ -220,6 +220,7 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 
         if uppercase_replacement_opt:
+            var count: Int
             # A given character can be replaced with a sequence of characters
             # up to 3 characters in length. A fixed size `Codepoint` array is
             # returned, along with a `count` (1, 2, or 3) of how many

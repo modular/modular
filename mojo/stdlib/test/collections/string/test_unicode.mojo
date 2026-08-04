@@ -19,6 +19,7 @@ from std.testing import TestSuite
 
 def test_uppercase_conversion() raises:
     # a -> A
+    var count1: Int
     count1, ref chars1 = _get_uppercase_mapping(Codepoint(97)).value()
     assert_equal(count1, 1)
     assert_equal(chars1[0], Codepoint(65))
@@ -26,6 +27,7 @@ def test_uppercase_conversion() raises:
     assert_equal(chars1[2], Codepoint(0))
 
     # ß -> SS
+    var count2: Int
     count2, ref chars2 = _get_uppercase_mapping(
         Codepoint.from_u32(0xDF).value()
     ).value()
@@ -35,6 +37,7 @@ def test_uppercase_conversion() raises:
     assert_equal(chars2[2], Codepoint(0))
 
     # ΐ -> Ϊ́
+    var count3: Int
     count3, ref chars3 = _get_uppercase_mapping(
         Codepoint.from_u32(0x390).value()
     ).value()

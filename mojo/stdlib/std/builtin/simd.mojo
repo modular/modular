@@ -3876,6 +3876,7 @@ def _convert_f32_to_float8_scalar[
 
     var sticky_bit: Int32 = 0
 
+    var u: UInt8
     if abs(x) >= Scalar[dtype](_max_finite[target]()):
         # satfinite
         return bitcast[target](sign | FP8_MAX_FLT)
