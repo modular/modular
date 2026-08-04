@@ -1049,11 +1049,6 @@ This version is still a work in progress.
   uses `Movable` element types is unaffected, since a `Movable` element still
   yields a movable array.
 
-- `Optional` gained `into_inner()`, the owning dual of `take()`. Both return the
-  contained value and abort when the `Optional` is empty, but `into_inner()`
-  consumes the `Optional` (`deinit self`) instead of leaving it empty, so it
-  does not have to write back the empty state. `take()` is unchanged.
-
 - `Optional` gained `deinit_assert_empty()`, which destroys an empty linear
   `Optional` without a caller-provided deinitializer, aborting in safe-assert
   builds if it is non-empty. `Optional.map()` and `Optional.and_then()` also
