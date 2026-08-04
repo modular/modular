@@ -1960,12 +1960,16 @@ struct BlackwellMatmulSM100Kernel[
 
                         producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # Implies each SM will only process initial work, there is no
-            # more work to schedule.
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # With no CLC pipeline stages each SM only processes its initial work, so
+        # there is nothing to schedule. KERN-3311: fold that into the condition
+        # rather than `return`ing -- a return would skip the cluster exit barrier
+        # at the end of this function, leaving it divergent (undefined behavior).
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             # Scheduler warp uses its own iterator that manages both
             # producer and consumer state, plus throttle signaling
             var sched_iter = scheduler.scheduler_iterator()
@@ -2026,6 +2030,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 UInt32(i),
                                                 0,
                                             )
+
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
 
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
@@ -2167,6 +2190,20 @@ struct BlackwellMatmulSM100Kernel[
                                     )
 
                         tile_idx += 1
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     @staticmethod
     @always_inline
@@ -2338,10 +2375,14 @@ struct BlackwellMatmulSM100Kernel[
 
                     producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # See run(): fold rather than `return`, so the cluster exit barrier below
+        # is reached by every thread.
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -2387,6 +2428,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 k_start,
                                             )
 
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
+
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
@@ -2421,6 +2481,20 @@ struct BlackwellMatmulSM100Kernel[
                             )
 
                     tile_idx += 1
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
 
 # ============================================================================
