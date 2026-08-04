@@ -139,7 +139,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime B_SCALING_BLOCK_K = K // b_scales_k
     comptime A_SCALING_BLOCK = K // a_scales_k
 
-    a_smem = external_memory[
+    var a_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -207,8 +207,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime a_scales_expected_bytes = a_scales_size * size_of[a_scales_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -229,7 +229,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     # wait for tensor memory to be allocated
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -395,7 +395,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     warp_id = get_warp_id()
 
-    ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
+    var ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
         Coord(block_idx.y, block_idx.x)
     )
     comptime c_coord_type = type_of(ctile_coords)
@@ -404,21 +404,25 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
+            var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
                     Coord(4 * m_mma + warp_id, n_mma)
                 )
             )
-            c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
+            var c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
                 _c_gmem_warp_tile_coords
             )
 
-            c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
-                1, 2
-            ]().distribute_with_offset[row_major[8, 4]()](lane_id())
-            new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
+            var c_gmem_frag, _c_gmem_frag_coords, _ = (
+                c_gmem_warp_tile.vectorize[1, 2]().distribute_with_offset[
+                    row_major[8, 4]()
+                ](lane_id())
+            )
+            var new_c_gmem_frag_coords = rebind[c_coord_type](
+                _c_gmem_frag_coords
+            )
             new_c_gmem_frag_coords[1] *= 2
-            c_gmem_frag_coords = (
+            var c_gmem_frag_coords = (
                 c_gmem_warp_tile_coords + new_c_gmem_frag_coords
             )
 

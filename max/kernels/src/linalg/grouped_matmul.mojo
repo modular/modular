@@ -122,17 +122,17 @@ def naive_grouped_matmul_kernel[
     comptime assert b.flat_rank == 3, "b must be rank 3"
 
     var M: Int = Int(a_offsets[block_idx.z + 1] - a_offsets[block_idx.z])
-    N = Int(b.dim[1]())
-    K = Int(b.dim[2]())
+    var N = Int(b.dim[1]())
+    var K = Int(b.dim[2]())
 
-    a_start_row = a_offsets[block_idx.z]
+    var a_start_row = a_offsets[block_idx.z]
 
-    expert = expert_ids[block_idx.z]
-    b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
+    var expert = expert_ids[block_idx.z]
+    var b_by_expert = b.ptr + Int64(expert) * Int64(N) * Int64(K)
 
     # indices in current matmul
-    n = global_idx.x
-    m = global_idx.y
+    var n = global_idx.x
+    var m = global_idx.y
 
     if n >= N or m >= M:
         return
@@ -146,7 +146,7 @@ def naive_grouped_matmul_kernel[
         a_row_off = lora_qkv_plane_row_offset[a_plane_splits](
             Int(n), Int(a.dim[0]()) // 3
         )
-    a_by_expert = a.ptr + Int64(Int(a_start_row) + a_row_off) * Int64(K)
+    var a_by_expert = a.ptr + Int64(Int(a_start_row) + a_row_off) * Int64(K)
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -168,7 +168,7 @@ def naive_grouped_matmul_kernel[
             Index(a_start_row + UInt32(m), n), accum.cast[c_type]()
         )
     else:
-        c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
+        var c_by_expert = c.ptr + Int64(a_start_row) * Int64(N)
         c_by_expert[m * N + n] = accum.cast[c_type]()
 
 
@@ -279,7 +279,7 @@ def grouped_matmul_kernel_sm100[
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
     comptime N = c.static_shape[1]
     comptime K = static_K
 
@@ -293,14 +293,14 @@ def grouped_matmul_kernel_sm100[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    a_start_row = a_offsets[block_idx.z]
-    expert = expert_ids[block_idx.z]
-    b_start_row = expert * Int32(N)
+    var a_start_row = a_offsets[block_idx.z]
+    var expert = expert_ids[block_idx.z]
+    var b_start_row = expert * Int32(N)
 
-    m_start = block_idx.y * BM
-    n_start = block_idx.x * BN
-    a_m_start = Int(a_start_row) + m_start
-    b_n_start = Int(b_start_row) + n_start
+    var m_start = block_idx.y * BM
+    var n_start = block_idx.x * BN
+    var a_m_start = Int(a_start_row) + m_start
+    var b_n_start = Int(b_start_row) + n_start
     if m_start >= Int(M) or n_start >= N:
         return
 
@@ -320,7 +320,7 @@ def grouped_matmul_kernel_sm100[
         b_type, BN, 64, swizzle_mode=b_swizzle
     ]()
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             UntrackedOrigin[mut=True],
@@ -378,8 +378,8 @@ def grouped_matmul_kernel_sm100[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -400,7 +400,7 @@ def grouped_matmul_kernel_sm100[
     # tensor memory allocation
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # Create MmaOpSM100_SS instance to handle MMA operations
     var mma_op = MmaOpSM100_SS[
@@ -431,7 +431,7 @@ def grouped_matmul_kernel_sm100[
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
                 # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
@@ -442,7 +442,7 @@ def grouped_matmul_kernel_sm100[
                     tma_mbar[0],
                     (k_start, a_m_start),
                 )
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
+                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
@@ -504,7 +504,7 @@ def grouped_matmul_kernel_sm100[
         c.ptr + a_start_row * UInt32(N), c_gmem_runtime_layout
     )
 
-    ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
+    var ctile, ctile_coords, _ = c_by_expert.tile_with_offset[BM, BN](
         block_idx.y, block_idx.x
     )
     comptime c_coord_type = type_of(ctile_coords)
@@ -513,21 +513,25 @@ def grouped_matmul_kernel_sm100[
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
+            var c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
                 ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
                     4 * m_mma + warp_id, n_mma
                 )
             )
-            c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
+            var c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
                 _c_gmem_warp_tile_coords
             )
 
-            c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
-                1, 2
-            ]().distribute_with_offset[Layout.row_major(8, 4)](lane_id())
-            new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
+            var c_gmem_frag, _c_gmem_frag_coords, _ = (
+                c_gmem_warp_tile.vectorize[1, 2]().distribute_with_offset[
+                    Layout.row_major(8, 4)
+                ](lane_id())
+            )
+            var new_c_gmem_frag_coords = rebind[c_coord_type](
+                _c_gmem_frag_coords
+            )
             new_c_gmem_frag_coords[1] *= 2
-            c_gmem_frag_coords = (
+            var c_gmem_frag_coords = (
                 c_gmem_warp_tile_coords + new_c_gmem_frag_coords
             )
 
@@ -603,9 +607,11 @@ def grouped_matmul_sm100[
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
-    b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
-    b_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a
+    )
+    var b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
+    var b_tma_op = create_tensor_tile[
         Index(BN, BK) if transpose_b else Index(BK, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b_2d)

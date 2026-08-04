@@ -116,7 +116,7 @@ def bench_compile_time[
     if len(m.info_vec) > 0:
         ref ref_measures = m.info_vec[0].measures
         for i in range(len(ref_measures)):
-            metric = ref_measures[i].metric
+            var metric = ref_measures[i].metric
             measures.append(ThroughputMeasure(metric, 0))
 
     m.bench_function[bench_call](
@@ -275,7 +275,7 @@ struct Mode(TrivialRegisterPassable, Writable):
         Args:
             writer: The writer to write to.
         """
-        s = List[String]()
+        var s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
         if Self.BENCHMARK == self:

@@ -3754,7 +3754,7 @@ struct Grouped1D1DMatmulKernel[
                     comptime for ci in range(BF16_LOAD_W):
                         pair_bf[li * BF16_LOAD_W + ci] = chunk[ci]
                 var pair = pair_bf.cast[DType.float32]()
-                gate, up = pair.deinterleave()
+                var gate, up = pair.deinterleave()
 
                 # silu(g) and the final SF reciprocal use `recip()`
                 # (`rcp.approx.ftz.f32`) rather than fp32 `/`: with only

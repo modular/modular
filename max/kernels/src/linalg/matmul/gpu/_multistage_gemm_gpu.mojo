@@ -777,7 +777,7 @@ def multistage_gemm_kernel[
     ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = udivmod(warp_id, num_warps_n)
+    var warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.

@@ -1051,10 +1051,10 @@ struct TensorCoreAsync[
         comptime b_num_k_mmas_per_tile = b_canonical_K // Self.mma_shape[2] if Self.transpose_b else num_k_mmas
         # fmt: on
 
-        a_desc = _wgmma_descriptor[a_canonical_layout, True, Self.a_swizzle](
-            a_smem_tile.ptr
-        )
-        b_desc = _wgmma_descriptor[
+        var a_desc = _wgmma_descriptor[
+            a_canonical_layout, True, Self.a_swizzle
+        ](a_smem_tile.ptr)
+        var b_desc = _wgmma_descriptor[
             b_canonical_layout, Self.transpose_b, Self.b_swizzle
         ](b_smem_tile.ptr)
 
@@ -1086,13 +1086,13 @@ struct TensorCoreAsync[
 
             comptime for m_mma in range(num_m_mmas):
                 comptime a_offset = m_mma * a_m_stride + a_k_mma_offset + a_offset_bytes
-                a_desc_m = a_desc + a_offset
+                var a_desc_m = a_desc + a_offset
 
                 comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     comptime b_offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
-                    b_desc_n = b_desc + b_offset
+                    var b_desc_n = b_desc + b_offset
 
                     var c_frags = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
 
@@ -1253,8 +1253,8 @@ struct TensorCoreAsync[
         # Vectorize each wgmma's fragment size.
         comptime a_frag_size = Self.mma_shape[0] * Self.mma_shape[2] // 128
         comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
-        a_frags = a_frag_tile.vectorize[1, a_frag_size]()
-        c_frags = c_reg_tile.vectorize[1, c_frag_size]()
+        var a_frags = a_frag_tile.vectorize[1, a_frag_size]()
+        var c_frags = c_reg_tile.vectorize[1, c_frag_size]()
         comptime assert (
             type_of(c_frags).layout.size() == num_m_mmas * num_n_mmas
         ), (
@@ -1273,7 +1273,7 @@ struct TensorCoreAsync[
             + String(b_smem_layout)
         )
 
-        b_desc = _wgmma_descriptor[
+        var b_desc = _wgmma_descriptor[
             b_canonical_layout, Self.transpose_b, Self.b_swizzle
         ](b_smem_tile.ptr)
         comptime layout_b = "col" if Self.transpose_b else "row"
@@ -1289,14 +1289,14 @@ struct TensorCoreAsync[
             ) * b_k_stride
 
             comptime for m_mma in range(num_m_mmas):
-                a_frag = a_frags[m_mma + k_mma * num_m_mmas, 0]
+                var a_frag = a_frags[m_mma + k_mma * num_m_mmas, 0]
 
                 comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
                     comptime offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
-                    b_desc_n = b_desc + offset
+                    var b_desc_n = b_desc + offset
 
                     c_frags[mma_id, 0] = wgmma_async[
                         Self.mma_shape[0],

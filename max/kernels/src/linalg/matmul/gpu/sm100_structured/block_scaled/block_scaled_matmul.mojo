@@ -208,7 +208,7 @@ def _create_tma_and_launch[
 
     # A matrix TMA
     comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         matmul_kernel.ATileLayout,
         matmul_kernel.ADescLayout,
         a_tma_tile_shape,
@@ -221,7 +221,7 @@ def _create_tma_and_launch[
     ) if transpose_b else Index(
         1, BK, BN // (cluster_shape[0] // config.cta_group)
     )
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         matmul_kernel.BTileLayout,
         matmul_kernel.BDescLayout,
         b_tma_tile_shape,

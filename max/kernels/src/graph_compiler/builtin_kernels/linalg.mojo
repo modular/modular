@@ -774,7 +774,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
             "grouped rowwise dynamic scaled matmul only supports GPUs with"
             " native FP8 support"
         )
-        cuda_ctx = context
+        var cuda_ctx = context
         grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,

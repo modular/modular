@@ -179,14 +179,14 @@ def blockwise_fp8_matmul[
     ]
 
     # Create TMA descriptors using kernel's layout types
-    a_tma_op = create_tma_tile[
+    var a_tma_op = create_tma_tile[
         Kernel.ATileLayout,
         Kernel.ADescLayout,
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
     ](ctx, a)
 
-    b_tma_op = create_tma_tile[
+    var b_tma_op = create_tma_tile[
         Kernel.BTileLayout,
         Kernel.BDescLayout,
         Index(
@@ -197,7 +197,7 @@ def blockwise_fp8_matmul[
         swizzle_mode=config.b_swizzle,
     ](ctx, b)
 
-    a_scales_tma_op = create_tma_tile[
+    var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
         Kernel.AScalesLayout,
         Index(1, BM),

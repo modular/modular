@@ -416,7 +416,7 @@ def _batched_matmul_cpu[
                 return
 
             comptime if use_i8mm:
-                a_packed_alloc = alloc(
+                var a_packed_alloc = alloc(
                     AllocLayout[Scalar[a_type]](
                         count=mh * kh, alignment=alignment
                     )
@@ -896,7 +896,7 @@ def _batched_matmul_gpu[
 
     else:
         logger.info("Dispatching Batched Matmul via Naive Kernels")
-        c_shape = coord_to_index_list(c_buf.layout.shape_coord())
+        var c_shape = coord_to_index_list(c_buf.layout.shape_coord())
 
         comptime BLOCK_DIM = 16
         comptime bmm = naive_batched_matmul_kernel[

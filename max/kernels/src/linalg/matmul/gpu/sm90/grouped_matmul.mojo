@@ -163,16 +163,20 @@ def grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](ctx, a)
+    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+        ctx, a
+    )
 
     # Flatten B tensor into a 2D TileTensor for easier TMA support.
-    b_flat = flatten_leading(b)
-    b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+    var b_flat = flatten_leading(b)
+    var b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
         ctx, b_flat
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
-    c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](ctx, c)
+    var c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+        ctx, c
+    )
 
     comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
     comptime smem_size = config.num_pipeline_stages * (

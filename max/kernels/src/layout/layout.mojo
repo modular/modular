@@ -1284,7 +1284,7 @@ def zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
     """
     var zipped = Layout()
     for i in range(layout_a.rank()):
-        bi = layout_b[i]
+        var bi = layout_b[i]
         if is_int(bi.shape) and Int(bi.shape) <= 0:
             zipped.append(layout_a[i])
         else:
@@ -1965,10 +1965,10 @@ def is_row_major[rank: Int](layout: Layout) -> Bool:
     if flat_stride[flat_rank - 1].value() != 1:
         return False
 
-    correct_stride = flat_shape[flat_rank - 1].value()
+    var correct_stride = flat_shape[flat_rank - 1].value()
 
     for i in reversed(range(flat_rank - 1)):
-        stride_i = flat_stride[i].value()
+        var stride_i = flat_stride[i].value()
         if stride_i != correct_stride:
             return False
         correct_stride *= flat_shape[i].value()
