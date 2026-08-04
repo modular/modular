@@ -13,23 +13,23 @@
 
 
 def empty_optional():
-    instance = Optional[String]()
+    var instance = Optional[String]()
     print(instance)  # Output: None
 
 
 def emptier_optional():
-    instance = Optional[String](None)
+    var instance = Optional[String](None)
     print(instance)  # Output: None
 
 
 def optional():
-    instance = Optional[String]("Hello")
+    var instance = Optional[String]("Hello")
     print(instance)  # Output: 'Hello'
 
 
 def bounds():
-    empty_instance = Optional[Int]()
-    populated_instance = Optional[Int](50)
+    var empty_instance = Optional[Int]()
+    var populated_instance = Optional[Int](50)
 
     # Bounds returns a tuple: (`bounds`, `Optional` version of `bounds`)
     # with the length of the `Optional`.
@@ -40,22 +40,22 @@ def bounds():
 
 
 def value():
-    instance = Optional("Hello")
-    x = instance.value()
+    var instance = Optional("Hello")
+    var x = instance.value()
     print(x)  # Hello
     # instance = Optional[String]() # Uncomment both lines to crash
     # print(instance.value())
 
 
 def unsafe_value():
-    instance = Optional("Hello")
-    x = instance.unsafe_value()
+    var instance = Optional("Hello")
+    var x = instance.unsafe_value()
     print(x)  # Hello
     instance = Optional[String](None)
 
     # Best practice:
     if instance:
-        y = instance.unsafe_value()  # Will not reach this line
+        var y = instance.unsafe_value()  # Will not reach this line
         print(y)
 
     # May crash, may access re-used uninitialized memory
@@ -64,9 +64,9 @@ def unsafe_value():
 
 
 def take():
-    instance = Optional("Hello")
+    var instance = Optional("Hello")
     print(instance.bounds()[0])  # Output: 1
-    x = instance.take()  # Moves value from `instance` to `x`
+    var x = instance.take()  # Moves value from `instance` to `x`
     print(x)  # Output: Hello
 
     # `instance` is now `Optional(None)`
@@ -75,7 +75,7 @@ def take():
 
     # Best practice
     if instance:
-        y = instance.take()  # Won't reach this line
+        var y = instance.take()  # Won't reach this line
         print(y)
 
     # Used directly
@@ -84,9 +84,9 @@ def take():
 
 
 def unsafe_take():
-    instance = Optional("Hello")
+    var instance = Optional("Hello")
     print(instance.bounds()[0])  # Output: 1
-    x = instance.unsafe_take()  # Moves value from `instance` to `x`
+    var x = instance.unsafe_take()  # Moves value from `instance` to `x`
     print(x)  # Output: Hello
 
     # `instance` is now `Optional(None)`
@@ -95,7 +95,7 @@ def unsafe_take():
 
     # Best practice:
     if instance:
-        y = instance.unsafe_take()  # Won't reach this line
+        var y = instance.unsafe_take()  # Won't reach this line
         print(y)
 
     # May crash:
@@ -106,7 +106,7 @@ def unsafe_take():
 
 
 def or_else():
-    instance = Optional("Hello")
+    var instance = Optional("Hello")
     print(instance)  # Output: 'Hello'
     print(instance.or_else("Bye"))  # Output: Hello
     instance = None
@@ -115,7 +115,7 @@ def or_else():
 
 
 def iter():
-    instance = Optional("Hello")
+    var instance = Optional("Hello")
     for value in instance:
         print(value)  # Output: Hello
     instance = None

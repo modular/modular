@@ -36,7 +36,7 @@ def main():
     # end-extension-example
 
     var f = Foobat(x=1)
-    g = f
+    var g = f
     print("before discard")
     _ = f
     print("before second discard")

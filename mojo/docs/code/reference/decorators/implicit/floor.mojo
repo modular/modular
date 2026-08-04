@@ -39,9 +39,9 @@ def main():
     print(floored(FlooringInt(42)))  # pass `FlooringInt` instance, output: 42
     print(floored(2))  # pass Int, without `FlooringInt` constructor, output: 2
     print(floored(52.6))  # pass Float64, output: 52
-    x = BFloat16(192.3)
+    var x = BFloat16(192.3)
     print(floored(x))  # pass BFloat, output: 192
-    y: FlooringInt = 180
+    var y: FlooringInt = 180
     print(y.floored)  # output 180
-    z: FlooringInt = 3.14159
+    var z: FlooringInt = 3.14159
     print(z.floored)  # output: 3
