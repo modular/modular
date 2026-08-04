@@ -110,7 +110,7 @@ def kernel_3[
         b_type, BN, 64, swizzle_mode=b_swizzle
     ]()
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -179,8 +179,8 @@ def kernel_3[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (b_smem + b_size).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
     # Shared memory pointer to hold tensor memory address, after last smem pointer and expected smem size
     var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
 
@@ -204,7 +204,7 @@ def kernel_3[
     # tensor memory allocation
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # give me a tensor for matrices A and B, sliced down to the portion that this CTA is responsible for, and referring to original global tensor
     # so it's the 128 x 64 portion the CTA will copy from global tensor into smem tile A and B
@@ -223,10 +223,10 @@ def kernel_3[
         b_type
     ]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         a_type,
         b_type,
@@ -249,7 +249,7 @@ def kernel_3[
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 # the answer to the above comment. # The descriptor layout i.e. data per copy can be smaller than the shared memory
                 # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
                 # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
@@ -259,7 +259,7 @@ def kernel_3[
                     tma_mbar[0],
                     (i * BK + k, block_idx.y * BM),
                 )
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
+                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
@@ -319,17 +319,17 @@ def kernel_3[
 
     comptime num_warps = num_threads // WARP_SIZE
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+            var c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id(), n_mma
             )
 
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
 
@@ -381,8 +381,10 @@ def kernel_2[
     # hard coded 64 for BK
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](
+        ctx, a
+    )
+    var b_tma_op = create_tensor_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)

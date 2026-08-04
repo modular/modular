@@ -197,8 +197,8 @@ def kernel_5[
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (mma_mbar_ptr + 2).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync()
@@ -223,7 +223,7 @@ def kernel_5[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var rank_m = block_id_in_cluster.x
     var rank_n = block_id_in_cluster.y
@@ -286,8 +286,8 @@ def kernel_5[
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
+                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
 
                 var a_smem_slice = type_of(sub_a_smem_tile)(
                     sub_a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
@@ -358,7 +358,7 @@ def kernel_5[
     var c_coord_y = ufloordiv(warp_id(), 2) if MMA_M == 128 else 0
 
     # 32 x BN
-    _c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
+    var _c_warp_tile = c_smem_tile.tile[C_WBM, C_WBN](c_coord_x, c_coord_y)
 
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
@@ -507,11 +507,11 @@ def blackwell_kernel_5[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], 64), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), 64
         ) if transpose_b else Index(
@@ -521,7 +521,7 @@ def blackwell_kernel_5[
     ](ctx, b)
 
     # TODO: 64 satisfies 128B swizzle, we need set TMA_BN according to swizzle mode
-    c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
+    var c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
 
     comptime smem_size = (
         BM * BK * size_of[a_type]()

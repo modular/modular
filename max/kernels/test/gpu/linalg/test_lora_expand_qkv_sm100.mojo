@@ -251,7 +251,7 @@ def test[
     ctx.enqueue_copy(ref_v_host_full, ref_v_full_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     # q_out[m, j] vs ref_q_full[m, j] for j in [0, q_dim).
     for m, j in std.itertools.product(range(M), range(q_dim)):

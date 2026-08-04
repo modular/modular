@@ -74,8 +74,8 @@ def test[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -209,7 +209,7 @@ def test[
         comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
-        ptr = (
+        var ptr = (
             c_dev_tile._storage.bitcast[Scalar[out_type]]()
             + idx[0] * N
             + idx[1]
@@ -232,7 +232,7 @@ def test[
         # tensor.
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
-        ptr = (
+        var ptr = (
             c_dev_tile._storage.bitcast[Scalar[out_type]]()
             + new_j * total_num_tokens * N
             + i * N
@@ -263,7 +263,7 @@ def test[
     ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     comptime if qkv_perm_dim:
         for qkv_idx, m, n in std.itertools.product(
@@ -339,8 +339,8 @@ def test_negative_lora_id[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -643,7 +643,7 @@ def test_step3p5_moe_dims[
     ctx.enqueue_copy(c_ref_host_ptr, c_ref_dev_buf)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
     for m, n in std.itertools.product(range(total_tokens), range(N)):
         var expect = c_ref_host[m, n][0]
         var actual = c_host[m, n][0]

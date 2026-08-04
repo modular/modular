@@ -169,8 +169,8 @@ def bulk_mma_pair_cta_kernel[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -193,7 +193,7 @@ def bulk_mma_pair_cta_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # Build descriptors for the accumulator (MMASmemDescriptorPair)
     comptime a_canonical_layout = tile_to_descriptor[ab_type, a_smem_layout]()
@@ -211,10 +211,10 @@ def bulk_mma_pair_cta_kernel[
         ab_type
     ]()
 
-    adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptorPair.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -466,8 +466,8 @@ def bulk_mma_pair_cta_ts_kernel[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -490,7 +490,7 @@ def bulk_mma_pair_cta_ts_kernel[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # A in TMEM: BK//2 u32 columns (each u32 = 2 packed bf16).
     comptime A_TMEM_COLS = BK // 2
@@ -508,7 +508,7 @@ def bulk_mma_pair_cta_ts_kernel[
         ab_type
     ]()
 
-    bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptorPair.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
@@ -779,10 +779,10 @@ def test_bulk_mma_pair_cta[
     var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
     var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a.device_tensor())
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -890,8 +890,8 @@ def test_bulk_mma_pair_cta[
 
     ctx.synchronize()
 
-    c_host = c.tensor()
-    c_host_ref = c_ref.tensor()
+    var c_host = c.tensor()
+    var c_host_ref = c_ref.tensor()
 
     for m in range(M):
         for n in range(N):

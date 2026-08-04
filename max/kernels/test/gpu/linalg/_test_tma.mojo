@@ -267,9 +267,9 @@ def test_2D_swizzle[
 
             for ii in range(load_shape_m):
                 for jj in range(load_shape_n):
-                    offset = swizzle(ii * load_shape_n + jj)
+                    var offset = swizzle(ii * load_shape_n + jj)
 
-                    m_offset, n_offset = divmod(offset, load_shape_n)
+                    var m_offset, n_offset = divmod(offset, load_shape_n)
 
                     if reference_tile[ii, jj] != rebind[
                         SIMD[
@@ -322,7 +322,9 @@ def test_3D_swizzle[
                                 offset, load_shape_m * load_shape_n
                             )
 
-                            m_offset, n_offset = divmod(offset, load_shape_n)
+                            var m_offset, n_offset = divmod(
+                                offset, load_shape_n
+                            )
 
                             if reference_tile[bb, ii, jj] != rebind[
                                 SIMD[

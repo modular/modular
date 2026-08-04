@@ -544,7 +544,7 @@ def kernel_7[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = rebind[
+    var base_ptr_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -614,9 +614,9 @@ def kernel_7[
     var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -649,7 +649,7 @@ def kernel_7[
     var consumer_phase = PipelineState[num_pipeline_stages]()
     var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -803,11 +803,11 @@ def blackwell_kernel_7[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(

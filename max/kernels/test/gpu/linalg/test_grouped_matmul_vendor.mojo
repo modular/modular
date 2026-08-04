@@ -61,8 +61,8 @@ def test_vendor[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -194,7 +194,7 @@ def test_vendor[
     ctx.synchronize()
 
     # Verify results
-    rtol = 1e-2
+    var rtol = 1e-2
     for m in range(total_num_tokens):
         for n in range(N):
             var expect = c_ref_host[m, n][0]
@@ -255,8 +255,8 @@ def test_negative_lora_id_vendor[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(

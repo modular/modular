@@ -126,7 +126,7 @@ def kernel_4[
     ]()
     comptime c_smem_layout = Layout.row_major(BM, BN)
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -205,8 +205,8 @@ def kernel_4[
     comptime b_expected_bytes = b_size * size_of[b_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     # Shared memory pointer to hold tensor memory address
     var ptr_tmem_addr = (mma_mbar + 1).bitcast[UInt32]()
@@ -230,7 +230,7 @@ def kernel_4[
     # tensor memory allocation
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
     comptime b_canonical_layout = tile_to_descriptor[
@@ -247,10 +247,10 @@ def kernel_4[
         b_type
     ]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         a_type,
         b_type,
@@ -270,13 +270,13 @@ def kernel_4[
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
                 comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
                 comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
-                sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
+                var sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
                     (i * BK + k, block_idx.y * BM),
                 )
-                sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
+                var sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
@@ -384,7 +384,7 @@ def kernel_4[
 
         var smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
-        c_tma_tile = LayoutTensor[
+        var c_tma_tile = LayoutTensor[
             c_type,
             Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
             address_space=AddressSpace.SHARED,
@@ -437,12 +437,14 @@ def blackwell_kernel_4[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](
+        ctx, a
+    )
+    var b_tma_op = create_tensor_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
         swizzle_mode=b_swizzle,
     ](ctx, b)
-    c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
+    var c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
 
     comptime smem_use = (
         BM * BK * size_of[a_type]()
