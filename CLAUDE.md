@@ -69,10 +69,10 @@ pixi task list
 
 ```bash
 # Install the MAX nightly within a Python virtual environment using pip
-pip install modular --extra-index-url https://whl.modular.com/nightly/simple/
+pip install "max[serve]" --extra-index-url https://whl.modular.com/nightly/simple/
 
 # Install MAX globally using Pixi, an alternative to the above
-pixi global install -c conda-forge -c https://conda.modular.com/max-nightly
+pixi global install max-serve -c conda-forge -c https://conda.modular.com/max-nightly
 
 # Start OpenAI-compatible server
 max serve --model modularai/Llama-3.1-8B-Instruct-GGUF

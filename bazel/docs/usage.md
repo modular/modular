@@ -245,7 +245,7 @@ In this case when the output contains `A100` we map it to `a100`. Then
 update the `supported_gpus` dictionary where the key is the human
 readable name, and the value is the `--target-accelerator` value passed
 to Mojo compiles. You can fetch this value with `gpu-query` which ships
-as part of `pip install modular`:
+as part of MAX:
 
 ```sh
 % gpu-query --target-accelerator
