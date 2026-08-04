@@ -331,6 +331,8 @@ _NONINNER_CASES = [
         "reduce_min",
         "reduce_mean",
         "reduce_product",
+        "argmax",
+        "argmin",
         "reduce_min_and_max",
     ]
 ] + [(op, DType.float32) for op in ["reduce_sum", "reduce_mean"]]
@@ -395,3 +397,31 @@ def test_rowwise_inner_gpu_subword_state(
     for cols in _INNER_COLS:
         x = _make_input(op, _INNER_ROWS, cols, dtype)
         _reference_and_check(op, dtype, model, x, -1, [], f"cols={cols}")
+
+
+# Split-K cross-block join, on an accelerator. A few-row, long-row shape routes
+# the inner-axis reduction through the split-K tier (`num_rows` under the SM
+# count and at least `_SPLITK_MIN_ROW` = 32768 elements per row at
+# `simd_width <= 4`, i.e. float32 here), whose cross-block finish in
+# `rowwise.pjoin` is the only place the scaffolder combines whole per-block
+# monoid states. Every other case in this file is orders of magnitude below that
+# element floor, so nothing else reaches it.
+#
+# argmax/argmin are what catch a mistake there: their cross-thread step ends by
+# publishing the winning index into the field the emit reads, so a finish that
+# skips it returns a real-but-not-extreme index -- a wrong answer that still
+# looks like a plausible one. reduce_max rides the same call with an exactly
+# representable result, so it pins the non-arg monoids on that path too.
+_SPLITK_ROWS = 8
+_SPLITK_COLS = 40960
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="the split-K tier is GPU-only"
+)
+@pytest.mark.parametrize("op", ["argmax", "argmin", "reduce_max"])
+def test_rowwise_inner_gpu_splitk(session: InferenceSession, op: str) -> None:
+    dtype = DType.float32
+    model = session.load(_build_graph(op, dtype, axis=-1, dev=DeviceRef.GPU()))
+    x = _make_input(op, _SPLITK_ROWS, _SPLITK_COLS, dtype)
+    _reference_and_check(op, dtype, model, x, -1, [], f"cols={_SPLITK_COLS}")

@@ -13,10 +13,10 @@
 """Row-based row-wise reductions (free-form body layer).
 
 Pure-reduction entry points (`reduce_sum` / `reduce_max` / `reduce_min` /
-`reduce_product` / `reduce_mean`) built on the `algorithm.rowwise` scaffolder
-and the `algorithm.reduce_op` monoid library. Each authors one free-form
-body — a single reduce phase plus a per-row `emit` — and runs on both CPU
-and GPU.
+`reduce_product` / `reduce_mean` / `reduce_argmax` / `reduce_argmin`) built
+on the `algorithm.rowwise` scaffolder and the `algorithm.reduce_op` monoid
+library. Each authors one free-form body — a single reduce phase plus a
+per-row `emit` — and runs on both CPU and GPU.
 """
 
 from max.gpu.host import DeviceContext
@@ -26,6 +26,8 @@ from std.utils.index import IndexList
 
 from algorithm import rowwise
 from algorithm.reduce_op import (
+    ArgMax,
+    ArgMin,
     ReduceMax,
     ReduceMin,
     ReduceProduct,
@@ -483,4 +485,183 @@ def reduce_mean[
 # ===----------------------------------------------------------------------=== #
 # Row-based argument reductions: argmax / argmin. Same free-form body;
 # the ArgMax / ArgMin monoid also tracks the winning index.
+# ===----------------------------------------------------------------------=== #
+
+
+def reduce_argmin[
+    dtype: DType,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, rank: Int
+        ](IndexList[rank]) -> SIMD[dtype, width]
+    ),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int
+        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+    ),
+    /,
+    target: StaticString,
+    *,
+    reduce_dim: Int,
+](
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    input_shape: Coord,
+    context: Optional[DeviceContext] = None,
+) raises:
+    """Finds the argmin along `reduce_dim` via the Row layer: one
+    `ArgMin` phase (native dtype, lower index wins ties) plus a per-row
+    `emit` of the int64 index."""
+    comptime simd_width = rowwise.pick_simd_width[
+        ArgMin[dtype, 1], target, 64, dtype
+    ]()
+    var axis_size = Int(input_shape[reduce_dim].value())
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx: rowwise.Context[params]) {
+        var axis_size, var input_fn, var output_fn
+    }:
+        comptime rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            return input_fn[width, alignment, rank](
+                rebind[IndexList[rank]](idx)
+            )
+
+        # Prepare Row: build the row view over the axis size (always
+        # dynamic here — these entry points take no static_cols param).
+        var row = rowwise.Row[
+            params, dtype, dtype, reduce_dim, rank, is_cached=False
+        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+
+        # Reduce: argmin via the ArgMin monoid (lower index wins ties).
+        @always_inline
+        def val[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+            dtype, width
+        ]:
+            return tile
+
+        var indices = row.reduce[ArgMin[dtype, params.simd_width]](
+            val, load
+        ).acc_indices
+
+        # Emit: per-row output — the winning index.
+        @always_inline
+        def write(oc: IndexList[rank]) {var indices, var output_fn}:
+            output_fn[params.emit_tile_width, rank](
+                oc, indices.slice[params.emit_tile_width]()
+            )
+
+        # `indices`/`output_fn` ride `write`'s capture list into `emit`.
+        row.emit(write)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=1,
+    ](body, input_shape, context)
+
+
+def reduce_argmax[
+    dtype: DType,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, rank: Int
+        ](IndexList[rank]) -> SIMD[dtype, width]
+    ),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int
+        ](IndexList[rank], SIMD[DType.int64, width]) -> None
+    ),
+    /,
+    target: StaticString,
+    *,
+    reduce_dim: Int,
+](
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    input_shape: Coord,
+    context: Optional[DeviceContext] = None,
+) raises:
+    comptime simd_width = rowwise.pick_simd_width[
+        ArgMax[dtype, 1], target, 64, dtype
+    ]()
+    var axis_size = Int(input_shape[reduce_dim].value())
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx: rowwise.Context[params]) {
+        var axis_size, var input_fn, var output_fn
+    }:
+        comptime rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            return input_fn[width, alignment, rank](
+                rebind[IndexList[rank]](idx)
+            )
+
+        # Prepare Row: build the row view over the axis size (always
+        # dynamic here — these entry points take no static_cols param).
+        var row = rowwise.Row[
+            params, dtype, dtype, reduce_dim, rank, is_cached=False
+        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+
+        # Reduce: argmax via the ArgMax monoid (lower index wins ties).
+        @always_inline
+        def val[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+            dtype, width
+        ]:
+            return tile
+
+        var indices = row.reduce[ArgMax[dtype, params.simd_width]](
+            val, load
+        ).acc_indices
+
+        # Emit: per-row output — the winning index.
+        @always_inline
+        def write(oc: IndexList[rank]) {var indices, var output_fn}:
+            output_fn[params.emit_tile_width, rank](
+                oc, indices.slice[params.emit_tile_width]()
+            )
+
+        # `indices`/`output_fn` ride `write`'s capture list into `emit`.
+        row.emit(write)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=1,
+    ](body, input_shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based fused min-and-max: one axis walk, two outputs via the
+# MinMax monoid (min_acc / max_acc).
 # ===----------------------------------------------------------------------=== #
