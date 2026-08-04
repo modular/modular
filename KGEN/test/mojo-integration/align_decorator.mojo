@@ -143,8 +143,8 @@ def test_nested_alignment() raises:
 def test_heap_allocation_alignment() raises:
     """Test that heap-allocated aligned structs are actually aligned at runtime.
 
-    The `alloc[T]()` function uses `align_of[T]()` as the default alignment,
-    so heap allocations should respect the @align decorator.
+    `Layout[T]` uses `align_of[T]()` as the default alignment, so heap
+    allocations should respect the @align decorator.
     """
     # Allocate on heap - should be 64-byte aligned
     var heap_ptr_alloc = alloc[CacheAligned]({count = 1}).into_managed()
