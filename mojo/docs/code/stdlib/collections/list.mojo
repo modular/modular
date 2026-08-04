@@ -13,28 +13,28 @@
 
 
 def append():
-    list: List = [1, 2, 3, 4, 5]
+    var list: List = [1, 2, 3, 4, 5]
     list.append(6)
     print(list)  # [1, 2, 3, 4, 5, 6]
 
 
 def insert():
-    list: List = ["one", "three"]
+    var list: List = ["one", "three"]
     list.insert(1, "two")
     print(list)  # ['one', 'two', 'three']
 
 
 def extend():
-    list: List = ["one", "two", "three"]
-    more: List = ["four", "five"]
+    var list: List = ["one", "two", "three"]
+    var more: List = ["four", "five"]
     list.extend(more^)  # more's values are consumed
     # print(more)      # Error: use of initialized value
     print(list)  # ['one', 'two', 'three', 'four', 'five']
 
 
 def extend_span():
-    numbers: List = [1, 2, 3]
-    more = [4, 5, 6]
+    var numbers: List = [1, 2, 3]
+    var more = [4, 5, 6]
     numbers.extend(Span(more))
     print(numbers)  # [1, 2, 3, 4, 5, 6]
 
@@ -42,8 +42,8 @@ def extend_span():
 def extend_dtype():
     from std.collections import List
 
-    numbers: List[Int64] = [1, 2]
-    more = SIMD[DType.int64, 2](3, 4)
+    var numbers: List[Int64] = [1, 2]
+    var more = SIMD[DType.int64, 2](3, 4)
     numbers.extend(more)
     print(numbers)  # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
     #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
@@ -52,16 +52,16 @@ def extend_dtype():
 def extend_dtype_count():
     from std.collections import List
 
-    numbers: List[Int64] = [1, 2]
-    more = SIMD[DType.int64, 4](3, 4, 5, 6)
+    var numbers: List[Int64] = [1, 2]
+    var more = SIMD[DType.int64, 4](3, 4, 5, 6)
     numbers.extend(more, count=2)
     print(numbers)  # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
     #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
 
 
 def pop():
-    numbers: List = ["1", "2", "3", "4", "5"]
-    value = numbers.pop()
+    var numbers: List = ["1", "2", "3", "4", "5"]
+    var value = numbers.pop()
     print(value)  # 5
     print("length", len(numbers))  # length 4
     value = numbers.pop(2)
@@ -72,7 +72,7 @@ def pop():
 
 
 def resize():
-    list: List = ["z", "y", "x", "w"]
+    var list: List = ["z", "y", "x", "w"]
     list.resize(3, "v")
     print(list)  # ['z', 'y', 'x']
     list.resize(6, "v")
@@ -80,7 +80,7 @@ def resize():
 
 
 def unsafe_resize():
-    list: List = [1, 2, 3]
+    var list: List = [1, 2, 3]
     list.resize(
         unsafe_uninit_length=5
     )  # Indices 3 and 4 are uninitialized memory
@@ -91,20 +91,20 @@ def unsafe_resize():
 
 
 def shrink():
-    numbers: List = [1, 2, 3, 4, 5, 6]
+    var numbers: List = [1, 2, 3, 4, 5, 6]
     numbers.shrink(2)
     print(numbers)  # [1, 2]
     # numbers.shrink(8)               # Error: new size is bigger than current
 
 
 def reverse():
-    list: List = ["o", "l", "l", "e", "H"]
+    var list: List = ["o", "l", "l", "e", "H"]
     list.reverse()
     print("".join(list))  # Hello
 
 
 def clear():
-    list: List = ["o", "l", "l", "e", "H"]
+    var list: List = ["o", "l", "l", "e", "H"]
     print(len(list))  # 5
     list.clear()
     print(len(list))  # 0
@@ -114,7 +114,7 @@ def unsafe_take_allocation():
     from std.collections import List
     from std.memory.alloc import dealloc
 
-    list: List[Int64] = [1, 2, 3, 4]
+    var list: List[Int64] = [1, 2, 3, 4]
     var allocation = list.unsafe_take_allocation()
     var ptr = allocation.unsafe_ptr()
     for idx in range(4):
@@ -126,7 +126,7 @@ def unsafe_take_allocation():
 
 
 def count():
-    list: List = ["a", "b", "c", "b", "b", "a", "c"]
+    var list: List = ["a", "b", "c", "b", "b", "a", "c"]
     print(list.count("b"))  # 3
 
 

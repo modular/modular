@@ -25,6 +25,6 @@ struct MyStruct:
 
 
 def main():
-    my_struct = MyStruct(1)
+    var my_struct = MyStruct(1)
     my_struct.increment()
     print(my_struct.value)

@@ -130,7 +130,7 @@ def pop() raises:
 
     var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
     assert_true(counter.get("b").or_else(0) == 1)
-    count = counter.pop("b")
+    var count = counter.pop("b")
     assert_true(count == 1)
     assert_true(counter.get("b").or_else(0) == 0)
 
@@ -161,7 +161,7 @@ def values() raises:
     var counter = Counter[Int]([1, 2, 3, 1, 2, 1, 1, 1, 2, 5, 2, 9])
 
     # Find most populous key
-    max_count: Int = Int.MIN
+    var max_count: Int = Int.MIN
     for count in counter.values():
         if count > max_count:
             max_count = count

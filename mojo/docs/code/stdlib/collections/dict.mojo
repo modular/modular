@@ -91,7 +91,7 @@ def test_itemstring() raises:
     var my_dict = Dict[Int, Float64]()
     my_dict[1] = 1.1
     my_dict[2] = 2.2
-    dict_as_string = String(my_dict)
+    var dict_as_string = String(my_dict)
     # print(dict_as_string)
     # prints {1: 1.1, 2: 2.2}
 
@@ -145,11 +145,11 @@ def test_get_with_default() raises:
     my_dict["a"] = 1
     my_dict["b"] = 2
 
-    value = my_dict.get("a", Int.MAX)
+    var value = my_dict.get("a", Int.MAX)
     # print(value.__str__())  # => 1
     assert_true(value == 1)
 
-    missing_value = my_dict.get("c", -1)
+    var missing_value = my_dict.get("c", -1)
     # print(missing_value.__str__())  # => -1
     assert_true(missing_value == -1)
 
@@ -179,7 +179,7 @@ def test_pop_with_default() raises:
     # print(value.__str__())  # => 1
     assert_true(value == 1)
 
-    missing_value = my_dict.pop("c", 99)
+    var missing_value = my_dict.pop("c", 99)
     # print(missing_value.__str__())  # => 99
     assert_true(missing_value == 99)
 
@@ -297,7 +297,7 @@ def test_setdefault() raises:
     # print(value.__str__())  # => 1
     assert_true(value == 1)
 
-    missing_value = my_dict.setdefault("c", 99)
+    var missing_value = my_dict.setdefault("c", 99)
     # print(missing_value.__str__())  # => 99
     assert_true(missing_value == 99)
     assert_true(my_dict["c"] == 99)
