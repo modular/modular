@@ -134,6 +134,7 @@ from std.builtin.sort import partition, sort
 from std.builtin.string_literal import StringLiteral
 from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
+from std.builtin.type_aliases import Never
 from std.builtin.value import (
     Copyable,
     Defaultable,
@@ -185,7 +186,6 @@ from std.origin import (
     ImmutOrigin,
     MutAnyOrigin,
     MutOrigin,
-    Never,
     Origin,
     OriginSet,
     ImmStaticOrigin,
