@@ -14,7 +14,6 @@ mojo_library(
         "//Kernels/lib/matmul_rs",
         "//Kernels/lib/msa",
         "//Kernels/src/mega_ffn",
-        "//max:algorithm",
         "//max:builtin_primitives",
         "//max:comm",
         "//max:extensibility",
