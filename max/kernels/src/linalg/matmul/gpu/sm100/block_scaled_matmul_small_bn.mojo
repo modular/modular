@@ -33,8 +33,7 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     external_memory,
     fence_mbarrier_init,

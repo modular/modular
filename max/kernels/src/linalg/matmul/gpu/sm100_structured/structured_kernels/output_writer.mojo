@@ -26,7 +26,7 @@ from std.sys import simd_width_of, size_of, align_of
 
 from std.gpu import WARP_SIZE, thread_idx
 from std.gpu import lane_id, warp_id as get_warp_id
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Coord,

@@ -30,7 +30,7 @@ from std.gpu.primitives.grid_controls import (
     PDLLevel,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,

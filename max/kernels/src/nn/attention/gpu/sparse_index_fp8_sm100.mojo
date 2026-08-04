@@ -77,7 +77,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from std.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,

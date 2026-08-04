@@ -40,8 +40,7 @@ from std.gpu.primitives.cluster import (
     cluster_wait,
     cluster_arrive_relaxed,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     external_memory,
     fence_mbarrier_init,

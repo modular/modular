@@ -27,7 +27,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.primitives import warp
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from std.collections import Span
 
 from extensibility import InputTensor, OutputTensor

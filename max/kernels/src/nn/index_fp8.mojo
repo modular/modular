@@ -29,7 +29,7 @@ from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.sync import barrier
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.attention.gpu.nvidia.common import q_tma
 from nn.attention.gpu.sparse_index_fp8_sm100 import (

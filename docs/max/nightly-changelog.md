@@ -813,6 +813,7 @@ This version is still a work in progress.
     `max.benchmark.bencher_iter_custom`
   - `std.gpu.compute` -> `max.gpu.compute`
   - `std.gpu.host` -> `max.gpu.host`
+  - `std.gpu.memory` -> `max.gpu.memory`
 
 ## Breaking changes
 

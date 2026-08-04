@@ -41,8 +41,7 @@ from std.gpu.primitives.cluster import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_group,

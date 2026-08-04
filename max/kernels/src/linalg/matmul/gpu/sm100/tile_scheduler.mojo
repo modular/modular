@@ -21,7 +21,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from std.gpu import block_id_in_cluster, block_idx, lane_id
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from std.utils.fast_div import FastDiv

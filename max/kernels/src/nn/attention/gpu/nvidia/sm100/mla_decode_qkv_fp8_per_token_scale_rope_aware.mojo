@@ -72,7 +72,7 @@ from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,

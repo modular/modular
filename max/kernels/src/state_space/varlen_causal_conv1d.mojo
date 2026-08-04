@@ -37,8 +37,6 @@ from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
 
 
-from std.gpu.memory import AddressSpace
-
 from layout import TensorLayout, TileTensor
 from layout.coord import Coord
 from layout.tensor_storage import TensorStorage

@@ -14,7 +14,6 @@
 """Figure 15.5 - Load tile from global memory to shared memory."""
 
 from std.gpu import thread_idx
-from std.gpu.memory import AddressSpace
 
 comptime NUM_THREADS_PER_BLOCK = 128
 

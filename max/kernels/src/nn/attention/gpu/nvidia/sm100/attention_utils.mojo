@@ -31,7 +31,6 @@ from std.gpu import block_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.primitives.warp import broadcast
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,

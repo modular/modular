@@ -35,7 +35,7 @@ from std.gpu import (
     thread_idx,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import fence_async_view_proxy, external_memory
+from max.gpu.memory import fence_async_view_proxy, external_memory
 from max.gpu.compute.mma import st_matrix
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.sync import named_barrier

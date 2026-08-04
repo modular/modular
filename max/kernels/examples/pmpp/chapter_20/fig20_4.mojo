@@ -14,7 +14,6 @@
 from std.math import exp, abs
 from std.random import rand
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.memory import AddressSpace
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 

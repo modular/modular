@@ -27,8 +27,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )

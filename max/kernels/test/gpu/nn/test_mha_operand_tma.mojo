@@ -19,7 +19,7 @@ from std.gpu import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,

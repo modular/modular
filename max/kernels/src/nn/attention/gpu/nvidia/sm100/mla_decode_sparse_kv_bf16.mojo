@@ -38,8 +38,7 @@ from std.gpu import (
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     CacheEviction,
     cp_async_bulk_tensor_2d_gather4,
     external_memory,

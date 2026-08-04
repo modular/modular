@@ -30,7 +30,6 @@ Types:
 
 from std.sys import align_of, size_of
 
-from std.gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
 from layout.layout_tensor import LayoutTensorIter

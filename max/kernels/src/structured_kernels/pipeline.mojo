@@ -79,8 +79,6 @@ Direct API (for special cases):
 
 from std.sys import size_of
 
-from std.gpu.memory import AddressSpace
-
 from .pipeline_backend import PipelineBackend, NvidiaMbarBackend
 
 # SM100 (B200) warp-specialized pipeline backoff hint, in nanoseconds.

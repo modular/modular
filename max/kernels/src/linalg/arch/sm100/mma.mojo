@@ -16,7 +16,6 @@ from std.sys import size_of
 from std.math import align_up
 
 from std.gpu.primitives.cluster import cluster_mask_base
-from std.gpu.memory import AddressSpace
 from std.gpu import block_id_in_cluster
 from max.gpu.host._tensormap import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

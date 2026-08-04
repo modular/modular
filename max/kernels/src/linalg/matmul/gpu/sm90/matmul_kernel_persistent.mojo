@@ -30,7 +30,7 @@ from std.gpu import thread_idx
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import TensorLayout, TileTensor
 from layout.tma_async import TMATensorTile
-from std.gpu.memory import external_memory, AddressSpace
+from max.gpu.memory import external_memory
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple

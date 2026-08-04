@@ -35,7 +35,7 @@
 from std.gpu import barrier, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange

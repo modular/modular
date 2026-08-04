@@ -28,7 +28,7 @@ from std.gpu.primitives.cluster import (
 from max.gpu.host import DeviceContext
 from std.gpu import block_id_in_cluster, lane_id
 from std.gpu.intrinsics import Scope
-from std.gpu.memory import fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal

@@ -14,10 +14,9 @@
 from std.gpu.primitives.cluster import elect_one_sync
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
-from std.gpu.memory import (
+from max.gpu.memory import (
     CacheEviction,
     ReduceOp,
-    AddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,

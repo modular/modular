@@ -17,7 +17,6 @@
 from std.math import ceildiv
 from std.gpu import block_idx, thread_idx, barrier
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 
 # ========================== KERNEL CODE ==========================

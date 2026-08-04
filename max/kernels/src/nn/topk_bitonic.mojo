@@ -23,7 +23,6 @@ from std.sys import align_of, size_of
 from std.gpu import barrier, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceAttribute
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.math import ceildiv
 from std.utils.numerics import min_or_neg_inf

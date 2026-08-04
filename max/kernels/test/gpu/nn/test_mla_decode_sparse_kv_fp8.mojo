@@ -48,7 +48,6 @@ from std.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.info import _is_sm10x_gpu
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

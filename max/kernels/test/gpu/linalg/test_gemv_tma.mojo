@@ -21,8 +21,7 @@ from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )

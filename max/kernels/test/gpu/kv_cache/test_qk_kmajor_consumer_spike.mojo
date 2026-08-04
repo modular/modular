@@ -44,7 +44,7 @@ from std.sys import size_of, has_nvidia_gpu_accelerator
 
 from std.gpu import WARP_SIZE, barrier, thread_idx, warp_id as get_warp_id
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from max.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive
 from max.gpu.compute.arch.tcgen05 import (

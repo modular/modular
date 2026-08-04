@@ -95,7 +95,6 @@ from algorithm.rowwise_types import (
 from algorithm.reduce_op import ReduceOp, Reducer
 from std.collections import InlineArray, Optional
 from std.gpu import (
-    AddressSpace,
     WARP_SIZE,
     barrier,
     lane_id,
@@ -104,8 +103,8 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.memory import external_memory
 from std.gpu.host.info import is_cpu, is_gpu
-from std.gpu.memory import external_memory
 from std.math import iota
 from std.memory import bitcast, stack_allocation
 from std.memory.unsafe_pointer import UnsafePointer

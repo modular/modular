@@ -18,7 +18,7 @@ from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.host import DeviceContext, Dim
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import cluster_idx, thread_idx
-from std.gpu.memory import fence_mbarrier_init
+from max.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor

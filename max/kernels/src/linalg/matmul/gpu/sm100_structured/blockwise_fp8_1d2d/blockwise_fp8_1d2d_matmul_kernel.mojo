@@ -31,7 +31,7 @@ from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from max.gpu.memory import external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,

@@ -71,8 +71,7 @@ from max.gpu.host import (
     Dim as LaunchDim,
 )
 from max.gpu.host.info import A100, H100, B200, _is_sm10x_gpu
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
     external_memory,

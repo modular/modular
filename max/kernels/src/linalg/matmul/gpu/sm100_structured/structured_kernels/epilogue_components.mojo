@@ -28,7 +28,7 @@ from std.sys import align_of, size_of, simd_width_of
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.primitives.cluster import elect_one_sync
-from std.gpu.memory import (
+from max.gpu.memory import (
     fence_async_view_proxy,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     ReduceOp,
@@ -1250,8 +1250,6 @@ struct EpilogueApplier[
             src_ptr: Pointer to source C SMEM tile (same TMA swizzle as output).
             beta: Residual scale factor.
         """
-        from std.gpu.memory import AddressSpace
-
         var top = self.coords.top_upper if is_upper else self.coords.top_lower
         var bot = (
             self.coords.bottom_upper if is_upper else self.coords.bottom_lower

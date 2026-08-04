@@ -112,7 +112,6 @@ When the framework doesn't fit:
 3. Add custom storage fields to SMEM struct
 """
 
-from std.gpu.memory import AddressSpace
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout
 from layout.tma_async import SharedMemBarrier

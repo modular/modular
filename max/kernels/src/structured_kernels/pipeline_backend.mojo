@@ -42,7 +42,6 @@ onto their substrate:
   from `phase` directly, so it needs no per-slot mutable wait state.
 """
 
-from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 
 comptime MbarPtr = UnsafePointer[

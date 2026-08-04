@@ -34,8 +34,7 @@ from layout import (
     TensorLayout,
     TileTensor,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
 )
 from ....structuring import SMemBarrier

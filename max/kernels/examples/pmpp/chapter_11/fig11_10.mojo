@@ -13,7 +13,6 @@
 
 from std.gpu import barrier, block_idx, thread_idx, WARP_SIZE
 from max.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
 from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.id import lane_id, warp_id
 from std.gpu.primitives.warp import shuffle_up

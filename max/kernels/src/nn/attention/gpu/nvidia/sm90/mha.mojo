@@ -38,7 +38,7 @@ from max.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from std.gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.layout_tensor import copy_sram_to_dram

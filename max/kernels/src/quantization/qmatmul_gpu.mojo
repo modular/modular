@@ -43,8 +43,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import is_gpu
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_group,

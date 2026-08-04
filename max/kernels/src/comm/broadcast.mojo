@@ -27,7 +27,7 @@ from std.gpu.primitives.grid_controls import (
 )
 
 from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
-from std.gpu.memory import Consistency, multimem_st
+from max.gpu.memory import Consistency, multimem_st
 from std.gpu.intrinsics import Scope
 from layout import TensorLayout, TileTensor
 

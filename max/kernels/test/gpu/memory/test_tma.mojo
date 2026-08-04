@@ -16,8 +16,7 @@ from std.io.io import _printf
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu import block_idx
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from std.gpu.sync import (

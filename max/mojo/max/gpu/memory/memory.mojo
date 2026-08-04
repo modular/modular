@@ -58,7 +58,7 @@ from std.memory.unsafe import bitcast
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from .._utils import (
+from std.gpu._utils import (
     to_i16,
     to_i32,
     to_i64,
@@ -67,130 +67,11 @@ from .._utils import (
     to_llvm_shared_mem_ptr,
     to_llvm_shared_cluster_mem_ptr,
 )
-from ..intrinsics import Scope
 
-# ===-----------------------------------------------------------------------===#
-# CacheOperation
-# ===-----------------------------------------------------------------------===#
+from std.gpu.intrinsics import Scope
 
-
-@fieldwise_init
-struct CacheOperation(Equatable, TrivialRegisterPassable):
-    """Represents different GPU cache operation policies.
-
-    This struct defines various caching behaviors for GPU memory operations,
-    controlling how data is cached and evicted at different cache levels.
-    The policies affect performance and memory coherency.
-    """
-
-    var _value: Int
-
-    comptime ALWAYS = Self(0)
-    """Cache at all levels. This will be accessed again.
-
-    Best for data that will be frequently reused across multiple threads.
-    Provides fastest subsequent access but uses the most cache space.
-    """
-
-    comptime GLOBAL = Self(1)
-    """Cache at global level.
-
-    Caches data only in the L2 cache, bypassing L1.
-    Good for data shared between different thread blocks.
-    """
-
-    comptime STREAMING = Self(2)
-    """Streaming, this is likely to be accessed once.
-
-    Optimizes for streaming access patterns where data is only read once.
-    May bypass certain cache levels for better throughput.
-    """
-
-    comptime LAST_USE = Self(4)
-    """Indicates the cache line will not be used again.
-
-    Hints to the cache that this data can be evicted after this access.
-    Helps optimize cache utilization.
-    """
-
-    comptime VOLATILE = Self(8)
-    """Don't cache, and fetch again.
-
-    Forces reads/writes to bypass cache and go directly to memory.
-    Useful for memory-mapped I/O or when cache coherency is required.
-    """
-
-    comptime WRITE_BACK = Self(16)
-    """Write back at all coherent levels.
-
-    Updates all cache levels and eventually writes to memory.
-    Most efficient for multiple writes to same location.
-    """
-
-    comptime WRITE_THROUGH = Self(32)
-    """Write through to system memory.
-
-    Immediately writes updates to memory while updating cache.
-    Provides stronger consistency but lower performance than write-back.
-    """
-
-    comptime WORKGROUP = Self(64)
-    """Workgroup level coherency.
-
-    Caches data in the L1 cache and streams it to the wave.
-    """
-
-    def __eq__(self, other: Self) -> Bool:
-        """Tests if two `CacheOperation` instances are equal.
-
-        Args:
-            other: The `CacheOperation` to compare against.
-
-        Returns:
-            True if the operations are equal, False otherwise.
-        """
-        return self._value == other._value
-
-    def __or__(self, other: Self) -> Self:
-        """Returns the bitwise OR of two `CacheOperation` instances.
-
-        Args:
-            other: The other `CacheOperation` to OR with.
-
-        Returns:
-            A new `CacheOperation` representing the bitwise OR of the two values.
-        """
-        return Self(self._value | other._value)
-
-    @always_inline
-    def mnemonic(self) -> StaticString:
-        """Returns the PTX mnemonic string for this cache operation.
-
-        Converts the cache operation into its corresponding PTX assembly
-        mnemonic string used in GPU instructions.
-
-        Returns:
-            A string literal containing the PTX mnemonic for this operation.
-        """
-        if self == Self.ALWAYS:
-            return "ca"
-        if self == Self.GLOBAL:
-            return "cg"
-        if self == Self.STREAMING:
-            return "cs"
-        if self == Self.LAST_USE:
-            return "lu"
-        if self == Self.VOLATILE:
-            return "cv"
-        if self == Self.WRITE_BACK:
-            return "wb"
-        if self == Self.WRITE_THROUGH:
-            return "wt"
-        if self == Self.WORKGROUP:
-            return "wg"
-
-        return "unknown cache operation"
-
+# Re-exports from the standard library
+from std.gpu.intrinsics import CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # CacheEviction
@@ -1062,7 +943,7 @@ def cp_async_bulk_global_shared_cta[
     Performs a non-blocking copy of `size` bytes from shared memory to global
     memory using the `cp.async.bulk` PTX instruction with the `.bulk_group`
     completion mechanism. Use `cp_async_bulk_commit_group` and
-    `cp_async_bulk_wait_group` from `std.gpu.sync` to synchronize.
+    `cp_async_bulk_wait_group` from `max.gpu.sync` to synchronize.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
     multiple of 16. Requires sm_100 or higher.
@@ -1177,7 +1058,7 @@ def cp_async_bulk_reduce_global_shared_cta[
     memory into the matching locations in global memory, using the PTX
     `cp.reduce.async.bulk` instruction with the `.bulk_group` completion
     mechanism. Use `cp_async_bulk_commit_group` and `cp_async_bulk_wait_group`
-    from `std.gpu.sync` to synchronize.
+    from `max.gpu.sync` to synchronize.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
     multiple of 16. Requires sm_100 or higher.
@@ -3372,7 +3253,7 @@ def multimem_st[
     Example:
 
     ```mojo
-    from std.gpu.memory.memory import multimem_st, Consistency
+    from max.gpu.memory.memory import multimem_st, Consistency
     from std.gpu.intrinsics import Scope
     from std.utils import StaticTuple
     var addr = Pointer[Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL].unsafe_dangling()

@@ -32,7 +32,7 @@ from std.gpu import (
     warp_id as get_warp_id,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import async_copy_wait_all
+from max.gpu.memory import async_copy_wait_all
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc

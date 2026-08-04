@@ -49,8 +49,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
     cp_async_bulk_shared_cluster_global,

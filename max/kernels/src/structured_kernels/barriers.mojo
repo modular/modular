@@ -16,7 +16,6 @@ This module provides type-safe wrappers around low-level barrier primitives,
 improving code readability and reducing error potential.
 """
 
-from std.gpu.memory import AddressSpace
 from std.gpu.sync import named_barrier, named_barrier_arrive
 from layout.tma_async import SharedMemBarrier
 

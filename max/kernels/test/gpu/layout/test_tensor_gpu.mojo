@@ -13,8 +13,7 @@
 
 from std.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
 )

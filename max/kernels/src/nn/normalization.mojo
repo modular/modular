@@ -36,7 +36,7 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 from std.sys.info import is_apple_gpu
 from std.gpu.primitives import block
 from std.gpu.primitives.grid_controls import (

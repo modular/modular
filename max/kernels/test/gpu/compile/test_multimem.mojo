@@ -13,7 +13,7 @@
 
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import H100
-from std.gpu.memory import *
+from max.gpu.memory import *
 from std.gpu.intrinsics import Scope
 from std.testing import *
 

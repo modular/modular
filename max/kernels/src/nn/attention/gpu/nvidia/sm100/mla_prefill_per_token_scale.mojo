@@ -45,7 +45,6 @@ from layout.coord import Idx, Coord
 from layout.layout_tensor import LayoutTensor
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from std.gpu.primitives.warp import broadcast
-from std.gpu.memory import AddressSpace
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

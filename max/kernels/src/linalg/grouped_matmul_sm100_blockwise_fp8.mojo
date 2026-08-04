@@ -36,8 +36,7 @@ from std.gpu import (
     lane_id,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,

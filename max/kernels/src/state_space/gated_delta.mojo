@@ -105,7 +105,6 @@ from std.gpu import (
     block_idx,
     thread_idx,
 )
-from std.gpu.memory import AddressSpace
 from std.math import rsqrt
 from std.memory import unsafe_stack_allocation
 from layout import TensorLayout, TileTensor

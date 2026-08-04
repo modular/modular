@@ -56,7 +56,7 @@ from std.builtin.dtype import _uint_type_of_width
 from nn.topk import TopK_2
 
 
-from std.gpu.memory import (
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,

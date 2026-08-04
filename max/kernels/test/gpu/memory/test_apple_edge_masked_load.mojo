@@ -19,7 +19,7 @@ col 3 masked to zero rather than leaking the next row. Apple M5 only.
 
 from std.gpu import thread_idx
 from max.gpu.host import DeviceContext, HostBuffer
-from std.gpu.memory import (
+from max.gpu.memory import (
     build_edge_mask,
     edge_masked_load,
     gmem_edge_masked_load,

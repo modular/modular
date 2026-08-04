@@ -18,8 +18,7 @@ transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 
 from std.utils.index import IndexList
 from max.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from layout import (
