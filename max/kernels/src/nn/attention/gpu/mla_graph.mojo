@@ -401,7 +401,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         rope_dim,
                     )
                 elif head_idx == num_q_heads:
-                    val = kv_input_fn[width=k_width](
+                    var val = kv_input_fn[width=k_width](
                         {global_token_idx, kv_norm_dim + head_dim_idx}
                     )
                     var roped_val = rope_value(val, f_c).cast[dtype]()

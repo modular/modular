@@ -459,11 +459,13 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
-        exp_sum_offset = UInt32(Self.q_num_heads) * (
+        var exp_sum_offset = UInt32(Self.q_num_heads) * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
-        exp_sum_ptr = partition.get_exp_sum_qk_max_pointer() + exp_sum_offset
-        qk_max_ptr = exp_sum_ptr + (
+        var exp_sum_ptr = (
+            partition.get_exp_sum_qk_max_pointer() + exp_sum_offset
+        )
+        var qk_max_ptr = exp_sum_ptr + (
             UInt32(Self.q_num_heads) * batch_size * partition.num_partitions()
         )
         return (exp_sum_ptr, qk_max_ptr)
@@ -477,7 +479,7 @@ struct MHAPosition[
         )
 
         comptime if PartitionType.do_partition:
-            start, end = get_start_and_end_for_partitions[Self.BN](
+            var start, end = get_start_and_end_for_partitions[Self.BN](
                 Int(self.num_keys - start_col),
                 Int(partition.num_partitions()),
                 Int(self.prompt_offset),
@@ -583,7 +585,7 @@ def get_seq_info[
     # for num_q==1 split-K (pair_cta=False) wrongly yields cluster_size=1 and
     # maps the partition CTAs (block_idx.x % P != 0) to nonexistent tiles, so
     # they are marked invalid and skip all compute.
-    scheduler = TransientScheduler[
+    var scheduler = TransientScheduler[
         UInt32(BM),
         UInt32(num_heads),
         flip_prompt_idx=flip_prompt_idx,
@@ -653,13 +655,13 @@ struct PositionSummary(TrivialRegisterPassable):
                 return seq_info.seq_len + start_pos
             else:
                 var kv_row_offsets = kv_input_row_offsets.value()
-                kv_seq_start = warp.broadcast(
+                var kv_seq_start = warp.broadcast(
                     UInt32(kv_row_offsets[Int(batch_idx)])
                 )
-                kv_seq_end = warp.broadcast(
+                var kv_seq_end = warp.broadcast(
                     UInt32(kv_row_offsets[Int(batch_idx) + 1])
                 )
-                cur_kv_len = kv_seq_end - kv_seq_start
+                var cur_kv_len = kv_seq_end - kv_seq_start
                 return cur_kv_len + start_pos
 
     @staticmethod
@@ -690,11 +692,11 @@ struct PositionSummary(TrivialRegisterPassable):
         kv_input_row_offsets: KVRowOffsetsType,
         max_seq_len: MaxSeqLenType,
     ) -> PositionSummary:
-        start_pos = Self.get_start_pos[
+        var start_pos = Self.get_start_pos[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
         ](kv_lut, seq_info, num_keys_arg)
-        num_keys = Self.get_num_keys[
+        var num_keys = Self.get_num_keys[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
         ](
@@ -704,7 +706,7 @@ struct PositionSummary(TrivialRegisterPassable):
             num_keys_arg,
             start_pos,
         )
-        score_row = Self.get_score_row[
+        var score_row = Self.get_score_row[
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding=_is_decoding[MaxSeqLenType](),

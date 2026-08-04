@@ -478,10 +478,10 @@ struct SM100MHA2Q[
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
-        mask = pack.mask
-        sink_weights = pack.sink_weights
-        kv_input_row_offsets = pack.kv_input_row_offsets
-        max_seq_len = pack.max_seq_len
+        var mask = pack.mask
+        var sink_weights = pack.sink_weights
+        var kv_input_row_offsets = pack.kv_input_row_offsets
+        var max_seq_len = pack.max_seq_len
 
         comptime num_q = Self.config.num_q
         # TODO: We may want to support num_q>2 for depth=64?
@@ -532,7 +532,7 @@ struct SM100MHA2Q[
                     UInt32(Self.config.sm100_tmem_cols),
                 )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:

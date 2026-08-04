@@ -327,7 +327,7 @@ def depth512_load[
     else:
         kv_head_idx = seq_info.head_idx // UInt32(group)
 
-    e = elect()
+    var e = elect()
 
     @parameter
     @always_inline

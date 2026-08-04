@@ -391,8 +391,8 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         comptime num_reg_softmax = 224
         comptime num_reg_correction = 152
         comptime num_reg_other = 112
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
             Self.config,
@@ -450,7 +450,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # We use byte-level pointer arithmetic via UInt8 bitcasts.
 
         # Q_nope FP8: 64 × 512 × 1 = 32768 bytes (SWIZZLE_64B)
-        q_nope_smem = external_memory[
+        var q_nope_smem = external_memory[
             Scalar[Self.fp8_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -571,7 +571,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
 
         if warp_idx == 8:
             if is_leader:
@@ -751,7 +751,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         if offset_position.num_keys_this_split == 0:
             return
 
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -975,7 +975,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
 
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -1014,7 +1014,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             # --- FP8 content MMA: Q_nope × K_nope → S (c_scale=0, overwrite) ---
             Self.UMMAQKTSS_Content.mma[stage_idx=0](
@@ -1075,7 +1075,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 

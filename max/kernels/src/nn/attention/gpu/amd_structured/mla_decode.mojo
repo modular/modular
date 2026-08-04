@@ -98,7 +98,7 @@ __extension Attention:
         var warp_id = UInt32(get_warp_id[broadcast=True]())
 
         # Split-K: compute this partition's key range.
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 

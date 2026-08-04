@@ -517,10 +517,10 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo,) -> MLAPositionSummary:
-        num_keys, start_pos = Self.get_num_keys_and_start_pos[
+        var num_keys, start_pos = Self.get_num_keys_and_start_pos[
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](k_rope_lut, seq_info)
-        score_row = Self.get_score_row(seq_info, start_pos)
+        var score_row = Self.get_score_row(seq_info, start_pos)
         return {num_keys, score_row}
 
 
