@@ -1491,7 +1491,7 @@ struct RaggedMHAOperand[
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
-        global_token_idx = Int(
+        var global_token_idx = Int(
             self.cache_row_offsets[Int(batch_idx)] + start_tok_idx
         )
         var ret_ptr = self.buffer.ptr + self.buffer.layout[

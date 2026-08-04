@@ -239,8 +239,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
     def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
-        q_size = self.block_m() * self.padded_depth
-        num_q = 2 if fa3 and persistent else 1
+        var q_size = self.block_m() * self.padded_depth
+        var num_q = 2 if fa3 and persistent else 1
         return num_q * q_size
 
     def kv_smem_size(self, fa3: Bool = False) -> Int:
@@ -259,7 +259,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if fa3:
             return self.kv_smem_size(True)
         else:
-            BN = self.block_n()
+            var BN = self.block_n()
             return BN * BN
 
     def p_smem_size(self) -> Int:
@@ -278,7 +278,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         comptime persistent = (
             get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
         ) and sm_90
-        sm_90_fa3 = sm_90 and (self.algorithm == 3)
+        var sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
         comptime if shared_kv:
             num_smem_elements = (
@@ -297,7 +297,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = size_of[self.dtype]() * num_smem_elements
+        var num_smem_bytes = size_of[self.dtype]() * num_smem_elements
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
@@ -342,7 +342,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         ):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(128)
-            reg_per = 224 if self.num_queries_per_block > 64 else 256
+            var reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
                 self.num_keys_per_block = num_keys_per_block.value()
             # FIXME: for depth == 64, larger num_keys_per_block values currently
@@ -357,11 +357,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
-                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                var reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
                 comptime persistent: Bool = (
                     get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
-                smem_total = 227000
+                var smem_total = 227000
                 # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
                 #                 + 16*pipeline_stages + 40*persistent
                 # smem_total - 2*BM*depth*(1+persistent) - 16*pipeline_stages - 40*persistent
