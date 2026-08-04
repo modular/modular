@@ -155,8 +155,8 @@ def test_kernel_1[
 
         ctx.synchronize()
 
-        c_host = c.tensor()
-        c_host_ref = c_ref.tensor()
+        var c_host = c.tensor()
+        var c_host_ref = c_ref.tensor()
 
         for m in range(M):
             for n in range(N):

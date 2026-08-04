@@ -64,8 +64,8 @@ def test[
     comptime K = expert_shape[1]
 
     # Total and max number of tokens
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
         max_num_tokens_by_expert = max(
@@ -203,7 +203,7 @@ def test[
     ctx.enqueue_copy(c_host_ptr, c_dev_buffer)
     ctx.synchronize()
 
-    rtol = 1e-2
+    var rtol = 1e-2
 
     for qkv_idx, m, n in std.itertools.product(
         range(3), range(total_num_tokens), range(N)

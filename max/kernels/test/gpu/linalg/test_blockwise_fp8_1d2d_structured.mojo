@@ -71,8 +71,8 @@ def test_blockwise_fp8_1d2d_structured[
     comptime N = expert_shape[0]
     comptime K = expert_shape[1]
 
-    total_num_tokens = 0
-    max_num_tokens_by_expert = 0
+    var total_num_tokens = 0
+    var max_num_tokens_by_expert = 0
     for i in range(len(num_tokens_by_expert)):
         var M = num_tokens_by_expert[i]
         total_num_tokens += M
