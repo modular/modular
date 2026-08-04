@@ -519,13 +519,13 @@ struct LayoutTensor[
             address_space=Self.address_space,
         ],
     ):
-        """Create a `LayoutTensor` with an `UnsafePointer`.
+        """Create a `LayoutTensor` with a `Pointer`.
 
         Constraints:
             Layout must be fully static.
 
         Args:
-            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `Pointer` pointing to the underlying data.
         """
 
         comptime assert (
@@ -564,7 +564,7 @@ struct LayoutTensor[
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
-        """Create a `LayoutTensor` with an `UnsafePointer` and a runtime layout
+        """Create a `LayoutTensor` with a `Pointer` and a runtime layout
         for the tensor. The runtime layout element type will be casted to the
         layout tensor layout integer type.
 
@@ -572,7 +572,7 @@ struct LayoutTensor[
             Element layout must be fully static.
 
         Args:
-            unsafe_ptr: The UnsafePointer pointing to the underlying data.
+            unsafe_ptr: The `Pointer` pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
         """
 
@@ -615,12 +615,12 @@ struct LayoutTensor[
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
     ):
-        """Create a `LayoutTensor` with an `UnsafePointer`, a runtime layout for
+        """Create a `LayoutTensor` with a `Pointer`, a runtime layout for
         the tensor, and the runtime layout of each element. The runtime layout
         element type will be casted to the layout tensor layout integer type.
 
         Args:
-            unsafe_ptr: The `UnsafePointer` pointing to the underlying data.
+            unsafe_ptr: The `Pointer` pointing to the underlying data.
             runtime_layout: The runtime layout of the `LayoutTensor`.
             element_runtime_layout: The runtime layout of each element.
         """

@@ -231,7 +231,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     3. tensormap_cp_fence_release() - Copy SMEM -> block's GMEM tensormap
     4. syncwarp() - Sync before using updated tensormap
 
-    TMA descriptor arrays are passed by reference (as UnsafePointer from
+    TMA descriptor arrays are passed by reference (as Pointer from
     TMATensorTileArray[blk]) to methods rather than stored by value. This
     ensures PTX tensormap operations receive valid GMEM addresses with correct
     address space semantics.

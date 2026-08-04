@@ -338,7 +338,7 @@ struct TileTensor[
         ],
         var layout: Self.LayoutType,
     ):
-        """Create a TileTensor from an UnsafePointer and layout.
+        """Create a TileTensor from a `Pointer` and layout.
 
         Args:
             ptr: The pointer to the tensor data.

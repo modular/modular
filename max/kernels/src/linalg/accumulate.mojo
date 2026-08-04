@@ -443,7 +443,7 @@ struct _Accumulator[
             partial_load: Whether load input partially.
 
         Args:
-            input: UnsafePointer to input buffer.
+            input: Pointer to input buffer.
             input_stride: Stride between input segments of size `num_cols * simd_width`.
             partial_load_size: Size of partial load for input.
         """
@@ -479,7 +479,7 @@ struct _Accumulator[
             partial_store: Whether store output partially.
 
         Args:
-            output: UnsafePointer to output buffer.
+            output: Pointer to output buffer.
             output_stride: Stride between output segments of size `num_cols * simd_width`.
             partial_store_size: Size of partial store to the output.
         """

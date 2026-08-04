@@ -78,11 +78,11 @@ def topk_wrapper[
         K: Int - Number of top elements to select per block
         num_elements: Int - Size of last dimension of input buffer (vocab size)
         num_blocks_per_input: Int - Number of blocks used to process the input data
-        in_buffer: UnsafePointer[Scalar[input_type]] - Input buffer containing the elements to process
-        local_topk_vals: UnsafePointer[Scalar[input_type]] - Output buffer to store the local top-K values
-        local_topk_idxs: UnsafePointer[Scalar[index_type]] - Output buffer to store the indices of local top-K elements
-        p_threshold: UnsafePointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
-        skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
+        in_buffer: Pointer[Scalar[input_type]] - Input buffer containing the elements to process
+        local_topk_vals: Pointer[Scalar[input_type]] - Output buffer to store the local top-K values
+        local_topk_idxs: Pointer[Scalar[index_type]] - Output buffer to store the indices of local top-K elements
+        p_threshold: Pointer[Scalar[input_type]] - Threshold for top-p sampling if is_top_p is True else min-p coefficient
+        skip_sort: Pointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
     var _K = Int(K)
     var _num_elements = Int(num_elements)
@@ -575,7 +575,7 @@ def run_radix_sort_pairs_gpu[
         ctx: DeviceContext - The GPU device context for enqueuing kernels.
         keys: DoubleBuffer[dtype] - Double buffer holding the keys to sort, swapped each pass.
         key_ids: DoubleBuffer[out_idx_type] - Double buffer holding the key indices, swapped each pass.
-        skip_sort: UnsafePointer[Scalar[DType.bool]] - Per-batch flag indicating whether sorting is skipped.
+        skip_sort: Pointer[Scalar[DType.bool]] - Per-batch flag indicating whether sorting is skipped.
         in_shape: IndexList - Shape of the input tensor as [batch_size, vocab_size].
     """
     var batch_size = in_shape[0]

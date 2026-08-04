@@ -1401,7 +1401,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
             sink_weights_ptr: Per-q-head attention-sink scalar weights.
                 Read only when the comptime `sink` parameter is True;
                 the non-sink path comptime-elides the load, so callers may
-                pass `UnsafePointer[...].unsafe_dangling()` when
+                pass `Pointer[...].unsafe_dangling()` when
                 `sink=False`. Indexed by `head_idx` once per block at
                 init time, cast to FP32, multiplied by `log2e` to land
                 in the kernel's log2-units rowmax, and seeded into

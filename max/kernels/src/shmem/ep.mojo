@@ -118,7 +118,7 @@ def pack_ptrs_array[
     """Pack the pointers into an inline array.
 
     Reads device addresses from `_ptrs` and produces an `Array` of
-    `UnsafePointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
+    `Pointer[Scalar[ptr_type]]` entries to pass to an EP kernel. When
     `local_rank_only` is set, every entry is filled with the address at
     `my_rank` instead of one address per rank.
 

@@ -2511,7 +2511,7 @@ struct RegTileEpilogue[
 
     var c_ptr_as_int: Int
     """Integer address of the destination's base pointer. Stored as
-    Int rather than `UnsafePointer` because the dst tile's origin
+    Int rather than `Pointer` because the dst tile's origin
     may be any mutable origin and the writer is reused across
     kernels with different origin types."""
 
