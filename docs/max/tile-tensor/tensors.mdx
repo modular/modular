@@ -77,7 +77,7 @@ You can address a
 tile tensor like a multidimensional array to access elements:
 
 ```mojo
-element = tensor2d[x, y]
+var element = tensor2d[x, y]
 tensor2d[x, y] = z
 ```
 
@@ -105,7 +105,7 @@ def takes_2d(tensor2d: TileTensor):
 
 # OR
 def takes_2d_constrained(tensor2d: TileTensor) where tensor2d.flat_rank == 2:
-    el0 = tensor2d[0, 0]
+    var el0 = tensor2d[0, 0]
 ```
 
 For information on using `where` clauses and `comptime` assertions, see the
@@ -753,7 +753,7 @@ from std.gpu import (
     WARP_SIZE,
 )
 from max.gpu.host import DeviceContext
-from std.gpu.memory import async_copy_commit_group, async_copy_wait_all
+from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation
 from layout.tile_io import GenericToSharedAsyncTileCopier, SharedToGenericTileCopier
 from layout.tile_layout import row_major

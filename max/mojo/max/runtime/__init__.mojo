@@ -14,9 +14,4 @@
 # the API reference publishes no page for this package and lists its subpackages
 # as though they were top-level. Replace this docstring with the one from
 # `std/runtime/__init__.mojo` once the rest of that package moves.
-"""Provides runtime services for async execution and program tracing.
-
-This package is moving from the Mojo standard library. Only the modules listed
-below have moved so far; the remaining `runtime` APIs are still documented in the
-Mojo standard library reference.
-"""
+"""Provides runtime services for async execution and program tracing."""

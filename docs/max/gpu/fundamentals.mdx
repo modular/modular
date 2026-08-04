@@ -295,7 +295,7 @@ ctx.enqueue_function[print_threads](
 ```
 
 For both `grid_dim` and `block_dim`, you express the size in the `x`, `y`, and
-`z` dimensions as a [`Dim`](https://mojolang.org/docs/std/gpu/host/dim/Dim/) or
+`z` dimensions as a [`Dim`](/api/mojo/max/gpu/host/dim/Dim/) or
 a `Tuple`. The `y` and `z` dimensions default to 1 if you don't explicitly
 provide them (that is, `(2, 2)` is treated as `(2, 2, 1)` and `(8,)` is treated
 as `(8, 1, 1)`). You can also provide just an `Int` value to specify only the

@@ -15,12 +15,7 @@
 # as though they were top-level. Replace this docstring with the one from
 # `std/gpu/__init__.mojo` once the rest of that package moves, repointing its
 # `/docs/std/...` links and `from std.gpu import ...` example.
-"""Provides GPU programming primitives for hardware-accelerated Mojo code.
-
-This package is moving from the Mojo standard library. Only the subpackages
-listed below have moved so far; the remaining `gpu` APIs are still documented in
-the Mojo standard library reference.
-"""
+"""Provides GPU programming primitives for hardware-accelerated Mojo code."""
 
 from .primitives import (
     block_rank_in_cluster,
