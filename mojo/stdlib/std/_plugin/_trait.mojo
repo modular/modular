@@ -20,7 +20,7 @@ from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
 )
 from std.utils import StaticTuple

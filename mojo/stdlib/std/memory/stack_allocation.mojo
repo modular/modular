@@ -20,7 +20,7 @@ from std.memory import unsafe_stack_allocation
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.sys import align_of, is_gpu
 from std._plugin import CurrentPlugin
 

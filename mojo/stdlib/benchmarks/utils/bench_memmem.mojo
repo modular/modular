@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _memchr, _memmem
+from std.collections.string.string_span import _memchr, _memmem
 from std.math import align_down
 from std.sys import simd_width_of
 

@@ -15,7 +15,7 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from std.collections.string.string_slice import _to_string_list
+from std.collections.string.string_span import _to_string_list
 from std.math import isinf, isnan
 
 from std.memory import unsafe_memcpy

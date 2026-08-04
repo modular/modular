@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 
 from ._trait import MaxPluginHooks
 

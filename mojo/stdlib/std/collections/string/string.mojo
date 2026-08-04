@@ -18,7 +18,7 @@ from std.collections.string import CodepointsIter
 from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     BytesIter,
     CodepointSliceIter,
     GraphemeIndicesIter,
@@ -211,10 +211,10 @@ struct String(
 
     Related types:
 
-    - [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/): A non-owning
+    - [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/): A non-owning
       view of string data, which can be either mutable or immutable.
-    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
-      alias for an immutable constant `StringSlice`.
+    - [`StaticString`](/docs/std/collections/string/string_span/#StaticString): An
+      alias for an immutable constant `StringSpan`.
     - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
     """
@@ -1527,7 +1527,7 @@ struct String(
             length=self.byte_length(),
         )
 
-    @deprecated("Use `StringSlice(str)` instead.")
+    @deprecated("Use `StringSpan(str)` instead.")
     @__unsafe_nested_origins_read_only
     def as_string_slice(
         ref self,

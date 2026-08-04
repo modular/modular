@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std._plugin._trait import PluginHooks
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 
 
 struct CUDAPlugin(PluginHooks):

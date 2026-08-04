@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _to_string_list
+from std.collections.string.string_span import _to_string_list
 from std.hashlib import default_comp_time_hasher, default_hasher
 from std.os import abort
 from std.pathlib import _dir_of_current_file

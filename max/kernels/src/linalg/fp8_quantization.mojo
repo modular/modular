@@ -13,7 +13,7 @@
 
 """Provides FP8 quantization kernels supporting static, dynamic, and blockwise scaling."""
 
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic

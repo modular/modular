@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.ffi import _CPointer
 from max.gpu.host import DeviceContext
 from max.gpu.host._amdgpu_hip import hipStream_t, HIP

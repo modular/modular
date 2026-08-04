@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import argv, size_of

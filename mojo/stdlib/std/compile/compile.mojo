@@ -38,7 +38,7 @@ print(info)
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.os import PathLike
 from std.pathlib import Path
 from std.sys.info import CompilationTarget, _current_target, _TargetType

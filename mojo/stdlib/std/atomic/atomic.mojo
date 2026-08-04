@@ -19,7 +19,7 @@ from std.atomic import Atomic
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.memory._poison import _check_not_poison
 from std.os import abort
 from std.sys.info import is_nvidia_gpu, is_apple_gpu

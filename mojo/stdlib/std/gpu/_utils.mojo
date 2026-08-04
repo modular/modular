@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
     get_static_string,
 )

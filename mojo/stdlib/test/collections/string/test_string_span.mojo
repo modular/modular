@@ -11,8 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string import ImmStringSlice, MutStringSlice
-from std.collections.string.string_slice import (
+from std.collections.string import (
+    ImmStringSpan,
+    ImmStringSlice,
+    MutStringSpan,
+    MutStringSlice,
+)
+from std.collections.string.string_span import (
     _to_string_list,
     get_static_string,
 )
@@ -53,19 +58,23 @@ For further visualization and analysis involving this sequence, see:
 # ===----------------------------------------------------------------------=== #
 
 
-def test_string_slice_layout() raises:
-    # Test that the layout of `StringSlice` is the same as `llvm::StringRef`.
-    # This is necessary for `StringSlice` to be validly bitcasted to and from
+def test_string_span_layout() raises:
+    # Test that the layout of `StringSpan` is the same as `llvm::StringRef`.
+    # This is necessary for `StringSpan` to be validly bitcasted to and from
     # `llvm::StringRef`
 
-    # StringSlice should be two words in size.
-    assert_equal(size_of[StringSlice[MutAnyOrigin]](), 2 * size_of[Int]())
+    # StringSpan should be two words in size.
+    assert_equal(size_of[StringSpan[MutAnyOrigin]](), 2 * size_of[Int]())
+    assert_equal(
+        size_of[StringSlice[MutAnyOrigin]](),
+        size_of[StringSpan[MutAnyOrigin]](),
+    )
 
-    var str_slice = StringSlice("")
+    var string_span = StringSpan("")
 
-    var base_ptr = Int(Pointer(to=str_slice))
-    var first_word_ptr = Int(Pointer(to=str_slice._slice._data))
-    var second_word_ptr = Int(Pointer(to=str_slice._slice._len))
+    var base_ptr = Int(Pointer(to=string_span))
+    var first_word_ptr = Int(Pointer(to=string_span._slice._data))
+    var second_word_ptr = Int(Pointer(to=string_span._slice._len))
 
     # 1st field should be at 0-byte offset from base ptr
     assert_equal(first_word_ptr - base_ptr, 0)
@@ -1182,28 +1191,36 @@ def test_grapheme_indexing() raises:
 
 
 def test_mut_string_slice_alias() raises:
-    var data = String("hello")
-
-    def capitalize(s: MutStringSlice[_]):
+    def capitalize(s: MutStringSpan[_]):
         s.as_bytes()[0] -= Byte(ord("a") - ord("A"))
 
-    capitalize(data)
-    assert_equal(data, "Hello")
+    def capitalize_compat(s: MutStringSlice[_]):
+        capitalize(s)
+
+    var canonical_data = String("hello")
+    var compatibility_data = String("world")
+    capitalize(canonical_data)
+    capitalize_compat(compatibility_data)
+    assert_equal(canonical_data, "Hello")
+    assert_equal(compatibility_data, "World")
 
 
 def test_imm_string_slice_alias() raises:
-    def byte_sum(s: ImmStringSlice[_]) -> Int:
+    def byte_sum(s: ImmStringSpan[_]) -> Int:
         var total = 0
         for b in s.as_bytes():
             total += Int(b)
         return total
 
+    def byte_sum_compat(s: ImmStringSlice[_]) -> Int:
+        return byte_sum(s)
+
     var mutable_data = String("abc")
     var immutable_data = StaticString("abc")
 
-    # `ImmStringSlice` works with both mutable and immutable data.
+    # Both names work with mutable and immutable data.
     assert_equal(byte_sum(mutable_data), 294)
-    assert_equal(byte_sum(immutable_data), 294)
+    assert_equal(byte_sum_compat(immutable_data), 294)
 
 
 def main() raises:

@@ -16,7 +16,7 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 from std.collections.string.format import _FormatUtils
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     CodepointSliceIter,
     CodepointsIter,
     GraphemeSliceIter,

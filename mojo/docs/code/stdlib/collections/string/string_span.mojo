@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def string_slice_summary() raises:
+def string_span_summary() raises:
     from std.testing import assert_equal, assert_raises
 
-    # Create a string slice
-    var text = StringSlice("Hello, 世界")
+    # Create a string span
+    var text = StringSpan("Hello, 世界")
 
     # Zero-copy slicing
     var hello = text[byte=0:5]  # Hello
@@ -41,4 +41,4 @@ def string_slice_summary() raises:
 
 
 def main() raises:
-    string_slice_summary()
+    string_span_summary()

@@ -20,7 +20,7 @@ from max.algorithm import elementwise
 """
 
 from max._plugin import MaxPluginForTarget
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu

@@ -13,7 +13,7 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.sys import _RegisterPackType, is_nvidia_gpu, llvm_intrinsic, size_of
 from std.sys._assembly import inlined_assembly
 from std.sys.info import (

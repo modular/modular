@@ -19,7 +19,7 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of, simd_width_of
 from max.gpu.host.info import B200, H100, _is_sm10x_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import (

@@ -15,7 +15,7 @@
 This module provides string formatting functionality similar to Python's
 `str.format()` method. The `format()` method (available on the
 [`String`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan`](/docs/std/collections/string/string_span/StringSpan/#format)
 types) takes the current string as a template (or "format string"), which can
 contain literal text and/or replacement fields delimited by curly braces (`{}`).
 The replacement fields are replaced with the values of the arguments.
@@ -65,13 +65,13 @@ var s4 = "{!r}".format("test")  # "'test'"
 
 This module has no public API; its functionality is available through the
 [`String.format()`](/docs/std/collections/string/string/String/#format) and
-[`StringSlice.format()`](/docs/std/collections/string/string_slice/StringSlice/#format)
+[`StringSpan.format()`](/docs/std/collections/string/string_span/StringSpan/#format)
 methods.
 """
 
 
 from std.builtin.globals import global_constant
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
