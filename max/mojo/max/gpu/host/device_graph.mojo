@@ -15,8 +15,8 @@
 A device graph captures a sequence of GPU operations (such as kernel launches,
 memory copies, and memsets) as a reusable graph that can be replayed at a lower
 overhead than re-enqueueing each operation individually. The main entry point
-is [`DeviceGraph.create()`](/docs/std/gpu/host/device_graph/DeviceGraph/#create),
-which hands a [`DeviceGraphBuilder`](/docs/std/gpu/host/device_graph/DeviceGraphBuilder/)
+is [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create),
+which hands a [`DeviceGraphBuilder`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/)
 to a scoped callback."""
 
 from max.gpu.host import (
@@ -150,7 +150,7 @@ struct DeviceGraph(ImplicitlyCopyable):
     lower overhead than re-enqueueing each operation individually.
 
     To obtain a `DeviceGraph`, use
-    [`DeviceGraph.create()`](/docs/std/gpu/host/device_context/DeviceGraph/#create).
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create).
     """
 
     var _handle: _DeviceGraphPtr[mut=True]
@@ -303,7 +303,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """Builder for explicit device graph construction.
 
     A `DeviceGraphBuilder` is handed to the callback passed to
-    [`DeviceGraph.create()`](/docs/std/gpu/host/device_context/DeviceGraph/#create).
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create).
     Callers add kernel nodes via `add_function()` from within that callback,
     which then instantiates a reusable `DeviceGraph`.
 
@@ -794,7 +794,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         compiles it automatically using the `DeviceContext` that created this
         builder, so no separate `DeviceContext.compile_function()` step is
         needed. It mirrors the parameter-based
-        [`DeviceContext.enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
         overload for the non-graph path.
 
         Parameters:
@@ -929,7 +929,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         compiles it automatically using the `DeviceContext` that created this
         builder, so no separate `DeviceContext.compile_function()` step is
         needed. It mirrors the capturing parameter-based
-        [`DeviceContext.enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+        [`DeviceContext.enqueue_function()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_function)
         overload for the non-graph path.
 
         Parameters:

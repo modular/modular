@@ -22,7 +22,7 @@ of GPU devices, such as maximum thread counts, memory sizes, compute capabilitie
 supported features.
 
 :::note
-See the [`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) page
+See the [`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/) page
 for examples that retrieve `DeviceAttribute` values.
 :::
 """
