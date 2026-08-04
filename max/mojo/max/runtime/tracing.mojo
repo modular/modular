@@ -307,9 +307,8 @@ def _get_enabled_tracing_systems[level: TraceLevel]() -> List[String]:
     enabled_systems = List[String]()
 
     # Check AsyncRT profiling
-    if (asyncrt_level := _build_info_asyncrt_max_profiling_level()) and (
-        asyncrt_level.value() > 0
-    ):
+    var asyncrt_level = _build_info_asyncrt_max_profiling_level()
+    if asyncrt_level and asyncrt_level.value() > 0:
         enabled_systems.append("AsyncRT")
 
     # Check GPU profiling

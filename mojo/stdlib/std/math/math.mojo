@@ -3055,7 +3055,8 @@ def lcm(m: Int, n: Int, /) -> Int:
     Returns:
         The least common multiple of the two integers.
     """
-    if d := gcd(m, n):
+    var d = gcd(m, n)
+    if d:
         return abs((m // d) * n if m > n else (n // d) * m)
     return 0
 

@@ -1463,7 +1463,8 @@ struct PythonObject(
             If the Python object does not contain an instance of the Mojo `T`
             type.
         """
-        if opt := self._try_downcast_value[T]():
+        var opt = self._try_downcast_value[T]()
+        if opt:
             return opt.unsafe_take()
 
         if func:

@@ -368,7 +368,8 @@ def _get_global_handle[
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
     var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
-    if global_ptr := _get_global_or_null(HANDLE_NAME):
+    var global_ptr = _get_global_or_null(HANDLE_NAME)
+    if global_ptr:
         var ptr = global_ptr.value().unsafe_bitcast[Handle[backend]]()
         _attach_handle_to_stream(ctx, ptr[])
         return ptr[]

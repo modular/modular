@@ -322,7 +322,8 @@ def _check_ccl_ok(status: ncclResult_t) raises:
 
 def _get_global_comms(ngpus: Int) raises -> Communicators:
     var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
-    if global_ptr := _get_global_or_null(NAME):
+    var global_ptr = _get_global_or_null(NAME)
+    if global_ptr:
         return global_ptr.value().unsafe_bitcast[Communicators]()[]
 
     if ngpus > MAX_GPUS:

@@ -57,7 +57,8 @@ def _init_rocshmem_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/librocshmem.so
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
     try:
         return OwnedDLHandle(

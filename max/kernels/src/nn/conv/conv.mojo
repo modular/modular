@@ -3834,7 +3834,8 @@ def _get_cudnn_meta(
     var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
 
     # Get or create the per-device cache dictionary.
-    if ptr_meta := _get_global_or_null(cache_key):
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
         var ptr = ptr_meta.unsafe_value().unsafe_bitcast[CuDNNConvMeta]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
@@ -3964,7 +3965,8 @@ def _get_cached_cudnn_meta_nhwc_full(
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key):
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
         var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
             CachedCuDNNMetaNHWCFull
         ]()
@@ -4342,7 +4344,8 @@ def _get_cached_miopen_meta[
         "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.id())
     )
 
-    if ptr_meta := _get_global_or_null(cache_key):
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
         var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
             CachedMIOpenMeta[conv_rank]
         ]()
@@ -6444,7 +6447,8 @@ def _conv3d_cudnn[
     var algo: cudnnConvolutionFwdAlgo_t
     var workspace_size_var: Int
 
-    if ptr_cached := _get_global_or_null(cache_key):
+    var ptr_cached = _get_global_or_null(cache_key)
+    if ptr_cached:
         # Cache hit — reuse previously selected algorithm.
         var entry = ptr_cached.unsafe_value().unsafe_bitcast[
             _Conv3dAlgoCacheEntry
