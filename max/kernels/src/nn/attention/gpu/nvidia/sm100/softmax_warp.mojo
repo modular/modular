@@ -2788,90 +2788,69 @@ def fa4_softmax[
                 " assumes 4 full batches (headline shape)"
             )
 
-            @parameter
-            @always_inline
-            def _asym[ahead: Int]() -> f32x2:
-                # buffer `ahead` batches (exp2 only, no store)
-                comptime for bb in range(ahead):
-                    comptime for idx in range(
-                        bb * batch_size, (bb + 1) * batch_size
-                    ):
-                        exp_iter[idx]()
-                # single inplace consume (instant at this static position)
-                inplace_cons.wait()
-                inplace_cons.step()
-                # init 0 only to satisfy definite-init across the comptime-if
-                # branches; batch 0 ASSIGNS (overwrites) below, so the 4-acc
-                # every-4th tree/pairings are unchanged => bit-exact.
-                var r0 = f32x2(0)
-                var r1 = f32x2(0)
-                var r2 = f32x2(0)
-                var r3 = f32x2(0)
-                comptime for b in range(num_batch_iters):
-                    # 3-then-1: release consumer_s[0] (P[0:96)) at the b==3
-                    # boundary, after batches 0,1,2 are stored.
-                    comptime if 4 * b == 3 * num_batch_iters:
-                        tcgen05_store_wait()
-                        tcgen05_fence_before()
-                        comptime if config.pair_cta:
-                            umma_arrive_leader_cta(
-                                pipeline_s.consumer_mbar[0]()
-                            )
-                        else:
-                            pipeline_s.release_no_step[0]()
-                    comptime if b >= ahead:
-                        comptime for idx in range(
-                            b * batch_size, (b + 1) * batch_size
-                        ):
-                            exp_iter[idx]()
-                    comptime if b == 0:
-                        BatchTileType(p_tmem).store_async(s)
+            # single inplace consume (instant at this static position)
+            inplace_cons.wait()
+            inplace_cons.step()
+            # init 0 only to satisfy definite-init across the comptime-if
+            # branches; batch 0 ASSIGNS (overwrites) below, so the 4-acc
+            # every-4th tree/pairings are unchanged => bit-exact.
+            var r0 = f32x2(0)
+            var r1 = f32x2(0)
+            var r2 = f32x2(0)
+            var r3 = f32x2(0)
+            comptime for b in range(num_batch_iters):
+                # 3-then-1: release consumer_s[0] (P[0:96)) at the b==3
+                # boundary, after batches 0,1,2 are stored.
+                comptime if 4 * b == 3 * num_batch_iters:
+                    tcgen05_store_wait()
+                    tcgen05_fence_before()
+                    comptime if config.pair_cta:
+                        umma_arrive_leader_cta(pipeline_s.consumer_mbar[0]())
                     else:
-                        comptime el = batch_size * b * exp_simd
-                        comptime to = (el * size_of[qkv_type]()) // size_of[
-                            accum_dtype
-                        ]()
-                        BatchTileType(p_tmem + UInt32(to)).store_async[
-                            src_offset=el
-                        ](s)
-                    # interleave the row-sum for batch b (same 4-acc every-4th
-                    # tree as the aliased path => bit-exact)
-                    comptime if b == 0:
-                        r0 = s_load[0]()
-                        r1 = s_load[1]()
-                        r2 = s_load[2]()
-                        r3 = s_load[3]()
-                        comptime for k in range(4, batch_size, 4):
-                            r0 = add_ftz(r0, s_load[k]())
-                            r1 = add_ftz(r1, s_load[k + 1]())
-                            r2 = add_ftz(r2, s_load[k + 2]())
-                            r3 = add_ftz(r3, s_load[k + 3]())
-                    else:
-                        comptime for k in range(
-                            b * batch_size, (b + 1) * batch_size, 4
-                        ):
-                            r0 = add_ftz(r0, s_load[k]())
-                            r1 = add_ftz(r1, s_load[k + 1]())
-                            r2 = add_ftz(r2, s_load[k + 2]())
-                            r3 = add_ftz(r3, s_load[k + 3]())
-                tcgen05_store_wait()
-                tcgen05_fence_before()
-                comptime if config.pair_cta:
-                    umma_arrive_leader_cta(
-                        pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
-                    )
-                    pipeline_s.step()
+                        pipeline_s.release_no_step[0]()
+                comptime for idx in range(b * batch_size, (b + 1) * batch_size):
+                    exp_iter[idx]()
+                comptime if b == 0:
+                    BatchTileType(p_tmem).store_async(s)
                 else:
-                    pipeline_s.release[config.num_pv_stages - 1]()
-                pipeline_c.acquire()
-                return add_ftz(add_ftz(r0, r1), add_ftz(r2, r3))
-
-            # Per-tile ahead value (see `_asym` above). Warp-uniform branch --
-            # no divergence cost.
-            if warp_group_idx == UInt32(0):
-                return _asym[1]()
+                    comptime el = batch_size * b * exp_simd
+                    comptime to = (el * size_of[qkv_type]()) // size_of[
+                        accum_dtype
+                    ]()
+                    BatchTileType(p_tmem + UInt32(to)).store_async[
+                        src_offset=el
+                    ](s)
+                # interleave the row-sum for batch b (same 4-acc every-4th
+                # tree as the aliased path => bit-exact)
+                comptime if b == 0:
+                    r0 = s_load[0]()
+                    r1 = s_load[1]()
+                    r2 = s_load[2]()
+                    r3 = s_load[3]()
+                    comptime for k in range(4, batch_size, 4):
+                        r0 = add_ftz(r0, s_load[k]())
+                        r1 = add_ftz(r1, s_load[k + 1]())
+                        r2 = add_ftz(r2, s_load[k + 2]())
+                        r3 = add_ftz(r3, s_load[k + 3]())
+                else:
+                    comptime for k in range(
+                        b * batch_size, (b + 1) * batch_size, 4
+                    ):
+                        r0 = add_ftz(r0, s_load[k]())
+                        r1 = add_ftz(r1, s_load[k + 1]())
+                        r2 = add_ftz(r2, s_load[k + 2]())
+                        r3 = add_ftz(r3, s_load[k + 3]())
+            tcgen05_store_wait()
+            tcgen05_fence_before()
+            comptime if config.pair_cta:
+                umma_arrive_leader_cta(
+                    pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
+                )
+                pipeline_s.step()
             else:
-                return _asym[0]()
+                pipeline_s.release[config.num_pv_stages - 1]()
+            pipeline_c.acquire()
+            return add_ftz(add_ftz(r0, r1), add_ftz(r2, r3))
 
         # --- Batch 0 ---
         comptime for idx in range(batch_size):
