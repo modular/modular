@@ -65,8 +65,11 @@ struct LowerArgConventionsPass
 
 /// Return the lowered type for an in-memory passed argument. If lowering is not
 /// needed, return null.
+///
+/// `isCABI` delegates lowering of all structs to the platform ABI classifier,
+/// so the Mojo-specific checks below are skipped.
 static Type lowerPointerType(Type type, TargetInfoAttr target,
-                             unsigned maxInlineSize) {
+                             unsigned maxInlineSize, bool isCABI) {
   // Only pointer types should be lowered.
   auto argPtr = dyn_cast<PointerType>(type);
   if (!argPtr)
@@ -74,9 +77,10 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
 
   // We don't lower memory-only structs.
   Type elType = argPtr.getElementType();
-  if (auto structType = dyn_cast<StructType>(elType))
-    if (structType.isDefinitelyMemoryOnly())
-      return {};
+  if (!isCABI)
+    if (auto structType = dyn_cast<StructType>(elType))
+      if (structType.isDefinitelyMemoryOnly())
+        return {};
 
   // Don't promote a pointer whose element this target keeps in memory form.
   if (target) {
@@ -102,7 +106,7 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
     // so lowering can continue on the unpacked/value form.
     if (!size || *size < 0)
       return elType;
-    if (*size > static_cast<int64_t>(maxInlineSize))
+    if (!isCABI && *size > static_cast<int64_t>(maxInlineSize))
       return {};
   }
 
@@ -245,7 +249,7 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
 
 static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                                     SmallVector<ArgConvention> &conventions,
-                                    unsigned argConventionIndex,
+                                    unsigned argConventionIndex, bool isCABI,
                                     int depth = 0) {
 
   Type type = transform->typeOfValueAt(operandIndex);
@@ -272,8 +276,8 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                                   convention == ArgConvention::DeinitMem))
     return;
 
-  if (auto elType =
-          lowerPointerType(type, transform->target, transform->maxInlineSize)) {
+  if (auto elType = lowerPointerType(type, transform->target,
+                                     transform->maxInlineSize, isCABI)) {
     transform->applyPointerTransform(operandIndex, elType);
     conventions[argConventionIndex] =
         (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
@@ -281,7 +285,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
             ? ArgConvention::OwnedReg
             : ArgConvention::ReadReg;
     transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, ++depth);
+                            argConventionIndex, isCABI, ++depth);
   }
 
   /// LOWER PACK. Look for a kgen.struct with the "isParamPack" attribute.
@@ -303,7 +307,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
     transform->applyPackTransform(operandIndex, types, packStruct);
     insertAndUpdateConventions(conventions, argConventionIndex, types, depth);
     transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, ++depth);
+                            argConventionIndex, isCABI, ++depth);
   }
 
   /// LIFT REG. Lower an argument this target cannot pass in registers back to
@@ -540,7 +544,7 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     auto convention = argConventions[idx];
     if (!isResultSlot(convention)) {
       transformNonResultValue(transform, idx + operandOffset, argConventions,
-                              idx);
+                              idx, oldSig.isCABI());
       continue;
     }
     if (oldSig.isAsync()) // Async is broken.
@@ -564,8 +568,14 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
 
     // This is either a byref_result or byref_error argument. See if it can be
     // lowered to being returned directly in a register.
-    Type loweredType = lowerPointerType(valueType, transform->target,
-                                        transform->maxInlineSize);
+    assert(!(oldSig.isCABI() && convention == ArgConvention::ByRefError) &&
+           "abi(\"C\") function must not have an error slot");
+
+    // Promoting a C result slot lets the platform ABI return it in a register
+    // or through an sret pointer.
+    Type loweredType =
+        lowerPointerType(valueType, transform->target, transform->maxInlineSize,
+                         oldSig.isCABI());
     if (!loweredType)
       continue;
 
