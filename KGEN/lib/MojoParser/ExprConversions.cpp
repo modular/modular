@@ -2310,7 +2310,7 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
     return {};
 
   // If the value is a t-string, convert it to String first. TString cannot be
-  // implicitly converted to StringSlice, but String has an explicit constructor
+  // implicitly converted to StringSpan, but String has an explicit constructor
   // that accepts TString.
   if (isa<TStringExprNode>(expr)) {
     auto stringType = shared.lookupBuiltinType("String", declScope, loc)
@@ -2324,18 +2324,18 @@ TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
     }
   }
 
-  // Convert to StringSlice if not already.
-  auto stringSliceType = shared.lookupBuiltinType("StringSlice", declScope, loc)
-                             .getWithoutParameters(shared);
-  if (val.getType().getDecl(shared) != stringSliceType.getDecl(shared)) {
-    if (!canImplicitlyConvertToType({val, expr}, stringSliceType, declScope)) {
+  // Convert to StringSpan if not already.
+  auto stringSpanType = shared.lookupBuiltinType("StringSpan", declScope, loc)
+                            .getWithoutParameters(shared);
+  if (val.getType().getDecl(shared) != stringSpanType.getDecl(shared)) {
+    if (!canImplicitlyConvertToType({val, expr}, stringSpanType, declScope)) {
       emitError(expr->getLoc()) << "cannot implicitly convert " << val.getType()
-                                << " to a `StringSlice`";
+                                << " to a `StringSpan`";
       return {};
     }
 
     val = emitConstructorCall(
-        stringSliceType,
+        stringSpanType,
         CallOperands(CallSyntax::kTypeCall, expr, context, {{val, expr}}));
     if (!val)
       return {};

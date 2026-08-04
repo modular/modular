@@ -43,14 +43,12 @@ def to_string[
     ]
 
 
-# CHECK-LABEL: lit.fn @"test2[::StringSlice[::Bool(False)
+# CHECK-LABEL: lit.fn @"test2[::StringSpan[::Bool(False)
 def test2[pred: StaticString](x: Int, y: Int) -> Bool:
     def get_pred[pred: StaticString]() -> __mlir_type.`!kgen.deferred`:
         return __mlir_deferred_attr[
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]
 
-    var z = __mlir_op.`index.cmp`[pred = get_pred[pred]()](x, y)
+    var z = __mlir_op.`index.cmp`[pred=get_pred[pred]()](x, y)
     return z
-
-

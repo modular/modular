@@ -8,7 +8,7 @@
 # RUN: not kgen -elaborate  -D TEST_RECURSION2=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION2
 # RUN: not kgen -elaborate  -D TEST_RECURSION3=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION3
 
-from std.collections.string.string_slice import StaticString, _get_kgen_string
+from std.collections.string.string_span import StaticString, _get_kgen_string
 from std.sys import get_defined_bool
 
 
