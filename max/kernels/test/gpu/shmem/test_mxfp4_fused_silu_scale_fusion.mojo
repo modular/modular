@@ -10,18 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""KS64: `fused_silu_mxfp4` direct `scale_4d` emission.
+"""KS64: `fused_silu_mx` direct `scale_4d` emission.
 
 The MXFP4 down-projection grouped matmul consumes the activation E8M0 scale in
 the per-expert fixed-stride `scale_4d` slot layout (`Shuffler.scale_4d_byte_off`).
 Today that layout is produced by a standalone kernel
 (`preshuffle_grouped_scale_4d_gpu`, traced `mxfp4_preshuffle_grouped_scale_4d_kernel_KS64`)
-that runs *serially* after `fused_silu_mxfp4` writes the scale row-major. The
+that runs *serially* after `fused_silu_mx` writes the scale row-major. The
 fusion (KS64/down-proj) has `fused_silu` write the scale DIRECTLY in
 the slot layout behind a `comptime fuse_a_scale_preshuffle` flag, deleting the
 separate kernel from the critical path.
 
-This test drives the REAL `fused_silu_mxfp4_kernel` two ways and asserts the
+This test drives the REAL `fused_silu_mx_kernel` two ways and asserts the
 produced slot buffers are byte-for-byte equal:
 
   reference (fuse_a_scale_preshuffle=False): fused_silu writes raw [tokens, K/32]
@@ -56,7 +56,7 @@ from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32, MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import Shuffler
 
-from shmem.ep_comm import fused_silu_mxfp4_kernel
+from shmem.ep_comm import fused_silu_mx_kernel
 
 from std.testing import assert_equal
 
@@ -174,7 +174,7 @@ def _run_fusion_check[
         a_off_d, row_major[n_off]()
     )
 
-    # The fused_silu_mxfp4_kernel is monomorphic over layout types; bind the
+    # The fused_silu_mx_kernel is monomorphic over layout types; bind the
     # comptime params (dtypes, layouts, threads/SMs) and `fuse_a_scale_preshuffle`.
     comptime out_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
@@ -192,7 +192,7 @@ def _run_fusion_check[
         )
     ).LayoutType
 
-    comptime kernel_ref = fused_silu_mxfp4_kernel[
+    comptime kernel_ref = fused_silu_mx_kernel[
         DType.uint8,
         DType.float8_e8m0fnu,
         DType.bfloat16,
@@ -205,7 +205,7 @@ def _run_fusion_check[
         fuse_a_scale_preshuffle=False,
         clamp_activation=clamp_activation,
     ]
-    comptime kernel_fused = fused_silu_mxfp4_kernel[
+    comptime kernel_fused = fused_silu_mx_kernel[
         DType.uint8,
         DType.float8_e8m0fnu,
         DType.bfloat16,
@@ -400,7 +400,7 @@ def _run_activation_probe[
         )
     ).LayoutType
 
-    comptime kernel = fused_silu_mxfp4_kernel[
+    comptime kernel = fused_silu_mx_kernel[
         DType.uint8,
         DType.float8_e8m0fnu,
         DType.bfloat16,
@@ -555,7 +555,7 @@ def main() raises:
     _run_fusion_check[hidden_size=3072, NUM_ACTIVE=5](
         "ks96-plainsilu-mixed", [3, 33, 0, 17, 64], 0, ctx
     )
-    print("All fused_silu_mxfp4 scale-fusion checks passed.")
+    print("All fused_silu_mx scale-fusion checks passed.")
 
     # Clamp-math correctness gate (byte-equivalence can't catch it).
     # M3 constants: alpha=1.702, limit=7.0.
@@ -565,4 +565,4 @@ def main() raises:
     _run_activation_probe[hidden_size=2048](
         "ks64-activation-probe", 96, 1.702, 7.0, ctx
     )
-    print("All fused_silu_mxfp4 activation probes passed.")
+    print("All fused_silu_mx activation probes passed.")

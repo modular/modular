@@ -492,6 +492,14 @@ class Mxfp4Strategy:
         group_size: int,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations to MXFP4 and returns (quantized, scales)."""
+        if self.config.is_mxfp8:
+            # Would silently emit MXFP4 otherwise. The MXFP8 path gets its
+            # activations from EP dispatch or `fused_silu_quantize`; a
+            # standalone MXFP8 activation quantize kernel does not exist yet.
+            raise NotImplementedError(
+                "standalone MXFP8 activation quantize is not implemented; "
+                "MXFP8 activations come from EP dispatch or fused_silu_quantize"
+            )
         return quantize_dynamic_block_scaled_mxfp4(
             tensor,
             scales_type=self.config.weight_scale.dtype,

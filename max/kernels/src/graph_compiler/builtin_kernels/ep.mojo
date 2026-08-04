@@ -66,12 +66,12 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
-    MXFP4TokenFormat,
+    MXTokenFormat,
     NVBlockScaledTokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
-    fused_silu_mxfp4_kernel,
+    fused_silu_mx_kernel,
     fused_silu_nvfp4_kernel,
 )
 
@@ -160,8 +160,8 @@ struct Struct_ep_init:
             dispatch_msg_size = token_fmt_type.msg_size()
 
         elif dispatch_fmt_str == "MXFP4":
-            comptime token_fmt_type = MXFP4TokenFormat[
-                fp4_dtype=dispatch_dtype,
+            comptime token_fmt_type = MXTokenFormat[
+                quant_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
                 scales_layout=RT_LAYOUT_2D,
@@ -578,8 +578,8 @@ struct Struct_ep_dispatch_async_mxfp4:
                 tokens received per expert.
             context: GPU device context for the current device.
         """
-        comptime token_fmt_type = MXFP4TokenFormat[
-            fp4_dtype=dispatch_dtype,
+        comptime token_fmt_type = MXTokenFormat[
+            quant_dtype=dispatch_dtype,
             scales_dtype=dispatch_scale_dtype,
             output_layout=RT_LAYOUT_2D,
             scales_layout=RT_LAYOUT_2D,
@@ -847,7 +847,7 @@ struct Struct_ep_dispatch_wait_mxfp4:
             output_tokens_tensor.static_shape[1] * 2 == hidden_size
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
-        var format_handler = MXFP4TokenFormat[
+        var format_handler = MXTokenFormat[
             hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
         ](
             output_tokens_tensor,
@@ -1255,7 +1255,7 @@ struct Struct_ep_dispatch_mxfp4:
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
 
-        var format_handler = MXFP4TokenFormat[
+        var format_handler = MXTokenFormat[
             hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
         ](
             output_tokens_tensor,
@@ -1566,7 +1566,7 @@ struct DistributedEPDispatchMXFP4:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
 
-            var format_handler = MXFP4TokenFormat[
+            var format_handler = MXTokenFormat[
                 hidden_size,
                 top_k,
                 fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
@@ -2666,7 +2666,7 @@ struct Struct_ep_fused_silu_mxfp4:
     @always_inline
     @staticmethod
     def execute[
-        fp4_dtype: DType,
+        quant_dtype: DType,
         scales_dtype: DType,
         input_dtype: DType,
         target: StaticString,
@@ -2674,8 +2674,10 @@ struct Struct_ep_fused_silu_mxfp4:
         fuse_a_scale_preshuffle: Bool = False,
         max_padded_M: Int = 0,
         clamp_activation: Bool = False,
+        # `ep.fused_silu.mxfp8` shares this body and overrides the label.
+        trace_name: StaticString = "ep.fused_silu.mxfp4",
     ](
-        output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
+        output: OutputTensor[dtype=quant_dtype, rank=2, ...],
         scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
         input: InputTensor[dtype=input_dtype, rank=2, ...],
         row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -2685,16 +2687,22 @@ struct Struct_ep_fused_silu_mxfp4:
         limit: Float32,
         context: DeviceContext,
     ) raises:
-        """Execute the Expert Parallelism fused SILU kernel with MXFP4
+        """Execute the Expert Parallelism fused SILU kernel with MX
         quantization.
 
-        This function launches the fused_silu_mxfp4 kernel to perform the SILU
+        Shared body for `ep.fused_silu.mxfp4` and `ep.fused_silu.mxfp8`:
+        `fused_silu_mx_kernel` takes its element packing from `quant_dtype`.
+        `trace_name` only labels the op in traces; it is defaulted and no
+        caller sets it through MOGG's `parameters` dict, so the mxfp8
+        registration overrides it directly at the Mojo call site.
+
+        This function launches the shared `fused_silu_mx_kernel` to perform the SILU
         operation for all the MLPs in the EP MoE module.
 
         This kernel will read the row offsets to determine the actual number of
         received tokens in the input tensor, and then only perform the SILU
         operation on the received tokens. Once the SILU operation is performed,
-        the output will be quantized to the MXFP4 format.
+        the output will be quantized to the MXFP4 or MXFP8 format.
 
         When `fuse_a_scale_preshuffle=True` (KS64 fusion), the kernel
         writes the E8M0 scale directly into the grouped matmul's per-expert
@@ -2716,8 +2724,8 @@ struct Struct_ep_fused_silu_mxfp4:
         var gpu_ctx = context
         comptime hw_info = gpu_ctx.default_device_info
 
-        comptime fused_silu_mxfp4 = fused_silu_mxfp4_kernel[
-            fp4_dtype,
+        comptime fused_silu_mx = fused_silu_mx_kernel[
+            quant_dtype,
             scales_dtype,
             input_dtype,
             output_tensor.LayoutType,
@@ -2735,7 +2743,7 @@ struct Struct_ep_fused_silu_mxfp4:
         def description_fn() -> String:
             # fmt: off
             return String(
-                "fp4_dtype=", fp4_dtype,
+                "quant_dtype=", quant_dtype,
                 ";scales_dtype=", scales_dtype,
                 ";input_dtype=", input_dtype,
                 ";fuse_a_scale_preshuffle=", fuse_a_scale_preshuffle,
@@ -2744,11 +2752,11 @@ struct Struct_ep_fused_silu_mxfp4:
             # fmt: on
 
         with Trace[TraceLevel.OP, target=target](
-            "ep.fused_silu.mxfp4",
+            trace_name,
             Trace[TraceLevel.OP]._get_detail_str[description_fn](),
             task_id=get_safe_task_id(context),
         ):
-            gpu_ctx.enqueue_function[fused_silu_mxfp4](
+            gpu_ctx.enqueue_function[fused_silu_mx](
                 output_tensor,
                 scales_tensor,
                 input_tensor,
@@ -2760,6 +2768,47 @@ struct Struct_ep_fused_silu_mxfp4:
                 block_dim=hw_info.max_thread_block_size,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
+
+
+@extensibility.register("ep.fused_silu.mxfp8")
+struct Struct_ep_fused_silu_mxfp8:
+    """Registers the `ep.fused_silu.mxfp8` graph op with the graph compiler."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        fp8_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+        *,
+        fuse_a_scale_preshuffle: Bool = False,
+        max_padded_M: Int = 0,
+        clamp_activation: Bool = False,
+    ](
+        output: OutputTensor[dtype=fp8_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        alpha: Float32,
+        limit: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Execute the EP fused SILU kernel with MXFP8 quantization.
+
+        Same body as `ep.fused_silu.mxfp4`: `fused_silu_mx_kernel` takes its
+        element packing from the output dtype, so one `fp8_e4m3fn` byte per
+        element here rather than two FP4 nibbles, leaving `output` at the full
+        hidden size along axis 1. With `fuse_a_scale_preshuffle`, `scales` must
+        be shaped `[n_local_experts * max_padded_M, K_SCALES]`.
+        """
+        Struct_ep_fused_silu_mxfp4.execute[
+            target=target,
+            fuse_a_scale_preshuffle=fuse_a_scale_preshuffle,
+            max_padded_M=max_padded_M,
+            clamp_activation=clamp_activation,
+            trace_name="ep.fused_silu.mxfp8",
+        ](output, scales, input, row_offsets, alpha, limit, context)
 
 
 @extensibility.register("ep.fused_silu.nvfp4")

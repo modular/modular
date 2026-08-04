@@ -23,6 +23,7 @@ from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
     _grouped_matmul_rowwise_dynamic_scaled_fp8,
+    _is_amd_gpu,
     _is_apple_gpu,
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
@@ -199,11 +200,13 @@ def _matmul_float8_mxfp8(
     """Computes ``x @ weight.T`` with MXFP8 quantization.
 
     MXFP8 sibling of :func:`_matmul_float4_mxfp4`: the activation is
-    dynamically quantized to ``float8_e4m3fn`` with E8M0 block scales, the
-    ``float8_e8m0fnu`` weight scales are interleaved into the rank-5 SF-atom
-    layout, and the SM100 block-scaled tensor-core MMA
-    (``UMMAKind.KIND_MXF8F6F4``) is used -- avoiding the naive CUDA-core
-    blockwise-FP8 fallback.
+    dynamically quantized to ``float8_e4m3fn`` with E8M0 block scales.
+
+    On cuda the ``float8_e8m0fnu`` weight scales are then interleaved into the
+    rank-5 SF-atom layout and the SM100 block-scaled tensor-core MMA
+    (``UMMAKind.KIND_MXF8F6F4``) is used, avoiding the naive CUDA-core
+    blockwise-FP8 fallback. AMD returns earlier: it consumes rank-2 E8M0 scales
+    and raw byte operands directly, with no interleave.
 
     Args:
         x: The input tensor in bf16.
@@ -214,6 +217,24 @@ def _matmul_float8_mxfp8(
     Returns:
         The output tensor in bf16.
     """
+    if _is_amd_gpu():
+        # AMD reads rank-2 E8M0 scales and raw byte operands; no rank-5 SF-atom
+        # interleave, and `lane_bytes=32` is derived from the operand dtype in
+        # the wrapper. Mirrors `_matmul_float4_mxfp4`, one byte per element.
+        x_fp8, x_scales = quantize_dynamic_block_scaled(
+            x,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+        )
+        return dynamic_block_scaled_matmul_mxfp4(
+            x_fp8,
+            weight,
+            x_scales,
+            weight_scale.to(x.device),
+            out_type=DType.bfloat16,
+        )
+
     x, x_scales = quantize_dynamic_block_scaled(
         x,
         sf_vector_size=32,

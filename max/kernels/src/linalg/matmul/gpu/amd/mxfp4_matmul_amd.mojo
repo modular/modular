@@ -110,11 +110,12 @@ comptime SCHED_MASK_MFMA = 3
 
 
 struct BlockScaledMmaOp[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4
+    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
     num_m_mmas: Int,
     num_n_mmas: Int,
     num_k_tiles: Int,
     num_b_slots: Int = 1,
+    lane_bytes: Int = 16,
 ]:
     """Register ownership + block-scaled MFMA execution.
 
@@ -145,30 +146,55 @@ struct BlockScaledMmaOp[
             (`BK_BYTES // packed_k_per_mma`).
         num_b_slots: Number of B register slots for depth-2 prefetch
             (defaults to 1).
+        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4) or 32
+            (MXFP8). A lane covers 32 K-elements either way.
     """
 
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
     comptime MMA_K = Self.mma_shape[2]
 
-    comptime packed_k_per_mma = Self.MMA_K // 2  # bytes consumed per MFMA
+    # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one e4m3 byte per element).
+    # A lane always covers 32 K-elements either way.
+    comptime elems_per_byte = 32 // Self.lane_bytes
+    comptime packed_k_per_mma = (
+        Self.MMA_K // Self.elems_per_byte
+    )  # bytes consumed per MFMA
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
 
-    # Per-lane data width: 16 bytes of FP4 data, zero-extended to 32
-    # for the MFMA operand VGPR.
-
-    # NOTE this is hardcoded to work with 16x16x128 matmul where
-    # where 16 threads operate on a 1x32 tile (total 16x32). Each
-    # thread owns one row, that row is 16 bytes.
-    comptime mma_frag_width_bytes: Int = 16
+    # Per-lane operand width: `lane_bytes` of MX data (16 at MXFP4, 32 at
+    # MXFP8), zero-extended into the MFMA operand VGPR.
+    #
+    # NOTE assumes the 16x16x128 MFMA, where 16 threads cover a 1x32-element
+    # tile (16x32 total) and each thread owns one row of `lane_bytes` bytes.
+    comptime mma_frag_width_bytes: Int = Self.lane_bytes
+    # At MXFP8 a lane's two 16-byte halves sit K_HALF_STRIDE apart in K, not
+    # contiguous; treating them as contiguous mis-pairs the scale blocks.
+    comptime FRAG_HALF_BYTES = 16
+    comptime num_frag_halves = (
+        Self.mma_frag_width_bytes // Self.FRAG_HALF_BYTES
+    )
+    comptime K_HALF_STRIDE = Self.packed_k_per_mma // Self.num_frag_halves
+    comptime mx_format = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if Self.lane_bytes
+        == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
 
     # XOR swizzle removing the LDS bank conflict on the 64B-pitch A/B fragment
     # SMEM read/write. `distribute` swizzles the element (16B) index, so base=0
     # equals a byte-offset Swizzle(3, 4, 3). Gated to the 16x16x128/64B config.
+    # MXFP4 only: the XOR is on the flat in-tile index, which write and read
+    # only agree on when the 64-byte read sub-tile is the whole row
+    # (BK_BYTES == 64). At MXFP8 the row is twice as wide, so the XOR would
+    # land on unwritten SMEM.
+    # TODO(nwillis): re-enable at MXFP8 by swizzling the FULL-row byte offset
+    # and assembling halves from explicit offsets, as the preb kernel does.
+    # Until then MXFP8 pays LDS bank conflicts on the A/B fragment reads.
     comptime use_smem_swizzle = (
         Self.num_k_tiles == 1
-        and Self.packed_k_per_mma == 64
-        and Self.mma_frag_width_bytes == 16
+        and Self.K_HALF_STRIDE == 64
+        and Self.FRAG_HALF_BYTES == 16
+        and Self.lane_bytes == 16
         and Self.MMA_M == 16
     )
     comptime smem_swizzle = Optional[Swizzle](
@@ -289,8 +315,11 @@ struct BlockScaledMmaOp[
             b_smem_warp: SMEM view of the B tile for this warp, shape
                 `[WN, BK_BYTES]` uint8.
         """
-        comptime frag_w = Self.mma_frag_width_bytes  # 16
-        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
+        # One lane's operand is `num_frag_halves` 16-byte halves, each in its
+        # own 64-byte k-window (`K_HALF_STRIDE` apart). At MXFP4 that is a
+        # single half, so this is bit-identical to the pre-MXFP8 path.
+        comptime half_w = Self.FRAG_HALF_BYTES
+        comptime half_k_bytes = Self.K_HALF_STRIDE
 
         # groups of 16 threads are responsible for 16 rows, i.e threads 0, 16, 32, 48 handle row 0 ...
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
@@ -298,22 +327,32 @@ struct BlockScaledMmaOp[
         # B fragments first (for ds_read scheduling).
         comptime for i in range(Self.num_n_mmas):
             var b_idx = k_tile_idx * Self.num_n_mmas + i
-            var b_frag = (
-                b_smem_warp.tile[Self.MMA_N, mma_k_bytes](i, k_tile_idx)
-                .vectorize[1, frag_w]()
-                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
-            )
-            self._b_reg.vectorize[1, frag_w]()[b_idx, 0] = b_frag[0, 0]
+            comptime for h in range(Self.num_frag_halves):
+                var b_frag = (
+                    b_smem_warp.tile[Self.MMA_N, half_k_bytes](
+                        i, k_tile_idx * Self.num_frag_halves + h
+                    )
+                    .vectorize[1, half_w]()
+                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
+                        lane_id()
+                    )
+                )
+                self._b_reg.vectorize[1, half_w]()[b_idx, h] = b_frag[0, 0]
 
         # A fragments.
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
-            var a_frag = (
-                a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
-                .vectorize[1, frag_w]()
-                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
-            )
-            self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
+            comptime for h in range(Self.num_frag_halves):
+                var a_frag = (
+                    a_smem_warp.tile[Self.MMA_M, half_k_bytes](
+                        i, k_tile_idx * Self.num_frag_halves + h
+                    )
+                    .vectorize[1, half_w]()
+                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
+                        lane_id()
+                    )
+                )
+                self._a_reg.vectorize[1, half_w]()[a_idx, h] = a_frag[0, 0]
 
     @always_inline
     def load_a_frag_from_smem[
@@ -334,17 +373,22 @@ struct BlockScaledMmaOp[
             a_smem_warp: SMEM view of the A tile for this warp, shape
                 `[WM, BK_BYTES]` uint8.
         """
-        comptime frag_w = Self.mma_frag_width_bytes  # 16
-        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
+        comptime half_w = Self.FRAG_HALF_BYTES
+        comptime half_k_bytes = Self.K_HALF_STRIDE
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
-            var a_frag = (
-                a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
-                .vectorize[1, frag_w]()
-                .distribute[lane_layout, swizzle=Self.smem_swizzle](lane_id())
-            )
-            self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
+            comptime for h in range(Self.num_frag_halves):
+                var a_frag = (
+                    a_smem_warp.tile[Self.MMA_M, half_k_bytes](
+                        i, k_tile_idx * Self.num_frag_halves + h
+                    )
+                    .vectorize[1, half_w]()
+                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
+                        lane_id()
+                    )
+                )
+                self._a_reg.vectorize[1, half_w]()[a_idx, h] = a_frag[0, 0]
 
     @always_inline
     def load_b_frag_preshuffled[
@@ -377,8 +421,14 @@ struct BlockScaledMmaOp[
                 iteration.
         """
         comptime assert slot < Self.num_b_slots, "slot out of range"
-        comptime frag_w = Self.mma_frag_width_bytes  # 16
-        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
+        comptime assert Self.lane_bytes == 16, (
+            "the preshuffled-B DRAM path is MXFP4-only; MXFP8 dense reads"
+            " row-major B through the SMEM loaders"
+        )
+        # MXFP4-only path (asserted above), so the operand is exactly one
+        # 16-byte half; use the concrete width the loader returns.
+        comptime frag_w = Self.FRAG_HALF_BYTES
+        comptime mma_k_bytes = Self.packed_k_per_mma
         var lane_nlane = lane_id() % Self.MMA_N
         var lane_klane = lane_id() // Self.MMA_N
         comptime for i in range(Self.num_n_mmas):
@@ -518,8 +568,8 @@ struct BlockScaledMmaOp[
                 cdna4_block_scaled_mfma[
                     Int32(n),
                     Int32(m),
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+                    Self.mx_format,
+                    Self.mx_format,
                 ](
                     c_frag,
                     b_frag,
@@ -545,6 +595,7 @@ struct MXFP4MatmulAMD[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
+    lane_bytes: Int = 16,
 ]:
     """Native MXFP4 block-scaled matmul for AMD CDNA4.
 
@@ -561,9 +612,14 @@ struct MXFP4MatmulAMD[
         MMA_M: MFMA tile rows. WM must be divisible by MMA_M. Default 16.
         MMA_N: MFMA tile cols. WN must be divisible by MMA_N. Default 16.
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
+        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
+            32 (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS`
+            costs twice the registers and LDS at MXFP8.
     """
 
-    comptime BK_BYTES = Self.BK_ELEMS // 2
+    # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
+    comptime elems_per_byte = 32 // Self.lane_bytes
+    comptime BK_BYTES = Self.BK_ELEMS // Self.elems_per_byte
 
     comptime num_warps_m = Self.BM // Self.WM
     comptime num_warps_n = Self.BN // Self.WN
@@ -574,7 +630,9 @@ struct MXFP4MatmulAMD[
     comptime num_n_mmas = Self.WN // Self.MMA_N
 
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
-    comptime packed_k_per_mma = Self.MMA_K // 2  # 64 bytes per MFMA
+    comptime packed_k_per_mma = (
+        Self.MMA_K // Self.elems_per_byte
+    )  # bytes per MFMA
     comptime num_k_tiles = Self.BK_BYTES // Self.packed_k_per_mma
 
     # DRAM→regs loading constants.
@@ -763,6 +821,7 @@ struct MXFP4MatmulAMD[
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
+            lane_bytes=Self.lane_bytes,
         ]()
 
         # === Output writer ===
@@ -1032,6 +1091,7 @@ def _launch_mxfp4[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
+    lane_bytes: Int = 16,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -1051,6 +1111,7 @@ def _launch_mxfp4[
         MMA_M=MMA_M,
         MMA_N=MMA_N,
         MMA_K=MMA_K,
+        lane_bytes=lane_bytes,
     ]
     comptime N = type_of(c).static_shape[1]
 
@@ -1077,7 +1138,13 @@ def _launch_mxfp4[
 
 
 def _launch_mxfp4_split_k[
-    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int, num_splits: Int
+    BM: Int,
+    BN: Int,
+    BK_ELEMS: Int,
+    WM: Int,
+    WN: Int,
+    num_splits: Int,
+    lane_bytes: Int = 16,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -1096,6 +1163,13 @@ def _launch_mxfp4_split_k[
     the partials and cast to `c`'s dtype. Targets the small-M decode
     regime where the natural launch geometry leaves the GPU starved.
     """
+    # Split-K is MXFP4-only: the reduce kernel and the byte extents below
+    # assume nibble packing. Enforced here rather than at the call sites so a
+    # future caller cannot silently get FP4 extents for MXFP8 data.
+    comptime assert lane_bytes == 16, (
+        "split-K is MXFP4-only; the reduce kernel and byte extents assume"
+        " nibble packing"
+    )
     comptime Kernel = MXFP4MatmulAMD[
         BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
     ]
@@ -1196,6 +1270,7 @@ def mxfp4_block_scaled_matmul_amd[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
+    lane_bytes: Int = 16,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
@@ -1220,11 +1295,13 @@ def mxfp4_block_scaled_matmul_amd[
             32x32x64 MFMA shape (must be paired with MMA_N=32, MMA_K=64).
         MMA_N: MFMA tile cols. Default 16.
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
+        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
+            32 (MXFP8), which selects the operand format and byte extents.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
-        a: Packed A [M, K//2] uint8 (two MXFP4 elements per byte).
-        b: Packed B [N, K//2] uint8 (transposed, two MXFP4 per byte).
+        a: Packed A [M, K//2] uint8 (MXFP4) or [M, K] uint8 (MXFP8).
+        b: Packed B [N, K//2] uint8 (transposed, MXFP4) or [N, K] (MXFP8).
         a_scales: A scales [M, K//32] float8_e8m0fnu.
         b_scales: B scales [N, K//32] float8_e8m0fnu.
         ctx: Device context for kernel launch.
@@ -1241,8 +1318,18 @@ def mxfp4_block_scaled_matmul_amd[
     # a small-K caller (e.g. tests with K=128) falls back to the safe
     # default instead of hitting a build error.
     comptime K_BYTES = type_of(a).static_shape[1]
-    comptime can_use_bk_256 = K_BYTES >= 128 and K_BYTES % 128 == 0
-    comptime can_use_bk_512 = K_BYTES >= 256 and K_BYTES % 256 == 0
+    # The buckets are named in ELEMENTS but the divisibility they need is in
+    # BYTES, and the two only coincide at MXFP4. Convert, or the gate is off by
+    # 2x at MXFP8 and admits a K it cannot tile.
+    comptime _elems_per_byte = 32 // lane_bytes
+    comptime _bk_256_bytes = 256 // _elems_per_byte
+    comptime _bk_512_bytes = 512 // _elems_per_byte
+    comptime can_use_bk_256 = (
+        K_BYTES >= _bk_256_bytes and K_BYTES % _bk_256_bytes == 0
+    )
+    comptime can_use_bk_512 = (
+        K_BYTES >= _bk_512_bytes and K_BYTES % _bk_512_bytes == 0
+    )
 
     var M = Int(c.dim[0]())
     comptime N = type_of(c).static_shape[1]
@@ -1315,8 +1402,13 @@ def mxfp4_block_scaled_matmul_amd[
     #     between K=3072 (single ~= split) and K=4096 (split wins).
     # Measured: single BN=32 closes the down-proj gap vs aiter from +25..36%
     # (split-K) to +2..8% at K=2048, and is faster than aiter at K=2560.
+    # Compare in ELEMENTS: the crossover above was measured in FP4 elements, so
+    # a byte comparison would halve the threshold at MXFP8. The crossover
+    # itself has not been re-measured for MXFP8; it is reused as-is.
     comptime _wide_n_short_k_decode = (
-        ceildiv(N, 32) >= _gpu.sm_count and K_BYTES <= 1536 and can_use_bk_512
+        ceildiv(N, 32) >= _gpu.sm_count
+        and K_BYTES * _elems_per_byte <= 3072
+        and can_use_bk_512
     )
 
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
@@ -1328,10 +1420,10 @@ def mxfp4_block_scaled_matmul_amd[
         comptime if _wide_n_short_k_decode:
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
             # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
-            _launch_mxfp4[BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16](
-                c, a, b, a_scales, b_scales, M, ctx
-            )
-        elif can_use_bk_256 and _sk_splits > 1:
+            _launch_mxfp4[
+                BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16, lane_bytes=lane_bytes
+            ](c, a, b, a_scales, b_scales, M, ctx)
+        elif can_use_bk_256 and _sk_splits > 1 and lane_bytes == 16:
             _launch_mxfp4_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
@@ -1350,6 +1442,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
             _launch_mxfp4[
@@ -1361,9 +1454,10 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
     elif M <= 64:
-        comptime if can_use_bk_256 and _sk_splits > 1:
+        comptime if can_use_bk_256 and _sk_splits > 1 and lane_bytes == 16:
             _launch_mxfp4_split_k[
                 BM=SK_BM,
                 BN=SK_BN,
@@ -1393,6 +1487,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
             _launch_mxfp4[
@@ -1404,6 +1499,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
     else:
         _launch_mxfp4[
@@ -1415,4 +1511,5 @@ def mxfp4_block_scaled_matmul_amd[
             MMA_M=MMA_M,
             MMA_N=MMA_N,
             MMA_K=MMA_K,
+            lane_bytes=lane_bytes,
         ](c, a, b, a_scales, b_scales, M, ctx)

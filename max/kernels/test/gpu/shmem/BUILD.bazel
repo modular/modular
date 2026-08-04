@@ -14,6 +14,8 @@ lit_tests(
             # requires-network lit_tests sweep.
             "test_mxfp4_ep_wait_scale_fusion.mojo",
             "test_mxfp4_fused_silu_scale_fusion.mojo",
+            "test_mxfp8_fused_silu_scale_fusion.mojo",
+            "test_mxfp8_scale_overflow_probe.mojo",
             # Single-GPU device-scope ordering regression guard. Pure std, no
             # rocshmem runtime; runs as the standalone mojo_test below.
             "test_ep_combine_ordering.mojo",
@@ -79,6 +81,34 @@ mojo_test(
     size = "large",
     srcs = ["test_mxfp4_fused_silu_scale_fusion.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_mxfp8_fused_silu_scale_fusion.mojo.test",
+    size = "large",
+    srcs = ["test_mxfp8_fused_silu_scale_fusion.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "test_mxfp8_scale_overflow_probe.mojo.test",
+    size = "large",
+    srcs = ["test_mxfp8_scale_overflow_probe.mojo"],
     tags = ["gpu"],
     target_compatible_with = ["//:mi355_gpu"],
     deps = [

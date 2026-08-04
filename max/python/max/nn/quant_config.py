@@ -502,5 +502,14 @@ def _mxfp8_scales_type(
         return _nvmxf4f8_scales_type(
             quantized_shape, device_ref, DType.float8_e8m0fnu, 32
         )
+    elif api_name == "hip":
+        # Same plain rank-2 layout as MXFP4 on AMD: both formats scale groups of
+        # 32 elements, and the difference (packed nibbles vs one byte) is in the
+        # quantized operand, not its scales.
+        return TensorType(
+            dtype=DType.float8_e8m0fnu,
+            shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
+            device=device_ref,
+        )
     else:
         raise ValueError(f"Unsupported accelerator API: {api_name}")

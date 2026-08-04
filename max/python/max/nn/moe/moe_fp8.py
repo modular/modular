@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
@@ -58,7 +59,11 @@ class MoEQuantized(MoE):
         assert self.quant_config is not None
         if self._uses_nvidia_block_scaled_ep_layout:
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
-        elif self.quant_config.is_mxfp4:
+        elif self.quant_config.is_mxfp4 or self.quant_config.is_mxfp8:
+            # MXFP8 shares this path: the MOGG grouped-matmul op infers the
+            # element packing from the tensors, and the E8M0 scale layout is
+            # format-independent. Without this, MXFP8 would fall through to
+            # `Fp8Strategy` (legacy per-tensor scales).
             return Mxfp4Strategy(
                 self.quant_config,
                 self.dtype,
@@ -235,9 +240,15 @@ class MoEQuantized(MoE):
     @property
     def _uses_nvidia_block_scaled_ep_layout(self) -> bool:
         """Whether local expert inputs include NVIDIA scale offsets."""
-        return self.quant_config is not None and (
-            self.quant_config.is_nvfp4 or self.quant_config.is_mxfp8
-        )
+        if self.quant_config is None:
+            return False
+        if self.quant_config.is_nvfp4:
+            return True
+        # MXFP8 takes the NVIDIA layout only on cuda, agreeing with
+        # `_uses_block_scaled_nv_ep_layout` in `ep_kernels`, which is what
+        # produces the offsets. Ungated, AMD MXFP8 read the dispatch's 5 outputs
+        # as the NVIDIA 6-tuple and never reached `Mxfp4Strategy`.
+        return self.quant_config.is_mxfp8 and accelerator_api() == "cuda"
 
     def _can_fuse_swiglu_nvfp4(self) -> bool:
         """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
