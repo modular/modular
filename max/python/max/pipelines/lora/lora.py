@@ -45,11 +45,6 @@ from max.nn.linear import Linear
 from max.nn.lora import LoRALinear, StackedLinearLoRA, SupportsLoRA
 from max.nn.stacked_linear import StackedLinear
 from max.pipelines.context import TextGenerationContextType
-from max.pipelines.modeling.types.pipeline import (
-    Pipeline,
-    PipelineInputsType,
-    PipelineOutputType,
-)
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from .config import LoRAConfig
@@ -1471,19 +1466,3 @@ class LoRAManager:
     def is_active_lora(self, name: str) -> bool:
         """Returns whether the given name is an active LoRA adapter."""
         return name in self._active_loras
-
-    @staticmethod
-    def get_lora_manager(
-        pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
-    ) -> LoRAManager | None:
-        """Returns the LoRAManager from the pipeline if LoRA is enabled."""
-        manager: LoRAManager | None = None
-
-        if hasattr(pipeline, "_pipeline_model"):
-            manager = pipeline._pipeline_model._lora_manager
-        elif hasattr(pipeline, "speech_lm_pipeline"):
-            manager = pipeline.speech_lm_pipeline._pipeline_model._lora_manager
-        elif hasattr(pipeline, "pipeline_model"):
-            manager = pipeline.pipeline_model._lora_manager
-
-        return manager
