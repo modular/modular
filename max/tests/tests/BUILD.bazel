@@ -17,6 +17,7 @@ modular_py_test(
             "mojo_runtime_background_thread_subprocess_thread.py",
             "mojo_runtime_foreign_thread_subprocess.py",
             "test_compile_pool.py",
+            "test_dim_substitute.py",
             "test_eager_cold_start_policy.py",
             "test_executor.py",
             "test_flashinfer_cubin.py",
@@ -143,6 +144,14 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_dim_substitute",
+    srcs = ["test_dim_substitute.py"],
+    deps = [
+        "//max/python/max/graph",
+    ],
+)
+
 modular_eager_py_test(
     name = "test_interpreter_ops",
     timeout = "long",
@@ -237,6 +246,7 @@ test_suite(
     tests = [
         ":max_tests",
         ":test_compile_pool",
+        ":test_dim_substitute",
         ":test_interpreter",
         ":test_interpreter_ops",
         ":test_mojo_runtime_background_thread_import",
