@@ -403,9 +403,26 @@ later). For installation, see the
 
 #### Apple silicon GPUs
 
-Apple silicon GPU support (M1–M5) is functional for GPU programming with Mojo.
-Large GenAI model inference via MAX isn't yet available on Apple silicon. For
-details, see the
+We're actively developing Apple silicon GPU support (M1–M5), both for GPU
+programming with Mojo and for model inference with MAX.
+
+MAX supports a subset of models on Apple silicon today. We've manually run
+the [Llama](/api/python/pipelines.architectures.llama3/),
+[Gemma](/api/python/pipelines.architectures.gemma3/),
+[Nemotron](/api/python/pipelines.architectures.nemotron_h/), and
+[FLUX.2](/api/python/pipelines.architectures.flux2/) families, and while Apple
+silicon isn't yet covered by the same nightly CI as the GPUs listed above,
+support continues to mature.
+
+Quantization moves the memory ceiling significantly; for example, FLUX.2 dev
+needs over 120 GB at BF16 and roughly 80 GB at FP4. The FP4 kernels target M5,
+and support for other generations is ongoing.
+
+Architectures we haven't exercised on Metal may depend on kernels that don't
+exist yet. When that happens, the model fails during graph compilation rather
+than at inference time.
+
+For hardware tables and Metal troubleshooting, see
 [Mojo system requirements](https://mojolang.org/docs/requirements/#apple-silicon-gpus).
 
 :::note Notes
@@ -414,6 +431,10 @@ details, see the
 each AI model has different memory requirements. Even if your GPU architecture
 is listed as compatible, confirm that the available memory is sufficient for the
 model you're using.
+
+- On systems where the GPU shares system RAM (Apple silicon and integrated
+GPUs like those in DGX Spark and Strix Halo), a model's weights and activations
+have to fit in memory alongside everything else the system is running.
 
 - MAX can serve models on either CPU or GPU, but some models require one or
 more GPUs. When you browse our [supported models](/models/), you can check
