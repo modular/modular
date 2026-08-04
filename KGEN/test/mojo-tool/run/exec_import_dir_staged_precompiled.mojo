@@ -4,21 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# Staged incremental precompilation: packages are precompiled one at a time
-# into a plain (non-package) staging directory, and later packages resolve
-# their dependencies from the `.mojoc`s already staged there. The second
-# `precompile` below is the interesting step: `consumer` imports
-# `tmp.helper`, which only exists as `tmp/helper.mojoc` inside the plain
-# directory `tmp`.
+# Staged incremental precompilation: packages precompiled one at a time into
+# a plain (non-package) staging directory would resolve their dependencies
+# from the `.mojoc`s already staged there — but importing a precompiled
+# package through a directory is a nested mount, which is rejected: its
+# recorded symbol roots resolve only for a top-level binding.
+# TODO(MOCO-4487): once loading re-anchors recorded roots to the mount
+# point, this flow resolves instead (restore the passing form of this test).
 
 # RUN: rm -rf %t.dir && mkdir -p %t.dir/stage/tmp
 # RUN: mojo precompile %S/inputs/dir_precompiled/helper -o %t.dir/stage/tmp/helper.mojoc
-# RUN: mojo precompile -I %t.dir/stage %S/inputs/dir_precompiled/consumer -o %t.dir/stage/tmp/consumer.mojoc
-# RUN: mojo run -I %t.dir/stage %s | FileCheck %s
+# RUN: not mojo precompile -I %t.dir/stage %S/inputs/dir_precompiled/consumer -o %t.dir/stage/tmp/consumer.mojoc 2>&1 \
+# RUN:   | FileCheck %s
+
+# CHECK: error: precompiled package '{{.*}}helper.mojoc' must be imported directly from an import root, not as 'tmp.helper'
 
 from tmp.consumer import foo
 
 
 def main():
-    # CHECK: precompiled
+    # This program is unused while staged resolution is rejected; it stays
+    # for the restored form of the test.
     foo()

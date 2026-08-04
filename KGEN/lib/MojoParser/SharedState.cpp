@@ -1997,6 +1997,18 @@ SharedState::createPackageState(ModuleSpec moduleSpec, ModuleState &parentState,
   return moduleState;
 }
 
+std::string SharedState::moduleMountPath(const ModuleState &root,
+                                         const ModuleState &target) {
+  for (const auto &[name, nested] : root.nestedModules) {
+    if (nested == &target)
+      return name.getValue().str();
+    std::string subPath = moduleMountPath(*nested, target);
+    if (!subPath.empty())
+      return (name.getValue() + "." + subPath).str();
+  }
+  return {};
+}
+
 SharedState::ModuleState &
 SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                       ModuleState &parentState) {
@@ -2005,6 +2017,23 @@ SharedState::createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
   auto makeError = [&](const Twine &msg) -> ModuleState & {
     return createErrorModuleState(loc, declNameAttr, *parentState.decl, msg);
   };
+
+  // Symbol references recorded in the artifact are rooted at its compiled
+  // name, which resolves only for a top-level binding of that name; mounted
+  // below the top level, every type escaping the package is unresolvable.
+  // TODO(MOCO-4487): lift this once loading re-anchors recorded roots to the
+  // mount point.
+  if (parentState.decl != &getTopLevelDecl()) {
+    std::string mountPath =
+        moduleMountPath(*impl->topLevelModuleState, parentState);
+    if (!mountPath.empty())
+      mountPath += ".";
+    mountPath += spec.name;
+    return makeError("precompiled package '" + pathStr +
+                     "' must be imported directly from an import root, not "
+                     "as '" +
+                     mountPath + "'");
+  }
 
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(pathStr);

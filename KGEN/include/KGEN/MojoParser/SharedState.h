@@ -791,6 +791,11 @@ private:
   ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                         ModuleState &parentState);
 
+  /// Returns the dotted module path of `target` below `root`, or an empty
+  /// string when `target` is not nested below `root`.
+  static std::string moduleMountPath(const ModuleState &root,
+                                     const ModuleState &target);
+
   /// Create an error module state and emit the given error message. If
   /// `unlisted` is set, the erroneous decl is not registered in
   /// `errorContext`'s name table. A non-empty `note` is attached to the error.
