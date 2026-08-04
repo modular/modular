@@ -66,9 +66,9 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._cap > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout({count = self._cap})
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    {count = self._cap}
+                )
             )
 
     def _grow_if_needed(mut self):
@@ -82,7 +82,7 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
             if self._cap > 0:
                 dealloc(
                     ThinAllocation(
-                        unsafe_assume_ownership=self._data
+                        unsafe_owned_ptr=self._data
                     ).unsafe_with_layout({count = self._cap})
                 )
             self._data = new_data
