@@ -433,7 +433,8 @@ def execute_flash_attention_suite[
             var ce_cache_sizes = List[Int]()
             var ce_seq_lens = List[Int]()
             var tg_cache_sizes = List[Int]()
-            tg_seq_lens = List[Int]()
+            var tg_seq_lens = List[Int]()
+
             for _ in range(bs):
                 tg_seq_lens.append(1)
                 tg_cache_sizes.append(Int(random_ui64(1, 1024)))
@@ -494,7 +495,7 @@ def execute_flash_attention_suite[
         )
 
     print("TG", 2, DType.bfloat16, "depth=", kv_params.head_size)
-    tg_seq_lens = [1, 1]
+    var tg_seq_lens: List = [1, 1]
     var tg_variable_cache_lens: List = [1024, 11]
     execute_ragged_flash_attention[num_q_heads, DType.bfloat16, kv_params](
         tg_seq_lens, tg_variable_cache_lens, 2, 0, mask, ctx
