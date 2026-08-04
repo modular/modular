@@ -36,7 +36,7 @@ def main() raises:
     comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
         print("block_idx\t\tthread_idx")
         print("x\ty\tz", "x\ty\tz", sep="\t")
         print("-" * 20, "-" * 20, sep="\t")

@@ -27,15 +27,15 @@ def main() raises:
         print("No GPU detected")
         exit(0)
     else:
-        num_devices = DeviceContext.number_of_devices()
+        var num_devices = DeviceContext.number_of_devices()
         print("Number of GPUs:", num_devices)
 
-        ctx = DeviceContext()  # Get context for the default device, 0
+        var ctx = DeviceContext()  # Get context for the default device, 0
         print("Device ID:", ctx.id())
         print("Device API:", ctx.api())
         print("Device name:", ctx.name())
         print("Device API version:", ctx.get_api_version())
-        mem_info = ctx.get_memory_info()
+        var mem_info = ctx.get_memory_info()
         print("Total memory:", mem_info[1])
         print("Free memory:", mem_info[0])
 

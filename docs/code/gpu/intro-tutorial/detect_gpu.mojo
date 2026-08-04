@@ -21,5 +21,5 @@ def main() raises:
     comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
         print("Found GPU:", ctx.name())

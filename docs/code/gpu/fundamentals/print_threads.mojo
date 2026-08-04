@@ -43,7 +43,7 @@ def main() raises:
         print("No compatible GPU found")
     else:
         # Initialize GPU context for device 0 (default GPU device).
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
 
         print("block_idx\t\tthread_idx\t\tglobal_idx\t\tcalculated global_idx")
         print("x\ty\tz", "x\ty\tz", "x\ty\tz", "x\ty\tz", sep="\t")

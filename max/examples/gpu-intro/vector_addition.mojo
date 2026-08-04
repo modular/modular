@@ -51,13 +51,13 @@ def main() raises:
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU
-        ctx = DeviceContext()
+        var ctx = DeviceContext()
 
         # Create HostBuffers for input vectors
-        lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+        var lhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
             vector_size
         )
-        rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+        var rhs_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
             vector_size
         )
         ctx.synchronize()
@@ -71,22 +71,26 @@ def main() raises:
         print("RHS buffer: ", rhs_host_buffer)
 
         # Create DeviceBuffers for the input vectors
-        lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
-        rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](vector_size)
+        var lhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
+        var rhs_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+            vector_size
+        )
 
         # Copy the input vectors from the HostBuffers to the DeviceBuffers
         ctx.enqueue_copy(dst_buf=lhs_device_buffer, src_buf=lhs_host_buffer)
         ctx.enqueue_copy(dst_buf=rhs_device_buffer, src_buf=rhs_host_buffer)
 
         # Create a DeviceBuffer for the result vector
-        result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
+        var result_device_buffer = ctx.enqueue_create_buffer[float_dtype](
             vector_size
         )
 
         # Wrap the DeviceBuffers in TileTensors
-        lhs_tensor = TileTensor(lhs_device_buffer, layout)
-        rhs_tensor = TileTensor(rhs_device_buffer, layout)
-        result_tensor = TileTensor(result_device_buffer, layout)
+        var lhs_tensor = TileTensor(lhs_device_buffer, layout)
+        var rhs_tensor = TileTensor(rhs_device_buffer, layout)
+        var result_tensor = TileTensor(result_device_buffer, layout)
 
         # Compile and enqueue the kernel
         ctx.enqueue_function[vector_addition](
@@ -98,7 +102,7 @@ def main() raises:
         )
 
         # Create a HostBuffer for the result vector
-        result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
+        var result_host_buffer = ctx.enqueue_create_host_buffer[float_dtype](
             vector_size
         )
 
