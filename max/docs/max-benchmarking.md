@@ -49,7 +49,7 @@ python benchmark_serving.py --help
 ```
 
 For more information, see the [`max benchmark`
-documentation](/max/cli/benchmark).
+documentation](https://docs.modular.com/max/cli/benchmark).
 
 ## Config files
 
