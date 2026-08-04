@@ -250,8 +250,8 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr[d + depth * (h + s * num_heads)]
-                    rep = output_ptr[d + depth * (h + s * num_heads)]
+                    var orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    var rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
