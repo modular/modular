@@ -650,13 +650,18 @@ def splitroot[
     """
     var p = path.__fspath__()
     comptime empty = ""
+    var length = p.byte_length()
 
     # Relative path, e.g.: 'foo'
-    if p[byte=:1] != StringSlice(sep):
+    if length < 1 or p[byte=:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[byte=1:2] != StringSlice(sep) or p[byte=2:3] == StringSlice(sep):
+    elif (
+        length < 2
+        or p[byte=1:2] != StringSlice(sep)
+        or (length >= 3 and p[byte=2:3] == StringSlice(sep))
+    ):
         return empty, String(sep), String(p[byte=1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
@@ -726,7 +731,9 @@ def _parse_variable_name[
     immutable: ImmOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
-    For `${}` expansions, two additional bytes are added to the byte count to account for the braces.
+    For `${}` expansions, two additional bytes are added to the byte count to
+    account for the braces, unless the closing brace is missing, in which
+    case only the opening brace is accounted for.
 
     Args:
         bytes: The bytes to extract the environment variable name from.
@@ -748,7 +755,9 @@ def _parse_variable_name[
             if bytes[i] == UInt8(ord("}")):
                 return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
-        return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
+        # No closing brace found: `i == len(bytes)`, so the whole remainder
+        # was consumed with no closing-brace byte to account for.
+        return StringSlice(unsafe_from_utf8=bytes[1:i]), i
     elif _is_shell_special_variable(bytes[0]):
         return StringSlice(unsafe_from_utf8=bytes[0:1]), 1
 

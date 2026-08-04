@@ -131,7 +131,7 @@ def test_span_slice() raises:
     var s = Span(l)
     var res = s[1:2]
     assert_equal(res[0], 2)
-    res = s[1:-1]
+    res = s[1 : len(l) - 1]
     assert_equal(res[0], 2)
     assert_equal(res[1], 3)
     assert_equal(res[2], 4)
@@ -184,7 +184,7 @@ def test_equality() raises:
     # different pointer
     assert_true(sp == sp3)
     # different length
-    assert_true(sp != sp3[:-1])
+    assert_true(sp != sp3[0 : len(l2) - 1])
     # empty
     assert_true(sp[0:0] == sp3[0:0])
 
@@ -412,7 +412,7 @@ def test_count_func() raises:
 
     var data = Span([Byte(0), 1, 2, 1, 2, 1, 2])
     assert_equal(3, Int(data.count(is_2)))
-    assert_equal(2, Int(data[:-1].count(is_2)))
+    assert_equal(2, Int(data[0 : len(data) - 1].count(is_2)))
     assert_equal(1, Int(data[:3].count(is_2)))
 
 

@@ -13,7 +13,7 @@
 """Implements the core `String` type and related utilities."""
 
 from std.builtin.globals import global_constant
-from std.collections import KeyElement, Span
+from std.collections import KeyElement, Span, check_slice_bounds
 from std.collections.string import CodepointsIter
 from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
@@ -28,6 +28,7 @@ from std.collections.string.string_slice import (
 )
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
+from std.reflection import call_location
 from std.format.tstring import TString
 from std.format._utils import (
     STACK_BUFFER_BYTES,
@@ -872,6 +873,7 @@ struct String(
         return string_slice._unchecked_get_byte(byte)
 
     @__unsafe_nested_origins_read_only
+    @always_inline
     def __getitem__(
         self, *, byte: ContiguousSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
@@ -882,12 +884,17 @@ struct String(
         multi-byte UTF-8 characters, slicing at byte positions that do not fall
         on codepoint boundaries will abort.
 
+        Aborts if `byte`'s start or end index is out of bounds (valid range
+        is `0` to `self.byte_length()`, inclusive), or if start is greater
+        than end. Negative indices are not supported and always abort.
+
         Args:
             byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
+        _ = check_slice_bounds(byte, self.byte_length(), call_location())
         return self._interior_slice()[byte=byte]
 
     @__unsafe_nested_origins_read_only

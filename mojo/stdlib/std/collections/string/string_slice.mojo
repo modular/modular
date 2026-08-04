@@ -15,7 +15,7 @@
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
 from std.reflection import call_location
-from std.collections import check_bounds, Span
+from std.collections import check_bounds, check_slice_bounds, Span
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -409,16 +409,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         multi-byte UTF-8 characters, slicing at byte positions that do not fall
         on codepoint boundaries will abort.
 
+        Aborts if `byte`'s start or end index is out of bounds (valid range is
+        `0` to `self.byte_length()`, inclusive), or if start is greater than
+        end. Negative indices are not supported and always abort.
+
         Args:
             byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A new StringSlice containing the bytes in the specified range.
         """
-        var start: Int
-        var end: Int
+        var start, end = check_slice_bounds(byte, self.byte_length())
 
-        start, end = byte.indices(len(self._slice))
         debug_assert[assert_mode="safe"](
             start == len(self._slice)
             or _is_utf8_start_byte(self._slice.unsafe_get(start)),
@@ -480,6 +482,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def __getitem__(self, *, codepoint: Some[Indexer]) -> Self:
         """Gets the character at the specified position.
 
+        Aborts if `codepoint` is out of bounds, though the error message may
+        not always be codepoint-scoped (see the `codepoint=` slice overload's
+        note).
+
         Args:
             codepoint: The codepoint index.
 
@@ -494,6 +500,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     def __getitem__(self, *, codepoint: ContiguousSlice) -> Self:
         """Gets a substring at the specified codepoint positions.
+
+        Note: some out-of-bounds indices already abort today, but not with a
+        codepoint-scoped message. Proper abort semantics matching `byte=`
+        slicing are planned as a follow-up.
 
         Args:
             codepoint: A slice that specifies codepoint positions of the new
@@ -851,7 +861,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         offsets.
 
         Out-of-range ends are clamped to the end of the string. Negative
-        indices are not supported.
+        indices are not supported. Unlike `byte=` slicing, this does not
+        abort on an out-of-range end -- aligning it with `byte=`'s abort
+        semantics is planned as a follow-up.
 
         Args:
             grapheme: A slice specifying the grapheme-cluster range of the
@@ -1824,7 +1836,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if suffix and self.endswith(suffix):
-            return self[byte = : -suffix.byte_length()]
+            return self[byte = : self.byte_length() - suffix.byte_length()]
         return self
 
     @always_inline
@@ -1882,7 +1894,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
-        var haystack = self.as_bytes()[start:]
+        var start_byte = start if start >= 0 else max(
+            start + self.byte_length(), 0
+        )
+        var haystack = self.as_bytes()[start_byte:]
 
         var loc = _memmem(
             haystack.as_imm(),
@@ -1914,7 +1929,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
-        var haystack = self.as_bytes()[start:]
+        var start_byte = start if start >= 0 else max(
+            start + self.byte_length(), 0
+        )
+        var haystack = self.as_bytes()[start_byte:]
 
         var loc = _memrmem(
             haystack,

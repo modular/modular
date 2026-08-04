@@ -29,7 +29,7 @@ from std.memory import (
     pack_bits,
     unsafe_uninit_copy_n,
 )
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
 from std.sys.info import simd_width_of
@@ -416,14 +416,17 @@ struct Span[
     def __getitem__(self, slc: ContiguousSlice) -> Self:
         """Get a new span from a slice of the current span.
 
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive), or if start is greater than end.
+        Negative indices are not supported and always abort.
+
         Args:
             slc: The slice specifying the range of the new subslice.
 
         Returns:
             A new span that points to the same data as the current span.
         """
-        var start, end = slc.indices(len(self))
-
+        var start, end = check_slice_bounds(slc, len(self))
         return Self(
             unsafe_ptr=self._data.unsafe_offset(start), length=end - start
         )
