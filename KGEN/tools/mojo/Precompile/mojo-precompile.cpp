@@ -22,6 +22,7 @@
 #include "Support/Compiler/Diags.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Config.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 
@@ -182,6 +183,10 @@ namespace {
 struct PrecompileArgs {
   /// The name of the package being output.
   std::string name;
+  /// The package's name while parsing: its source directory's name. Modules
+  /// inside the package may import it absolutely under this name, so parsing
+  /// must happen under it; `name` is applied when packaging.
+  std::string sourceName;
   /// The path to the Mojo package source directory to parse and output as a
   /// package.
   std::string inputPath;
@@ -232,10 +237,16 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
                  "' does not correspond to a Mojo package");
   }
   std::string extension = ".mojoc";
-  // Use the output path the user specified, or if none was specified, output
-  // "input-directory-name.mojoc".
-  std::string inputDirName =
-      std::filesystem::path(pkgArgs.inputPath).filename().string();
+  // The package's name comes from its directory, so canonicalize first
+  std::error_code ec;
+  std::filesystem::path canonicalInput =
+      std::filesystem::weakly_canonical(pkgArgs.inputPath, ec);
+  if (ec) {
+    return Error("cannot canonicalize input path '" + pkgArgs.inputPath +
+                 "': " + ec.message());
+  }
+  std::string inputDirName = canonicalInput.filename().string();
+  pkgArgs.sourceName = inputDirName;
 
   if (args.hasArg(options::OPT_o)) {
     pkgArgs.outputPath = args.getLastArgValue(options::OPT_o);
@@ -267,13 +278,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
       pkgArgs.name = outputPath.stem().string();
     }
   } else {
-    pkgArgs.outputPath = inputDirName + extension;
-    pkgArgs.name = inputDirName;
-    // If the input dir is `.` for current directory, get the directory name.
-    if (inputDirName == ".") {
-      pkgArgs.name = std::filesystem::current_path().filename().string();
-      pkgArgs.outputPath = pkgArgs.name + extension;
-    }
+    pkgArgs.name = pkgArgs.sourceName;
+    pkgArgs.outputPath = pkgArgs.name + extension;
   }
 
   // Set up the compilation options now, so we can use them as a single source
@@ -345,7 +351,12 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
   // `.mojoc` files), so record each as a link dependency.
   SmallVector<FlatSymbolRefAttr> dependencies;
   for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
-    if (package == parsedPackageOp)
+    // A package is never its own link dependency, under either its parse-time
+    // (source directory) name or its output name: a recorded self-dependency
+    // dangles once the package is renamed for output.
+    if (package == parsedPackageOp ||
+        package.getSymName() == precompileArgs.sourceName ||
+        package.getSymName() == precompileArgs.name)
       continue;
     dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
   }
@@ -356,6 +367,86 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
 
   auto [packageModule, thePackage] =
       buildPackageModule(theModule, parsedPackageOp);
+
+  // The package parses under its source directory's name so that absolute
+  // self-imports resolve to the package under compilation; the output name
+  // applies from here on: to symbol references and the recorded import paths
+  // that name the package (both re-resolved when the package is imported,
+  // under the output file's name), and to the debug-info source names that
+  // snapshot the package lineage.
+  if (precompileArgs.name != precompileArgs.sourceName) {
+    MLIRContext *ctx = theModule.getContext();
+    auto newName = StringAttr::get(ctx, precompileArgs.name);
+    auto sourceName = StringAttr::get(ctx, precompileArgs.sourceName);
+    // Qualified references rooted at the package resolve through the
+    // parser's scoping rather than MLIR symbol tables, so rewrite them
+    // directly rather than through SymbolTable::replaceAllSymbolUses.
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement(
+        [&](SymbolRefAttr ref) -> std::pair<Attribute, WalkResult> {
+          if (ref.getRootReference() != sourceName)
+            return {ref, WalkResult::advance()};
+          return {SymbolRefAttr::get(newName, ref.getNestedReferences()),
+                  WalkResult::advance()};
+        });
+    // Debug-info source names snapshot the symbol lineage as plain strings at
+    // parse time, so the package appears in them as a name, not a symbol
+    // reference. Rewriting the parentless package root rebuilds every lineage
+    // chained from it; these live in scoped locations, hence replaceLocs.
+    // Source names for types and parameter values are rendered text, so
+    // package-rooted references inside them are substrings: rewrite the
+    // root token (its `::` terminator keeps longer names unmatched).
+    std::string sourceToken = "@" + precompileArgs.sourceName + "::";
+    std::string newToken = "@" + precompileArgs.name + "::";
+    auto rewriteNameText = [&](StringAttr str) -> StringAttr {
+      if (!str.getValue().contains(sourceToken))
+        return str;
+      std::string text = str.getValue().str();
+      for (size_t pos = text.find(sourceToken); pos != std::string::npos;
+           pos = text.find(sourceToken, pos + newToken.size()))
+        text.replace(pos, sourceToken.size(), newToken);
+      return StringAttr::get(ctx, text);
+    };
+    replacer.addReplacement([&](DebugInfo::SourceNameAttr attr)
+                                -> std::pair<Attribute, WalkResult> {
+      bool isPackageRoot =
+          attr.getKind() == DebugInfo::SourceNameKind::Package &&
+          !attr.getParent() && attr.getName() == sourceName;
+      StringAttr name =
+          isPackageRoot ? newName : rewriteNameText(attr.getName());
+      SmallVector<StringAttr> paramValues;
+      for (StringAttr value : attr.getParamValues())
+        paramValues.push_back(rewriteNameText(value));
+      if (name == attr.getName() &&
+          ArrayRef<StringAttr>(paramValues) == attr.getParamValues())
+        return {attr, WalkResult::advance()};
+      return {DebugInfo::SourceNameAttr::get(
+                  name, attr.getParamTypes(), attr.getArgTypes(), paramValues,
+                  attr.getParent(), attr.getKind(), attr.getDecorators()),
+              WalkResult::advance()};
+    });
+    // Recorded import paths are raw name components, and any import op form
+    // may carry one rooted at the package (a resolved import kept inside a
+    // file module, an unresolved import, a wildcard import). All re-resolve
+    // under the output file's name when the package is imported.
+    replacer.addReplacement(
+        [&](LIT::ImportPathAttr path) -> std::pair<Attribute, WalkResult> {
+          auto components = path.getComponents();
+          if (path.getRelativeLevel() != 0 || components.empty() ||
+              components.front() != sourceName)
+            return {path, WalkResult::advance()};
+          SmallVector<StringAttr> newComponents(components);
+          newComponents.front() = newName;
+          return {
+              LIT::ImportPathAttr::get(ctx, /*relativeLevel=*/0, newComponents),
+              WalkResult::advance()};
+        });
+    replacer.recursivelyReplaceElementsIn(*packageModule,
+                                          /*replaceAttrs=*/true,
+                                          /*replaceLocs=*/true,
+                                          /*replaceTypes=*/true);
+    mlir::SymbolTable::setSymbolName(thePackage, newName);
+  }
 
   // Process bitcode libraries if any were specified
   if (!precompileArgs.compileOptions.bitcodeLibs.empty()) {
@@ -473,7 +564,7 @@ static int precompile(const State &subcommandState) {
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
-            ctx, precompileArgs.inputPath, precompileArgs.name, sourceMgr,
+            ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
             parserConfig, ts);
         return moduleOp;
       });
