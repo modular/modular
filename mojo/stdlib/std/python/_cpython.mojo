@@ -1504,6 +1504,36 @@ struct GILReleased(Movable):
         self.python.cpython().PyEval_RestoreThread(self.thread_state)
 
 
+def _untracked_symbol[
+    result_type: AnyType
+](mut lib: OwnedDLHandle, name: StringSlice) -> Optional[
+    Pointer[result_type, MutUntrackedOrigin]
+]:
+    """Resolves a symbol and drops the borrow tying it to `lib`.
+
+    `OwnedDLHandle.get_symbol` hands back a pointer borrowed from the handle,
+    which is what stops the library being `dlclose`d underneath it. `CPython`
+    caches its symbols in fields alongside the handle itself, so the borrow
+    cannot be expressed — a field would have to name a sibling field's origin.
+    Dropping it is sound here because `lib` and the cached pointers are fields
+    of the same struct, so the library outlives every read of them.
+
+    Parameters:
+        result_type: The type of the symbol to return.
+
+    Args:
+        lib: The library to resolve the symbol in.
+        name: The name of the symbol to resolve.
+
+    Returns:
+        An optional pointer to the symbol, or `None` if not found.
+    """
+    var ptr = lib.get_symbol[result_type](name)
+    if not ptr:
+        return None
+    return ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin]()
+
+
 @fieldwise_init
 struct CPython(Defaultable, Movable):
     """Handle to the CPython interpreter present in the current process.
@@ -1857,26 +1887,28 @@ struct CPython(Defaultable, Movable):
         else:
             # PyObject *Py_None
             # TODO(MOCO-4435): remove this temporary variable.
-            var none_ptr = self.lib.get_symbol[PyObject]("_Py_NoneStruct")
+            var none_ptr = _untracked_symbol[PyObject](
+                self.lib, "_Py_NoneStruct"
+            )
             self._Py_None = PyObjectPtr(upcast_from=none_ptr)
         # Integer Objects
         # PyTypeObject PyLong_Type
-        self._PyLong_Type = self.lib.get_symbol[PyTypeObject](
-            "PyLong_Type"
+        self._PyLong_Type = _untracked_symbol[PyTypeObject](
+            self.lib, "PyLong_Type"
         ).value()
         self._PyLong_FromSsize_t = PyLong_FromSsize_t.load(self.lib.borrow())
         self._PyLong_FromSize_t = PyLong_FromSize_t.load(self.lib.borrow())
         self._PyLong_AsSsize_t = PyLong_AsSsize_t.load(self.lib.borrow())
         # Boolean Objects
         # PyTypeObject PyBool_Type
-        self._PyBool_Type = self.lib.get_symbol[PyTypeObject](
-            "PyBool_Type"
+        self._PyBool_Type = _untracked_symbol[PyTypeObject](
+            self.lib, "PyBool_Type"
         ).value()
         self._PyBool_FromLong = PyBool_FromLong.load(self.lib.borrow())
         # Floating-Point Objects
         # PyTypeObject PyFloat_Type
-        self._PyFloat_Type = self.lib.get_symbol[PyTypeObject](
-            "PyFloat_Type"
+        self._PyFloat_Type = _untracked_symbol[PyTypeObject](
+            self.lib, "PyFloat_Type"
         ).value()
         self._PyFloat_FromDouble = PyFloat_FromDouble.load(self.lib.borrow())
         self._PyFloat_AsDouble = PyFloat_AsDouble.load(self.lib.borrow())
@@ -1897,8 +1929,8 @@ struct CPython(Defaultable, Movable):
         self._PyList_SetItem = PyList_SetItem.load(self.lib.borrow())
         # Dictionary Objects
         # PyTypeObject PyDict_Type
-        self._PyDict_Type = self.lib.get_symbol[PyTypeObject](
-            "PyDict_Type"
+        self._PyDict_Type = _untracked_symbol[PyTypeObject](
+            self.lib, "PyDict_Type"
         ).value()
         self._PyDict_New = PyDict_New.load(self.lib.borrow())
         self._PyDict_SetItem = PyDict_SetItem.load(self.lib.borrow())

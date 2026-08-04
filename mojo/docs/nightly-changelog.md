@@ -1246,6 +1246,13 @@ This version is still a work in progress.
   passed and returned by value. Multi-field struct arguments are no longer
   rejected at compile time.
 
+- `OwnedDLHandle.get_symbol` now returns a pointer that borrows the handle
+  instead of one with an untracked origin, so the library can no longer be
+  `dlclose`d while a resolved symbol is still live. The `_ = lib` keep-alive
+  that used to be needed to avoid that is now unnecessary. The pointer's
+  mutability follows the handle's, so a symbol read through an immutable
+  handle is read-only.
+
 ## Tooling changes
 
 - Crash reporting now defaults to the `telemetry.enabled` setting, so the two

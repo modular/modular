@@ -455,14 +455,30 @@ struct OwnedDLHandle(Movable):
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
     def get_symbol[
-        result_type: AnyType,
-    ](self, name: StringSlice) -> Optional[
-        Pointer[result_type, MutUntrackedOrigin]
+        mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
+    ](ref[origin] self, name: StringSlice) -> Optional[
+        Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
 
+        The returned pointer borrows `self`, so the library cannot be
+        `dlclose`d while the pointer is live. Its mutability follows the
+        handle's: a symbol resolved through an immutable handle is read-only.
+
+        Example:
+        ```mojo
+        from std.ffi import OwnedDLHandle, c_int
+
+        var lib = OwnedDLHandle("libcounters.so")
+        var counter = lib.get_symbol[c_int]("live_connections")
+        if counter:
+            print(counter.value()[])
+        ```
+
         Parameters:
+            mut: The mutability of self.
+            origin: The origin of self.
             result_type: The type of the symbol to return.
 
         Args:
@@ -471,17 +487,27 @@ struct OwnedDLHandle(Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        return self._handle.get_symbol[result_type](name)
+        var name_copy = String(name)
+        return self.get_symbol[result_type](
+            cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
+        )
 
+    # TODO(MSTDL-3007): take a `CStringSlice`, which states the
+    # nul-termination this pointer only assumes.
     def get_symbol[
-        result_type: AnyType
-    ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
-        Pointer[result_type, MutUntrackedOrigin]
+        mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
+    ](ref[origin] self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
+        Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
         library, or `None` if the symbol is not found.
 
+        See the `name` overload for how the returned pointer's origin and
+        mutability relate to the handle.
+
         Parameters:
+            mut: The mutability of self.
+            origin: The origin of self.
             result_type: The type of the symbol to return.
 
         Args:
@@ -490,7 +516,17 @@ struct OwnedDLHandle(Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        return self._handle.get_symbol[result_type](cstr_name=cstr_name)
+        var res = self._handle.get_symbol[result_type](cstr_name=cstr_name)
+        if not res:
+            return None
+        # `_DLHandle` is non-owning, so it can only hand back an untracked
+        # origin. Re-tie the pointer to this owning handle, which is the borrow
+        # `_DLHandle` has no way to express.
+        return (
+            res.unsafe_value()
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     def call[
