@@ -99,7 +99,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
             var gpu_ctx = ctx
 
-            var b_ptr_to_use: UnsafePointer[Float16, MutAnyOrigin]
+            var b_ptr_to_use: Pointer[Float16, MutAnyOrigin]
 
             # Only transpose the B matrix if we are validating the results,
             # otherwise we can pretend the matrix is already transposed

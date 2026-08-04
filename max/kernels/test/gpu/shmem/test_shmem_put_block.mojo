@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 from std.gpu import block_dim, block_idx, global_idx
-from std.memory import UnsafePointer, alloc
+from std.memory import Pointer, alloc
 from std.ffi import c_size_t
 from shmem import *
 from std.testing import assert_equal
 
 
 def set_and_shift_kernel(
-    send_data: UnsafePointer[Float32, MutAnyOrigin],
-    recv_data: UnsafePointer[Float32, MutAnyOrigin],
+    send_data: Pointer[Float32, MutAnyOrigin],
+    recv_data: Pointer[Float32, MutAnyOrigin],
     num_elems: Int,
     mype: Int32,
     npes: Int32,

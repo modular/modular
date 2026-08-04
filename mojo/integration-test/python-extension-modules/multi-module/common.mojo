@@ -47,7 +47,7 @@ struct TestStruct(Defaultable, Movable, Writable):
     @staticmethod
     def _get_self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

@@ -351,7 +351,7 @@ def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
                         1,
                         1,
                         0,
-                        OptionalUnsafePointer[Int8, MutAnyOrigin](),
+                        OptionalPointer[Int8, MutAnyOrigin](),
                     )
                 )
             else:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import align_of, size_of
-from std.memory import UnsafePointer
+from std.memory import Pointer
 from std.testing import *
 
 

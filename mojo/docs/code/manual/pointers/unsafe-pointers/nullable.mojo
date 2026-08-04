@@ -14,7 +14,7 @@
 
 def test_unsafe_dangling():
     # start-unsafe-dangling
-    var ptr = UnsafePointer[Int, MutUntrackedOrigin].unsafe_dangling()
+    var ptr = Pointer[Int, MutUntrackedOrigin].unsafe_dangling()
     # end-unsafe-dangling
 
     _ = ptr
@@ -22,7 +22,7 @@ def test_unsafe_dangling():
 
 def main():
     # start-optional-pointer
-    var ptr = Optional[UnsafePointer[Int, MutUntrackedOrigin]]()
+    var ptr = Optional[Pointer[Int, MutUntrackedOrigin]]()
     # end-optional-pointer
 
     # Optional is initially None; if block is skipped.

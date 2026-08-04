@@ -20,7 +20,12 @@ method surface.
 """
 
 from std.collections import OptionalReg
-from std.memory.pointer import AddressSpace, OptionalPointer, Pointer
+from std.memory.pointer import (
+    AddressSpace,
+    ImmPointer,
+    OptionalPointer,
+    Pointer,
+)
 
 # ===----------------------------------------------------------------------=== #
 # unsafe_cast
@@ -86,6 +91,7 @@ def pointer_to_int(pointer: OptionalPointer[...]) -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated(use=MutPointer)
 comptime MutUnsafePointer[
     T: AnyType,
     origin: MutOrigin,
@@ -100,6 +106,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated(use=ImmPointer)
 comptime ImmUnsafePointer[
     T: AnyType,
     origin: ImmOrigin,
@@ -116,53 +124,16 @@ Parameters:
 
 
 @doc_hidden
-@deprecated(use=ImmUnsafePointer)
-comptime ImmutUnsafePointer = ImmUnsafePointer
-
-comptime OpaquePointer[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = Pointer[NoneType, origin, address_space=address_space]
-"""An opaque pointer, equivalent to the C `(const) void*` type.
-
-Parameters:
-    mut: Whether the pointer is mutable.
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-comptime MutOpaquePointer[
-    origin: MutOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointer[origin, address_space=address_space]
-"""A mutable opaque pointer, equivalent to the C `void*` type.
-
-Parameters:
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
-
-comptime ImmOpaquePointer[
-    origin: ImmOrigin,
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-] = OpaquePointer[origin, address_space=address_space]
-"""An immutable opaque pointer, equivalent to the C `const void*` type.
-
-Parameters:
-    origin: The origin of the pointer.
-    address_space: The address space of the pointer.
-"""
+@deprecated(use=ImmPointer)
+comptime ImmutUnsafePointer = ImmPointer
 
 
 @doc_hidden
 @deprecated(use=ImmOpaquePointer)
 comptime ImmutOpaquePointer = ImmOpaquePointer
 
+
+@deprecated(use=OptionalPointer)
 comptime OptionalUnsafePointer[
     mut: Bool,
     //,
@@ -180,6 +151,8 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+
+@deprecated(use=Pointer)
 comptime UnsafePointer[
     mut: Bool,
     //,

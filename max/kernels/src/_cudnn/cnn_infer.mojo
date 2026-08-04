@@ -1104,7 +1104,7 @@ def cudnnConvolutionBackwardData(
     dy: OpaquePointer,
     conv_desc: UnsafePointer[cudnnConvolutionStruct, _],
     algo: cudnnConvolutionBwdDataAlgo_t,
-    work_space: OptionalUnsafePointer[NoneType, MutAnyOrigin],
+    work_space: OptionalPointer[NoneType, MutAnyOrigin],
     work_space_size_in_bytes: Int,
     beta: OpaquePointer,
     dx_desc: UnsafePointer[cudnnTensorStruct, _],

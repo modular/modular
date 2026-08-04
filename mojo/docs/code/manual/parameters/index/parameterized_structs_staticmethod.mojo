@@ -13,7 +13,7 @@
 
 
 struct ParameterizedArray[ElementType: Copyable & Deinitable]:
-    var data: UnsafePointer[Self.ElementType, MutUntrackedOrigin]
+    var data: Pointer[Self.ElementType, MutUntrackedOrigin]
     var size: Int
 
     def __init__(out self, var *elements: Self.ElementType):

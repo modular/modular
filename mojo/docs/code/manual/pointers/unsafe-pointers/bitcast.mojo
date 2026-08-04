@@ -16,7 +16,7 @@ from std.bit import byte_swap
 
 # start-read-chunks
 def read_chunks(
-    var ptr: UnsafePointer[mut=False, UInt8, _],
+    var ptr: Pointer[mut=False, UInt8, _],
 ) -> List[List[UInt32]]:
     var chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data

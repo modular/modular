@@ -318,6 +318,45 @@ Parameters:
     address_space: The address space of the pointer.
 """
 
+comptime OpaquePointer[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[NoneType, origin, address_space=address_space]
+"""An opaque pointer, equivalent to the C `(const) void*` type.
+
+Parameters:
+    mut: Whether the pointer is mutable.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+comptime MutOpaquePointer[
+    origin: MutOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = OpaquePointer[origin, address_space=address_space]
+"""A mutable opaque pointer, equivalent to the C `void*` type.
+
+Parameters:
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
+comptime ImmOpaquePointer[
+    origin: ImmOrigin,
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = OpaquePointer[origin, address_space=address_space]
+"""An immutable opaque pointer, equivalent to the C `const void*` type.
+
+Parameters:
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
+
 
 @doc_hidden
 @deprecated(use=ImmPointer)

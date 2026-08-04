@@ -25,7 +25,7 @@ from max.gpu.host import DeviceContext
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+    def kernel(x: Pointer[Int, MutAnyOrigin]):
         x[unsafe_offset=0] = thread_idx.x
 
     # CHECK: tid.x

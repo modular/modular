@@ -21,10 +21,10 @@ from std.testing import assert_equal
 
 
 def ring_bcast(
-    data: UnsafePointer[c_int, MutAnyOrigin],
+    data: Pointer[c_int, MutAnyOrigin],
     nelem_dev: Int32,
     root: c_int,
-    psync: UnsafePointer[UInt64, MutAnyOrigin],
+    psync: Pointer[UInt64, MutAnyOrigin],
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var nelem = Int(nelem_dev)
