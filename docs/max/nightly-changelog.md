@@ -8,1091 +8,979 @@ This version is still a work in progress.
 
 ## Documentation
 
-- The MAX AI kernels library has been renamed to the MAX accelerator library,
-  reflecting an expanded scope that now includes the GPU programming APIs
-  migrated out of the Mojo standard library and gathered under a new top-level
-  `max` package. Its API reference moved to
-  [`/api/mojo/`](https://docs.modular.com/api/mojo/), and links to the previous
-  location redirect.
+- Renamed the MAX AI kernels library to the MAX accelerator library, now
+  including the GPU programming APIs under the new top-level `max` package;
+  its API reference moved to `/api/mojo/` (old links redirect).
+- Added docstrings across the public APIs of the kernel packages (`linalg`,
+  `comm`, `kv_cache`, `shmem`, `state_space`, `pipeline`,
+  `structured_kernels`, `profiling_range`, `builtin_kernels`, and the `nvml`
+  wrapper), now published in the kernels API reference.
+- Brought the OpenAI-compatible REST API reference up to date: each operation
+  is now its own page under a new `rest-api/index.mdx` overview, and new
+  chat-completion fields and message roles are documented.
+- Restructured the MAX docs site: removed the `/max` URL prefix and moved
+  `deploy/` and `inference/` under `serve/` and `graph/` under `develop/`.
+- Moved cloud deployment documentation out of the MAX doc set (redirects
+  added).
 
 ## MAX models
 
-- Added DSpark speculative decoding for Gemma4 12B
-  (`UnifiedDSparkGemma4ForCausalLM`), DeepSeek's block-drafting method
-  (arXiv 2607.05147). A small non-causal draft transformer conditioned on
-  selected target-layer hidden states drafts a 7-token block per step, and
-  a sequential Markov head biases each draft position's logits from the
-  previously drafted token. Enabled by serving `google/gemma-4-12B-it` with
-  `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
-  --speculative-method dflash --num-speculative-tokens 7`. Verified on a
-  single B200 at ~4.6 accepted draft tokens per step (greedy, code-style
-  prompts; ~5.6 including the bonus token), in the paper's reported band.
-- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the existing
-  GLM-5.1 sparse-attention architecture with cross-layer index sharing.
-- Added multi-token prediction (MTP) speculative decoding for GLM-5.2
-  (`UnifiedMTPGlm5_2ForCausalLM`). The baked-in NextN layer is served as a
-  single-layer sparse-MLA draft (its own lightning indexer plus a paired
-  `{mla, indexer}` KV cache); per `index_share_for_mtp_iteration`, the draft
-  computes its top-k selection on the first MTP step and reuses it on the
-  rest. Enabled automatically for GLM checkpoints that ship a NextN layer when
-  speculative decoding is requested with no separate draft model. Validated on
-  `zai-org/GLM-5.2-FP8` and `nvidia/GLM-5.2-NVFP4` across 8 B200s
-  (`--speculative-method mtp`).
-- Added Laguna (`LagunaForCausalLM`), poolside's decoder-only sparse-MoE
-  language model. It uses sigmoid expert routing with a per-expert
-  score-correction bias, a per-element softplus attention-output gate, and
-  per-head QK-RMSNorm. Verified on `poolside/Laguna-M.1-NVFP4` (131B,
-  compressed-tensors NVFP4 experts) on a single B200, including chat-template
-  serving and tool calling. On GSM8K (0-shot) it scores ~0.81 with light
-  sampling (`temperature=0.3` plus a frequency penalty); greedy decoding
-  (`temperature=0`) is **not** recommended for this NVFP4 checkpoint, since it
-  falls into repetition loops on a sizable fraction of prompts (dropping GSM8K
-  to ~0.59). An experimental, not-yet-accuracy-validated FP8 KV cache (unscaled
-  cast) is available behind `--kv-cache-format float8_e4m3fn`; the default bf16
-  KV cache is the validated configuration.
-- Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`), an
-  encoder/decoder block-diffusion text model that generates 256-token
-  blocks per step via an inner denoising loop. Supports NVFP4 and bfloat16
-  weights; text-only for now.
-- Added Nemotron-H (`NemotronHForCausalLM`), NVIDIA's hybrid Mamba-2 +
-  attention + relu-squared-MLP decoder, with modelopt per-tensor FP8. Adds a
-  new Mamba-2 SSD chunked-scan varlen prefill kernel (also used for decode as
-  length-1 sequences). Verified on `nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8` on a
-  single B200: random-weight logit-verify cosine 0.9999 vs HuggingFace, GSM8K
-  strict-match ~0.70. Decode is optimized with an in-place SSM state-pool
-  read-modify-write that writes only the active slots (+52% output tok/s at
-  concurrency 32).
-- Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant (a
-  sigmoid-plus-bias top-6 router over 128 routed experts plus a shared expert)
-  and enabled the Nemotron-H architecture on Apple silicon GPUs in bfloat16.
-  The MoE path on Metal uses an integer-domain expert-gather index
-  (`ops.floor_div`, avoiding a 64-bit-float divide) and a 32-bit
-  `moe_create_indices` atomic (Apple GPUs lack 64-bit atomics), and adds an
-  Apple FP4 (W4A16) decode GEMV with an f16-domain E2M1 decode plus a
-  redesigned varlen causal-conv1d kernel. Verified on M5: the 30B-A3B MoE
-  serves in bfloat16 at GSM8K 8-shot ~0.85.
-- Added an `enable_dp_cross_replica_prefix_copy` KV cache config flag
-  (default on). When serving with data parallelism, a prefix-cache hit
-  resident on another DP replica's GPU is normally served by a
-  device-to-device copy onto the request's replica. Disabling the flag turns
-  those copies off so cross-replica reuse is served only from the shared
-  host/disk tier via the KV connector (or recomputed), which can be
-  preferable when a connector is configured and GPU block-pool pressure
-  matters more than copy bandwidth.
-- Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
-- Added tool-calling, reasoning, and structured-output (`response_format`)
-  support to GLM-5.1 / GLM-5.2, enabled with
-  `--tool-parser glm45 --reasoning-parser glm45 --enable-structured-output`.
-  Reasoning uses `<think>`/`</think>`; tool calls use the model's native
-  `<tool_call>…<arg_key>…<arg_value>…</tool_call>` format. With constrained
-  decoding, tool-call arguments are constrained to each tool's JSON schema
-  (declared keys, `required` properties, and per-property types — including
-  nested objects/arrays, enums, numeric bounds, and string patterns), and the
-  call sequence terminates on the model's turn-ender so it can't loop. Validated
-  on `zai-org/GLM-5.2-FP8`.
-- Added support for the Ideogram 4 (`Ideogram4Pipeline`) text-to-image
-  flow-matching diffusion transformer. The pipeline pairs a Qwen3-VL text
-  encoder (run text-only, emitting concatenated intermediate hidden states)
-  with a single-stream DiT that uses QK-RMSNorm, 3D MRoPE, SwiGLU, and AdaLN,
-  and an asymmetric dual-branch classifier-free guidance scheme. FP8
-  (`float8_e4m3fn`) checkpoint weights are dequantized to `bfloat16` at load.
-  Serve via `/v1/responses`; benchmark with
-  `--benchmark-task text-to-image`.
-- Added the `reasoning_split` chat-completion request field for MiniMax M3.
-  It defaults to `true`, which keeps the existing behavior of returning the
-  model's thinking in a separate `reasoning` field. Setting it to `false` folds
-  the thinking back into the `content` field wrapped in `<think>...</think>`
-  tags, matching the official MiniMax M3 endpoint. The field is a no-op for
-  every other model.
-- FLUX.2-klein bf16 checkpoints on Apple M5 GPUs now default to int8 W8A8
-  quantization (weights round-to-nearest-quantized at load, per-token dynamic
-  activation scales in a fused Metal matmul — MAX's own Mojo kernel).
-  Measured ~1.45x faster end-to-end than bf16 on FLUX.2-klein-4B (1024x1024,
-  4 steps) at near-lossless quality (PSNR 34.2 dB, SSIM 0.9966). Set
-  `APPLE_FLUX2_INT8_W8A8=0` to opt back into bf16; FLUX.2-dev and non-M5
-  devices are unaffected.
-- NVFP4 FLUX.2 checkpoints (for example FLUX.2-dev) can now opt into an int8
-  W8A8 requant at load on Apple M5 with `APPLE_FLUX2_INT8_W8A8=1`: each
-  quantized layer's weight is reconstructed from its FP4 data and scales,
-  then requantized to int8 one weight at a time, so no full-model
-  high-precision copy is ever resident. Measured ~2.56x faster end-to-end
-  than the default weight-only W4A16 path on FLUX.2-dev (1024x1024, 24
-  steps) at faithful quality (SSIM 0.996-0.999). Unset, NVFP4 keeps its
-  W4A16 default.
-- Renamed the FLUX.2 int8 W8A8 override env var `FLUX2_KLEIN_INT8_W8A8` to
-  `APPLE_FLUX2_INT8_W8A8` (the path is Apple-Metal-only and no longer
-  klein-only). The old name is still honored with a one-time deprecation
-  warning; the new name wins when both are set.
-- FLUX.2 diffusion pipelines now support both denoising-cache backends to skip
-  redundant transformer passes during generation: `--taylorseer` (Taylor-series
-  step skipping — the recommended default, with `balanced` and `fast` presets)
-  and `--first-block-caching` (first-block-residual reuse — zero-tuning and
-  data-adaptive). The two are mutually exclusive and both off by default. See
-  the [image generation guide](/serve/image-generation).
-- Gemma 4 with multi-token prediction (MTP) speculative decoding
-  (`UnifiedMTPGemma4ForCausalLM`) now supports image and video input.
-  Previously this path was served text-only: image tokens were ingested by
-  the tokenizer but the vision encoder output never reached the language
-  model, so image prompts were answered as if the model were blind. The
-  vision encoder now runs during prefill and its projected soft-token
-  embeddings are merged into the target model, matching the non-MTP Gemma 4
-  path.
-- Gemma 4 MTP speculative decoding now samples recovered tokens from the
-  residual distribution when stochastic acceptance rejects a draft token. This
-  preserves the target distribution for argmax draft proposals instead of
-  sampling recovery from the full target distribution.
-- Kimi with DFlash speculative decoding
-  (`UnifiedDflashKimiK25ForCausalLM`) now supports image input. Previously
-  this path was served text-only: the vision encoder was not compiled, so
-  image tokens reached the language model as bare placeholder embeddings and
-  image prompts were answered as if the model were blind. The vision encoder
-  now runs during prefill and its patch-merged embeddings are scattered into
-  the target model's token embeddings, matching the non-speculative and Eagle3
-  Kimi paths.
+- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the GLM-5.1
+  sparse-attention architecture with cross-layer index sharing.
+  - Added multi-token prediction (MTP) speculative decoding for GLM-5.2
+    (`UnifiedMTPGlm5_2ForCausalLM`), serving the baked-in NextN layer as a
+    single-layer sparse-MLA draft; enabled automatically for GLM checkpoints
+    that ship a NextN layer with `--speculative-method mtp`.
+  - Added tool-calling, reasoning, and structured-output (`response_format`)
+    support to GLM-5.1 / GLM-5.2, enabled with `--tool-parser glm45
+    --reasoning-parser glm45 --enable-structured-output`.
+  - Fixed a GLM-5.1-FP8 crash caused by a shared-experts dtype mismatch.
+- Added Laguna (`LagunaForCausalLM`) support for
+  `poolside/Laguna-M.1-NVFP4`, including tool calling.
+- Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`) support for
+  `google/diffusiongemma-26B-A4B-it` (bfloat16) and
+  `nvidia/diffusiongemma-26B-A4B-it-NVFP4`; text-only for now.
+- Added Nemotron-H (`NemotronHForCausalLM`) support, NVIDIA's hybrid
+  Mamba-2 + attention decoder, with modelopt per-tensor FP8 and a new
+  Mamba-2 SSD chunked-scan varlen kernel.
+  - Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant
+    and enabled the architecture on Apple silicon GPUs in bfloat16.
+  - Enabled NVIDIA's official FP8 Nemotron-H checkpoints on Apple silicon
+    (previously crashing or producing all-zero logits) and sped up
+    Nemotron-H decode on Apple M5 by ~41-81%.
+  - Added support for serving `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8` on
+    Apple silicon via a tiled simdgroup-MMA grouped-FP8 (W8A16) MoE matmul,
+    decoding faster than bf16 at concurrency with half the weight memory.
+- Fixed the `max_batch_size` handling for Nemotron-H.
+- Added support for the `detail` parameter on image and video content
+  parts in chat requests.
+- Added Ideogram 4 (`Ideogram4Pipeline`) support, a text-to-image
+  flow-matching diffusion transformer; serve via `/v1/responses`.
+  - FP8 checkpoint weights run hot projections on native FP8 GEMMs (~24%
+    faster end-to-end on MI355).
+- Added support for `amd/Kimi-K2.7-Code-MXFP4` on AMD GPUs.
+- Expanded Gemma 4 support:
+  - Added DSpark speculative decoding for Gemma 4 12B
+    (`UnifiedDSparkGemma4ForCausalLM`), DeepSeek's block-drafting method:
+    a small draft transformer drafts a 7-token block per step. Enabled with
+    `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
+    --speculative-method dflash --num-speculative-tokens 7`.
+  - Sped up Gemma4-12B DSpark decode by up to ~1.3x via a packed wide-N
+    shallow-K GEMV, a single-pass streaming argmax kernel, and device graph
+    capture.
+  - Gemma 4 with MTP speculative decoding (`UnifiedMTPGemma4ForCausalLM`)
+    now supports image and video input; previously the vision encoder output
+    never reached the language model, so image prompts were answered as if
+    the model were blind.
+  - MTP speculative decoding now samples recovered tokens from the residual
+    distribution when stochastic acceptance rejects a draft token,
+    preserving the target distribution for argmax draft proposals.
+  - Added structured-output and tool-calling support via the xgrammar
+    backend, covering Gemma 4's special tool-call format.
+  - Added float16 support, with the logit softcap and vision pooler run in
+    fp32.
+  - Added tensor-parallel support for the MoE variant.
+  - Video inputs now route through the shared `VisionEncoderCache`, so a
+    repeated clip is served from cache with no re-encode.
+  - Video decoding now runs on a worker thread, so concurrent requests
+    overlap video decode.
+  - Improved vision-batch serving latency by concatenating embeddings
+    on-device instead of round-tripping through host numpy.
+  - Fixed the MoE expert-router softmax being computed in `bfloat16`
+    instead of `float32`, which degraded MoE quality.
+  - Fixed image/video position and scatter indexing desyncs under chunked
+    prefill, which could corrupt vision embeddings on multimodal prompts
+    split across chunks.
+  - Fixed crashes in multi-device serving and multi-image batches by making
+    `merge_per_device_buffers` rank-agnostic.
+  - Fixed reasoning being dropped after tool results.
+  - Fixed a vision-batch crash caused by constructing a `Device()` instead
+    of `CPU()` for host tensors.
+- Expanded DeepSeek-V3 ModuleV3 support:
+  - Added NVFP4 (modelopt) weight support, running experts, dense MLPs,
+    and the attention output projection on SM100 block-scaled FP4 matmul
+    kernels.
+  - Added data-parallel + expert-parallel (DP-EP) and multi-GPU
+    tensor-parallel + expert-parallel (TP+EP) serving. Note: `Tensor.to`
+    no longer implicitly calls `F.distributed_broadcast`; call it
+    explicitly where needed.
+  - Fixed the FP8 adapter by casting f32 normalization gammas, resolving a
+    dtype mismatch.
+- Expanded Kimi K2.5 support:
+  - Kimi with DFlash speculative decoding
+    (`UnifiedDflashKimiK25ForCausalLM`) now supports image input;
+    previously the vision encoder was not compiled, so image prompts were
+    answered as if the model were blind.
+  - Added support for combining Kimi tool calling with
+    `response_format=json_schema` on the xgrammar constrained-decoding
+    backend.
+- Expanded FLUX.2 support:
+  - FLUX.2-klein bf16 checkpoints on Apple M5 GPUs now default to int8
+    W8A8 quantization, ~1.45x faster end-to-end than bf16 on
+    FLUX.2-klein-4B at near-lossless quality; set
+    `APPLE_FLUX2_INT8_W8A8=0` to opt out.
+  - NVFP4 checkpoints can now opt into an int8 W8A8 requant at load on
+    Apple M5 with `APPLE_FLUX2_INT8_W8A8=1`, ~2.56x faster end-to-end
+    than the default W4A16 path on FLUX.2-dev.
+  - Diffusion pipelines now support two denoising-cache backends to skip
+    redundant transformer passes: `--taylorseer` (recommended default,
+    with `balanced` and `fast` presets) and `--first-block-caching`; the
+    two are mutually exclusive and both off by default.
+- Expanded Qwen support:
+  - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Fixed a `Qwen3EmbeddingModel` crash.
+- Added per-request LoRA adapter support: `LoRALinear` and
+  `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
+  with `LoRAManager.apply` swapping target layers in a model.
+- Improved Eagle3 speculative-decoding performance by removing a redundant
+  concatenate in the draft path.
+- Fixed Step-3.5-Flash accuracy and performance.
+- Fixed the EAGLE3 MHA draft `lm_head` all-gather in pure tensor-parallel
+  mode.
 
 ## MAX framework
 
-- Added `MAX_SERVE_OTLP_METRICS_ENDPOINT` to additionally push a
-  self-calibrating exponential-histogram shadow of every histogram metric
-  (TTFT, ITL, request time, token counts, throughput, etc.) to an OTLP
-  endpoint (for example a Datadog Agent OTLP receiver, or any OTel
-  collector), rather than using the existing hand-tuned static bucket
-  boundaries. The existing histograms keep exporting on the local
-  Prometheus `/metrics` endpoint exactly as before, unaffected either way
-  (the classic Prometheus text format cannot carry exponential histograms
-  regardless); the shadow metric (named `<metric>.exponential`) goes only
-  to the configured OTLP endpoint, so both representations are available
-  side by side for comparison. Unset by default, which adds nothing and
-  leaves today's behavior unchanged.
-- Added video encoder statistics to the scheduler's per-iteration batch log
-  for multimodal models, mirroring the existing `Vision Encoder` clause. Each
-  batch line with video work now includes a `Video Encoder` clause reporting
-  the number of clips encoded this iteration versus served from the video
-  encoder cache (with the cache hit rate), the sampled frame count, the
-  video tokens encoded, and the encoder wall-clock time. The same values are
-  exported as OpenTelemetry metrics under the `maxserve.video.*` namespace.
-  A model that manages its own encoder cache internally rather than through
-  the pipeline-owned `VisionEncoderCache` (e.g. MiniMax-M3) now implements a
-  `SupportsPooledVisionMetrics` protocol so both its image and video metrics
-  reach the scheduler.
-- Added opt-in token-balanced CE scheduling across data-parallel replicas.
-  With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
-  encoding requests wait in an unbound pool and are placed by a per-step
-  planner that prices them at their post-prefix-cache length (a read-only
-  probe of each replica's device cache and the shared host/disk tiers) and
-  binds them to the least-loaded replica when first scheduled. Unbalanced CE
-  work may be deferred up to the timeout while its replica runs decode
-  instead, until per-step occupancy reaches `--dp-ce-balance-threshold`
-  (default 0.8). A below-threshold step with CE work on two or more replicas
-  still runs immediately with each replica's chunk size reduced to the
-  balance level, so only the excess defers
-  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on; skipped when the
-  balance level is under half the CE chunk target, where the extra chunks
-  would cost more than the imbalance).
-- Added `--chunked-prefill-min-chunk-size` (config key
-  `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
-  in tokens, on any chunk created by chunked prefill. When splitting a
-  request against the CE token budget, the cut is moved earlier so that
-  neither the chunk nor its remainder is smaller than the floor; if no legal
-  cut point exists within the remaining budget, the request is left unsplit
-  for a later step. This avoids degenerate slivers (for example an 8-token
-  tail chunk after an 8192-token budget cut) that pay a full step's overhead
-  and re-read the request's entire context in attention for almost no
-  progress.
-- Fixed non-streaming chat completions leaking a literal structural tool-call
-  marker (for example `<tool_call>`) into `message.content` when a
-  `max_tokens` truncation landed mid tool-call block. The response now
-  surfaces only the content before the marker, with
-  `finish_reason == "length"`.
-- Added an experimental `--fold-sampler-into-graph` option (default off) that
-  folds greedy token selection (argmax) into the captured forward graph, so a
-  single device-graph replay materializes the sampled token instead of a
-  separate sampler submission with a blocking readback. Applies to all-greedy
-  decode batches on architectures that emit the folded token output (currently
-  Nemotron-H); non-greedy requests fall back to the separate sampler.
-- Added a `max-pending-futures` config (default 1, the classic
-  overlap-scheduler depth of one forward in flight per request). Request
-  bookkeeping now tracks unrealized future-token placeholders with a counted
-  model instead of a single-sentinel check, and setting the value to 2 enables
-  experimental schedule-ahead decoding: two forwards in flight per request,
-  with the next step's input token realized on-device from the folded sampler
-  output. Behavior at the default depth is unchanged.
-- Fixed the serve CLI dropping the `fold-sampler-into-graph`,
-  `max-pending-futures`, and greedy-sampling gate settings on their way to the
-  model worker, which silently disabled the folded greedy sampler. With the
-  flags threaded through, `--fold-sampler-into-graph` removes the per-token
-  blocking sampler submission and substantially improves decode latency on
-  architectures that support it.
-- Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
-  file) without an `InferenceSession`. The resulting `CompiledModel` can
-  be initialized on any session via `InferenceSession.init`. It replaces
-  `InferenceSession.read`, which has been removed.
-- Image generation responses on the Open Responses endpoint now report
-  `usage`: `output_tokens` and `total_tokens` carry the total pixel count of
-  the generated images, counted from the actual output arrays, and
-  `input_tokens` is 0 (prompt text is not counted). Previously `usage` was
-  always `null`.
-- Added `InferenceSession.read` for loading a compiled-model artifact (a
-  `.mef` file) previously saved with `CompiledModel.export_mef`. It accepts a
-  path or a binary file-like object (such as `io.BytesIO`), deserializes
-  without invoking the graph compiler, and returns a `CompiledModel` ready to
-  pass to `InferenceSession.init`.
-- Added `--no-enable-tool-call-constrained-decode` (config key
-  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
-  tool-call parsing from constrained decoding. When disabled, a configured
-  `--tool-parser` still parses tool calls out of the generated text, but no
-  server-generated grammar is produced and the bitmask constrained-decode path
-  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
-  or a named function can no longer force a tool call. This is independent of
-  `--enable-structured-output`, which continues to gate user-supplied
-  `response_format` JSON schemas.
-- Fixed the `code` label on the `maxserve_request_count` metric so it reports
-  the HTTP status code actually returned to the client. The count is now
-  recorded from the HTTP layer, so failures rejected before generation (for
-  example a request with an unreachable image URL) are counted with their real
-  status code instead of being labeled `200` or dropped entirely. Liveness and
-  observability endpoints (`/health`, `/version`, `/ping`, `/metrics`) are not
-  counted.
-- Failed request submissions in the OpenAI-compatible serving endpoints now
-  surface as HTTP error responses instead of a `200 OK` streaming response that
-  carries an error payload. Request tokenization and the handoff to the model
-  worker now complete before the streaming response headers are sent, so a
-  failure at submission time (for example, a dead model worker) maps to an HTTP
-  5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
-  chunk has been sent, are still serialized as an error event within the stream.
-- Added request-queue backpressure to MAX serve via two cooperating caps. The
-  `--max-queue-size` flag (env var `MAX_SERVE_MAX_QUEUE_SIZE`, cap *N*) bounds
-  the request queue to the model worker; once it is full, new requests are
-  rejected immediately with HTTP 429 instead of being enqueued. The
-  `--max-pending-requests` flag (env var `MAX_SERVE_MAX_PENDING_REQUESTS`, cap
-  *M*) stops the worker from draining the request queue once its pending
-  (prefill) queue is *M* deep, so the request queue actually backs up under
-  load. Together they form a self-calibrating mechanism that sheds load to keep
-  latency within SLAs and naturally accounts for long requests holding batch
-  space. Both default to unbounded. Rejections are observable via the existing
-  `maxserve.request_count` metric with `code="429"`.
-- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
-  waits for in-flight requests to finish after receiving `SIGTERM` before
-  exiting (default 5 seconds). Raise it so long-running requests are drained
-  rather than dropped during a rolling restart.
-- Fixed `SIGTERM` cutting off in-flight streaming responses immediately instead
-  of draining them, which dropped partially generated completions during a
-  rolling restart no matter how high
-  `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` was set. Streaming requests are now
-  bounded by that timeout like every other request.
-- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
-  multi-turn conversation gets cache hits even when a later turn is scheduled on
-  a different replica than the previous one. GPU prefix-cache hits are served by
-  a cheap device-to-device copy of the cached pages onto the assigned replica,
-  and the CPU/disk offload tiers are now a single pool shared by every replica
-  (a block offloaded by one replica can be loaded by another). As a result,
-  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
-  the whole deployment, rather than allocating a separate pool of that size per
-  replica.
-- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
-  data-parallel (DP) serving and shares its prefix cache across DP replicas on
-  the default single-tenant path, matching the `local` and `tiered` connectors.
-  Every replica resolves to the same replica-agnostic store, and the stored
-  block key carries no replica component, so a block offloaded through one
-  replica is served to any other.
-- The dKV external KV-cache connector now supports tensor parallelism
-  (TP greater than 1) on the multi-tenant path for head-sharded (MHA/GQA), MLA
-  (replicated-KV), and GQA head-replicated (`allow_kv_head_replication`) models.
-  Each GPU handshakes its own per-shard store, and every KV load/offload fans
-  out across the processing replica's shard clients with identical block ids and
-  hashes; a block counts as loaded only once every shard has it. The store key
-  reflects the KV-head slice each GPU holds: the TP rank when head-sharded, a
-  single shared shard for MLA, and the head-group index under head replication.
-- On the dKV multi-tenant tensor-parallel path, a KV load that returns
-  differing block counts across a replica's per-GPU shard clients now drains
-  the over-loading shards' in-flight device reads before returning the minimum
-  count. This keeps a stray in-flight host-to-device copy (into a block the
-  block manager frees because it did not land on every shard) from later
-  clobbering a reallocated block. The drain host-completes the reads on the
-  remote (NIXL) transport and enqueues a cross-stream ordering on the
-  co-located same-host (CUDA) transport, so it closes the window on both. The
-  common equal-count path is unchanged and pays no extra synchronization.
-- The dKV external KV-cache connector (`--kv-connector dkv`) now requires a
-  non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
-  operator); the empty-tenant "default" path is removed. Both the connector and
-  the dKV server now reject an unset/empty tenant rather than keying an unfenced
-  shared store, so every deployment (single-tenant included) routes through the
-  per-tenant region-sharded store — DP replicas of one tenant still share one
-  store. Multi-cache models (speculative draft+target, quantized values+scales)
-  now resolve on this path, folded into the handshake's `kv_config_hash`. A
-  single-tenant node spanning more than one GPU must set the dKV server's
-  `--fair-share-partitions` to its GPU count.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
-  into a single `rms_norm_rope` GPU kernel even when the RMSNorm is written "in
-  float32" — that is, when a `bfloat16`/`float16` activation is upcast to
-  `float32`, normalized, and cast back before RoPE. Previously the intervening
-  `float32`-to-`bfloat16` downcast blocked the fusion and the idiom compiled to
-  several separate elementwise kernels. The fused kernel now decouples its
-  output dtype from its input dtype, so the reduction and weight/epsilon scaling
-  stay in `float32` and only the result is produced in the activation dtype; the
-  input upcast is absorbed by ordinary prologue fusion. Numerics match the
-  unfused graph (the normalized value is rounded to the output dtype before
-  RoPE).
-- Added a `poison-all` mode to the `MODULAR_DEBUG_DEVICE_ALLOCATOR` environment
-  variable for debugging uninitialized device-memory reads. Unlike the existing
-  `uninitialized-poison` (which fills graph tensors with a type-aware, non-NaN
-  sentinel and is detected by an instrumented load check), `poison-all` fills
-  *every* memory-manager allocation — including internal scratch and other
-  non-tensor buffers — with a raw byte (default `0xFF`, a NaN pattern for
-  `float32`/`bfloat16`), so an uninitialized read propagates NaN into the output
-  and trips existing differential tests without any kernel instrumentation. The
-  fill byte is configurable via
-  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`, and the mode composes
-  with `out-of-bounds` redzone checks. Because the NaN can also surface on
-  legitimately-uninitialized allocation padding, it is a manual debugging aid
-  rather than a default.
-- Added a `max-benchmark` conda package for parity with the `max[benchmark]`
-  wheel extra.
-- Added a `max-serve` conda package for parity with the `max[serve]` wheel
-  extra.
-- Added a `max[all]` extra to the wheel, and `max-all` package for Conda.
+  into a single `rms_norm_rope` GPU kernel even when the RMSNorm upcasts to
+  `float32`; numerics match the unfused graph.
+- Added a `poison-all` mode to `MODULAR_DEBUG_DEVICE_ALLOCATOR` that fills
+  every memory-manager allocation with a configurable NaN-pattern byte
+  (`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`), so uninitialized
+  device-memory reads trip differential tests without kernel instrumentation.
+  Manual debugging aid, not a default.
+- Added conda packages `max-benchmark`, `max-serve`, and `max-all`, plus a
+  `max[all]` wheel extra, for parity with the existing wheel extras.
+- Multimodal pipelines now compile their vision and language models in
+  parallel via a shared `Module` container and `session.load_all()`, cutting
+  compile/load time by up to 1.86x (Qwen3-VL-4B: 614s -> 428s).
+- Made the compiled-model (MEF) cache key relocatable across install paths:
+  absolute-path-valued pipeline options no longer enter the key, so a cache
+  warmed under one install path hits under another.
+- ModuleV3 weights are now sharded and transferred to devices inside the
+  compiled graph rather than via eager ops, reducing per-GPU memory use
+  (about 10 GiB for a DP-EP NVFP4 DeepSeek-V3).
+- The VMM defragmenting allocator is now the default memory manager on NVIDIA
+  GPUs, fixing external-fragmentation OOMs ("plenty free but no contiguous
+  block"); override with `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0`. Also
+  fixed the earlier opt-in being a silent no-op.
+- Added a HIP-based VMM defragmenting allocator for AMD GPUs (opt-in via
+  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=1`) on MI300-series hardware.
+- Coalesced consecutive Metal kernel launches into a single shared command
+  buffer with a tunable op cap, reducing per-launch overhead on Apple GPUs;
+  also restored Metal GPU execution aborted by an unimplemented
+  driver-context stub.
+- Improved expert-parallel MoE execution by running the shared expert on a
+  side stream via `ops.side_stream`, overlapping it with the routed-expert
+  computation.
+- Allowed `float16`/`bfloat16` graphs to load `float32` checkpoint weights,
+  with the weight adapter casting at load time.
+- Improved multi-device startup latency by batching replay preface copies
+  into a single submission.
 
 ### Inference server
 
-- Raised the maximum tool function name length from 64 to 1024 characters.
-  Client-supplied tool names that legitimately exceed 64 characters are now
-  accepted instead of rejected with a 400 error.
-- Added vision encoder statistics to the scheduler's per-iteration batch log
-  for multimodal models. Each batch line now includes a `Vision Encoder`
-  clause reporting the number of images encoded this iteration versus served
-  from the vision encoder cache (with the cache hit rate), and the image
-  patches and vision tokens encoded. This makes it clear when a slow
-  context-encoding iteration is driven by the vision encoder rather than the
-  language model. The same values are exported as OpenTelemetry metrics under
-  the `maxserve.vision.*` namespace. Applies to models backed by the shared
-  vision encoder cache (Gemma 4, Kimi K2.5, and Gemma 4 MTP).
-- Added an opt-in `emit_reasoning_content` server config. When enabled, chat
-  completion responses emit a reasoning model's chain-of-thought under
-  `reasoning_content` instead of `reasoning` (the two are never emitted
-  together). This restores the `reasoning_content` field for clients that
-  require it; it remains off by default, so responses emit `reasoning` only.
-- Improved time-to-first-token for multimodal requests by making the image and
-  video preprocessor reject and decode media more efficiently. Oversized media
-  is now rejected before its bytes are fully materialized: an `http(s)` download
-  is aborted as soon as the advertised `Content-Length` (or the streamed total)
-  crosses the per-item cap, and a `data:` URI is rejected from its base64 length
-  before it is decoded. Large `data:` base64 decoding now runs on a worker
-  thread instead of blocking the server event loop, so one big payload no longer
-  stalls other in-flight requests. Per-request video count and per-video byte
-  limits are also enforced up front (mirroring the existing image limits).
-- Reduced per-iteration latency for structured-output (constrained decoding)
-  requests on speculative-decode models. The overlap pipeline now enqueues the
-  asynchronous FSM-advance and bitmask compute once the next iteration's batch
-  order is known, so the bitmask is written directly in the consuming batch's
-  row order. This removes both the host-synchronization point that previously
-  stalled the GPU-feeding thread when the batch composition changed between
-  iterations and the device-side gather that earlier reconciled the order. The
-  improvement applies across all six supported speculative-decode architectures
-  (Kimi K2.5 MLA and MHA, DeepseekV3 MTP and Eagle3, Gemma 4 MTP,
-  and EAGLE Llama 3).
-- Constrained decoding (structured output) now unpacks the grammar bitmask on
-  the GPU. The packed `int32` bitmask is transferred to device as-is and
-  unpacked and applied to the logits in a single fused kernel
-  (`apply_packed_bitmask`), instead of unpacking to a `bool` tensor on the CPU.
+- Structured output (constrained decoding) and tool calling:
+  - Reduced per-iteration latency for structured-output requests: the
+    grammar bitmask is now unpacked and applied on the GPU in a single
+    fused kernel (`apply_packed_bitmask`), and on speculative-decode models
+    the overlap pipeline enqueues the FSM-advance and bitmask compute in
+    the consuming batch's row order, removing a host synchronization point
+    and a device-side gather across all six speculative-decode
+    architectures.
+  - Fixed a structured-output runaway where a `response_format` schema
+    omitting the root `"type"` compiled to an unbounded grammar and
+    generated until `max_length`; object-implying schemas are now
+    normalized to `"type": "object"` before grammar compilation.
+  - Structured-output grammars are now compile-validated at request
+    admission: uncompilable or unsatisfiable schemas return HTTP 400
+    instead of crashing the model worker, and boolean-valued or non-object
+    root schemas are now accepted per JSON Schema draft-7.
+  - Structured-output (`response_format`) JSON is now emitted compactly,
+    without whitespace around separators, reducing output token count and
+    mitigating runaway generation on Gemma 4.
+  - Kimi tool-call arguments are now grammar-enforced via xgrammar
+    structural tags during constrained decoding.
+  - Added a pluggable grammar backend for constrained decoding, allowing
+    alternative grammar engines to be selected.
+  - Fixed intermittently dropped Kimi K2.5 tool calls under
+    reasoning-enabled `tool_choice="auto"`: the reasoning parser now also
+    ends a reasoning span at `<|tool_calls_section_begin|>` when the model
+    omits `</think>`, so the tool call reaches the tool parser instead of
+    being stranded in `reasoning`.
+  - Raised the maximum tool function name length from 64 to 1024
+    characters; longer client-supplied tool names are now accepted instead
+    of rejected with a 400 error.
+- Extended the chat completions endpoint: accepts the `root` message role
+  (opt-in via tokenizer `extra_chat_roles`), a `thinking` control object,
+  dotted tool function names, and per-image and per-request size limits;
+  reconciles `max_tokens` with `max_completion_tokens`; added a schema-aware
+  `coerce_arguments` tool-parser hook; and added per-video `fps`,
+  `max_frames`, and `max_long_side_pixel` sampling hints on `video_url`
+  content parts.
+- Speculative decoding:
+  - Speculative decoding now runs to `max_seq_len` instead of
+    early-stopping, allowing requests to reach their full configured
+    length.
+  - Greedy speculative-decode acceptance now uses an exact argmax
+    comparison, improving acceptance correctness for greedy requests.
+  - Enabled the overlap scheduler for DFlash speculative decoding,
+    reducing per-iteration latency.
+- KV cache and prefix caching:
+  - Added opt-in SHA-256 KV-cache block hashing: a new
+    `kv_cache_hash_algo` field on `KVCacheConfig` (default `ahash64`;
+    opt-in `sha256` and `sha256_64`), an optional per-request `cache_salt`
+    scoping prefix-cache reuse, and support across the host-tier
+    connectors (`NullConnector`, `LocalConnector`, `TieredConnector`) and
+    the dKV external tier (`DKVConnector`), which advertise accepted
+    algorithms via a `supported_hash_algos` property validated at startup.
+    Default behavior is unchanged.
+  - MAX now refreshes an external KV cache tier's recency when a request's
+    prefix is served from the on-GPU cache, keeping hot shared prefixes
+    warm in an external tier such as dKV; set
+    `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable.
+  - Added a Rust-implemented host/disk KV cache connector, selected with
+    `--kv-connector rust_tiered` (CUDA-only), with asynchronous onload
+    that overlaps compute.
+  - Sped up host KV-cache allocation for tiered/local KV caching with a
+    fast page-locked allocator (mmap + parallel page-fault + chunked host
+    registration).
+  - Added a `per_layer_buffers` KV cache option backing each layer
+    (including quantized scale buffers) with its own sub-cap buffer,
+    unlocking larger context lengths by relaxing the per-allocation size
+    cap.
+  - Added an `enable_dp_cross_replica_prefix_copy` KV cache config flag
+    (default on); disabling it serves cross-replica prefix-cache reuse
+    only from the shared host/disk tier instead of device-to-device
+    copies.
+  - Added int8 KV-cache storage with fp16 block scales (MXint8) for flash
+    attention, halving KV-cache memory footprint at near-parity
+    performance and accuracy with fp16.
+  - Fixed the KV-cache transfer engine (NIXL, behind disaggregated
+    serving) being NVIDIA-only: packages now ship per-vendor UCX plugin
+    flavors, so KV-cache transfer works on AMD GPUs.
+  - The dKV connector now supports tensor parallelism (TP > 1) on the
+    multi-tenant path for head-sharded (MHA/GQA), MLA, and GQA
+    head-replicated models, with each GPU handshaking its own per-shard
+    store. Also fixed a cross-shard race where a KV load returning
+    differing block counts could leave a stray in-flight copy that later
+    clobbered a reallocated block.
+  - The dKV KV-cache connector (`--kv-connector dkv`) now supports
+    data-parallel serving and shares its prefix cache across DP replicas,
+    matching the `local` and `tiered` connectors.
+  - Data-parallel serving now shares the prefix cache across replicas: GPU
+    hits are served by device-to-device copy, and the CPU/disk offload
+    tiers are a single shared pool, so `host_kvcache_swap_space_gb` now
+    sizes one shared host pool for the whole deployment rather than one
+    per replica.
+- Improved time-to-first-token for multimodal requests: oversized media is now
+  rejected before its bytes are fully materialized, large `data:` base64
+  decoding runs on a worker thread instead of blocking the event loop,
+  per-video count and byte limits are enforced up front, and multi-MB `data:`
+  payloads bypass Pydantic `AnyUrl` parsing via a lightweight `DataUrl`
+  wrapper.
 - Made numpy array transport across the API-server-to-model-worker request
-  queue zero-copy. Large arrays (notably multi-image or high-resolution vision
-  `pixel_values`) now ride out-of-band as their own ZMQ frame instead of being
-  copied into the message body and then again through the socket, and the
-  receiver decodes them as views with no copy. This is faster than both the
-  previous copy and shared-memory transports at every payload size (for example
-  ~5x faster than the copy path and ~2x faster than shared memory at 24-32 MiB
-  in the transport microbenchmark), and removes the per-request shared-memory
-  segment (and its sizing, leak, and page-fault costs) from this path entirely.
-- Fixed image requests failing with a 400 or 500 across all vision models. Two
-  bugs in the shared image-resolution layer: `data:` URIs with unpadded or
-  URL-safe base64 (sent routinely by clients and relays) were rejected by the
-  strict decoder, and truncated, animated, or content-negotiated images (for
-  example a `.jpg` URL that a host serves as WebP) passed the lazy header-only
-  validation and then crashed later in the tokenizer's pixel decode with an
-  unhandled error. Image payloads are now decoded tolerantly and validated with
-  a full pixel decode that the tokenizer reuses (so each image is decoded only
-  once), and undecodable content fails fast as a clean 400.
-- Fixed intermittently-dropped Kimi K2.5 tool calls under reasoning-enabled
-  `tool_choice="auto"`. The model often opens a tool-call section directly from
-  inside its `<think>` block without emitting a closing `</think>` (an implicit
-  end-of-reasoning, part of Kimi's interleaved-thinking design). The reasoning
-  parser previously ended a reasoning span only on `</think>`, so the entire
-  tool-call section was misclassified as reasoning and never reached the tool
-  parser, so the response came back with empty `content` and the tool-call
-  payload stranded in `reasoning`. Because whether the model emits `</think>`
-  is sampling-dependent, the failure was flaky. The reasoning parser now also
-  ends the span at `<|tool_calls_section_begin|>`, leaving the marker as
-  content so the tool call is parsed correctly.
-- Fixed a structured-output runaway: a `response_format` JSON schema that omits
-  the root `"type"` (for example `{"properties": {"x": {}}}`, valid JSON Schema)
-  previously compiled to a grammar that permitted a bare, unbounded top-level
-  value, so a model that looped inside that value could never emit a terminator
-  and generated until `max_length` (`finish_reason="length"`). Such schemas with
-  an object-implying keyword (`properties`, `required`, `additionalProperties`,
-  `patternProperties`) are now normalized to `"type": "object"` before grammar
-  compilation, matching the behavior of xgrammar-based engines. A genuinely
-  empty `{}` schema is still treated as "any value".
-- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX metrics.
-  Previously every histogram shared one millisecond-latency bucket range, which
-  was inaccurate for non-latency metrics. Each histogram now uses bucket
-  boundaries matched to its actual range (percentages bucket 0–100, token and
-  occupancy counts use power-of-two buckets, batch size is fine-grained up to
-  512, throughput and time metrics use appropriately wide ranges, and time
-  metrics now extend out to 30 minutes). Quantile queries become more accurate;
-  dashboards that hardcoded specific bucket boundaries may need updating.
-- Changed `maxserve.cache.num_used_blocks` and `maxserve.cache.num_total_blocks`
-  from counters to gauges. These report an instantaneous level, so a gauge is
-  correct; as counters their exported values were meaningless. The Prometheus
-  type changes to `gauge` and the exported series drops the counter `_total`
-  suffix.
-- Added `maxserve.cache.disk_blocks_read` and
-  `maxserve.cache.disk_blocks_written` counters, reporting KV blocks read from
-  and written to the disk cache tier when tiered (disk) KV caching is enabled.
-- Added opt-in SHA-256 KV-cache block hashing. A new `kv_cache_hash_algo`
-  field on `KVCacheConfig` (default `ahash64`; opt-in `sha256` and
-  `sha256_64`) threads through the pipeline and serve config, selecting a
-  Mojo `block_hasher_sha256` and the matching `hash_request_tokens` SHA-256
-  path. Chat-completion requests also accept an optional `cache_salt` field
-  that scopes prefix-cache reuse to a single per-request KV chain. Default
-  behavior is the same as the existing `ahash64` path.
-- Added opt-in SHA-256 KV-cache block hashes through host-tier KV
-  connectors. `NullConnector`, `LocalConnector`, and `TieredConnector` now
-  accept 32-byte SHA-256 digests alongside 64-bit `ahash64` hashes. The
-  `KVConnector` Protocol's `load` and `offload` take `Sequence[bytes]`
-  block hashes and a `bytes | None` parent-sequence hash; the block
-  manager coerces legacy `ahash64` int hashes to bytes (8-byte
-  big-endian, signed) at the boundary, so a connector implementation only
-  ever sees one hash shape. Connectors advertise what they accept via a
-  new `supported_hash_algos: frozenset[KVHashAlgo]` property (default
-  `frozenset({"ahash64"})`), which the block manager validates against
-  the configured `kv_hash_algo` at startup so a mismatch fails fast with
-  a clear remediation message. The disk tier names files `<hex>.bin` (16
-  hex chars for 64-bit hashes, 64 hex chars for SHA-256 digests) and pins
-  the algo in a `kv-disk-cache.meta.json` sidecar to refuse cross-algo
-  reuse of a cache directory. `KVHashAlgo` is re-exported from
-  `max.nn.kv_cache` for downstream consumers. Default behavior is
-  unchanged.
-- Extended SHA-256 KV-cache block hashes to the dKV (`DKVConnector`)
-  external tier. `DKVConnector.supported_hash_algos` now advertises
-  `frozenset({"ahash64", "sha256", "sha256_64"})`, and `load`/`offload`
-  accept both 8-byte (`ahash64` / `sha256_64`) and 32-byte (full
-  `sha256`) block hashes; 32-byte digests are truncated to their first
-  8 bytes at the boundary into the unchanged `dkv_connector` Rust
-  client, which continues to carry a `uint64 seq_hash` on the wire.
-  Truncation is byte-identical to the existing `sha256_64` algorithm,
-  so configuring MAX with `sha256` or `sha256_64` produces the same
-  dKV key for the same logical block — no change to the dkv wire
-  format, stored block identity, or `DKVExternalBlockMetadata`
-  orchestrator hint shape. Default behavior is unchanged.
-- MAX now refreshes an external KV cache tier's recency when a request's prefix
-  is served from the on-GPU cache. Such a hit sends no traffic to the external
-  tier, so a hot shared prefix could otherwise go cold there and be evicted
-  while still resident on device; a best-effort recency `touch` now keeps hot
-  shared prefixes warm in an external tier such as dKV. Set
-  `MODULAR_DKV_DISABLE_G0_TOUCH=1` to disable the refresh.
-- Added dKV external-tier health metrics so operators can alert on a dead or
-  degraded external KV cache. The `dkv` connector now surfaces its per-replica
-  connection state through `KVCacheMetrics`, and MAX exports three
-  OpenTelemetry gauges: `maxserve.dkv.connected_clients`,
-  `maxserve.dkv.total_clients`, and `maxserve.dkv.reconnect_attempts` (a
-  cumulative lifetime count reported as a gauge). Alert on
-  `connected_clients == 0` for a fully dead tier or
-  `connected_clients < total_clients` for a degraded one. The scheduler also
-  logs a `dKV degraded` clause while any replica client is disconnected.
+  queue zero-copy: large arrays (notably vision `pixel_values`) ride
+  out-of-band as their own ZMQ frame and are decoded as views, replacing both
+  the copy and shared-memory transports on this path.
+- Fixed image requests failing with a 400 or 500 across all vision models:
+  `data:` URIs with unpadded or URL-safe base64 are now decoded tolerantly,
+  and truncated, animated, or content-negotiated images are validated with a
+  full pixel decode that fails fast as a clean 400.
+- Changed VLM image (and Gemma 4 video) prefix-cache/routing keys to hash
+  the raw encoded container bytes plus a resolution `size_tier`, making
+  keys stable across torch/BLAS/numpy versions and CPU-vs-GPU.
+- Added an opt-in `emit_reasoning_content` server config that emits a
+  reasoning model's chain-of-thought under `reasoning_content` instead of
+  `reasoning`; off by default.
+- Added support for the OpenRouter-style `reasoning` request field in chat
+  completions.
+- Chat completions now respect `max_completion_tokens` as the preferred way to
+  cap output length, per the OpenAI API spec; `max_tokens` is still accepted
+  for backwards compatibility.
+- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` (default 5s) controlling how
+  long the server drains in-flight requests after `SIGTERM`, and fixed
+  `SIGTERM` cutting off in-flight streaming responses immediately — streaming
+  requests are now bounded by the same timeout.
+- Added request-queue backpressure to MAX serve: `--max-queue-size` rejects
+  new requests with HTTP 429 once the queue to the model worker is full, and
+  `--max-pending-requests` stops the worker draining the queue once its
+  prefill queue is that deep. Both default to unbounded; rejections are
+  observable via `maxserve.request_count` with `code="429"`.
+- Failed request submissions in the OpenAI-compatible endpoints now surface
+  as HTTP 4xx/5xx errors instead of a `200 OK` stream carrying an error
+  payload; mid-stream errors are still serialized as error events.
+- Image generation responses on the Open Responses endpoint now report
+  `usage`: `output_tokens`/`total_tokens` carry the total pixel count of the
+  generated images and `input_tokens` is 0. Previously `usage` was always
+  `null`.
+- Added an opt-in `MAX_SERVE_STREAM_MIN_CHUNK_TOKENS` server config (default 1
+  = unchanged) that coalesces streamed SSE output into larger chunks without
+  affecting TTFT; streaming now also truncates output at a stop string, and
+  reasoning and content are emitted as separate chunks so a delta at the
+  boundary no longer carries both fields.
+- Added HTTP endpoints to fetch and reset expert-parallel load balancing
+  (EPLB) statistics, plus the `MAX_SERVE_EPLB_PROFILE` environment variable to
+  enable EPLB stats profiling in `max serve`.
 
 ### Server metrics
 
-- Histogram bucket boundaries are now generated instead of hand-written: most
-  metrics use geometric ladders, while percentages step linearly by 5,
-  tightening to 2 above 90. Several ranges are wider too: latencies extend to 8
-  hours (previously 30 minutes) and token counts to 100M (previously 1M), so
-  slow compiles and very long contexts no longer land in the overflow bucket.
-  Every histogram now also starts with a `0` boundary. Because the individual
-  bucket edges have moved, dashboards and alerts that hardcode `le` values need
-  updating.
+- Fixed speculative-decoding metrics being accumulated across all batches
+  since server start; they are now per-batch.
+- Added Prometheus counters for structured-output and tool-call failures:
+  `maxserve.tool_call.conformance_errors` and
+  `maxserve.structured_output.grammar_rejections`.
+- Added data-parallel load-balance metrics: `dp_active_token_occupancy` and
+  `dp_context_token_occupancy`.
+- Added block-level KV-cache metrics: `maxserve.cache.device_blocks_served`,
+  `maxserve.cache.cross_replica_blocks_copied`, and
+  `maxserve.cache.cross_replica_bytes_copied`.
+- Added `MAX_SERVE_OTLP_METRICS_ENDPOINT` to push a self-calibrating
+  exponential-histogram shadow (`<metric>.exponential`) of every histogram
+  metric to an OTLP endpoint, alongside the existing Prometheus `/metrics`
+  histograms. Unset by default; behavior unchanged.
+- Added video encoder statistics to the scheduler's per-iteration batch log
+  (a `Video Encoder` clause mirroring `Vision Encoder`) and as OpenTelemetry
+  metrics under `maxserve.video.*`. Models managing their own encoder cache
+  implement a `SupportsPooledVisionMetrics` protocol so their image and
+  video metrics reach the scheduler.
+- Fixed the `code` label on the `maxserve_request_count` metric to report the
+  HTTP status actually returned, so requests rejected before generation are
+  counted with their real status code instead of `200` or dropped.
+- Added dKV external-tier health metrics: OpenTelemetry gauges
+  `maxserve.dkv.connected_clients`, `maxserve.dkv.total_clients`, and
+  `maxserve.dkv.reconnect_attempts`, plus a `dKV degraded` scheduler log
+  clause while any replica client is disconnected.
+- Added `maxserve.cache.disk_blocks_read` and
+  `maxserve.cache.disk_blocks_written` counters for KV blocks read from and
+  written to the disk cache tier when tiered KV caching is enabled.
+- Added vision encoder statistics to the scheduler's per-iteration batch log
+  for multimodal models (images encoded vs. served from the vision encoder
+  cache, patches and vision tokens), also exported as OpenTelemetry metrics
+  under the `maxserve.vision.*` namespace.
+- Fixed `maxserve_time_to_first_token_milliseconds` under-reporting TTFT
+  by excluding request parsing and media resolution; expect a step up in
+  reported TTFT that reflects measurement, not a regression.
+- Fixed inflated `maxserve.cache.h2d_blocks_copied` and
+  `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV
+  cache deployments; counters now report per-batch deltas.
+- Fixed the input-token metric being double-counted in MAX Serve.
+- Fixed max-serve telemetry emitting a batch's token counts alongside the
+  previous batch's timing under overlap scheduling.
+- Fixed speculative-decode acceptance metrics leaking from a
+  token-generation batch into a following context-encoding batch.
 
 ### `max` CLI
 
-- The entrypoint for the CLI, formerly `max.entrypoints`, has been marked as
-  private and moved to `max._entrypoints`. The CLI is still a public facing API,
-  but the code within it is not.
+- Improved error messages when a subcommand's components are not installed:
+  e.g. `max serve` from the base package now names the extra to install
+  (`max[serve]`) instead of a bare `ModuleNotFoundError`.
+- Trimmed `max benchmark` dependencies so it no longer requires the full
+  serve dependency set; telemetry is now disabled for `max benchmark` and
+  `max list`.
+- Added opt-in token-balanced CE scheduling across data-parallel replicas via
+  `--dp-ce-balance-timeout-ms` (default off): new context-encoding requests
+  are priced at their post-prefix-cache length and bound to the least-loaded
+  replica, deferring up to the timeout while per-step occupancy stays under
+  `--dp-ce-balance-threshold` (default 0.8). Dynamic chunk-size reduction
+  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on) runs
+  below-threshold steps immediately at a reduced chunk size.
+- Added `--chunked-prefill-min-chunk-size` (default 0 = off) to floor the
+  token size of any chunked-prefill chunk, avoiding degenerate sliver chunks
+  that pay a full step's overhead for almost no progress.
+- Added an experimental `--fold-sampler-into-graph` option (default off) that
+  folds greedy argmax token selection into the captured forward graph,
+  removing the per-token blocking sampler submission on supported
+  architectures (currently Nemotron-H). Also fixed the serve CLI silently
+  dropping this and related flags on their way to the model worker, which
+  had disabled the folded sampler; with the flags threaded through, decode
+  latency improves substantially.
+- Added a `max-pending-futures` config (default 1, unchanged behavior);
+  setting it to 2 enables experimental schedule-ahead decoding with two
+  forwards in flight per request.
+- Added `--no-enable-tool-call-constrained-decode` (default enabled) to keep
+  `--tool-parser` parsing of generated text while skipping grammar-based
+  constrained decoding for tool calls. With it disabled,
+  `tool_choice=required` can no longer force a tool call;
+  `--enable-structured-output` is unaffected.
+- Added a `--top-k` MAX Serve flag to set a server-wide default top-k when
+  clients omit `top_k`; request-supplied values still take precedence.
+- Added a `max warm-interpreter-cache` command that batch-compiles the eager
+  interpreter model matrix into the on-disk cache (parallel workers, `--jobs`,
+  `--check`, `--force`) so later programs start warm. `max serve` now refuses
+  on-demand eager compiles by default (opt back in with
+  `--allow-cold-interpreter-cache` or `MAX_EAGER_ALLOW_LAZY_COMPILE=1`);
+  adopting a warm cache still works.
+- Fixed KV-cache CLI flags (e.g. `--kv-connector-config`) replacing the
+  entire `kv_cache` section of a `--config-file` recipe instead of
+  overriding just the named setting.
+- Fixed speculative-decoding CLI flags (e.g. `--num-speculative-tokens`)
+  being silently dropped when a `--config-file` recipe already set a
+  `speculative` section; flags now merge onto the recipe's values.
+- Fixed default-valued CLI overrides being silently dropped; explicitly
+  passing a flag equal to its default now overrides recipe/config-file
+  settings.
 
 ### Python API
 
 - Added `max.graph.ops.reduce_scatter_rms_norm`, a distributed op that
-  reduce-scatters a bfloat16 tensor across devices and RMSNorm-normalizes each
-  device's row shard in a single collective launch, keeping the reduced sum in
-  float32 registers so there is no global-memory round-trip between the
-  reduce-scatter and the norm. It returns both the normed shard and the
-  reduce-scatter sum (residual) shard, and is numerically identical to a
-  standalone reduce-scatter followed by `rms_norm`.
-
-- Added an optional `init_value` argument to `max.graph.ops.buffer_create`.
-  When set, the buffer becomes persistent state: it is allocated and filled
-  with the scalar `init_value` exactly once when the model is loaded, and the
-  same buffer (with its mutations preserved) is reused across every execution,
-  rather than being re-created per call. Use it for a buffer that a kernel
-  mutates in place and only needs initialized once, such as a counter a kernel
-  resets at the end of each call.
-
+  reduce-scatters a bfloat16 tensor across devices and RMSNorm-normalizes
+  each device's row shard in one collective launch, returning both the normed
+  shard and the residual sum shard; numerically identical to reduce-scatter
+  followed by `rms_norm`. DeepSeek V3.2 and GLM-5.x now use it in TP-EP
+  non-allreduce mode.
+- Added `max.graph.ops.allgather_rms_norm`, which fuses an all-gather with
+  the following RMSNorm into one kernel launch, returning both the normed
+  tensor and the bit-identical gathered residual. Dispatches to the fused
+  kernel or falls back by shape; not enabled by default in any shipping
+  pipeline.
+- Added an optional `init_value` argument to `max.graph.ops.buffer_create`:
+  the buffer becomes persistent state, allocated and filled once at model
+  load and reused (with mutations preserved) across executions.
 - Added `max.graph.ops.floor_div` (and `F.floor_div`), element-wise floor
-  division matching Python `//`. Unlike `ops.div`, integer operands stay in
-  the integer domain instead of being promoted to `float64`, so integer floor
-  division compiles on backends without 64-bit float support (for example,
-  Metal GPUs).
-
-- Added `max.driver.set_virtual_cpu_target()` and `get_virtual_cpu_target()`.
-  Set a fixed CPU codegen target (for example `"x86-64-v3"`, `"neoverse-n1"`,
-  or `"generic"` for the most-portable baseline of the host arch family) before
-  importing `max._interpreter_ops` so the eager interpreter's CPU kernel cache
-  is compiled host-independently and can be shipped and reused across hosts of
-  the same architecture family. Mirrors `set_virtual_device_target_arch()` for
-  GPUs. Leaving it unset compiles for the build host's CPU, as before.
-
+  division matching Python `//`. Integer operands stay in the integer domain,
+  so integer floor division compiles on backends without 64-bit float support
+  (for example, Metal GPUs).
+- Added `max.driver.set_virtual_cpu_target()` / `get_virtual_cpu_target()` to
+  fix the CPU codegen target (for example `"x86-64-v3"` or `"generic"`)
+  before importing `max._interpreter_ops`, so the eager interpreter's CPU
+  kernel cache is host-independent and shippable across hosts of the same
+  architecture family. Mirrors `set_virtual_device_target_arch()` for GPUs.
 - Eager execution in `max.experimental` now routes every realization through
-  the `max.experimental.executor.Executor` abstraction. The out-of-the-box
-  path is unchanged — graphs within the `MAX_INTERPRETER_MAX_OPS` threshold run
-  on the interpreter and fall back to a cached compile otherwise — but it is
-  now expressed as a new `CompositeExecutor` selected by
-  `MAX_EAGER_EXECUTOR=composite` (the new default). The
-  `MAX_USE_EAGER_INTERPRETER` environment variable has been removed; force
-  compilation with `MAX_EAGER_EXECUTOR=compile` instead. The
-  `EagerRealizationContext(use_interpreter=...)` argument is deprecated in
-  favor of `EagerRealizationContext(executor=...)`.
-
-- The eager interpreter now compiles its matmul and unary-elementwise
-  graph-compiler models lazily, per target on first dispatch, by default —
-  bounding compile cost to the targets a program uses instead of JIT-compiling
-  the full kernel library at import. Set `MAX_EAGER_OP_PRECOMPILE=1` to
-  precompile the full matrix at import instead.
-
-- The eager interpreter's binary-elementwise and comparison ops (`add`, `sub`,
-  `mul`, `div`, `mod`, `max`, `min`, `pow`, `and`, `or`, `xor`, and the
-  comparison predicates) now run through pre-compiled graph-compiler models
-  instead of hand-written Mojo bindings, matching the matmul and
-  unary-elementwise migrations. On CPU they run float32/float64; the
-  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
-  and raise.
-
-- The eager interpreter's reduce-along-axis ops (`max`/`min`/`add`/`mul`/`mean`
-  reductions, `softmax`/`logsoftmax`, `argmax`/`argmin`, and `cumsum`) now run
-  through pre-compiled graph-compiler models instead of hand-written Mojo
-  bindings. On CPU the reduction/argmax family runs float32/float64: the
-  float16/bfloat16 CPU inputs the Mojo path accepted are no longer supported
-  and raise. On accelerators it narrows to 32/64-bit integers (CUDA's reduce
-  kernels don't compile 8/16-bit int reduction). An unsupported dtype raises
-  immediately instead of silently falling back.
-
-- The eager interpreter's shape-rearrange ops (`pad` constant/reflect/edge,
-  `tile`, `split`, `concat`, and `slice`) now run through pre-compiled
-  graph-compiler models instead of hand-written Mojo bindings, matching the
-  matmul, elementwise, and reduce migrations. Structural parameters (pad
-  widths, repeat counts, split/slice bounds) stay runtime operands, so one
-  compiled graph per `(op, device, dtype[, rank])` serves every shape.
-
-- The eager interpreter's gather and scatter ops (`gather`, `gather_nd`,
-  `scatter`, `scatter_nd`, and their `add`/`max`/`min`/`mul` reductions) now run
-  through pre-compiled graph-compiler models instead of hand-written Mojo
-  bindings, matching the matmul, elementwise, reduce, and shape-rearrange
-  migrations. Pure copies serve every dtype, including `float16`; the
-  reductions drop the `float16`/`bfloat16` CPU inputs the Mojo path accepted and
-  raise. `gather_nd` and `scatter_nd` (including its reductions) dispatch
-  through the genuine `ops.gather_nd`/`ops.scatter_nd*`, which run on GPU as
-  well as CPU; duplicate index vectors resolve deterministically (overwrite is
-  last-write-wins, reduce accumulates atomically via the GPU kernel's
-  compare-and-swap loop).
-
-- The eager interpreter's pooling ops (`max_pool`/`avg_pool`, floor and
-  ceil-mode variants) now run through pre-compiled graph-compiler models
-  instead of hand-written Mojo bindings. Window shape, strides, dilations,
-  and paddings are runtime operands, so one compiled graph per `(op, device,
-  dtype[, count_boundary])` serves every configuration. CPU float16 isn't
-  supported (a graph-compiler limitation); GPU float16 still works.
-
-- The eager interpreter's `conv2d` op now runs through a pre-compiled
-  graph-compiler model instead of a hand-written Mojo binding. Filter
-  shape, input shape, stride, dilation, and padding are runtime operands,
-  so one compiled graph per `(device, dtype)` serves every conv shape.
-  Dilation != 1 and grouped convolution now raise a clear error instead of
-  computing silently. `conv2d_transpose` is no longer supported: its old
-  Mojo binding depended on cuDNN, which crashed on Apple GPUs and failed on
-  CUDA, and has been removed rather than kept as a broken fallback.
-
-- The eager interpreter's `resize` ops (`resize_linear` and
-  `resize_nearest`) now run through pre-compiled graph-compiler models
-  instead of hand-written Mojo bindings, with output size as a runtime
-  operand, so one compiled graph per `(op, device, dtype, rank, variant)`
-  serves every output size. `resize_bicubic` is no longer supported: its
-  old Mojo binding has been removed rather than kept as a fallback, due to
-  a graph-compiler gap. CPU float16 isn't supported (a graph-compiler
-  limitation); GPU float16 still works.
-
-- The eager interpreter's `top_k`/`bottom_k` ops now run through pre-compiled
-  graph-compiler models instead of hand-written Mojo bindings. `k` stays a
-  runtime operand, so one compiled graph per `(op, device, dtype)` serves
-  every `k`. CPU float16 isn't supported (a graph-compiler limitation); GPU
-  narrows integers to 32/64-bit (the same shuffle-kernel limitation as the
-  reduce migration).
-
-- The eager interpreter's `Select`/`where` op now runs through a pre-compiled
-  graph-compiler model instead of a hand-written Mojo binding. Dtype coverage
-  is unchanged: it still runs the full float, signed-int, unsigned-int, and
-  bool value set on both CPU and accelerators.
-
-- The eager interpreter's `layer_norm` and `rms_norm` ops now run through
-  pre-compiled graph-compiler models instead of hand-written Mojo bindings,
-  matching the matmul, elementwise, reduce, shape-rearrange, pooling, and
-  conv2d migrations. `epsilon`/`weight_offset` stay runtime operands, so one
-  compiled graph per `(device, dtype[, multiply_before_cast])` serves every
+  the `max.experimental.executor.Executor` abstraction, selected by
+  `MAX_EAGER_EXECUTOR` (default `composite`, the same
+  interpreter-then-cached-compile behavior as before).
+- The eager interpreter now compiles its graph-compiler models lazily, per
+  target on first dispatch, instead of JIT-compiling the full kernel library
+  at import; set `MAX_EAGER_OP_PRECOMPILE=1` to precompile at import.
+- The eager interpreter's remaining op families — binary elementwise and
+  comparison, reduce/softmax/argmax/cumsum, shape-rearrange (`pad`, `tile`,
+  `split`, `concat`, `slice`), gather/scatter, pooling, `conv2d`, `resize`,
+  `top_k`/`bottom_k`, `where`, `layer_norm`/`rms_norm`, `cast`,
+  `band_part`/`arg_nonzero`/`non_maximum_suppression`/`random`/`range`/
+  `roi_align`, and the last Mojo-bound ops (`transpose`, `broadcast_to`,
+  `store_slice`) — now run through pre-compiled graph-compiler models instead
+  of hand-written Mojo bindings. No Mojo sources ship, removing the
+  multi-minute first-import JIT compile. Structural parameters stay runtime
+  operands, so one compiled graph per `(op, device, dtype)` serves every
   shape.
-
-- The eager interpreter's `group_norm` op now runs through a pre-compiled
-  graph-compiler model on GPU. CPU support has been removed:
-  `nn.normalization.group_norm`'s graph-compiler kernel is GPU-only (a
-  pre-existing limitation of the kernel itself, not new in this change), so
-  eager `group_norm` on CPU now raises `NotImplementedError` instead of
-  running through the old hand-written Mojo binding.
-
-- The eager interpreter's `cast` op now runs through pre-compiled graph-compiler
-  models instead of a hand-written Mojo binding, matching the matmul,
-  elementwise, reduce, and shape-rearrange migrations. On CPU the
-  float16/bfloat16 endpoints the Mojo path accepted are no longer supported and
-  raise; on accelerators float64 is excluded, matching the sibling families.
-
-- The eager interpreter's `band_part`, `arg_nonzero`, `non_maximum_suppression`,
-  `random.normal`, `random.uniform`, `range`, and `roi_align` ops now run
-  through pre-compiled graph-compiler models instead of hand-written Mojo
-  bindings, so each shares one implementation with the compiled path. Eager CPU
-  coverage narrows to float32 and float64 for `arg_nonzero`,
-  `non_maximum_suppression`, `random.uniform`, `range`, and `roi_align`,
-  matching the dtype policy the other graph-compiler-backed float ops use; the
-  deleted bindings also accepted float16 and bfloat16. `band_part`'s coverage
-  is unchanged, `random.normal` still accepts float16 and bfloat16, and sampled
-  random values are unchanged. `arg_nonzero`, `non_maximum_suppression`, and
-  `roi_align` remain CPU-only, as their `MO_HostOnly` trait already required.
-
-- `band_part` now supports CPU float64 on Apple-silicon builds, which the
-  deleted binding rejected.
-
-- `arg_nonzero` no longer caps input rank.
-
-- `non_maximum_suppression` now runs suppression twice, once to size the output
-  and once to compute it, in exchange for dropping the upper-bound allocation
-  and its truncating copy.
-
-- `range` now raises on a non-evenly-divisible interval or a zero `step` where
-  it previously returned a mis-sized or constant tensor.
-
-- `random.uniform`'s samples depend on the kernel's SIMD grouping, so an eager
-  graph can draw different values than a compiled one from the same seed.
-
+- Small eager-interpreter behavior fixes from the migration: `band_part`
+  gained CPU float64 on Apple silicon; `arg_nonzero` no longer caps input
+  rank; `range` raises on a non-evenly-divisible interval or zero `step`;
+  `random.uniform` samples may differ between eager and compiled graphs from
+  the same seed.
 - Added `max.graph.Dim.substitute`, which replaces named symbols in a
   dimension with other dims or static values, folding the result through
   the compiler's own attribute evaluation. Unmapped symbols are left
   intact, and a static dimension is always returned unchanged.
-
-- Added `max.graph.KernelLibrary.has_shape_function`, which reports whether
-  a kernel in a loaded library registered a shape function.
-
-- The eager interpreter's last three Mojo-bound ops (`transpose`,
-  `broadcast_to`, mutable `store_slice`) now run through graph-compiler
-  models; no Mojo sources ship, removing the multi-minute first-import JIT
-  compile from wheel installs.
-
-- Added a `max warm-interpreter-cache` command that batch-compiles the full
-  eager interpreter model matrix into the on-disk cache for the current
-  machine's devices and drops a stamp. A later lazy eager process on the same
-  device set adopts the warm — one batched cache load instead of compiling each
-  target on first use — so later programs start warm. Run it as a provisioning
-  step (for example a Dockerfile `RUN`) on the target hardware. Pure
-  optimization: if skipped, or on a different device set, dispatch compiles each
-  target lazily.
-
-- `max serve` now refuses on-demand eager interpreter compiles by default
-  (opt back in with `--allow-cold-interpreter-cache` or
-  `MAX_EAGER_ALLOW_LAZY_COMPILE=1`); adopting a warm cache still works, and
-  any permitted on-demand compile warns with the target and its duration.
-  `max warm-interpreter-cache` no longer needs environment setup, compiles op
-  families in parallel worker processes (bound with `--jobs`), and gained
-  `--check` and `--force`.
-
-- Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation: a
-  repeated block (via the `@subgraphable` class decorator, or the
-  `subgraphable(layer)(x)` call form) lowers to one shared subgraph reused per
-  call. Opt out per compile with `Module.compile(..., allow_subgraphs=False)`.
-
+- Added `max.graph.KernelLibrary.has_shape_function`, reporting whether a
+  kernel in a loaded library registered a shape function.
+- Added `max.experimental.nn.subgraphable` for `Module` subgraph compilation:
+  a repeated block lowers to one shared subgraph reused per call (share
+  across modules by passing a `name`), cutting graph size and compile time —
+  the DeepSeek-V3 ModuleV3 MoE decoder block now compiles as one reused
+  subgraph. Opt out with `Module.compile(..., allow_subgraphs=False)`.
 - `max.nn.hooks.PrintHook` now supports `max.experimental.nn.Module`.
-
-- Added `F.print`, which supports both single-device and multi-device tensors.
-
+- Added `F.print`, supporting both single-device and multi-device tensors.
 - Added `max.graph.default_custom_extensions()` and the
-  `default_custom_extensions_scope()` context manager. Paths registered as
-  defaults are merged into the `custom_extensions` of every new `Graph`, so a
-  backend can make its custom-op kernel library reachable from graphs built
-  without an explicit `custom_extensions=` — including the eager-realization
-  graph that backs `max.experimental` tensors. Empty by default.
-
-- Moved the `max.entrypoints` package to be private. In doing so, we
-  deprecated the `max.entrypoints.LLM` API and we'll introduce a new API
-  for offline inference in a future release.
-
-- Added `max.graph.ops.allgather_rms_norm`, which fuses an all-gather across
-  devices with the RMSNorm that follows it into a single kernel launch,
-  avoiding the extra HBM round-trip of a standalone norm. It returns both the
-  normed tensor and the raw gathered tensor (the residual stream), which is
-  bit-identical to a plain `allgather`. The op dispatches to the fused kernel
-  or falls back to a standalone all-gather plus `rms_norm` depending on shape,
-  and is not enabled by default in any shipping pipeline.
+  `default_custom_extensions_scope()` context manager: registered paths are
+  merged into the `custom_extensions` of every new `Graph`, so a backend's
+  custom-op library is reachable without an explicit `custom_extensions=`.
+- Added `PipelineArgs` (`max.pipelines`) as the user-facing input type for
+  constructing pipelines, consolidating construction arguments into a single
+  explicit type instead of scattered flat kwargs.
+- Added `max.experimental.compile_pool.ProcessCompilePool`, which compiles
+  graphs in parallel background worker processes; eager execution now
+  compiles out of process, so a first eager call on a warm MEF cache drops
+  from ~5.6s to ~16.7ms.
+- Added `InferenceSession.compile_async`, which schedules compilation on the
+  runtime worker pool and returns a pending `CompiledModel`;
+  `InferenceSession.compile` now wraps it and blocks.
+- Added `max.engine.read` for loading a compiled-model artifact (`.mef`)
+  without an `InferenceSession`; the result can be initialized on any session
+  via `InferenceSession.init`.
+- Added a LoRA wrapper to `max.experimental.nn.common_layers`: wrap a
+  `Linear` or `QKVLinear` in place to add a ragged multi-adapter delta fed as
+  per-call graph inputs (GPU-only, Mojo SGMV); the QKV path uses a single
+  fused LoRA-B expand op, simplifying weight loading and the
+  `StackedLinearLoRA` / `LoRAMixin` interfaces.
+- Added a `tile_based_fusion` option (default `False`) to `compile` / `load`
+  in the graph API, enabling tile-based codegen at the graph-API level.
+- Added a `fused_qk_rms_norm_rope_ragged` Python wrapper, exposing the fused
+  QK RMSNorm + RoPE ragged paged kernel to graph building.
+- Added a `model_name` property to `max.driver.Device`.
+- Made several previously private modules public so their APIs are officially
+  documented: the `GGUFWeights` loader wrappers in `max.graph.weights` and
+  the `max.profiler.cpu` / `max.profiler.gpu` modules.
+- Added `max.experimental.testing` with a shared `assert_all_close` helper
+  for eager `max.experimental.Tensor` tests.
+- Added a `PipelineModel.sampler_custom_extensions` hook so custom extensions
+  are threaded into the token-sampler graph.
 
 ### C API
 
-- Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input. When
-  the borrowed pointer already lived on the target accelerator, the call
-  allocated a fresh device buffer and copied into it, so in-place mutation of a
-  `BufferType` model input was applied to the engine's private copy and never
-  reflected back into the caller's buffer. Such pointers are now borrowed in
-  place (zero-copy) on CUDA devices, matching the documented borrow semantics
-  and the existing behavior for host inputs. Host pointers passed with a device
-  spec are still staged via a host-to-device copy, as are device pointers on
-  backends that do not yet implement in-place borrowing (AMD and Apple).
+- Fixed `M_borrowTensorInto()` copying instead of borrowing a GPU input:
+  device pointers already on the target accelerator are now borrowed in place
+  (zero-copy) on CUDA, so in-place mutation of a `BufferType` model input is
+  visible to the caller. Host pointers are still staged via copy, as are
+  device pointers on AMD and Apple.
 
 ## MAX kernels
 
-- The `LayoutTensor.get_immutable()` method has been renamed to
-  `as_imm()`, matching the shorter `imm` spelling used across the
-  immutability API. The old name remains as a `@deprecated` alias and
-  will be removed in a future release.
-- GPU token sampling with `top_k >= 10` is now 2-4x faster. The softmax,
-  temperature scaling, and min-p masking steps are fused into the top-k/top-p
-  rejection-sampling kernel, eliminating an intermediate probability buffer
-  and two kernel launches per sampling call. The dispatch threshold between
-  the two-stage top-k kernel and the rejection-sampling kernel was lowered
-  from `top_k = 32` to `top_k = 10` to match the new performance crossover.
-- The `TileTensor` layout type no longer takes an `element_size` parameter. A
-  tensor's logical element width is now carried by its `Storage` parameter via
-  `PointerStorage[element_width]` (default `PointerStorage[1]`), and
-  `element_size` remains available as a derived comptime member. Code that
-  passed `element_size=N` should now pass
-  `Storage=PointerStorage[element_width=N]`, or use `TileTensor.vectorize()` to
-  build the vectorized view.
-- Apple silicon GPU support for running MAX models has been extended to M1 and
-  M2 systems. Previously, the optimized matrix multiplication kernels for Apple
-  silicon GPUs only returned correct results on M3 and newer systems. That has
-  now been fixed for M1 and M2 systems, allowing many common MAX models to run
-  correctly on them.
-- The split-K decode attention kernel for Apple GPUs is now the default for
-  token-generation attention, covering paged-KV-cache MHA and GQA decode for
-  head dims that are a multiple of 32. It was previously opt-in;
-  `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` now opts out, falling back to
-  `mha_gpu_naive`.
-- Sped up GPU RMS norm on AMD CDNA4 (MI355X) for prefill-sized shapes. The
-  warp-tiling path runs one row per block, so the per-thread SIMD width sets
-  how many warps a row needs; on CDNA4, when there are enough rows to keep the
-  GPU busy, using a 2x-wider per-thread SIMD halves the warps per row, which
-  cheapens the block reduction and raises blocks-per-CU. This improves
-  throughput by roughly 15-31% on shapes such as 8192x{2880,4096,5120,8192}
-  and 4096x4096 (bfloat16), with no change to small-row shapes or other
-  architectures.
-- Fixed a rare illegal-instruction crash in the SM100 (Blackwell)
-  flash-attention prefill kernels under chunked prefill with tensor
-  parallelism. When the attention grid shared SMs with the tensor-parallel
-  all-reduce collective under device graph capture, a consumer warp could read
-  a stale tensor-memory base address and issue a tensor-core MMA against an
-  invalid operand. The kernels now read the tensor-memory base once after it
-  is published and carry it in a register, so there is no in-loop re-read to
-  race.
-- Enabled the low-latency (Lamport) all-reduce on B200 for small messages
-  (up to 1 MiB at 2, 4, and 8 GPUs), where it beats the one-stage path by
-  roughly 1.1-1.68x. The barrier-free protocol marks unwritten slots with a
-  negative-zero sentinel, so its communication region is now initialized when
-  pipeline signal buffers are allocated; without that the region read as
-  already-written and produced non-deterministic results.
-- The `layout` package is now bundled with MAX instead of Mojo.
-
-- Some standard library APIs related to accelerator programming have moved to
-  a new `max` Mojo package, including:
-
-  - `std.benchmark.Bench.bench_multicontext` ->
-    `max.benchmark.bench_multicontext`
-  - `std.benchmark.Bencher.iter_custom(DeviceContext)` ->
-    `max.benchmark.bencher_iter_custom`
-  - `std.gpu.compute` -> `max.gpu.compute`
-  - `std.gpu.host` -> `max.gpu.host`
-  - `std.gpu.memory` -> `max.gpu.memory`
-  - `std.gpu.sync` -> `max.gpu.sync`
+- GPU sampling and token selection:
+  - Sped up GPU token sampling with `top_k >= 10` by 2-4x by fusing
+    softmax, temperature scaling, and min-p masking into the
+    rejection-sampling kernel.
+  - Improved the GPU top-k kernel: it now streams past the previous N=2048
+    cap, with a new single-pass block-wide bitonic sort
+    (`persistent_topk_block`).
+  - Made the top-k + top-p sampler's RNG offset batch-invariant, so
+    sampling results no longer depend on batch composition.
+  - Fixed GPU sampling kernel bugs: unwritten output when a per-row
+    `top_k` is 0, division-by-zero in `apply_gumbel_noise_kernel` at
+    `temperature=0`, and NaN-handling bugs in the `topk` kernel.
+- Sped up GPU softmax with a new split-K path for few-row, wide-column shapes,
+  significantly improving BF16 1024x4096 and 256x4096 cases on both B200 and
+  MI355X.
+- Fixed the streaming GPU argmax failing to launch for reductions over more
+  than 65,535 rows.
+- Attention `OrMask` and `ChunkedMask` patterns are now handled natively by
+  the mask iterator, avoiding slower generic fallback paths.
+- Added float16 MMA support on NVIDIA GPUs, enabling float16 matmuls on
+  NVIDIA tensor cores.
+- Improved tiny-M small-N FP32 GEMM performance by routing those shapes to a
+  split-K GEMV kernel.
+- Sped up matmul by checking out-of-bounds only on border tiles.
+- Added fast RMSNorm GPU kernels: a single-pass kernel for small
+  static-shaped rows and a barrier-free warp-per-row kernel.
+- Fixed mis-aligned memory accesses in the `rms_norm` reduction kernels and
+  in `layer_norm_cpu`'s sum reduction.
+- Added `fused_qk_rms_norm_rope_ragged_paged` and
+  `fused_dual_qk_rms_norm_rope_ragged` GPU kernels fusing QK RMSNorm with
+  rotary embeddings over ragged paged inputs; the dual variant also enables
+  scale-free FP8 KV caches.
+- Sped up the Gated DeltaNet recurrence kernel by tiling one CTA per value
+  head.
+- Added an initial functional MegaFFN kernel.
+- Fixed an expert-parallel decode crash when `estimated_total_m` floored to
+  zero.
+- Added support for non-unit dilation in the CPU direct convolution kernel.
+- SM100 (Blackwell) attention and sparse-attention kernels:
+  - Fixed rare crashes in the SM100 attention kernels: an
+    illegal-instruction fault in flash-attention prefill under chunked
+    prefill with tensor parallelism, `cta_group=2` TMEM teardown faults,
+    and an out-of-bounds shared-memory write in the 1Q split-K combine
+    kernel.
+  - Fixed a hang in the SM100 FA4 attention kernel on all-masked rows
+    (`valid_length=0`).
+  - Improved the SM100 FA4 flash-attention kernel: softmax warp-path
+    optimizations and support for cluster sizes 6, 8, 10, and 16 across
+    more multi-GPU configurations.
+  - B200 decode attention partitioning is no longer restricted to powers
+    of 2, improving decode performance for more batch and head
+    configurations.
+  - Improved the SM100 MLA prefill kernel: added a 1Q (`num_qo=1`) mode,
+    Programmatic Dependent Launch for the generic BF16 path (up to ~1.37x
+    on short sequences), and support for `v_head_dim != qk_nope_head_dim`.
+  - Added native FP8 sparse MLA decode and prefill kernels for SM100, and
+    extended prefill head-count coverage with a 64-head path and
+    `num_heads=8` support.
+  - Added an SM100 tensor-core FP8 MLA sparse-indexer scorer kernel and
+    improved sparse MLA prefill indexer performance via tensor-core
+    scoring over query tiles.
+  - Sped up the SM100 MLA sparse decode kernels by ~29% on the bf16 path
+    and ~8% on the fp8 path.
+  - Fixed sparse-attention kernel bugs: a crash during CUDA-graph capture
+    in the sparse MLA decode dispatch, wrong results from the sparse MLA
+    indexer with prefix-cached values, a top-k shared-memory overflow, and
+    an MLA indexer fill bug.
+- Added Layout-E and Layout-g MMA paths for MHA prefill, improving attention
+  performance on supported NVIDIA GPUs.
+- Enabled the Mojo SM100 FP32 GEMM in the kernel dispatcher, with optional
+  1D bias and an `allow_tf32` opt-out to force full-FP32 precision.
+- Added weight prefetching to the SM100 block-scaled and structured matmul
+  kernels.
+- B200 collective communication:
+  - Enabled the low-latency (Lamport) all-reduce on B200 for small
+    messages (up to 1 MiB at 2, 4, and 8 GPUs), roughly 1.1-1.68x faster
+    than the one-stage path.
+  - Added a fused Lamport all-reduce + RMSNorm kernel with PDL early
+    launch, with column-aware dispatch on 8-GPU B200 (up to ~1.14x on the
+    decode-critical-path collective).
+  - Added a fused GEMM+ReduceScatter kernel that overlaps computation with
+    communication on B200 (~10% faster than unfused for prefill shapes).
+- Sped up B200 MoE grouped matmul by removing a per-step synchronization.
+- Retuned the SM100 MoE decode kernels from 4-12 to 6 pipeline stages:
+  ~5-7% better decode latency for MXFP8 grouped matmul and up to ~11%
+  throughput for the NVFP4 down-projection at higher active-expert counts,
+  with no change to numerics.
+- Fused SM100 projection and GEMM kernels:
+  - Added a fused GEMM+Bias+SwiGLU kernel for SM100 (B200), exposed to
+    graphs as `mo.matmul_swiglu` (~1.06-1.12x faster than unfused).
+  - Added `expand_qkv_sm100`, a single-launch fused LoRA-B QKV expand
+    kernel for SM100.
+  - Added a fused MXFP8 QKV matmul kernel with paged KV-cache write.
+  - Added a fused QKV + indexer-QKV projection matmul kernel for
+    sparse-attention MLA models (~1.5-2x faster than the unfused pair).
+- Fixed FP8 MHA silently underflowing P values to 0.0 by scaling them before
+  the softmax accumulation.
+- Fixed the SFB `n_group` per-lane computation and an N-edge out-of-bounds
+  access in `small_bn`.
+- Fixed MXFP8 block-scaled matmul dispatch misses by falling back to cuBLAS
+  on unsupported shapes.
+- Fixed `LAUNCH_OUT_OF_RESOURCES` failures during graph capture on SM100 by
+  declaring the launch block size on the block-scaled small-BN matmul kernel.
+- Fixed an unaligned-access bug in the NVFP4 quantization async kernel.
+- Fixed the `cluster_mask_base` computation for tall clusters.
+- Fixed GEMM kernels producing incorrect or out-of-bounds C stores for
+  partial tiles and odd sizes (multistage GEMM, SM100 small-MN GEMM).
+- Fixed the vendor-BLAS matmul ignoring the layout row stride, which could
+  compute wrong results for strided inputs.
+- AMD GPU kernels:
+  - Sped up GPU RMS norm on AMD CDNA4 (MI355X) by roughly 15-31% on
+    prefill-sized shapes.
+  - Extended the AMD MHA prefill kernel with depth-80 support and partial
+    (non-power-of-two) head dimensions.
+  - Fixed an AMD MHA decode crash caused by too many split-K partitions.
+  - Added speculative-decode query-token folding to the AMD MHA decode
+    kernel for higher multi-token decode throughput.
+  - Reworked the AMD sparse-attention decode path: rewrote the
+    sparse-indexer decode scoring and top-k as faster split-K partition
+    kernels (fixing a `max_num_blocks` double-count), and added
+    multi-token (MTP/speculative) support across the gfx950 FP8 MLA
+    decode and sparse-indexer top-k kernels.
+  - Fused MXFP4 expert-parallel operations on AMD MI355X (activation +
+    quantize into down-projection, scale preshuffle into producer/dispatch
+    kernels): +37% total TPM and -15% mean TPOT on an MXFP4 MoE model.
+  - Improved AMD MXFP4 matmul and grouped-matmul performance via weight
+    preshuffling, register staging, double buffering, async loads, and
+    shared-memory swizzling.
+  - Optimized all-gather and reduce-scatter on AMD CDNA4 (MI355X),
+    bringing 4-GPU bf16 collectives to the PCIe fabric roofline (all-gather
+    ~2.7x its previous default).
+  - Sped up expert-parallel dispatch and combine on AMD GPUs via a
+    volatile-load spin loop and reduced atomic contention.
+  - Sped up float32 matmul/GEMV on AMD GPUs: enabled the GPU matmul kernel
+    for `float32` (fixing graph capture), dispatched `float32` GEMV to
+    vectorized/split-K paths (52us to 4us in decode), and enabled split-K
+    for skinny-deep shapes (up to ~10x on small shapes).
+  - Sped up bfloat16 matmul on AMD RDNA 3+ GPUs with faster WMMA-based
+    kernels.
+  - Fixed a race in the AMD 4-wave split-K matmul kernel.
+  - Fixed the GEMV launch grid writing past the end of the output tensor
+    on AMD GPUs.
+  - Routed the AMD float32 MoE router through the cached GEMV path.
+- Apple GPU kernels:
+  - Extended Apple silicon GPU support for MAX models to M1 and M2 systems
+    by fixing the optimized matrix multiplication kernels on those GPUs.
+  - Made the split-K decode attention kernel the default for
+    token-generation attention on Apple GPUs (paged-KV-cache MHA and GQA
+    decode); `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` opts out.
+  - Restored the 32-bit atomic `scatter_nd` reduce path on Apple GPUs.
+  - Further optimized the Apple M5 GEMM kernels; neural-accelerator
+    utilization rose from 85% to 95%, within 2-3% of MPS.
+  - Added Apple M5 int8 W8A8 matmul optimizations for NT layouts.
+  - Added a hardware-MMA flash-attention prefill kernel for Apple M5
+    (Metal 4) with paged-KV support, giving ~1.4x lower TTFT at seq=8192
+    (bf16, head dim 128).
+  - Added a fused online-im2col bf16 conv2d kernel for Apple M5 (Metal 4)
+    and sped up its gather/MMA path by ~4x.
 
 ## Breaking changes
 
 - Dynamic CE chunk sizing in the data-parallel load-balancer
-  (`--dp-ce-balance-enable-dynamic-chunk-size`) now defaults to off. The
-  smaller, more frequent context-encoding chunks it produces interact with
-  tiered-KV onload latency on speculative-decoding deployments; re-enable it
-  explicitly for workloads where its TTFT win is measured to hold.
-
-- Removed the deprecated `--max-num-steps` CLI flag (and the corresponding
-  `max_num_steps` config field). Multi-step pipeline execution is no longer
-  supported; the pipeline always runs single-step decode. The flag had been a
-  no-op that only logged a warning, so passing it now errors instead of being
-  ignored.
-- `PipelineTokenizer.eos` (a single scalar token id) is replaced by
-  `PipelineTokenizer.eos_token_ids` (a set): the tokenizer's declared EOS
-  plus any additional terminators from the model config's `eos_token_id`
-  entries. The runtime previously assembled that full set privately while
-  the protocol exposed only the scalar, so consumers that needed every
-  terminator (for example, grammar backends for constrained decoding) had
-  no public way to get it.
+  (`--dp-ce-balance-enable-dynamic-chunk-size`) now defaults to off;
+  re-enable it explicitly where its TTFT win holds for your workload.
+- Removed the deprecated `--max-num-steps` CLI flag and `max_num_steps`
+  config field; the pipeline always runs single-step decode and passing the
+  flag now errors.
+- Replaced `PipelineTokenizer.eos` (scalar) with
+  `PipelineTokenizer.eos_token_ids` (a set of the declared EOS plus any
+  terminators from the model config's `eos_token_id` entries).
 - MAX Serve now fails at startup when the device KV cache cannot hold a
-  single request at the configured max sequence length. Previously this
-  condition only logged a warning, and a request approaching the max
-  sequence length would exhaust the KV cache pool at runtime and crash the
-  model worker with `InsufficientBlocksError`. The startup error reports the
-  largest `--max-length` that fits in the allocated KV cache pool.
-- `max.nn.Module.build_subgraph()` now takes representative input *values*
-  (`inputs=`) instead of input *types* (`input_types=`). Each argument may be a
-  single `Value`, a nested list/tuple of values, or a structured
-  `FlattenableGraphInput` such as `PagedCacheValues`; the subgraph signature is
-  derived from the flattened leaves and the structure is rebuilt before the
-  layer runs. This lets structured inputs cross the subgraph boundary directly,
-  so `DistributedTransformerBlock` now accepts `list[PagedCacheValues]` rather
-  than the hand-decomposed per-field lists. Update call sites from
+  single request at the configured max sequence length (previously a warning
+  followed by a runtime crash); the error reports the largest `--max-length`
+  that fits.
+- `max.nn.Module.build_subgraph()` now takes representative input values
+  (`inputs=`) instead of input types (`input_types=`); update call sites from
   `build_subgraph(name, input_types=[v.type for v in values])` to
-  `build_subgraph(name, inputs=values)`.
+  `build_subgraph(name, inputs=values)`. `DistributedTransformerBlock` now
+  accepts `list[PagedCacheValues]` directly.
 - Removed the `MAX_SERVE_METRIC_LEVEL` and
-  `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables along with
-  the `BASIC`/`DETAILED` metric-level distinction. MAX Serve now always emits
-  its full set of metrics, so panels that previously required `DETAILED` (for
-  example batch execution time) are populated in every deployment rather than
-  only when detailed metrics were explicitly enabled. High-volume
-  per-iteration scheduler metrics are still coalesced into a single
-  cross-process flush, so there is no change in per-metric recording overhead.
-  To record no metrics at all (previously `MAX_SERVE_METRIC_LEVEL=NONE`), set
-  `MAX_SERVE_METRIC_RECORDING_METHOD=NOOP` or `MAX_SERVE_DISABLE_TELEMETRY=1`.
+  `MAX_SERVE_DETAILED_METRIC_BUFFER_FACTOR` environment variables; MAX Serve
+  now always emits its full metric set. To record no metrics (previously
+  `MAX_SERVE_METRIC_LEVEL=NONE`), set
+  `MAX_SERVE_METRIC_RECORDING_METHOD=NOOP` or
+  `MAX_SERVE_DISABLE_TELEMETRY=1`.
 - Removed `InferenceSession.use_old_top_k_kernel()` and the
-  `USE_OLD_TOP_K_KERNEL` environment variable. The legacy top-k sampling
-  kernel this fallback selected has been deleted; the current two-stage
-  top-k kernel is now used unconditionally.
+  `USE_OLD_TOP_K_KERNEL` environment variable; the two-stage top-k kernel is
+  now used unconditionally.
 - The `Input`, `Output`, `MutableInput`, `FusedInput`, and `FusedOutput`
-  `IOSpec` values used in custom-op signatures (for example,
-  `Tensor[Input, spec]`) are now static members of `IOSpec`
-  (`IOSpec.Input`, `IOSpec.Output`, `IOSpec.MutableInput`,
-  `IOSpec.FusedInput`, `IOSpec.FusedOutput`) instead of module-level aliases.
-  Update custom-op call sites to qualify these names under `IOSpec`, for
-  example `Tensor[IOSpec.Input, spec]`.
-- The `compiler` Mojo package has been removed. It only re-exported 4 symbols
-  from `extensibility`, please use that directly instead.
-- Renamed the MAX Serve metric `maxserve_cache_hit_rate_percent_utilization`
-  (OTEL name `maxserve.cache.hit_rate`) to
-  `maxserve_cache_request_prefix_coverage_percent` (OTEL name
-  `maxserve.cache.request_prefix_coverage`). The old name was misread as a
-  token-weighted cache hit rate; it's actually an unweighted average of each
-  admitted request's `cached_prefix_length / prompt_length`, so it can read
-  much lower than the true hit rate on workloads with many short, low-overlap
-  requests. Derive the token-weighted cache hit rate from
-  `maxserve_cache_hits_tokens` and `maxserve_cache_misses_tokens` instead.
+  `IOSpec` values are now static members of `IOSpec` instead of module-level
+  aliases; qualify them as `IOSpec.Input` etc. (e.g.
+  `Tensor[IOSpec.Input, spec]`).
+- Removed the `compiler` Mojo package; import the 4 re-exported symbols from
+  `extensibility` directly.
+- Renamed the metric `maxserve_cache_hit_rate_percent_utilization` (OTEL
+  `maxserve.cache.hit_rate`) to
+  `maxserve_cache_request_prefix_coverage_percent` (OTEL
+  `maxserve.cache.request_prefix_coverage`); derive a token-weighted hit rate
+  from `maxserve_cache_hits_tokens` and `maxserve_cache_misses_tokens`.
+- Removed the EXAONE model architectures (`exaone` and `exaone_modulev3`);
+  EXAONE checkpoints are no longer served.
+- Removed `InferenceSession.read`; use `max.engine.read` to load a
+  compiled-model artifact (`.mef`) without a session, then initialize it on
+  any session via `InferenceSession.init`.
+- Removed the `MAX_USE_EAGER_INTERPRETER` environment variable; eager
+  execution is now selected by `MAX_EAGER_EXECUTOR` (use `compile` to force
+  compilation), and `EagerRealizationContext(use_interpreter=...)` is
+  deprecated in favor of `executor=...`.
+- Removed eager-interpreter support that only existed through broken or
+  GPU-only Mojo bindings: `conv2d_transpose` (cuDNN-dependent, crashed on
+  Apple GPUs), `resize_bicubic`, and CPU `group_norm` (now raises
+  `NotImplementedError`; GPU still works).
+- Narrowed the eager interpreter's CPU coverage to float32/float64 for most
+  float families (the previous Mojo bindings also accepted
+  float16/bfloat16); unsupported dtypes now raise immediately.
+- Changed `TileTensor` to drop its `element_size` parameter; element width
+  is now carried by `Storage=PointerStorage[element_width=N]`, or use
+  `TileTensor.vectorize()`.
+- Moved accelerator-programming APIs from the Mojo standard library into the
+  `max` package: `std.algorithm` -> `max.algorithm`, `std.benchmark` ->
+  `max.benchmark`, and `std.gpu.{compute,host,memory,sync}` -> `max.gpu.*`.
+- The `layout` package is now bundled with MAX instead of Mojo.
+- Renamed `LayoutTensor.get_immutable()` to `as_imm()`; the old name remains
+  as a `@deprecated` alias.
+- Deprecated the Python `local` and `tiered` KV cache connectors in favor of
+  the Rust `rust_tiered` connector (`--kv-connector rust_tiered`, CUDA-only);
+  the Python connectors remain for backward compatibility.
+- Made the `max.entrypoints` package private (`max._entrypoints`) and
+  deprecated `max.entrypoints.LLM`; a new offline-inference API will follow
+  in a future release.
+- Renamed the FLUX.2 int8 W8A8 override env var `FLUX2_KLEIN_INT8_W8A8` to
+  `APPLE_FLUX2_INT8_W8A8`; the old name is still honored with a one-time
+  deprecation warning.
+- The dKV connector now requires a non-empty tenant identity
+  (`MODULAR_DKV_TENANT_ID`); the empty-tenant default path is removed, so
+  every deployment routes through the per-tenant region-sharded store. A
+  single-tenant multi-GPU node must set the dKV server's
+  `--fair-share-partitions` to its GPU count.
+- Made the tiered (disk) KV cache offload ephemeral: the disk tier starts
+  empty and removes its `max_kv_tiered_*` directory on shutdown; use dKV for
+  persistent KV across runs.
+- Retuned the Prometheus/OpenTelemetry histogram buckets for MAX
+  metrics: boundaries are now generated instead of hand-written, matched
+  to each histogram's actual range (latencies to 8 hours, token counts to
+  100M) with a leading `0` boundary. Dashboards and alerts that hardcode
+  `le` values need updating.
+- Changed `maxserve.cache.num_used_blocks` and
+  `maxserve.cache.num_total_blocks` from counters to gauges; the exported
+  series drops the counter `_total` suffix.
 
 ## Fixes
 
-- Fixed a per-kernel-launch memory leak on macOS: the Metal driver now drains
-  autoreleased Objective-C objects (command buffers, encoders) per call
-  instead of accumulating them for the lifetime of the thread.
-- Fixed a custom op with a data-dependent output dimension killing the process
-  when its kernel registers no shape function. It now reports a compile error.
-- Fixed KV-cache CLI flags replacing the entire `kv_cache` section of a
-  `--config-file` recipe instead of overriding just the named setting. For
-  example, passing `--kv-connector-config` alongside a recipe that sets
-  `kv_connector: tiered` used to silently reset `kv_connector` (and every
-  other unnamed `kv_cache` field) to its default, disabling the connector.
-  KV-cache flags now merge onto the recipe's values, so a partial override
-  changes only what it names.
-- Fixed speculative-decoding CLI flags being silently dropped when a
-  `--config-file` recipe already set a `speculative` section. For example,
-  passing `--num-speculative-tokens 2` alongside a recipe that sets
-  `speculative_method: mtp` used to keep the recipe's token count and ignore
-  the flag. Speculative flags now merge onto the recipe's values, so a partial
-  override changes only what it names.
-- Fixed MAX Serve container pods ignoring `SIGTERM` during the model
-  cold-start window. The serving image ran Python directly as PID 1, and the
-  Linux kernel silently discards a default-disposition signal sent to a
-  namespaced PID 1 — so a `SIGTERM` arriving before the server installed its
-  handler (for example, during the long graph compile) was dropped, leaving
-  pods stuck `Terminating` until the termination grace period elapsed (holding
-  GPUs during rollouts). The container now runs under `dumb-init` as PID 1,
-  which handles `SIGTERM` (a signal the kernel otherwise drops when sent to
-  PID 1) and reaps the process tree, so the pod shuts down promptly and
-  releases its GPU.
-- Fixed a graph-compilation failure on B200 (`constraint failed: split-K (M2)
-  supports only check_mask==False masks`) for models whose attention uses a
-  materialized attention mask, such as the padded text encoders in diffusion
-  pipelines (for example FLUX.2's Qwen3 text encoder). The SM100 FA4 dispatch
-  no longer instantiates its split-K kernels for such masks and routes them to
-  the single-partition path instead.
-- Fixed Nemotron-3-Nano (`NemotronHForCausalLM`) leaking chain-of-thought and
-  a raw `</think>` delimiter into `message.content` (with the reasoning field
-  left empty), and `tool_choice="required"` emitting zero tool calls. The
-  architecture now defaults both `--reasoning-parser` and `--tool-parser` to
-  `qwen3_5`, matching its Qwen-format chat template (implicit `<think>` open,
-  explicit `</think>` close, `<tool_call>`/`<function=…>` tool blocks). Pass
-  `--reasoning-parser=none` / `--tool-parser=none` to restore the old
-  behavior.
-- Fixed `ops.scatter_add` / `ops.scatter_mul` / `ops.scatter_max` /
-  `ops.scatter_min` silently returning wrong results when `indices` contains
-  duplicates and the update count is large. These ops run on CPU, and once
-  the update count exceeded roughly 32k elements the reduction was split
-  across worker threads with a plain read-modify-write, so concurrent
-  updates to the same output element raced and got dropped. The reduce path
-  now applies updates atomically; the plain overwrite `ops.scatter` is
-  unchanged (duplicates keep last-writer-wins semantics).
-- Fixed `ops.scatter_nd_add` / `ops.scatter_nd_mul` / `ops.scatter_nd_max` /
-  `ops.scatter_nd_min` silently returning wrong results when `indices`
-  contains duplicate index vectors. The reduction applied each update with a
-  plain read-modify-write, so concurrent threads targeting the same output
-  element raced and dropped updates — on GPU always, and on CPU once the
-  index count was large enough to split across worker threads. The reduce
-  path now applies updates atomically (a compare-exchange loop around the
-  reduction), so duplicate indices accumulate correctly on both devices, in
-  line with ONNX `ScatterND` reduction semantics.
-- Fixed the compiled-model cache (`.max_cache`) not invalidating when the
-  Mojo kernel libraries change. The cache key previously content-hashed only
-  the two built-in kernel packages, not the packages they import
-  (`linalg`, `nn`, ...), so rebuilding after a kernel-source edit could
-  silently serve a stale compiled model — for example during back-to-back
-  kernel A/B benchmarking. The key now covers every Mojo binary package on
-  the module import path, so kernel changes correctly trigger a recompile
-  and clearing caches by hand is no longer needed.
-- Fixed the structured-output grammar backend silently defaulting to
-  `llguidance` instead of the intended global default `xgrammar` for models
-  launched via `max serve`. The `--structured-output-backend` flag hardcoded
-  `llguidance` as its default value, which shadowed the `None` "unset" sentinel
-  the resolver relies on to apply the global default (`xgrammar`) or an
-  architecture's pinned backend. The flag now defaults to unset, so any model
-  without an explicit `--structured-output-backend` (and no architecture pin)
-  correctly resolves to `xgrammar`.
-- Sparse-attention MLA models (DeepSeek V3.2, GLM 5.1/5.2) with an FP8 latent
-  KV cache now run prefill on the absorbed sparse MLA prefill kernel instead
-  of the dense unabsorbed fallback, matching the decode kernel's unit-scale
-  read of the scale-less FP8 latent cache. The dense fallback re-quantized the
-  up-projected Q/K/V to FP8, measurably costing accuracy (GLM 5.2 TP8 gsm8k
-  0.95 -> 1.0), and forfeited sparse attention's linear-cost prefill at long
-  context. The kernel also gained a cache-native blockwise scale path (int8
-  granularity-32), dormant until FP8 KV-cache scales land.
-- Fixed the SM100 sparse MLA prefill kernel gathering K/V latents from the
-  wrong layer's KV-cache region for every layer above the first
-  (`num_layers > 1`). The gather consumed raw encoded indices without folding
-  in the paged per-layer block stride, silently corrupting attention for
-  multi-layer sparse-attention models (DeepSeek V3.2 and GLM 5.1/5.2) served
-  with a bfloat16 latent cache. Also enabled the sparse prefill kernel for
-  GLM 5.2's tensor-parallel head shards (8/16/32 heads per device) over a
-  bfloat16 latent cache; FP8 latent caches keep the decode-kernel routing.
-- Hugging Face weight and benchmark-dataset downloads now retry past a racy
-  `.incomplete` cache entry (a concurrent download or evicted cache deleting
-  the temp blob before `hf_hub_download` renames it), so a transient race no
-  longer fails with a `FileNotFoundError`.
-- Fixed MiniMax-M3 tool-call grammar enforcement silently disabling itself
-  when the model emits more than one tool-call section in a single response.
-  Enforcement used to switch off once the first section closed, so a second
-  section's start marker was rejected against the completed matcher
-  (`Matcher rejected N token(s)…`) and the rest of the request ran
-  unconstrained. Enforcement now stays on through the end of the turn: after
-  the single tool-call section closes, only EOS is allowed, matching the
-  model's chat template (all invocations in one section, followed
-  immediately by end of turn).
-- Fixed MiniMax-M3 streaming chat completions aborting with a 500 when the
-  model emits a malformed tool call. The streaming tool parser now fails open
-  like the non-streaming path: the raw tool-call text degrades to assistant
-  content, tool parsing is bypassed for the rest of the request, and the
-  stream terminates normally.
-- Fixed a precision loss in the normalization ops where the `epsilon` value was
-  carried in the input's dtype (for example `bfloat16`) before use. A small
-  epsilon such as `1e-6` is not representable in `bfloat16`, so it was silently
-  rounded. The `epsilon` for `rms_norm`, `layer_norm`, `group_norm`, and the
-  fused residual, FP8-quantized, and distributed all-reduce variants is now
-  carried as `float32` end to end — from the graph op through the graph
-  compiler to the kernel. The Python `epsilon: float` argument is unchanged.
+- Fixed Apple GPU issues:
+  - Fixed a per-kernel-launch memory leak on macOS Metal that accumulated
+    autoreleased driver objects for the lifetime of the thread.
+  - Fixed three Apple Metal kernel bugs (`rope_ragged`, `concat`, `split`)
+    that silently produced zeros on Metal.
+  - Fixed the FlashInfer top-k/top-p samplers returning out-of-top-K
+    tokens on Apple GPUs.
+  - Fixed models failing on pre-M5 Apple silicon GPUs (NVFP4 weights, MHA,
+    and 2-D convolution fallbacks).
+- Fixed `--model-revision` and `--model-override` with an external weights
+  repository or path being resolved against the base model repo, failing
+  weight downloads.
+- Fixed a custom op with a data-dependent output dimension killing the
+  process when its kernel registers no shape function; it now reports a
+  compile error.
+- Fixed MAX Serve containers ignoring `SIGTERM` during model cold start,
+  leaving pods stuck `Terminating` until the grace period elapsed; the
+  image now runs under `dumb-init`, so pods shut down promptly and release
+  their GPUs.
+- Fixed `max serve` crashing on startup with `TypeError: cli_serve()
+  missing 1 required positional argument: 'task'`.
+- Fixed `max serve` failing at startup with a `device_graph_capture` error
+  for models in the overlap-scheduler auto-disable list (e.g. Gemma 4) when
+  `--device-graph-capture` is passed explicitly.
+- Fixed a hang during `max serve` shutdown after failures (e.g. OOM).
+- Fixed `max warm-cache` crashing in virtual-device (compile-only) mode
+  with `--draft-model-path`.
+- Fixed a graph-compilation failure on B200 for models with materialized
+  attention masks, such as the padded text encoders in diffusion pipelines
+  (e.g. FLUX.2's Qwen3 text encoder).
+- Fixed structured-output, tool-calling, and reasoning issues:
+  - Fixed the structured-output grammar backend silently defaulting to
+    `llguidance` instead of `xgrammar` for models launched via
+    `max serve`.
+  - Fixed structured-output responses being truncated when the model
+    sampled an extra `eos_token_id` mid-response.
+  - Fixed an explicitly empty (`{}`) or boolean-`true` JSON schema in
+    `response_format` being treated as "no structured output" instead of
+    "any valid JSON value".
+  - Fixed `response_format` constraints being dropped after an auto tool
+    call for Gemma 4 and Kimi K2.5.
+  - Fixed Gemma 4 tool-call structured output enforcing JSON Schema
+    `minLength`/`maxLength` as a token count rather than a character
+    count.
+  - Fixed grammar enforcement being intermittently dropped during
+    speculative decoding: across tool-call structural tags, mid-span when
+    a committed draft span contained a terminating token, and batch-wide
+    when a single request was preempted.
+  - Fixed a grammar FSM off-by-one at the chunked-prefill-to-decode seam
+    that could misalign constrained-decoding state.
+  - Fixed streaming tool-call glitches: dangling tool calls with empty
+    arguments, structural namespace tokens leaking into assistant content
+    (MiniMax M2), empty SSE packets while the parser consumed structural
+    tokens, and same-index tool-call entries split across a chunk.
+  - Fixed the tool-call conformance check turning successful responses
+    into 500 errors or dropping valid tool calls when a client schema
+    failed validation; parameter-less tools are no longer flagged as
+    `unknown_tool`.
+  - Fixed non-streaming chat completions leaking a literal `<tool_call>`
+    marker into `message.content` when `max_tokens` truncated mid
+    tool-call block; the response now surfaces only the preceding content
+    with `finish_reason == "length"`.
+  - Fixed Kimi tool-call arguments decoding unconstrained under
+    `tool_choice="auto"` when the model opened a tool call without a
+    closing `</think>`, and the combined tools +
+    `response_format=json_schema` grammar letting non-conforming output
+    through.
+  - Fixed Gemma 4 with MTP speculative decoding crashing the model worker
+    on the first tool-call grammar.
+  - Fixed non-streaming Kimi reasoning responses returning null
+    `message.content` when the model stopped without `</think>`, and added
+    validation rejecting out-of-range or non-finite
+    `frequency_penalty`/`presence_penalty` values.
+  - Fixed replayed assistant `reasoning` being silently dropped when sent
+    back to chat completions; `reasoning_content` is also accepted.
+  - Fixed Nemotron-3-Nano leaking chain-of-thought and a raw `</think>`
+    delimiter into `message.content` and emitting zero tool calls with
+    `tool_choice="required"`; it now defaults `--reasoning-parser` and
+    `--tool-parser` to `qwen3_5`.
+- Fixed `ops.scatter_add`/`scatter_mul`/`scatter_max`/`scatter_min` and
+  their `scatter_nd_*` variants silently dropping concurrent updates when
+  `indices` contains duplicates; reductions are now atomic on CPU and GPU.
+- Fixed `scatter`/`scatter_add` writing out of bounds under multi-device
+  sharding in `max.experimental`, corrupting unrelated allocations.
+- Fixed the compiled-model cache (`.max_cache`) serving stale compiled
+  models after Mojo kernel-library changes; kernel edits now correctly
+  trigger recompilation.
+- Fixed sparse-attention (MLA) issues:
+  - Fixed sparse-attention MLA models (DeepSeek V3.2, GLM 5.1/5.2) with an
+    FP8 latent KV cache falling back to a dense prefill path that cost
+    accuracy and long-context performance.
+  - Fixed the SM100 sparse MLA prefill kernel reading the wrong layer's KV
+    cache for every layer above the first, silently corrupting attention
+    for multi-layer sparse-attention models (DeepSeek V3.2, GLM 5.1/5.2);
+    also enabled the kernel for GLM 5.2 tensor-parallel head shards.
+  - Fixed sparse MLA top-k dropping the indexer `-1` pad sentinels, which
+    could corrupt padding handling in sparse-attention index selection.
+  - Fixed a warp-collective deadlock in the sparse MLA decode indexer
+    kernel.
+  - Fixed disaggregated `prefill_only` serving of DeepSeek V3.2 ignoring
+    the sparse indexer's top-k selection.
+- Fixed speculative-decoding issues:
+  - Fixed speculative decoding (Eagle) requests stopping short of the
+    per-request `max_tokens` cap, returning `finish_reason="length"` with
+    fewer tokens than requested.
+  - Fixed the first structured-output request on a speculative-decode
+    (EAGLE) server stalling ~7-9 seconds with the GPU idle.
+  - Fixed a crash taking down the decode-only engine on disaggregated
+    (1p1d) deployments running structured output with Eagle3 speculative
+    decoding.
+  - Fixed Eagle speculative decoding with FP4-quantized models: Kimi K2.5
+    with MXFP4 weights produced garbage tokens, and pairing an FP4 target
+    with a `bfloat16` Eagle3 draft failed to load.
+  - Fixed DeepSeek-V3.1-NVFP4 multi-token prediction failing to load with
+    expert parallelism enabled.
+  - Fixed the float32 weight-path fallback firing for any model, breaking
+    architectures without f32 support (e.g. f32-only Eagle3 drafts).
+- Fixed precision loss in `rms_norm`, `layer_norm`, `group_norm` (and
+  fused variants) where a small `epsilon` such as `1e-6` was silently
+  rounded in `bfloat16`; `epsilon` is now carried as `float32`.
 - Fixed MAX crashing the model worker on the first host KV-cache
-  offload/reload when run with `--kv-connector dkv`. The dKV connector had
-  drifted out of sync with its client and no longer passed the required
-  attention group on the load/offload path; it now supplies it, so the
-  same-host prefix-cache path completes instead of raising.
-- Fixed inflated `maxserve.cache.h2d_blocks_copied` and
-  `maxserve.cache.d2h_blocks_copied` telemetry on tiered and local KV cache
-  deployments. The scheduler now resets connector transfer counters after each
-  batch metrics sample so OpenTelemetry counters report per-batch deltas.
-- Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
-  constructed with its default `has_bias=False`. The constructor
-  unconditionally deleted the wrapped conv's `bias` attribute, which is only
-  set when `has_bias=True`; the delete is now guarded.
-- Fixed a GPU memory fault when benchmarking GPU layer norm: the benchmark's
-  output lambda copy-captured the wrong tensor, so the actual output tensor was
-  captured by reference and dereferenced as a host pointer on the device. This
-  faulted on AMD GPUs (and was undefined behavior elsewhere). The lambda now
-  captures the output tensor it writes to.
-- Fixed `max.experimental.nn.Conv2d.forward` moving the weight to the
-  input's device but leaving the bias behind, which failed with a device
-  mismatch when the bias started on a different device than the input. The
-  bias is now moved alongside the weight.
-
-- Fixed a constrained-decoding bug that could intermittently drop grammar
-  enforcement during speculative decoding with grammar-guided tool calling.
-  The speculative bitmask walk advanced the matcher through draft tokens and
-  restored it with `rollback`, but `rollback` does not correctly restore the
-  matcher across certain tool-call structural tags (e.g.
-  `<|tool_call_begin|>`). The walk now runs on a deep copy of the matcher,
-  leaving the real matcher untouched.
-
-- Fixed speculative decoding (Eagle) requests that reached the per-request
-  `max_tokens` cap stopping up to `num_speculative_tokens` tokens short of it,
-  returning `finish_reason="length"` with fewer completion tokens than
-  requested. The response builder reserved a full worst-case speculative
-  chunk of slack against the per-request cap instead of only against the
-  hard model/KV limit, ending the request before its final (and possibly
-  partial) chunk could run. That chunk now runs, and the per-token accept
-  loop truncates it to land exactly on the cap.
-
-- Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
-  returning a plain `Buffer`. The decayed type lost the pinned buffer's
-  no-synchronization behavior, so a later `to_numpy()` on the slice triggered
-  an unexpected device synchronization. Slices and views now preserve the
-  `DevicePinnedBuffer` type.
-
-- Fixed virtual-device mode on macOS. Previously the
-  `max.driver.set_virtual_device_*()` settings had no effect on device
-  creation: `Accelerator()` still took the real-hardware path, so requesting
-  more devices than physically present failed and single-device
-  cross-compilation silently used the real GPU. The virtual-device state now
-  lives in a single shared library, so the setters and device creation always
-  observe the same configuration on every platform.
-
-- Fixed DeepSeek-V3.1-NVFP4 multi-token prediction (MTP) failing to load with
-  `dispatch_quant_config must be specified when dispatch_dtype is not
-  bfloat16` when expert parallelism was enabled. When a quantized model has no
-  resolvable quantization config for its draft (BF16 NextN) weights, the draft
-  config is now built with a bfloat16 dispatch dtype instead of constructing an
-  invalid `EPConfig`.
-
-- Fixed over-provisioned KV cache offload configurations bringing the server
-  down mid-startup instead of failing fast. The `local` and `tiered`
-  connectors reserved their full host (pinned DRAM) and disk budgets eagerly,
-  so an impossible `host_kvcache_swap_space_gb` grew the pinned buffer until
-  the process was OOM-killed, and an impossible `disk_offload_max_gb` filled
-  the filesystem. They now run a startup preflight that checks the host budget
-  against available memory (including the process cgroup limit) and the disk
-  budget against filesystem free space, raising an actionable error before
-  allocating.
-
+  offload/reload with `--kv-connector dkv`.
+- Fixed memory-planning and OOM issues:
+  - Fixed over-provisioned KV-cache offload budgets
+    (`host_kvcache_swap_space_gb`, `disk_offload_max_gb`) OOM-killing the
+    server or filling the disk mid-startup; the `local` and `tiered`
+    connectors now fail fast with an actionable error.
+  - Fixed the VMM defragmenting allocator failing large contiguous
+    allocations, which could OOM long-context KV caches despite free
+    memory.
+  - Fixed steady device-memory drain during serving; model inputs now
+    reuse fixed-capacity backing buffers.
+  - Fixed memory planning failing on devices that report zero free memory.
+  - Fixed a `ValueError` during memory planning for diffusion pipelines.
+  - Fixed the Gemma 4 vision encoder running one unbounded forward pass
+    over every image regardless of chunked prefill, which could OOM the
+    model worker on many-image requests.
+  - Fixed multimodal serving OOMing under load despite free device memory;
+    the vision encoder cache no longer fragments the allocator and
+    releases over-limit entries promptly.
+  - Fixed Gemma 4 activation-memory estimation under-estimating with
+    tensor parallelism (TP=2) plus MTP speculative decoding, causing OOMs.
+- Fixed a use-after-free of pinned buffers when multiple streams were in
+  use in the driver.
+- Fixed a token-input staging buffer race under the overlap scheduler that
+  could corrupt inputs.
+- Fixed multimodal serving issues:
+  - Fixed a crash in vision encoder cache assembly on a prefix-cache hit
+    covering an evicted image.
+  - Fixed Kimi-K2.5 device graph capture failing with an input-count
+    mismatch after the vision cache migration.
+  - Fixed two crashes in disaggregated serving of vision-capable models.
+- Fixed tensor-parallel and expert-parallel accuracy and performance
+  issues in DeepSeek-V3 ModuleV3, and added device-graph-capture support.
+- Fixed a GPU memory fault in `grouped_matmul_ragged` for unquantized bf16
+  MoE experts under expert parallelism on SM100 (e.g. GLM 5.2 NVFP4's MTP
+  draft).
+- Fixed a crash on data-parallel replicas with no assigned requests.
+- Fixed a FLUX.2 multi-GPU accuracy regression.
+- Fixed failures loading models whose `transformers` AutoConfig is not
+  registered in the installed `transformers` version.
+- Fixed Hugging Face weight and dataset downloads failing with
+  `FileNotFoundError` on a racy `.incomplete` cache entry; downloads now
+  retry past the transient race.
 - Fixed grouped (`groups > 1`) `ops.conv2d`/`ops.conv3d` on CPU raising
-  `grouped conv requires packed filter` whenever the filter was a non-constant
-  graph value, even with a fully static graph. The compiler only pre-packed
-  the filter into the layout the grouped-conv kernel requires when the filter
-  traced back to a compile-time constant; it now also packs a non-constant
-  filter when `groups > 1`, since the kernel cannot run without one.
-
-- Fixed `maxserve_time_to_first_token_milliseconds` under-reporting TTFT. The
-  timer started when the request reached the token-generation pipeline, so
-  request parsing, validation and media resolution were excluded and the
-  metric disagreed with client-observed TTFT under load. It now starts when
-  the API server receives the request, matching the origin already used by
-  `maxserve_request_time_milliseconds`. Expect a step up in reported TTFT that
-  reflects measurement, not a regression.
+  `grouped conv requires packed filter` for non-constant filters.
+- Fixed `max.nn.WeightNormConvTranspose1d` raising `AttributeError` when
+  constructed with the default `has_bias=False`.
+- Fixed `max.experimental.nn.Conv2d.forward` failing with a device
+  mismatch when the bias started on a different device than the input.
+- Fixed `max.experimental.functional.while_loop` raising `AttributeError`
+  at graph-construction time.
+- Fixed slicing and `view()` on a `max.driver.DevicePinnedBuffer` silently
+  returning a plain `Buffer`, causing unexpected device synchronization on
+  `to_numpy()`.
+- Fixed `max.driver.set_virtual_device_*()` settings having no effect on
+  macOS device creation.
+- Fixed `DeviceContext.load_function` returning the wrong function when
+  loading two entry points from one PTX/cubin blob.
+- Fixed `top_k`/`bottom_k` mis-shaping or rejecting graphs using a
+  negative `axis`.
+- Fixed `sliding_window` being silently dropped when combined with a
+  causal mask.
+- Fixed AMD GPU issues:
+  - Fixed an AMD MLA decode crash for models with `num_heads > 16` on
+    short prefills of 2-8 tokens, common with multi-turn prefix caching.
+  - Disabled the v2 attention prefill kernel on AMD GPUs due to a race
+    producing NaNs.
+  - Fixed NaNs from the fused SwiGLU kernel on AMD GPUs.
+  - Fixed a correctness race in the AMD expert-parallel combine kernel.
+  - Fixed diffusion models failing on AMD RDNA GPUs.
+- Fixed `usage` reporting at zero-token edge cases: `prompt_tokens=0` in
+  the final streaming chunk and null `usage` in non-streaming completions.
+- Fixed image/video URL fetches being rejected by some hosts (now sends a
+  browser `User-Agent`) and failing with a 500 on slow or large transfers
+  (now a clean 4xx `InputError` on timeout).
+- Fixed requests containing unpaired UTF-16 surrogates (e.g. a truncated
+  emoji) crashing the tokenizer; they are now replaced with U+FFFD.
+- Fixed the benchmark harness crashing with a 500 when flushing the prefix
+  cache on diffusion models; `/reset_prefix_cache` now returns a clean 400
+  for pipelines without a KV cache.
+- Blocked the MagicYUV video codec pending a fix for CVE-2026-8461; video
+  input using that codec is now rejected.
 
 ## Mojo language
 
