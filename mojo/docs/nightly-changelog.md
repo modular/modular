@@ -401,6 +401,12 @@ This version is still a work in progress.
 - Span
   - `def __init__(out self):`
   - `def __init__(other: Span, out self: ImmSpan[other.T, other.origin]):`
+- String
+  - `def __init__(out self, data: StringLiteral, /):`
+  - `def __init__(out self, *, from_utf8_lossy: Span[Byte, _]):`
+  - `def __eq__(self, rhs: String) -> Bool:`
+  - `def __eq__(self, other: StringSlice) -> Bool:`
+  - `def __ne__(self, other: StringSlice) -> Bool:`
   - `def __getitem__(ref self, idx: Int, /) -> ref[self.origin, self.address_space] Self.T:`
 
 - Array

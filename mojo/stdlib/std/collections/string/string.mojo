@@ -56,6 +56,7 @@ from std.python import ConvertibleFromPython, PythonObject
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 struct String(
     Boolable,
     Comparable,
@@ -294,6 +295,7 @@ struct String(
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
+    @stable(since="1.0")
     @always_inline("nodebug")
     def __deinit__(deinit self):
         """Destroy the string data."""
@@ -324,8 +326,9 @@ struct String(
             self._set_ref_counted()
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     @implicit  # does not allocate.
-    def __init__(out self, data: StaticString):
+    def __init__(out self, data: StaticString, /):
         """Construct a `String` from a `StaticString` without allocating.
 
         Args:
@@ -344,8 +347,9 @@ struct String(
         self._capacity_or_data = 0
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     @implicit  # does not allocate.
-    def __init__(out self, data: StringLiteral):
+    def __init__(out self, data: StringLiteral, /):
         """Construct a `String` from a `StringLiteral` without allocating.
 
         Args:
@@ -397,6 +401,7 @@ struct String(
             count=length,
         )
 
+    @stable(since="1.0")
     def __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
         """Construct a string from a span of bytes, including invalid UTF-8.
 
@@ -590,6 +595,7 @@ struct String(
             )
         )
 
+    @stable(since="1.0")
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
         """Copy initialize the string from another string.
@@ -790,6 +796,29 @@ struct String(
 
     @__unsafe_nested_origins_read_only
     @always_inline
+    def __getitem__(
+        self, *, byte: Int
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        var string_slice = self._interior_slice()
+        var idx = index(byte)
+        string_slice._check_valid_index(idx)
+        return string_slice._unchecked_get_byte(idx)
+
+    @__unsafe_nested_origins_read_only
+    @always_inline
     def __getitem__[
         I: Indexer, //
     ](self, *, byte: I) -> StringSlice[
@@ -913,6 +942,7 @@ struct String(
         """
         return self._interior_slice()[grapheme=grapheme]
 
+    @stable(since="1.0")
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -936,6 +966,7 @@ struct String(
         return unsafe_memcmp(self_ptr, rhs_ptr, self_len) == 0
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __eq__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -948,6 +979,7 @@ struct String(
         return StringSlice(self) == other
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __ne__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
