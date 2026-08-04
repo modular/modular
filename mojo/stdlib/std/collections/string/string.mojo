@@ -49,7 +49,7 @@ from std.memory import (
     unsafe_memcpy,
     unsafe_memset,
 )
-from std.python import ConvertibleFromPython, PythonObject
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -61,6 +61,7 @@ struct String(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
     FloatableRaising,
     ImplicitlyCopyable,
@@ -1154,6 +1155,20 @@ struct String(
         self = String(StringSlice(unsafe_borrowed_obj=str_obj))
         # keep python object alive so the copy can occur
         _ = str_obj
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Convert this value to a Python `str` object.
+
+        Returns:
+            A PythonObject representing this value.
+
+        Raises:
+            If the Python runtime is not initialized or conversion fails.
+        """
+        return StringSlice(self).to_python_object()
 
     # ===------------------------------------------------------------------=== #
     # Methods

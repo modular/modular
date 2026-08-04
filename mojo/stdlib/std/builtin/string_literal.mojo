@@ -24,6 +24,7 @@ from std.collections.string.string_slice import (
 )
 from std.os import PathLike
 from std.ffi import c_char, CStringSlice
+from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral
@@ -241,6 +242,20 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
             `StringSlice`.
         """
         return self.graphemes_reversed()
+
+    comptime ConversionToPythonErrorType = Error
+    """The error type raised if conversion to a PythonObject fails."""
+
+    def to_python_object(var self) raises -> PythonObject:
+        """Initialize the object from a string literal.
+
+        Returns:
+            A PythonObject representing the string literal.
+
+        Raises:
+            If the string is not valid UTF-8.
+        """
+        return PythonObject(StringSlice(self))
 
     # ===-------------------------------------------------------------------===#
     # Methods
