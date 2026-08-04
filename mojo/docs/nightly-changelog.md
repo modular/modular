@@ -1577,3 +1577,10 @@ This version is still a work in progress.
   such packages, rather than truncating it at the first dot.
 
 - Invalid SIMD vector lengths are now rejected during code generation.
+
+- `mojo build` now links libm, so a program calling a math function implemented
+  by it — `math.hypot`, `math.expm1`, and `math.tanh` on `Float64`, among
+  others — builds successfully on Linux. Such a program previously ran fine
+  under `mojo run` but failed to link, for example with `undefined reference to
+  symbol 'hypot@@GLIBC_2.35'` followed by `libm.so.6: error adding symbols: DSO
+  missing from command line`.
