@@ -195,7 +195,7 @@ def _argmaxmin_scan_kernel[
     """Streams one contiguous slice of one row and emits its local winner.
 
     Target families: NVIDIA (SM90/SM100), AMD CDNA, Apple silicon. Grid is
-    `(num_splits, rows)`; each block reads its slice exactly once with
+    `(rows, num_splits)`; each block reads its slice exactly once with
     vector loads and keeps a per-lane running `(extremum, index)` in
     registers. There is no input copy and no re-scan.
 
@@ -216,8 +216,10 @@ def _argmaxmin_scan_kernel[
         aligned_arg: Non-zero when vector loads may assume vector alignment.
     """
     var num_elements = Int(num_elements_arg)
-    var split = Int(block_idx.x)
-    var row_id = Int(block_idx.y)
+    # Rows ride the x dimension: it is the only one whose extent is not
+    # capped at 65535, and a batch can have millions of rows.
+    var row_id = Int(block_idx.x)
+    var split = Int(block_idx.y)
     var tid = Int(thread_idx.x)
 
     var begin = min(split * Int(split_len_arg), num_elements)
@@ -409,7 +411,7 @@ def argmaxmin_gpu[
             Int32(split_len),
             Int32(num_splits),
             Int32(1) if aligned else Int32(0),
-            grid_dim=(num_splits, num_rows),
+            grid_dim=(num_rows, num_splits),
             block_dim=block_size,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )

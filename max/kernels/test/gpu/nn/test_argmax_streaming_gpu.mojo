@@ -209,6 +209,16 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
                 ctx, b, n, "all-nan"
             )
 
+    # A batch past 65535 does not fit a CUDA grid's y or z extent, so the row
+    # count has to ride x. Short rows keep this to one split per row, which is
+    # the shape a vocab-sized argmax over a large token batch actually launches.
+    _check[dtype, out_idx_type, True, fill_random](
+        ctx, 65537, 8, "wide-batch-max"
+    )
+    _check[dtype, out_idx_type, False, fill_random](
+        ctx, 65537, 8, "wide-batch-min"
+    )
+
 
 def main() raises:
     seed(24301)
