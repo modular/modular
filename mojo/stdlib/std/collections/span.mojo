@@ -226,9 +226,11 @@ struct Span[
     comptime _is_generic_as = Self.address_space == AddressSpace.GENERIC
     """Whether this `Span` views the default (generic) address space.
 
-    Element-copying operations are only available on generic-address-space
-    spans: the compiler rejects copying a non-trivially-copyable value into or
-    out of a non-default address space.
+    Most element-copying operations are only available on
+    generic-address-space spans: the compiler rejects copying a value that is
+    not register passable into or out of a non-default address space. `fill()`
+    is the exception, accepting any address space when the element type
+    conforms to `TrivialRegisterPassable`.
     """
 
     # Fields
@@ -772,21 +774,37 @@ struct Span[
         """
         return not self == rhs
 
-    @__allow_legacy_custom_self_type
     def fill(
-        self: Span[mut=True, Self.T, _], value: Self.T
-    ) where conforms_to(Self.T, Copyable & Deinitable):
+        self, value: Self.T
+    ) where Self.mut and (
+        (Self._is_generic_as and conforms_to(Self.T, Copyable & Deinitable))
+        or conforms_to(Self.T, TrivialRegisterPassable)
+    ):
         """
         Fill the memory that a span references with a given value.
 
         Args:
             value: The value to assign to each element.
+
+        Constraints:
+            The span must be mutable. A register-passable element type works in
+            any address space. All other element types require the span
+            to view the default (generic) address space.
         """
-        for ref element in self:
-            # TODO(MOCO-4220) once fixed update body to:
-            # element = value.copy()
-            var p = Pointer(to=element).unsafe_mut_cast[True]()
-            p[] = value.copy()
+        comptime if conforms_to(Self.T, TrivialRegisterPassable):
+            for i in range(len(self)):
+                # TODO(MOCO-4220) once fixed update body to:
+                # self._data[unsafe_offset=i]= value
+                var p = self._data.unsafe_offset(i).unsafe_mut_cast[True]()
+                p[] = value
+        else:
+            comptime assert Self._is_generic_as
+            comptime assert conforms_to(Self.T, Copyable & Deinitable)
+            for ref element in self:
+                # TODO(MOCO-4220) once fixed update body to:
+                # element = value.copy()
+                var p = Pointer(to=element).unsafe_mut_cast[True]()
+                p[] = value.copy()
 
     @always_inline
     @__allow_legacy_custom_self_type

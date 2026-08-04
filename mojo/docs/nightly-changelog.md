@@ -521,7 +521,9 @@ This version is still a work in progress.
   space, such as GPU shared memory:
 
   ```mojo
-  var smem = stack_allocation[32, Float32, address_space = AddressSpace.SHARED]()
+  var smem = stack_allocation[
+      32, Float32, address_space = AddressSpace.SHARED
+  ]()
   var tile = Span[
       mut=True, Float32, MutUntrackedOrigin, address_space = AddressSpace.SHARED
   ](unsafe_ptr=smem, length=32)
@@ -529,10 +531,11 @@ This version is still a work in progress.
 
   Address-only operations (indexing, slicing, `unsafe_ptr()`, `as_imm()`, and
   the SIMD search helpers) work in any address space and preserve it in their
-  results. Element-copying operations (iteration, `fill()`, `copy_from()`,
-  hashing, equality, and writing) remain restricted to the default address
-  space, since copying a value into or out of another address space requires the
-  element type to be trivially copyable.
+  results. `fill()` also works in any address space when the element type is
+  register passable, since such a value may cross an address-space boundary.
+  The remaining element-copying operations (iteration, `copy_from()`, hashing,
+  equality, and writing) are still restricted to the default address space,
+  for any element type.
 
 - `List`, `Span`, and `String`/`StringSlice` (`byte=`) indexing with a
   contiguous (non-strided) slice now aborts on an invalid slice instead of
