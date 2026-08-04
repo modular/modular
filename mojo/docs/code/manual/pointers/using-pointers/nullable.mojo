@@ -44,8 +44,6 @@ def main():
         var p = ptr.value()
         print(p[])
     x_ptr.unsafe_deinit_pointee()
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=x_ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=x_ptr).unsafe_with_layout(layout))
 
     test_unsafe_dangling()

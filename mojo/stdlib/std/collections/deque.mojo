@@ -263,9 +263,9 @@ struct Deque[ElementType: Movable](
         backing storage.
         """
         dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=self._data
-            ).unsafe_with_layout({count = self._capacity})
+            ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                {count = self._capacity}
+            )
         )
 
     def __deinit__(
@@ -646,9 +646,9 @@ struct Deque[ElementType: Movable](
             var offset = self._physical_index(self._head + i)
             (self._data.unsafe_offset(offset)).unsafe_deinit_pointee()
         dealloc(
-            ThinAllocation(
-                unsafe_assume_ownership=self._data
-            ).unsafe_with_layout({count = self._capacity})
+            ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                {count = self._capacity}
+            )
         )
         self._capacity = self._min_capacity
         self._data = alloc(
@@ -1083,9 +1083,9 @@ struct Deque[ElementType: Movable](
 
         if self._capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout({count = self._capacity})
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    {count = self._capacity}
+                )
             )
 
         self._data = new_data
@@ -1130,9 +1130,9 @@ struct Deque[ElementType: Movable](
 
         if self._capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout({count = self._capacity})
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    {count = self._capacity}
+                )
             )
         self._data = new_data
         self._capacity = new_capacity

@@ -488,12 +488,12 @@ struct ThinAllocation[T: AnyType](
     def __init__(
         out self,
         *,
-        unsafe_assume_ownership: Pointer[Self.T, MutUntrackedOrigin],
+        unsafe_owned_ptr: Pointer[Self.T, MutUntrackedOrigin],
     ):
         """Initializes a `ThinAllocation` that takes ownership of a raw pointer.
 
         Args:
-            unsafe_assume_ownership: The raw pointer to take ownership of. The
+            unsafe_owned_ptr: The raw pointer to take ownership of. The
                 new `ThinAllocation` assumes responsibility for deallocating
                 this storage.
 
@@ -503,7 +503,7 @@ struct ThinAllocation[T: AnyType](
         (typically obtained from `alloc`), and no other value may own it.
         Otherwise, destroying the `ThinAllocation` causes a double-free.
         """
-        self._ptr = unsafe_assume_ownership
+        self._ptr = unsafe_owned_ptr
 
     def unsafe_with_layout(
         var self, layout: Layout[Self.T]
@@ -727,13 +727,11 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
 
     comptime if size_of_t == 0:
         return ThinAllocation(
-            unsafe_assume_ownership=Pointer[
-                T, MutUntrackedOrigin
-            ].unsafe_dangling()
+            unsafe_owned_ptr=Pointer[T, MutUntrackedOrigin].unsafe_dangling()
         ).unsafe_with_layout(layout)
     else:
         return ThinAllocation(
-            unsafe_assume_ownership=_alloc_bytes(
+            unsafe_owned_ptr=_alloc_bytes(
                 layout.as_byte_layout()
             ).unsafe_bitcast[T]()
         ).unsafe_with_layout(layout)

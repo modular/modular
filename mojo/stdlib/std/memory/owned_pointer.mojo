@@ -140,9 +140,7 @@ struct OwnedPointer[T: AnyType](
         After using this constructor, the `Pointer` is assumed to be owned by this `OwnedPointer`.
         In particular, the destructor method will call `T.__deinit__` and `dealloc`.
         """
-        self._inner = ThinAllocation(
-            unsafe_assume_ownership=unsafe_from_raw_pointer
-        )
+        self._inner = ThinAllocation(unsafe_owned_ptr=unsafe_from_raw_pointer)
 
     def __init__(out self, *, unsafe_from_opaque_pointer: MutOpaquePointer[_]):
         """Construct a new `OwnedPointer` by taking ownership of the provided `Pointer`.

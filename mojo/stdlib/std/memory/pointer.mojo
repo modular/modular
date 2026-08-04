@@ -378,7 +378,7 @@ struct Pointer[
         ptr.unsafe_write(42)
         print(ptr[])  # => 42
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                 layout
             )
         )

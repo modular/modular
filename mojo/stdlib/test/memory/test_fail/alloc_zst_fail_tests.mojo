@@ -40,9 +40,7 @@ def test_alloc_zst_count_zero_fails() raises:
     # CHECK_1-NOT: is never reached
     assert_equal(0, len(ptr[]))
 
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def test_alloc_zst_count_negative_fails() raises:
@@ -58,9 +56,7 @@ def test_alloc_zst_count_negative_fails() raises:
     # CHECK_2-NOT: is never reached
     assert_equal(0, len(ptr[]))
 
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout))
 
 
 def main() raises:

@@ -531,9 +531,9 @@ struct List[T: Movable, /](
         if self._capacity > 0:
             self._annotate_delete()
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    Layout[Self.T](count=self._capacity)
+                )
             )
 
     @stable(since="1.0")
@@ -855,9 +855,9 @@ struct List[T: Movable, /](
         if self._capacity > 0:
             self._annotate_delete()
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    Layout[Self.T](count=self._capacity)
+                )
             )
         self._data = new_data
         self._capacity = new_capacity
@@ -1405,9 +1405,7 @@ struct List[T: Movable, /](
         self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = 0
-        return ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(
-            layout
-        )
+        return ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout)
 
     @deprecated(use=unsafe_take_allocation)
     def steal_data(mut self) -> Pointer[Self.T, MutUntrackedOrigin]:

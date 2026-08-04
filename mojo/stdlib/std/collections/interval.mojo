@@ -492,7 +492,7 @@ struct IntervalTree[
             Self._del_helper(node[].right().value())
         node.unsafe_deinit_pointee()
         dealloc(
-            ThinAllocation(unsafe_assume_ownership=node).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=node).unsafe_with_layout(
                 {count = 1}
             )
         )

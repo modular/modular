@@ -275,9 +275,9 @@ struct ArcPointer[T: Movable & Deinitable](
         # pointers. If we are also the last weak, free the allocation.
         if self._inner[].drop_weak():
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._inner
-                ).unsafe_with_layout({count = 1})
+                ThinAllocation(unsafe_owned_ptr=self._inner).unsafe_with_layout(
+                    {count = 1}
+                )
             )
 
     # FIXME: The origin returned for this is currently self origin, which
@@ -358,9 +358,9 @@ struct ArcPointer[T: Movable & Deinitable](
         `ArcPointer(unsafe_from_raw_pointer=handle^.unsafe_leak())`, which
         restores the `ArcPointer` and its reference-counting bookkeeping.
         """
-        return ThinAllocation(
-            unsafe_assume_ownership=self._inner
-        ).unsafe_with_layout(Layout[Self._inner_type].single())
+        return ThinAllocation(unsafe_owned_ptr=self._inner).unsafe_with_layout(
+            Layout[Self._inner_type].single()
+        )
 
     def __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same
@@ -527,7 +527,7 @@ struct WeakPointer[T: Movable & Deinitable](
         ):
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=self._inner.unsafe_value().unsafe_bitcast[
+                    unsafe_owned_ptr=self._inner.unsafe_value().unsafe_bitcast[
                         Self._inner_type
                     ]()
                 ).unsafe_with_layout({count = 1})

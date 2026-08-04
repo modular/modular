@@ -1027,7 +1027,7 @@ struct _Global[
         if opaque_ptr:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=opaque_ptr.unsafe_value().unsafe_bitcast[
+                    unsafe_owned_ptr=opaque_ptr.unsafe_value().unsafe_bitcast[
                         Self.StorageType
                     ]()
                 ).unsafe_with_layout({count = 1})

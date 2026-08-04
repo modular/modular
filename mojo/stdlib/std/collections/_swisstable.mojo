@@ -508,14 +508,14 @@ struct SwissTable[
         """
         if self._capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._ctrl
-                ).unsafe_with_layout({count = self._capacity + GROUP_WIDTH})
+                ThinAllocation(unsafe_owned_ptr=self._ctrl).unsafe_with_layout(
+                    {count = self._capacity + GROUP_WIDTH}
+                )
             )
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._slots
-                ).unsafe_with_layout({count = self._capacity})
+                ThinAllocation(unsafe_owned_ptr=self._slots).unsafe_with_layout(
+                    {count = self._capacity}
+                )
             )
 
     @always_inline
@@ -803,14 +803,14 @@ struct SwissTable[
 
         if old_capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=old_ctrl
-                ).unsafe_with_layout({count = old_capacity + GROUP_WIDTH})
+                ThinAllocation(unsafe_owned_ptr=old_ctrl).unsafe_with_layout(
+                    {count = old_capacity + GROUP_WIDTH}
+                )
             )
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=old_slots
-                ).unsafe_with_layout({count = old_capacity})
+                ThinAllocation(unsafe_owned_ptr=old_slots).unsafe_with_layout(
+                    {count = old_capacity}
+                )
             )
 
         return relocations^

@@ -805,7 +805,7 @@ def test_alloc_free_single_zst() raises:
 
     std.memory.alloc.dealloc(
         std.memory.alloc.ThinAllocation(
-            unsafe_assume_ownership=ptr
+            unsafe_owned_ptr=ptr
         ).unsafe_with_layout(layout)
     )
 
@@ -824,7 +824,7 @@ def test_alloc_free_many_zst() raises:
 
     std.memory.alloc.dealloc(
         std.memory.alloc.ThinAllocation(
-            unsafe_assume_ownership=ptr
+            unsafe_owned_ptr=ptr
         ).unsafe_with_layout(layout)
     )
 
