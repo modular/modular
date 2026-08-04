@@ -811,6 +811,14 @@ static int linkOutput(OutputType outputType, const State &state,
   linkerArgs.emplace_back("-Wl,--gc-sections");
 #endif // defined(__APPLE__)
 
+  // The Mojo standard library calls libm entry points such as `hypot` and
+  // `expm1`. A C compiler driver doesn't link libm implicitly the way a C++
+  // driver does, so request it here. Apple platforms and Windows keep those
+  // entry points in libSystem and the CRT, which are already linked.
+  if (llvm::Triple triple(options.targetTriple);
+      !triple.isOSDarwin() && !triple.isOSWindows())
+    linkerArgs.emplace_back("-lm");
+
   // Add any necessary system libraries.
   config.appendSystemLibraryLinkArgs(linkerArgs);
 
