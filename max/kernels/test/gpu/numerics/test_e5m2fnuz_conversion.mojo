@@ -322,7 +322,7 @@ def test_simd_e5m2fnuz_to_float[target: DType]():
     for i in range(256):
         float8_simd[i] = bitcast[DType.float8_e5m2fnuz](UInt8(i))
 
-    target_casted = float8_simd.cast[target]()
+    var target_casted = float8_simd.cast[target]()
 
     comptime M = 32
     comptime N = 8
@@ -520,7 +520,7 @@ def test_simd_f32_to_e5m2fnuz():
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 
-    f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2fnuz]()
+    var f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2fnuz]()
 
     for i in range(64):
         for j in range(8):

@@ -48,7 +48,7 @@ def build_ChunkedCausalMask[
         for h in range(num_heads):
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
-                    start_pos = num_keys - seq_len
+                    var start_pos = num_keys - seq_len
                     var q_chunk_idx = (q_idx + start_pos) // local_window_size
                     var k_chunk_idx = k_idx // local_window_size
                     var chunk_masked = q_chunk_idx != k_chunk_idx

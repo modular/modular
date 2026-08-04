@@ -21,7 +21,7 @@ from std.memory import unsafe_stack_allocation
 # CHECK-NOT: ld.local
 # CHECK-NOT: st.local
 def test_shared_mem_barrier():
-    mbar = unsafe_stack_allocation[
+    var mbar = unsafe_stack_allocation[
         10,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,

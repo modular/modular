@@ -359,7 +359,7 @@ def test_simd_e4m3_to_f32():
     for i in range(256):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
-    e4m3_casted_f32 = e4m3_simd.cast[DType.float32]()
+    var e4m3_casted_f32 = e4m3_simd.cast[DType.float32]()
 
     comptime M = 32
     comptime N = 8
@@ -410,7 +410,7 @@ def test_simd_e4m3_to_f16():
     for i in range(256):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
-    e4m3_casted_f16 = e4m3_simd.cast[DType.float16]()
+    var e4m3_casted_f16 = e4m3_simd.cast[DType.float16]()
 
     comptime M = 32
     comptime N = 8
@@ -461,7 +461,7 @@ def test_simd_e4m3_to_bf16():
     for i in range(256):
         e4m3_simd[i] = bitcast[DType.float8_e4m3fn](UInt8(i))
 
-    e4m3_casted_bf16 = e4m3_simd.cast[DType.bfloat16]()
+    var e4m3_casted_bf16 = e4m3_simd.cast[DType.bfloat16]()
 
     comptime M = 32
     comptime N = 8
@@ -545,7 +545,7 @@ def test_simd_f32_to_e4m3():
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 
-    f32_casted_e4m3 = f32_simd.cast[DType.float8_e4m3fn]()
+    var f32_casted_e4m3 = f32_simd.cast[DType.float8_e4m3fn]()
 
     for i in range(64):
         for j in range(8):

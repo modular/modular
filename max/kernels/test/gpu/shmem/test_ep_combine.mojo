@@ -161,7 +161,7 @@ def test_combine[
         n_tokens_per_rank * n_ranks * n_local_experts * 2
     )
 
-    device_output_2_buf = ctx.enqueue_create_buffer[input_type](
+    var device_output_2_buf = ctx.enqueue_create_buffer[input_type](
         n_tokens_per_rank * top_k * hidden_size
     )
 

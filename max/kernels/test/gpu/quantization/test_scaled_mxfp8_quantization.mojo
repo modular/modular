@@ -214,7 +214,7 @@ def test_dynamic_mxfp8_quant[
                         if left > right:
                             mismatch_count += 1
 
-                mismatch_rate = Float64(mismatch_count) / Float64(m * n)
+                var mismatch_rate = Float64(mismatch_count) / Float64(m * n)
                 if (1 - mismatch_rate) < 0.999:
                     raise Error("Too many mismatches!")
                 print(
