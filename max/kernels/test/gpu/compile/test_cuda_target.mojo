@@ -60,11 +60,11 @@ def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
 
     # Now make sure that we have something like this:
     #     st.param.b64 	[func_retval0], 42;
-    instruction_start_loc = asm.find("st.param.b64")
+    var instruction_start_loc = asm.find("st.param.b64")
     assert_true(instruction_start_loc >= 0)  # Assert it's present
-    instruction_end_loc = asm.find(";", instruction_start_loc)
+    var instruction_end_loc = asm.find(";", instruction_start_loc)
     assert_true(instruction_end_loc >= 0)
-    instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
+    var instruction_str = asm[byte=instruction_start_loc:instruction_end_loc]
     # Make sure 42 appears somewhere in the instruction
     assert_true("42" in instruction_str)
 

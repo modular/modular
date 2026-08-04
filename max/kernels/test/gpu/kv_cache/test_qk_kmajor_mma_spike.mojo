@@ -241,7 +241,7 @@ def qk_mma_kernel[
         ab_type, BN, BK, swizzle_mode=swizzle_mode
     ]()
 
-    q_smem = rebind[
+    var q_smem = rebind[
         UnsafePointer[
             Scalar[ab_type],
             address_space=AddressSpace.SHARED,
@@ -289,8 +289,8 @@ def qk_mma_kernel[
     comptime k_expected_bytes = k_size * size_of[ab_type]()
     comptime expected_bytes = q_expected_bytes + k_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -308,7 +308,7 @@ def qk_mma_kernel[
 
     barrier()
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     # ---- MMA operand descriptors ------------------------------------------
     # A (Q) and B (K) are both k-major. SBO/LBO derived exactly as in
@@ -330,10 +330,14 @@ def qk_mma_kernel[
     comptime kSBO = k_s01 * size_of[ab_type]()
     comptime kLBO = k_s11 * size_of[ab_type]()
 
-    qdesc = MMASmemDescriptor.create[qSBO, qLBO, swizzle_mode](q_smem_tile.ptr)
-    kdesc = MMASmemDescriptor.create[kSBO, kLBO, swizzle_mode](k_smem_tile.ptr)
+    var qdesc = MMASmemDescriptor.create[qSBO, qLBO, swizzle_mode](
+        q_smem_tile.ptr
+    )
+    var kdesc = MMASmemDescriptor.create[kSBO, kLBO, swizzle_mode](
+        k_smem_tile.ptr
+    )
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
         accum_type,
         ab_type,
         ab_type,
@@ -396,14 +400,14 @@ def qk_mma_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
-    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
-            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+            var c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
                 4 * m_mma + warp_id, n_mma
             )
-            c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
+            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
             ](lane_id())
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
@@ -468,7 +472,7 @@ def run_qk_spike[
     arange(k.tensor[update=False](), start=0.0, step=0.001)
 
     # A=Q k-major tile (BM,BK), default box.
-    q_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
+    var q_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
         ctx, q.device_tensor()
     )
     comptime block_dim = 128

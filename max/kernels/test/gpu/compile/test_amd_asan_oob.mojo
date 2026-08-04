@@ -50,6 +50,6 @@ def test(ctx: DeviceContext, i: Int) raises:
 
 
 def main() raises:
-    i = atol(argv()[1])
+    var i = atol(argv()[1])
     with DeviceContext() as ctx:
         test(ctx, i)

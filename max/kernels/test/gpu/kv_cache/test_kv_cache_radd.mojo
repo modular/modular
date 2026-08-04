@@ -80,7 +80,7 @@ def test_kv_cache_radd[
 
     input_row_offsets_slice_host[num_active_loras] = UInt32(running_total)
 
-    num_paged_blocks = ceildiv(
+    var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
@@ -208,7 +208,7 @@ def test_kv_cache_radd[
                         )
 
     # now check that the lora-augmented entries are correct
-    arange_counter = 0
+    var arange_counter = 0
     for i in range(batch_size - num_active_loras, batch_size):
         for c in range(prompt_lens[i]):
             var actual_len = c + cache_lens[i]

@@ -265,7 +265,7 @@ def test_kv_cache_2m_iadd_gpu[
     input_row_offsets_host[batch_size] = UInt32(total_length)
     input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
-    num_paged_blocks = ceildiv(
+    var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
@@ -316,7 +316,7 @@ def test_kv_cache_2m_iadd_gpu[
 
     var page_pos = 0
     for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
+        var seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
@@ -453,7 +453,7 @@ def test_kv_cache_2m_iadd_cpu[
     input_row_offsets_host[batch_size] = UInt32(total_length)
     input_row_offsets_slice_host[num_active_loras] = UInt32(total_slice_length)
 
-    num_paged_blocks = ceildiv(
+    var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
@@ -507,7 +507,7 @@ def test_kv_cache_2m_iadd_cpu[
 
     var page_pos = 0
     for bs in range(batch_size):
-        seq_len = cache_lens[bs] + prompt_lens[bs]
+        var seq_len = cache_lens[bs] + prompt_lens[bs]
 
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             paged_lut_host[bs, block_idx] = UInt32(paged_blocks[page_pos])
