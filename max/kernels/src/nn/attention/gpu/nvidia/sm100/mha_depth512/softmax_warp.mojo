@@ -52,7 +52,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )

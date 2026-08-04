@@ -41,7 +41,7 @@ from std.sys import size_of
 
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp

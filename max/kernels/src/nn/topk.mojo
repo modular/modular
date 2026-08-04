@@ -31,7 +31,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.info import is_cpu
 from max.gpu.memory import external_memory
@@ -58,7 +58,7 @@ from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 
 from .normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,

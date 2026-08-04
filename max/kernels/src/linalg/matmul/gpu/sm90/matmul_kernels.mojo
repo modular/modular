@@ -26,13 +26,13 @@ from std.sys import size_of
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,

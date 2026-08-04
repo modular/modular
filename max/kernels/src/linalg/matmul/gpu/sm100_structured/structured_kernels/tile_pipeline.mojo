@@ -1453,7 +1453,7 @@ struct OutputTilePipeline[
         Args:
             stage: The acquired output stage to signal completion for.
         """
-        from std.gpu.primitives.cluster import elect_one_sync
+        from max.gpu.primitives.cluster import elect_one_sync
         from max.gpu.compute.arch.mma_nvidia_sm100 import (
             mma_arrive,
             mma_arrive_multicast,

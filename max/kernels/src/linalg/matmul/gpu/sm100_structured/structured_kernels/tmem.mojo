@@ -35,7 +35,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier
 from linalg.structuring import SMemArray
 from structured_kernels.pipeline import SM100_PIPELINE_WAIT_TICKS

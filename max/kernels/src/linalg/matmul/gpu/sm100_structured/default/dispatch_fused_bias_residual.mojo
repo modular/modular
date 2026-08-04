@@ -27,7 +27,7 @@ honored one of two mutually exclusive ways:
 
 from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.sys import size_of
 
 from internal_utils import Table

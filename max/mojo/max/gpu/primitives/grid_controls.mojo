@@ -27,14 +27,15 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from std.sys import has_nvidia_gpu_accelerator
-
-from ..host.info import H100, GPUInfo, _accelerator_arch
-from ..host.launch_attribute import (
+from std.gpu.host.launch_attribute import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,
 )
+from std.sys import has_nvidia_gpu_accelerator
+from std.sys.info import _accelerator_arch
+
+from ..host.info import H100, GPUInfo
 
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 

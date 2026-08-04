@@ -25,7 +25,7 @@ from std.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.primitives import block
 from std.gpu.primitives import warp
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     pdl_launch_attributes,
     PDLLevel,

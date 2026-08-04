@@ -22,7 +22,7 @@ from std.math.constants import log2e
 from std.sys import align_of, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,

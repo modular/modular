@@ -58,13 +58,13 @@ from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,

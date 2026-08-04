@@ -35,7 +35,7 @@ from std.sys import size_of
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
 from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.tcgen05 import (

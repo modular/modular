@@ -23,7 +23,7 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory, fence_async_view_proxy
 from max.gpu.sync import named_barrier

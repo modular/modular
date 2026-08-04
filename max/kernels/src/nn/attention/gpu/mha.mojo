@@ -37,7 +37,7 @@ from std.sys import (
 )
 from std.sys.info import _is_amd_rdna
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,

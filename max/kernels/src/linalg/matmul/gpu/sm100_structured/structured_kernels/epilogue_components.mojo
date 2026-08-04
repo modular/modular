@@ -27,7 +27,7 @@ The SM100 epilogue pipeline flows as:
 from std.sys import align_of, size_of, simd_width_of
 
 from std.gpu import WARP_SIZE, lane_id, warp_id
-from std.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.memory import (
     fence_async_view_proxy,
     cp_async_bulk_tensor_reduce_global_shared_cta,

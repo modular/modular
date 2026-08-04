@@ -54,7 +54,7 @@ from nn.attention.mha_mask import (
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention

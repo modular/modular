@@ -35,7 +35,7 @@ from std.sys import align_of, size_of
 from std.memory import UnsafePointer
 from std.gpu import WARP_SIZE, warp_id as get_warp_id
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -51,7 +51,7 @@ from max.gpu.memory import (
     CacheEviction,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,

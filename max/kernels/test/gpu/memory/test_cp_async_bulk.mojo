@@ -24,7 +24,7 @@ from max.gpu.memory import (
     fence_mbarrier_init,
     ReduceOp,
 )
-from std.gpu.primitives import elect_one_sync
+from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,

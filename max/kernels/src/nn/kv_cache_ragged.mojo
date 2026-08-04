@@ -24,7 +24,7 @@ from max.algorithm.functional import elementwise
 from std.gpu import global_idx
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,

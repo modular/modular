@@ -35,7 +35,7 @@ from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS, Signal
 from comm.allreduce import elementwise_epilogue_type
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.coord import Coord
 
 comptime ncclComm_t = _CPointer[NoneType, MutUntrackedOrigin]

@@ -22,7 +22,7 @@ from std.gpu import (
     warp_id,
 )
 from max.gpu.sync import barrier
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -36,7 +36,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
 )
 from max.gpu.memory import fence_mbarrier_init
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout.tma_async import RaggedTMA3DTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL

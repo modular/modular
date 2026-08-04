@@ -14,7 +14,7 @@
 
 from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from .dispatch import _scaling_kind

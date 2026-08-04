@@ -19,7 +19,7 @@ from std.sys import size_of
 
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,

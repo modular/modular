@@ -31,7 +31,7 @@ and only for bfloat16.
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,

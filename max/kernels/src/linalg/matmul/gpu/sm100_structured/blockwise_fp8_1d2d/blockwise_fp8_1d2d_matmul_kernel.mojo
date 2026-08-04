@@ -32,7 +32,7 @@ from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx
 from max.gpu.memory import external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,

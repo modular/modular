@@ -44,7 +44,6 @@ from linalg.matmul.gpu.amd import Shuffler
 import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
 from std.gpu import (
-    PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     thread_idx,
@@ -52,6 +51,9 @@ from std.gpu import (
     grid_dim,
     lane_id,
     warp_id,
+)
+from max.gpu.primitives.grid_controls import (
+    PDL,
 )
 from max.gpu.sync import barrier
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
@@ -63,7 +65,7 @@ from max.gpu.memory import (
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_shared_cluster_global,
 )
-from std.gpu.primitives import elect_one_sync
+from max.gpu.primitives.cluster import elect_one_sync
 from max.gpu.sync import (
     syncwarp,
     cp_async_bulk_commit_group,

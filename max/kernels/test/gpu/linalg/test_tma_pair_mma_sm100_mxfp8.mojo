@@ -22,7 +22,7 @@ from std.gpu import (
     lane_id,
 )
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,

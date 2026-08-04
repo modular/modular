@@ -34,7 +34,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )

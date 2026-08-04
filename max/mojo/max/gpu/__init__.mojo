@@ -22,6 +22,20 @@ listed below have moved so far; the remaining `gpu` APIs are still documented in
 the Mojo standard library reference.
 """
 
+from .primitives import (
+    block_rank_in_cluster,
+    cluster_arrive,
+    cluster_arrive_relaxed,
+    cluster_sync,
+    cluster_sync_relaxed,
+    cluster_wait,
+    elect_one_sync,
+    PDL,
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
+
 from .memory import (
     AddressSpace,
     CacheEviction,
