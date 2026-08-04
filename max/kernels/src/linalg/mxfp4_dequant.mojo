@@ -24,7 +24,7 @@ from std.gpu import block_idx, thread_idx, grid_dim, block_dim
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

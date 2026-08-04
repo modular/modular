@@ -32,7 +32,7 @@ from layout.tensor_core_async import (
     tile_to_descriptor,
     tile_sf_layout_k_major,
 )
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,

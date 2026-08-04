@@ -44,7 +44,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from std.algorithm.functional import (
     tile_and_unswitch,
     unswitch,

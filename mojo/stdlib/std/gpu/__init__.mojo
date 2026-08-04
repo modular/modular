@@ -42,17 +42,6 @@ in the MAX repo.
 
 # Import from sub-packages which now properly export their symbols
 from .primitives import (
-    block_rank_in_cluster,
-    cluster_arrive,
-    cluster_arrive_relaxed,
-    cluster_sync,
-    cluster_sync_relaxed,
-    cluster_wait,
-    elect_one_sync,
-    PDL,
-    PDLLevel,
-    launch_dependent_grids,
-    wait_on_dependent_grids,
     block_dim,
     block_id_in_cluster,
     block_idx,

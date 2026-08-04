@@ -16,7 +16,7 @@ from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.host import DeviceContext, Dim
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx

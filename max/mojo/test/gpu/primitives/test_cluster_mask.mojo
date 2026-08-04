@@ -20,7 +20,7 @@ device, so shapes with `cluster_shape[1] > 2` (e.g. (2, 4, 1)) guard against
 the mask over-extending past the cluster.
 """
 
-from std.gpu.primitives.cluster import cluster_mask_base
+from max.gpu.primitives.cluster import cluster_mask_base
 from std.testing import assert_equal, TestSuite
 from std.utils import Index
 

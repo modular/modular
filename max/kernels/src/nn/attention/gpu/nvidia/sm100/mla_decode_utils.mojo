@@ -29,7 +29,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.memory import fence_async_view_proxy
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,

@@ -34,7 +34,7 @@ from std.math.uutils import umod, ufloordiv
 from std.gpu import WARP_SIZE, warp_id as get_warp_id
 from max.gpu.sync import barrier
 from std.gpu import block_id_in_cluster, lane_id
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
@@ -58,7 +58,7 @@ from max.gpu.sync import (
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections.string.string_slice import _get_kgen_string
-from std.gpu import PDLLevel
 from std.utils.index import IndexList
 from std._plugin.selector import Plugin
 
+from max.gpu import PDLLevel
 from max.gpu.host import DeviceContext
 
 

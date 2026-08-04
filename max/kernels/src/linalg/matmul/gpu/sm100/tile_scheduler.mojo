@@ -16,7 +16,7 @@
 from std.sys import _RegisterPackType, size_of
 from std.sys._assembly import inlined_assembly
 
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )

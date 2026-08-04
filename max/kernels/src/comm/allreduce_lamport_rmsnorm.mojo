@@ -40,7 +40,7 @@ from std.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.primitives import block
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,

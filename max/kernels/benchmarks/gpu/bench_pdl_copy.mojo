@@ -21,10 +21,12 @@ from std.gpu import (
     block_idx,
     grid_dim,
     thread_idx,
+)
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import DeviceContext
 
 

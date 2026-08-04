@@ -34,7 +34,7 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

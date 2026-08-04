@@ -21,7 +21,7 @@ from std.sys import align_of, simd_width_of, size_of
 from std.bit import next_power_of_two
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,

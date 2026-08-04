@@ -20,7 +20,7 @@ descriptors and tile scheduler, and enqueues the kernel onto the device.
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import get_defined_int
-from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from max.gpu.primitives.grid_controls import pdl_launch_attributes
 from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,

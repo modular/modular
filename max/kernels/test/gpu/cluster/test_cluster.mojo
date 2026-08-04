@@ -16,7 +16,7 @@ from std.math.uutils import ufloordiv
 
 from std.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,
     cluster_sync_release,

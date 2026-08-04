@@ -51,8 +51,8 @@ from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

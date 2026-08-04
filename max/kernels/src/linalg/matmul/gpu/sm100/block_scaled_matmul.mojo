@@ -19,7 +19,7 @@ from std.sys import size_of
 
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
@@ -36,7 +36,7 @@ from max.gpu.memory import (
     fence_mbarrier_init,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,

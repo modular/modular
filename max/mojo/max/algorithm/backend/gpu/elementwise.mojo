@@ -14,15 +14,17 @@
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    PDL,
-    PDLLevel,
     WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+)
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     cluster_sync_acquire,
     cluster_sync_release,
     clusterlaunchcontrol_try_cancel,
@@ -30,7 +32,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_query_cancel_get_first_ctaid,
     elect_one_sync_with_mask,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )  # @doc_hidden
 from max.gpu.host import DeviceContext

@@ -46,7 +46,7 @@ from std.collections import Optional
 
 from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.index import Index
 from layout import TileTensor
 

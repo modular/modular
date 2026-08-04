@@ -30,7 +30,7 @@ from max.algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

@@ -21,7 +21,7 @@ from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from max.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id, warp_id as get_warp_id

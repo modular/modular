@@ -35,7 +35,7 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

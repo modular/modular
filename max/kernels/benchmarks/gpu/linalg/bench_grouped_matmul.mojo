@@ -35,7 +35,7 @@ from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )

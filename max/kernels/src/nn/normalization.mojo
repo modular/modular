@@ -41,7 +41,7 @@ from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.memory import external_memory
 from std.sys.info import is_apple_gpu
 from max.gpu.primitives import block
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -67,7 +67,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from .reshape import reshape
 from .shapes import _get_start_indices_of_nth_subvolume_static
 

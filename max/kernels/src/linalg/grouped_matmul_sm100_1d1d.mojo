@@ -18,7 +18,7 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -38,7 +38,7 @@ from max.gpu.memory import (
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,

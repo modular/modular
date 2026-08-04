@@ -22,7 +22,7 @@ from std.math import ceildiv
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from layout import TileTensor
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import H100
 from internal_utils import Table

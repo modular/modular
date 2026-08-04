@@ -39,7 +39,6 @@ from std.memory.unsafe import bitcast
 from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_scalar
 from std.gpu import (
-    PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     thread_idx,
@@ -47,7 +46,11 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 import std.gpu.primitives.warp as warp
 from std.utils.index import StaticTuple
 

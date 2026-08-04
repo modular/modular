@@ -115,7 +115,7 @@ from std.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

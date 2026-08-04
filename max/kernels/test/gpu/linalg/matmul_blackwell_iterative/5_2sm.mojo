@@ -19,7 +19,7 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.sync import barrier
-from std.gpu.primitives.cluster import (
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,

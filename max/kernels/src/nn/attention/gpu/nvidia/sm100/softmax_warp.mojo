@@ -28,7 +28,7 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
 )
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.primitives.id import cluster_dim
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,

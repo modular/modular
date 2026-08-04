@@ -51,7 +51,7 @@ from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from max.gpu.primitives import block
 from std.gpu.intrinsics import threadfence
 from std.gpu.primitives import warp
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,

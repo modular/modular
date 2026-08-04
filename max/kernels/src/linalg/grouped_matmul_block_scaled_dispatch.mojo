@@ -19,7 +19,7 @@ and MXFP8 on SM100.
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (

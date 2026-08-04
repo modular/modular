@@ -52,7 +52,7 @@ from max.gpu.host import (
 )
 from max.gpu.host.info import B200
 from max.gpu.memory import async_copy, external_memory
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
     launch_dependent_grids,

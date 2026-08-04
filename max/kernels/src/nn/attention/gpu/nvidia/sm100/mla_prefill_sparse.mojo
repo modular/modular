@@ -33,8 +33,8 @@ from std.gpu import (
 from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
 from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
