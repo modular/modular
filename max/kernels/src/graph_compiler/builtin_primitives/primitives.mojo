@@ -317,7 +317,7 @@ struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
             "MGP_RT_CreateTensorRefAsyncValue", _AsyncValuePtr[mut=True]
         ](
             storage^.take_handle(),
-            ptr.bitcast[NoneType](),
+            ptr.unsafe_bitcast[NoneType](),
             n,
             Self.rank,
             UnsafePointer(to=shape.data),
@@ -473,14 +473,14 @@ def mgp_tensor_create[
         # We promote scalar tensor to tensor<[1]>
         comptime assert buffer_rank == 1
         var view = DynamicTensor[dtype, buffer_rank](
-            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
+            buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
         return OwnedTensor[dtype, buffer_rank](view, storage^)
     else:
         comptime assert spec_rank == buffer_rank
         var view = DynamicTensor[dtype, buffer_rank](
-            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
+            buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
         return OwnedTensor[dtype, buffer_rank](view, storage^)
@@ -544,7 +544,7 @@ def mgp_tensor_slice[
     # start is a 1-element vector holding the scalar start value for
     # dimension k.  (mogg.slice scalars are rank-0 in MO but are lowered to
     # rank-1 DynamicTensors of size 1 by TensorCreateOp::emitMojo.)
-    var start_k = Int(start.unsafe_ptr()[0]) if k < rank else 0
+    var start_k = Int(start.unsafe_ptr()[unsafe_offset=0]) if k < rank else 0
 
     # Normalize a negative start and clamp into [0, dim_k], matching the
     # clamping in `mo.slice`'s shape function; a start past the end yields an
@@ -565,7 +565,7 @@ def mgp_tensor_slice[
     # storage handle, which the slice then hands to the output tensor.
     var base_bytes = OwnedByteBuffer(
         MutByteBuffer(
-            input.unsafe_ptr().bitcast[Int8](), Index(input.bytecount())
+            input.unsafe_ptr().unsafe_bitcast[Int8](), Index(input.bytecount())
         ),
         AnyAsyncValueRef(copy=input.storage),
     )
@@ -576,7 +576,7 @@ def mgp_tensor_slice[
         dev_context,
     )
     var view = DynamicTensor[dtype, rank](
-        slice_bytes.unsafe_ptr().bitcast[Scalar[dtype]](), output_spec
+        slice_bytes.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](), output_spec
     )
     return OwnedTensor[dtype, rank](view, slice_bytes.take_storage())
 
@@ -624,10 +624,10 @@ def mgp_buffer_constant(
 
 @no_inline
 def fill_buffer[dtype: DType](buf: MutByteBuffer, *vals: Int):
-    var ptr = buf.unsafe_ptr().bitcast[Scalar[dtype]]()
+    var ptr = buf.unsafe_ptr().unsafe_bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
-        ptr.store(offset, Scalar[dtype](val))
+        ptr.unsafe_store(offset, Scalar[dtype](val))
         offset += 1
 
 
@@ -658,7 +658,7 @@ def mgp_buffer_to_bool[bDevice: StaticString](buffer: OwnedByteBuffer) -> Bool:
     assert is_cpu[bDevice](), "to_bool can only work on cpu buffers"
     var bufSize = buffer.size()
     assert bufSize == 1, "buffer size must be a size of 1"
-    return buffer.unsafe_ptr()[0] != 0
+    return buffer.unsafe_ptr()[unsafe_offset=0] != 0
 
 
 @register_internal("mgp.buffer.to_index")
@@ -668,9 +668,9 @@ def mgp_buffer_to_index(
 ) raises -> Int:
     var bufSize = buffer.size()
     if bufSize == 4:
-        return Int(buffer.unsafe_ptr().bitcast[Int32]()[0])
+        return Int(buffer.unsafe_ptr().unsafe_bitcast[Int32]()[unsafe_offset=0])
     if bufSize == 8:
-        return Int(buffer.unsafe_ptr().bitcast[Int64]()[0])
+        return Int(buffer.unsafe_ptr().unsafe_bitcast[Int64]()[unsafe_offset=0])
 
     raise Error(
         "mgp.buffer.to_index must be called on either a 4- or 8-byte buffer"
@@ -937,16 +937,16 @@ def _memset_buffer[
         # (no allocation), then memset it -- mirrors `to_device_buffer`.
         var dev_buf = DeviceBuffer[dtype](
             dev_context,
-            buffer.unsafe_ptr().bitcast[Scalar[dtype]](),
+            buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](),
             count,
             owning=False,
         )
         dev_context.enqueue_memset[dtype](dev_buf, val)
     else:
         # cpu: fill the raw bytes directly via a typed store loop.
-        var ptr = buffer.unsafe_ptr().bitcast[Scalar[dtype]]()
+        var ptr = buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]]()
         for i in range(count):
-            ptr.store(i, val)
+            ptr.unsafe_store(i, val)
 
 
 @register_internal("mgp.buffer.memset")
@@ -1191,7 +1191,7 @@ def to_managed_tensor_slice[
 
     comptime for i in reversed(range(rank)):
         # Start from the back so we can accumulate the strides.
-        shape_tuple[i] = shape_ptr[i]
+        shape_tuple[i] = shape_ptr[unsafe_offset=i]
         stride_tuple[i] = stride
         stride *= shape_tuple[i]
 
@@ -1549,14 +1549,14 @@ struct MoggAsyncPackHelper:
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
         def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
-            ptr.bitcast[Type]().unsafe_deinit_pointee()
+            ptr.unsafe_bitcast[Type]().unsafe_deinit_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",
             UnsafePointer[UInt8, MutUntrackedOrigin],
         ](size_of[Type](), align_of[Type]())
 
-        dst_ptr.bitcast[Type]().unsafe_write(data^)
+        dst_ptr.unsafe_bitcast[Type]().unsafe_write(data^)
 
         external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
             dst_ptr,
@@ -1599,7 +1599,7 @@ def mogg_async_pack_owned_tensor[
     #     const size_t *shape, DType dtype, AnyAsyncValueRef *async)
     external_call["MGP_RT_CreateAsyncTensorRefFromStorage", NoneType](
         storage^.take_handle(),
-        ptr.bitcast[NoneType](),
+        ptr.unsafe_bitcast[NoneType](),
         n,
         spec_rank,
         UnsafePointer(to=shape.data),
@@ -1647,7 +1647,7 @@ def mogg_tensor_init[
     Helper for constructing a ManagedTensorSlice from a layout.
     """
     return {
-        ptr.bitcast[Scalar[dtype]](),
+        ptr.unsafe_bitcast[Scalar[dtype]](),
         layout.shape_coord(),
         layout.stride_coord(),
     }
@@ -2223,7 +2223,7 @@ struct _ElementwiseFusionTileAdapter[
             dtype=Self.dtype, address_space=AddressSpace.LOCAL
         ](row_major[1, 1]())
         var dst = TileTensor(
-            dst_local._storage.address_space_cast[
+            dst_local._storage.unsafe_address_space_cast[
                 AddressSpace.GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             row_major[1, 1](),
