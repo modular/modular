@@ -251,11 +251,14 @@ def main() raises:
     print(greeting)
 ```
 
-The two forms aren't interchangeable, though. A `var` declaration belongs to the
-block it appears in, whereas assigning to a new name declares a variable that
-belongs to the whole function. In a program with nested blocks, that difference
-changes which code can see the variable. Prefer `var`: it says on the line that
-a declaration is happening.
+The two forms aren't interchangeable, though. Assigning to a new name is
+deprecated and now warns, so prefer `var`: it says on the line that a
+declaration is happening. The warning also catches a later typo in a name,
+which would otherwise create a second variable silently. You will still meet
+the other form in existing code, and what differs there is scope: a `var`
+declaration belongs to the block it appears in, whereas a variable declared by
+assignment belongs to the whole function. In a program with nested blocks, that
+changes which code can see the variable.
 
 Either way, the variable has a fixed type: the annotation gives it when there is
 one, and otherwise Mojo infers it from the initial value assignment. In both

@@ -231,6 +231,22 @@ This version is still a work in progress.
   the declaration instead of silently producing a function that could never be
   called.
 
+- Declaring a variable by assigning to a fresh name inside a function body is
+  deprecated, and now warns with a fixit that inserts `var`:
+
+  ```mojo
+  def sum_to(n: Int) -> Int:
+      var total = 0  # previously: `total = 0`
+      for i in range(n):
+          total += i
+      return total
+  ```
+
+  Every first assignment to a name warns, `:=` walrus targets and a bare `x: T`
+  annotation included. Binding forms that already spell out how they bind are
+  unaffected: `for` targets, `with ... as`, `except ... as`, comprehension
+  targets, and the `_` discard.
+
 - A bare `**kwargs` is now an error; write `var **kwargs` (a fixit inserts it),
   in function declarations and function types alike. `var` was already the only
   supported convention — the sole exception to arguments defaulting to `imm`,

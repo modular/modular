@@ -23,7 +23,7 @@ def inline_allocation() raises:
     for i in range(4):
         ptr.unsafe_offset(i).unsafe_write(i)
     # Omit next line
-    tmp = ptr[unsafe_offset=3]
+    var tmp = ptr[unsafe_offset=3]
     # Release allocation
     dealloc(allocation^)
     # Delay assert until after allocation is released
