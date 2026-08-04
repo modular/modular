@@ -9,7 +9,7 @@
 # RUN: %t.dir/test_variadic_floats_many | FileCheck %s
 # CHECK: 90.0
 
-# Note: Variadic C functions require the variadicType attribute on
+# Note: Variadic C functions require the numFixedArgs attribute on
 # pop.external_call to generate correct LLVM IR with isVarArg=true.
 
 
@@ -20,7 +20,7 @@ def main():
     # sum = (1+2+...+12) = 78, plus count (12) = 90
     var result = __mlir_op.`pop.external_call`[
         func="c_func_variadic_many_floats".value,
-        fnType=__mlir_attr[`(!kgen.scalar<si64>) -> !kgen.scalar<f64>`,],
+        numFixedArgs=__mlir_attr[`1 : index`],
         _type=Float64,
     ](
         Int(12),

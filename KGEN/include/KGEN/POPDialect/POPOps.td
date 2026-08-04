@@ -1707,12 +1707,16 @@ def POP_ExternalCallOp : POPOp<"external_call", [
     %0 = pop.external_call @sqrt(%arg) : (!kgen.scalar<f64>) -> !kgen.scalar<f64>
     ```
 
-    Variadic functions are those with trailing function arguments. A variadic
-    external function is indicated by specifying an explicit signature of the
-    non-variadic arguments.
+    A C variadic callee is indicated by the `numFixedArgs` attribute, which
+    gives how many of the first operands are fixed arguments of the callee. The
+    operands after those are passed as variadic arguments, which the C ABI may
+    place differently than fixed arguments. The presence of the attribute, not
+    its value, is what marks the callee variadic, so a count of zero is a callee
+    whose every operand is variadic.
 
     ```mlir
-    pop.external_call @printf(%fmt, %v0, %v1) (!kgen.pointer<scalar<si8>>) -> ()
+    pop.external_call @printf(%fmt, %v0, %v1)
+      attributes {numFixedArgs = 1 : index}
       : (!kgen.pointer<scalar<si8>>, !kgen.scalar<f32>, !kgen.scalar<ui32>) -> ()
     ```
 
@@ -1725,14 +1729,14 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
-    OptionalAttr<TypeAttrOf<FunctionType>>:$fnType,
+    OptionalAttr<AttrOfType<Index>>:$numFixedArgs,
     OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
     OptionalAttr<DictionaryAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
   let results = (outs Optional<AnyType>:$result);
 
   let assemblyFormat = [{
     custom<ExternalCallee>($func) `(` operands `)`
-    ($fnType^)? attr-dict-with-keyword `:`
+    attr-dict-with-keyword `:`
     functional-type(operands, results)
   }];
 
@@ -1746,7 +1750,7 @@ def POP_ExternalCallOp : POPOp<"external_call", [
     OpBuilder<(ins "Type":$result, "StringRef":$func,
                    "ValueRange":$operands)>,
     OpBuilder<(ins "Type":$result, "StringRef":$func,
-                   "ValueRange":$operands, "FunctionType":$fnType)>
+                   "ValueRange":$operands, "int64_t":$numFixedArgs)>
   ];
 
   let hasVerifier = 1;

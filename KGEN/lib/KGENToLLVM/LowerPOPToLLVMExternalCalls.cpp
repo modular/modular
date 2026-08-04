@@ -231,15 +231,24 @@ public:
 
     // Determine number of fixed arguments (for variadic functions).
     size_t numFixedArgs = adaptor.getOperands().size();
-    bool isVariadic = op.getFnType().has_value();
+    std::optional<mlir::TypedAttr> declaredFixedArgs = op.getNumFixedArgs();
+    bool isVariadic = declaredFixedArgs.has_value();
     if (isVariadic) {
-      numFixedArgs = op.getFnType()->getNumInputs();
-      // Validate that the declared fixed arg count doesn't exceed actual
-      // operands. A malformed op would cause out-of-bounds access in argument
-      // classification.
-      assert(
-          numFixedArgs <= adaptor.getOperands().size() &&
-          "variadic function declares more fixed args than provided operands");
+      // Elaboration has folded every parameter expression by now, and the op
+      // verifier has already rejected a negative count.
+      int64_t declared = cast<IntegerAttr>(*declaredFixedArgs).getInt();
+      assert(declared >= 0 && "'numFixedArgs' must be a non-negative constant");
+      // The operand bound is not an invariant: LowerArgConventions expands
+      // argument packs into individual operands after the verifier has run, so
+      // the verifier cannot bound the count. A count above the post-expansion
+      // operand count is reachable from Mojo source and would index out of
+      // bounds during argument classification, so it stays a diagnostic.
+      if (static_cast<size_t>(declared) > adaptor.getOperands().size())
+        return mlir::emitError(loc,
+                               "'numFixedArgs' must not exceed the number of "
+                               "call operands: expected at most ")
+               << adaptor.getOperands().size() << ", found " << declared;
+      numFixedArgs = declared;
     }
 
     // Classify arguments/return and build the coerced LLVM signature + args.
@@ -320,8 +329,7 @@ public:
     // integers). Linux AAPCS64 has a separate VR save area; floats stay as
     // floats and land in SIMD registers where va_arg for HFA structs reads
     // them.
-    if (op.getFnType().has_value() && triple.isAArch64() &&
-        triple.isOSDarwin()) {
+    if (isVariadic && triple.isAArch64() && triple.isOSDarwin()) {
       applyARM64VariadicFloatBitcast(prep.callArgs, argClassifications,
                                      numFixedArgs, usesSRet, loc, rewriter);
     }

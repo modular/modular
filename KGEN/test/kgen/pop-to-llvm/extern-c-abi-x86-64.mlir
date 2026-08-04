@@ -439,8 +439,7 @@ module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", 
 // CHECK-LABEL: @variadic_scalars
 llvm.func @variadic_scalars(%fixed: i32, %extra: i32) {
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i32) -> ()
-  pop.external_call @c_g1(%fixed, %extra)
-    (i32) -> ()
+  pop.external_call @c_g1(%fixed, %extra) attributes {numFixedArgs = 1 : index}
     : (i32, i32) -> ()
   llvm.return
 }
@@ -461,8 +460,7 @@ llvm.func @variadic_large_struct(%fixed: i32,
                                   %s: !llvm.struct<(i64, i64, i64)>) {
   // CHECK: llvm.call @c_g2
   // CHECK-SAME: llvm.byval = !llvm.struct<(i64, i64, i64)>
-  pop.external_call @c_g2(%fixed, %s)
-    (i32) -> ()
+  pop.external_call @c_g2(%fixed, %s) attributes {numFixedArgs = 1 : index}
     : (i32, !llvm.struct<(i64, i64, i64)>) -> ()
   llvm.return
 }

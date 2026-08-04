@@ -27,9 +27,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK-LABEL: @external_call_variadic
   kgen.func @external_call_variadic(%a: !kgen.simd<1, ui32>) {
     // CHECK: llvm.call @foo
-    pop.external_call @foo (%a) (!kgen.simd<1, ui32>) -> () : (!kgen.simd<1, ui32>) -> ()
+    pop.external_call @foo (%a) attributes {numFixedArgs = 1 : index} : (!kgen.simd<1, ui32>) -> ()
     // CHECK: llvm.call @foo
-    pop.external_call @foo (%a, %a) (!kgen.simd<1, ui32>) -> () : (!kgen.simd<1, ui32>, !kgen.simd<1, ui32>) -> ()
+    pop.external_call @foo (%a, %a) attributes {numFixedArgs = 1 : index} : (!kgen.simd<1, ui32>, !kgen.simd<1, ui32>) -> ()
     kgen.return
   }
   // CHECK: llvm.func @foo(i32, ...)
