@@ -228,7 +228,7 @@ def _mma_apple_transposable(
 ):
     """Variant of `_mma_apple` with runtime transpose flags."""
     comptime assert _has_shape[8](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ), "Apple MMA requires 8-element fragments (16x16 / 32 threads)"
 
     comptime assert d.dtype in (
@@ -290,7 +290,7 @@ def _mma_apple_8x8(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     (a, b, c) -- there is no transpose variant.
     """
     comptime assert _has_shape[2](
-        a.size, b.size, c.size, d.size
+        a.length, b.length, c.length, d.length
     ), "Apple 8x8 MMA requires 2-element fragments (8x8 / 32 threads)"
 
     comptime assert (

@@ -1119,7 +1119,7 @@ def load_AB[
             var group_scale_offset_vec = group_scale_offsets[
                 Int(scheduler.current_group_idx)
             ]
-            comptime assert group_scale_offset_vec.size == 1
+            comptime assert group_scale_offset_vec.length == 1
             var group_scale_offset = group_scale_offset_vec[0]
             var a_m: Int
             var b_n: Int

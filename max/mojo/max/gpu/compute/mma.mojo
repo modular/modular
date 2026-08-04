@@ -85,10 +85,10 @@ def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # fmt: off
     comptime assert False, String(
         "no valid implementation of mma for a=",
-        Int(a.size), "x",  a.dtype,
-        ", b=",  Int(b.size), "x",  b.dtype,
-        ", c=",  Int(c.size), "x",  c.dtype,
-        ", and d=", Int(d.size), "x", d.dtype,
+        Int(a.length), "x",  a.dtype,
+        ", b=",  Int(b.length), "x",  b.dtype,
+        ", c=",  Int(c.length), "x",  c.dtype,
+        ", and d=", Int(d.length), "x", d.dtype,
     )
     # fmt: on
 

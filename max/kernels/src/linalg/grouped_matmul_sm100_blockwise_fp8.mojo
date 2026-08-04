@@ -172,11 +172,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     ), "BN <= BK or gcd(BN, BK) == BN - BK"
 
     a_start_row_vec = a_offsets[expert_idx]
-    comptime assert a_start_row_vec.size == 1
+    comptime assert a_start_row_vec.length == 1
     var a_start_row = a_start_row_vec[0]
 
     expert_vec = expert_ids[expert_idx]
-    comptime assert expert_vec.size == 1
+    comptime assert expert_vec.length == 1
     var expert = expert_vec[0]
 
     b_start_row = expert * Int32(N)
@@ -1039,7 +1039,7 @@ def load_AB[
         + peer_cta_coord[0] * BN
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
-    comptime assert b_gmem_slice_coord_vec.size == 1
+    comptime assert b_gmem_slice_coord_vec.length == 1
     var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
     comptime a_smem_tile_size = a_smem_layout.size()
@@ -1223,7 +1223,7 @@ def load_AB_partial[
         + peer_cta_coord[0] * BN
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
-    comptime assert b_gmem_slice_coord_vec.size == 1
+    comptime assert b_gmem_slice_coord_vec.length == 1
     var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
     comptime a_smem_tile_size = a_smem_layout.size()

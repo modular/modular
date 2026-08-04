@@ -370,7 +370,7 @@ def _verify_add_results[
             _width: SIMDLength,
             *,
             _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+        ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
             var il = coord_to_index_list(coords)
             var flat_idx = il[0] * num_cols + il[1]
             var res = residual_ptr.load[width=_width, alignment=_alignment](
@@ -952,7 +952,7 @@ def bench_allreduce_rmsnorm_fp8[
                     _width: SIMDLength,
                     *,
                     _alignment: Int,
-                ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+                ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
                     var il = coord_to_index_list(coords)
                     var flat_idx = il[0] * num_cols + il[1]
                     var res = residual_ptr_base.load[

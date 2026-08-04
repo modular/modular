@@ -290,7 +290,7 @@ You can access parameters as attributes on the type itself:
 
 ```mojo
 def on_type():
-    print(SIMD[DType.float32, 2].size)  # prints 2
+    print(SIMD[DType.float32, 2].length)  # prints 2
 ```
 
 Or as attributes on an *instance* of the type:
@@ -449,13 +449,13 @@ variations.
 
 Mojo's [`SIMD`](/docs/std/builtin/simd/SIMD/) type (defined as a struct)
 exposes the common SIMD operations through its methods, and takes the SIMD data
-type and size values as parameters. This allows you to directly map your data to
-the SIMD vectors on any hardware.
+type and length values as parameters. This allows you to directly map your data
+to the SIMD vectors on any hardware.
 
 Here's a cut-down (non-functional) version of Mojo's `SIMD` type definition:
 
 ```mojo no-test
-struct SIMD[dtype: DType, size: Int]:
+struct SIMD[dtype: DType, length: Int]:
     var value: … # Some low-level MLIR stuff here
 
     # Create a new SIMD from a number of scalars
@@ -463,10 +463,10 @@ struct SIMD[dtype: DType, size: Int]:
 
     # Fill a SIMD with a duplicated scalar value.
     @staticmethod
-    def splat(x: SIMD[Self.dtype, 1]) -> SIMD[Self.dtype, Self.size]: ...
+    def splat(x: SIMD[Self.dtype, 1]) -> SIMD[Self.dtype, Self.length]: ...
 
     # Cast the elements of the SIMD to a different elt type.
-    def cast[target: DType](self) -> SIMD[target, Self.size]: ...
+    def cast[target: DType](self) -> SIMD[target, Self.length]: ...
 
     # Many standard operators are supported.
     def __add__(self, rhs: Self) -> Self: ...
@@ -493,7 +493,7 @@ Defining each SIMD variant with parameters is great for code reuse because the
 requiring the language to pre-define every variant.
 
 Because `SIMD` is a parameterized type, the `self` argument in its functions
-carries those parameters—the full type name is `SIMD[type, size]`. Although
+carries those parameters—the full type name is `SIMD[dtype, length]`. Although
 it's valid to write this out (as shown in the return type of `splat()`), this
 can be verbose, so we recommend using the `Self` type (from
 [PEP673](https://peps.python.org/pep-0673/)) like the `__add__()` example does.
@@ -502,8 +502,8 @@ can be verbose, so we recommend using the `Self` type (from
 
 You can use parameterized types and functions by passing values to the
 parameters in square brackets. For example, for the `SIMD` type above, `dtype`
-specifies the data type and `size` specifies the length of the SIMD vector
-(which must be a power of 2):
+specifies the data type and `length` specifies the number of elements in the
+SIMD vector (which must be a power of 2):
 
 ```mojo
 # Make a vector of 4 floats.
@@ -890,13 +890,13 @@ def slice[
 
 
 def reduce_add(x: SIMD) -> Int:
-    comptime if x.size == 1:
+    comptime if x.length == 1:
         return Int(x[0])
-    elif x.size == 2:
+    elif x.length == 2:
         return Int(x[0]) + Int(x[1])
 
     # Extract the top/bottom halves, add them, sum the elements.
-    comptime half_size = x.size // 2
+    comptime half_size = x.length // 2
     var lhs = slice(x, 0)
     var rhs = slice(x, half_size)
     return reduce_add(lhs + rhs)
@@ -1116,7 +1116,7 @@ type, you specify a
 ```mojo
 def take_simd(vec: SIMD[...]):
     print(vec.dtype)
-    print(vec.size)
+    print(vec.length)
 ```
 
 ```mojo
@@ -1160,7 +1160,7 @@ signature and an automatically-parameterized signature:
 
   However, you can always access a type's parameters and `comptime` members
   using dot syntax—as in the automatic parameterization example, which used
-  `vec.dtype` and `vec.size` to access parameters on the argument.
+  `vec.dtype` and `vec.length` to access parameters on the argument.
 
 - With the manually-parameterized function, you can pass the parameter value
   directly; that's not an option with automatically-parameterized functions.
@@ -1207,10 +1207,10 @@ For example, if you want your function to take two SIMD vectors with the same
 type and size, you can write code like this:
 
 ```mojo
-def interleave(v1: SIMD[...], v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
-    var result = SIMD[v1.dtype, v1.size * 2]()
+def interleave(v1: SIMD[...], v2: type_of(v1)) -> SIMD[v1.dtype, v1.length * 2]:
+    var result = SIMD[v1.dtype, v1.length * 2]()
 
-    comptime for i in range(v1.size):
+    comptime for i in range(v1.length):
         result[i * 2] = v1[i]
         result[i * 2 + 1] = v2[i]
     return result
@@ -1229,7 +1229,7 @@ print(c)
 
 As shown in the example, you can use the magic `type_of(x)` expression if you
 just want to match the type of an argument. In this case, it's more convenient
-and compact than writing the equivalent `SIMD[v1.dtype, v1.size]`.
+and compact than writing the equivalent `SIMD[v1.dtype, v1.length]`.
 
 #### Automatic parameterization with partially-bound types
 

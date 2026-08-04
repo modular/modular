@@ -3129,7 +3129,7 @@ def hmul2_bf16x8_by_scalar[
     """
     var res = type_of(packed)()
 
-    comptime for i in range(packed.size):
+    comptime for i in range(packed.length):
         res[i] = inlined_assembly[
             "mul.rn.bf16x2 $0, $1, $2;",
             UInt32,

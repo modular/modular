@@ -47,7 +47,7 @@ def mma_load_and_multiply[
     var d_frags = load_to_simd(d_reg_tile).cast[DType.float64]()
 
     # NVIDIA
-    comptime if a_frags.size == 8 and b_frags.size == 4:
+    comptime if a_frags.length == 8 and b_frags.length == 4:
         _printf[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g],"
             " d_vals=[%g %g %g %g]\n"
@@ -70,7 +70,7 @@ def mma_load_and_multiply[
             d_frags[2],
             d_frags[3],
         )
-    elif a_frags.size == 4 and b_frags.size == 2:
+    elif a_frags.length == 4 and b_frags.length == 2:
         _printf[
             "thread %u a_vals=[%g %g %g %g], b_vals=[%g %g], d_vals=[%g %g %g"
             " %g]\n"
@@ -87,7 +87,7 @@ def mma_load_and_multiply[
             d_frags[2],
             d_frags[3],
         )
-    elif a_frags.size == 2 and b_frags.size == 1:
+    elif a_frags.length == 2 and b_frags.length == 1:
         _printf[
             "thread %u a_vals=[%g %g], b_vals=[%g], d_vals=[%g %g %g %g]\n"
         ](
@@ -101,7 +101,7 @@ def mma_load_and_multiply[
             d_frags[3],
         )
     # AMD-MI300
-    elif a_frags.size == 4 and b_frags.size == 4:
+    elif a_frags.length == 4 and b_frags.length == 4:
         _printf[
             "thread %u a_vals=[%g %g %g %g], b_vals=[%g %g %g %g], d_vals=[%g"
             " %g %g %g]\n"
@@ -120,7 +120,7 @@ def mma_load_and_multiply[
             d_frags[2],
             d_frags[3],
         )
-    elif a_frags.size == 1 and b_frags.size == 1:
+    elif a_frags.length == 1 and b_frags.length == 1:
         _printf["thread %u a_vals=[%g], b_vals=[%g], d_vals=[%g %g %g %g]\n"](
             thread_idx.x,
             a_frags[0],
@@ -142,7 +142,9 @@ def mma_write_operand_kernel[
 ](output: LayoutTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
-    var thread_reg_tile_v = thread_reg_tile.vectorize[1, mma.c_reg_type.size]()
+    var thread_reg_tile_v = thread_reg_tile.vectorize[
+        1, mma.c_reg_type.length
+    ]()
     thread_reg_tile_v[0, 0] = rebind[type_of(thread_reg_tile_v[0, 0])](
         mma.c_reg_type(thread_idx.x)
     )
@@ -230,8 +232,8 @@ def mma_load_and_print_operands_kernel_ldmatrix[
     copy_dram_to_sram[thread_layout=thread_layout](b_smem, rhs)
     barrier()
 
-    comptime a_simd_width = mma.a_reg_type.size
-    comptime b_simd_width = mma.b_reg_type.size
+    comptime a_simd_width = mma.a_reg_type.length
+    comptime b_simd_width = mma.b_reg_type.length
     var a_reg_tile = (
         LayoutTensor[
             dtype,
@@ -261,7 +263,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
     var b_frags = b_reg_tile[0, 0].cast[DType.float64]()
 
     # NVIDIA
-    comptime if a_frags.size == 4 and b_frags.size == 2:
+    comptime if a_frags.length == 4 and b_frags.length == 2:
         _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g]\n"](
             thread_idx.x,
             a_frags[0],
@@ -271,7 +273,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
             b_frags[0],
             b_frags[1],
         )
-    elif a_frags.size == 8 and b_frags.size == 4:
+    elif a_frags.length == 8 and b_frags.length == 4:
         _printf[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g]\n"
         ](
@@ -290,7 +292,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
             b_frags[3],
         )
     # AMD-MI300
-    elif a_frags.size == 4 and b_frags.size == 4:
+    elif a_frags.length == 4 and b_frags.length == 4:
         _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g %g %g]\n"](
             thread_idx.x,
             a_frags[0],
@@ -302,7 +304,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
             b_frags[2],
             b_frags[3],
         )
-    elif a_frags.size == 1 and b_frags.size == 1:
+    elif a_frags.length == 1 and b_frags.length == 1:
         _printf["thread %u a_vals=[%g], b_vals=[%g]\n"](
             thread_idx.x,
             a_frags[0],

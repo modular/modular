@@ -332,7 +332,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             - C/D fragment: 8 fp32 elements (M×N=256 distributed: 256/32 lanes = 8)
 
         This means the SIMD sizes passed to mma() for wave32 must be:
-            - a.size = 16, b.size = 16, c.size = 8, d.size = 8
+            - a.length = 16, b.length = 16, c.length = 8, d.length = 8
 
         LLVM Intrinsic Signatures (RDNA3/gfx11):
             - FP16: llvm.amdgcn.wmma.f32.16x16x16.f16(<16 x half>, <16 x half>, <8 x float>)
@@ -383,7 +383,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             a.dtype, b.dtype, c.dtype, d.dtype
         ):
             comptime if _has_shape[(16, 16, 8, 8)](
-                a.size, b.size, c.size, d.size
+                a.length, b.length, c.length, d.length
             ):
                 comptime type_name = "f16" if a.dtype == DType.float16 else "bf16"
                 return "llvm.amdgcn.wmma.f32.16x16x16." + type_name
@@ -436,10 +436,13 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             and c.dtype == DType.float32
             and d.dtype == DType.float32
         ):
-            comptime if _has_shape[4](a.size, b.size, c.size, d.size):
+            comptime if _has_shape[4](a.length, b.length, c.length, d.length):
                 return "llvm.amdgcn.wmma.f32.16x16x16.f16"
             elif (
-                a.size == 16 and b.size == 16 and c.size == 32 and d.size == 32
+                a.length == 16
+                and b.length == 16
+                and c.length == 32
+                and d.length == 32
             ):
                 return "llvm.amdgcn.wmma.f32.16x16x16.f16"
             else:
@@ -453,7 +456,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
                 comptime if _has_shape[(16, 16, 8, 8)](
-                    a.size, b.size, c.size, d.size
+                    a.length, b.length, c.length, d.length
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu8"
                 else:
@@ -470,7 +473,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ):
             comptime if _is_amd_rdna3() or _is_amd_rdna4():
                 comptime if _has_shape[(16, 16, 8, 8)](
-                    a.size, b.size, c.size, d.size
+                    a.length, b.length, c.length, d.length
                 ):
                     return "llvm.amdgcn.wmma.i32.16x16x16.iu4"
                 else:
@@ -491,7 +494,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             a.dtype == DType.float8_e5m2 or a.dtype == DType.float8_e5m2fnuz
         ) else "f16"
 
-        comptime if a.size == 16 and b.size == 16:
+        comptime if a.length == 16 and b.length == 16:
             var result = c.cast[DType.float32]()
             comptime intrinsic_name = "llvm.amdgcn.wmma.f32.16x16x16." + intrinsic_suffix
 
@@ -509,18 +512,20 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
             d = rebind[type_of(d)](result)
             return
-        elif a.size == 4 and b.size == 4:
+        elif a.length == 4 and b.length == 4:
             var a_converted = a.cast[target_dtype]()
             var b_converted = b.cast[target_dtype]()
 
             var r = llvm_intrinsic[
                 "llvm.amdgcn.wmma.f32.16x16x16." + intrinsic_suffix,
-                SIMD[c.dtype, c.size],
+                SIMD[c.dtype, c.length],
             ](a_converted, b_converted, c)
             d = rebind[type_of(d)](r)
             return
 
-    comptime if a.size == 16 and b.size == 16 and c.size == 8 and d.size == 8:
+    comptime if (
+        a.length == 16 and b.length == 16 and c.length == 8 and d.length == 8
+    ):
         comptime intrinsic_name = get_intrinsic_name()
 
         # gfx12 halves the A/B width vs gfx11 (see the struct docstring), so on

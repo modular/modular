@@ -245,7 +245,7 @@ struct MatmulTileWriter[
                 var shared_value = shared_fragment.load(Coord(Idx[i], Idx[0]))
                 epilogue[
                     dtype=type_of(shared_value).dtype,
-                    width=type_of(shared_value).size,
+                    width=type_of(shared_value).length,
                 ](IndexList[2](Int(row), Int(col)), shared_value)
                 shared_fragment.store(Coord(Idx[i], Idx[0]), shared_value)
 

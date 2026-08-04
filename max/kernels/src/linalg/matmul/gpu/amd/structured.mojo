@@ -347,7 +347,7 @@ struct AmdTileOperator[
     ) // Self.mma_shape[1]
 
     comptime _out_frag_rows = Self.num_m_mmas * Self.num_n_mmas
-    comptime _out_frag_cols = Self.tensor_core.c_reg_type.size
+    comptime _out_frag_cols = Self.tensor_core.c_reg_type.length
 
     comptime _out_layout = Layout.row_major(
         Self._out_frag_rows, Self._out_frag_cols

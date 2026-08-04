@@ -420,6 +420,23 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The second parameter of `SIMD` has been renamed from `size` to `length`, to
+  match the `SIMDLength` type it is declared with and the `length` vocabulary
+  the rest of the library uses for element counts:
+
+  ```mojo
+  var v = SIMD[DType.float32, length=4](1.0, 2.0, 3.0, 4.0)
+  print(v[0], Int(v.length))
+  ```
+
+  Positional uses such as `SIMD[DType.float32, 4]` are unaffected. Reading the
+  parameter as `v.size` still works but is deprecated and warns, so existing
+  code keeps compiling while you migrate. Binding it by keyword as
+  `SIMD[dtype, size=4]` is an error and must be updated.
+
+  `ComplexSIMD`'s matching `size` parameter has been renamed to `length` as
+  well, so the two types stay consistent.
+
 - The `MutSpan` and `ImmSpan` aliases are now exported from the prelude, so
   they no longer need an explicit import from `std.collections`. This matches
   the `Mut`/`Imm` aliases for `Pointer`, which the prelude already exported.

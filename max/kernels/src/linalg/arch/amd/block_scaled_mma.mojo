@@ -88,13 +88,13 @@ def cdna4_block_scaled_mfma[
         _cdna_4_or_newer()
     ), "CDNA4 block-scaled MFMA wrappers require CDNA4 or newer"
     comptime assert (
-        d.size == 16 or d.size == 4
+        d.length == 16 or d.length == 4
     ), "accumulator width must be 16 (32x32x64) or 4 (16x16x128)"
-    comptime assert a.size == a_matrix_format.simd_width(), "bad a width"
-    comptime assert b.size == b_matrix_format.simd_width(), "bad b width"
+    comptime assert a.length == a_matrix_format.simd_width(), "bad a width"
+    comptime assert b.length == b_matrix_format.simd_width(), "bad b width"
 
     comptime intrinsic = (
-        "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4" if d.size
+        "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4" if d.length
         == 16 else "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4"
     )
     # The ISA names the scale-byte selector {OP_SEL_HI, OP_SEL}. Together
@@ -102,10 +102,10 @@ def cdna4_block_scaled_mfma[
     # scale word: 0 -> bits 7:0, 1 -> 15:8, 2 -> 23:16, 3 -> 31:24.
     d = llvm_intrinsic[
         intrinsic,
-        SIMD[DType.float32, d.size],
+        SIMD[DType.float32, d.length],
     ](
-        bitcast[DType.int32, a.size // size_of[DType.int32]()](a),
-        bitcast[DType.int32, b.size // size_of[DType.int32]()](b),
+        bitcast[DType.int32, a.length // size_of[DType.int32]()](a),
+        bitcast[DType.int32, b.length // size_of[DType.int32]()](b),
         d,
         a_matrix_format,
         b_matrix_format,

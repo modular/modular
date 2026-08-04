@@ -60,7 +60,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
-](Coord, SIMD[dtype, size=width]) capturing -> None
+](Coord, SIMD[dtype, length=width]) capturing -> None
 
 
 @always_inline
