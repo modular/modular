@@ -899,8 +899,8 @@ def choose_config[
                 MMA_N_GRANULARITY,
             ),
         ):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -923,10 +923,10 @@ def choose_config[
                     N_aligned = align_up(N, 32)
                     MMA_N_GRANULARITY = 32
 
-                max_mma_n = min(N_aligned, 256)
+                var max_mma_n = min(N_aligned, 256)
                 # In practice 64x16 mma creates too many ctas and increase L2
                 # load volume, ends up hurting performance.
-                min_mma_n = min(N_aligned, 32)
+                var min_mma_n = min(N_aligned, 32)
 
                 for mma_n in range(
                     max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
@@ -1043,7 +1043,7 @@ def build_sm100_matmul_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):  # [8, 256)
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
@@ -1055,7 +1055,7 @@ def build_sm100_matmul_configs[
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):  # [256, 8192]
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
@@ -1097,7 +1097,7 @@ def build_sm100_batched_matmul_configs[
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(8, 256, 8):  # [8, 256)
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -1105,7 +1105,7 @@ def build_sm100_batched_matmul_configs[
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(256, 8192 + 1, 64):  # [256, 8192]
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -1468,8 +1468,8 @@ def choose_block_scaled_config[
     # a larger range than mma_m.
     if M < M_pivote:
         for bm, mma_n in product([128], range(64, align_up(M, 64) + 1, 64)):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -1484,11 +1484,11 @@ def choose_block_scaled_config[
         @parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            N_alignby64 = align_up(N, 64)
-            max_mma_n = min(N_alignby64, 256)
+            var N_alignby64 = align_up(N, 64)
+            var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2
             # load volume, ends up hurting performance.
-            min_mma_n = min(N_alignby64, 64)
+            var min_mma_n = min(N_alignby64, 64)
             for bm in [128]:
                 for mma_n in range(max_mma_n, min_mma_n - 1, -64):
                     var mma_m = bm * cta_group
@@ -1625,14 +1625,14 @@ def build_block_scaled_configs[
         return mma_m_ok and cfg.mma_shape[1] in (64, 128, 192, 256)
 
     for m in range(8, 128, 8):  # [8, 128]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
         if _kernel_supported(config) and config not in set:
             set.add(config)
 
     for m in range(128, 8193, 64):  # [128, 8192]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
         if _kernel_supported(config) and config not in set:

@@ -5534,10 +5534,10 @@ struct RaggedTMA3DTile[
         # (`depth` for group==1, `group*depth` for group>1), box 1. Each copy
         # issues coordinate `(ragged_idx + dynamic_dim)*middle_dim + middle_idx`
         # on it. This drops one descriptor rank everywhere.
-        merged_extent = Self.middle_dim * (rows + 1)
+        var merged_extent = Self.middle_dim * (rows + 1)
         comptime if Self.group > 1:
             # Fused GQA: gmem is 4D (rows, middle_dim, group, depth).
-            stride = Self.middle_dim * (Self.group * depth)
+            var stride = Self.middle_dim * (Self.group * depth)
             comptime if Self.tma_blocks_per_op > 0:
                 # Batched fused-GQA store: split `depth` into (n_blocks, K) and
                 # add a *blocks* box dim. Rank-5 dims (inner->outer) =
@@ -5593,7 +5593,7 @@ struct RaggedTMA3DTile[
                 )
         else:
             # group == 1: gmem is 3D (rows, middle_dim, depth).
-            stride = Self.middle_dim * depth
+            var stride = Self.middle_dim * depth
             comptime if Self.tma_blocks_per_op > 0:
                 # Batched store: split `depth` into (n_blocks, K) + blocks box.
                 # Rank-4 dims (inner->outer) = (K, BM, n_blocks, merged); the

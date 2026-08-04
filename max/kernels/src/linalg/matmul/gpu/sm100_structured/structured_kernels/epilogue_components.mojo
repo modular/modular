@@ -953,14 +953,18 @@ struct EpilogueApplier[
                         )
             else:
                 comptime if is_in_bounds:
-                    elem01 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
+                    var elem01 = compute_lambda_fn[
+                        epilogue_dtype, 2, alignment=2
+                    ](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
                             elem0,
                             elem1,
                         ),
                     )
-                    elem23 = compute_lambda_fn[epilogue_dtype, 2, alignment=2](
+                    var elem23 = compute_lambda_fn[
+                        epilogue_dtype, 2, alignment=2
+                    ](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
                             elem2,
@@ -979,7 +983,7 @@ struct EpilogueApplier[
                     var valid_bot_row = bot_row < self.M
 
                     if valid_top_row:
-                        elem01 = compute_lambda_fn[
+                        var elem01 = compute_lambda_fn[
                             epilogue_dtype, 2, alignment=2
                         ](
                             IndexList[2](Int(top_row), Int(top_col)),
@@ -992,7 +996,7 @@ struct EpilogueApplier[
                         frag[offset + 1] = elem01[1]
 
                     if valid_bot_row:
-                        elem23 = compute_lambda_fn[
+                        var elem23 = compute_lambda_fn[
                             epilogue_dtype, 2, alignment=2
                         ](
                             IndexList[2](Int(bot_row), Int(bot_col)),
@@ -1460,7 +1464,9 @@ struct TMEMToSMemWriter[
                 )
                 var new_smem = c_smem_tile.reshape(logical_layout)
 
-                warp_j, warp_i = divmod(Int(self.warp_id), warps_per_swblock)
+                var warp_j, warp_i = divmod(
+                    Int(self.warp_id), warps_per_swblock
+                )
                 var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
                     Coord(warp_j, Idx[0], warp_i, Idx[0])
                 )
@@ -1515,7 +1521,9 @@ struct TMEMToSMemWriter[
                 )
                 var new_smem = c_smem_tile.reshape(logical_layout)
 
-                warp_j, warp_i = divmod(Int(self.warp_id), warps_per_swblock)
+                var warp_j, warp_i = divmod(
+                    Int(self.warp_id), warps_per_swblock
+                )
                 var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
                     Coord(warp_j, Idx[0], warp_i, Idx[0])
                 )
@@ -1772,7 +1780,7 @@ struct SMemEpilogueWriter[
             )
             var new_smem = c_smem_tile.reshape(logical_layout)
 
-            warp_j, warp_i = divmod(Int(self.warp_id), 2)
+            var warp_j, warp_i = divmod(Int(self.warp_id), 2)
             var tiled = new_smem.tile[1, Self.stageN, 1, tile_width](
                 Coord(warp_j, Idx[0], warp_i, Idx[0])
             )
@@ -1791,7 +1799,7 @@ struct SMemEpilogueWriter[
                 Self.stageN, Self.data_paths
             ](Coord(Idx[0], Idx[1]))
 
-            warp_offset = warp_i * tile_width
+            var warp_offset = warp_i * tile_width
             store_fragment_to_smem[
                 Self.swizzle, Self.stageN, transpose_c=Self.transpose_c
             ](upper_frag, c_smem_warp_tile_upper, UInt32(warp_offset))
@@ -1846,7 +1854,7 @@ struct SMemEpilogueWriter[
             )
             var c_smem_warp_tile = tiled.reshape(coalesced)
 
-            warp_offset = Int(self.warp_id) * tile_width
+            var warp_offset = Int(self.warp_id) * tile_width
             store_fragment_to_smem[
                 Self.swizzle, Self.stageN, transpose_c=Self.transpose_c
             ](upper_frag, c_smem_warp_tile, UInt32(warp_offset))
