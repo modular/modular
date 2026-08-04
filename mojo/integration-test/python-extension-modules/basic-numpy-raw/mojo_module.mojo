@@ -94,7 +94,7 @@ def mojo_incr_np_array(
 
     var num_elts = 1
     for i in range(nd):
-        dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
+        var dim = py_array_object_ptr[].dimensions[unsafe_offset=i]
         num_elts *= dim
 
     for i in range(num_elts):
