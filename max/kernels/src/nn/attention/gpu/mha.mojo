@@ -102,8 +102,8 @@ from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
 from .amd_rdna.mha_prefill import AttentionRDNA
 from .apple.naive_fa_decode import (
-    NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
     naive_fa_decode_apple,
+    naive_fa_decode_apple_supports_depth,
 )
 from .apple.fa_prefill import (
     FA_PREFILL_APPLE_MAX_HEAD_DIM,
@@ -1984,7 +1984,8 @@ def flash_attention_dispatch[
         # Assumes BSHD.
         comptime if has_apple_gpu_accelerator():
             # Apple attention. Decode (1 query row) -> `naive_fa_decode_apple`
-            # (head dim split across lanes, % WARP_SIZE gate). Prefill ->
+            # (head dim split across lanes; that kernel owns which head dims it
+            # can specialize). Prefill ->
             # MMA-based `fa_prefill_apple` when depth % 16 == 0 and KV is
             # contiguous or 16-aligned-paged; otherwise `mha_gpu_naive`. The KV
             # gate is COMPTIME because the prefill resolves a page per 16-row
@@ -1993,8 +1994,7 @@ def flash_attention_dispatch[
             if (
                 is_token_generation
                 and _apple_naive_fa_decode_enabled()
-                and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
-                and depth % WARP_SIZE == 0
+                and naive_fa_decode_apple_supports_depth(depth)
             ):
                 naive_fa_decode_apple[
                     ragged=ragged,
