@@ -44,7 +44,7 @@ struct Point_1:
 
 
 def test_point_distance() raises:
-    p = Point_1(3, 4)
+    var p = Point_1(3, 4)
     assert_equal(p.distance(), 5.0)
 
 
@@ -103,7 +103,7 @@ struct Color_2:
 
 
 def test_color_fieldwise() raises:
-    color = Color_2(255, 0, 0)
+    var color = Color_2(255, 0, 0)
     assert_equal(color.r, 255)
     assert_equal(color.g, 0)
     assert_equal(color.b, 0)
@@ -158,7 +158,7 @@ struct MyInt(Copyable, Writable):
 
 
 def test_trait_conformance() raises:
-    my_int = MyInt(42)
+    var my_int = MyInt(42)
     assert_equal(String(my_int), "42")
 
 
@@ -229,7 +229,7 @@ struct Point_2:
 
 
 def test_point_float() raises:
-    p = Point_2(3.0, 4.0)
+    var p = Point_2(3.0, 4.0)
     assert_equal(p.x, 3.0)
     assert_equal(p.y, 4.0)
 

@@ -90,7 +90,7 @@ Some of them may already be familiar to you.
   by assigning a value to a variable):
 
   ```mojo
-  copied_ptr = ptr
+  var copied_ptr = ptr
   ```
 
   The pointer itself is a small amount of data to copy (typically 64 bits), and
@@ -169,7 +169,7 @@ with the `to` keyword argument:
 ```mojo no-test
 from std.memory import Pointer
 
-ptr = Pointer(to=some_value)
+var ptr = Pointer(to=some_value)
 ```
 
 You can also create a `Pointer` by copying an existing `Pointer`.
@@ -188,7 +188,7 @@ moves or copies the value into the reserved memory.
 ```mojo no-test
 from std.memory import OwnedPointer
 
-o_ptr = OwnedPointer(some_big_struct^)
+var o_ptr = OwnedPointer(some_big_struct^)
 ```
 
 An owned pointer can hold almost any type of item, but when constructing an
@@ -248,8 +248,8 @@ struct SharedDict(ImplicitlyCopyable):
         return self.attributes[].get(key, default="")
 
 def main():
-    thing1 = SharedDict()
-    thing2 = thing1
+    var thing1 = SharedDict()
+    var thing2 = thing1
     thing1["Flip"] = "Flop"
     print(thing2["Flip"])
 ```

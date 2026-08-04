@@ -68,8 +68,8 @@ def test_unsafe_write_owned():
 
 def test_pointer_to_string():
     # start-pointer-to-string
-    s = "Testing"
-    s_ptr = UnsafePointer(to=s)
+    var s = "Testing"
+    var s_ptr = UnsafePointer(to=s)
     # end-pointer-to-string
 
     _ = s_ptr

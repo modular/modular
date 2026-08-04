@@ -452,11 +452,13 @@ invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
 it as an argument to the constructor of the target type. For example:
 
 ```mojo
-simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
-simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
-simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
+var simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
+var simd2 = SIMD[DType.int16, 4](-1, 2, -3, 4)
+var simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
 print("simd3:", simd3)
-simd4 = simd2 + SIMD[DType.int16, 4](simd1)  # Convert with SIMD constructor
+var simd4 = simd2 + SIMD[DType.int16, 4](
+    simd1
+)  # Convert with SIMD constructor
 print("simd4:", simd4)
 ```
 
@@ -469,9 +471,9 @@ You can convert a `Scalar` value by passing it as an argument to the constructor
 of the target type. For example:
 
 ```mojo
-var my_int: Int16 = 12                 # SIMD[DType.int16, 1]
-var my_float: Float32 = 0.75           # SIMD[DType.float32, 1]
-result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
+var my_int: Int16 = 12                     # SIMD[DType.int16, 1]
+var my_float: Float32 = 0.75               # SIMD[DType.float32, 1]
+var result = Float32(my_int) * my_float    # Result is SIMD[DType.float32, 1]
 print("Result:", result)
 ```
 
@@ -743,14 +745,14 @@ several forms of indexing:
 
 ```mojo
 # Tuples are immutable and can hold multiple types
-example_tuple = Tuple[Int, String](1, "Example")
+var example_tuple = Tuple[Int, String](1, "Example")
 
 # Assign multiple variables at once
-x, y = example_tuple
+var x, y = example_tuple
 print(x, y)
 
 # Get individual values with an index
-s = example_tuple[1]
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -762,8 +764,8 @@ Example
 You can also create a tuple without explicit typing.
 
 ```mojo
-example_tuple = (1, "Example")
-s = example_tuple[1]
+var example_tuple = (1, "Example")
+var s = example_tuple[1]
 print(s)
 ```
 
@@ -974,9 +976,9 @@ dictionaries, sets support standard literal syntax, as well as generator
 comprehensions:
 
 ```mojo
-i_like = {"sushi", "ice cream", "tacos", "pho"}
-you_like = {"burgers", "tacos", "salad", "ice cream"}
-we_like = i_like.intersection(you_like)
+var i_like = {"sushi", "ice cream", "tacos", "pho"}
+var you_like = {"burgers", "tacos", "salad", "ice cream"}
+var we_like = i_like.intersection(you_like)
 
 print("We both like:")
 for item in we_like:

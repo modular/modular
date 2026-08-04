@@ -14,14 +14,14 @@
 
 def main():
     # start-owning-variable
-    owning_variable = "Owned value"
+    var owning_variable = "Owned value"
     # end-owning-variable
 
     _ = owning_variable
 
     # start-move-value
-    first = [1, 2, 3]
-    second = first^
+    var first = [1, 2, 3]
+    var second = first^
     # end-move-value
 
     _ = second
@@ -34,8 +34,8 @@ def main():
     _ = second
 
     # start-implicit-copy
-    one_value = 15
-    another_value = one_value  # implicit copy
+    var one_value = 15
+    var another_value = one_value  # implicit copy
     # end-implicit-copy
 
     _ = another_value
