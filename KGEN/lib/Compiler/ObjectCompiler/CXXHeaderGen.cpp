@@ -155,15 +155,93 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
   return success();
 }
 
+/// Collapse a chain of single-field structs to the field they wrap. A pointer
+/// wrapper such as `UnsafePointer` arrives here nested several deep, and one C
+/// parameter of the innermost field is ABI-identical to the whole chain.
+static Type collapseSingleFieldStructs(Type t) {
+  while (auto structType = dyn_cast<StructType>(t)) {
+    std::optional<SmallVector<Type>> elts = structType.getElementTypes();
+    if (!elts || elts->size() != 1)
+      break;
+    t = (*elts)[0];
+  }
+  return t;
+}
+
+/// True if `t` fills exactly one eightbyte, so that spelling it as its own C
+/// parameter puts it in the same register the platform ABI would give it.
+static bool fillsOneEightbyte(Type t) {
+  t = collapseSingleFieldStructs(t);
+  if (isa<PointerType>(t) || isa<IndexType>(t))
+    return true;
+  if (auto intTy = dyn_cast<IntegerType>(t))
+    return intTy.getWidth() == 64;
+  if (auto floatTy = dyn_cast<FloatType>(t))
+    return floatTy.getWidth() == 64;
+  // A Mojo scalar field is a one-element SIMD type, e.g. `scalar<index>`.
+  if (auto simd = dyn_cast<SIMDType>(t)) {
+    std::optional<int64_t> size = simd.getResolvedSize();
+    std::optional<KGENDType> dt = simd.getResolvedDType();
+    if (!size || *size != 1 || !dt)
+      return false;
+    return dt->isIndex() || dt->isUIndex() || dt->getWidthInBits() == 64;
+  }
+  return false;
+}
+
+/// Reject structs whose flattened "one C param per field" spelling would not
+/// match the platform ABI. Headergen has no struct name (LowerLIT drops it), so
+/// it can only safely emit: a single collapsed field, or two fields that each
+/// fill an eightbyte. Multi-field returns, >2 fields, and narrow fields are
+/// refused — including some ABI-correct shapes (e.g. {float, double}) because
+/// we lack DataLayout to prove padding. Workaround: pass a pointer.
+/// TODO(MOCO-4513): emit a named `typedef struct` and drop this check.
+static LogicalResult checkStructSpellingMatchesABI(FuncOp func, Type t,
+                                                   bool isResult) {
+  auto structType = dyn_cast<StructType>(collapseSingleFieldStructs(t));
+  if (!structType)
+    return success();
+
+  // A parameter pack is spelled by the ParamListType path, not as a struct.
+  if (structType.getIsParamPack())
+    return success();
+
+  std::optional<SmallVector<Type>> elts = structType.getElementTypes();
+  if (!elts)
+    return success(); // Parametric; getCTypeForType reports it.
+
+  if (isResult)
+    return func.emitError("cannot declare a C prototype returning struct ")
+           << t
+           << ": it is returned in registers, but the header would declare one "
+              "out-parameter per field. Return a pointer instead, or see "
+              "MOCO-4513";
+
+  if (elts->size() > 2 || !llvm::all_of(*elts, fillsOneEightbyte))
+    return func.emitError("cannot declare a C prototype taking struct ")
+           << t
+           << " by value: one parameter per field would not match the "
+              "registers the platform ABI assigns it. Pass a pointer "
+              "instead, or see MOCO-4513";
+
+  return success();
+}
+
 /// Emit the C signature of a KGEN func.
 static LogicalResult emitSignature(raw_ostream &os, FuncOp func) {
   SmallVector<std::string> argTys, resTys;
-  for (Type type : func.getArgumentTypes())
+  for (Type type : func.getArgumentTypes()) {
+    if (failed(checkStructSpellingMatchesABI(func, type, /*isResult=*/false)))
+      return failure();
     if (failed(getCTypeForType(func, type, argTys)))
       return failure();
-  for (Type type : func.getResultTypes())
+  }
+  for (Type type : func.getResultTypes()) {
+    if (failed(checkStructSpellingMatchesABI(func, type, /*isResult=*/true)))
+      return failure();
     if (failed(getCTypeForType(func, type, resTys)))
       return failure();
+  }
 
   // Print the function declaration.
   os << "extern ";

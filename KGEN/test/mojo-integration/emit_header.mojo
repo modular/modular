@@ -33,13 +33,8 @@ def first_reg(pair: RegIntPair) abi("C") -> Int:
     return pair.first
 
 
-# CHECK: extern void make_reg_pair(ssize_t, ssize_t, ssize_t *, ssize_t *);
-@export
-def make_reg_pair(first: Int, second: Int) abi("C") -> RegIntPair:
-    return RegIntPair(first, second)
-
-
-# This is a memory only type.
+# This is a memory only type. The platform C ABI classifies it from its layout,
+# so its declaration below matches RegIntPair's field for field.
 struct MemIntPair:
     var first: Int
     var second: Int
@@ -49,16 +44,10 @@ struct MemIntPair:
         self.second = second
 
 
-# CHECK: extern ssize_t first_mem(void *);
+# CHECK: extern ssize_t first_mem(ssize_t, ssize_t);
 @export
 def first_mem(pair: MemIntPair) abi("C") -> Int:
     return pair.first
-
-
-# CHECK: extern void make_mem_pair(ssize_t, ssize_t, void *);
-@export
-def make_mem_pair(first: Int, second: Int) abi("C") -> MemIntPair:
-    return MemIntPair(first, second)
 
 
 # CHECK: extern int32_t main(int32_t, void *);
