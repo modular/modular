@@ -246,7 +246,7 @@ def _run(var handle: Coroutine[...], out result: handle.type):
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(_AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
-    handle^.force_destroy()
+    handle^._unsafe_force_deinit()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -301,7 +301,7 @@ struct Task[type: Deinitable, origins: OriginSet](Movable where False):
         """
         var ctx = self._handle._get_ctx[_AsyncContext]()
         _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
-        self._handle^.force_destroy()
+        self._handle^._unsafe_force_deinit()
 
     @always_inline
     def __await__(self) -> ref[self.get()] Self.type:
@@ -389,7 +389,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
 
     This type does not conform to `Deinitable` because only one of the
     result or error slots is valid after completion. The caller must call
-    `wait()` or `force_destroy()` to consume the task.
+    `wait()` to consume the task.
 
     Parameters:
         type: The type of value produced on success.
@@ -452,7 +452,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
 
         var ctx = self._handle._get_ctx[_AsyncContext]()
         _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
-        self._handle^.force_destroy()
+        self._handle^._unsafe_force_deinit()
 
         if has_error:
             var err = self._error_alloc.unsafe_ptr().unsafe_take_pointee()
