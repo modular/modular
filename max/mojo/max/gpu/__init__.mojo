@@ -47,3 +47,24 @@ from .memory import (
     multimem_ld_reduce,
     multimem_st,
 )
+
+from .sync import (
+    NamedBarrierSemaphore,
+    Semaphore,
+    AMDScheduleBarrierMask,
+    async_copy_arrive,
+    barrier,
+    cp_async_bulk_commit_group,
+    cp_async_bulk_wait_group,
+    mbarrier_arrive,
+    mbarrier_arrive_expect_tx_shared,
+    mbarrier_init,
+    mbarrier_test_wait,
+    mbarrier_try_wait_parity_shared,
+    named_barrier,
+    schedule_barrier,
+    schedule_group_barrier,
+    syncwarp,
+    s_waitcnt,
+    s_waitcnt_barrier,
+)

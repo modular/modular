@@ -57,7 +57,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 
 from std.utils.index import Index
 

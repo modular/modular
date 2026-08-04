@@ -47,13 +47,13 @@ from std.gpu import (
     PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_idx,
     grid_dim,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.memory import (
@@ -64,7 +64,7 @@ from max.gpu.memory import (
     cp_async_bulk_shared_cluster_global,
 )
 from std.gpu.primitives import elect_one_sync
-from std.gpu.sync import (
+from max.gpu.sync import (
     syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,

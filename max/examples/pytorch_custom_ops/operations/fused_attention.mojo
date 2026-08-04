@@ -56,7 +56,7 @@ from std.math import exp
 
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx
-from std.gpu.sync import barrier
+from max.gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore

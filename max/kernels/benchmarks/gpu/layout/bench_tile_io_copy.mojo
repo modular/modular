@@ -20,7 +20,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.compile import get_gpu_target
 from std.memory import bitcast

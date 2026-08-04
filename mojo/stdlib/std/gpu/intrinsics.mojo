@@ -27,7 +27,6 @@ underlying GPU architecture.
 
 from std.atomic import Ordering
 from std.ffi import external_call
-from std.gpu._utils import to_i32
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -50,8 +49,10 @@ from std.sys.info import (
     _is_amd_rdna4,
 )
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
-from std.gpu import lane_id
 from std.math.uutils import ufloordiv, umod
+
+from std.gpu._utils import to_i32
+from std.gpu import lane_id
 
 from std.memory.unsafe import bitcast
 

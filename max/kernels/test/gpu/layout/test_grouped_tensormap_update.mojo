@@ -34,11 +34,11 @@ This pattern is based on NVIDIA CuTe DSL's grouped block-scaled GEMM which uses
 
 from std.sys import size_of
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor
 from std.gpu import block_idx, thread_idx
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

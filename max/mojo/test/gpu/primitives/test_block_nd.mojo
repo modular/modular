@@ -20,10 +20,11 @@ thread IDs in the block.
 """
 
 from std.gpu import thread_idx
-from max.gpu.host import DeviceContext
-from std.gpu.primitives import block
 from std.gpu.globals import WARP_SIZE
 from std.testing import assert_equal, TestSuite
+
+from max.gpu.host import DeviceContext
+from max.gpu.primitives import block
 
 # ===-----------------------------------------------------------------------===#
 # 1D block sum

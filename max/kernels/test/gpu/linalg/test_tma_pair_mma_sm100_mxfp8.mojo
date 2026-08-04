@@ -16,12 +16,12 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
-    barrier,
     warp_id as get_warp_id,
     block_id_in_cluster,
     block_idx,
     lane_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
@@ -61,7 +61,7 @@ from std.utils.static_tuple import StaticTuple
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from std.sys import argv
 from std.random import random_ui64
 from linalg.fp4_utils import (

@@ -16,12 +16,11 @@ from std.math import align_up
 from std.math.uutils import udivmod, ufloordiv
 
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
-from std.gpu.primitives.block import broadcast
+from max.gpu.primitives.block import broadcast
 from max.gpu.host import DeviceContext
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     grid_dim,
@@ -30,6 +29,7 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,

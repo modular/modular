@@ -70,13 +70,13 @@ from std.sys import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from layout import (
     Coord,
     Idx,

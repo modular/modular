@@ -101,10 +101,10 @@ Outputs:
 
 import std.math
 from std.gpu import (
-    barrier,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.math import rsqrt
 from std.memory import unsafe_stack_allocation
 from layout import TensorLayout, TileTensor

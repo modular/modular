@@ -95,15 +95,15 @@ reference attention kernel.
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.compile import CompilationTarget
 from std.math import ceildiv
-from std.gpu.sync import (
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     s_waitcnt,
     schedule_group_barrier,

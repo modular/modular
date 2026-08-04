@@ -20,7 +20,7 @@ to implement efficient thread synchronization.
 Examples:
 
     ```mojo
-    from std.gpu import Semaphore
+    from max.gpu.sync import Semaphore
 
     def semaphore(lock: Pointer[mut=True, Int32, ...]):
         var thread_id = 0

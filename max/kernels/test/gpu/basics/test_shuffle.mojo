@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import has_amd_gpu_accelerator
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import (

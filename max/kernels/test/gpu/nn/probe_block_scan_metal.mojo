@@ -30,7 +30,7 @@
 
 from std.gpu import thread_idx
 from max.gpu.host import DeviceContext
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from std.testing import assert_equal, assert_almost_equal, TestSuite
 
 

@@ -19,10 +19,10 @@ from std.atomic import Atomic
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     global_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host.info import is_cpu
 from max.gpu.host import DeviceBuffer
 from std.memory import unsafe_stack_allocation

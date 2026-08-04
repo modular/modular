@@ -14,7 +14,7 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
 

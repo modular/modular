@@ -21,7 +21,6 @@ from max.algorithm.functional import elementwise
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     thread_idx,
     block_dim,
     block_idx,
@@ -29,6 +28,7 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation

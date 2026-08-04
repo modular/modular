@@ -20,11 +20,11 @@ from max.algorithm import elementwise
 from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 import std.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu

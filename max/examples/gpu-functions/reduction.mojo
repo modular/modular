@@ -25,7 +25,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.bit import log2_floor
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
 from std.gpu.primitives import warp
 from std.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext, DeviceBuffer

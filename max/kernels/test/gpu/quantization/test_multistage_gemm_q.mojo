@@ -19,10 +19,10 @@ from std.sys import align_of, argv, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
 from max.gpu.memory import external_memory

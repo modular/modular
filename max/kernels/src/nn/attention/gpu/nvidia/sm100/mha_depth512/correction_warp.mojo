@@ -33,7 +33,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from std.gpu.sync import umma_arrive_leader_cta
+from max.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )

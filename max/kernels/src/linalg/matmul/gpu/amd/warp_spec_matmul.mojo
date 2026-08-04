@@ -40,11 +40,11 @@ from std.sys import simd_width_of
 from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     block_idx,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor, TileTensor

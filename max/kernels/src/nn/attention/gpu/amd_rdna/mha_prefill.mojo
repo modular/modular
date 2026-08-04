@@ -21,7 +21,8 @@ Recipe (per KV tile):
     P from SMEM as the A operand and V from LDS as B.
 """
 
-from std.gpu import barrier, lane_id
+from std.gpu import lane_id
+from max.gpu.sync import barrier
 
 from .attention import AttentionRDNA
 from .buffers import KBufferRDNA, VBufferRDNA

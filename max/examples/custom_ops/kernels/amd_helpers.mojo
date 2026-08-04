@@ -18,15 +18,15 @@ from std.sys import align_of, size_of
 from std.sys.info import simd_width_of
 
 from std.gpu import (
-    barrier,
     block_dim,
     block_idx,
     global_idx,
     lane_id,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import (
     Layout,
     PointerStorage,

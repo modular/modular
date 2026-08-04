@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys import simd_width_of
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from max.gpu.memory import (

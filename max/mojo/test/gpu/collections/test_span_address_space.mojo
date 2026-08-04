@@ -18,7 +18,8 @@ preserve the address space. Further kernels `fill` real shared and thread-local
 memory and read the results back.
 """
 
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.sys import has_apple_gpu_accelerator

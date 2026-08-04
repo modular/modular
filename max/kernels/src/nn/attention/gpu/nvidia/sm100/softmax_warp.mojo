@@ -22,7 +22,7 @@ import std.gpu.primitives.warp as warp
 from std.gpu import block_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.memory import fence_async_view_proxy
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,

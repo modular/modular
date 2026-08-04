@@ -17,7 +17,7 @@ from std.sys import argv
 from max.gpu.host import DeviceContext
 from std.gpu import block_idx, global_idx, warp_id
 from max.gpu.memory import async_copy_wait_all
-from std.gpu.sync import barrier
+from max.gpu.sync import barrier
 from std.memory import alloc
 from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type

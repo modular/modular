@@ -24,7 +24,7 @@ from std.sys import simd_width_of, size_of
 
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 from layout import Coord, Idx, Layout, TensorLayout, TileTensor, row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_storage import TensorStorage

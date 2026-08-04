@@ -42,7 +42,8 @@ the `K % 16 == 0` interior takes a width-16 int8 K-repartition; the K-tail and
 tiles take the bounded path. See KB `kernels/apple-m5-int8-matmul`.
 """
 
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from max.gpu.host import DeviceContext
 from max.gpu.memory import build_edge_mask, gmem_edge_masked_load

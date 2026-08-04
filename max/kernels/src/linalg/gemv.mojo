@@ -25,7 +25,7 @@ from std.sys import (
 )
 from std.sys.info import _is_amd_mi250x, _is_sm_100x, size_of
 from max.gpu.compute.mma import ld_matrix, mma
-from std.gpu.sync import async_copy_arrive, named_barrier
+from max.gpu.sync import async_copy_arrive, named_barrier
 from layout.tma_async import SharedMemBarrier
 from structured_kernels.kernel_common import _to_batched_3d
 from structured_kernels.smem_types import SMemArray
@@ -37,13 +37,13 @@ from max.algorithm.reduction import _reduce_generator
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
     lane_id,
     warp_id,
 )
+from max.gpu.sync import barrier
 from max.gpu.host import (
     DeviceAttribute,
     DeviceContext,

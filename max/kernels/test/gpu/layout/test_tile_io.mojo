@@ -44,7 +44,7 @@ Coverage:
   is a follow-up — see the kernel's docstring).
 """
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import (
     async_copy_commit_group,

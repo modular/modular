@@ -28,7 +28,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from max.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx
 from std.gpu.primitives.id import cluster_dim
-from std.gpu.sync import barrier, named_barrier
+from max.gpu.sync import barrier, named_barrier
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 
 from std.builtin.device_passable import DevicePassable

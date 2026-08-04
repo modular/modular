@@ -15,7 +15,7 @@ from std.collections import Set
 from std.random import random_ui64, seed
 from std.sys import size_of
 
-from std.gpu import barrier
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, thread_idx

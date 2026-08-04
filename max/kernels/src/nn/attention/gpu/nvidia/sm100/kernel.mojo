@@ -18,10 +18,10 @@ from std.math import align_up
 from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     thread_idx,
     warp_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,

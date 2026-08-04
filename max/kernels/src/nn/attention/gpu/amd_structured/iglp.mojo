@@ -31,7 +31,7 @@ each kernel (they're shape-dependent and kernel-specific).
 
 from std.sys import llvm_intrinsic
 
-from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 
 
 @fieldwise_init

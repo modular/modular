@@ -14,7 +14,8 @@
 from std.sys import size_of
 from std.math.uutils import ufloordiv
 
-from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
 from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,

@@ -32,7 +32,7 @@ from std.sys.defines import get_defined_bool
 
 from std.gpu.intrinsics import Scope
 
-from .._utils import to_i32, to_llvm_shared_mem_ptr
+from std.gpu._utils import to_i32, to_llvm_shared_mem_ptr
 
 # ===-----------------------------------------------------------------------===#
 # barrier
@@ -893,7 +893,7 @@ def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     Example:
         ```mojo
-        from std.gpu.sync.sync import cp_async_bulk_wait_group
+        from max.gpu.sync.sync import cp_async_bulk_wait_group
 
         # Wait until at most 2 async groups are pending
         cp_async_bulk_wait_group[2]()

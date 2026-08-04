@@ -16,14 +16,15 @@ from std.bit import log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.primitives import block, warp
+from max.gpu.sync import barrier
+from max.gpu.primitives import block
+from std.gpu.primitives import warp
 from std.gpu.primitives.grid_controls import (
     PDL,
     pdl_launch_attributes,
