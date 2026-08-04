@@ -24,7 +24,7 @@ intentionally out of scope and omitted throughout.
   - [Docstring code blocks: `parseREPLExpression` (the exception)](#docstring-code-blocks-parsereplexpression-the-exception)
 - [Reference: the full `ParserListener` interface](#reference-the-full-parserlistener-interface)
 - [Threading: using a single-threaded parser safely](#threading-using-a-single-threaded-parser-safely)
-- [Open questions / TODO](#open-questions--todo)
+- [Follow ups](#follow-ups)
 
 ## Overview
 
@@ -187,7 +187,7 @@ size_t MojoTextDocument::parseDocumentImpl() {
 ```
 
 (`checkModuleSemantics` runs the LIT "check" pipeline on a clone and is a
-separate thread — see [TODO](#open-questions--todo). `processDocStrings` handles
+separate thread — see [Follow ups](#follow-ups). `processDocStrings` handles
 docstring code blocks, also TODO.)
 
 > Because the `SymbolIndex` lives in the per-parse `Context`
