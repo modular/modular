@@ -179,11 +179,13 @@ def test_type_patterns():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: {{.*}}int_literal 4>
     # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}UInt8::@"__init__{{.*}}([[TMP]])
     # CHECK-NEXT: lit.ref.store [[TMP2]], %b
+    # expected-warning @+1 {{implicit declaration of 'b' is deprecated; add 'var' before the name}}
     b: UInt8 = 4
 
     # Show that the type annotation allows us to use the type in the pattern to
     # infer the RHS type of the collection.
     # CHECK: lit.call {{.*}}List::@"__init__
+    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; add 'var' before the name}}
     c: List[Int] = []
 
     # declare multiple variables at once.

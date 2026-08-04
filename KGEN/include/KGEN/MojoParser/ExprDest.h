@@ -177,16 +177,19 @@ public:
   }
   ExprDest(ExprDest &&rhs)
       : representation(std::move(rhs.representation)), context(rhs.context),
-        patternDeclKind(rhs.patternDeclKind) {
+        patternDeclKind(rhs.patternDeclKind), walrusTarget(rhs.walrusTarget) {
     rhs.representation = NullRepresentation();
     rhs.patternDeclKind = PatternDeclKind::kNone;
+    rhs.walrusTarget = false;
   }
   ExprDest &operator=(ExprDest &&rhs) {
     representation = std::move(rhs.representation);
     patternDeclKind = rhs.patternDeclKind;
+    walrusTarget = rhs.walrusTarget;
     context = rhs.context;
     rhs.representation = NullRepresentation();
     rhs.patternDeclKind = PatternDeclKind::kNone;
+    rhs.walrusTarget = false;
     return *this;
   }
 
@@ -202,6 +205,20 @@ public:
   ExprContext getContext() const { return context; }
   PatternDeclKind getPatternDeclKind() const { return patternDeclKind; }
   void setPatternDeclKind(PatternDeclKind kind) { patternDeclKind = kind; }
+
+  /// True when this destination is one element of a tuple target and a 'var' or
+  /// 'ref' appears elsewhere in that target, either in a sibling element or at
+  /// an enclosing level of it.  The deprecation diagnostic must not then
+  /// suggest prefixing the whole target, because `var a, var b = pair()` is
+  /// rejected.
+  bool hasSiblingPatternDecl() const { return siblingPatternDecl; }
+  void setHasSiblingPatternDecl(bool value) { siblingPatternDecl = value; }
+
+  /// True when this destination is a target of a walrus assignment.  The
+  /// deprecation diagnostic must not then advise 'var' at all, because 'var'
+  /// and 'ref' on a walrus target are being removed from the language.
+  bool isWalrusTarget() const { return walrusTarget; }
+  void setIsWalrusTarget(bool value) { walrusTarget = value; }
 
   /// Return true if there is a specification for this destination.  If not,
   /// an expression will be emitted to generate a PValue, SRValue, LValue, etc.
@@ -310,6 +327,13 @@ private:
   /// This enum value keeps track of whether a "target" is being emitted in a
   /// var or ref wrapper.  This affects the behavior of a synthesized VarDecl:
   PatternDeclKind patternDeclKind = PatternDeclKind::kNone;
+
+  /// True when a 'var' or 'ref' appears elsewhere in the target this
+  /// destination belongs to, at any level of it.
+  bool siblingPatternDecl = false;
+
+  /// True when the target this destination belongs to is assigned by a ':='.
+  bool walrusTarget = false;
 
   friend raw_ostream &operator<<(raw_ostream &os, const ExprDest &value);
 };

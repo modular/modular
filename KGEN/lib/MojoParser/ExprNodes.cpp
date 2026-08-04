@@ -1233,6 +1233,34 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     auto contextualType = dest.getIfInitializerType();
     assert(contextualType && "must have contextual type");
 
+    // Inserting 'var' at the name would scope the variable to this block, while
+    // this declaration is function-scoped -- so the two spellings differ
+    // exactly when the declaration lands in a different block.
+    bool isNestedBlock =
+        emitter.builder && emitter.builder->getInsertionBlock() !=
+                               emitter.varDeclCursor->getInsertionBlock();
+    bool isTupleElement = dest.getContext() == EC_TupleElement;
+    bool needsSeparateDecl =
+        isNestedBlock ||
+        // 'var' and 'ref' on a walrus target are being removed from the
+        // language, so neither edit is one to advise for `x := 1`.
+        dest.isWalrusTarget() ||
+        // For `a, var b = pair()` the whole-target edit reads
+        // `var a, var b = pair()`, which does not compile.
+        (isTupleElement && dest.hasSiblingPatternDecl());
+    auto diag = emitter.emitWarning(loc);
+    diag << "implicit declaration of '" << spelling << "' is deprecated; ";
+    if (needsSeparateDecl)
+      diag << "declare it with 'var' in the function body";
+    else
+      diag << "add 'var' before "
+           << (isTupleElement ? "the assignment target" : "the name");
+    diag << expr->getRange();
+    // A tuple element gets no fixit: one 'var' covers the whole target, and an
+    // element's destination cannot reach that target's position to anchor one.
+    if (!needsSeparateDecl && !isTupleElement)
+      diag << FixIt::insertBeforeToken(loc, "var ");
+
     // NOTE: We intentionally do NOT apply type refinement to contextual types
     // for implicit variable declarations. The contextual type comes from the
     // source expression (e.g., iterator element type), and refining it here
@@ -3827,6 +3855,7 @@ AnyValue BinOpNode::emitAssign(ExprDest &dest, IREmitter &emitter) const {
   } else {
     assignDest = ExprDest(lhsResult.getIfPartiallyBoundLV(), assignDestKind);
   }
+  assignDest.setIsWalrusTarget(kind == kWalrus);
 
   // Emit the RHS into the context of the LHS.  If we got an LValue, then we can
   // infer the type of the RHS from the LHS LValue.  If we got an unresolved
@@ -5708,6 +5737,12 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     }
   }
 
+  // A binder anywhere in the target rules out an outer 'var' for every fresh
+  // name in it, at any nesting depth.
+  bool anyEltPatternDecl = llvm::any_of(exprs, [](const ExprNode *elt) {
+    return elt->kind == kVarPat || elt->kind == kRefPat;
+  });
+
   bool allEltsLValue = true;
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (auto [i, expr] : llvm::enumerate(exprs)) {
@@ -5723,6 +5758,9 @@ auto TupleNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     // Propagate var/ref context.
     eltDest.setPatternDeclKind(dest.getPatternDeclKind());
+    eltDest.setHasSiblingPatternDecl(anyEltPatternDecl ||
+                                     dest.hasSiblingPatternDecl());
+    eltDest.setIsWalrusTarget(dest.isWalrusTarget());
     auto exprVal = emitter.emitExpr(expr, eltDest);
     if (!exprVal)
       return {};

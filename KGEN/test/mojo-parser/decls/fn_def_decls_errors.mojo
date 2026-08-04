@@ -15,7 +15,8 @@ def test_never_declared_fn():
     never_declared_fn()
 
 def implicit_var_decl(a: Int):
-    c = a  # implicit declaration of c
+    # expected-warning @+1 {{implicit declaration of 'c' is deprecated; add 'var' before the name}}
+    c = a
 
 struct BadMethod(Movable where False):
     # expected-error @+1 {{'__add__' requires 2 operands}}
