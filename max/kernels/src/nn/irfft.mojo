@@ -56,7 +56,8 @@ def _get_fft_workarea(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
     )
 
-    if lookup := _get_global_or_null(fft_buffer_key):
+    var lookup = _get_global_or_null(fft_buffer_key)
+    if lookup:
         # we found the allocated device buffer
         return lookup.unsafe_value()
 
@@ -88,7 +89,8 @@ def _get_fft_plan[
         "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
     )
 
-    if lookup := _get_global_or_null(cached_plan_key):
+    var lookup = _get_global_or_null(cached_plan_key)
+    if lookup:
         # We found the plan in the cache, so just return it
         return cufftHandle(Int(lookup.unsafe_value()))
 
@@ -197,9 +199,10 @@ def _irfft[
 
     # skip size estimations if the plan is already cached, as
     # the function call is expensive
-    if plan := _get_fft_plan[create_if_not_found=False](
+    var plan = _get_fft_plan[create_if_not_found=False](
         output_size, batch_size, ALLOCATED_WORKSPACE_SIZE, ctx
-    ):
+    )
+    if plan:
         check_error(cufftSetStream(plan, cuda_stream))
         var input_ptr = input.ptr.bitcast[ComplexFloat32]()
         var output_ptr = output.ptr.bitcast[Float32]()

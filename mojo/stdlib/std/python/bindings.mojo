@@ -119,7 +119,8 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   type.
 
     comptime type_name = reflect[T].name[qualified_builtins=True]()
-    if entry := type_dict[].find(type_name):
+    var entry = type_dict[].find(type_name)
+    if entry:
         return entry.take()
 
     raise Error(
@@ -688,7 +689,8 @@ struct PythonTypeBuilder(Copyable):
         # correctness. This check here ensures that the user is not accidentally
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
-        if type_id := self._type_id:
+        var type_id = self._type_id
+        if type_id:
             _register_py_type_object(type_id[], type_obj)
 
         Python.add_object(module, self.type_name, type_obj)
