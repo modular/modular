@@ -94,6 +94,7 @@ def execute_kv_cache_ragged_rope[
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
+    var max_context_length: UInt32
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         with input_row_offsets_device.map_to_host() as input_row_offsets_host:
             for i in range(batch_size):

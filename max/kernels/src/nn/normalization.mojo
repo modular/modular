@@ -1001,6 +1001,7 @@ def _rms_norm_warp_tiling_subkernel[
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
 
+    var row_m2: Scalar[accum_type]
     comptime if rows_per_warp == 2:
         # Each half warp handles reduction for one row.
         row_m2 = warp.lane_group_sum[num_lanes=WARP_SIZE // 2](thread_m2)

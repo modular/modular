@@ -326,6 +326,8 @@ def tma_umma_kernel_sgs[
         comptime for elem in range(elems_per_thread // simd_size):
             var local_idx = simd_size * (elem * num_threads + tid)
 
+            var n_local: Int
+            var k_local: Int
             # Compute local tile coordinates based on memory layout
             # transpose_b=True: gmem NxK (K fast), smem K-major (K fast)
             # transpose_b=False: gmem KxN (N fast), smem N-major (N fast)
@@ -338,6 +340,7 @@ def tma_umma_kernel_sgs[
             var gmem_n = block_idx.x * BN + n_local
             var gmem_k = Int(i) * BK + k_local
 
+            var fp8_val: SIMD[b_gmem_type, simd_size]
             # Load from gmem - layout is NxK when transpose_b, KxN otherwise
             comptime if transpose_b:
                 fp8_val = b.ptr.load[width=simd_size, alignment=simd_size](

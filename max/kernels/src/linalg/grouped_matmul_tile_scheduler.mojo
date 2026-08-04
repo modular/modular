@@ -197,6 +197,7 @@ struct TileScheduler[
             self.group_offsets[Int(self.current_group_idx)]
         )
 
+        var num_dynamic_dim_blocks: UInt32
         # Trim to the next group
         while True:
             if self.current_group_idx >= UInt32(self.num_active_experts):

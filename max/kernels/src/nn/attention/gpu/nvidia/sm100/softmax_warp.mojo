@@ -3512,6 +3512,8 @@ def fa4_softmax[
         ) else config.BN
     )
 
+    var diff: Float32
+    var local_rowsum: f32x2
     comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
         comptime for i in range(num_sets):
             comptime mask_status = mask_sets[i]

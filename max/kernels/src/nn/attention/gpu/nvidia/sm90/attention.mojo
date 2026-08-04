@@ -790,6 +790,8 @@ def produce[
     var write_pipeline_states = PipelineState[pipeline_stages]()
     var q_pipeline_state = PipelineState[2 if persistent else 1]()
 
+    var start: UInt32
+    var end: UInt32
     comptime if PartitionType.do_partition:
         var startend = position.get_start_and_end_for_partitions[
             page_size=KVLUTType.page_size
@@ -894,6 +896,7 @@ def produce[
     # order of the producer's waits.
     # few_keys = num_keys <= BN
 
+    var new_end: UInt32
     # Process work with the tile size until there's not enough remaining work
     # to fit in a tile.
     # Production order:

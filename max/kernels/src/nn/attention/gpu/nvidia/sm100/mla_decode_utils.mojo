@@ -3686,6 +3686,7 @@ struct MLA_SM100_Decode_Common[
         # recovering the original `tiles_done > 0` semantics. For sliding
         # window it equals `tiles_done`'s initial value above.
         var first_processed_tile_sw: Int = tiles_done
+        var current_max: Scalar[Self.AccumType]
         while tiles_done < num_k_tiles:
             # Wait for an S slot to become ready
             var slot_idx: UInt32 = s_cons.wait()

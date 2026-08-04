@@ -1489,9 +1489,7 @@ def _build_mma[
     # Blocks use ABSOLUTE k-index `jj = k_start + k` (for full, `k_start=0`).
     #
     # Plain `if` (not `comptime if`) is used throughout: the whole function is
-    # comptime-evaluated, and plain `if` is function-scoped (Python-like) so
-    # bindings like `operands` survive past the branch -- a `comptime if` branch
-    # scope would hide them.
+    # comptime-evaluated, so a `comptime if` would add only a scope.
     # Pre-reserve so `mma` is heap-backed from the start: the comptime
     # interpreter cannot memcpy into a String's inline (SSO) buffer, so
     # appending a small fragment to a still-small string fails to interpret
@@ -1526,6 +1524,7 @@ def _build_mma[
     # consumes `$7,$8` for SS but only `$7` for TS, so the next free slot differs.
     var valid_op = 8 if a_tmem else 9
 
+    var operands: String
     for k in range(num_k_mmas):
         var jj = k_start + k
         # Warp-uniform validity guard: true once an absolute k-index lands past

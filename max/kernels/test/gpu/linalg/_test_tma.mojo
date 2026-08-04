@@ -318,6 +318,7 @@ def test_3D_swizzle[
                                 + (ii * load_shape_n + jj)
                             )
 
+                            var b_offset: Int
                             b_offset, offset = divmod(
                                 offset, load_shape_m * load_shape_n
                             )

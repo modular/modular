@@ -278,6 +278,7 @@ def run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(c_device, c_host)
 
     var kernelType: StaticString
+    var nstime: Float64
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)

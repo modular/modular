@@ -116,6 +116,7 @@ def test_case_sampling[
 
     var max_k = K
 
+    var batch_size: Int
     comptime if rank == 1:
         batch_size = 1
     elif rank == 2:

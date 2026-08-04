@@ -2737,6 +2737,9 @@ def _matmul_kv_cache_ragged_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
+        var cache: cache_t
+        var h_idx: Int
+        var hd_idx: Int
         if idx[1] < k_offset:
             # Write this element to the K cache.
             cache = k_cache

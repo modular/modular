@@ -2733,6 +2733,7 @@ struct LayoutTensor[
     def _stack_copy(
         self,
     ) -> Self.StackTensorType:
+        var copy: Self.StackTensorType
         comptime if Self.layout.all_dims_known():
             copy = self.stack_allocation()
         else:
@@ -2788,6 +2789,7 @@ struct LayoutTensor[
         eidx = IndexList[Self.num_strides, element_type=Self.linear_idx_type]()
         eidx_offset = 0
 
+        var r: Int
         comptime for rank_idx in range(Self.rank):
             comptime sub_layout = flatten(Self.layout.shape[rank_idx])
             comptime sub_layout_size = len(sub_layout)
@@ -4200,6 +4202,7 @@ struct LayoutTensor[
             axis,
         ]()
 
+        var runtime_shape: ret_tensor_type.RuntimeLayoutType.ShapeType
         comptime if ret_tensor_type.masked:
             runtime_shape = ret_tensor_type.RuntimeLayoutType.ShapeType(
                 self._clamp_distribute_shape[threads_layout](thread_id)
@@ -6297,6 +6300,7 @@ def copy_dram_to_sram[
         and coalesce_dst_element_layout.stride[0] == 1
     )
 
+    var stride: Int
     comptime if not src_fragments.masked or is_scalar:
         comptime assert (
             dst_fragments.layout.size() == src_fragments.layout.size()
@@ -6998,6 +7002,7 @@ def copy_sram_to_dram[
     var src_fragments = src.distribute[thread_layout](worker_idx)
     var dst_fragments = dst.distribute[thread_layout](worker_idx)
 
+    var stride: Int
     # TODO: copy_from only allows static layout
     comptime if src.dtype == dst.dtype and not swizzle and not dst.masked:
         dst_fragments.copy_from(src_fragments)
@@ -7236,6 +7241,7 @@ def copy_local_to_dram[
 
     var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
 
+    var stride: Int
     comptime if not dst_fragments.masked:
         dst_fragments.copy_from(src)
     else:
@@ -7712,6 +7718,7 @@ def copy_dram_to_local[
 
     var src_fragments = src.distribute[src_thread_layout](worker_idx)
 
+    var stride: Int
     comptime if not src_fragments.masked:
         dst.copy_from(src_fragments)
     else:
@@ -8502,6 +8509,7 @@ struct LayoutTensorIter[
         comptime if Self.axis:
             next_idx = self.idx + Self.linear_uint_type(Int(rhs))
 
+        var runtime_layout: Self.RuntimeLayoutType
         comptime if Self.masked:
             runtime_layout = self._clip_shape()
         else:

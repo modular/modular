@@ -497,6 +497,7 @@ def b2b_gemm[
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
+                var dst_idx: Int
                 comptime if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
@@ -547,6 +548,7 @@ def b2b_gemm[
             comptime for i in range(type_of(d_gmem_frag).layout.size()):
                 comptime src_idx = d_reg_frag.layout(i)
 
+                var dst_idx: Int
                 comptime if d_layout.all_dims_known():
                     comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
                     dst_idx = dst_static_idx

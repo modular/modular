@@ -1720,6 +1720,8 @@ __extension SM100MLA:
         var q0 = Self.descriptor_q(q_smem)
         var q1 = q0 + q0_bytes
 
+        var q0_rope: type_of(q0)
+        var q1_rope: type_of(q1)
         comptime if Self.config.fa4_config.use_shared_kv:
             # ---- Shared KV mode ----
             # Single StagedPipeline alternating K_nope and V.
