@@ -48,19 +48,19 @@ def sum_kernel[
 ](output: Pointer[Int32, MutAnyOrigin], a: Pointer[Int32, MutAnyOrigin],):
     """Efficient reduction of the vector a."""
     comptime KERNEL_TPB: Int = 512
-    sums = unsafe_stack_allocation[
+    var sums = unsafe_stack_allocation[
         KERNEL_TPB,
         Scalar[dtype],
         address_space=AddressSpace.SHARED,
     ]()
 
-    global_tid = block_idx.x * block_dim.x + thread_idx.x
-    tid = thread_idx.x
-    threads_in_grid = KERNEL_TPB * NUM_BLOCKS
+    var global_tid = block_idx.x * block_dim.x + thread_idx.x
+    var tid = thread_idx.x
+    var threads_in_grid = KERNEL_TPB * NUM_BLOCKS
     var sum: Int32 = 0
 
     for i in range(global_tid, size, threads_in_grid):
-        idx = i * batch_size
+        var idx = i * batch_size
         # Load in a vectorized fashion and reduce the loaded SIMD vector
         if idx < size:
             sum += a.unsafe_load[width=batch_size](idx).reduce_add()
@@ -69,7 +69,7 @@ def sum_kernel[
 
     # Reduce until the first warp
 
-    active_threads = KERNEL_TPB
+    var active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
     comptime for power in range(1, KERNEL_LOG_TPB - log2_floor(WARP_SIZE) + 1):
@@ -134,9 +134,9 @@ def main() raises:
     with DeviceContext() as ctx:
         # Allocate memory on the device
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
-        out = ctx.enqueue_create_buffer[dtype](1)
+        var out = ctx.enqueue_create_buffer[dtype](1)
         out.enqueue_fill(0)
-        a = ctx.enqueue_create_buffer[dtype](SIZE)
+        var a = ctx.enqueue_create_buffer[dtype](SIZE)
         a.enqueue_fill(0)
 
         # Initialise a with random integers between 0 and 10
@@ -154,7 +154,7 @@ def main() raises:
 
         # Calculate the sum in a sequential fashion on the host
         # for correctness check
-        expected = ctx.enqueue_create_host_buffer[dtype](1)
+        var expected = ctx.enqueue_create_host_buffer[dtype](1)
         expected.enqueue_fill(0)
         with a.map_to_host() as a_host:
             for i in range(SIZE):
