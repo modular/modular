@@ -23,6 +23,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 import huggingface_hub
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
@@ -1099,8 +1100,19 @@ def parse_quant_config(
         # ``gate_up_proj`` and ``gate_up_proj_scales`` properties (which
         # gate the sigma-permutation on this flag) stay byte-equal to the
         # historical chained-kernel path.
-        config.can_use_fused_swiglu = (config.is_nvfp4 or config.is_mxfp8) and (
-            os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1"
-        )
+        # NOTE: `accelerator_api()` probes the LOCAL machine, so this flag --
+        # and with it the sigma-permutation applied to `gate_up_proj` -- is a
+        # function of the build host, not the target device. Parsing the same
+        # checkpoint on a CPU-only host yields a different weight layout. The
+        # assumption is build-host == inference-target; fixing it properly
+        # means threading the target device spec in here.
+        # MXFP8 is cuda-only here: the fused kernel is SM100, and on AMD the
+        # MoE gate/up SwiGLU is fused by `fused_silu_mx_kernel` off the
+        # chained path instead (as MXFP4 already does). Gating the flag rather
+        # than the call site keeps the sigma-permutation and the kernel choice
+        # consistent.
+        config.can_use_fused_swiglu = (
+            config.is_nvfp4 or (config.is_mxfp8 and accelerator_api() == "cuda")
+        ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
 
     return config

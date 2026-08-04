@@ -64,6 +64,7 @@ def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
 struct PreShuffledBGroupedGEMM[
     cu_count: Int,
     wg_per_cu: Int = 2,
+    lane_bytes: Int = 16,
 ]:
     """Grouped GEMM for MXFP4 on AMD CDNA4 with pre-shuffled weights.
 
@@ -77,7 +78,12 @@ struct PreShuffledBGroupedGEMM[
     Parameters:
         cu_count: Number of compute units on the target device.
         wg_per_cu: Work groups per compute unit (default 2).
+        lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
+            (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS` costs
+            twice the registers and LDS at MXFP8.
     """
+
+    comptime elems_per_byte = 32 // Self.lane_bytes
 
     comptime num_xcd = 8
     comptime total_wg = Self.cu_count * Self.wg_per_cu
@@ -117,12 +123,13 @@ struct PreShuffledBGroupedGEMM[
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
                     b_prefetch=True,
+                    lane_bytes=Self.lane_bytes,
                 ].num_threads
             )
         )
     )
     @__name(
-        t"mxfp4_preb_pers_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+        t"mx_preb_pers_lb{Self.lane_bytes}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -181,11 +188,14 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
+            lane_bytes=Self.lane_bytes,
         ]
-        # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
+        # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
         # vs uint8-byte views differ); A is canonically 2D so this is stable.
-        comptime K_SCALES = a_tensor.static_shape[1] // 16
+        comptime K_SCALES = (
+            a_tensor.static_shape[1] * Self.elems_per_byte
+        ) // 32
         comptime gx_n = ceildiv(N, BN)
 
         if N == 0 or _num_active_experts == 0:
@@ -325,11 +335,14 @@ struct PreShuffledBGroupedGEMM[
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
                     b_prefetch=True,
+                    lane_bytes=Self.lane_bytes,
                 ].num_threads
             )
         )
     )
-    @__name(t"mxfp4_preb_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}")
+    @__name(
+        t"mx_preb_lb{Self.lane_bytes}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+    )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
     )
@@ -386,11 +399,14 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
+            lane_bytes=Self.lane_bytes,
         ]
-        # K_SCALES (= K / 32) derived from A-data packed_K (= K / 2). The
+        # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
         # vs uint8-byte views differ); A is canonically 2D so this is stable.
-        comptime K_SCALES = a_tensor.static_shape[1] // 16
+        comptime K_SCALES = (
+            a_tensor.static_shape[1] * Self.elems_per_byte
+        ) // 32
 
         var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
         if M == 0 or N == 0:
@@ -492,6 +508,7 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
+            lane_bytes=Self.lane_bytes,
         ]
 
         comptime N = c.static_shape[1]
@@ -918,7 +935,9 @@ def _launch_mxfp4_grouped[
     )
 
 
-def mxfp4_grouped_matmul_amd_preb(
+def mxfp4_grouped_matmul_amd_preb[
+    lane_bytes: Int = 0
+](
     c: TileTensor[mut=True, ...],
     a: TileTensor[DType.uint8, ...],
     b_pre: TileTensor[DType.uint8, ...],
@@ -944,9 +963,17 @@ def mxfp4_grouped_matmul_amd_preb(
     MI355X and requires packed K (K // 2) to be at least 256 and divisible by
     256; smaller K should use `mxfp4_grouped_matmul_amd` instead.
 
+    Parameters:
+        lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
+            (MXFP8). 0 (default) infers it from the tensors, since both
+            formats present as `uint8` and a wrong value silently corrupts
+            `K_SCALES`. Also part of the band dispatch key: `(N, packed_K)`
+            alone does not identify a shape across formats.
+
     Args:
         c: Output tensor [total_tokens, N].
-        a: Packed activations [total_tokens, K//2] uint8.
+        a: Packed activations [total_tokens, K//2] uint8 (MXFP4) or
+            [total_tokens, K] uint8 (MXFP8).
         b_pre: Pre-shuffled expert weights, rank-2 flat or rank-3
             [num_experts, N, K//2] uint8.
         a_scales: Activation scales [total_tokens, K//32] float8_e8m0fnu.
@@ -978,6 +1005,22 @@ def mxfp4_grouped_matmul_amd_preb(
     comptime N = c.static_shape[1]
     comptime packed_K = a.static_shape[1]
 
+    # a_scales holds one E8M0 per 32 elements, so K == its K-extent * 32.
+    # Assert the ratio before dividing by it: a mismatched pair truncates to 0
+    # and would raise a comptime divide-by-zero instead of this message.
+    comptime _epb = (a_scales.static_shape[1] * 32) // packed_K
+    comptime assert _epb == 1 or _epb == 2, (
+        "a_scales' K extent must be K/32 and a's must be K (MXFP8) or K/2"
+        " (MXFP4); their ratio is what identifies the format"
+    )
+    comptime LB = (32 // _epb) if lane_bytes == 0 else lane_bytes
+    comptime assert (
+        LB == 16 or LB == 32
+    ), "lane_bytes (inferred or explicit) must be 16 (MXFP4) or 32 (MXFP8)"
+    comptime assert (
+        lane_bytes == 0 or lane_bytes == 32 // _epb
+    ), "explicit lane_bytes disagrees with the shapes of a / a_scales"
+
     comptime assert (
         b_per_expert_bytes == N * packed_K
     ), "b_pre shape mismatch with c.N and a.K"
@@ -991,7 +1034,7 @@ def mxfp4_grouped_matmul_amd_preb(
     # Preshuffled-scales requires num_k_mmas % 2 == 0, which
     # forces BK_ELEMS >= 256 (i.e. packed_K >= 256 and packed_K % 256 == 0).
     comptime assert packed_K >= 256 and packed_K % 256 == 0, (
-        "mxfp4_grouped_matmul_amd_preb requires packed K (K // 2) >= 256 and"
+        "mxfp4_grouped_matmul_amd_preb requires A's K byte extent >= 256 and"
         " divisible by 256; smaller K should use the non-preb path"
         " (mxfp4_grouped_matmul_amd) instead."
     )
@@ -1010,11 +1053,16 @@ def mxfp4_grouped_matmul_amd_preb(
         wg_per_cu: Int = 2,
         use_decode_cap: Bool = False,
         pipeline_depth: Int = 2,
+        cluster_drain_sched: Bool = False,
+        mfma_cluster: Int = 4,
+        waves_per_eu: Int = 0,
     ]() raises:
         # Decode bands (use_decode_cap) pass the decode cap; others pass -1.
         var grid_m_cap = decode_grid_m_cap if use_decode_cap else -1
         PreShuffledBGroupedGEMM[
-            cu_count=ctx.default_device_info.sm_count, wg_per_cu=wg_per_cu
+            cu_count=ctx.default_device_info.sm_count,
+            wg_per_cu=wg_per_cu,
+            lane_bytes=LB,
         ].launch[
             BM=BM,
             BN=BN,
@@ -1024,6 +1072,9 @@ def mxfp4_grouped_matmul_amd_preb(
             b_cache_policy=b_cache_policy,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
+            cluster_drain_sched=cluster_drain_sched,
+            mfma_cluster=mfma_cluster,
+            waves_per_eu=waves_per_eu,
             static_grid_z=use_decode_cap,
         ](
             c,
@@ -1044,7 +1095,7 @@ def mxfp4_grouped_matmul_amd_preb(
     comptime STREAM = CacheOperation.STREAMING
     var etm = estimated_total_m
 
-    comptime if N == 4096 and packed_K == (7168 // 2):  # gate+up
+    comptime if LB == 16 and N == 4096 and packed_K == (7168 // 2):  # gate+up
         if etm == 1:
             return run_kernel[16, 64, 512, 16, True, wg_per_cu=1]()
         elif etm <= 20:
@@ -1058,7 +1109,7 @@ def mxfp4_grouped_matmul_amd_preb(
         else:
             return run_kernel[64, 128, 512, 64, False]()
 
-    comptime if N == 7168 and packed_K == (2048 // 2):  # down
+    comptime if LB == 16 and N == 7168 and packed_K == (2048 // 2):  # down
         if etm == 1:
             return run_kernel[16, 64, 512, 16, True, wg_per_cu=1]()
         elif etm <= 3:
@@ -1076,7 +1127,9 @@ def mxfp4_grouped_matmul_amd_preb(
         else:
             return run_kernel[64, 128, 512, 64, False, deep_prime=True]()
 
-    comptime if N == 6144 and packed_K == (6144 // 2):  # MiniMax-M3 gate+up
+    comptime if LB == 16 and N == 6144 and packed_K == (
+        6144 // 2
+    ):  # MiniMax-M3 gate+up
         if etm <= 256:
             # Decode: direct capped grid (pipeline_depth=3) beats persistent, else persistent.
             if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
@@ -1103,7 +1156,9 @@ def mxfp4_grouped_matmul_amd_preb(
         else:
             return run_kernel[64, 128, 512, 64, False]()
 
-    comptime if N == 6144 and packed_K == (3072 // 2):  # MiniMax-M3 down
+    comptime if LB == 16 and N == 6144 and packed_K == (
+        3072 // 2
+    ):  # MiniMax-M3 down
         if etm <= 256:
             # Decode: direct capped grid (pipeline_depth=3) beats persistent, else persistent.
             if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
@@ -1126,13 +1181,78 @@ def mxfp4_grouped_matmul_amd_preb(
         else:
             return run_kernel[128, 128, 512, 64, True]()
 
-    comptime if N == 3072 and packed_K == (6144 // 2):
+    comptime if LB == 16 and N == 3072 and packed_K == (6144 // 2):
         if etm <= 4096:
             return run_kernel[64, 128, 512, 64, True]()
         else:
             return run_kernel[128, 128, 512, 64, True]()
 
+    # MXFP8. Tiles below were autotuned on MI355 over the M3 gate_up/down
+    # shapes; the FP4 bands above carry their own rationale inline.
+    # `use_decode_cap` is required on the decode bands, not preferred:
+    # it makes grid.z a capture-time constant for device graph capture.
+    comptime if LB == 32 and N == 6144 and packed_K == 6144:  # M3 gate+up, K=6144
+        if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+            return run_kernel[
+                16,
+                64,
+                512,
+                16,
+                False,
+                STREAM,
+                use_decode_cap=True,
+                pipeline_depth=3,
+            ]()
+        if etm <= 256:
+            return run_kernel[
+                32, 128, 256, 32, False, STREAM, cluster_drain_sched=True
+            ]()
+        elif etm <= 512:
+            return run_kernel[64, 128, 512, 32, False, deep_prime=True]()
+        elif etm <= 2048:
+            return run_kernel[
+                64,
+                128,
+                256,
+                32,
+                False,
+                cluster_drain_sched=True,
+                mfma_cluster=2,
+            ]()
+        else:
+            return run_kernel[
+                64, 128, 256, 32, False, cluster_drain_sched=True
+            ]()
+
+    comptime if LB == 32 and N == 6144 and packed_K == 3072:  # M3 down, K=3072
+        if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+            return run_kernel[
+                16,
+                64,
+                512,
+                16,
+                False,
+                STREAM,
+                use_decode_cap=True,
+                pipeline_depth=3,
+            ]()
+        if etm <= 256:
+            return run_kernel[
+                32, 128, 256, 32, False, STREAM, pipeline_depth=3
+            ]()
+        elif etm <= 512:
+            return run_kernel[
+                64, 128, 512, 32, False, STREAM, deep_prime=True
+            ]()
+        elif etm <= 2048:
+            return run_kernel[64, 128, 512, 32, False, deep_prime=True]()
+        else:
+            return run_kernel[128, 128, 256, 64, True, waves_per_eu=2]()
+
     # Other shapes: persistent below the threshold, direct at/above it.
+    # Not a typo: BK counts ELEMENTS, so 256 at MXFP8 is the same LDS/register
+    # footprint as 512 at MXFP4.
+    comptime FALLBACK_BK = 512 if LB == 16 else 256
     if etm >= m_threshold:
-        return run_kernel[64, 128, 512, 64, False]()
-    return run_kernel[64, 128, 512, 64, True]()
+        return run_kernel[64, 128, FALLBACK_BK, 64, False]()
+    return run_kernel[64, 128, FALLBACK_BK, 64, True]()

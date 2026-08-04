@@ -39,7 +39,7 @@ from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
     EP_DATA_READY_FLAG,
     EPLocalSyncCounters,
-    MXFP4TokenFormat,
+    MXTokenFormat,
     NVBlockScaledTokenFormat,
     TokenFormat,
 )
@@ -699,8 +699,8 @@ struct MXFP4DispatchTest[
             Self.hidden_size // MXFP4_SF_VECTOR_SIZE,
         )
     )
-    comptime TokenFormatType = MXFP4TokenFormat[
-        fp4_dtype=Self.fp4_dtype,
+    comptime TokenFormatType = MXTokenFormat[
+        quant_dtype=Self.fp4_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
         scales_layout=type_of(Self.output_scales_layout),

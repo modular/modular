@@ -5254,11 +5254,12 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     tensor representation for variable-length expert inputs.
 
     Args:
-        hidden_states: The input activations with shape ``[total_tokens, K/2]``
-            where K is the unpacked hidden dimension. Dtype must be uint8
-            (packed MXFP4).
-        weight: The expert weights with shape ``[num_experts, N, K/2]``.
-            Dtype must be uint8 (packed MXFP4).
+        hidden_states: The input activations with shape
+            ``[total_tokens, K/2]`` at MXFP4 or ``[total_tokens, K]`` at MXFP8,
+            where K is the unpacked hidden dimension.
+        weight: The expert weights, shaped ``[num_experts, N, K/2]`` at MXFP4
+            or ``[num_experts, N, K]`` at MXFP8. Must share ``hidden_states``'
+            dtype: uint8 (packed MXFP4) or float8_e4m3fn (MXFP8).
         a_scales: Scaling factors for inputs with shape
             ``[num_scale_rows, K/32]``. Dtype must be float8_e8m0fnu.
         b_scales: Scaling factors for weights with shape
@@ -5293,9 +5294,15 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             f"{hidden_k}] but got {weight.shape}"
         )
 
-    if (hidden_states.dtype != DType.uint8) or (weight.dtype != DType.uint8):
+    # The kernel infers the packing from the shapes, so both operands need only
+    # agree on one MX dtype: uint8 (MXFP4) or float8_e4m3fn (MXFP8).
+    if hidden_states.dtype != weight.dtype or hidden_states.dtype not in (
+        DType.uint8,
+        DType.float8_e4m3fn,
+    ):
         raise TypeError(
-            "hidden_states and weight dtypes must be uint8 for MXFP4, but got "
+            "hidden_states and weight must share one MX dtype, either uint8 "
+            "(MXFP4) or float8_e4m3fn (MXFP8), but got "
             f"{hidden_states.dtype}, {weight.dtype}"
         )
 
@@ -5335,8 +5342,12 @@ def grouped_dynamic_scaled_mxfp4_matmul(
 
     MXFP4_SF_VECTOR_SIZE = 32
 
+    # Shapes are in BYTES, so recover the element count before counting scale
+    # groups: MXFP4 stores two elements per byte, MXFP8 one.
+    elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
+
     a_scales_dim_1 = ceildiv(
-        hidden_states.shape[1] * 2, Dim(MXFP4_SF_VECTOR_SIZE)
+        hidden_states.shape[1] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
     )
     if a_scales.shape[1] != a_scales_dim_1:
         raise ValueError(
@@ -5345,7 +5356,9 @@ def grouped_dynamic_scaled_mxfp4_matmul(
             f" but got {a_scales.shape}"
         )
 
-    b_scales_dim_2 = ceildiv(weight.shape[2] * 2, Dim(MXFP4_SF_VECTOR_SIZE))
+    b_scales_dim_2 = ceildiv(
+        weight.shape[2] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
+    )
     if (
         b_scales.shape[0] != weight.shape[0]
         or b_scales.shape[1] != weight.shape[1]
@@ -5433,7 +5446,12 @@ def grouped_dynamic_scaled_mxfp4_matmul(
                 device=hidden_states.device,
             ),
         ],
-        parameters={"preshuffled_b": preshuffled_b},
+        parameters={
+            "preshuffled_b": preshuffled_b,
+            # Both formats reach the kernel as raw bytes, so this is what tells
+            # them apart: 16 bytes per lane at MXFP4, 32 at MXFP8.
+            "lane_bytes": 32 // elems_per_byte,
+        },
     )[0].tensor
 
     return output
@@ -6924,11 +6942,37 @@ def dynamic_block_scaled_matmul_mxfp4(
             f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
         )
 
-    if a.dtype != DType.uint8:
-        raise ValueError("A dtype must be uint8 (fp4-e2m1fnX2)")
+    # The kernel reads raw bytes and takes the packing as a parameter.
+    if a.dtype not in (DType.uint8, DType.float8_e4m3fn):
+        raise ValueError(
+            "A dtype must be uint8 (MXFP4) or float8_e4m3fn (MXFP8), got "
+            f"{a.dtype}"
+        )
 
     if a_scales.dtype != DType.float8_e8m0fnu:
-        raise ValueError("a_scales dtype must be float8_e4m3fn")
+        raise ValueError("a_scales dtype must be float8_e8m0fnu")
+
+    elems_per_byte = 2 if a.dtype == DType.uint8 else 1
+
+    # Validate the scale extents here rather than letting a mis-sized tensor
+    # reach the kernel, where it reads out of bounds instead of raising.
+    MX_SF_VECTOR_SIZE = 32
+    expected_a_scales_k = ceildiv(
+        a.shape[1] * elems_per_byte, Dim(MX_SF_VECTOR_SIZE)
+    )
+    if a_scales.shape[1] != expected_a_scales_k:
+        raise ValueError(
+            f"a_scales shape must be [*, {expected_a_scales_k}] but got "
+            f"{a_scales.shape}"
+        )
+    expected_b_scales_k = ceildiv(
+        b.shape[1] * elems_per_byte, Dim(MX_SF_VECTOR_SIZE)
+    )
+    if b_scales.shape[1] != expected_b_scales_k:
+        raise ValueError(
+            f"b_scales shape must be [*, {expected_b_scales_k}] but got "
+            f"{b_scales.shape}"
+        )
 
     result = ops.custom(
         "mo.matmul.dynamic.block.scaled.mxfp4",
@@ -6944,6 +6988,7 @@ def dynamic_block_scaled_matmul_mxfp4(
                 dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
             )
         ],
+        parameters={"lane_bytes": 32 // elems_per_byte},
     )[0].tensor
 
     return result
@@ -7035,6 +7080,14 @@ def _is_apple_gpu() -> bool:
     """Checks if the current accelerator is an Apple (Metal) GPU."""
     try:
         return accelerator_api() == "metal"
+    except Exception:
+        return False
+
+
+def _is_amd_gpu() -> bool:
+    """Checks if the current accelerator is an AMD (HIP) GPU."""
+    try:
+        return accelerator_api() == "hip"
     except Exception:
         return False
 

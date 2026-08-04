@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared MXFP4 expert-weight preshuffle for the AMD preb grouped-matmul kernel.
+"""Shared MX expert-weight preshuffle for the AMD preb grouped-matmul kernel.
 
-CPU byte-permutation of per-expert MXFP4 ``B`` weights (and their E8M0
+CPU byte-permutation of per-expert MXFP4 or MXFP8 ``B`` weights (and their E8M0
 ``B``-scales) into the 5D / 4D-cell layouts the AMD
 ``mxfp4_grouped_matmul_amd_preb`` kernel reads, so it can issue coalesced
 DRAM->VGPR loads. Model weight adapters call
@@ -21,8 +21,10 @@ lockstep and flip ``QuantConfig.mxfp4_preshuffled_b`` so ``MoEQuantized``
 dispatches to the preb path.
 
 Matches expert weights named ``...layers.N.mlp.experts.IDX.{gate,up,down}_proj``;
-weights whose dtype/dims aren't MXFP4-packed and tile-aligned are silently
-skipped (they fall through to the row-major kernel). Used by the Kimi K2.5 and
+weights whose dtype/dims aren't MX-packed and tile-aligned are skipped. NOTE
+the caller flips ``mxfp4_preshuffled_b`` for the whole config regardless, so a
+PARTIALLY shuffled expert group would be read as if fully permuted; the helpers
+below raise on that case rather than skip silently. Used by the Kimi K2.5 and
 MiniMax-M3 adapters.
 """
 
@@ -69,15 +71,26 @@ _SHARED_EXPERT_SCALE_RE = re.compile(
 def _as_shuffleable_mxfp4_b(wd: WeightData) -> np.ndarray | None:
     """Return ``wd`` as a numpy view if it's a shuffleable MXFP4 B weight.
 
-    A weight is shuffleable when its dtype is packed-MXFP4 (uint8) and its
-    dims are MFMA-tile-aligned: ``N % 16 == 0`` (NLane=16) and
-    ``K_BYTES % 64 == 0`` (4 KLane * 16 KPack). The shuffle reshape
-    hardcodes those factors, so non-aligned dims would crash on reshape.
-    Returns ``None`` when the weight isn't shuffleable.
+    Shuffleable when the dtype is packed-MXFP4 (uint8) or MXFP8
+    (``float8_e4m3fn``) and the dims are MFMA-tile-aligned: ``N % 16 == 0``
+    (NLane=16) and ``K_BYTES % 64 == 0`` (4 KLane * 16 KPack). The shuffle
+    reshape hardcodes those factors, so non-aligned dims would crash on
+    reshape. The 5D layout is a pure byte permutation and identical for both
+    formats, so FP8 bytes are reinterpreted as uint8 here; the caller restores
+    the dtype. Returns ``None`` when the weight isn't shuffleable.
     """
-    if wd.dtype != DType.uint8:
+    if wd.dtype not in (DType.uint8, DType.float8_e4m3fn):
         return None
-    arr = np.from_dlpack(wd.data)
+    try:
+        arr = np.from_dlpack(wd.data)
+    except (TypeError, BufferError):
+        return None
+    except RuntimeError:
+        arr = np.from_dlpack(
+            wd.to_buffer().view(DType.uint8, wd.shape.static_dims)
+        )
+    if arr.dtype != np.uint8:
+        arr = arr.view(np.uint8)
     if arr.ndim != 2 or arr.shape[0] % 16 != 0 or arr.shape[1] % 64 != 0:
         return None
     return arr
@@ -192,14 +205,29 @@ def preshuffle_mxfp4_b_experts(
             ]
             if not shuffleable:
                 continue
+            if len(shuffleable) != len(names):
+                # All-or-nothing is a legitimate "this model doesn't use the
+                # preb path". A MIXED group is always a bug: the caller flips
+                # `mxfp4_preshuffled_b` for the whole config, so the skipped
+                # weights would be read as if they had been permuted.
+                skipped = sorted(set(names) - {n for n, _ in shuffleable})
+                raise ValueError(
+                    "partial MX expert-weight preshuffle: "
+                    f"{len(shuffleable)}/{len(names)} shuffled, skipped "
+                    f"{skipped}. Every weight in a group must share a "
+                    "shuffleable dtype and tile-aligned dims."
+                )
 
             kept_names, srcs = zip(*shuffleable, strict=True)
             N, K_BYTES = srcs[0].shape
             buf = np.empty((len(srcs), N, K_BYTES), dtype=np.uint8)
             list(pool.map(_shuffle_b_5d, srcs, buf))
             for name, slot in zip(kept_names, buf, strict=True):
-                state_dict[name] = WeightData.from_numpy(
-                    slot, name=state_dict[name].name
+                # The slab is uint8; restore the source dtype so MXFP8 weights
+                # stay float8_e4m3fn for downstream dtype checks.
+                state_dict[name] = dataclasses.replace(
+                    WeightData.from_numpy(slot, name=state_dict[name].name),
+                    dtype=state_dict[name].dtype,
                 )
             n_total += len(srcs)
 

@@ -32,6 +32,11 @@ comptime NVFP4_SF_VECTOR_SIZE = 16
 comptime MXFP4_SF_VECTOR_SIZE = 32
 comptime MXFP8_SF_VECTOR_SIZE = 32
 
+# Reciprocal of E4M3's maxabs. Exact as a literal, so the MXFP8 block-scale
+# derivation carries no `V_RCP_F32` rounding and no reliance on LLVM folding
+# the intrinsic.
+comptime E4M3_MAXABS_RECIP = 1.0 / 448.0
+
 comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
 comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
 comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu

@@ -119,10 +119,11 @@ def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
 
 
 struct BlockScaledMmaOp_PreB[
-    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4
+    mma_shape: IndexList[3],  # (16, 16, 128) for MXFP4 and MXFP8 alike
     warp_tile: IndexList[3],  # (WM, WN, BK_ELEMS) in MFMA-native element units
     num_b_slots: Int = 1,
     num_scale_slots: Int = 1,
+    lane_bytes: Int = 16,
 ]:
     """Per-warp register state + MFMA dispatch for the preb (preshuffled-B,
     preshuffled-scale) kernel.
@@ -153,21 +154,37 @@ struct BlockScaledMmaOp_PreB[
             this is 1 (1-deep, unchanged behavior); the depth-3
             co-deepened prefetch sets it to 2 so the scale ring
             double-buffers alongside the B fragments.
+        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4) or 32
+            (MXFP8). A lane always covers 32 K-elements either way.
     """
 
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
     comptime MMA_K = Self.mma_shape[2]
 
+    comptime elems_per_byte = 32 // Self.lane_bytes
+
     comptime num_m_mmas = Self.warp_tile[0] // Self.MMA_M
     comptime num_n_mmas = Self.warp_tile[1] // Self.MMA_N
     comptime num_k_mmas = Self.warp_tile[2] // Self.MMA_K
 
-    comptime MMA_K_BYTES = Self.MMA_K // 2  # 64 bytes / MFMA along K
+    comptime MMA_K_BYTES = Self.MMA_K // Self.elems_per_byte
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
-    comptime mma_frag_width_bytes: Int = 16
-    # Per-slot A LDS tile is [BM, BK_BYTES]; BK_BYTES = BK_ELEMS // 2.
-    comptime BK_BYTES = Self.warp_tile[2] // 2
+    comptime mma_frag_width_bytes: Int = Self.lane_bytes
+    # At MXFP8 a lane's two 16-byte halves are K_HALF_STRIDE apart in K, not
+    # contiguous; treating them as contiguous mis-pairs the scale blocks.
+    comptime FRAG_HALF_BYTES = 16
+    comptime num_frag_halves = (
+        Self.mma_frag_width_bytes // Self.FRAG_HALF_BYTES
+    )
+    comptime K_HALF_STRIDE = Self.MMA_K_BYTES // Self.num_frag_halves
+    # Per-slot A LDS tile is [BM, BK_BYTES].
+    comptime BK_BYTES = Self.warp_tile[2] // Self.elems_per_byte
+
+    comptime mx_format = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if Self.lane_bytes
+        == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
 
     comptime _a_reg_layout = row_major[
         Self.num_k_mmas,
@@ -312,20 +329,21 @@ struct BlockScaledMmaOp_PreB[
         var crd = lane_layout.idx2crd(Int(lane_id()))
         var m = crd[0]
         var k_vec = crd[1]
-        var col_byte = (
-            mma_k_idx * Self.MMA_K_BYTES
-            + Int(k_vec) * Self.mma_frag_width_bytes
-        )
-
         comptime swizzle = a_lds_swizzle[Self.BK_BYTES]()
         comptime tile_layout = row_major[Self.warp_tile[0], Self.BK_BYTES]()
-        var a_reg_v = self._a_reg.vectorize[1, 1, Self.mma_frag_width_bytes]()
+        var a_reg_v = self._a_reg.vectorize[1, 1, Self.FRAG_HALF_BYTES]()
         comptime for i in range(Self.num_m_mmas):
             var row = i * Self.MMA_M + Int(m)
-            var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
-            a_reg_v[mma_k_idx, i, 0] = a_smem_warp.raw_load[
-                width=Self.mma_frag_width_bytes
-            ](off)
+            comptime for h in range(Self.num_frag_halves):
+                var col_byte = (
+                    mma_k_idx * Self.MMA_K_BYTES
+                    + h * Self.K_HALF_STRIDE
+                    + Int(k_vec) * Self.FRAG_HALF_BYTES
+                )
+                var off = swizzle(Int(tile_layout(Coord(row, col_byte))))
+                a_reg_v[mma_k_idx, i, h] = a_smem_warp.raw_load[
+                    width=Self.FRAG_HALF_BYTES
+                ](off)
 
     @always_inline
     def load_b_frag_preshuffled[
@@ -354,9 +372,7 @@ struct BlockScaledMmaOp_PreB[
 
         var lane_klane, lane_nlane = udivmod(lane_id(), Self.MMA_N)
 
-        var b_reg_v = self._b_reg.vectorize[
-            1, 1, 1, Self.mma_frag_width_bytes
-        ]()
+        var b_reg_v = self._b_reg.vectorize[1, 1, 1, Self.FRAG_HALF_BYTES]()
         comptime for i in range(Self.num_n_mmas):
             # the logical n row in the expert we will be loading from
             # the warp_n_offset is the tile base position for this warp block,
@@ -370,17 +386,16 @@ struct BlockScaledMmaOp_PreB[
             # processing in that block. Finally we add the lane's klane offset within that K tile,
             # This is usually a multiple of 16
 
-            var k_byte_log = (
-                k_byte_base
-                + mma_k_idx * Self.MMA_K_BYTES
-                + lane_klane * Self.mma_frag_width_bytes
-            )
-
-            # we pass in the logical Nth row, and K byte to get the shuffled
-            # coordinate we are loading from
-            b_reg_v[slot, mma_k_idx, i, 0] = b_loader.load_fragment(
-                n_log, k_byte_log
-            )
+            comptime for h in range(Self.num_frag_halves):
+                var k_byte_log = (
+                    k_byte_base
+                    + mma_k_idx * Self.MMA_K_BYTES
+                    + h * Self.K_HALF_STRIDE
+                    + lane_klane * Self.FRAG_HALF_BYTES
+                )
+                b_reg_v[slot, mma_k_idx, i, h] = b_loader.load_fragment(
+                    n_log, k_byte_log
+                )
 
     @always_inline
     def load_a_scales_preshuffled[
@@ -524,8 +539,8 @@ struct BlockScaledMmaOp_PreB[
                 cdna4_block_scaled_mfma[
                     Int32(b_byte),
                     Int32(a_byte),
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+                    Self.mx_format,
+                    Self.mx_format,
                 ](
                     c_frag,
                     b_frag,
@@ -549,6 +564,7 @@ struct MXFP4MatmulAMD_PreB[
     mfma_cluster: Int = 4,
     deep_prime: Bool = False,
     pipeline_depth: Int = 2,
+    lane_bytes: Int = 16,
 ]:
     """Preshuffled-B variant of `MXFP4MatmulAMD`.
 
@@ -623,10 +639,15 @@ struct MXFP4MatmulAMD_PreB[
             the non-draining `s_waitcnt[lgkmcnt=0]` + bare `s_barrier`
             and co-deepens the A/scale rings. At the default (2) the
             behavior is bit-identical to before.
+        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4) or 32
+            (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS`
+            costs twice the registers and LDS at MXFP8.
     """
 
     # WM is locked to BM — single warp along M for the preb (no-LDS-B) path.
     comptime WM = Self.BM
+
+    comptime elems_per_byte = 32 // Self.lane_bytes
 
     comptime MMA_M = 16
     comptime MMA_N = 16
@@ -644,6 +665,7 @@ struct MXFP4MatmulAMD_PreB[
         warp_tile=IndexList[3](Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
         num_scale_slots=Self.num_scale_slots,
+        lane_bytes=Self.lane_bytes,
     ]
 
     comptime num_m_mmas = Self.MmaOpType.num_m_mmas
@@ -652,7 +674,7 @@ struct MXFP4MatmulAMD_PreB[
     comptime MMA_K_BYTES = Self.MmaOpType.MMA_K_BYTES
     comptime c_frag_size = Self.MmaOpType.c_frag_size
 
-    comptime BK_BYTES = Self.BK_ELEMS // 2
+    comptime BK_BYTES = Self.BK_ELEMS // Self.elems_per_byte
 
     comptime num_warps_m = 1
     comptime num_warps_n = Self.BN // Self.WN
@@ -690,6 +712,10 @@ struct MXFP4MatmulAMD_PreB[
         ), "K_BYTES must be a multiple of BK_BYTES"
 
         comptime assert (
+            Self.lane_bytes == 16 or Self.lane_bytes == 32
+        ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8)"
+
+        comptime assert (
             Self.BM == 16 or Self.BM % 32 == 0
         ), "preshuffled scales require BM == 16 or BM % 32 == 0"
         comptime assert (
@@ -703,8 +729,8 @@ struct MXFP4MatmulAMD_PreB[
             N % 32 == 0
         ), "N must be a multiple of 32 (= 16 * mn_pack) for preshuffled scales"
 
-        # K_SCALES = K / 32; K_BYTES = K / 2 → K_SCALES = K_BYTES / 16.
-        comptime K_SCALES = K_BYTES // 16
+        # K_SCALES = K / 32, with K = K_BYTES * elems_per_byte.
+        comptime K_SCALES = (K_BYTES * Self.elems_per_byte) // MX_BLOCK_SIZE
         # Number of (k_pack=2) scale-dwords needed per outer-K iter.
         comptime mma_k_pair_per_tile = Self.num_k_mmas // 2
         # MN_padded is only used by the layout for shape bookkeeping —
