@@ -411,7 +411,7 @@ struct OwnedDLHandle(Movable):
             " `get_function[Ret](name)`."
         )
         var ptr = self._handle.get_symbol[NoneType](
-            cstr_name=name.as_c_string_slice().unsafe_ptr()
+            cstr_name=name.as_c_string_slice()
         )
         if not ptr:
             raise Error(t"symbol not found: {name}")
@@ -439,7 +439,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: Pointer[mut=False, c_char, _]) -> result_type:
+    ](self, *, cstr_name: CStringSlice[_]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -489,14 +489,12 @@ struct OwnedDLHandle(Movable):
         """
         var name_copy = String(name)
         return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
+            cstr_name=name_copy.as_c_string_slice()
         )
 
-    # TODO(MSTDL-3007): take a `CStringSlice`, which states the
-    # nul-termination this pointer only assumes.
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
-    ](ref[origin] self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
+    ](ref[origin] self, *, cstr_name: CStringSlice[_]) -> Optional[
         Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -719,7 +717,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         )
 
         return self._get_function[result_type](
-            cstr_name=name.as_c_string_slice().unsafe_ptr()
+            cstr_name=name.as_c_string_slice()
         )
 
     @always_inline
@@ -739,13 +737,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Force unique the func_name so we know that it is nul-terminated.
         comptime func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            cstr_name=func_name_literal.unsafe_ptr().unsafe_bitcast[c_char](),
+            cstr_name=func_name_literal.as_c_string_slice(),
         )
 
     @always_inline
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: Pointer[mut=False, c_char, _]) -> result_type:
+    ](self, *, cstr_name: CStringSlice[_]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -761,10 +759,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
 
         if not opaque_function_ptr:
-            abort(
-                t"symbol not found: "
-                t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
-            )
+            abort(t"symbol not found: {cstr_name}")
 
         return Pointer(to=opaque_function_ptr.value()).unsafe_bitcast[
             result_type
@@ -789,12 +784,12 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var name_copy = String(name)
         return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
+            cstr_name=name_copy.as_c_string_slice()
         )
 
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: Pointer[mut=False, Int8, _]) -> Optional[
+    ](self, *, cstr_name: CStringSlice[_]) -> Optional[
         Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -812,9 +807,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         debug_assert(
             Bool(self.handle),
             "Dylib handle is null when loading symbol: ",
-            StringSlice(
-                unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name)
-            ),
+            cstr_name,
         )
 
         # Follow the dance described in
@@ -830,7 +823,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
         var res: Optional[Pointer[result_type, MutUntrackedOrigin]] = dlsym[
             result_type
-        ](self.handle, cstr_name)
+        ](self.handle, cstr_name.unsafe_ptr())
 
         if not res:
             # Result is NULL — check if it's an error or a valid NULL symbol.
@@ -843,10 +836,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # Abort rather than returning a null pointer wrapped in Some,
             # which would be misleading. Callers who need to handle NULL
             # symbols should specify a nullable pointer as the result_type.
-            abort(
-                t"symbol resolved to NULL: "
-                t"{StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=cstr_name))}"
-            )
+            abort(t"symbol resolved to NULL: {cstr_name}")
 
         return res.value()
 
