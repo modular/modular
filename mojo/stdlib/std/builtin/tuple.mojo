@@ -68,7 +68,9 @@ struct Tuple[*element_types: Movable](
     """The underlying storage for the tuple."""
 
     @always_inline("nodebug")
-    def __init__(out self):
+    def __init__(
+        out self,
+    ) where Self.element_types.all_conforms_to[Defaultable]():
         """Construct a tuple with default-initialized elements.
 
         Constraints:
@@ -84,16 +86,7 @@ struct Tuple[*element_types: Movable](
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        # TODO(MOCO-3791): Replace the per-element `comptime assert` below
-        # with `where Self.element_types.all_conforms_to[Defaultable]()`
-        # once the solver can prove reducer-based `where` clauses for
-        # generic callers that forward parameter packs.
         comptime for i in range(Self.__len__()):
-            comptime TUnknown = Self.element_types[i]
-            comptime assert conforms_to(TUnknown, Defaultable), (
-                "Tuple default-construction requires all element types to"
-                " conform to `Defaultable`"
-            )
             Pointer(to=self[i]).unsafe_write({})
 
     @always_inline("nodebug")
@@ -145,7 +138,9 @@ struct Tuple[*element_types: Movable](
         self^.consume_elements[deinit_func]()
 
     @always_inline("nodebug")
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where Self.element_types.all_conforms_to[Copyable]():
         """Copy construct the tuple.
 
         Args:
@@ -157,7 +152,6 @@ struct Tuple[*element_types: Movable](
         )
 
         comptime for i in range(Self.__len__()):
-            comptime assert conforms_to(Self.element_types[i], Copyable)
             # TODO: We should not use self[i] as this returns a reference to
             # uninitialized memory.
             Pointer(to=self[i]).unsafe_write(copy=copy[i])
@@ -264,7 +258,6 @@ struct Tuple[*element_types: Movable](
             True if this tuple is equal to the other tuple, False otherwise.
         """
         comptime for i in range(type_of(self).__len__()):
-            comptime assert conforms_to(Self.element_types[i], Equatable)
             if self[i] != other[i]:
                 return False
         return True
@@ -281,7 +274,6 @@ struct Tuple[*element_types: Movable](
             hasher: The hasher instance.
         """
         comptime for i in range(type_of(self).__len__()):
-            comptime assert conforms_to(Self.element_types[i], Hashable)
             self[i].__hash__(hasher)
 
     @no_inline
@@ -301,7 +293,6 @@ struct Tuple[*element_types: Movable](
 
         @parameter
         def elements[i: Int](mut writer: Some[Writer]):
-            comptime assert conforms_to(Self.element_types[i], Writable)
             comptime if is_repr:
                 self[i].write_repr_to(writer)
             else:
@@ -368,7 +359,6 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            comptime assert conforms_to(Self.element_types[i], Comparable)
             if self[i] < other[i]:
                 return -1
             if other[i] < self[i]:

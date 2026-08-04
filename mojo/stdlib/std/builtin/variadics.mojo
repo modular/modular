@@ -611,7 +611,9 @@ struct _ParameterListIter[type: Copyable, //, *values: type](
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
-    Sized, TrivialRegisterPassable, Writable
+    Sized,
+    TrivialRegisterPassable,
+    Writable where conforms_to(type, Writable),
 ):
     """A utility class to access homogeneous variadic parameters.
 
@@ -986,15 +988,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     # Other
     # ===-------------------------------------------------------------------===#
 
-    def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
-        _constrained_conforms_to[
-            conforms_to(Self.type, Writable),
-            Parent=Self,
-            Element=Self.type,
-            ParentConformsTo="Writable",
-            ElementConformsTo="Writable",
-        ]()
-        comptime assert conforms_to(Self.type, Writable)
+    def _write_elements[
+        is_repr: Bool = False
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.type, Writable):
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
@@ -1007,7 +1003,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         writer.write_string(")")
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.type, Writable):
         """Writes the elements of this variadic list to a writer.
 
         Constraints:
@@ -1019,7 +1017,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         self._write_elements(writer)
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.type, Writable):
         """Writes the repr of this variadic list to a writer.
 
         Constraints:
@@ -1118,7 +1118,11 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](RegisterPassable, Sized, Writable):
+](
+    RegisterPassable,
+    Sized,
+    Writable where conforms_to(element_type, Writable),
+):
     """A utility class to access variadic function arguments of memory-only
     types that may have ownership. It exposes references to the elements in a
     way that can be enumerated.  Each element may be accessed with `elt[]`.
@@ -1201,6 +1205,9 @@ struct VariadicList[
     def consume_elements(
         deinit self,
         elt_handler: Some[def(idx: Int, var elt: Self.element_type)],
+    ) where (
+        Self.is_owned,
+        "consume_elements may only be called on owned variadic lists",
     ):
         """Consume the variadic list by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
@@ -1210,10 +1217,6 @@ struct VariadicList[
             elt_handler: A function that will be called for each element of the
                          list.
         """
-
-        comptime assert (
-            Self.is_owned
-        ), "consume_elements may only be called on owned variadic lists"
 
         for i in range(len(self)):
             var ptr = Pointer(to=self[i])
@@ -1269,15 +1272,11 @@ struct VariadicList[
         """
         return self._value.unsafe_ptr()[unsafe_offset=idx][]
 
-    def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
-        _constrained_conforms_to[
-            conforms_to(Self.element_type, Writable),
-            Parent=Self,
-            Element=Self.element_type,
-            ParentConformsTo="Writable",
-            ElementConformsTo="Writable",
-        ]()
-        comptime assert conforms_to(Self.element_type, Writable)
+    def _write_elements[
+        is_repr: Bool = False
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.element_type, Writable
+    ):
         writer.write_string("(")
         for i in range(len(self)):
             if i > 0:
@@ -1290,7 +1289,9 @@ struct VariadicList[
         writer.write_string(")")
 
     @no_inline
-    def write_to(self, mut writer: Some[Writer]):
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.element_type, Writable):
         """Writes the elements of this variadic list to a writer.
 
         Constraints:
@@ -1302,7 +1303,9 @@ struct VariadicList[
         self._write_elements(writer)
 
     @no_inline
-    def write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.element_type, Writable):
         """Writes the repr of this variadic list to a writer.
 
         Constraints:
@@ -1350,7 +1353,11 @@ struct VariadicPack[
     //,
     is_owned: Bool,
     *element_types: element_trait,
-](Copyable, RegisterPassable, Sized):
+](
+    Copyable where (not is_owned, "Cannot copy an owned variadic pack."),
+    RegisterPassable,
+    Sized,
+):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each
@@ -1433,7 +1440,9 @@ struct VariadicPack[
         self._value = value
 
     @always_inline("nodebug")
-    def __init__(out self, *, copy: Self):
+    def __init__(
+        out self, *, copy: Self
+    ) where (not Self.is_owned, "Cannot copy an owned variadic pack."):
         """Copy construct the variadic pack.
 
         Args:
@@ -1443,7 +1452,6 @@ struct VariadicPack[
             The variadic pack must not be owned.
         """
 
-        comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
         self._value = copy._value
 
     # The destructor for this type is trivial if not an "owned" pack.
@@ -1469,7 +1477,10 @@ struct VariadicPack[
 
     def consume_elements[
         elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
-    ](deinit self):
+    ](deinit self) where (
+        Self.is_owned,
+        "consume_elements may only be called on owned variadic packs",
+    ):
         """Consume the variadic pack by transferring ownership of each element
         into the provided closure one at a time.  This is only valid on 'owned'
         variadic packs.
@@ -1478,10 +1489,6 @@ struct VariadicPack[
             elt_handler: A function that will be called for each element of the
                          pack.
         """
-
-        comptime assert (
-            Self.is_owned
-        ), "consume_elements may only be called on owned variadic packs"
 
         comptime for i in range(Self.__len__()):
             var ptr = Pointer(to=self[i])
@@ -1632,9 +1639,6 @@ struct VariadicPack[
         writer.write_string(start)
 
         comptime for i in range(self.__len__()):
-            comptime assert conforms_to(
-                Self.element_types[i], Writable
-            ), "variadic pack element type is not Writable"
             comptime if i != 0:
                 writer.write_string(sep)
 

@@ -358,9 +358,9 @@ struct List[T: Movable, /](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, Deinitable]
-    ]
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.T, Deinitable
+    ) = _ListIterOwned[Self.T]
     """The owned iterator type for this list."""
 
     # asan annotation methods
@@ -713,10 +713,7 @@ struct List[T: Movable, /](
         Returns:
             An iterator of owned elements.
         """
-        return {
-            rebind_var[List[downcast[Self.T, Deinitable]]](self^),
-            0,
-        }
+        return {self^, 0}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
