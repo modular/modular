@@ -109,10 +109,16 @@ bool IREvaluator::getElabErrorIncludePrelude() {
 
 FailureOr<TypedAttr>
 IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
+
+  // conforms_to can be folded without a concrete instance, aggressively fold it
+  // here before checking "EscapingReferenceFinder"
+  if (auto typeConformsToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
+    return typeConformsToTraitAttr.evaluateWithContext(*this);
+
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   if (EscapingReferenceFinder::check(attr))
-    return failure();
+    return cast<TypedAttr>(attr);
 
   if (auto genref = dyn_cast<TypeGeneratorRefAttr>(attr)) {
     // Attempt to concretize the function first.
