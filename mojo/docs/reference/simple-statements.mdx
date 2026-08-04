@@ -111,10 +111,14 @@ Type annotations aren't required, but they improve readability and catch
 errors:
 
 ```mojo
-x: Int = 42
-name: String = "Alice"
-values: List[Float64] = []
+var x: Int = 42
+var name: String = "Alice"
+var values: List[Float64] = []
 ```
+
+Omitting `var` declares the name just the same, but at function scope rather
+than block scope. See
+[Variables](/docs/manual/variables/#implicitly-declared-variables).
 
 A `var` without a type *and* without an initializer is an error:
 
@@ -142,7 +146,7 @@ they run once:
 
 ```mojo
 # Good for initializing counters/flags to the same literal.
-var x = y = z = "Hello"
+var x = var y = var z = "Hello"
 print(x, y, z) # Hello Hello Hello
 
 # Mixing conventions

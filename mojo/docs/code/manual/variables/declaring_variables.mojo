@@ -19,28 +19,26 @@ def declaration_intro():
     _ = greeting
 
 
-def implicit_variables():
-    # start-implicit-variables
-    name = "Sam"
-    user_id = 0
-    # end-implicit-variables
+def inferred_declarations():
+    # start-inferred-declarations
+    var name = "Sam"
+    var user_id = 0
+    # end-inferred-declarations
     _, _ = name, user_id
 
 
-def implicit_variables_annotated():
-    # start-implicit-variables-annotated
-    name: String = "Sam"
-    user_id: Int
-    # end-implicit-variables-annotated
+def annotated_declarations():
+    # start-annotated-declarations
+    var name: String = "Sam"
+    var user_id: Int
+    # end-annotated-declarations
     user_id = 0
     _, _ = name, user_id
 
 
 def explicit_variables():
-    # start-explicit-variables
     var name = "Sam"
     var user_id: Int
-    # end-explicit-variables
     user_id = 0
     _, _ = name, user_id
 
@@ -81,8 +79,8 @@ def foo() -> Float32:
 
 def main():
     declaration_intro()
-    implicit_variables()
-    implicit_variables_annotated()
+    inferred_declarations()
+    annotated_declarations()
     explicit_variables()
     type_annotations()
     implicit_conversion()

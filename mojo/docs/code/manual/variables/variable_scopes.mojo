@@ -26,17 +26,5 @@ def lexical_scopes():
     # end-lexical-scopes
 
 
-# start-function-scopes
-def function_scopes():
-    num = 1
-    if num == 1:
-        print(num)  # Reads the function-scope "num"
-        num = 2  # Updates the function-scope variable
-        print(num)  # Reads the function-scope "num"
-    print(num)  # Reads the function-scope "num"
-    # end-function-scopes
-
-
 def main():
     lexical_scopes()
-    function_scopes()

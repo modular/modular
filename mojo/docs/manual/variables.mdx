@@ -27,79 +27,51 @@ The `var` statement above does three things:
 
 ## Variable declarations
 
-Mojo has two ways to declare a variable:
+Declare a variable with the `var` keyword. You can give it a value, a type
+annotation, or both:
 
-- Explicitly-declared variables are created with the `var` keyword.
+```mojo
+var a = 5
+var b: Float64 = 3.14
+var c: String
+```
 
-  ```mojo
-  var a = 5
-  var b: Float64 = 3.14
-  var c: String
-  ```
-
-- Implicitly-declared variables are created the first time the variable is used,
-  either with an assignment statement or with a type annotation:
-
-  ```mojo
-  a = 5
-  b: Float64 = 3.14
-  c: String
-  ```
-
-Both types of variables are strongly typed—the type is either set explicitly
-with a [type annotation](#type-annotations) or implicitly when the variable is
-first initialized with a value.
+Variables are strongly typed—the type is either set explicitly with a
+[type annotation](#type-annotations) or implicitly when the variable is first
+initialized with a value.
 
 Either way, the variable receives a type when it's created, and the type never
 changes. So you can't assign a variable a value of a different type:
 
 ```mojo
-count = 8 # count is type Int
+var count = 8 # count is type Int
 count = "Nine?" # Error: can't implicitly convert 'StringLiteral' to 'Int'
 ```
 
-## Implicitly-declared variables
-
-You can create a variable with just a name and a value. For example:
-
-```mojo
-name = "Sam"
-user_id = 0
-```
-
-Implicitly-declared variables are strongly typed: they take the type from the
-first value assigned to them. For example, the `user_id` variable above is type
-`Int`, while the `name` variable is type `String`. You can't assign a string to
-`user_id` or an integer to `name`.
-
-You can also use a type annotation with an implicitly-declared variable, either
-as part of an assignment statement, or on its own:
-
-```mojo
-name: String = "Sam"
-user_id: Int
-```
-
-Here, the `user_id` variable has a type, but is uninitialized.
-
-Implicitly-declared variables are scoped at the function level. You create an
-implicitly-declared variable the first time you assign a value to a given name
-inside a function. Any subsequent references to that name inside the function
-refer to the same variable. For more information, see [Variable
-scopes](#variable-scopes), which describes how variable scoping differs between
-explicitly- and implicitly-declared variables.
+There is also a form that omits `var`. It scopes differently and is best
+avoided—see [Implicitly-declared variables](#implicitly-declared-variables).
 
 ## Explicitly-declared variables
 
-You can declare a variable with the `var` keyword. For example:
+Give the variable a value and Mojo infers its type:
 
 ```mojo
 var name = "Sam"
+var user_id = 0
+```
+
+The `name` variable is type `String`, and `user_id` is type `Int`. You can't
+assign a string to `user_id` or an integer to `name`.
+
+Or give the variable a [type annotation](#type-annotations), with or without an
+initial value:
+
+```mojo
+var name: String = "Sam"
 var user_id: Int
 ```
 
-The `name` variable is initialized to the string "Sam". The `user_id` variable
-is uninitialized, but it has a declared type, `Int` for an integer value.
+Here, the `user_id` variable has a type, but is uninitialized.
 
 Since variables are strongly typed, you can't assign a variable a
 value of a different type, unless those types can be
@@ -111,6 +83,31 @@ var user_id: Int = "Sam"
 ```
 
 Explicitly-declared variables have block-level [scope](#variable-scopes).
+
+## Implicitly-declared variables
+
+Assigning to a name that hasn't been declared yet also declares it, as does a
+type annotation on its own:
+
+<!-- The block below is deliberately NOT mirrored by a compiled example: it
+     shows the spelling this passage advises against, so a compiled twin would
+     be a first-party use of it. -->
+
+```mojo
+name = "Sam"
+user_id: Int
+```
+
+Such a variable is declared just as `var` declares one, and is strongly typed
+the same way. Two things differ, and both are reasons to prefer `var`. Nothing
+on the line says a declaration is happening, so a mistyped name reads as an
+assignment while quietly declaring a second variable. And the variable is
+scoped to the whole function rather than to the block that first assigns to it,
+so the two spellings are not interchangeable: where the first assignment sits
+inside an `if`, `for`, `while`, `with`, or `try` body, the equivalent is a
+`var` declaration in the function body, since a `var` on the assignment would
+scope the variable to that block. For more on the difference, see
+[Variable scopes](#variable-scopes).
 
 ## Type annotations
 
@@ -234,33 +231,14 @@ scope variable hides or "shadows" a variable from an outer scope.)
 The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
 
-This is in contrast to [implicitly-declared](#implicitly-declared-variables)
-variables (those without the `var` keyword), which use
-**function-level scoping** (consistent with Python variable behavior). That
-means, when you change the value of an implicitly-declared variable inside the
-`if` block, it actually changes the value for the entire function.
-
-For example, here's the same code but *without* the `var` declarations:
-
-```mojo
-def function_scopes():
-    num = 1
-    if num == 1:
-        print(num)   # Reads the function-scope "num"
-        num = 2      # Updates the function-scope variable
-        print(num)   # Reads the function-scope "num"
-    print(num)       # Reads the function-scope "num"
-```
-
-```output
-1
-2
-2
-```
-
-Now, the last `print()` function sees the updated `num` value from the inner
-scope, because implicitly-declared variables are scoped at the function level,
-as in Python, rather than at the block level.
+An assignment written without `var` scopes differently: the
+[implicitly-declared](#implicitly-declared-variables) variable it creates
+belongs to the whole function rather than to the block that first assigns to it,
+as in Python. You'll meet that in existing code, and it's why `var` isn't a
+mechanical substitution for such an assignment—writing `var` where the first
+assignment sits scopes the variable to that block, so code after the block no
+longer sees it, and either fails to compile or, where an outer variable of the
+same name exists, silently reads that one instead.
 
 ## Copying and moving values
 
