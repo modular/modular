@@ -174,6 +174,12 @@ public:
   ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                  FnTypeGeneratorType signatureType,
                                  SMLoc location);
+
+  /// Generate a stateless extension struct that extends one closure trait to
+  /// a structurally compatible one.
+  ASTDecl *createExtensionStruct(ASTDecl &moduleDecl, TraitDeclOp sourceTrait,
+                                 TraitDeclOp targetTrait,
+                                 ASTType sourceMetaType, SMLoc location);
   Type getConcreteClosureWrapperTypeForFnSymbol(ASTDecl &declScope, SMLoc loc,
                                                 PValue fnPValue);
 
@@ -194,8 +200,9 @@ private:
   void buildCallAdaptorAndAddWitness(StructDeclOp structDeclOp,
                                      ASTDecl &structDecl,
                                      TraitDeclOp traitDeclOp, FnOp traitCallFn,
-                                     FnOp structCallFn,
-                                     const AdapteeParts &adapteeParts);
+                                     TypedAttr callee,
+                                     const AdapteeParts &adapteeParts,
+                                     ASTType selfTypeOverride = {});
 
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired
@@ -207,9 +214,19 @@ public:
   LogicalResult augmentWitnessTablesToConformTo(ASTType structType,
                                                 ASTDecl *closureTrait);
 
+  /// Extend a source closure value/type constrained by one closure trait to a
+  /// structurally compatible target closure trait, without changing the
+  /// source's physical type.
+  CValue createExtensionType(ASTDecl &declScope, CValue sourceValue,
+                             Type targetMetaType, TraitDeclOp targetTrait);
+
   /// Checks if the wrapper struct type conforms to a trait that is compatible
   /// with the desired trait.
   LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);
+
+  /// Returns true if sourceTraitType can conform to targetTrait.
+  LogicalResult isTraitCompatibleWith(ASTType sourceTraitType,
+                                      TraitDeclOp targetTrait);
 
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)
@@ -298,10 +315,14 @@ private:
   /// reference struct parameters instead of indices
   /// (c) the result of the function, remapped to reference the struct
   /// parameters instead of indices.
+  /// \p selfTypeOverride replaces the struct's own `Self` in the specialized
+  /// signature; an extension's methods are written on the anchor it extends,
+  /// not on the (stateless) extension struct.
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
   pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
                             bool synthetic = true, StringAttr customName = {},
-                            bool redirectWitnessToImplParam = true);
+                            bool redirectWitnessToImplParam = true,
+                            ASTType selfTypeOverride = {});
   struct DevicePassablePopulators {
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;

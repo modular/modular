@@ -1720,7 +1720,9 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
                   dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
               traitDeclOp && traitDeclOp.getDefinesClosure()) {
             if (succeeded(shared.closureEmitter->isCompatibleWith(
-                    fromType, &symbolDecl))) {
+                    fromType, &symbolDecl)) ||
+                succeeded(shared.closureEmitter->isTraitCompatibleWith(
+                    fromType, traitDeclOp))) {
               return TriState::yes();
             }
           }
@@ -1778,7 +1780,9 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
                 dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
             traitDeclOp && traitDeclOp.getDefinesClosure()) {
           if (succeeded(shared.closureEmitter->isCompatibleWith(concreteType,
-                                                                &symbolDecl)))
+                                                                &symbolDecl)) ||
+              succeeded(shared.closureEmitter->isTraitCompatibleWith(
+                  concreteType, traitDeclOp)))
             return TriState::yes();
         }
       }
@@ -2023,8 +2027,22 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
         if (auto traitDeclOp =
                 dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
             traitDeclOp && traitDeclOp.getDefinesClosure()) {
-          (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
-              fromType, &symbolDecl);
+          if (failed(shared.getClosureEmitter().augmentWitnessTablesToConformTo(
+                  fromType, &symbolDecl))) {
+            // Augmentation failed. Only treat this as fatal for a *genuine*
+            // trait-to-trait extension: a trait-view source that does not
+            // already expose this (structurally compatible but distinct) trait
+            // symbol. Failing here lets the caller's extension branch
+            // synthesize the `#kgen.extension`. When the source already exposes
+            // the trait (subset conversion, e.g. `A & B` -> `B`) or is a
+            // struct, fall through to the normal conversion below (baseline
+            // behavior).
+            if (auto fromTrait =
+                    sugarDynCast<AnyTraitType>(fromType.extractMetaType());
+                fromTrait && !llvm::is_contained(
+                                 fromTrait.getTraitType().getSymbols(), symbol))
+              return failure();
+          }
         }
       }
       // Conversions from structs or traits.
@@ -2161,6 +2179,20 @@ CValue IREmitter::emitImplicitConversionToType(
         return emitConstructorCall(
             structTy,
             CallOperands(CallSyntax::kTypeCall, expr, std::move(dest), {}));
+      }
+    }
+  }
+
+  // Extend one parametric closure trait to a structurally compatible one.
+  if (auto anyTrait =
+          sugarDynCast<AnyTraitType>(requiredType.extractMetaType())) {
+    if (sugarIsa<AnyTraitType>(rvType.extractMetaType())) {
+      if (std::optional<TraitDeclOp> targetTrait =
+              ClosureEmitter::getClosureDecl(shared, anyTrait.getTraitType())) {
+        if (CValue extension = shared.getClosureEmitter().createExtensionType(
+                getDeclScope(), valueExpr.ir, anyTrait.getTraitType(),
+                *targetTrait))
+          return extension;
       }
     }
   }

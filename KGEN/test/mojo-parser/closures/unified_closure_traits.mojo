@@ -14,6 +14,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S7 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S10 < %t.mlir
 # COM: Verify ParamOperatorAttr and LITStructAttr matching: Pair(tag, 0) lowers
 # COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
 # COM: requires recursive matching through both composite attr types.
@@ -312,3 +313,19 @@ def s9(var t: s9_MiniTuple[String, Int]):
         _ = elt^
 
     t^.consume_elements(handler)
+
+
+# COM: Bridging one closure trait to a structurally compatible one emits a
+# COM: stateless extension struct plus a `#kgen.extension` at the call site.
+# S10: lit.struct.decl @"{{.*}}$extension${{.*}}"<Anchor:{{.*}}register_passable
+# S10: #kgen.extension<
+
+
+def s10_sink[V: Movable & Deinitable, //, F: def() -> V](*, call: F) -> V:
+    return call()
+
+
+def s10_forward[
+    T: Movable & Deinitable, //, G: def() -> T
+](*, call: G) -> T:
+    return s10_sink(call=call)
