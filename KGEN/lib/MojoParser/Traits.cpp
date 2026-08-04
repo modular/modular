@@ -1090,13 +1090,15 @@ static TriState doesNominalTypeConformToUncached(
 
   // Map each provided symbol to the condition under which it is provided. A
   // null or trivially-true entry means the symbol is provided unconditionally.
-  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> providedConditions;
+  llvm::SmallDenseMap<SymbolRefAttr, TypedAttr> providedConditions;
   assert((constraints.empty() ||
           constraints.size() == providedSymbolsArr.size()) &&
          "trait constraints must be parallel to symbols");
   for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr))
     providedConditions[symbol] =
-        constraints.empty() ? ConstraintAttr() : constraints[i];
+        constraints.empty()
+            ? TypedAttr()
+            : evaluator.getReboundAttribute(constraints[i].getProposition());
 
   if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
@@ -1144,7 +1146,7 @@ static TriState doesNominalTypeConformToUncached(
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
         for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
           // Extension conformances are currently unconditional.
-          providedConditions[symbol] = ConstraintAttr();
+          providedConditions[symbol] = TypedAttr();
         }
       }
     }
@@ -1153,18 +1155,22 @@ static TriState doesNominalTypeConformToUncached(
   // Check the provided symbols against the required symbols by the target
   // trait. Track whether any required symbol relies on unproven constraints.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
-  SmallVector<ConstraintAttr> scratch;
+  SmallVector<TypedAttr> callerAssumptionProps =
+      llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
+        return constraint.getProposition();
+      });
+  SmallVector<TypedAttr> scratch;
   bool hasUnprovenRequired = false;
   for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
-    ArrayRef<ConstraintAttr> assumptions = callerAssumptions;
+    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
     if (!requiredConstraints.empty()) {
-      ConstraintAttr requiredCond = requiredConstraints[i];
-      if (isPropositionImplied(requiredCond, callerAssumptions, evaluator)
-              .isFalse())
+      TypedAttr requiredCond = requiredConstraints[i].getProposition();
+      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
         continue;
-      scratch.assign(callerAssumptions.begin(), callerAssumptions.end());
+      scratch.assign(callerAssumptionProps.begin(),
+                     callerAssumptionProps.end());
       scratch.push_back(requiredCond);
       assumptions = scratch;
     }
@@ -1172,9 +1178,9 @@ static TriState doesNominalTypeConformToUncached(
     auto it = providedConditions.find(required);
     TriState provided =
         it == providedConditions.end() ? TriState::no()
-        : isTriviallyTrueConstraint(it->second)
+        : (!it->second || isTriviallyTrueProposition(it->second))
             ? TriState::yes()
-            : isPropositionImplied(it->second, assumptions, evaluator);
+            : isPropositionImplied(it->second, assumptions);
 
     if (provided.isTrue()) {
       // Symbol is definitely provided.
@@ -1248,12 +1254,17 @@ LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
   // `doesNominalTypeConformToUncached` -- otherwise a note could contradict
   // the conformance decision.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
-  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> requiredConds;
+  SmallVector<TypedAttr> callerAssumptionProps =
+      llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
+        return constraint.getProposition();
+      });
+  llvm::SmallDenseMap<SymbolRefAttr, TypedAttr> requiredConds;
   for (auto [i, symbol] : llvm::enumerate(trait.getSymbols()))
-    requiredConds[symbol] =
-        requiredConstraints.empty() ? ConstraintAttr() : requiredConstraints[i];
+    requiredConds[symbol] = requiredConstraints.empty()
+                                ? TypedAttr()
+                                : requiredConstraints[i].getProposition();
   DenseSet<std::pair<LocationAttr, StringAttr>> seen;
-  SmallVector<ConstraintAttr> scratch;
+  SmallVector<TypedAttr> scratch;
   for (auto [i, symbol] : llvm::enumerate(providedSymbols)) {
     auto reqIt = requiredConds.find(symbol);
     if (reqIt == requiredConds.end())
@@ -1265,13 +1276,13 @@ LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
     // -- both fall out of the same rules with no trivially-true special case. A
     // null entry means the requirement is unconditional (no `c_req` to
     // consult).
-    ConstraintAttr requiredCond = reqIt->second;
-    ArrayRef<ConstraintAttr> assumptions = callerAssumptions;
+    TypedAttr requiredCond = reqIt->second;
+    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
     if (requiredCond) {
-      if (isPropositionImplied(requiredCond, callerAssumptions, evaluator)
-              .isFalse())
+      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
         continue;
-      scratch.assign(callerAssumptions.begin(), callerAssumptions.end());
+      scratch.assign(callerAssumptionProps.begin(),
+                     callerAssumptionProps.end());
       scratch.push_back(requiredCond);
       assumptions = scratch;
     }
@@ -1281,7 +1292,9 @@ LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
       continue;
     if (!seen.insert({constraint.getLoc(), constraint.getMessage()}).second)
       continue;
-    if (!isPropositionImplied(constraint, assumptions, evaluator).isTrue())
+    TypedAttr proposition =
+        evaluator.getReboundAttribute(constraint.getProposition());
+    if (!isPropositionImplied(proposition, assumptions).isTrue())
       result.push_back(constraint);
   }
   return result;
