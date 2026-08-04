@@ -48,7 +48,7 @@ struct Module:
         # `get_function` directly. That's safe here because `self.lib`
         # is a long-lived member that outlives the call, so the looked-up
         # symbol can't be `dlclose`d out from under us.
-        safe_call = self.lib.borrow().get_function[SafeFunction](
+        var safe_call = self.lib.borrow().get_function[SafeFunction](
             "__tvm_ffi_fp4_gemm"
         )
 
@@ -56,7 +56,7 @@ struct Module:
         # `DLTensor.__copyinit__` (used at the call site) already fixed
         # up self-referential pointers + nulled strides for contiguous
         # tensors.  So we can take their addresses directly.
-        args: Array[TVMFFIAny, 8] = [
+        var args: Array[TVMFFIAny, 8] = [
             TVMFFIAny(Pointer(to=mat1)),
             TVMFFIAny(Pointer(to=mat2)),
             TVMFFIAny(Pointer(to=mat1_scale)),
@@ -67,9 +67,9 @@ struct Module:
             TVMFFIAny(tactic),
         ]
 
-        result = TVMFFIAny(0)
+        var result = TVMFFIAny(0)
 
-        errno = safe_call(
+        var errno = safe_call(
             Optional[Pointer[NoneType, MutAnyOrigin]](),  # null unused module
             Pointer[TVMFFIAny, MutAnyOrigin](to=args[0]),
             8,  # num_args
@@ -77,7 +77,7 @@ struct Module:
         )
 
         if errno != 0:
-            error = take_latest_error()
+            var error = take_latest_error()
             raise Error("FlashInfer fp4_gemm failed: {}".format(error))
 
 
@@ -119,7 +119,7 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
         """Execute the FP4 GEMM operation by calling FlashInfer."""
         comptime assert target == "gpu"
 
-        mod = Module(OwnedDLHandle(path=Self.lib_path))
+        var mod = Module(OwnedDLHandle(path=Self.lib_path))
 
         mod.fp4_gemm(
             DLTensor(mat1),

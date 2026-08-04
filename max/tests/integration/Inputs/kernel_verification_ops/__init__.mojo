@@ -254,11 +254,11 @@ struct ExternalCubinVecAdd:
         ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        var gpu_ctx = ctx
 
         var external_func: DeviceExternalFunction
         with open(getenv("CUBIN_PATH"), "r") as file:
-            cubin_data = file.read_bytes()
+            var cubin_data = file.read_bytes()
 
             external_func = DeviceExternalFunction(
                 gpu_ctx,
@@ -268,9 +268,9 @@ struct ExternalCubinVecAdd:
                 asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
             )
 
-        length = output.dim_size(0)
-        block_dim = 32
-        grid_dim = (length + block_dim - 1) // block_dim
+        var length = output.dim_size(0)
+        var block_dim = 32
+        var grid_dim = (length + block_dim - 1) // block_dim
 
         # Execute the external cubin kernel
         gpu_ctx.enqueue_function(
@@ -303,7 +303,7 @@ struct IntentionalGpuCrash:
         ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        var gpu_ctx = ctx
 
         def crash_kernel():
             abort()

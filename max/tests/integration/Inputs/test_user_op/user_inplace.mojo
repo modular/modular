@@ -21,7 +21,7 @@ from extensibility import (
 struct MutableTestOp:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        x = in_place_tensor._ptr.unsafe_load(0)
+        var x = in_place_tensor._ptr.unsafe_load(0)
         x += 1
         in_place_tensor._ptr.unsafe_store(0, x)
 

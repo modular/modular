@@ -75,7 +75,7 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     ctx.synchronize()
 
     with out.map_to_host() as out_host:
-        expected: List[Float32] = [
+        var expected: List[Float32] = [
             4.5,
             5.5,
             6.5,
