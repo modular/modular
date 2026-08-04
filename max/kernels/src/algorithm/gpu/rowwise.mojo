@@ -44,6 +44,7 @@ from std.gpu import (
     block_idx,
     grid_dim,
     lane_id,
+    syncwarp,
     thread_idx,
     warp_id,
 )
@@ -189,8 +190,27 @@ a size cutoff (Welford = 3 words → shuffle; ArgMax/ArgMin → tree)."""
 @always_inline
 def _state_fits_warp_shuffle[S: ReduceOp]() -> Bool:
     """Returns `True` when `S` is small enough that the register-only
-    warp-shuffle butterfly beats the shmem tree in `generic`."""
-    return ceildiv(size_of[S](), 4) <= _WARP_SHUFFLE_MAX_WORDS
+    warp-shuffle butterfly beats the shmem tree in `generic`.
+
+    `_warp_shuffle_combine` exchanges whole `uint32` words via a raw
+    pointer bitcast, so it is only byte-safe when `size_of[S]()` is an
+    *exact* multiple of 4 -- a state smaller than one word (e.g. a
+    width-1 `ReduceProduct[float16 | bfloat16]`, 2 bytes, or a bool
+    `ReduceMax`/`ReduceMin`, 1 byte) would have its last word's high
+    bytes read from -- and, on the write-back half of the exchange,
+    stomped onto -- whatever memory follows the state on the stack.
+    Round *down* here (not `ceildiv`) so a non-multiple size falls
+    through to the shmem tree, which uses a typed `S`-element array and
+    is size-agnostic.
+
+    Packing such a state into a padded tail word to keep it on the
+    register path was measured on B200 and is NOT a win: it buys
+    `reduce_product` fp16/bf16 8-14% but costs `bool` `reduce_max`/
+    `reduce_min` 5-24% (both at narrow rows), for a geomean of 1.00.
+    """
+    return (
+        size_of[S]() % 4 == 0 and size_of[S]() // 4 <= _WARP_SHUFFLE_MAX_WORDS
+    )
 
 
 @always_inline
@@ -210,8 +230,12 @@ def _warp_shuffle_combine[S: ReduceOp](mut state: S):
     Used by `BlockReducer` / `WarpReducer` as the within-warp portion.
     Bytes are exchanged word-by-word (one `shuffle_xor` per word per
     level), so cost grows with state size — hence the ~4-word cutoff.
+
+    Only ever called with a state whose size is an exact multiple of 4
+    (`_state_fits_warp_shuffle` gates that), so the word exchange never
+    reads or writes past `state`.
     """
-    comptime n_words = ceildiv(size_of[S](), 4)
+    comptime n_words = size_of[S]() // 4
 
     comptime for step in reversed(range(log2_floor(WARP_SIZE))):
         var stride = UInt32(1 << step)
@@ -433,6 +457,15 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
         `[warp_id*WARP_SIZE, ...)` slice, so concurrent warps don't
         clobber each other.
 
+        The tree's `syncwarp()`s are load-bearing, not defensive: each
+        step reads the slot its partner lane wrote in the previous one,
+        and lanes diverge on `lid < stride`, so without them the
+        compiler is free to reorder the shared accesses (and Volta+
+        lanes need not reconverge). `barrier()` -- what `BlockReducer`'s
+        tree uses -- is not an option here: a warp whose `row_idx`
+        exceeds `num_rows` skips the body entirely, so a block-wide
+        barrier inside it would deadlock.
+
         Parameters:
             S: The monoid type being combined.
 
@@ -451,6 +484,7 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
             var warp_base = Int(warp_id()) * WARP_SIZE
             var lid = Int(lane_id())
             shmem[warp_base + lid] = state
+            syncwarp()
 
             comptime n_steps = log2_floor(WARP_SIZE)
 
@@ -462,6 +496,7 @@ struct WarpReducer[WARPS_PER_BLOCK: Int = 1](Reducer, TrivialRegisterPassable):
                     var local = shmem[warp_base + lid]
                     local.join(partner)
                     shmem[warp_base + lid] = local
+                syncwarp()
 
             state = shmem[warp_base]
 
