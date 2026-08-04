@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements C string interoperability utilities."""
 
-from std.collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_span import _unsafe_strlen
 from std.memory import UnsafeMaybeUninit
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex

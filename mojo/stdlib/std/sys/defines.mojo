@@ -40,7 +40,7 @@ from std.sys import is_defined
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 
 
 def is_defined[name: StaticString]() -> Bool:

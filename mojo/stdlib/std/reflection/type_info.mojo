@@ -43,7 +43,7 @@ def main():
 """
 
 from std.sys.info import _current_target, _TargetType
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 
 from .reflect import reflect
 

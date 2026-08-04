@@ -149,11 +149,10 @@ value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
 [`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral/#as_string_slice)
-returns a
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/) pointing
-to the original string literal. String literals are static—they're allocated at
-compile time and never destroyed—so the slice is created with an immutable,
-static origin.
+returns a [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/)
+pointing to the original string literal. String literals are static—they're
+allocated at compile time and never destroyed—so the slice is created with an
+immutable, static origin.
 
 #### Derived origins
 

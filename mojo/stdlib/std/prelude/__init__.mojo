@@ -37,10 +37,13 @@ from std.collections import (
 )
 from std.collections.string import (
     Codepoint,
+    ImmStringSpan,
     ImmStringSlice,
+    MutStringSpan,
     MutStringSlice,
     StaticString,
     String,
+    StringSpan,
     StringSlice,
     ascii,
     atof,

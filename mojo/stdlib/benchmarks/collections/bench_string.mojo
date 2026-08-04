@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 from std.collections.string._utf8 import _is_valid_utf8
-from std.collections.string.string_slice import _split
+from std.collections.string.string_span import _split
 from std.os import abort
 from std.pathlib import _dir_of_current_file
 from std.random import seed

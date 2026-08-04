@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements gather and scatter operations for CPU and GPU, including indexed reductions."""
 
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target, is_apple_gpu

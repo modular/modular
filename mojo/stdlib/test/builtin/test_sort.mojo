@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _to_string_list
+from std.collections.string.string_span import _to_string_list
 from std.pathlib import _dir_of_current_file
 from std.random import rand, random_float64, random_si64, random_ui64, seed
 

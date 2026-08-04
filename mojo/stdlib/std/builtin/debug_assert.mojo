@@ -33,7 +33,7 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
     get_static_string,
 )

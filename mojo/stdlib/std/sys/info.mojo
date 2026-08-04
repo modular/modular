@@ -21,7 +21,7 @@ print(CompilationTarget.is_x86())
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`

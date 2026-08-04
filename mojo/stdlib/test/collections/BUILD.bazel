@@ -17,7 +17,7 @@ _FILECHECK_TESTS = [
     "test_negative_index_list.mojo",
     "test_negative_index_list_insert.mojo",
     "test_negative_index_string.mojo",
-    "test_negative_index_string_slice.mojo",
+    "test_negative_index_string_span.mojo",
 ]
 
 _LIT_TESTS = [
@@ -48,7 +48,7 @@ _EXPECT_CRASH = [
     "test_negative_index_list.mojo",
     "test_negative_index_list_insert.mojo",
     "test_negative_index_string.mojo",
-    "test_negative_index_string_slice.mojo",
+    "test_negative_index_string_span.mojo",
 ]
 
 [

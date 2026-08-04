@@ -12,7 +12,7 @@ description: >-
      std.prelude per MojoParser/SharedState.cpp). builtin/bool.mojo (1-bit
      backing), builtin/type_aliases.mojo (Never), builtin/none.mojo
      (NoneType is a struct), builtin/builtin_slice.mojo (Slice fields),
-     collections/string/string_slice.mojo (StaticString, StringSlice),
+     collections/string/string_span.mojo (StaticString, StringSpan),
      memory/span.mojo (non-owning view), collections/optional.mojo
      (value() aborts on empty), collections/array.mojo,
      utils/variant.mojo, os/os.mojo (abort -> Never). Set and Variant are
@@ -64,19 +64,20 @@ caller to guarantee validity.
 
 <!-- markdownlint-disable MD013 -->
 
-| Type                                                                      | What it is                                   |
-|---------------------------------------------------------------------------|----------------------------------------------|
-| [`String`](/docs/std/collections/string/string/String/)                   | Owned, mutable, heap-allocated UTF-8 string. |
-| [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/)   | Non-owning view into existing UTF-8 data.    |
-| [`StaticString`](/docs/std/collections/string/string_slice/#staticstring) | A `StringSlice` over static, read-only data. |
-| [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/)        | Compile-time string constant from source.    |
-| [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint/)          | A single Unicode codepoint.                  |
+| Type                                                                     | What it is                                   |
+|--------------------------------------------------------------------------|----------------------------------------------|
+| [`String`](/docs/std/collections/string/string/String/)                  | Owned, mutable, heap-allocated UTF-8 string. |
+| [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/)     | Non-owning view into existing UTF-8 data.    |
+| [`StaticString`](/docs/std/collections/string/string_span/#staticstring) | A `StringSpan` over static, read-only data.  |
+| [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/)       | Compile-time string constant from source.    |
+| [`Codepoint`](/docs/std/collections/string/codepoint/Codepoint/)         | A single Unicode codepoint.                  |
 
 <!-- markdownlint-enable MD013 -->
 
 A string literal in source is a `StringLiteral`. It materializes to a
-`String` at runtime, or to a `StringSlice` when the context requires a
-view. For details, see [String
+`String` at runtime, or to a `StringSpan` when the context requires a view.
+`StringSlice` remains available as a compatibility alias for `StringSpan`.
+For details, see [String
 literals](/docs/reference/literals/#string-literals).
 
 Length has three measurements, and they disagree for non-ASCII text:

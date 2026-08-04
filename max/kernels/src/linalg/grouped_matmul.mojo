@@ -31,7 +31,7 @@ from std.gpu import block_idx, global_idx, warp_id, lane_id, thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *

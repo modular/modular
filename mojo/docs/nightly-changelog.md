@@ -492,10 +492,14 @@ This version is still a work in progress.
   they no longer need an explicit import from `std.collections`. This matches
   the `Mut`/`Imm` aliases for `Pointer`, which the prelude already exported.
 
-- `StringSlice` now has `MutStringSlice` and `ImmStringSlice` aliases, matching
-  the `Mut`/`Imm` aliases already provided for `Span` and `Pointer`. A function
-  can use them to state the mutability it requires of a string argument without
-  spelling out the `origin` parameter.
+- `StringSlice` has been renamed to `StringSpan`, matching other non-owning
+  view types such as `Span`. `StringSlice` remains available as a `comptime`
+  alias for the time being to ease transition to the new name.
+
+  `StringSpan` has `MutStringSpan` and `ImmStringSpan` aliases, matching the
+  `Mut`/`Imm` aliases already provided for `Span` and `Pointer`. The previous
+  `MutStringSlice` and `ImmStringSlice` names remain available as compatibility
+  aliases.
 
 - `GPUInfo.vendor` has been removed. It duplicated `GPUInfo.api`, which
   identifies the vendor precisely (`"cuda"`, `"hip"`, `"metal"`, or a stdlib

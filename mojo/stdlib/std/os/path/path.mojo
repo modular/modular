@@ -20,7 +20,7 @@ from std.os.path import isdir
 ```
 """
 
-from std.collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_span import _unsafe_strlen
 from std.pwd import getpwuid, getpwnam
 from std.stat import S_ISDIR, S_ISLNK, S_ISREG
 from std.ffi import MAX_PATH, c_char, external_call, get_errno
