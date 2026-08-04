@@ -81,13 +81,9 @@ TriState LIT::canDischargeConstraintsInScope(
     assumptions.push_back(confOp.getConstraint());
 
   SmallVector<TypedAttr> overallAssumptionOperands;
-  for (ConstraintAttr assumption : assumptions) {
-    TypedAttr prop = assumption.getProposition();
-    TypedAttr canonProp = getCanonicalAttr(prop);
-    if (evaluator)
-      canonProp = getCanonicalAttr(evaluator->getReboundAttribute(canonProp));
-    overallAssumptionOperands.push_back(canonProp);
-  }
+  for (ConstraintAttr assumption : assumptions)
+    overallAssumptionOperands.push_back(
+        getCanonicalAttr(assumption.getProposition()));
 
   SmallVector<std::pair<size_t, ConstraintAttr>> failedConstraints;
   SmallVector<ConstraintAttr> localUnprovableConstraints;
