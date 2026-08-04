@@ -613,6 +613,13 @@ class TextGenerationInputs(PipelineInputs, Generic[TextGenerationContextType]):
         """Flattened list of contexts across all replicas."""
         return [context for batch in self.batches for context in batch]
 
+    @property
+    def batch_size(self) -> int:
+        """Number of requests in the batch."""
+        return sum(
+            1 for context in self.flat_batch if not context._is_padding_ctx
+        )
+
     def __bool__(self) -> bool:
         return len(self.flat_batch) > 0
 

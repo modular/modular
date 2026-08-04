@@ -201,7 +201,7 @@ class BatchMetrics:
         batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
-        batch_size = len(inputs.flat_batch)
+        batch_size = inputs.batch_size
         prompt_throughput = num_input_tokens / batch_execution_time_s
         if (
             batch_spec_decode_metrics is not None
