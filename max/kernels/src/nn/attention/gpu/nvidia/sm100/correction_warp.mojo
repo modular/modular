@@ -74,12 +74,12 @@ def fa4_correction[
 
     # `tmem_addr` passed in by register (read once post-barrier in the kernel
     # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
-    o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
-    o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
+    var o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
+    var o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
     var correction_smem_arg = smem.correction_smem()
 
-    pipeline_c0 = mbars.consumer_c0()
-    pipeline_c1 = mbars.consumer_c1()
+    var pipeline_c0 = mbars.consumer_c0()
+    var pipeline_c1 = mbars.consumer_c1()
 
     comptime BM_mask: Int = config.PairBM_eff()
     comptime num_q: Int = config.num_q
@@ -185,6 +185,8 @@ def fa4_correction[
         tcgen05_store_wait()
         tcgen05_fence_before()
 
+    var change: Bool
+
     # ---- single-O correction (1Q wide-V) ----
     # Wide V forces single-O (aliased O0), so only WG0 runs: it folds EVERY
     # K-tile serially into the single O0 (WG1 no-op). The correction thus
@@ -227,7 +229,7 @@ def fa4_correction[
         return
 
     # Two-WG (2Q and standard 1Q) O consumer — unchanged.
-    pipeline_o = mbars.consumer_o()
+    var pipeline_o = mbars.consumer_o()
 
     # Per-WG main-loop commit counts (= softmax's main-loop iters after
     # peel, = MMA's post-peel P@V commits per side).
