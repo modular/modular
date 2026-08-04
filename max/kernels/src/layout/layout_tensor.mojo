@@ -2764,7 +2764,7 @@ struct LayoutTensor[
     @staticmethod
     @always_inline("nodebug")
     def _get_rank_stride_offset(rank_idx: Int) -> Int:
-        offset = 0
+        var offset = 0
         for i in range(rank_idx):
             offset += len(flatten(Self.layout.shape[i]))
         return offset
@@ -2786,8 +2786,10 @@ struct LayoutTensor[
     def _expand_indices(
         ridx: Self.idx_list_t[Self.rank],
     ) -> Self.idx_list_t[Self.num_strides]:
-        eidx = IndexList[Self.num_strides, element_type=Self.linear_idx_type]()
-        eidx_offset = 0
+        var eidx = IndexList[
+            Self.num_strides, element_type=Self.linear_idx_type
+        ]()
+        var eidx_offset = 0
 
         var r: Int
         comptime for rank_idx in range(Self.rank):
@@ -2801,7 +2803,7 @@ struct LayoutTensor[
                 eidx_offset += 1
             else:
                 # map from linear to column-major cartesian indices
-                idx = ridx[rank_idx]
+                var idx = ridx[rank_idx]
 
                 comptime for i in range(sub_layout_size - 1):
                     comptime sz: Int = sub_layout[i].value()
@@ -3337,8 +3339,10 @@ struct LayoutTensor[
             # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
             comptime if tile_type.masked:
                 comptime for i in range(tile_type.layout.rank()):
-                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                    var cur_dim = self.dim[i]() - (
+                        tile_coords[i] * tile_sizes[i]
+                    )
+                    var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
 
             return tile_type(self.ptr + offset, runtime_layout)
@@ -3357,8 +3361,8 @@ struct LayoutTensor[
 
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
             comptime for i in range(tile_type.layout.rank()):
-                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                var cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
+                var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
 
             return tile_type(self.ptr + offset, runtime_layout)
@@ -3456,8 +3460,10 @@ struct LayoutTensor[
             # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
             comptime if tile_type.masked:
                 comptime for i in range(tile_type.layout.rank()):
-                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                    var cur_dim = self.dim[i]() - (
+                        tile_coords[i] * tile_sizes[i]
+                    )
+                    var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_layout.shape.value[i] = shape_i
 
             return (
@@ -3482,8 +3488,8 @@ struct LayoutTensor[
 
             # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
             comptime for i in range(tile_type.layout.rank()):
-                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                var cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
+                var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_layout.shape.value[i] = shape_i
 
             return (
@@ -3620,8 +3626,10 @@ struct LayoutTensor[
 
             comptime if tiled_iterator_type.masked:
                 comptime for i in range(tiled_iterator_type.layout.rank()):
-                    cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                    shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                    var cur_dim = self.dim[i]() - (
+                        tile_coords[i] * tile_sizes[i]
+                    )
+                    var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                     runtime_shape.value[i] = shape_i
 
                 return tiled_iterator_type(
@@ -3664,8 +3672,8 @@ struct LayoutTensor[
             var iter_stride = tile_sizes[axis] * axis_stride
 
             comptime for i in range(tiled_iterator_type.layout.rank()):
-                cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
-                shape_i = max(min(tile_sizes[i], cur_dim), 0)
+                var cur_dim = self.dim[i]() - (tile_coords[i] * tile_sizes[i])
+                var shape_i = max(min(tile_sizes[i], cur_dim), 0)
                 runtime_shape.value[i] = shape_i
 
             return tiled_iterator_type(
@@ -4442,8 +4450,8 @@ struct LayoutTensor[
         comptime vectorized_type = Self.ShapeVectorizedType[
             _origin, vector_shape, linear_vectorize
         ]
-        runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
-        runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
+        var runtime_shape = vectorized_type.RuntimeLayoutType.ShapeType()
+        var runtime_stride = vectorized_type.RuntimeLayoutType.StrideType()
 
         comptime if check_rank:
             comptime assert is_int(vector_shape) or congruent(
@@ -4484,10 +4492,10 @@ struct LayoutTensor[
                 vectorized_type.element_layout
             ).known_shape(), "Result element layout should have known shape"
 
-            runtime_element_layout_shape = (
+            var runtime_element_layout_shape = (
                 vectorized_type.RuntimeElementLayoutType.ShapeType()
             )
-            runtime_element_layout_stride = (
+            var runtime_element_layout_stride = (
                 vectorized_type.RuntimeElementLayoutType.StrideType(
                     self.runtime_layout.stride.value
                 )
@@ -5474,14 +5482,14 @@ struct LayoutTensor[
         ), "copy_from should move"
 
         comptime for i in range(dst_size):
-            src_idx = other._get_element_idx[i]()
-            dst_idx = self._get_element_idx[i]()
+            var src_idx = other._get_element_idx[i]()
+            var dst_idx = self._get_element_idx[i]()
 
-            src_element = MemoryElement[index_type=other.linear_idx_type](
+            var src_element = MemoryElement[index_type=other.linear_idx_type](
                 other.ptr + src_idx, other.runtime_element_layout
             )
 
-            dst_element = MemoryElement[index_type=Self.linear_idx_type](
+            var dst_element = MemoryElement[index_type=Self.linear_idx_type](
                 self.ptr + dst_idx, self.runtime_element_layout
             )
 
@@ -6539,8 +6547,8 @@ def cp_async_k_major[
     )
 
     comptime for tile_id in range(num_tiles):
-        src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
-        dst_tile = LayoutTensor[
+        var src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
+        var dst_tile = LayoutTensor[
             dtype, desc_layout, address_space=gpu_memory.AddressSpace.SHARED
         ](dst.ptr + tile_id * desc_size)
 
@@ -8418,7 +8426,7 @@ struct LayoutTensorIter[
         Returns:
             A new runtime layout with adjusted shape.
         """
-        new_shape = self.runtime_layout.shape
+        var new_shape = self.runtime_layout.shape
         var cur_dim = new_shape.value[Self.axis.value()]
         new_shape.value[Self.axis.value()] = max(
             0, min(Int(self.dimension_bound) - Int(self.idx) * cur_dim, cur_dim)

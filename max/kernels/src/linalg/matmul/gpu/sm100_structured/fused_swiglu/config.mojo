@@ -572,14 +572,14 @@ def build_sm100_swiglu_heuristic_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:

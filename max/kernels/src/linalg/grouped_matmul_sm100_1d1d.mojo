@@ -583,17 +583,17 @@ def copy_accum_to_gmem[
                             and global_j + UInt32(simd_size) <= N
                         ):
                             # src_ptr = c_smem_split.ptr + swizzle(linear_idx)
-                            src_ptr = c_smem_split.ptr + (
+                            var src_ptr = c_smem_split.ptr + (
                                 linear_idx if size_of[c_type]()
                                 != 2 else swizzle(linear_idx)
                             )
-                            src = src_ptr.load[
+                            var src = src_ptr.load[
                                 width=simd_size, alignment=alignment
                             ]()
-                            dst_crd = RuntimeTuple[
+                            var dst_crd = RuntimeTuple[
                                 IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
                             ](Int(global_i), Int(global_j))
-                            dst_ptr = c.ptr + c.runtime_layout(dst_crd)
+                            var dst_ptr = c.ptr + c.runtime_layout(dst_crd)
                             dst_ptr.store[width=simd_size, alignment=alignment](
                                 src
                             )
@@ -1727,11 +1727,11 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=config.a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // config.cta_group), BK
         ) if transpose_b else Index(
@@ -2168,7 +2168,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = tmem_addr_storage.unsafe_ptr()
 
-    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
     # hardcode to float32 for now as we only support FP32 accumulation for block scaled matmul
     # TODO: (KERN-2238) replace with get_accum_type[a_type]() when KERN-2238 is fixed and we can return FP32 for FP4-E2M1
@@ -2351,7 +2351,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             # non blocking, arrives and proceeds
             named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-            tmem_addr = ptr_tmem_addr[0]
+            var tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
                 config.num_accum_pipeline_stages * MMA_N
             )
@@ -2368,7 +2368,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         )
                     continue
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work()
+                var next_work_info = scheduler.fetch_next_work()
                 # DO MMA
                 if elect_one_cta:
                     var mma_output_mma_stage = (
@@ -2446,7 +2446,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         var tile_idx = 0
 
@@ -2499,7 +2499,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 )
                 mma_output_pipeline.consumer_step()
 
-                next_work_info = scheduler.fetch_next_work()
+                var next_work_info = scheduler.fetch_next_work()
                 work_info = next_work_info
                 if not work_info.is_done():
                     expert_id = rebind[Int32](
