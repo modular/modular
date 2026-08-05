@@ -462,9 +462,22 @@ class TokenGeneratorPipeline(
                                 # per-request report, so mirror the first-chunk
                                 # gating below and only emit it if no earlier
                                 # chunk already carried it.
+                                #
+                                # response.tokens (pre-strip) still holds the
+                                # delimiter token(s) that extract_content/
+                                # extract_reasoning stripped down to nothing.
+                                # They were genuinely generated and consumed
+                                # the token budget, so they must still be
+                                # billed -- as reasoning tokens, since that's
+                                # what they are -- or a max_tokens=1 request
+                                # that stops on a bare think-start delimiter
+                                # reports completion_tokens=0 (CENG-932).
                                 yield TokenGeneratorOutput(
                                     status=response.final_status,
                                     token_count=0,
+                                    reasoning_token_count=len(response.tokens)
+                                    if response.tokens
+                                    else 0,
                                     prompt_token_count=context.tokens.prompt_length,
                                     cached_token_count=response.num_cached_tokens
                                     if not first_chunk_yielded
