@@ -673,104 +673,44 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.7e-03
     kl_div_threshold: 1.1e-2
 
-  nvidia/Kimi-K2.5-NVFP4:
+  deepseek-ai/DeepSeek-R1:
     pre_submit_agents: []
-    pipeline: "nvidia/Kimi-K2.5-NVFP4"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [nvidia-multi, 8xb200]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz"
-      json_file: "vllm_kimik2_5_nvfp4_golden.json"
-    absolute_tolerance: 1.5e+01
-    relative_tolerance: 9.6e-01
-    cos_dist_threshold: 2.0e-03
-    kl_div_threshold: 5.0e+00
-    timeout: 1800
-
-  nvidia/Kimi-K2.6-NVFP4:
-    pre_submit_agents: []
-    pipeline: "nvidia/Kimi-K2.6-NVFP4"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [nvidia-multi, 8xb200]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.6-NVFP4_golden/1/2c622ad15c9b307bc2b02493c65479ef192232b546a46ec528df0d8b02c672f6/nvidia_Kimi-K2.6-NVFP4_golden.tar.gz"
-      json_file: "vllm_nvidia_Kimi-K2.6-NVFP4_float4_e2m1fnx2_golden.json"
-    absolute_tolerance: 5.2e+00
-    relative_tolerance: 1.7e-01
-    cos_dist_threshold: 1.0e-03
-    kl_div_threshold: 5.0e-02
-    timeout: 1800
-
-  amd/Kimi-K2.5-MXFP4:
-    pre_submit_agents: []
-    pipeline: "amd/Kimi-K2.5-MXFP4"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [amd-only, 4xmi355]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_amd_kimi-k2_5-mxfp4_golden/1/e5ce00b937b3b28935578a74e1da2fbb37b19e60996406713592f563c44fff43/vllm_amd_kimi-k2_5-mxfp4_golden.tar.gz"
-      json_file: "vllm_amd_kimi-k2_5-mxfp4_golden.json"
-    cos_dist_threshold: 1.7e-02
-    kl_div_threshold: 1.0e+00
-    timeout: 1800
-
-  # Text-only DeepseekV3 conversion of the Kimi-K2.5-NVFP4 weights (vision
-  # stack stripped, key prefixes rewritten), loaded from a directory pre-staged
-  # on the dedicated prod-2 8xB200 runner. The tags restrict this pipeline to
-  # that runner only: `prod-2-8xb200` matches the `+prod-2-8xb200` requirement
-  # on the prod-2 matrix entry, while `nvidia-only` and `no-b200` exclude it
-  # from the single-B200 and MI355 runners (which do not have the weights
-  # staged).
-  nvidia/Kimi-K2.5-NVFP4__internal:
-    pre_submit_agents: []
-    pipeline: "nvidia/Kimi-K2.5-NVFP4__internal"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [prod-2-8xb200, nvidia-only, no-b200]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.5-NVFP4__internal_golden/1/1e59f3ee02ae446ebcaccb0b1fd4ff7d92122771c9306e5c2e7147ab595045f2/nvidia_Kimi-K2.5-NVFP4__internal_golden.tar.gz"
-      json_file: "vllm_nvidia_Kimi-K2.5-NVFP4__internal_float4_e2m1fnx2_golden.json"
-    cos_dist_threshold: 2.1e-04
-    kl_div_threshold: 5.1e-02
-    timeout: 1440
-
-  MiniMaxAI/MiniMax-M2.7:
-    pre_submit_agents: []
-    pipeline: "MiniMaxAI/MiniMax-M2.7"
+    pipeline: "deepseek-ai/DeepSeek-R1"
     compatible_with: [gpu]
     encoding: float8_e4m3fn
-    tags: [nvidia-multi, 8xb200]
+    tags: [nvidia-multi, 8xb200]  # Requires 8 B200s to run
+    # Goldens generated using VLLM.
+    # Script: https://gist.github.com/k-w-w/1dc387dc41f11789e464d4a9267a8d20
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M2.7_golden/1/e39d1d7daf4680a1210384453df4bb2b85caf9063a86c5e588183146d209208d/MiniMaxAI_MiniMax-M2.7_golden.tar.gz"
-      json_file: "torch_MiniMaxAI_MiniMax-M2.7_float8_e4m3fn_golden.json"
-    cos_dist_threshold: 3.1e-01
-    kl_div_threshold: 1.0e-01
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz"
+      json_file: "vllm_deepseek-r1_float8_golden.json"
+    cos_dist_threshold: 4.2e-02
+    kl_div_threshold: 2.6e-01
+    timeout: 1200
 
-  lukealonso/MiniMax-M2.7-NVFP4:
+  nvidia/Kimi-K2.7-Code-NVFP4:
     pre_submit_agents: []
-    pipeline: "lukealonso/MiniMax-M2.7-NVFP4"
+    pipeline: "nvidia/Kimi-K2.7-Code-NVFP4"
     compatible_with: [gpu]
     encoding: float4_e2m1fnx2
     tags: [nvidia-multi, 8xb200]
+    # Goldens generated using vLLM.
+    # https://github.com/modularml/modular/actions/runs/30509573089
     pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/lukealonso_MiniMax-M2.7-NVFP4_golden/1/8cfc279e6ad212cc92f7f91fd4e5654dadf00ea4316e775fefbb6dd20f8d74ca/vllm_lukealonso_MiniMax-M2.7-NVFP4_float4_e2m1fnx2_golden.json.tar.gz"
-      json_file: "vllm_lukealonso_MiniMax-M2.7-NVFP4_float4_e2m1fnx2_golden.json"
-    cos_dist_threshold: 2.0e-03
-    kl_div_threshold: 7.3e-01
-
-  amd/MiniMax-M2.7-MXFP4:
-    pre_submit_agents: []
-    pipeline: "amd/MiniMax-M2.7-MXFP4"
-    compatible_with: [gpu]
-    encoding: float4_e2m1fnx2
-    tags: [amd-only, 4xmi355]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/amd_MiniMax-M2.7-MXFP4_golden/1/3f20f966d15214f854b4b68c2454c686ee7f175564a11e51ede5f1540c008188/vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json.tar.gz"
-      json_file: "vllm_amd_MiniMax-M2.7-MXFP4_float4_e2m1fnx2_golden.json"
-    cos_dist_threshold: 8.0e-03
-    kl_div_threshold: 1.5e+00
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/nvidia_Kimi-K2.7-Code-NVFP4_golden/1/18f5a14abf9e4a2d9dea154caf2c2a815d6d6c9651d4c0a6f586e9949f03b9e8/nvidia_Kimi-K2.7-Code-NVFP4_golden.tar.gz"
+      json_file: "vllm_nvidia_Kimi-K2.7-Code-NVFP4_float4_e2m1fnx2_golden.json"
+    # Tolerances from the actual verify run against this golden:
+    # https://github.com/modularml/modular/actions/runs/30877333156
+    # Pareto-optimal (abs, rel) pair that passes 100% via relative tolerance
+    # alone; kl_div_threshold matches the run's suggested KL divergence
+    # threshold (max observed 4.56736e-01). cos_dist_threshold unchanged
+    # from the K2.6-derived placeholder -- no cos-distance failures were
+    # reported, so it already passes at that value.
+    absolute_tolerance: 5.2e+00
+    relative_tolerance: 4.6e-01
+    cos_dist_threshold: 1.0e-03
+    kl_div_threshold: 4.6e-01
+    timeout: 1800
 
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.

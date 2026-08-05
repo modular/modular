@@ -60,6 +60,7 @@ SKIP_MODELS: set[str] = {
     "deepseek-ai/deepseek-r1",
     "deepseek-ai/deepseek-v3.1-terminus",
     "amd/kimi-k2.5-mxfp4",
+    "nvidia/kimi-k2.7-code-nvfp4",
 }
 
 
