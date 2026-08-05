@@ -505,63 +505,6 @@ def _make_multi_kv_manager(
 
 
 @pytest.mark.asyncio
-async def test_multi_cache_alloc_skip_tokens_is_safe() -> None:
-    """skip_tokens=True is safe for multi-cache because there is one BlockManager.
-
-    Previously, models with multiple KV caches used separate
-    PagedKVCacheManagers. Each manager had its own BlockManager, so
-    alloc(skip_tokens=True) on one manager would mutate
-    ctx.tokens.processed_length before the second manager allocated,
-    causing the second alloc to see stale token state.
-
-    With a single multi-cache PagedKVCacheManager, there is one shared
-    BlockManager. alloc() is called once and internally handles all
-    caches, so skip_tokens=True cannot cause a state mismatch.
-    """
-    page_size = 128
-    kv_manager = _make_multi_kv_manager(
-        page_size=page_size,
-        total_num_pages=16,
-        enable_prefix_caching=True,
-    )
-    kv_params = kv_manager.params
-    assert isinstance(kv_params, MultiKVCacheParams)
-    assert len(kv_params.children) == 2
-
-    # --- First request: populate the prefix cache ---
-    ctx1 = create_text_context(
-        np.arange(page_size + 1, dtype=np.int64), max_length=2048
-    )
-    kv_manager.claim(ctx1.request_id, replica_idx=0)
-    kv_manager.alloc(ctx1, replica_idx=0)
-    assert ctx1.tokens.processed_length == 0
-
-    # Simulate a full decode step so the first page gets committed.
-    kv_manager.runtime_inputs([[ctx1]])
-    ctx1.update(42)
-    kv_manager.step([[ctx1]])
-
-    kv_manager.release(ctx1.request_id, replica_idx=0)
-
-    # --- Second request: same prefix, should get a prefix cache hit ---
-    ctx2 = create_text_context(
-        np.arange(page_size + 1, dtype=np.int64), max_length=2048
-    )
-    kv_manager.claim(ctx2.request_id, replica_idx=0)
-    assert ctx2.tokens.processed_length == 0
-
-    # alloc applies prefix-cache skip internally. With the old separate-manager
-    # approach, this would have required skip_tokens=False to avoid corrupting
-    # state between managers. A single multi-cache manager has one BlockManager,
-    # so the skip is applied once safely.
-    kv_manager.alloc(ctx2, replica_idx=0)
-    assert ctx2.tokens.processed_length == page_size
-
-    # Verify the context is in a consistent state for runtime_inputs.
-    kv_manager.runtime_inputs([[ctx2]])
-
-
-@pytest.mark.asyncio
 async def test_multi_cache_runtime_inputs_combined() -> None:
     """runtime_inputs returns combined inputs for all caches."""
     kv_manager = _make_multi_kv_manager(total_num_pages=16)

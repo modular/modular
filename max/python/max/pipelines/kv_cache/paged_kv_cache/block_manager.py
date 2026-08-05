@@ -447,7 +447,6 @@ class BlockManager:
         self,
         ctx: TextContext,
         replica_idx: int = 0,
-        skip_tokens: bool = True,
     ) -> tuple[int, KVConnectorTransfer]:
         """Reuses blocks from prefix cache.
 
@@ -457,11 +456,6 @@ class BlockManager:
         Args:
             ctx: The request context.
             replica_idx: Index of the replica the request is assigned to.
-            skip_tokens: When True (default), advances the context's active
-                token window via ``ctx.tokens.skip_processing`` to reflect
-                the reused prefix-cache blocks.  Set to False when multiple
-                cache managers share a context and the caller will apply the
-                skip separately.
 
         Returns:
             ``(skip_amount, event)`` where ``skip_amount`` is the number of
@@ -498,9 +492,7 @@ class BlockManager:
             )
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(
-                ctx, replica_idx, skip_tokens=skip_tokens
-            )
+            self.release_uncommitted_blocks(ctx, replica_idx)
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
@@ -511,13 +503,12 @@ class BlockManager:
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
 
             skip_amount = new_committed_idx - ctx.tokens.processed_length
-            if skip_tokens:
-                ctx.tokens.skip_processing(skip_amount)
-                assert ctx.tokens.active_length >= 1, (
-                    "No active tokens after prefix caching! "
-                    "We should never get 100% prefix cache hit rate. "
-                    "Something went wrong!"
-                )
+            ctx.tokens.skip_processing(skip_amount)
+            assert ctx.tokens.active_length >= 1, (
+                "No active tokens after prefix caching! "
+                "We should never get 100% prefix cache hit rate. "
+                "Something went wrong!"
+            )
             if is_first_admission:
                 ctx.cached_prefix_length = skip_amount
             return skip_amount, load_event
@@ -1132,17 +1123,15 @@ class BlockManager:
             num_draft_tokens_per_step,
         )
 
-        # Verify that committed tokens fit within the currently allocated
-        # blocks.  We check against committed_idx (block-manager-internal
-        # state) rather than ctx.tokens.processed_length, because the latter
-        # is shared across multiple cache managers and may not reflect this
-        # cache's state when skip_tokens=False is used.
+        # Verify that processed tokens fit within the currently allocated blocks.
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        committed_idx = self.req_to_committed_idx[ctx.request_id]
-        assert committed_idx <= (num_current_blocks * self.block_size), (
-            f"Expected at least {ceildiv(committed_idx, self.block_size)} "
-            f"blocks to store KV for {committed_idx} committed tokens, but "
+        processed_length = ctx.tokens.processed_length
+        assert ctx.tokens.processed_length <= (
+            num_current_blocks * self.block_size
+        ), (
+            f"Expected at least {ceildiv(processed_length, self.block_size)} "
+            f"blocks to store KV for {processed_length} committed tokens, but "
             f"only {num_current_blocks} are assigned."
         )
 
@@ -1207,7 +1196,6 @@ class BlockManager:
         self,
         ctx: TextContext,
         replica_idx: int = 0,
-        skip_tokens: bool = True,
     ) -> None:
         """Release the uncommitted blocks for the request."""
         pool = self.device_block_pools[replica_idx]
@@ -1220,15 +1208,14 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             pool.free_block(block)
-        if skip_tokens:
-            delta = (
-                ctx.tokens.processed_length
-                - self.req_to_committed_idx[ctx.request_id]
-            )
-            if delta > 0:
-                ctx.tokens.rewind_processing(delta)
-            elif delta < 0:
-                ctx.tokens.skip_processing(-delta)
+        delta = (
+            ctx.tokens.processed_length
+            - self.req_to_committed_idx[ctx.request_id]
+        )
+        if delta > 0:
+            ctx.tokens.rewind_processing(delta)
+        elif delta < 0:
+            ctx.tokens.skip_processing(-delta)
 
     def register_dummy_request(
         self, request_id: RequestID, replica_idx: int = 0
