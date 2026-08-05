@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Unit tests for the KV cache host capacity preflight."""
+"""Unit tests for the KV cache host and disk capacity preflights."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 import pytest
+from max.pipelines.kv_cache.connectors import disk_tier
 from max.pipelines.kv_cache.paged_kv_cache import block_copy_engine
 
 
@@ -57,3 +58,28 @@ def test_host_capacity_skips_when_unknown(
 
     block_copy_engine._check_host_memory_capacity(1 << 60)
     assert "skipping KV cache host capacity preflight" in caplog.text
+
+
+def test_disk_capacity_rejects_oversized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        disk_tier.psutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(free=1024),
+    )
+
+    with pytest.raises(RuntimeError, match="disk_offload_max_gb"):
+        disk_tier._check_disk_capacity("/tmp", 2048)
+
+
+def test_disk_capacity_accepts_fitting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        disk_tier.psutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(free=4096),
+    )
+
+    disk_tier._check_disk_capacity("/tmp", 4096)
