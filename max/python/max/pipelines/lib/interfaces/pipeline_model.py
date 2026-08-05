@@ -53,8 +53,6 @@ from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
 )
 from max.pipelines.lora import (
-    LoRAInputs,
-    LoRAManager,
     LoRAManagerV3,
     LoRATargetModule,
 )
@@ -211,9 +209,6 @@ class ModelInputs:
     inputs: a ``KVCacheInputs`` leaf, or a ``MultiKVCacheInputs`` tree for
     multi-cache models. ``flatten()`` yields the full positional input list."""
 
-    lora: LoRAInputs | None = None
-    """Per-batch LoRA adapter buffers, or ``None`` when LoRA is disabled."""
-
     lora_buffers: tuple[Buffer, ...] = ()
     """ModuleV3 LoRA graph inputs (routing triple + per-slot adapter stacks)
     in ``LoRAManagerV3.symbolic_inputs`` order, set by the ModuleV3 batch
@@ -350,7 +345,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     #: Config class used to delegate ``calculate_max_seq_len`` and KV params.
     model_config_cls: ClassVar[type[Any] | None] = None
     #: Whether this arch serves LoRA via the ModuleV3 adapters-as-inputs path
-    #: (``LoRAManagerV3``), rather than the V2 alias-buffer ``LoRAManager``.
+    #: (``LoRAManagerV3``). Non-ModuleV3 archs cannot serve LoRA.
     lora_modulev3: ClassVar[bool] = False
     #: The ModuleV3 LoRA target projections this arch wraps. Read by the base
     #: to construct ``LoRAManagerV3``; empty for non-ModuleV3-LoRA archs.
@@ -389,10 +384,17 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 "prefix caching disabled (`--no-enable-prefix-caching`)."
             )
 
-        self._lora_manager: LoRAManager | LoRAManagerV3 | None
+        self._lora_manager: LoRAManagerV3 | None
         if not pipeline_config.lora:
             self._lora_manager = None
         else:
+            if not type(self).lora_modulev3:
+                raise ValueError(
+                    f"{type(self).__qualname__} does not support LoRA serving. "
+                    "LoRA requires a ModuleV3 architecture; relaunch the "
+                    "ModuleV3 variant of this model (e.g. `--prefer-module-v3`) "
+                    "or serve without `--lora-paths`."
+                )
             common_args = (
                 pipeline_config.lora,
                 pipeline_config.model.model_name,
@@ -402,12 +404,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.head_dim,
                 self.max_seq_len * max_batch_size,
             )
-            if type(self).lora_modulev3:
-                self._lora_manager = LoRAManagerV3(
-                    *common_args, targets=type(self).lora_targets
-                )
-            else:
-                self._lora_manager = LoRAManager(*common_args)
+            self._lora_manager = LoRAManagerV3(
+                *common_args, targets=type(self).lora_targets
+            )
 
         if isinstance(self._lora_manager, LoRAManagerV3):
             assert self.adapter is not None, (
@@ -472,7 +471,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         return config
 
     @property
-    def lora_manager(self) -> LoRAManager | LoRAManagerV3 | None:
+    def lora_manager(self) -> LoRAManagerV3 | None:
         """Returns the LoRA manager if LoRA is enabled, otherwise None."""
         return self._lora_manager
 

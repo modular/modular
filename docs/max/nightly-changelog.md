@@ -687,6 +687,13 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
+  passed as graph inputs) is now the only supported LoRA implementation.
+  Serving a non-ModuleV3 architecture with `--lora-paths` now raises a clear
+  error at startup instead of building a manager that never applies the
+  adapters; serve the model's ModuleV3 variant (for example,
+  `--prefer-module-v3`) to use LoRA adapters.
+
 - Dynamic CE chunk sizing in the data-parallel load-balancer
   (`--dp-ce-balance-enable-dynamic-chunk-size`) now defaults to off;
   re-enable it explicitly where its TTFT win holds for your workload.

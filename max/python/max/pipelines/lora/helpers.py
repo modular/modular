@@ -21,14 +21,14 @@ from max.pipelines.modeling.types.pipeline import (
     PipelineOutputType,
 )
 
-from .lora import LoRAManager
+from .modulev3 import LoRAManagerV3
 
 
 def get_lora_manager(
     pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
-) -> LoRAManager | None:
-    """Returns the LoRAManager from the pipeline if LoRA is enabled."""
-    manager: LoRAManager | None = None
+) -> LoRAManagerV3 | None:
+    """Returns the LoRA manager from the pipeline if LoRA is enabled."""
+    manager: LoRAManagerV3 | None = None
 
     if hasattr(pipeline, "_pipeline_model"):
         manager = pipeline._pipeline_model._lora_manager
