@@ -18,10 +18,11 @@ from collections.abc import MutableSequence
 from typing import Any
 
 import numpy as np
-from max._core.dialects import builtin, mo
+from max._core.dialects import builtin, kgen, mo
 from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
+    AlgebraicDim,
     BufferValue,
     BufferValueLike,
     DeviceKind,
@@ -7286,7 +7287,13 @@ def grouped_quantize_dynamic_block_scaled(
     SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
 
     total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
-    total_m_tiles += expert_ids.shape[0]  # add one padding tile for each group
+    # A row belongs to exactly one group, so the number of non-empty groups
+    # is bounded by both the group count and the row count; padding one tile
+    # per group beyond that bound is wasted work at low occupancy (e.g.
+    # single-token decode routed across hundreds of experts).
+    total_m_tiles += AlgebraicDim.apply(
+        kgen.POC.min, expert_ids.shape[0], input.shape[0]
+    )
     scales_shape: list[Dim | int] = [
         total_m_tiles,
         ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
