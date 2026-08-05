@@ -835,6 +835,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
         num_active_experts: UInt32,
         estimated_total_m: UInt32,
         decode_grid_m_cap: UInt32,
+        decode_grid_m_rows: UInt32,
         context: DeviceContext,
     ) raises:
         """Executes grouped block-scaled matrix multiplication.
@@ -860,9 +861,10 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
                 used by the preb dispatcher to pick the persistent vs direct
                 kernel path. Pass 0 to default to persistent. Ignored when
                 `preshuffled_b == False`.
-            decode_grid_m_cap: Per-expert decode cap sizing the direct grid.y
-                on the decode bands. 0 disables (full-stride fallback). Ignored
-                when `preshuffled_b == False`.
+            decode_grid_m_cap: Decode-band gate selecting the direct kernel over
+                the persistent one; 0 disables. Ignored unless `preshuffled_b`.
+            decode_grid_m_rows: Rows grid.y must cover per expert on the
+                decode bands. Ignored unless `preshuffled_b`.
             context: The device context pointer.
         """
         comptime assert is_gpu[
@@ -897,6 +899,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
                 Int(estimated_total_m),
                 # 0 = unset -> -1 (full-stride fallback).
                 -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
+                Int(decode_grid_m_rows),
             )
         else:
             # Dense row-major B path. Safe default for arbitrary callers.

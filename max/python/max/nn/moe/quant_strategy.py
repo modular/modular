@@ -528,6 +528,7 @@ class Mxfp4Strategy:
         a_scales_preshuffled: bool = False,
         a_scales_max_padded_m: int = 0,
         decode_grid_m_cap: int = 0,
+        decode_grid_m_rows: int = 0,
     ) -> TensorValue:
         """Runs grouped MXFP4 matmul with per-expert scales."""
         (
@@ -551,6 +552,7 @@ class Mxfp4Strategy:
             a_scales_preshuffled=a_scales_preshuffled,
             a_scales_max_padded_m=a_scales_max_padded_m,
             decode_grid_m_cap=decode_grid_m_cap,
+            decode_grid_m_rows=decode_grid_m_rows,
         )
 
     def prepare_weight_scales(
