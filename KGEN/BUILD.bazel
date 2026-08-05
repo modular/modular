@@ -36,6 +36,7 @@ package_group(
         "//docs/...",
         "//max/python/max/_core/internal/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
+        "//oss/modular/bazel/...",
         "//oss/modular/docs/...",
         "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
         "//oss/modular/mojo/docs/...",
@@ -896,7 +897,7 @@ modular_cc_library(
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
         "//:hal_device_context_enabled": ["//MLRT:Driver/DeviceContextAPI"],
-        "//conditions:default": ["//MLRT:Driver/DeviceContext"],
+        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
     }),
     tags = ["no-clang-tidy-headers"],
     visibility = ["//visibility:private"],
@@ -960,7 +961,7 @@ modular_shared_library(
         # Under --config=hal-device-context we don't link the full DeviceContext,
         # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
         "//:hal_device_context_enabled": [],
-        "//conditions:default": ["//MLRT:Driver/DeviceContext"],
+        "//conditions:default": ["//MLRT:Driver/DeviceContextImplCpp"],
     }) + select({
         "//:tracy_enabled": ["@tracy//:Tracy"],
         "//conditions:default": [],
@@ -977,6 +978,8 @@ modular_shared_library(
         "//KGEN:consumers",
         "//KGEN/test/internal/profiling:__pkg__",
         "//KGEN/test/tracy:__pkg__",
+        "//mojo/stdlib/std:__pkg__",
+        "//oss/modular/mojo/stdlib/std:__pkg__",
     ],
     deps = [
         "//AsyncRT:Runtime",

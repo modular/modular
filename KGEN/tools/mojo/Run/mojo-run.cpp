@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/Support/Configuration.h"
 #include "KGEN/Support/Constants.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -397,8 +398,27 @@ static int run(const State &subcommandState) {
   // should load. `mojo run` has no native linker — the program is JIT'd in
   // process — so `-Xlinker -L<dir> -Xlinker -l<name>` is translated into a
   // set of dlopen-able paths rather than passed verbatim to a system linker.
-  SmallVector<std::string> additionalLibraries = resolveXlinkerLibraries(
-      state, args.getAllArgValues(options::OPT_Xlinker));
+  //
+  // The configured shared libraries are resolved the same way: `mojo build`
+  // puts them on the link line, so the JIT has to dlopen them for the same
+  // symbols to resolve. The AsyncRT Mojo bindings reach a JIT'd program only
+  // this way now — they used to be satisfied out of the compiler's own process
+  // image, back when it linked them itself.
+  SmallVector<std::string> linkerArgs;
+  if (ErrorOr<MojoConfig> configOr = MojoConfig::open(); !configOr.isError()) {
+    SmallVector<StringRef> configuredLibs;
+    configOr->appendSharedLibraryLinkArgs(configuredLibs);
+    for (StringRef arg : configuredLibs) {
+      // A clang driver passthrough token; the resolver reads the flags it
+      // wraps, and would warn about the token itself.
+      if (arg != "-Xlinker")
+        linkerArgs.emplace_back(arg.str());
+    }
+  }
+  llvm::append_range(linkerArgs, args.getAllArgValues(options::OPT_Xlinker));
+
+  SmallVector<std::string> additionalLibraries =
+      resolveXlinkerLibraries(state, linkerArgs);
 
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
