@@ -20,7 +20,6 @@
 
 # Tracing
 /mojo/stdlib/gpu/host/_tracing.mojo @modular/stdlib @modular/kernels @modular/mojo-tooling
-/mojo/stdlib/gpu/profiler.mojo @modular/stdlib @modular/kernels @modular/mojo-tooling
 /mojo/stdlib/runtime/tracing.mojo @modular/mojo-lang @modular/mojo-tooling
 /mojo/stdlib/test/runtime/tracing.mojo @modular/mojo-lang @modular/mojo-tooling
 
