@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections import OrderedDict, deque
 from collections.abc import Callable
@@ -51,6 +52,12 @@ from .token_budget import (
 )
 
 logger = logging.getLogger("max.serve")
+
+TG_PRIORITY_KV_PERCENTAGE_ENV_VAR = "MAX_SERVE_TG_PRIORITY_KV_PERCENTAGE"
+"""Device KV usage percentage above which a replica runs TG before CE.
+
+Set it above 100 to disable the rule.
+"""
 
 
 @dataclass
@@ -352,17 +359,14 @@ class TextBatchConstructor:
     removed from the TG queue. All requests present in the TG queue at
     batch construction time therefore have remaining capacity.
 
-    **5. KV cache watermark and memory pressure**
+    **5. KV cache memory pressure**
 
     When a paged KV cache is used, KV memory becomes an additional limiting
     factor:
 
-    - During CE, the constructor estimates how many KV blocks would be used if
-      a candidate request were admitted.
-    - If admitting the request would push usage above ``kvcache_ce_watermark``
-      *and* there is active TG work on the replica, the request is deferred to
-      protect room for ongoing generations. This prevents CE from starving
-      existing TG batches of KV memory.
+    - Once a replica's device KV usage exceeds
+      ``TG_PRIORITY_KV_PERCENTAGE_ENV_VAR`` percent, it prioritizes TG over CE
+      so in-flight generations drain before new prefills compete for blocks.
     - During TG, if allocating KV blocks for a candidate request fails due to
       insufficient capacity, the constructor may preempt other TG candidates
       to free KV space, ensuring that at least a subset of requests can
@@ -438,6 +442,9 @@ class TextBatchConstructor:
         self.kv_cache = kv_cache
         self.batch_scheduling_strategy = batch_scheduling_strategy
         self._get_inflight_kv_transfer_count = get_inflight_kv_transfer_count
+        self.tg_priority_kv_percentage = float(
+            os.getenv(TG_PRIORITY_KV_PERCENTAGE_ENV_VAR, "90")
+        )
 
         self._lora_manager: LoRAManager | None = get_lora_manager(pipeline)
 
@@ -862,6 +869,17 @@ class TextBatchConstructor:
         if len(self.replicas[replica_idx].tg_reqs) == 0:
             return RequestType.CE
 
+        # Under KV pressure, drain TG before admitting more CE work: a new
+        # prefill competes for the blocks in-flight generations still need,
+        # and preempting one of those discards prefill already paid for.
+        kv_percentage = (
+            100
+            * self.kv_cache.get_num_used_pages(replica_idx)
+            / self.kv_cache.get_num_pages(replica_idx)
+        )
+        if kv_percentage > self.tg_priority_kv_percentage:
+            return RequestType.TG
+
         # If we've enabled in flight batching, prioritize TG
         if self.scheduler_config.enable_in_flight_batching:
             return RequestType.TG
@@ -918,27 +936,6 @@ class TextBatchConstructor:
                 # Claim the request if needed.
                 if not self.kv_cache.contains(req_id, replica_idx=replica_idx):
                     self.kv_cache.claim(req_id, replica_idx=replica_idx)
-
-                # Check that the CE request does not go above the watermark
-                pct_blocks_used_after_ce_request = max(
-                    0.0,
-                    min(
-                        self.kv_cache.get_pct_used_blocks_after_allocation(
-                            ctx, replica_idx=replica_idx
-                        ),
-                        1.0,
-                    ),
-                )
-                if (
-                    pct_blocks_used_after_ce_request
-                    > self.scheduler_config.kvcache_ce_watermark
-                ) and (
-                    len(batch) != 0
-                    or len(replica_requests.tg_reqs) != 0
-                    or self._inflight_kv_transfer_count() > 0
-                ):
-                    self._return_to_request_queue(ctx, replica_idx)
-                    break
 
                 try:
                     onload_event = self.kv_cache.alloc(

@@ -23,10 +23,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import DummyKVCache
-from max.pipelines.modeling.types import (
-    RequestID,
-    TextGenerationInputs,
-)
+from max.pipelines.modeling.types import RequestID, TextGenerationInputs
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -68,7 +65,6 @@ def create_scheduler(
     dp: int = 1,
     max_batch_size: int = 4,
     target_tokens_per_batch_ce: int = 32,
-    kvcache_ce_watermark: float = 0.95,
     enable_chunked_prefill: bool = False,
 ) -> tuple[
     TokenGenerationScheduler,
@@ -80,7 +76,6 @@ def create_scheduler(
         max_batch_size=max_batch_size,
         target_tokens_per_batch_ce=target_tokens_per_batch_ce,
         data_parallel_degree=dp,
-        kvcache_ce_watermark=kvcache_ce_watermark,
         enable_chunked_prefill=enable_chunked_prefill,
     )
 
@@ -384,7 +379,6 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
             max_batch_size=4,
             target_tokens_per_batch_ce=32,
             data_parallel_degree=1,
-            kvcache_ce_watermark=0.95,
         ),
         pipeline=pipeline,
         request_queue=queue.Queue(),

@@ -79,6 +79,16 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
     return manager
 
 
+def set_mock_kv_usage(cache: Mock, used_fraction: float) -> None:
+    """Point a mock cache's device page counts at a given usage fraction.
+
+    ``_identify_priority`` divides used pages by total pages, so a mock that
+    reaches it needs real numbers rather than auto-created ``Mock`` attributes.
+    """
+    cache.get_num_pages = Mock(return_value=100)
+    cache.get_num_used_pages = Mock(return_value=round(used_fraction * 100))
+
+
 def create_mock_kv_cache() -> Mock:
     """Create a mock paged KV cache manager with minimal interface."""
     cache = Mock()
@@ -91,8 +101,8 @@ def create_mock_kv_cache() -> Mock:
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
-    cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.94)
     cache.pending_transfers_exist = Mock(return_value=False)
+    set_mock_kv_usage(cache, 0.0)
 
     return cache
 
@@ -164,8 +174,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -267,8 +276,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -294,8 +302,8 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.alloc = Mock(side_effect=InsufficientBlocksError)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
     kv_cache.pending_transfers_exist = Mock(return_value=False)
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -345,7 +353,7 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     )
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
+    set_mock_kv_usage(kv_cache, 0.0)
 
     inflight_count = [1]  # mutable so the lambda can be updated between calls
     batch_constructor = TextBatchConstructor(
@@ -386,15 +394,13 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
         enable_in_flight_batching=False,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
-        kvcache_ce_watermark=0.95,
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -447,8 +453,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(batch_constructor.replicas[0].ce_reqs) == 3
     assert len(batch_constructor.replicas[0].tg_reqs) == 5
 
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.96
-
     # We still prioritize CE, but return an empty batch
     assert batch_constructor._identify_priority(0) == RequestType.CE
 
@@ -457,7 +461,6 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     assert len(inputs.batches[0]) == 5
 
     # Last Ce Batch
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
     assert batch_constructor._identify_priority(0) == RequestType.CE
     inputs = batch_constructor.construct_batch()
     # Since we already have 5 CE request outstanding, we cannot grab any new CE requests.
@@ -516,15 +519,13 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
         enable_in_flight_batching=True,
         enable_chunked_prefill=True,
         target_tokens_per_batch_ce=30,
-        kvcache_ce_watermark=0.95,
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -588,8 +589,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation = Mock()
-    kv_cache.get_pct_used_blocks_after_allocation.return_value = 0.0
+    set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
@@ -1897,8 +1897,8 @@ def _make_cordon_kv_cache(alloc: Mock) -> Mock:
     kv_cache.alloc = alloc
     kv_cache.claim = Mock()
     kv_cache.contains = Mock(return_value=False)
-    kv_cache.get_pct_used_blocks_after_allocation = Mock(return_value=0.0)
     kv_cache.pending_transfers_exist = Mock(return_value=False)
+    set_mock_kv_usage(kv_cache, 0.0)
     return kv_cache
 
 

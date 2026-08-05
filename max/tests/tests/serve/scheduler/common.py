@@ -174,7 +174,6 @@ def create_paged_scheduler(
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
-    kvcache_ce_watermark: float = 1.0,
     num_speculative_tokens: int = 0,
     max_pending_requests: int | None = None,
 ) -> tuple[
@@ -204,7 +203,6 @@ def create_paged_scheduler(
         max_batch_total_tokens=max_batch_total_tokens,
         data_parallel_degree=dp,
         num_speculative_tokens=num_speculative_tokens,
-        kvcache_ce_watermark=kvcache_ce_watermark,
     )
     token_pipeline = FakeTokenGeneratorPipeline(
         kv_manager=kv_cache,

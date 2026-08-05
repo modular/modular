@@ -756,28 +756,6 @@ class BlockManager:
         return loaded_blocks, event
 
     @traced
-    def count_full_blocks_from_prefix_caches(
-        self, ctx: TextContext, replica_idx: int = 0
-    ) -> int:
-        """Returns the number of computed (cached) blocks related to this request.
-
-        Note that only full blocks are counted.
-        """
-        if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return 0
-
-        self.compute_hashes_for_request(ctx)
-        num_committed_blocks = (
-            self.req_to_committed_idx[ctx.request_id] // self.block_size
-        )
-        req_hashes = self.req_to_hashes[ctx.request_id]
-        uncommitted_hashes = req_hashes[num_committed_blocks:]
-
-        return self._count_full_blocks_from_prefix_cache(
-            uncommitted_hashes, replica_idx
-        )
-
-    @traced
     def count_cached_prefix_blocks(
         self, block_hashes: Sequence[bytes]
     ) -> PrefixCacheHits:
