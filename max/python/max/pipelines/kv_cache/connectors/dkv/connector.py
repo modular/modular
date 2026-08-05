@@ -952,7 +952,6 @@ class DKVConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
@@ -961,11 +960,10 @@ class DKVConnector:
         contract as :meth:`load` (truncated to its first 8 bytes at the
         dkv boundary; see :func:`_to_dkv_u64`).
 
-        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
-        chain blocks under a parent, so the Rust client builds the keys
-        (and the NUMA striping plan) from the hashes alone.
+        The dKV store dedups by composite key ``(tp_shard_id, group,
+        seq_hash)`` and does not chain blocks under a parent, so the Rust
+        client builds the keys (and the NUMA striping plan) from the hashes
+        alone.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set).

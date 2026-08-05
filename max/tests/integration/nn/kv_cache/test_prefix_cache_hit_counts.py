@@ -140,7 +140,6 @@ class _TierStubConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
 

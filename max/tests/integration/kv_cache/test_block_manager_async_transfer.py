@@ -122,7 +122,6 @@ class _AsyncConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         event = _ControllableTransfer(
@@ -307,7 +306,7 @@ def test_async_offload_pins_source_blocks_without_commit() -> None:
     blk1 = _commit_device_block(pool, 111)
     blk2 = _commit_device_block(pool, 222)
     assert blk1.ref_cnt == 0 and blk2.ref_cnt == 0
-    bm._pending_offloads = [[(None, [_b(111), _b(222)])]]
+    bm._pending_offloads = [[[_b(111), _b(222)]]]
 
     bm.offload()
 

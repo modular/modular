@@ -13,10 +13,9 @@
 
 """CPU conformance tests for the ``KVConnector`` protocol additions.
 
-Covers the ``wait_for_loads`` / ``wait_for_offloads`` barriers, the ``offload``
-``parent_seq_hash`` parameter, and the fire-and-forget ``touch`` method,
-verified against the no-op ``NullConnector`` (which needs no device) plus the
-host/disk connectors.
+Covers the ``wait_for_loads`` / ``wait_for_offloads`` barriers and the
+fire-and-forget ``touch`` method, verified against the no-op ``NullConnector``
+(which needs no device) plus the host/disk connectors.
 """
 
 from __future__ import annotations
@@ -38,13 +37,6 @@ def test_barrier_methods_are_callable() -> None:
     # Both are no-op barriers (return ``None``); just ensure they are callable.
     connector.wait_for_loads()
     connector.wait_for_offloads()
-
-
-def test_offload_accepts_parent_seq_hash() -> None:
-    # The new third positional/keyword arg is accepted (and ignored here).
-    NullConnector().offload([0], [b"\x01" * 8], parent_seq_hash=b"\x02" * 8)
-    # ``None`` is the root-of-chain sentinel under the bytes-only contract.
-    NullConnector().offload([0], [b"\x01" * 8], parent_seq_hash=None)
 
 
 def test_touch_returns_none_and_never_raises() -> None:
