@@ -954,6 +954,7 @@ def mxfp4_grouped_matmul_amd_preb[
     ctx: DeviceContext,
     estimated_total_m: Int = 0,
     decode_grid_m_cap: Int = -1,
+    decode_grid_m_rows: Int = 0,
 ) raises:
     """Launches grouped MXFP4 matmul on AMD CDNA4 with pre-shuffled weights.
 
@@ -985,10 +986,10 @@ def mxfp4_grouped_matmul_amd_preb[
         ctx: Device context.
         estimated_total_m: Estimated total tokens across all experts, used
             to select the tuned kernel band (default 0).
-        decode_grid_m_cap: Decode-band grid cap (the production max batch
-            size); when positive and estimated_total_m is within it, launches
-            the direct capped decode grid instead of the persistent fallback
-            (default -1, disabled).
+        decode_grid_m_cap: Decode-band gate (the production max batch size)
+            selecting the direct kernel over the persistent one; not a bound.
+        decode_grid_m_rows: Rows grid.y must cover per expert on the decode
+            bands. 0 falls back to the full A-scale stride.
     """
 
     comptime assert (
@@ -1057,8 +1058,9 @@ def mxfp4_grouped_matmul_amd_preb[
         mfma_cluster: Int = 4,
         waves_per_eu: Int = 0,
     ]() raises:
-        # Decode bands (use_decode_cap) pass the decode cap; others pass -1.
-        var grid_m_cap = decode_grid_m_cap if use_decode_cap else -1
+        # `decode_grid_m_cap` gates the band in pairs/rank; it does not bound
+        # rows per expert, so grid.y takes the caller's row bound instead.
+        var grid_m_cap = decode_grid_m_rows if use_decode_cap else -1
         PreShuffledBGroupedGEMM[
             cu_count=ctx.default_device_info.sm_count,
             wg_per_cu=wg_per_cu,
