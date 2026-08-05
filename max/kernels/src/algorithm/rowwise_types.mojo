@@ -28,7 +28,6 @@ discriminators and split-K plumbing — are `_`-prefixed.
 """
 
 from std.memory import UnsafePointer
-from std.sys import align_of
 from std.gpu.host.info import is_cpu
 from std.utils.coord import Coord
 
@@ -40,18 +39,27 @@ from std.utils.coord import Coord
 
 @always_inline
 def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
-    """Memory alignment a row-wise body's store — or its `input_fn`'s
-    load — should use for a width-`ws` tile of `dtype` on `target`.
+    """Alignment, **in elements**, a row-wise body's store — or its
+    `input_fn`'s load — may assume for a width-`ws` tile of `dtype` on
+    `target`.
 
-    Single source of truth for the rule. Element-natural
-    (`align_of[Scalar[dtype]]`) on CPU: it vectorizes via unaligned
-    SIMD and the CPU tiers don't guarantee SIMD-aligned row bases.
-    SIMD-natural (`align_of[SIMD[dtype, ws]]`) on GPU: folds the access
-    into one vector transaction (`LDG.128`/`STG.128`), safe because a
-    body only ever gets a `ws > 1` tile on a SIMD-aligned offset (block
-    tier requires `row_size % simd == 0`; the warp tier matches via the
-    same guard, else falls through to the block tier). The two coincide
-    at `ws == 1`.
+    The unit is elements, not bytes: every caller forwards this value into
+    the `element_alignment` parameter of a tensor load/store, which
+    multiplies it by `align_of[dtype]()` to get the byte alignment it
+    promises the backend. Returning a byte count here therefore squares
+    the intended alignment, and an alignment the address does not keep is
+    a fault rather than a missed optimization — a `float64` tile promised
+    64 bytes loads through `vmovapd`.
+
+    Single source of truth for the rule. `1` on CPU (element-natural: the
+    CPU tiers walk a row at the tensor's own stride, and an input tensor
+    may be an imported buffer, so neither a tile base nor the step between
+    tiles is guaranteed SIMD-aligned). `ws` on GPU (SIMD-natural —
+    `ws * align_of[dtype]()` bytes: folds the access into one vector
+    transaction (`LDG.128`/`STG.128`), safe because a body only ever gets
+    a `ws > 1` tile on a SIMD-aligned offset (block tier requires
+    `row_size % simd == 0`; the warp tier matches via the same guard, else
+    falls through to the block tier)). The two coincide at `ws == 1`.
 
     Both `Context.alignment` (the store) and the public-op wrappers'
     synthesized `input_fn` (the load) call this, so the rule lives in
@@ -63,12 +71,12 @@ def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
         target: `"cpu"` or `"gpu"`.
 
     Returns:
-        The alignment in bytes.
+        The alignment in elements.
     """
     comptime if is_cpu[target]():
-        return align_of[Scalar[dtype]]()
+        return 1
     else:
-        return align_of[SIMD[dtype, ws]]()
+        return ws
 
 
 # ===-----------------------------------------------------------------------===#
@@ -269,7 +277,7 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
             ws: The tile's SIMD width.
 
         Returns:
-            The alignment in bytes.
+            The alignment in elements.
         """
         return tile_alignment[dtype, ws, Self.target]()
 

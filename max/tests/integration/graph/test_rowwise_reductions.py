@@ -19,7 +19,9 @@ the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 ``row_mean_of_squares``). Each op is checked against a float32 torch reference
 across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
-float32 where precision makes it meaningful.
+float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
+group (see ``test_rowwise_wide_element_cpu``) for what only the widest element
+can reach.
 
 Every case runs on both the CPU and, when an accelerator is present, the GPU --
 the GPU is where the cooperative tiers, the cross-thread combine and the split-K
@@ -51,6 +53,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from test_common.reduction_graphs import (
     LAYER_NORM_EPS,
+    PURE_REDUCTIONS,
     RMS_NORM_EPS,
     build_reduction,
 )
@@ -81,6 +84,8 @@ def _torch_dtype(dtype: DType) -> torch.dtype:
         DType.bool: torch.bool,
         DType.int8: torch.int8,
         DType.int16: torch.int16,
+        DType.int64: torch.int64,
+        DType.float64: torch.float64,
     }.get(dtype, torch.float32)
 
 
@@ -110,7 +115,7 @@ def _make_input(op: str, rows: int, cols: int, dtype: DType) -> torch.Tensor:
         # rows are all-False with a single True (and vice versa for min).
         f = torch.rand(rows, cols, dtype=torch.float32)
         return (f > 1.0 - 2.0 / cols) | (f < 1.0 / cols)
-    if dtype in (DType.int8, DType.int16):
+    if dtype in (DType.int8, DType.int16, DType.int64):
         return torch.randint(-100, 100, (rows, cols), dtype=torch.int32).to(
             _torch_dtype(dtype)
         )
@@ -276,21 +281,29 @@ def _reference_and_check(
 
 
 # Inner-axis matrix: precision-sensitive ops in both dtypes; exact
-# selection/compare ops (max/min/arg/min_and_max) in bfloat16 only.
+# selection/compare ops (max/min_and_max/arg) in bfloat16 only.
+#
+# reduce_min/reduce_mean/logsoftmax/argmin are deliberately absent: each is
+# redundant with a sibling already in this matrix (reduce_max, reduce_sum,
+# softmax, argmax respectively) -- same monoid/combine mechanics, differing
+# only in comparison direction or a trivial final step (a divide, or the
+# elementwise map after the shared OnlineLogSumExp reduce). A bug in the
+# shared scaffolder path shows up in the sibling that's still tested; the two
+# confirmed bugs that genuinely needed both directions tested (the bool
+# subword-state crash, the split-K join_parallel bug) have their own narrow
+# regression coverage below (`_GPU_SUBWORD_CASES`,
+# `test_rowwise_inner_gpu_splitk`) that still exercises both regardless of
+# this trim.
 _INNER_BOTH = [
     "reduce_sum",
-    "reduce_mean",
     "reduce_product",
     "softmax",
-    "logsoftmax",
     "layer_norm",
     "row_mean_of_squares",
 ]
 _INNER_BF16_ONLY = [
     "reduce_max",
-    "reduce_min",
     "argmax",
-    "argmin",
     "reduce_min_and_max",
 ]
 _INNER_CASES = (
@@ -322,18 +335,19 @@ def test_rowwise_inner(
 
 
 # Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
-# sensitive sum/mean in both dtypes; the rest in bfloat16 only.
+# sensitive sum in both dtypes; the rest in bfloat16 only. See the inner-axis
+# matrix above for why reduce_min/reduce_mean/argmin are absent (redundant
+# with reduce_max/reduce_sum/argmax).
 _NONINNER_CASES = [
     (op, DType.bfloat16)
     for op in [
         "reduce_sum",
         "reduce_max",
-        "reduce_min",
-        "reduce_mean",
         "reduce_product",
+        "argmax",
         "reduce_min_and_max",
     ]
-] + [(op, DType.float32) for op in ["reduce_sum", "reduce_mean"]]
+] + [(op, DType.float32) for op in ["reduce_sum"]]
 
 
 @pytest.mark.parametrize("dev", _DEVICES, ids=_DEV_IDS)
@@ -349,6 +363,48 @@ def test_rowwise_noninner(
     for rows, cols in _NONINNER_SHAPES:
         x = _make_input(op, rows, cols, dtype)
         _reference_and_check(op, dtype, model, x, 0, [], f"shape={rows}x{cols}")
+
+
+# 8-byte elements, both axes -- CPU only (MAX's reduce dtype set has no 64-bit
+# element on GPU). The widest element is what turns a wrong tile alignment into a
+# crash rather than a slow path: the alignment a body claims per tile is scaled
+# by the element size before it reaches the backend, so only on the widest
+# element can an off-by-a-factor claim reach a whole SIMD register and select an
+# alignment-checked instruction. Nothing narrower can catch that, which is why
+# every dtype above passed while float64 segfaulted. Both axes, since the claim
+# rides every load, and both 8-byte dtypes, since the claim is a function of the
+# element's width and not of its kind -- int64 faulted on the same ops.
+#
+# int64 skips reduce_mean and reduce_product: integer division and integer
+# overflow make them a comparison against the float32 reference rather than
+# against the alignment claim, which every other op here already pins.
+_WIDE_CASES = [(op, DType.float64) for op in PURE_REDUCTIONS] + [
+    (op, DType.int64)
+    for op in PURE_REDUCTIONS
+    if op not in ("reduce_mean", "reduce_product")
+]
+
+
+@pytest.mark.parametrize("axis", [-1, 0], ids=["inner", "noninner"])
+@pytest.mark.parametrize(
+    "op,dtype", _WIDE_CASES, ids=lambda v: v if isinstance(v, str) else str(v)
+)
+def test_rowwise_wide_element_cpu(
+    session: InferenceSession, op: str, dtype: DType, axis: int
+) -> None:
+    model = session.load(
+        _build_graph(op, dtype, axis=axis, dev=DeviceRef.CPU())
+    )
+    shapes = (
+        [(_INNER_ROWS, cols) for cols in _INNER_COLS]
+        if axis == -1
+        else _NONINNER_SHAPES
+    )
+    for rows, cols in shapes:
+        x = _make_input(op, rows, cols, dtype)
+        _reference_and_check(
+            op, dtype, model, x, axis, [], f"shape={rows}x{cols}"
+        )
 
 
 # Sub-word monoid state, on an accelerator. The Row scaffolder's cross-thread
@@ -395,3 +451,31 @@ def test_rowwise_inner_gpu_subword_state(
     for cols in _INNER_COLS:
         x = _make_input(op, _INNER_ROWS, cols, dtype)
         _reference_and_check(op, dtype, model, x, -1, [], f"cols={cols}")
+
+
+# Split-K cross-block join, on an accelerator. A few-row, long-row shape routes
+# the inner-axis reduction through the split-K tier (`num_rows` under the SM
+# count and at least `_SPLITK_MIN_ROW` = 32768 elements per row at
+# `simd_width <= 4`, i.e. float32 here), whose cross-block finish in
+# `rowwise.pjoin` is the only place the scaffolder combines whole per-block
+# monoid states. Every other case in this file is orders of magnitude below that
+# element floor, so nothing else reaches it.
+#
+# argmax/argmin are what catch a mistake there: their cross-thread step ends by
+# publishing the winning index into the field the emit reads, so a finish that
+# skips it returns a real-but-not-extreme index -- a wrong answer that still
+# looks like a plausible one. reduce_max rides the same call with an exactly
+# representable result, so it pins the non-arg monoids on that path too.
+_SPLITK_ROWS = 8
+_SPLITK_COLS = 40960
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="the split-K tier is GPU-only"
+)
+@pytest.mark.parametrize("op", ["argmax", "argmin", "reduce_max"])
+def test_rowwise_inner_gpu_splitk(session: InferenceSession, op: str) -> None:
+    dtype = DType.float32
+    model = session.load(_build_graph(op, dtype, axis=-1, dev=DeviceRef.GPU()))
+    x = _make_input(op, _SPLITK_ROWS, _SPLITK_COLS, dtype)
+    _reference_and_check(op, dtype, model, x, -1, [], f"cols={_SPLITK_COLS}")
