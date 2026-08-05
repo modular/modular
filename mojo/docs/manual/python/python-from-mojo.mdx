@@ -49,17 +49,11 @@ from std.python import Python
 
 def main() raises:
     # This is equivalent to Python's `import numpy as np`
-    np = Python.import_module("numpy")
+    var np = Python.import_module("numpy")
 
     # Now use numpy as if writing in Python
-    array = np.array(Python.list(1, 2, 3))
-    print(array)
-```
-
-Running this program produces the following output:
-
-```output
-[1 2 3]
+    var array = np.array(Python.list(1, 2, 3))
+    print(array)  # [1 2 3]
 ```
 
 Assuming that you have the NumPy package installed in your environment, this
@@ -72,15 +66,11 @@ module the same way. For example:
 from std.python import Python
 
 def main() raises:
-    np = Python.import_module("numpy")
-    array = np.array(Python.list(1, 2, 3))
+    var np = Python.import_module("numpy")
+    var array = np.array(Python.list(1, 2, 3))
 
-    builtins = Python.import_module("builtins")
-    print(builtins.type(array))
-```
-
-```output
-<class 'numpy.ndarray'>
+    var builtins = Python.import_module("builtins")
+    print(builtins.type(array))  # <class 'numpy.ndarray'>
 ```
 
 A few things to note:
@@ -145,9 +135,9 @@ from std.python import Python
 
 def main() raises:
     Python.add_to_path("path/to/module")
-    mypython = Python.import_module("mypython")
+    var mypython = Python.import_module("mypython")
 
-    values = mypython.gen_random_values(2, 3)
+    var values = mypython.gen_random_values(2, 3)
     print(values)
 ```
 

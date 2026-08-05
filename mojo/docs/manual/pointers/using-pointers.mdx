@@ -125,7 +125,7 @@ initialized or uninitialized:
   # or
   ptr.unsafe_write(copy=value)
   # or
-  ptr = Pointer(to=value)
+  var ptr = Pointer(to=value)
   ```
 
   Once the value is initialized, you can read or mutate it using the dereference
@@ -354,7 +354,7 @@ The offset can also be negative, to move backward through the block. Because
 assign the result back to a variable to advance it:
 
 ```mojo
-# Advance the pointer one element:
+# Advance an existing pointer one element:
 ptr = ptr.unsafe_offset(1)
 ```
 

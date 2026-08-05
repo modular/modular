@@ -93,11 +93,11 @@ by keyword. These forms can also be mixed in the same function call.
 
 ```mojo
 # positional
-x = add(5, 7)      # Positionally, a=5 and b=7
+var x = add(5, 7)    # Positionally, a=5 and b=7
 # keyword
-y = add(b=3, a=9)
+var y = add(b=3, a=9)
 # mixed
-z = add(5, b=7)    # Positionally, a=5
+var z = add(5, b=7)  # Positionally, a=5
 ```
 
 For more information on arguments, see [Function arguments](#function-arguments)
@@ -653,7 +653,7 @@ def get_name_tag(var name: String, out name_tag: NameTag):
 In both cases, the call looks like this:
 
 ```mojo
-tag = get_name_tag("Judith")
+var tag = get_name_tag("Judith")
 ```
 
 Because the return value is assigned to this special `out` variable, it doesn't
@@ -674,14 +674,14 @@ def create_immovable_object(var name: String, out obj: ImmovableObject):
     # obj is implicitly returned
 
 def main():
-    my_obj = create_immovable_object("Blob")
+    var my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
 def create_immovable_object2(var name: String) -> ImmovableObject:
-    obj = ImmovableObject(name^)
+    var obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
 ```

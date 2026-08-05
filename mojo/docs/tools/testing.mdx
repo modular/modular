@@ -145,7 +145,7 @@ For comparing floating-point values, you should use `assert_almost_equal()`,
 which allows you to specify either an absolute or relative tolerance.
 
 ```mojo
-result = 10 / 3
+var result = 10 / 3
 assert_almost_equal(result, 3.33, atol=0.001, msg="close but no cigar")
 ```
 
