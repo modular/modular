@@ -321,7 +321,7 @@ def _elementwise_impl[
     def description_fn() -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
-        return ";".join(Span([shape_str^, vector_width_str^]))
+        return ";".join([shape_str^, vector_width_str^])
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = trace_description
@@ -450,7 +450,7 @@ def _dual_elementwise_impl[
         var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
         var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))
         var vw = String(t"vector_width={simd_width}")
-        return ";".join(Span([s0^, s1^, vw^]))
+        return ";".join([s0^, s1^, vw^])
 
     comptime d = trace_description
     comptime desc = String(t"({d})") if d else ""

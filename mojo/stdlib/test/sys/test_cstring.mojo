@@ -38,10 +38,10 @@ def test_init_from_invalid_byte_span() raises:
         _ = CStringSlice(Span[Byte, ImmUntrackedOrigin]())
 
     with assert_raises(contains="not nul-terminated"):
-        _ = CStringSlice(Span[Byte]([Byte(1), Byte(2)]))
+        _ = CStringSlice([Byte(1), Byte(2)])
 
     with assert_raises(contains="interior nul byte"):
-        _ = CStringSlice(Span[Byte]([Byte(1), Byte(0), Byte(2)]))
+        _ = CStringSlice([Byte(1), Byte(0), Byte(2)])
 
 
 def test_c_string_slice_from_ptr() raises:
