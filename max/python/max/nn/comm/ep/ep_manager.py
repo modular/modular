@@ -178,23 +178,23 @@ class EPBatchManager:
     """Atomic synchronization counters. Shape: [NUM_GROUPS][n_gpus_per_node]
     of BufferValue. Used for inter-thread-block coordination."""
 
-    _src_info: dict[int, TensorValue | None] = {}
+    _src_info: dict[int, TensorValue | None]
     """Source routing information for combine phase. Each key is a device ID,
     and the value is a TensorValue with shape [max_recv_tokens, 2]. Maps expert
     outputs back to their source positions."""
 
-    _eplb_log2phy_per_device: dict[int, BufferValue] = {}
+    _eplb_log2phy_per_device: dict[int, BufferValue]
     """Per-device log2phy buffer. Shape: [num_moe_layer, num_experts_per_layer, max_replicas].
     Populated by fetch_buffers when config.eplb_enabled is True."""
 
-    _eplb_logcnt_per_device: dict[int, BufferValue] = {}
+    _eplb_logcnt_per_device: dict[int, BufferValue]
     """Per-device logcnt buffer. Shape: [num_moe_layer, num_experts_per_layer]"""
 
-    _eplb_phy2log: NDArray[np.int64] | None = None
+    _eplb_phy2log: NDArray[np.int64] | None
     """Per-layer logical->physical map from EPLB. Shape [num_layers, num_phy].
     Set once at startup before MoE.shard()."""
 
-    _dispatch_dim: dict[int, Dim | None] = {}
+    _dispatch_dim: dict[int, Dim | None]
     """Dictionary of device ID to dimension for the dispatch input tensor.
     Used to determine the shape of the combined output tensor.
     """
@@ -206,6 +206,16 @@ class EPBatchManager:
             config: EP configuration.
         """
         self.config = config
+        # Per-instance state (two managers must not share these dicts).
+        self._src_info = {}
+        self._eplb_log2phy_per_device = {}
+        self._eplb_logcnt_per_device = {}
+        self._eplb_phy2log = None
+        self._dispatch_dim = {}
+        self._send_buf_ptrs = None
+        self._recv_buf_ptrs = None
+        self._recv_count_ptrs = None
+        self._atomic_counters = None
 
         if getattr(config, "eplb_phy2log_plan", None) is not None:
             self._eplb_phy2log = config.eplb_phy2log_plan
