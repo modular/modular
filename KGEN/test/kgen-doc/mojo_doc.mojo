@@ -347,13 +347,13 @@ def fn_with_params_and_return(arg: Int) -> Int:
 # CHECK:         "type": "def(S, S) capturing thin -> Bool"
 # CHECK:     "parameters":
 # CHECK:         "name": "T"
-# CHECK:         "path": "/std/builtin/anytype/AnyType"
+# CHECK:         "path": "/std/traits/anytype/AnyType"
 # CHECK:         "type": "AnyType"
 # CHECK:         "name": "param_fn"
 # CHECK:         "type": "def(T, T) capturing thin -> Bool"
 # CHECK:         "default": "T"
 # CHECK:         "name": "S"
-# CHECK:         "path": "/std/builtin/anytype/AnyType"
+# CHECK:         "path": "/std/traits/anytype/AnyType"
 # CHECK:         "type": "AnyType"
 # CHECK:     "returns": {
 # CHECK:       "type": "S"
@@ -548,7 +548,7 @@ def default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK:     "parameters":
 # CHECK:         "name": "*Ts",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "path": "/std/builtin/anytype/AnyType",
+# CHECK:         "path": "/std/traits/anytype/AnyType",
 # CHECK:         "type": "AnyType"
 
 # CHECK:     "signature": "def variadic_pack[*Ts: AnyType](*vals: *Ts.values)",
@@ -609,7 +609,7 @@ def variadic_params_args[*nums: Int](*vals: Int, var **kwargs: String):
 # CHECK:     "parameters":
 # CHECK:         "kind": "parameter",
 # CHECK:         "name": "type",
-# CHECK:         "path": "/std/builtin/anytype/AnyType",
+# CHECK:         "path": "/std/traits/anytype/AnyType",
 
 # CHECK:     "signature": "def parameter_with_escaped_mlir_name[type: AnyType](value: type)",
 
@@ -688,7 +688,7 @@ def deprecated_function():
 # CHECK:   "type": "UsesParameter[K]"
 # CHECK: "parameters":
 # CHECK:   "name": "K",
-# CHECK:   "path": "/std/builtin/anytype/AnyType",
+# CHECK:   "path": "/std/traits/anytype/AnyType",
 # CHECK:   "type": "AnyType"
 # CHECK: "returns": {
 # CHECK:   "type": "ref[value] UsesParameter[K]"
@@ -836,23 +836,23 @@ struct HList[T: ImplicitlyCopyable]:
 # CHECK:  "parentTraits": [
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "AnyType",
-# CHECK-NEXT:     "path": "/std/builtin/anytype/AnyType"
+# CHECK-NEXT:     "path": "/std/traits/anytype/AnyType"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Copyable",
-# CHECK-NEXT:     "path": "/std/builtin/value/Copyable"
+# CHECK-NEXT:     "path": "/std/traits/copyable/Copyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Deinitable",
-# CHECK-NEXT:     "path": "/std/builtin/anytype/Deinitable"
+# CHECK-NEXT:     "path": "/std/traits/deinitable/Deinitable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "ImplicitlyCopyable",
-# CHECK-NEXT:     "path": "/std/builtin/value/ImplicitlyCopyable"
+# CHECK-NEXT:     "path": "/std/traits/copyable/ImplicitlyCopyable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Movable",
-# CHECK-NEXT:     "path": "/std/builtin/value/Movable"
+# CHECK-NEXT:     "path": "/std/traits/movable/Movable"
 # CHECK-NEXT:   },
 # CHECK-NEXT:   {
 # CHECK-NEXT:     "name": "Sized",
@@ -970,13 +970,13 @@ struct StructWithAutoParamScalar[a: Scalar]:
 # CHECK:  "name": "StructWithFnParam",
 # CHECK:  "parameters":
 # CHECK:      "name": "T"
-# CHECK:      "path": "/std/builtin/anytype/AnyType"
+# CHECK:      "path": "/std/traits/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK:      "name": "param_fn"
 # CHECK:      "type": "def(T, T) capturing thin -> Bool"
 # CHECK:      "default": "T",
 # CHECK:      "name": "S"
-# CHECK:      "path": "/std/builtin/anytype/AnyType"
+# CHECK:      "path": "/std/traits/anytype/AnyType"
 # CHECK:      "type": "AnyType"
 # CHECK: "signature": "struct StructWithFnParam[T: AnyType, param_fn: def(T, T) capturing thin -> Bool, S: AnyType = T]",
 
