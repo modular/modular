@@ -37,6 +37,7 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd.mxfp4_matmul_amd import (
     MXFP4MatmulAMD,
+    _launch_mxfp4_split_k,
     mxfp4_block_scaled_matmul_amd,
 )
 
@@ -226,6 +227,134 @@ def _test_case[
     print("     OK")
 
 
+def test_mxfp8_matmul_split_k[
+    M_static: Int,
+    N_static: Int,
+    K_static: Int,
+    num_splits: Int,
+    BM: Int = 64,
+    BN: Int = 128,
+    BK_ELEMS: Int = 256,
+    WM: Int = 64,
+    WN: Int = 32,
+](ctx: DeviceContext) raises:
+    """MXFP8 sibling of `test_mxfp4_matmul_split_k`.
+
+    Launches `_launch_mxfp4_split_k[lane_bytes=32]` (workspace + reduce
+    path) for the given `num_splits` and verifies against the same
+    per-element reference used by `_test_case`.
+    """
+    print(
+        M_static,
+        "x",
+        N_static,
+        "x",
+        K_static,
+        " [split-K num_splits=",
+        num_splits,
+        " BM=",
+        BM,
+        " BN=",
+        BN,
+        " BK=",
+        BK_ELEMS,
+        " WN=",
+        WN,
+        "]",
+    )
+
+    comptime assert (
+        K_static % MXFP8_SF_VECTOR_SIZE == 0
+    ), "K must be a multiple of 32"
+    # MXFP8: one byte per element.
+    comptime K_BYTES = K_static
+    comptime K_SCALES = K_static // MXFP8_SF_VECTOR_SIZE
+
+    var a_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_BYTES)
+    var b_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_BYTES)
+    var sfa_h = ctx.enqueue_create_host_buffer[DType.uint8](M_static * K_SCALES)
+    var sfb_h = ctx.enqueue_create_host_buffer[DType.uint8](N_static * K_SCALES)
+    ctx.synchronize()
+
+    for i in range(M_static * K_BYTES):
+        a_h[i] = _rand_e4m3_byte()
+    for i in range(N_static * K_BYTES):
+        b_h[i] = _rand_e4m3_byte()
+    for i in range(M_static * K_SCALES):
+        sfa_h[i] = UInt8(Int(random_ui64(124, 130)))
+    for i in range(N_static * K_SCALES):
+        sfb_h[i] = UInt8(Int(random_ui64(124, 130)))
+
+    var a_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_BYTES)
+    var b_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_BYTES)
+    var sfa_d = ctx.enqueue_create_buffer[DType.uint8](M_static * K_SCALES)
+    var sfb_d = ctx.enqueue_create_buffer[DType.uint8](N_static * K_SCALES)
+    var c_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    var c_ref_d = ctx.enqueue_create_buffer[DType.float32](M_static * N_static)
+    ctx.enqueue_copy(a_d, a_h)
+    ctx.enqueue_copy(b_d, b_h)
+    ctx.enqueue_copy(sfa_d, sfa_h)
+    ctx.enqueue_copy(sfb_d, sfb_h)
+
+    var c_tt = TileTensor[mut=True](c_d, row_major[M_static, N_static]())
+    var a_tt = TileTensor[mut=False](a_d, row_major[M_static, K_BYTES]())
+    var b_tt = TileTensor[mut=False](b_d, row_major[N_static, K_BYTES]())
+    var sfa_tt = TileTensor[mut=False](
+        sfa_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major[M_static, K_SCALES](),
+    )
+    var sfb_tt = TileTensor[mut=False](
+        sfb_d.unsafe_ptr().unsafe_bitcast[Scalar[DType.float8_e8m0fnu]](),
+        row_major[N_static, K_SCALES](),
+    )
+
+    _launch_mxfp4_split_k[
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        num_splits=num_splits,
+        lane_bytes=FP8_LANE_BYTES,
+    ](c_tt, a_tt, b_tt, sfa_tt, sfb_tt, M_static, ctx)
+
+    comptime BLOCK_DIM = 32
+    ctx.enqueue_function[block_scaled_matmul_fp8_ref](
+        a_d.unsafe_ptr().as_imm(),
+        b_d.unsafe_ptr().as_imm(),
+        sfa_d.unsafe_ptr()
+        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
+        .as_imm(),
+        sfb_d.unsafe_ptr()
+        .unsafe_bitcast[Scalar[DType.float8_e8m0fnu]]()
+        .as_imm(),
+        c_ref_d.unsafe_ptr(),
+        Int32(M_static),
+        Int32(N_static),
+        Int32(K_static),
+        grid_dim=(ceildiv(M_static, BLOCK_DIM), ceildiv(N_static, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
+
+    var c_h = ctx.enqueue_create_host_buffer[DType.float32](M_static * N_static)
+    var c_ref_h = ctx.enqueue_create_host_buffer[DType.float32](
+        M_static * N_static
+    )
+    ctx.enqueue_copy(c_h, c_d)
+    ctx.enqueue_copy(c_ref_h, c_ref_d)
+    ctx.synchronize()
+
+    for i in range(M_static * N_static):
+        assert_almost_equal(
+            c_h[i],
+            c_ref_h[i],
+            atol=1e-2,
+            rtol=1e-2,
+            msg=String("mismatch at ", i),
+        )
+    print("     OK")
+
+
 def _test_dispatch[
     M_static: Int, N_static: Int, K_static: Int
 ](name: String, ctx: DeviceContext) raises:
@@ -353,3 +482,67 @@ def main() raises:
         _test_case[256, 256, 256]("multi-tile", ctx)
         # Attention-shaped: o_proj-like K, non-square N.
         _test_case[128, 2304, 6144]("attn-qkv-shaped", ctx)
+
+        print("\n--- SK: inter-block split-K (workspace + reduce) ---")
+
+        # MiniMax M3 dimensions: hidden_size=6144, 128 experts with top_k=4,
+        # expert intermediate=3072, dense MLP intermediate=12288, and GQA
+        # with 64 query heads / 4 KV heads at head_dim=128 (fused QKV has
+        # N=9216).
+        #
+        # `num_splits` below is `_pick_num_splits`'s actual choice for each
+        # (N, K) at BK_ELEMS=256 on this GPU. It depends on N, not just K.
+        # MoE gate_up and dense QKV both have K=6144, but they don't get
+        # the same split factor.
+        #
+        # MoE gate_up/down get the most coverage here because they dominate
+        # M3: 57 of the 60 layers route through them per-expert. The dense
+        # shapes are covered too since every request hits them.
+        test_mxfp8_matmul_split_k[1, 6144, 6144, num_splits=8](
+            ctx
+        )  # MoE gate_up
+        test_mxfp8_matmul_split_k[16, 6144, 6144, num_splits=8](ctx)
+        test_mxfp8_matmul_split_k[64, 6144, 6144, num_splits=8](ctx)
+        test_mxfp8_matmul_split_k[1, 6144, 3072, num_splits=6](ctx)  # MoE down
+        test_mxfp8_matmul_split_k[16, 6144, 3072, num_splits=6](ctx)
+        test_mxfp8_matmul_split_k[64, 6144, 3072, num_splits=6](ctx)
+        test_mxfp8_matmul_split_k[1, 9216, 6144, num_splits=6](ctx)  # dense QKV
+        test_mxfp8_matmul_split_k[16, 9216, 6144, num_splits=6](ctx)
+        test_mxfp8_matmul_split_k[1, 6144, 8192, num_splits=8](
+            ctx
+        )  # dense O-proj
+        test_mxfp8_matmul_split_k[1, 24576, 6144, num_splits=2](
+            ctx
+        )  # dense MLP gate_up
+        test_mxfp8_matmul_split_k[1, 6144, 12288, num_splits=8](
+            ctx
+        )  # dense MLP down
+
+        # Unaligned-M OOB stress under split-K (M not a multiple of BM=64).
+        test_mxfp8_matmul_split_k[17, 6144, 6144, num_splits=8](ctx)
+        test_mxfp8_matmul_split_k[63, 6144, 3072, num_splits=6](ctx)
+
+        print("\n--- SK16: narrow-M split-K tile (BM=16, WM=16, WN=64) ---")
+
+        test_mxfp8_matmul_split_k[
+            1, 6144, 6144, num_splits=8, BM=16, BN=128, WM=16, WN=64
+        ](ctx)
+        test_mxfp8_matmul_split_k[
+            16, 6144, 6144, num_splits=8, BM=16, BN=128, WM=16, WN=64
+        ](ctx)
+        test_mxfp8_matmul_split_k[
+            7, 6144, 6144, num_splits=8, BM=16, BN=128, WM=16, WN=64
+        ](ctx)
+        test_mxfp8_matmul_split_k[
+            1, 6144, 3072, num_splits=6, BM=16, BN=128, WM=16, WN=64
+        ](ctx)
+        test_mxfp8_matmul_split_k[
+            16, 6144, 3072, num_splits=6, BM=16, BN=128, WM=16, WN=64
+        ](ctx)
+
+        print("\n--- dispatch: public entry point now routes to split-K ---")
+
+        # Same MoE shapes as above, but through the public dispatcher.
+        # Confirms it actually routes them into split-K.
+        _test_dispatch[16, 6144, 6144]("dispatch-sk-moe-gateup", ctx)
+        _test_dispatch[16, 6144, 3072]("dispatch-sk-moe-down", ctx)
