@@ -13,4 +13,4 @@ test_inc = "mojo run -I src test/my_math/test_inc.mojo"
 test = { depends-on = ["test_dec", "test_inc"] }
 
 [dependencies]
-mojo = "<1.0.0"
+mojo = "*"
