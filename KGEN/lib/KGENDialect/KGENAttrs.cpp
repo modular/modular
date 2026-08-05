@@ -17,6 +17,7 @@
 #include "Support/AssertStream.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Support/STLExtras.h"
 #include "mlir/Dialect/PDL/IR/PDLOps.h"
@@ -29,8 +30,10 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Mutex.h"
 #include <numeric>
 
 using namespace M;
@@ -3549,6 +3552,28 @@ static Attribute simplifyHasFeature(SmallVectorImpl<TypedAttr> &operands) {
   auto feature = sugarDynCast<StringAttr>(operands[1]);
   if (!target || !feature)
     return {};
+
+  // An unrecognized name silently evaluates to false, hiding spelling bugs.
+  // Warn -- the boolean below is still correct. No location is available when
+  // folding, matching LLVM's own -mattr warning. Warn once per name to avoid
+  // repeats across identical folds.
+  StringRef name = feature.strref();
+  if (!M::isKnownTargetFeature(name, target.getTarget().getTripleStr())) {
+    static llvm::sys::SmartMutex<true> warnedMutex;
+    static llvm::StringSet<> warned;
+    bool firstTime;
+    {
+      llvm::sys::SmartScopedLock<true> lock(warnedMutex);
+      firstTime = warned.insert(name).second;
+    }
+    if (firstTime) {
+      mlir::emitWarning(UnknownLoc::get(target.getContext()))
+          << "'" << name
+          << "' is not a recognized target feature name; this check always "
+             "evaluates to false";
+    }
+  }
+
   return Builder(target.getContext())
       .getBoolAttr(target.getTarget().hasFeature(feature));
 }

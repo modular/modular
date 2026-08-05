@@ -382,6 +382,14 @@ getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                  StringRef acceleratorArch = "",
                  llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_);
 
+/// Returns true if `feature` is a recognized LLVM subtarget feature name for
+/// `targetTriple`, host x86-64, or host aarch64. The union keeps a cross-arch
+/// query that legitimately evaluates to false (a real feature of another arch)
+/// recognized; only a name that is a feature of none of them is unrecognized.
+/// Matching is exact. Returns true when no relevant backend is linked (a
+/// host-only build cannot validate).
+bool isKnownTargetFeature(StringRef feature, StringRef targetTriple);
+
 /// Returns runtime representation of target info attribute.
 ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);
 
