@@ -120,15 +120,26 @@ def _process_mojo_deps(deps):
     # TODO: This will break in the presence of select()s
     new_deps = []
     imports_max = False
+    needs_compiler_rt = False
     for dep in deps:
         if dep in INTERNAL_PACKAGES:
             new_deps.append("@modular_wheel//:" + dep.split("/")[-1])
             imports_max = True
+        elif dep == "//MLRT:Driver/DeviceContext":
+            new_deps.append("@modular_wheel//:AsyncRTMojoBindings_lib")
+        elif dep == "//KGEN:CompilerRT":
+            needs_compiler_rt = True
         else:
             new_deps.append(dep)
 
     if imports_max and "//max:max_mojo" not in new_deps:
         new_deps.append("//max:max_mojo")
+
+    if needs_compiler_rt:
+        new_deps += select({
+            "//:use_prebuilt_mojo_toolchain_disabled": ["//KGEN:CompilerRT"],
+            "//conditions:default": ["@modular_wheel//:CompilerRT_lib"],
+        })
 
     return new_deps
 

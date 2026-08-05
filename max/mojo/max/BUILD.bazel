@@ -15,6 +15,7 @@ mojo_library(
     srcs = [":max_srcs"],
     docs_base_path = "mojo",
     deps = [
+        "//MLRT:Driver/DeviceContext",
         "@mojo//:std",
     ],
 )
