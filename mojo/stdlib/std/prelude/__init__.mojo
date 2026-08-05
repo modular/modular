@@ -58,8 +58,6 @@ from std.io.file_descriptor import FileDescriptor
 from std.io.io import input, print
 
 from std.builtin.anytype import (
-    AnyType,
-    Deinitable,
     Some,
     SomeTypeList,
     ImplicitlyDestructible,
@@ -139,10 +137,7 @@ from std.builtin.swap import swap
 from std.builtin.tuple import Tuple
 from std.builtin.type_aliases import Never
 from std.builtin.value import (
-    Copyable,
     Defaultable,
-    ImplicitlyCopyable,
-    Movable,
     materialize,
     RegisterPassable,
     TrivialRegisterPassable,
@@ -206,3 +201,10 @@ from std.origin import (
     ImmutUnsafeAnyOrigin,
 )
 from std.reflection import reflect
+from std.traits import (
+    AnyType,
+    Copyable,
+    Deinitable,
+    ImplicitlyCopyable,
+    Movable,
+)
