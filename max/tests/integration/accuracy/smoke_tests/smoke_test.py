@@ -426,7 +426,7 @@ def get_server_cmd(
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
-    MAX = ["max._entrypoints.pipelines", "serve", "--pretty-print-config"]
+    MAX = ["serve", "--pretty-print-config"]
 
     if gpu_count > 1:
         if recipe is not None:
@@ -486,14 +486,14 @@ def get_server_cmd(
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
-        cmd = [sys.executable, "-m", *MAX]
+        cmd = [sys.executable, "-m", "max._entrypoints.pipelines", *MAX]
     else:
         assert framework != "max-ci", "max-ci must be run through bazel"
         interpreter = [".venv-serve/bin/python", "-m"]
         commands = {
             "sglang": [*interpreter, *SGLANG],
             "vllm": [*interpreter, *VLLM],
-            "max": [*interpreter, *MAX],
+            "max": [".venv-serve/bin/max", *MAX],
         }
         cmd = commands[framework]
 

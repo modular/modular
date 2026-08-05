@@ -331,10 +331,8 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
         "max", alias, gpu_spec=("NVIDIA L40S", 1)
     )
 
-    assert cmd[:5] == [
-        ".venv-serve/bin/python",
-        "-m",
-        "max._entrypoints.pipelines",
+    assert cmd[:3] == [
+        ".venv-serve/bin/max",
         "serve",
         "--pretty-print-config",
     ]
