@@ -1385,7 +1385,7 @@ def _handle_rms_norm(
 def _handle_group_norm(
     op: mo.ReduceGroupNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Routes eager group_norm through a GC model (GPU only).
+    """Routes eager group_norm through a GC model.
 
     Looks up the group_norm :class:`~max.engine.Model` for the realized
     input's device and dtype (see :func:`group_norm_gc.group_norm_model`),
@@ -1401,10 +1401,6 @@ def _handle_group_norm(
 
     Returns:
         A single-element list holding the normalized tensor buffer.
-
-    Raises:
-        NotImplementedError: On CPU -- group_norm's GC kernel
-            (``nn.normalization.group_norm``) is GPU-only today.
     """
     x, gamma, beta, epsilon, num_groups = inputs
     assert isinstance(x, Buffer)
@@ -1412,13 +1408,6 @@ def _handle_group_norm(
     assert isinstance(beta, Buffer)
     assert isinstance(epsilon, Buffer)
     assert isinstance(num_groups, Buffer)
-
-    # See KERN-3267: no CPU kernel yet.
-    if x.device.is_host:
-        raise NotImplementedError(
-            "group_norm is not supported on CPU in the eager interpreter"
-            " (nn.normalization.group_norm's GC kernel is GPU-only)."
-        )
 
     model = group_norm_gc.group_norm_model(x.device, x.dtype)
 
