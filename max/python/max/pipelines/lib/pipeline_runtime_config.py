@@ -288,16 +288,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    kvcache_ce_watermark: float = Field(
-        default=0.95,
-        description=(
-            "Projected cache usage threshold for scheduling CE requests, "
-            "considering current and incoming requests. CE is scheduled if "
-            "either projected usage stays below this threshold or no active "
-            "requests exist. Higher values can cause more preemptions."
-        ),
-    )
-
     decode_stall_timeout_s: float | None = Field(
         default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
         if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ

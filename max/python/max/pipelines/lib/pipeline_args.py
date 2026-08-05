@@ -428,13 +428,6 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
-    kvcache_ce_watermark: float = Field(
-        default=0.95,
-        description=(
-            "Projected cache usage threshold for scheduling CE requests."
-        ),
-    )
-
     decode_stall_timeout_s: float | None = Field(
         default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
         if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ
@@ -798,7 +791,6 @@ class PipelineArgs(ConfigFileModel):
             fold_sampler_into_graph=runtime.fold_sampler_into_graph,
             max_pending_futures=runtime.max_pending_futures,
             force=runtime.force,
-            kvcache_ce_watermark=runtime.kvcache_ce_watermark,
             decode_stall_timeout_s=runtime.decode_stall_timeout_s,
             decode_request_ttl_s=runtime.decode_request_ttl_s,
             enable_overlap_scheduler=runtime.enable_overlap_scheduler,

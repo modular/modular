@@ -370,35 +370,6 @@ class PagedKVCacheManager:
             for replica_idx in range(num_replicas)
         ]
 
-    def get_pct_used_blocks_after_allocation(
-        self, ctx: TextContext, replica_idx: int
-    ) -> float:
-        """Gets the percentage of blocks used after allocating for a request.
-
-        Args:
-            ctx: The request context containing sequence information and token indices.
-            replica_idx: Index of the replica to query.
-
-        Returns:
-            The percentage of total blocks used after allocating for the request.
-        """
-        block_manager = self._block_manager
-        num_needed_blocks = (
-            self.get_num_used_pages(replica_idx)
-            + block_manager.num_blocks_to_allocate(
-                ctx,
-                self.params.num_draft_tokens,
-                self.params.num_draft_tokens_per_step,
-            )
-            - block_manager.count_full_blocks_from_prefix_caches(
-                ctx, replica_idx
-            )
-        )
-        return min(
-            1.0,
-            num_needed_blocks / self._total_num_pages,
-        )
-
     def get_prefix_cache_hit_counts(
         self, ctx: TextContext
     ) -> list[PrefixCacheHits]:

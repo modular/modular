@@ -1577,7 +1577,6 @@ class PipelineConfig(ConfigFileModel):
                 fold_sampler_into_graph=args.fold_sampler_into_graph,
                 max_pending_futures=args.max_pending_futures,
                 force=args.force,
-                kvcache_ce_watermark=args.kvcache_ce_watermark,
                 decode_stall_timeout_s=args.decode_stall_timeout_s,
                 decode_request_ttl_s=args.decode_request_ttl_s,
                 enable_overlap_scheduler=args.enable_overlap_scheduler,

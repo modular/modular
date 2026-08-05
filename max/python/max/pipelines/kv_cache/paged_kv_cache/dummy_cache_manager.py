@@ -45,12 +45,6 @@ class DummyKVCache(PagedKVCacheManager):
             devices=[DeviceRef.CPU()],
         )
 
-    def get_pct_used_blocks_after_allocation(
-        self, *args: Any, **kwargs: Any
-    ) -> float:
-        """Returns a fixed low percentage (0.01)."""
-        return 0.01
-
     def claim(self, request_id: RequestID, replica_idx: int) -> None:
         """No-op."""
         pass
@@ -76,8 +70,8 @@ class DummyKVCache(PagedKVCacheManager):
         return 1
 
     def get_num_used_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+        """Returns 0; this cache never allocates, so no page is ever in use."""
+        return 0
 
     def get_num_host_pages(self, replica_idx: int) -> int:
         """Returns 1."""
