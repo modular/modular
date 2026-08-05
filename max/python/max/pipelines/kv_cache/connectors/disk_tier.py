@@ -155,6 +155,21 @@ class PriorityExecutor:
         return self._inflight
 
 
+def _check_disk_capacity(
+    cache_dir: Path | str, max_disk_size_bytes: int
+) -> None:
+    """Raises when a disk offload budget exceeds free space at cache_dir."""
+    available_bytes = psutil.disk_usage(str(cache_dir)).free
+    if max_disk_size_bytes > available_bytes:
+        raise RuntimeError(
+            "disk_offload_max_gb requests "
+            f"{max_disk_size_bytes / (1024**3):.1f} GiB at "
+            f"{cache_dir} but only "
+            f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
+            "disk_offload_max_gb or free space on the target filesystem."
+        )
+
+
 class DiskTier:
     """Sharded disk cache for KV blocks.
 
@@ -203,15 +218,7 @@ class DiskTier:
         # Priority executor: reads preempt deletes preempt writes.
         self._executor = PriorityExecutor(num_workers=num_workers)
 
-        available_bytes = psutil.disk_usage(str(self._cache_dir)).free
-        if self._max_disk_size_bytes > available_bytes:
-            raise RuntimeError(
-                "disk_offload_max_gb requests "
-                f"{self._max_disk_size_bytes / (1024**3):.1f} GiB at "
-                f"{self._cache_dir} but only "
-                f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
-                "disk_offload_max_gb or free space on the target filesystem."
-            )
+        _check_disk_capacity(self._cache_dir, self._max_disk_size_bytes)
 
     @property
     def num_blocks(self) -> int:
