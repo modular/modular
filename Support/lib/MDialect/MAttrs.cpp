@@ -35,13 +35,16 @@
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/Mutex.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -1185,6 +1188,61 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                              machine->getRelocationModel(),
                              simdWidthFromFeatures(StringRef(resolvedFeatures)),
                              pointerBitWidth, tuneCpu, acceleratorArch);
+}
+
+bool M::isKnownTargetFeature(StringRef feature, StringRef targetTriple) {
+  // LLVM has no combined feature table, so union the current target (covers
+  // whatever we compile for, GPU included) with host x86-64 + aarch64 (cover
+  // the cross-arch CPU queries the stdlib `has_*` wrappers make).  The
+  // OS/environment does not affect the feature table, so use `unknown-unknown`.
+  static constexpr StringLiteral kUnionTriples[] = {"x86_64-unknown-unknown",
+                                                    "aarch64-unknown-unknown"};
+
+  static llvm::sys::SmartMutex<true> mu;
+  // triple -> its full set of valid feature names. An entry that failed to
+  // build (backend not linked) is present but empty.
+  static llvm::StringMap<llvm::StringSet<>> cache;
+
+  llvm::sys::SmartScopedLock<true> lock(mu);
+
+  auto namesFor = [&](StringRef triple) -> const llvm::StringSet<> & {
+    auto [it, inserted] = cache.try_emplace(triple);
+    if (!inserted)
+      return it->second;
+    llvm::StringSet<> &names = it->second;
+    std::string err;
+    llvm::Triple tt(triple);
+    const llvm::Target *target = llvm::TargetRegistry::lookupTarget(tt, err);
+    if (!target)
+      return names; // Backend not linked; leave empty.
+    std::unique_ptr<llvm::MCSubtargetInfo> sti(
+        target->createMCSubtargetInfo(tt, /*CPU=*/"", /*Features=*/""));
+    if (!sti)
+      return names;
+    for (const llvm::SubtargetFeatureKV &kv : sti->getAllProcessorFeatures())
+      names.insert(kv.key());
+    return names;
+  };
+
+  bool anyTableAvailable = false;
+  auto check = [&](StringRef triple) -> bool {
+    const llvm::StringSet<> &names = namesFor(triple);
+    if (names.empty())
+      return false;
+    anyTableAvailable = true;
+    return names.contains(feature);
+  };
+
+  if (check(targetTriple))
+    return true;
+  for (StringLiteral triple : kUnionTriples) {
+    if (check(triple))
+      return true;
+  }
+
+  // If no backend was available to validate against, don't claim the name is
+  // unknown - ex falso sequitur quodlibet, "from falsehood, anything follows".
+  return !anyTableAvailable;
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
