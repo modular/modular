@@ -39,10 +39,10 @@ from .cache_manager import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
-NixlBackendType = Literal["ucx", "libfabric"]
+NixlBackendType = Literal["ucx", "libfabric", "uccl"]
 
 _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
-_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
+_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric", "uccl"}
 
 # GPU runtime libraries that the upstream UCX plugin (libplugin_UCX.so, in
 # its per-vendor flavors) references but does not itself dlopen. The upstream
@@ -115,6 +115,65 @@ def _get_nixl_backend_type() -> NixlBackendType:
             f"Supported backends: {sorted(_SUPPORTED_BACKENDS)}"
         )
     return raw  # type: ignore[return-value]
+
+
+def _default_uccl_socket_ifname_if_unset() -> None:
+    """Pins UCCL's out-of-band bootstrap to the host's default-route NIC.
+
+    UCCL derives the IP it advertises for its TCP bootstrap from the socket
+    interface it selects (``UCCL_SOCKET_IFNAME``, then ``NCCL_SOCKET_IFNAME``);
+    when neither is set, its auto-pick can land on a RoCE rail. On a fabric
+    that carries RoCE only -- filtering rail TCP at the switch -- the peer's
+    bootstrap dial then hangs forever even though the RDMA data plane is
+    healthy. Default the interface to the host's default-route NIC (the
+    control network, which peers can reach) when the operator has not chosen
+    one; RDMA HCA selection is independent, so KV data still rides the rails.
+    An explicitly set ``UCCL_SOCKET_IFNAME``/``NCCL_SOCKET_IFNAME`` always wins.
+    """
+    if os.environ.get("UCCL_SOCKET_IFNAME") or os.environ.get(
+        "NCCL_SOCKET_IFNAME"
+    ):
+        return
+    # Field 0 (interface) of the /proc/net/route row whose destination is
+    # 0.0.0.0 and whose flags have RTF_GATEWAY set (0x2) is the default route.
+    try:
+        with open("/proc/net/route") as route_table:
+            next(route_table, None)  # header row
+            for line in route_table:
+                cols = line.split()
+                if (
+                    len(cols) > 3
+                    and cols[1] == "00000000"
+                    and int(cols[3], 16) & 0x2
+                ):
+                    os.environ["UCCL_SOCKET_IFNAME"] = cols[0]
+                    logger.info(
+                        "Defaulting UCCL_SOCKET_IFNAME to %s so UCCL's "
+                        "bootstrap does not ride the RDMA rails; set "
+                        "UCCL_SOCKET_IFNAME explicitly to override.",
+                        cols[0],
+                    )
+                    return
+    except OSError:
+        pass
+
+
+def _default_uccl_p2p_env_if_unset() -> None:
+    """Forces UCCL's RDMA transport to avoid its broken same-host IPC path.
+
+    UCCL's cross-process peer-to-peer IPC path is broken upstream, so a
+    same-host (intranode) sender/receiver pair deadlocks unless UCCL uses its
+    RDMA transport instead. ``UCCL_P2P_TRANSPORT=rdma`` and
+    ``UCCL_P2P_DISABLE_IPC=1`` force that; both are no-ops internode, where
+    RDMA is already the only path. An explicitly set value always wins.
+    """
+    for name, value in (
+        ("UCCL_P2P_TRANSPORT", "rdma"),
+        ("UCCL_P2P_DISABLE_IPC", "1"),
+    ):
+        if not os.environ.get(name):
+            os.environ[name] = value
+            logger.info("Defaulting %s=%s for UCCL.", name, value)
 
 
 def available_port(
@@ -326,12 +385,17 @@ class TensorAgent:
                 draft_scales]``). All must share the same device. Must be
                 non-empty.
             memory_type: NIXL memory segment type (DRAM or VRAM).
-            backend_type: NIXL transport backend (``"ucx"`` or ``"libfabric"``).
+            backend_type: NIXL transport backend
+                (``"ucx"``, ``"libfabric"``, or ``"uccl"``).
         """
         # Pre-load the UCX plugin's GPU runtime dependencies with RTLD_GLOBAL
         # before the NIXL plugin manager dlopens the plugin. Must run in this
         # process (e.g. spawn-ed children do not inherit RTLD_GLOBAL handles).
         _preload_nixl_plugin_deps()
+
+        if backend_type == "uccl":
+            _default_uccl_socket_ifname_if_unset()
+            _default_uccl_p2p_env_if_unset()
 
         # Create NIXL agent
         agent = nixl.Agent(

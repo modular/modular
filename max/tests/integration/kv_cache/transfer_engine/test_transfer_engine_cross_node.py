@@ -96,7 +96,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-batches", type=int, default=50)
     p.add_argument("--warmup-batches", type=int, default=5)
     p.add_argument(
-        "--backend", choices=["libfabric", "ucx"], default="libfabric"
+        "--backend", choices=["libfabric", "ucx", "uccl"], default="libfabric"
     )
     p.add_argument(
         "--min-bandwidth-gbps",

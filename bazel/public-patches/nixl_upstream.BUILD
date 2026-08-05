@@ -341,6 +341,34 @@ cc_binary(
     deps = [":uccl_plugin_lib"],
 )
 
+# Co-locate the transport lib next to the plugin in a `rocm-uccl/` runfiles
+# subdir so the plugin's $ORIGIN rpath resolves it under `bazel run` (the NIXL
+# drag race). Packaging stages the same pair into lib/nixl/rocm-uccl/ via its
+# own path mapping (utils/packaging), which is why this copy is needed only for
+# the runfiles layout.
+genrule(
+    name = "rocm-uccl-transport-copy",
+    srcs = ["@uccl_prebuilt//:libuccl_p2p_so"],
+    outs = ["rocm-uccl/libuccl_p2p.so"],
+    cmd = "cp $< $@",
+    target_compatible_with = _LINUX_X86,
+)
+
+# The loadable UCCL flavor for a runfiles tree: the plugin plus its co-located
+# transport lib. Depend on this from a `bazel run` target that selects the
+# UCCL backend on an AMD host (the drag race). Deliberately NOT part of the
+# shared :nixl_host_plugins set — staging it there would make the default-UCCL
+# resolver pick this flavor for the gating same-node AMD transfer tests, which
+# do not set UCCL_P2P_DISABLE_IPC and would break.
+filegroup(
+    name = "rocm_uccl_host_plugin",
+    srcs = [
+        "rocm-uccl/libplugin_UCCL.so",
+        "rocm-uccl/libuccl_p2p.so",
+    ],
+    target_compatible_with = _LINUX_X86,
+)
+
 # --- libfabric backend plugin --------------------------------------------
 # Upstream src/utils/libfabric/* is a separate library that the plugin
 # links against. We fold both into a single cc_library that builds the

@@ -38,6 +38,12 @@ modular_py_binary(
 modular_py_binary(
     name = "test_transfer_engine_cross_node",
     srcs = ["test_transfer_engine_cross_node.py"],
+    # The UCCL flavor (plugin + co-located transport lib) so the drag race can
+    # select `--backend uccl` on an AMD host. The other plugin flavors reach
+    # the runfiles tree via the kv_cache dep's :nixl_host_plugins; UCCL is
+    # staged only here, not in that shared set, so it does not flip the gating
+    # AMD transfer tests onto the default-UCCL resolver path.
+    data = ["@nixl_upstream//:rocm_uccl_host_plugin"],
     main = "test_transfer_engine_cross_node.py",
     target_compatible_with = [
         "@platforms//cpu:x86_64",
