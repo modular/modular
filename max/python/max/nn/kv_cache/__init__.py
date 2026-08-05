@@ -33,6 +33,7 @@ from .cache_params import (
     compute_num_device_blocks,
     compute_num_host_blocks,
     estimated_memory_size,
+    host_bytes_per_block,
     spec_decode_cache_slack,
 )
 from .input_types import (
@@ -86,5 +87,6 @@ __all__ = [
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
+    "host_bytes_per_block",
     "spec_decode_cache_slack",
 ]
