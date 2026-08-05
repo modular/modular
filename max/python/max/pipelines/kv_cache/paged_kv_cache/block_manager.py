@@ -30,6 +30,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from max.driver import Buffer, batch_inplace_copy
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import (
@@ -183,14 +184,14 @@ class BlockManager:
 
     The device prefix cache is shared across replicas in the sense that a
     lookup for a request on replica ``B`` can hit a block physically resident
-    on replica ``A``: the block's pages are copied device-to-device onto ``B``
-    via :meth:`KVCacheMemory.copy_block_to` (SERVOPT-1500). The
+    on replica ``A``: matching pages are copied device-to-device onto ``B``
+    (a single ``batch_inplace_copy``). The
     ``enable_dp_cross_replica_prefix_copy`` config flag turns these copies
     off, in which case cross-replica reuse falls through to the shared
     external tier instead. External tiers (host/disk) are reached through a
     single ``KVConnector`` shared by every replica; each ``load``/``offload``
     passes the ``replica_idx`` so the connector can select that replica's
-    device buffers (SERVOPT-1501).
+    device buffers.
     """
 
     @traced
@@ -599,6 +600,11 @@ class BlockManager:
         local_cache = local_pool.prefix_cache
 
         blocks: list[KVCacheBlock] = []
+        # Cross-replica copies grouped by source replica: one batched
+        # device-to-device transfer per group rather than one round trip per
+        # page. Commit into the local prefix cache is deferred until after
+        # enqueue so a concurrent lookup cannot hit an empty destination page.
+        pending_copies: dict[int, list[tuple[bytes, KVCacheBlock, int]]] = {}
         for block_hash in desired_hashes:
             local_block = local_cache.get(block_hash)
             if local_block is not None:
@@ -626,42 +632,70 @@ class BlockManager:
             if local_pool.num_free_blocks == 0:
                 break
 
-            # Materialize the block on this replica via a device-to-device copy
-            # and commit it locally so future requests here hit directly. The
-            # copy is enqueued on the destination device's default stream -- the
-            # same stream the forward pass runs on -- so it is ordered before
-            # the block is read, and the source block (on another replica's
-            # pool, which this method never allocates from) cannot be recycled
-            # before the copy is enqueued. No pinning or synchronization needed.
+            # Allocate and queue the copy; commit only after enqueue (below)
+            # so others cannot hit an empty page.
             dst_block = self.allocate_device_block(replica_idx)
-            self._copy_block_across_replicas(
-                dst_replica=replica_idx,
-                src_replica=src_replica,
-                dst_block_id=dst_block.bid,
-                src_block_id=src_block.bid,
+            pending_copies.setdefault(src_replica, []).append(
+                (block_hash, dst_block, src_block.bid)
             )
-            local_pool.commit_into_prefix_cache(block_hash, dst_block)
             blocks.append(dst_block)
             self._metrics.cross_replica_blocks_copied += 1
 
+        # Enqueue batched D2D copies, then publish destinations into the local
+        # prefix cache so subsequent requests on this replica hit locally.
+        for src_replica, pending in pending_copies.items():
+            self._copy_blocks_across_replicas(
+                dst_replica=replica_idx,
+                src_replica=src_replica,
+                block_id_pairs=[
+                    (dst_block.bid, src_block_id)
+                    for _, dst_block, src_block_id in pending
+                ],
+            )
+        for pending in pending_copies.values():
+            for block_hash, dst_block, _ in pending:
+                local_pool.commit_into_prefix_cache(block_hash, dst_block)
+
         return blocks
 
-    def _copy_block_across_replicas(
+    def _copy_blocks_across_replicas(
         self,
         dst_replica: int,
         src_replica: int,
-        dst_block_id: int,
-        src_block_id: int,
+        block_id_pairs: Sequence[tuple[int, int]],
     ) -> None:
-        """Copies one page from ``src_replica`` to ``dst_replica`` (per shard)."""
+        """Batch-copies pages from ``src_replica`` to ``dst_replica``.
+
+        Pages across every unit go into one ``batch_inplace_copy``; the driver
+        groups them by destination device and submits one batch per device.
+
+        All page views are built before the call so getitem host work does not
+        sit between the peer copies.
+
+        ``block_id_pairs`` is a sequence of ``(dst_block_id, src_block_id)``.
+        """
         assert self._replica_kv_memory is not None
         src_units = self._replica_kv_memory[src_replica]
         dst_units = self._replica_kv_memory[dst_replica]
+        if not block_id_pairs:
+            return
+
+        dst_pages: list[Buffer] = []
+        src_pages: list[Buffer] = []
         for src_unit, dst_unit in zip(src_units, dst_units, strict=True):
-            src_unit.copy_block_to(dst_unit, dst_block_id, src_block_id)
-            self._metrics.cross_replica_bytes_copied += src_unit.buffer.shape[
-                1
-            ] * len(src_unit.all_buffers)
+            for src_buf, dst_buf in zip(
+                src_unit.all_buffers, dst_unit.all_buffers, strict=True
+            ):
+                for dst_id, src_id in block_id_pairs:
+                    dst_pages.append(dst_buf[dst_id, :])
+                    src_pages.append(src_buf[src_id, :])
+            self._metrics.cross_replica_bytes_copied += (
+                src_unit.buffer.shape[1]
+                * len(src_unit.all_buffers)
+                * len(block_id_pairs)
+            )
+
+        batch_inplace_copy(dst_pages, src_pages)
 
     @traced
     def _get_full_blocks_from_host_prefix_cache(

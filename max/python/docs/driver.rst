@@ -45,6 +45,7 @@ Buffers
    :toctree: generated
    :template: autosummary/function.rst
 
+   batch_inplace_copy
    load_max_buffer
 
 Device discovery

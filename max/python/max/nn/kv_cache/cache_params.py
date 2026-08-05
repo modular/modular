@@ -163,32 +163,6 @@ class KVCacheMemory:
         """Returns every shard buffer backing this unit (rank-0 + peers)."""
         return [self.buffer]
 
-    def copy_block_to(
-        self,
-        dst: KVCacheMemory,
-        dst_block_id: int,
-        src_block_id: int,
-    ) -> None:
-        """Copies one page from this unit into ``dst`` (device-to-device).
-
-        ``dst`` must be the same logical unit on another replica (identical
-        page layout, same number of shards). The copy may cross devices; the
-        driver issues a peer-to-peer (or host-bounced) transfer. Used to
-        materialize a prefix-cache block on a different DP replica
-        (SERVOPT-1500).
-
-        Args:
-            dst: Destination memory unit (same logical unit, another replica).
-            dst_block_id: Destination page index.
-            src_block_id: Source page index in this unit.
-        """
-        for dst_buffer, src_buffer in zip(
-            dst.all_buffers, self.all_buffers, strict=True
-        ):
-            dst_buffer[dst_block_id, :].inplace_copy_from(
-                src_buffer[src_block_id, :]
-            )
-
 
 @dataclass
 class ReplicatedKVCacheMemory(KVCacheMemory):
@@ -223,8 +197,8 @@ class ReplicatedKVCacheMemory(KVCacheMemory):
     def all_buffers(self) -> list[Buffer]:
         """Returns the rank-0 shard buffer followed by every peer buffer.
 
-        For replicated caches (MLA) all shards hold identical data; the
-        inherited :meth:`KVCacheMemory.copy_block_to` zips these against the
+        For replicated caches (MLA) all shards hold identical data;
+        ``BlockManager._copy_blocks_across_replicas`` zips these against the
         destination's shards (``strict=True``), so each shard is fanned out
         with an independent point-to-point copy (no broadcast collective).
         """

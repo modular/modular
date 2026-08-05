@@ -22,10 +22,11 @@ commit, multi-run ordering, and that the pending queue is drained.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from types import SimpleNamespace
 from typing import cast
 
+import pytest
 from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -34,6 +35,9 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
+)
+from max.pipelines.kv_cache.paged_kv_cache import (
+    block_manager as block_manager_module,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
@@ -155,45 +159,149 @@ class _ExternalTierConnector(RecordingConnector):
 _FAKE_BYTES_PER_PAGE = 64
 
 
+class _BatchCopyRecorder:
+    """Shared counter for fake ``batch_inplace_copy`` submits."""
+
+    def __init__(self) -> None:
+        self.copies: list[tuple[int, int]] = []
+        # Destination device of each entry in ``copies``, same order. The
+        # driver groups a batch by destination device internally, so submit
+        # count no longer distinguishes devices -- this does.
+        self.dst_device_ids: list[int] = []
+        self.batched_calls = 0
+        # Optional hook fired at the start of each batch submit so a test can
+        # snapshot local-prefix-cache visibility during enqueue.
+        self.on_batch_copy: Callable[[], None] | None = None
+
+
+class _FakePageView:
+    """Stand-in for a Buffer page view, carrying its recorder and page index."""
+
+    def __init__(
+        self, recorder: _BatchCopyRecorder, block_id: int, device_id: int
+    ) -> None:
+        self.recorder = recorder
+        self.block_id = block_id
+        self.device_id = device_id
+
+
+def _fake_batch_inplace_copy(
+    dst_pages: Sequence[_FakePageView], src_pages: Sequence[_FakePageView]
+) -> None:
+    """Records one submit; stands in for the driver's ``batch_inplace_copy``.
+
+    Every page view in a batch shares one recorder, so the destinations carry
+    it in from the call.
+    """
+    recorder = dst_pages[0].recorder
+    if recorder.on_batch_copy is not None:
+        recorder.on_batch_copy()
+    recorder.batched_calls += 1
+    recorder.copies.extend(
+        (dst.block_id, src.block_id)
+        for dst, src in zip(dst_pages, src_pages, strict=True)
+    )
+    recorder.dst_device_ids.extend(dst.device_id for dst in dst_pages)
+
+
+@pytest.fixture(autouse=True)
+def fake_batch_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Routes the block manager's batched copies at the fake page views.
+
+    ``batch_inplace_copy`` is a module-level driver call rather than a Buffer
+    method, so the fake is installed by patching the name ``block_manager``
+    resolves.
+    """
+    monkeypatch.setattr(
+        block_manager_module, "batch_inplace_copy", _fake_batch_inplace_copy
+    )
+
+
+class _FakeBuffer:
+    """Stand-in for a shard Buffer; ``[block_id, :]`` yields a page view."""
+
+    def __init__(self, recorder: _BatchCopyRecorder, device_id: int) -> None:
+        self._recorder = recorder
+        self.device = SimpleNamespace(id=device_id)
+
+    def __getitem__(self, key: tuple[int, slice]) -> _FakePageView:
+        block_id, _ = key
+        return _FakePageView(self._recorder, block_id, self.device.id)
+
+
 class _FakeKVMemory:
     """CPU stand-in for a ``KVCacheMemory`` unit: records cross-replica D2D
     copies without touching device memory, so a cross-replica prefix-cache hit
     can be exercised CPU-only.
 
-    ``buffer``/``all_buffers`` mirror the real ``KVCacheMemory`` shape (a
-    single, non-replicated shard) since ``_copy_block_across_replicas`` reads
-    ``buffer.shape[1]`` and ``len(all_buffers)`` to accumulate
-    ``cross_replica_bytes_copied``.
+    ``buffer`` mirrors ``KVCacheMemory.buffer`` so
+    ``_copy_blocks_across_replicas`` can accumulate
+    ``cross_replica_bytes_copied`` from ``buffer.shape[1]``.
     """
 
-    def __init__(self) -> None:
-        self.copies: list[tuple[int, int]] = []
-        self.buffer = SimpleNamespace(shape=(1, _FAKE_BYTES_PER_PAGE))
-        self.all_buffers = [self.buffer]
-
-    def copy_block_to(
-        self, dst_unit: object, dst_block_id: int, src_block_id: int
+    def __init__(
+        self,
+        *,
+        device_ids: Sequence[int] = (0,),
+        recorder: _BatchCopyRecorder | None = None,
     ) -> None:
-        self.copies.append((dst_block_id, src_block_id))
+        self._recorder = (
+            recorder if recorder is not None else _BatchCopyRecorder()
+        )
+        self.buffer = SimpleNamespace(shape=(1, _FAKE_BYTES_PER_PAGE))
+        self.all_buffers = [
+            _FakeBuffer(self._recorder, device_id=did) for did in device_ids
+        ]
+
+    @property
+    def copies(self) -> list[tuple[int, int]]:
+        return self._recorder.copies
+
+    @property
+    def dst_device_ids(self) -> list[int]:
+        return self._recorder.dst_device_ids
+
+    @property
+    def batched_calls(self) -> int:
+        return self._recorder.batched_calls
+
+    @property
+    def on_batch_copy(self) -> Callable[[], None] | None:
+        return self._recorder.on_batch_copy
+
+    @on_batch_copy.setter
+    def on_batch_copy(self, fn: Callable[[], None] | None) -> None:
+        self._recorder.on_batch_copy = fn
 
 
 def _make_block_manager(
     *,
     num_replicas: int = 1,
+    unit_device_ids: Sequence[Sequence[int]] = ((0,),),
     connector: RecordingConnector | None = None,
     enable_dp_cross_replica_prefix_copy: bool = True,
 ) -> tuple[BlockManager, RecordingConnector]:
     connector = connector if connector is not None else RecordingConnector()
     # Multi-replica needs per-replica memory units so a cross-replica hit can
-    # materialize via device-to-device copy (fake, CPU-only).
-    replica_kv_memory = (
-        cast(
-            "Sequence[Sequence[KVCacheMemory]]",
-            [[_FakeKVMemory()] for _ in range(num_replicas)],
-        )
-        if num_replicas > 1
-        else None
-    )
+    # materialize via device-to-device copy (fake, CPU-only). All units share
+    # one recorder: submits land on destination page views, but tests often
+    # assert via a source unit handle.
+    #
+    # ``unit_device_ids[u]`` is the per-buffer device-id list for unit ``u``:
+    # MLA-like replicated = same ids across units (e.g. ((0,1),(0,1)));
+    # MHA-like sharded = one buffer per unit on distinct devices
+    # (e.g. ((0,),(1,))).
+    replica_kv_memory: Sequence[Sequence[KVCacheMemory]] | None = None
+    if num_replicas > 1:
+        recorder = _BatchCopyRecorder()
+        fakes = [
+            [
+                _FakeKVMemory(device_ids=device_ids, recorder=recorder)
+                for device_ids in unit_device_ids
+            ]
+            for _ in range(num_replicas)
+        ]
+        replica_kv_memory = cast("Sequence[Sequence[KVCacheMemory]]", fakes)
     bm = BlockManager(
         total_num_blocks=64,
         block_size=16,
@@ -393,6 +501,121 @@ def test_touch_fires_on_cross_replica_hit_keyed_to_serving_replica() -> None:
     assert bm._metrics.cross_replica_blocks_copied == 2
     assert bm._metrics.cross_replica_bytes_copied == 2 * _FAKE_BYTES_PER_PAGE
     assert bm._metrics.device_blocks_served == 0
+
+
+def test_cross_replica_hit_issues_a_single_batched_copy() -> None:
+    """A multi-block cross-replica hit uses one batched D2D call per shard.
+
+    Both pages are resident only on replica 1; the request runs on replica 0.
+    The fake memory must record both pages under a single
+    ``batch_inplace_copy`` submit, not one copy per page.
+
+    Prefix-cache publish is deferred until after enqueue: during the batched
+    copy the destination hashes must not yet be visible in replica 0's local
+    cache; after materialization returns, they must be.
+    """
+    bm, _ = _make_block_manager(num_replicas=2)
+    rid = RequestID("req-xrep-batch")
+    hashes = [_b(111), _b(222)]
+    bm.req_to_hashes[rid] = hashes
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    local_cache = bm.device_block_pools[0].prefix_cache
+    visible_during_batch: list[bool] = []
+    assert bm._replica_kv_memory is not None
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+
+    def _snapshot_local_visibility() -> None:
+        visible_during_batch.append(any(h in local_cache for h in hashes))
+
+    src_unit.on_batch_copy = _snapshot_local_visibility
+
+    served, _ = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(rid), replica_idx=0
+    )
+
+    assert len(served) == 2  # both pages materialized onto replica 0
+    assert bm.metrics.cross_replica_blocks_copied == 2
+    assert src_unit.batched_calls == 1  # one batched call, not two
+    assert len(src_unit.copies) == 2  # carrying both pages
+    # Enqueue-before-publish: hashes must be invisible during batch_copy and
+    # visible once materialization returns.
+    assert visible_during_batch == [False]
+    assert all(h in local_cache for h in hashes)
+
+
+def test_cross_replica_hit_merges_units_into_one_submit() -> None:
+    """Cross-replica copies merge every unit into a single submit.
+
+    MLA-like layout: 2 units each with buffers on devices 0 and 1. Expect one
+    ``batch_inplace_copy`` carrying all 8 page pairs, split evenly across the
+    two destination devices -- the driver, not the block manager, groups them.
+    Enqueue-before-publish still holds.
+    """
+    unit_device_ids = ((0, 1), (0, 1))
+    num_devices = 2
+    num_units = len(unit_device_ids)
+    bm, _ = _make_block_manager(num_replicas=2, unit_device_ids=unit_device_ids)
+    rid = RequestID("req-xrep-merge")
+    hashes = [_b(111), _b(222)]
+    bm.req_to_hashes[rid] = hashes
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    local_cache = bm.device_block_pools[0].prefix_cache
+    visible_during_batch: list[bool] = []
+    assert bm._replica_kv_memory is not None
+    # Units in a replica share one recorder; either unit surfaces the totals.
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+
+    def _snapshot_local_visibility() -> None:
+        visible_during_batch.append(any(h in local_cache for h in hashes))
+
+    src_unit.on_batch_copy = _snapshot_local_visibility
+
+    served, _ = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(rid), replica_idx=0
+    )
+
+    assert len(served) == 2
+    assert bm.metrics.cross_replica_blocks_copied == 2
+    assert src_unit.batched_calls == 1  # not one per unit, nor per device
+    # The submit includes every unit's page pairs for every device.
+    assert len(src_unit.copies) == num_units * num_devices * len(hashes)
+    assert sorted(src_unit.dst_device_ids) == sorted(
+        [0, 1] * (num_units * len(hashes))
+    )
+    assert visible_during_batch == [False]
+    assert all(h in local_cache for h in hashes)
+
+
+def test_cross_replica_hit_covers_every_device_in_one_submit() -> None:
+    """MHA-like layout reaches both TP devices from the single submit.
+
+    Two units with one buffer each on devices 0 and 1 (non-replicated TP).
+    Every unit's pages must be present and attributed to its own destination
+    device; dropping a unit would silently leave one device's pages stale.
+    """
+    unit_device_ids = ((0,), (1,))
+    bm, _ = _make_block_manager(num_replicas=2, unit_device_ids=unit_device_ids)
+    rid = RequestID("req-xrep-mha")
+    hashes = [_b(111), _b(222)]
+    bm.req_to_hashes[rid] = hashes
+    _commit_device_block(bm.device_block_pools[1], 111)
+    _commit_device_block(bm.device_block_pools[1], 222)
+
+    assert bm._replica_kv_memory is not None
+    src_unit = cast(_FakeKVMemory, bm._replica_kv_memory[1][0])
+
+    served, _ = bm.get_full_blocks_from_prefix_cache(
+        _make_ctx(rid), replica_idx=0
+    )
+
+    assert len(served) == 2
+    assert src_unit.batched_calls == 1
+    assert len(src_unit.copies) == len(unit_device_ids) * len(hashes)
+    assert sorted(src_unit.dst_device_ids) == sorted([0, 1] * len(hashes))
 
 
 def test_cross_replica_copy_disabled_serves_from_external_tier() -> None:
