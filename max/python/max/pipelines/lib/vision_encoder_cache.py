@@ -713,7 +713,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                         img.end_idx <= ctx.tokens.processed_length
                         or img.start_idx >= ctx.tokens.current_position
                     ), f"Active in-window image {img.image_hash} not in cache"
-                    count = img.end_idx - img.start_idx
+                    count = img.embedding_rows
                     for d in range(n_devices):
                         base = empty_embeddings[d]
                         all_device_bufs[d].append(
