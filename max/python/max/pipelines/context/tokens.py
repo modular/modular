@@ -828,6 +828,21 @@ class ImageMetadata:
     image_hash: int | None = None
     """Hash of the image, for use in prefix caching"""
 
+    num_embedding_rows: int | None = None
+    """Embedding rows the encoder emits for this entry.
+
+    ``None`` means every token in ``[start_idx, end_idx)`` is a placeholder,
+    so the row count equals the span width. Set by tokenizers whose spans
+    interleave placeholder runs with other tokens (e.g. video timestamp
+    text)."""
+
+    @property
+    def embedding_rows(self) -> int:
+        """Embedding rows for this entry (span width unless overridden)."""
+        if self.num_embedding_rows is not None:
+            return self.num_embedding_rows
+        return self.end_idx - self.start_idx
+
     def __post_init__(self) -> None:
         if self.start_idx < 0:
             raise ValueError("Images must have a valid start index")
