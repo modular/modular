@@ -103,7 +103,7 @@ modular_cc_library(
             "//MLRT:Driver/CompilationDeviceImpl",
             "//MLRT:Driver/CompilerDeviceArch",
         ],
-        "//conditions:default": ["//MLRT:Driver/DeviceContext"],
+        "//conditions:default": [],
     }),
     local_defines = ["MOJO_COMPILER_ACCELERATOR_SUPPORT=1"],
     strip_include_prefix = "",

@@ -6,6 +6,7 @@
 
 #include "KGEN/Support/Configuration.h"
 #include "Support/Configuration.h"
+#include "llvm/Support/FileSystem.h"
 #include <variant> // IWYU pragma: keep (std::visit)
 
 using namespace M;
@@ -164,13 +165,22 @@ void MojoConfig::appendSharedLibraryLinkArgs(SmallVectorImpl<StringRef> &args) {
     // Mini-hack: We make up some imaginary config sections so that the config
     // will intern some strings for us. Otherwise, we'd have to intern the whole
     // string and then parse it back out.
-    args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artmb"),
-                           "lib/libAsyncRTMojoBindings" EXT));
     args.push_back("-Xlinker");
     args.push_back("-rpath");
     args.push_back("-Xlinker");
     args.push_back(getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_lib"), "lib"));
   }
+
+  // The AsyncRT Mojo bindings ship in max-core, not in the mojo compiler
+  // package, so a base Mojo install simply does not have them. Link them
+  // whenever they are installed: a `.mojoc` records no cc dependencies, so
+  // this is the only way `mojo build` can learn that an imported package
+  // (`max`) needs them. Bazel builds resolve the same library through the
+  // dependency graph instead and never reach this.
+  StringRef bindings = getPath(STRINGIFY_MOJO_CONFIG(".shared_libs_artmb"),
+                               "lib/libAsyncRTMojoBindings" EXT);
+  if (llvm::sys::fs::exists(bindings))
+    args.push_back(bindings);
 }
 
 StringRef MojoConfig::getMojoConfigSection() {
