@@ -48,10 +48,17 @@ archive_override(
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-feQyfpQxe9TFkuN4xdOzZ1QHr898WiZao6I7IMbApuw=",
-    strip_prefix = "rules_mojo-03c6ac252de49be7e8d1206fe1c2e0cfdda6e275",
+    integrity = "sha256-wciBGAfb+aWWW6XuNiWqLtfiaLIE1evNzhS5q5gt0/w=",
+    patch_strip = 1,
+    patches = [
+        # Left as a patch for now since it may not worth upstreaming.
+        # Also includes a toolchain change which has to be done in lockstep to the current commit
+        # That piece can be removed after the 8/5 nightly.
+        "//bazel/public-patches:rules_mojo_toolchain.patch",
+    ],
+    strip_prefix = "rules_mojo-47643a3b441c20c3a351b8807e37c547338557c8",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/03c6ac252de49be7e8d1206fe1c2e0cfdda6e275.tar.gz",
+        "https://github.com/modular/rules_mojo/archive/47643a3b441c20c3a351b8807e37c547338557c8.tar.gz",
     ],
 )
 
