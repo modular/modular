@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max/"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 description = "Examples of using TileTensors"
 name = "TileTensor examples"
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
