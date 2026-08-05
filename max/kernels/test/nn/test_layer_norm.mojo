@@ -47,40 +47,35 @@ def run_layer_norm_cpu[
     var output_buf = TileTensor(output_ptr, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_ptr, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_ptr, row_major(Coord(param_shape)))
-    var epsilon = Float32(0.0001)
+    var epsilon = Scalar[dtype](0.0001)
 
-    @__copy_capture(input_buf)
     @always_inline
-    @parameter
     def input_fn[
         width: Int,
-        _rank: Int,
         alignment: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        _rank: Int,
+    ](coords: IndexList[_rank]) {var input_buf} -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
         return input_buf.raw_load[width=width, alignment=alignment](idx)
 
-    @__copy_capture(gamma)
     @always_inline
-    @parameter
-    def gamma_fn[
-        width: Int, rank: Int, alignment: Int
-    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(coords[0])
-        return gamma.raw_load[width=width, alignment=alignment](idx)
-
-    @__copy_capture(output_buf)
-    @always_inline
-    @parameter
     def output_fn[
         width: SIMDLength, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output_buf}:
         var idx = output_buf.layout(Coord(coords))
         output_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
-    layer_norm_cpu[input_fn, gamma_fn, output_fn](shape, beta, epsilon)
+    layer_norm[dtype, rank, target="cpu"](
+        input_fn,
+        output_fn,
+        Coord(shape),
+        Scalar[DType.int](cols),
+        gamma,
+        beta,
+        epsilon,
+    )
 
     var input_ptr_ptr: UnsafePointer[
         input_ptr.T, origin_of(input_ptr)
@@ -92,7 +87,7 @@ def run_layer_norm_cpu[
         )
         var mean_ref = mean(vec)
         var var_ref = variance(vec, correction=0)
-        var norm_factor_ref = rsqrt(var_ref + epsilon.cast[dtype]())
+        var norm_factor_ref = rsqrt(var_ref + epsilon)
         var idx = r * cols + c
         var val = ((input_ptr[idx] - mean_ref) * norm_factor_ref) * gamma_ptr[
             c

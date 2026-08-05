@@ -24,7 +24,8 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, coord, row_major
-from nn.normalization import layer_norm_gpu, rms_norm_gpu
+from nn.normalization import layer_norm, rms_norm_gpu
+from std.utils.coord import ComptimeInt
 
 from std.utils.index import Index, IndexList
 
@@ -64,62 +65,73 @@ def bench_layer_norm_gpu[
         beta_h[i] = (Float64(i) / Float64(cols)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    # Distinct output buffer: `input_fn` (reads) and `output_fn` (writes) are
+    # separate value-closure args and must reference distinct buffer origins
+    # (mirrors test_layer_norm.mojo's `run_layer_norm_gpu`).
+    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
     var param_shape = Index(cols)
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
-    var epsilon = Float32(0)
+    var epsilon = Scalar[dtype](0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
 
-    # `layer_norm_gpu` migrated to a `Coord` shape boundary (mirror of
-    # `rms_norm_gpu` / softmax migration). `gamma_fn` stays n-D `IndexList`-form.
-    @__copy_capture(data_buf)
+    # `layer_norm` takes gamma/beta as `TileTensor`s directly (no
+    # `gamma_fn`); `input_fn`/`output_fn` are unified closures matching its
+    # (width, alignment, coord_rank) / (width, rank, alignment) signatures.
     @always_inline
-    @parameter
     def input_fn[
-        width: Int, alignment: Int
-    ](coords: Coord) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
+        width: Int, alignment: Int, coord_rank: Int
+    ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[dtype, width]:
+        var idx = data_buf.layout(Coord(coords))
 
         return data_buf.raw_load[width=width, alignment=alignment](idx)
 
-    @__copy_capture(gamma)
     @always_inline
-    @parameter
-    def gamma_fn[
-        width: Int, rank: Int, alignment: Int
-    ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = gamma.layout(coords[0])
-
-        return gamma.raw_load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    @__copy_capture(data_buf)
-    @parameter
     def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(coords)
+        width: SIMDLength, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var out_buf} -> None:
+        var idx = out_buf.layout(Coord(coords))
 
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+        out_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
-    @__copy_capture(shape_coord, beta, epsilon, data_buf)
+    @__copy_capture(shape_coord, gamma, beta, epsilon, input_fn, output_fn)
     @parameter
     def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            layer_norm_gpu[rank, input_fn, gamma_fn, output_fn](
-                shape_coord, beta, epsilon, ctx=ctx
-            )
+            comptime if static_shape:
+                layer_norm[dtype, rank, target="gpu"](
+                    input_fn,
+                    output_fn,
+                    shape_coord,
+                    ComptimeInt[cols](),
+                    gamma,
+                    beta,
+                    epsilon,
+                    ctx,
+                )
+            else:
+                layer_norm[dtype, rank, target="gpu"](
+                    input_fn,
+                    output_fn,
+                    shape_coord,
+                    Scalar[DType.int](cols),
+                    gamma,
+                    beta,
+                    epsilon,
+                    ctx,
+                )
 
         bencher_iter_custom[kernel_launch](b, ctx)
 
@@ -134,6 +146,7 @@ def bench_layer_norm_gpu[
     ctx.synchronize()
 
     _ = data_d
+    _ = out_d
     _ = gamma_d
     _ = beta_d
     _ = data_h^

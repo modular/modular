@@ -112,7 +112,7 @@ _TARGETS: dict[str, FuzzTarget] = {
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_layer_norm.mojo.test",
         binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_layer_norm.mojo.test",
         description=(
-            "layer_norm layer_norm_gpu boundary fuzz (memory-safety + ref)"
+            "layer_norm layer_norm boundary fuzz (memory-safety + ref)"
         ),
         default_oracle="memcheck",
     ),
