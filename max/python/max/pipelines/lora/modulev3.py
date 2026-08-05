@@ -97,11 +97,10 @@ def _download_adapter_repo(repo_id: str) -> str:
 class LoRAManagerV3:
     """Loads and routes ModuleV3 LoRA adapters (adapters-as-inputs).
 
-    A self-contained ModuleV3 counterpart to the V2 :class:`LoRAManager`: it owns
-    an LRU slot cache and loads adapters unfused (per-projection q/k/v), then
-    supplies the batch routing and slot->adapter map that the serving path feeds
-    as graph inputs. Adapters ride in as inputs, so there is no alias-buffer
-    hot-swap.
+    It owns an LRU slot cache and loads adapters unfused (per-projection q/k/v),
+    then supplies the batch routing and slot->adapter map that the serving path
+    feeds as graph inputs. Adapters ride in as inputs, so there is no
+    alias-buffer hot-swap.
     """
 
     # -1 marks a base-model request; downstream kernels exit early on it.
@@ -160,8 +159,7 @@ class LoRAManagerV3:
     def unload_adapter(self, name: str) -> LoRAStatus:
         """Unloads ``name`` from the registry and frees its LRU slot.
 
-        Mirrors :meth:`~max.pipelines.lora.lora.LoRAManager.unload_adapter` so
-        the serving request processor drives V2 and V3 managers identically.
+        The serving request processor calls this to release a loaded adapter.
         """
         if name not in self._loras:
             return LoRAStatus.UNLOAD_NAME_NONEXISTENT

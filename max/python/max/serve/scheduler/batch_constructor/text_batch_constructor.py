@@ -25,8 +25,7 @@ from max.pipelines.context import TextGenerationOutput
 from max.pipelines.context.context import TextContext
 from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
 from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
-from max.pipelines.lib import LoRAManager
-from max.pipelines.lora import get_lora_manager
+from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -111,7 +110,7 @@ class ReplicaRequests:
     )
 
     def add_active_lora(
-        self, context: TextContext, lora_manager: LoRAManager | None
+        self, context: TextContext, lora_manager: LoRAManagerV3 | None
     ) -> None:
         """Mark a LoRA as active for this replica and refresh its LRU in the manager."""
         if lora_manager is None:
@@ -129,7 +128,7 @@ class ReplicaRequests:
         self.deferred_lora_requests.clear()
 
     def can_allocate_lora_request(
-        self, context: TextContext, lora_manager: LoRAManager | None
+        self, context: TextContext, lora_manager: LoRAManagerV3 | None
     ) -> bool:
         """Check LoRA budget and defer the request if it cannot be safely activated."""
         if lora_manager is None:
@@ -379,7 +378,7 @@ class TextBatchConstructor:
 
     **LoRA batch construction**
 
-    When a :class:`LoRAManager` is attached, the constructor applies
+    When a :class:`LoRAManagerV3` is attached, the constructor applies
     additional constraints to respect the maximum number of concurrently
     loaded LoRA adapters and to avoid evicting adapters needed for active
     generations.
@@ -446,7 +445,7 @@ class TextBatchConstructor:
             os.getenv(TG_PRIORITY_KV_PERCENTAGE_ENV_VAR, "90")
         )
 
-        self._lora_manager: LoRAManager | None = get_lora_manager(pipeline)
+        self._lora_manager: LoRAManagerV3 | None = get_lora_manager(pipeline)
 
         self.num_replicas = self.scheduler_config.data_parallel_degree
         if self._lora_manager and self.num_replicas > 1:

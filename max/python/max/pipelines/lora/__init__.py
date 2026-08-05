@@ -15,7 +15,7 @@
 
 from .config import LoRAConfig
 from .helpers import get_lora_manager
-from .lora import ADAPTER_CONFIG_FILE, LoRAInputs, LoRAManager, LoRAModel
+from .lora import ADAPTER_CONFIG_FILE, LoRAModel
 from .lora_types import (
     LORA_REQUEST_ENDPOINT,
     LORA_RESPONSE_ENDPOINT,
@@ -37,8 +37,6 @@ __all__ = [
     "LORA_RESPONSE_ENDPOINT",
     "NUM_ROUTING_INPUTS",
     "LoRAConfig",
-    "LoRAInputs",
-    "LoRAManager",
     "LoRAManagerV3",
     "LoRAModel",
     "LoRAOperation",

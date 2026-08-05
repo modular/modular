@@ -35,7 +35,6 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
-    LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
@@ -147,7 +146,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     devices: list[DeviceRef]
     clip_qkv: float | None
     quant_config: QuantConfig | None = None
-    lora_config: LoRAConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
@@ -368,7 +366,6 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             use_subgraphs=pipeline_config.model.use_subgraphs,
-            lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             quantization_encoding=quantization_encoding,

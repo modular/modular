@@ -22,7 +22,6 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
-    LoRAManager,
     MAXModelConfig,
     ModelInputs,
     ModelOutputs,
@@ -123,14 +122,10 @@ class EagleLlama3Model(LlamaModelBase):
         )
         weights_registry = single_model.state_dict()
 
-        lora_manager = self._lora_manager
-        assert lora_manager is None or isinstance(lora_manager, LoRAManager)
-
         with Graph(
             "eagle_llama3",
             input_types=single_model.input_types(
                 self.kv_params,
-                lora_manager,
                 needs_hidden_state_input=True,
             ),
         ) as graph:

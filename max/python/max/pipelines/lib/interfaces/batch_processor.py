@@ -56,7 +56,6 @@ from max.pipelines.modeling.dataprocessing import collate_batch
 
 if TYPE_CHECKING:
     from max.pipelines.lib import PipelineConfig
-    from max.pipelines.lora import LoRAManager
 
 logger = logging.getLogger("max.pipelines")
 
@@ -81,7 +80,7 @@ class BatchProcessorRuntime:
     return_logits: ReturnLogits
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     signal_buffers: Sequence[Buffer] = ()
-    lora_manager: LoRAManager | LoRAManagerV3 | None = None
+    lora_manager: LoRAManagerV3 | None = None
     pad_token_id: int = 0
     max_batch_size: int | None = None
 

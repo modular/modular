@@ -52,7 +52,6 @@ from .kv_cache import (
 )
 from .layer import Layer, LayerList, Module, Shardable
 from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
-from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
 from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
 from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
 from .quant_config import (
@@ -94,7 +93,6 @@ __all__ = [
     "MLP",
     "Allreduce",
     "AttentionWithRope",
-    "AttentionWithRopeAndLoRA",
     "ColumnParallelLinear",
     "ConstantLayerNorm",
     "Conv1D",
@@ -121,7 +119,6 @@ __all__ = [
     "LayerList",
     "LayerNorm",
     "Linear",
-    "LinearLoRA",
     "LinearScalingParams",
     "Llama3RopeScalingParams",
     "Llama3RotaryEmbedding",
@@ -148,7 +145,6 @@ __all__ = [
     "Shardable",
     "Signals",
     "StackedLinear",
-    "SupportsLoRA",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
     "Transformer",

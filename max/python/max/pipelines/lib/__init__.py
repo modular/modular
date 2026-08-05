@@ -20,7 +20,6 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
-from max.pipelines.lora import LoRAManager
 from max.pipelines.sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -123,7 +122,6 @@ __all__ = [
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
-    "LoRAManager",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",

@@ -49,7 +49,6 @@ Linear layers
    Embedding
    GPTQLinear
    Linear
-   LinearLoRA
    MLP
    StackedLinear
    VocabParallelEmbedding
@@ -66,17 +65,6 @@ Normalization
    GroupNorm
    LayerNorm
    RMSNorm
-
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   AttentionWithRopeAndLoRA
-   SupportsLoRA
 
 Rotary embeddings
 -----------------

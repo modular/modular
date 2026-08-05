@@ -31,12 +31,12 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
-    LoRAManager,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
 )
+from max.pipelines.lora import LoRAManagerV3
 from transformers import AutoConfig
 
 
@@ -117,7 +117,7 @@ class MockPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
             pipeline_config, self.huggingface_config
         )
         self._lora_manager = (
-            LoRAManager(
+            LoRAManagerV3(
                 config=self.pipeline_config.lora,
                 base_model_path=pipeline_config.model.model_path,
                 base_dtype=self.dtype,

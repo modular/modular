@@ -20,8 +20,7 @@ Adapter management
    :template: autosummary/class.rst
 
    LoRAConfig
-   LoRAInputs
-   LoRAManager
+   LoRAManagerV3
    LoRAModel
 
 LoRA types

@@ -32,7 +32,7 @@ from max.pipelines.request import RequestID
 from ._zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 if TYPE_CHECKING:
-    from max.pipelines.lora import LoRAManager, LoRAManagerV3
+    from max.pipelines.lora import LoRAManagerV3
 
 _logger = logging.getLogger("max.serve")
 
@@ -40,19 +40,19 @@ __all__ = ["LoRARequestProcessor"]
 
 
 class LoRARequestProcessor:
-    """Processes LoRA requests by delegating operations to a LoRAManager.
+    """Processes LoRA requests by delegating operations to a LoRA manager.
 
     Acts as a bridge between the LoRA queue system and the LoRA manager,
     processing load/unload/list operations and returning appropriate responses.
 
     Args:
-        manager: The LoRA manager (V2 or V3) instance to handle operations.
+        manager: The LoRA manager instance to handle operations.
         zmq_endpoint_base: Base endpoint string for ZMQ request/response sockets.
     """
 
     def __init__(
         self,
-        manager: LoRAManager | LoRAManagerV3,
+        manager: LoRAManagerV3,
         zmq_endpoint_base: str,
     ):
         self.manager = manager

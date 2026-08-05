@@ -30,7 +30,6 @@ from max.graph import (
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.layer import Module
-from max.pipelines.lora import LoRAManager
 
 from .llama3 import Llama3
 from .model_config import Llama3Config
@@ -77,7 +76,6 @@ class DataParallelLlama(Module):
     def input_types(
         self,
         kv_params: KVCacheParamInterface,
-        lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
 
@@ -101,7 +99,7 @@ class DataParallelLlama(Module):
         tokens and input_row_offsets into data parallel splits.
         """
         inputs = []
-        single_model_inputs = self.model.input_types(kv_params, lora_manager)
+        single_model_inputs = self.model.input_types(kv_params)
         (
             token_type,
             input_row_offsets_type,
@@ -244,7 +242,7 @@ def create_graph(
         weight_alignment=1,
         strict=True,
     )
-    inputs = model.input_types(kv_params, None)
+    inputs = model.input_types(kv_params)
     with Graph("llama3", input_types=inputs) as graph:
         outputs = model._call_flat(kv_params, *graph.inputs)
         graph.output(*outputs)
