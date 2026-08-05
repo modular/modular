@@ -678,30 +678,32 @@ def flash_attention[
         not ragged or q.rank == 3
     ), "only support rank 3 inputs for ragged inputs."
 
-    # Native FP8 SM100 path. K/V are FP8 in the paged cache.
-    # Q@K^T and P@V run as FP8 MMAs at tensorwise scale=1.
+    # Native FP8 path (SM100 tcgen05, or AMD MFMA on gfx950). K/V are FP8 in
+    # the paged cache.  Q@K^T and P@V run as FP8 MMAs at tensorwise scale=1.
     # Output is BF16.
-    comptime is_native_fp8_sm100 = (
+    comptime is_native_fp8_bf16_out = (
         q.dtype.is_float8()
         and cache_t.dtype.is_float8()
         and output.dtype == DType.bfloat16
-        and _is_sm10x_gpu(ctx.default_device_info)
+        and (
+            _is_sm10x_gpu(ctx.default_device_info) or has_amd_gpu_accelerator()
+        )
     )
 
     comptime assert (
-        q.dtype == cache_t.dtype == output.dtype or is_native_fp8_sm100
+        q.dtype == cache_t.dtype == output.dtype or is_native_fp8_bf16_out
     ), (
         "Q, K, V, output should have same dtype, or Q=K=V=float8,"
-        " output=bfloat16 for the native FP8 SM100 path."
+        " output=bfloat16 for the native FP8 path."
     )
     comptime assert (
         q.dtype == DType.float32
         or q.dtype.is_half_float()
         or (q.dtype.is_float8() and has_amd_gpu_accelerator())
-        or is_native_fp8_sm100
+        or is_native_fp8_bf16_out
     ), (
         "Only support single, half, float8 (AMD), and float8->bfloat16"
-        " (SM100) precision."
+        " (SM100 or AMD) precision."
     )
 
     # TODO docstring
