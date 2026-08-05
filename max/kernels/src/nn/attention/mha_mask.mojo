@@ -2668,3 +2668,239 @@ def ChunkedCausalMask[
         6 | 0 0 0 0 0 0 0 0 1 1
     """
     res = {}
+
+
+# ===-----------------------------------------------------------------------===#
+# RelativeLogitsMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct RelativeLogitsMask[
+    V: MHAMask,
+    //,
+    visibility: V,
+    dtype_: DType,
+    layout_: Layout,
+    origin_: Origin[mut=False],
+](MHAMask, TrivialRegisterPassable):
+    """Causal (optionally sliding-window) mask plus an additive relative-position bias.
+
+    The bias is gathered by `rel_dist = q_pos - k_pos` from a `(tokens,
+    heads, extent)` table and added on every visible position; distances
+    outside `[0, extent)` carry no bias. `mask()` adds the bias before
+    delegating the visibility select to `visibility.mask()`, so masked lanes
+    come out as exactly `MASK_VALUE` (never `MASK_VALUE + bias`).
+
+    Parameters:
+        visibility: `CausalMask()` (global) or
+            `SlidingWindowCausalMask[window_size]()` (local).
+        dtype_: Element type of the bias tensor.
+        layout_: Layout of the bias tensor, rank 3
+            `(total_q_tokens, heads, extent)`.
+        origin_: Origin of the bias tensor.
+    """
+
+    comptime window_size: Int = Self.V.sliding_window_size()
+    """`0` means unbounded (plain causal), per this file's convention."""
+
+    comptime apply_log2e_after_mask: Bool = True
+    comptime mask_out_of_bound: Bool = is_nvidia_gpu()
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    var bias: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+    """`(total_q_tokens, heads, extent)`, row `r` matching `q`'s ragged-flat row."""
+
+    @__allow_legacy_any_origin_fields
+    var cache_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    """Cached tokens before this call's new tokens."""
+
+    @__allow_legacy_any_origin_fields
+    var input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ]
+    """Ragged row offset into `bias`/`q` for this call's new tokens, `(batch + 1,)`."""
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode(self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "RelativeLogitsMask"
+
+    @staticmethod
+    def name() -> String:
+        return "RelativeLogitsMask[" + String(Self.window_size) + "]"
+
+    def __init__(
+        out self,
+        bias: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
+        cache_lengths: LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+        input_row_offsets: LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ],
+    ):
+        comptime assert (
+            Self.layout_.rank() == 3
+        ), "Expected rank 3 (tokens, heads, extent) for the bias tensor"
+        comptime visibility_name = Self.V.get_type_name()
+        comptime assert (
+            visibility_name == CausalMask.get_type_name()
+            or visibility_name == SlidingWindowCausalMask[1].get_type_name()
+        ), (
+            "RelativeLogitsMask's visibility mask must be CausalMask or"
+            " SlidingWindowCausalMask"
+        )
+        self.bias = bias
+        self.cache_lengths = cache_lengths
+        self.input_row_offsets = input_row_offsets
+
+    @always_inline
+    def _flat_row(self, seq_id: Int, q_idx_abs: Int) -> Int:
+        # `q_idx_abs` is the query's absolute in-sequence position (cached
+        # prefix + new tokens); subtract the cached length and add this
+        # sequence's ragged offset to recover the global flat row into `bias`.
+        var cache_len = Int(self.cache_lengths[seq_id])
+        var row_offset = Int(self.input_row_offsets[seq_id])
+        return row_offset + (q_idx_abs - cache_len)
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+        *,
+        element_type: DType = DType.uint32,
+    ](
+        self,
+        coord: IndexList[4, element_type=element_type],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        var q_idx = coord[2]
+        var k_idx = coord[3]
+
+        # Gather the bias by relative distance, zero outside [0, extent).
+        var flat_row = self._flat_row(Int(coord[0]), Int(q_idx))
+        var head = Int(coord[1])
+        var extent = self.bias.dim[2]()
+        if extent == 0:
+            return Self.visibility.mask(coord, score_vec)
+        var num_rows = self.bias.dim[0]()
+        var row_in_bounds = 0 <= flat_row < num_rows
+        # Clamp to an in-bounds row once; the gather below then has no
+        # data-dependent skip on it.
+        var safe_flat_row = flat_row if row_in_bounds else 0
+        var bias_vec = SIMD[dtype, width](0)
+        comptime for i in range(width):
+            var rel_dist = Int(q_idx) - (Int(k_idx) + i)
+            var dist_in_bounds = rel_dist >= 0 and rel_dist < extent
+            # Clamp the distance so the gather always reads an in-bounds
+            # entry; `valid` decides whether the value is used. Reading
+            # unconditionally avoids a per-lane conditional store.
+            var safe_rel_dist = max(0, min(rel_dist, extent - 1))
+            var valid = dist_in_bounds and row_in_bounds
+            # `bias[...]` returns a 1-element SIMD whose width is a
+            # layout-size expression, not the literal `1`; `rebind` bridges
+            # the two comptime spellings (not a numeric cast).
+            var raw_bias = self.bias[safe_flat_row, head, safe_rel_dist].cast[
+                dtype
+            ]()
+            bias_vec[i] = rebind[Scalar[dtype]](raw_bias) if valid else Scalar[
+                dtype
+            ](0)
+
+        # Add the bias before the visibility select so masked lanes come out
+        # as exactly `MASK_VALUE` (never `MASK_VALUE + bias`). The visibility
+        # mask's own `mask()` is the select, so this can't drift from it.
+        return Self.visibility.mask(coord, score_vec + bias_vec)
+
+    @always_inline
+    def status[
+        *, element_type: DType = DType.uint32
+    ](
+        self,
+        seq_id: UInt32,
+        tile_offset: IndexList[2, element_type=element_type],
+        tile_size: IndexList[2, element_type=element_type],
+    ) -> TileMaskStatus:
+        # `visibility` owns the FULL_MASK boundary; downgrade its NO_MASK
+        # (skip `mask()`) to PARTIAL_MASK, since the bias must be added on
+        # every visible tile.
+        var inner = Self.visibility.status(seq_id, tile_offset, tile_size)
+        return (
+            TileMaskStatus.PARTIAL_MASK if inner
+            == TileMaskStatus.NO_MASK else inner
+        )
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        return Self.visibility.start_column[BM, BN, page_size](seq_id, row)
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return Self.V.start_column_alignment[BM, BN, page_size]()
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return Self.visibility.total_iters[BM, BN, page_size](
+            seq_id, row, num_cols
+        )
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {
+            self.last_masked_set_end[BM, BN, page_size](seq_id, row, num_cols)
+        }
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Unreachable: mask_strategies never advertises BITMASK.
+        return UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return Self.window_size

@@ -3242,31 +3242,52 @@ def flash_attention_ragged(
     scale: float,
     local_window_size: int = -1,
     sink_weights: TensorValue | None = None,
+    rel_logits: TensorValue | None = None,
     output_dtype: DType | None = None,
 ) -> TensorValue:
-    """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
+    """Computes flash (self) attention provided the ``!mo.opaque`` KV Cache.
 
-    Notably, this materializes the attention mask (dependent on MHAMaskVariant)
-    within the kernel.
-    `input` and `input_row_offsets` are used together to implement the ragged
-    tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    Notably, this materializes the attention mask (dependent on
+    :class:`MHAMaskVariant`) within the kernel. ``input`` and
+    ``input_row_offsets`` are used together to implement the ragged tensor.
+    ``input_row_offsets`` indicates where each batch starts and ends in
+    ``input``.
 
-    Note that this is self attention and the KV sequence length is
-    assumed to be equal to the Q sequence length.
-    For KV sequence length != Q sequence length, use `cross_attention_ragged`.
+    Note that this is self attention and the KV sequence length is assumed to
+    be equal to the Q sequence length. For KV sequence length != Q sequence
+    length, use :func:`cross_attention_ragged`.
+
+    When ``rel_logits`` is set, the kernel gathers an additive
+    relative-position bias by ``rel_dist = q_pos - k_pos`` from a
+    ``(total_q_tokens, heads, extent)`` table and adds it on every visible
+    position, selecting ``mo.mha.ragged.paged.rel_logits``. This path only
+    supports ``mask_variant`` values ``CAUSAL_MASK`` (with
+    ``local_window_size == -1``) and ``SLIDING_WINDOW_CAUSAL_MASK`` (with a
+    positive ``local_window_size``); ``sink_weights`` and ``rel_logits`` are
+    mutually exclusive.
 
     Args:
         kv_params: KVCacheParams object containing key-value cache parameters.
-        input: TensorValue representing the input tensor with shape [total_seq_len, hidden_dim].
-        input_row_offsets: TensorValue indicating the start and end of each batch in the input tensor with shape [batch_size + 1].
+        input: TensorValue representing the input tensor with shape
+            ``[total_seq_len, num_heads, head_dim]``.
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape ``[batch_size + 1]``.
         kv_collection: PagedCacheValues object for managing key-value cache.
-        layer_idx: TensorValue representing the layer index, expected to have dtype uint32.
-        mask_variant: MHAMaskVariant specifying the type of attention mask to use.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        mask_variant: MHAMaskVariant specifying the type of attention mask to
+            use. With ``rel_logits``, only ``CAUSAL_MASK`` and
+            ``SLIDING_WINDOW_CAUSAL_MASK`` are supported.
         scale: float value used to scale the attention scores.
-        local_window_size: int specifying the size of the local attention window, default is -1 for no local window.
-        sink_weights: Optional tensor of shape [num_heads] containing learnable sink weights for each attention head.
-        output_dtype: Dtype for the attention output. Defaults to ``input.dtype``.
+        local_window_size: int specifying the size of the local attention
+            window, default is -1 for no local window.
+        sink_weights: Optional tensor of shape ``[num_heads]`` containing
+            learnable sink weights for each attention head.
+        rel_logits: Optional relative-position bias table with shape
+            ``[total_seq_len, num_heads, extent]``; row ``r`` matches
+            ``input``'s own ragged-flat row convention.
+        output_dtype: Dtype for the attention output. Defaults to
+            ``input.dtype``.
     """
     input_rank_expected = 3
     if input.rank != input_rank_expected:
@@ -3288,6 +3309,11 @@ def flash_attention_ragged(
             f" {input_row_offsets.dtype}"
         )
 
+    if sink_weights is not None and rel_logits is not None:
+        raise ValueError(
+            "sink_weights and rel_logits are mutually exclusive; pass at most one"
+        )
+
     dispatch_metadata = kv_collection.attention_dispatch_metadata
     if dispatch_metadata is None:
         raise ValueError(
@@ -3303,13 +3329,52 @@ def flash_attention_ragged(
                 f"got {sink_weights.shape}"
             )
 
-    parameters = _mha_parameters(
-        mask_variant, local_window_size=local_window_size
-    )
+    if rel_logits is not None:
+        if mask_variant == MHAMaskVariant.CAUSAL_MASK:
+            if local_window_size != -1:
+                raise ValueError(
+                    "rel_logits with MHAMaskVariant.CAUSAL_MASK requires "
+                    f"local_window_size == -1, got {local_window_size}"
+                )
+        elif mask_variant == MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK:
+            if local_window_size <= 0:
+                raise ValueError(
+                    "rel_logits with MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK "
+                    "requires a positive local_window_size, got "
+                    f"{local_window_size}"
+                )
+        else:
+            raise ValueError(
+                "rel_logits requires mask_variant to be CAUSAL_MASK or "
+                f"SLIDING_WINDOW_CAUSAL_MASK, got {mask_variant}"
+            )
+        _check_rank(3, rel_logits=rel_logits)
+        _check_same_dtype(input=input, rel_logits=rel_logits)
+        if rel_logits.shape[0] != input.shape[0]:
+            raise ValueError(
+                f"expected rel_logits to hold {input.shape[0]} rows, matching "
+                f"input's ragged-flat rows, but got {rel_logits.shape[0]}"
+            )
+        if rel_logits.shape[1] != input.shape[1]:
+            raise ValueError(
+                f"expected rel_logits to hold {input.shape[1]} heads, matching "
+                f"input's, but got {rel_logits.shape[1]}"
+            )
 
-    op_name = "mo.mha.ragged.paged"
-    if sink_weights is not None:
-        op_name = "mo.mha.ragged.paged.sink_weights"
+        parameters: dict[str, int | str | DType] = (
+            {"local_window_size": local_window_size}
+            if local_window_size != -1
+            else {}
+        )
+        op_name = "mo.mha.ragged.paged.rel_logits"
+    else:
+        parameters = _mha_parameters(
+            mask_variant, local_window_size=local_window_size
+        )
+        op_name = "mo.mha.ragged.paged"
+        if sink_weights is not None:
+            op_name = "mo.mha.ragged.paged.sink_weights"
+
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
@@ -3318,7 +3383,9 @@ def flash_attention_ragged(
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-    if sink_weights is not None:
+    if rel_logits is not None:
+        values.append(rel_logits)
+    elif sink_weights is not None:
         values.append(sink_weights)
     values.append(dispatch_metadata.tensor)
 
