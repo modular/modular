@@ -18,9 +18,11 @@ CDNA4 mfma.scale.f32.16x16x128.f8f6f4 instruction which natively
 consumes MXFP4 operands with E8M0 scale words: no dequantization needed.
 
 Structure mirrors AMDMatmul: TileTensor throughout, RegTileLoader for
-DRAM→regs, row-major SMEM (no blocked-product or swizzle: the FP4
-MFMA expects a simple row-major lane-to-data mapping unlike BF16/FP8),
-schedule-driven pipeline.
+DRAM→regs, row-major SMEM (no blocked-product layout: the FP4/FP8 MFMA
+expects a simple row-major lane-to-data mapping unlike BF16), schedule-
+driven pipeline. A conditional XOR swizzle (see `use_smem_swizzle`)
+removes LDS bank conflicts on the A/B fragment SMEM read/write when the
+tile config qualifies.
 
 MXFP4 data layout:
   A: [M, K//2] uint8 (two MXFP4 nibbles packed per byte), row-major
@@ -109,6 +111,58 @@ comptime SCHED_MASK_VMEM_READ = 2
 comptime SCHED_MASK_MFMA = 3
 
 
+# `_full_row_lds_swizzle`: XOR LDS swizzle on a row-major `[rows, BK_BYTES]`
+# uint8 A/B tile, applied to the full flat `row*BK_BYTES + col_byte` in-tile
+# offset (not a sub-tile-local offset) at both SMEM write and read; a
+# mismatch produces wrong logits. `use_smem_swizzle`'s gate admits exactly
+# two BK_BYTES values, 64 (MXFP4) and 128 (MXFP8), and both use bits=3:
+#
+#   * BK_BYTES == 64 (MXFP4): bit-for-bit the pattern this kernel shipped
+#     with before MXFP8 support existed (`distribute(...,
+#     swizzle=Swizzle(3, 0, 3))`, byte-space equivalent `Swizzle(3, 4, 3)`,
+#     applied over a per-MFMA sub-tile that happened to span the whole
+#     row). That formulation depends only on `lane_row` (0..15); since
+#     `row = i*MMA_M + lane_row` folds `i` into bits outside
+#     `Swizzle(3, 4, 3)`'s [4, 10) span, applying the same swizzle to the
+#     explicit flat offset reproduces it exactly for every `i`.
+#   * BK_BYTES == 128 (MXFP8): a new pattern. The old kernel disabled the
+#     swizzle here entirely (see `use_smem_swizzle` below). Validated on
+#     MI355 via rocprofv3: it eliminates the measured LDS bank conflicts
+#     on the A/B fragment reads.
+@always_inline
+def _full_row_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
+    """Builds the LDS swizzle for a row-major `[rows, BK_BYTES]` uint8 tile.
+
+    Parameters:
+        BK_BYTES: Width of the SMEM tile in bytes. Only 64 (MXFP4) and
+            128 (MXFP8) are derived/validated (see comment above); any
+            other value is a comptime error until re-derived.
+
+    Returns:
+        The `Swizzle` on the flat in-tile byte offset.
+    """
+    comptime assert BK_BYTES == 64 or BK_BYTES == 128, (
+        "_full_row_lds_swizzle is only derived and measured for BK_BYTES"
+        " in {64, 128} (the only values use_smem_swizzle's gate admits);"
+        " a relaxed gate must re-derive and re-measure `bits` here rather"
+        " than inherit this constant."
+    )
+    comptime bits = 3
+    return Swizzle(bits, 4, bits)
+
+
+@always_inline
+def _swizzled_smem_off[
+    BK_BYTES: Int, swizzle: Optional[Swizzle]
+](row: Int, col_byte: Int) -> Int:
+    """Flat `row*BK_BYTES + col_byte` in-tile byte offset, XOR-swizzled if enabled.
+    """
+    var off = row * BK_BYTES + col_byte
+    comptime if swizzle:
+        off = swizzle.value()(off)
+    return off
+
+
 # ===----------------------------------------------------------------------=== #
 # BlockScaledMmaOp — MFMA with inline scale application
 # ===----------------------------------------------------------------------=== #
@@ -185,25 +239,22 @@ struct BlockScaledMmaOp[
         == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
     )
 
-    # XOR swizzle removing the LDS bank conflict on the 64B-pitch A/B fragment
-    # SMEM read/write. `distribute` swizzles the element (16B) index, so base=0
-    # equals a byte-offset Swizzle(3, 4, 3). Gated to the 16x16x128/64B config.
-    # MXFP4 only: the XOR is on the flat in-tile index, which write and read
-    # only agree on when the 64-byte read sub-tile is the whole row
-    # (BK_BYTES == 64). At MXFP8 the row is twice as wide, so the XOR would
-    # land on unwritten SMEM.
-    # TODO(nwillis): re-enable at MXFP8 by swizzling the FULL-row byte offset
-    # and assembling halves from explicit offsets, as the preb kernel does.
-    # Until then MXFP8 pays LDS bank conflicts on the A/B fragment reads.
+    # Full A/B SMEM tile width in bytes (one full row): `num_k_tiles` K-tiles
+    # of `packed_k_per_mma` bytes each — 64B at MXFP4, 128B at MXFP8.
+    comptime BK_BYTES = Self.num_k_tiles * Self.packed_k_per_mma
+
+    # XOR swizzle removing LDS bank conflicts on the A/B fragment SMEM
+    # read/write, computed on the full flat offset (see
+    # `_full_row_lds_swizzle`). Gated to the 16x16x128/64B-`K_HALF_STRIDE`
+    # config this formula was derived and tested against.
     comptime use_smem_swizzle = (
         Self.num_k_tiles == 1
         and Self.K_HALF_STRIDE == 64
         and Self.FRAG_HALF_BYTES == 16
-        and Self.lane_bytes == 16
         and Self.MMA_M == 16
     )
     comptime smem_swizzle = Optional[Swizzle](
-        Swizzle(3, 0, 3)
+        _full_row_lds_swizzle[Self.BK_BYTES]()
     ) if Self.use_smem_swizzle else Optional[Swizzle]()
 
     # Scales: 4 E8M0 bytes per MFMA call (128 MXFP4 / 32 per scale = 4).
@@ -304,12 +355,13 @@ struct BlockScaledMmaOp[
             DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
         ],
     ):
-        """Load MXFP4 A/B fragments from row-major SMEM for k-tile k_tile_idx.
+        """Load MXFP4/MXFP8 A/B fragments from row-major SMEM for k-tile k_tile_idx.
 
-        Uses tile to extract the [MMA_M, packed_k_per_mma] sub-tile,
-        vectorize groups 64 bytes into 4 x 16-byte elements, and
-        distribute with col_major[MMA_M, 4] assigns each lane its
-        16-byte fragment matching the MFMA native lane mapping.
+        Computes each lane's flat `row*BK_BYTES + col_byte` in-tile byte
+        offset explicitly (XOR-swizzled when `use_smem_swizzle`) and reads
+        it directly, matching the write side's identical formula in
+        `copy_tiles_to_smem`. col_major[MMA_M, WARP_SIZE/MMA_M] gives each
+        lane's (row, k_vec) position, matching the MFMA native lane mapping.
 
         Parameters:
             k_tile_idx: K-tile index within the current BK iteration.
@@ -324,40 +376,44 @@ struct BlockScaledMmaOp[
         # own 64-byte k-window (`K_HALF_STRIDE` apart). At MXFP4 that is a
         # single half, so this is bit-identical to the pre-MXFP8 path.
         comptime half_w = Self.FRAG_HALF_BYTES
-        comptime half_k_bytes = Self.K_HALF_STRIDE
 
         # groups of 16 threads are responsible for 16 rows, i.e threads 0, 16, 32, 48 handle row 0 ...
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
+        var lane_crd = lane_layout.idx2crd(Int(lane_id()))
+        var lane_row = Int(lane_crd[0])
+        var lane_k_vec = Int(lane_crd[1])
 
+        var b_reg_v = self._b_reg.vectorize[1, half_w]()
         # B fragments first (for ds_read scheduling).
         comptime for i in range(Self.num_n_mmas):
             var b_idx = k_tile_idx * Self.num_n_mmas + i
+            var row = i * Self.MMA_N + lane_row
             comptime for h in range(Self.num_frag_halves):
-                var b_frag = (
-                    b_smem_warp.tile[Self.MMA_N, half_k_bytes](
-                        i, k_tile_idx * Self.num_frag_halves + h
-                    )
-                    .vectorize[1, half_w]()
-                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
-                        lane_id()
-                    )
+                var col_byte = (
+                    k_tile_idx * Self.packed_k_per_mma
+                    + h * Self.K_HALF_STRIDE
+                    + lane_k_vec * half_w
                 )
-                self._b_reg.vectorize[1, half_w]()[b_idx, h] = b_frag[0, 0]
+                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
+                    row, col_byte
+                )
+                b_reg_v[b_idx, h] = b_smem_warp.raw_load[width=half_w](off)
 
+        var a_reg_v = self._a_reg.vectorize[1, half_w]()
         # A fragments.
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
+            var row = i * Self.MMA_M + lane_row
             comptime for h in range(Self.num_frag_halves):
-                var a_frag = (
-                    a_smem_warp.tile[Self.MMA_M, half_k_bytes](
-                        i, k_tile_idx * Self.num_frag_halves + h
-                    )
-                    .vectorize[1, half_w]()
-                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
-                        lane_id()
-                    )
+                var col_byte = (
+                    k_tile_idx * Self.packed_k_per_mma
+                    + h * Self.K_HALF_STRIDE
+                    + lane_k_vec * half_w
                 )
-                self._a_reg.vectorize[1, half_w]()[a_idx, h] = a_frag[0, 0]
+                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
+                    row, col_byte
+                )
+                a_reg_v[a_idx, h] = a_smem_warp.raw_load[width=half_w](off)
 
     @always_inline
     def load_a_frag_from_smem[
@@ -379,21 +435,24 @@ struct BlockScaledMmaOp[
                 `[WM, BK_BYTES]` uint8.
         """
         comptime half_w = Self.FRAG_HALF_BYTES
-        comptime half_k_bytes = Self.K_HALF_STRIDE
         comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
+        var lane_crd = lane_layout.idx2crd(Int(lane_id()))
+        var lane_row = Int(lane_crd[0])
+        var lane_k_vec = Int(lane_crd[1])
+        var a_reg_v = self._a_reg.vectorize[1, half_w]()
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
+            var row = i * Self.MMA_M + lane_row
             comptime for h in range(Self.num_frag_halves):
-                var a_frag = (
-                    a_smem_warp.tile[Self.MMA_M, half_k_bytes](
-                        i, k_tile_idx * Self.num_frag_halves + h
-                    )
-                    .vectorize[1, half_w]()
-                    .distribute[lane_layout, swizzle=Self.smem_swizzle](
-                        lane_id()
-                    )
+                var col_byte = (
+                    k_tile_idx * Self.packed_k_per_mma
+                    + h * Self.K_HALF_STRIDE
+                    + lane_k_vec * half_w
                 )
-                self._a_reg.vectorize[1, half_w]()[a_idx, h] = a_frag[0, 0]
+                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
+                    row, col_byte
+                )
+                a_reg_v[a_idx, h] = a_smem_warp.raw_load[width=half_w](off)
 
     @always_inline
     def load_b_frag_preshuffled[
@@ -607,7 +666,9 @@ struct MXFP4MatmulAMD[
 
     Uses cdna4_block_scaled_mfma with FLOAT4_E2M1 format directly.
     Single-buffer pipeline with schedule-driven prologue/kernel/epilogue.
-    SMEM is plain row-major (no blocked-product, no swizzle).
+    SMEM is plain row-major (no blocked-product), with a conditional XOR
+    swizzle (`BlockScaledMmaOp.use_smem_swizzle`) removing LDS bank
+    conflicts on the A/B fragment read/write when the tile config qualifies.
 
     Parameters:
         BM: Block tile rows (output M per block). Default 128.
@@ -767,7 +828,8 @@ struct MXFP4MatmulAMD[
         var a_gmem = TileTensor(a.ptr.bitcast[Scalar[DType.uint8]](), a.layout)
         var b_gmem = TileTensor(b.ptr.bitcast[Scalar[DType.uint8]](), b.layout)
 
-        # === SMEM tiles (row-major, no swizzle) ===
+        # === SMEM tiles (row-major allocation; access is conditionally
+        # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
         var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
             row_major[Self.BM, BK_BYTES]()
         )
@@ -894,20 +956,34 @@ struct MXFP4MatmulAMD[
         @always_inline
         @parameter
         def copy_tiles_to_smem():
-            """Copy register buffers to SMEM in row-major order."""
-            var a_smem_dist = a_smem.vectorize[1, simd_width]().distribute[
-                load_layout, swizzle=type_of(mma_op).smem_swizzle
-            ](thread_idx.x)
-            var b_smem_dist = b_smem.vectorize[1, simd_width]().distribute[
-                load_layout, swizzle=type_of(mma_op).smem_swizzle
-            ](thread_idx.x)
+            """Copy register buffers to SMEM in row-major order.
+
+            Computes each thread's flat `row*BK_BYTES + col_byte` in-tile
+            byte offset explicitly (XOR-swizzled when `use_smem_swizzle`),
+            matching `load_frag_from_smem`'s identical formula on the read
+            side byte-for-byte — see `_swizzled_smem_off`.
+            """
+            comptime MmaOpT = type_of(mma_op)
+            var tid = Int(thread_idx.x)
+            var base_row = tid // load_thread_cols
+            var col_byte = (tid % load_thread_cols) * simd_width
             comptime for v in range(a_loads_per_tile):
-                a_smem_dist[v, 0] = a_load_reg.raw_load[width=simd_width](
-                    v * simd_width
+                var row = base_row + v * load_thread_rows
+                var off = _swizzled_smem_off[BK_BYTES, MmaOpT.smem_swizzle](
+                    row, col_byte
+                )
+                a_smem.raw_store[width=simd_width](
+                    off,
+                    a_load_reg.raw_load[width=simd_width](v * simd_width),
                 )
             comptime for v in range(b_loads_per_tile):
-                b_smem_dist[v, 0] = b_load_reg.raw_load[width=simd_width](
-                    v * simd_width
+                var row = base_row + v * load_thread_rows
+                var off = _swizzled_smem_off[BK_BYTES, MmaOpT.smem_swizzle](
+                    row, col_byte
+                )
+                b_smem.raw_store[width=simd_width](
+                    off,
+                    b_load_reg.raw_load[width=simd_width](v * simd_width),
                 )
 
         @always_inline
