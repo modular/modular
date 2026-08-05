@@ -864,6 +864,10 @@ This version is still a work in progress.
   accepting any iterable of keys. Both forms require the key and
   value types to be `Deinitable`.
 
+- `Counter` can now be constructed from any iterable of values, not just a
+  `List`, e.g. `Counter(["a", "a", "b"])` or `Counter(String("aaab").bytes())`.
+  This replaces the previous `Counter(items: List[V])` constructor.
+
 - By-reference `Dict` iteration (`for entry in dict`, `keys()`, `values()`,
   `items()`, and `reversed()`) no longer requires the key and value types to be
   `Deinitable`. These iterators only borrow references and never
