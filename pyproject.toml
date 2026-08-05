@@ -23,7 +23,6 @@ force-exclude = '''
     | max/python/max/serve/schemas
     | utils/packaging/tests
     | Faux/mojo_llm_from_scratch
-    | utils/kb/sol-execbench
   )/
 )
 '''
@@ -52,10 +51,6 @@ extend-exclude = [
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
   "KGEN/tools/mblack/tests",
   "Faux/mojo_llm_from_scratch/**", # Experimental from-scratch LLM project
-  # SOL-ExecBench candidate reproduction packages: frozen byte-faithful
-  # snapshots of tuned candidates (solution + custom ops + gate + verbatim
-  # oracle), committed as records and never reformatted.
-  "utils/kb/sol-execbench",
 ]
 
 [tool.ruff.lint]
