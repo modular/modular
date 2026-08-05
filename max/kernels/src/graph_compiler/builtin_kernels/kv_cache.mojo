@@ -38,6 +38,7 @@ from layout import (
     UNKNOWN_VALUE,
     row_major,
 )
+from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
@@ -84,10 +85,10 @@ struct Struct_kv_cache_store_paged:
     @always_inline
     @staticmethod
     def execute[
-        dtype: DType, target: StaticString, key_or_value: Int
+        dtype: DType, kv_type: DType, target: StaticString, key_or_value: Int
     ](
         inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
         cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
@@ -115,11 +116,14 @@ struct Struct_kv_cache_store_paged:
         @always_inline
         def input_fn[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
-            return inputs._lambda_load[
-                width=width, element_alignment=alignment
-            ](
-                idx,
+        ](idx: IndexList[3]) capturing -> SIMD[kv_type, width]:
+            # The value dtype is the producer compute dtype (bf16), which need
+            # not match the cache: an FP8 cache saturates on the store rather
+            # than emitting NaN for out-of-range values.
+            return cast_saturating[kv_type](
+                inputs._lambda_load[width=width, element_alignment=alignment](
+                    idx,
+                )
             )
 
         kv_cache_store_ragged[input_fn=input_fn, target=target](
