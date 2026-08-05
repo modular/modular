@@ -104,7 +104,6 @@ HF_MODELS: dict[str, set[str]] = {
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "4xMI355"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
     "openai/gpt-oss-20b": XL | {"2xMI355"},
-    "stepfun-ai/Step-3.5-Flash": NON_XL | {"4xMI355"},
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
