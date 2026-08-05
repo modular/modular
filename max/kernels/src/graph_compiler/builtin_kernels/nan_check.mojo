@@ -158,6 +158,10 @@ def nan_check_count[
             out_nan_ptr, out_inf_ptr, grid_dim=1, block_dim=1
         )
 
+        # `ceildiv(0, BLOCK) == 0`, and a zero-sized grid launch is rejected.
+        if total == 0:
+            return
+
         comptime BLOCK = 256
         var grid = ceildiv(total, BLOCK)
 
