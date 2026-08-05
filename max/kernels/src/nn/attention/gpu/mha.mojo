@@ -171,7 +171,7 @@ from nn.softmax import (
     _online_softmax_iter_for_mma_output,
     _online_softmax_iter_for_mma_output_split_warp_reduce,
     _softmax_gpu,
-    softmax,
+    softmax_inline,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -7261,7 +7261,9 @@ def _naive_attention[
     )
 
     # `as_unsafe_any_origin()` is used to avoid exclusivity violations
-    softmax[dtype, simd_size, 4](score, score.as_unsafe_any_origin(), axis=3)
+    softmax_inline[dtype, simd_size, 4](
+        score, score.as_unsafe_any_origin(), axis=3
+    )
 
     var output_tt = TileTensor(
         output.ptr,

@@ -17,7 +17,7 @@ from std.builtin.device_passable import DevicePassable
 from std.math.uutils import umod, ufloordiv, udivmod
 from std.collections import Optional, OptionalReg
 
-from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
+from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of, size_of
 from std.sys._assembly import inlined_assembly
 
 import std.gpu.primitives.warp as warp
@@ -72,9 +72,13 @@ from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils import IndexList, StaticTuple
-from std.utils.coord import Coord
+from std.utils.coord import ComptimeInt, Coord, CoordLike
 from std.utils.index import product
 from std.utils.numerics import get_accum_type, min_or_neg_inf
+
+# Free-form row-wise scaffolder (Row) + monoids.
+from algorithm import rowwise
+from algorithm.reduce_op import ReduceMax, ReduceSum
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -630,7 +634,7 @@ def softmax_3_pass[
 # ===-----------------------------------------------------------------------===#
 
 
-def logsoftmax[
+def logsoftmax_inline[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -647,8 +651,8 @@ def logsoftmax[
 ) raises:
     """Computes log-softmax over the given axis using a caller-supplied input lambda.
 
-    Delegates to `softmax` with `logsoftmax=True`, which applies an elementwise
-    `log` to the normalized outputs.
+    Delegates to `softmax_inline` with `logsoftmax=True`, which applies an
+    elementwise `log` to the normalized outputs.
 
     Parameters:
         dtype: The dtype of the input and output buffers.
@@ -664,7 +668,7 @@ def logsoftmax[
         axis: The axis along which to compute the log-softmax.
         context: Optional device context for GPU execution.
     """
-    softmax[
+    softmax_inline[
         dtype,
         simd_width,
         rank,
@@ -675,7 +679,7 @@ def logsoftmax[
     ](shape, output, axis, context)
 
 
-def logsoftmax[
+def logsoftmax_inline[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -688,7 +692,7 @@ def logsoftmax[
 ) raises:
     """Computes log-softmax over the given axis of `input` and stores the result in `output`.
 
-    Wraps `input` with a load lambda and delegates to `softmax` with
+    Wraps `input` with a load lambda and delegates to `softmax_inline` with
     `logsoftmax=True`.
 
     Parameters:
@@ -709,7 +713,7 @@ def logsoftmax[
     def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
         return input.load[width=_simd_width, alignment=1](coords)
 
-    softmax[dtype, simd_width, rank, input_fn, target, logsoftmax=True](
+    softmax_inline[dtype, simd_width, rank, input_fn, target, logsoftmax=True](
         input.layout.shape_coord(),
         output,
         axis,
@@ -788,7 +792,7 @@ def _softmax_cpu[
 
 
 # Softmax (no input lambda)
-def softmax[
+def softmax_inline[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -799,8 +803,8 @@ def softmax[
 ) raises:
     """Computes softmax over the given axis of `input` and stores the result in `output`.
 
-    Wraps `input` with a load lambda and delegates to the main `softmax` entry
-    point.
+    Wraps `input` with a load lambda and delegates to the main `softmax_inline`
+    entry point.
 
     Parameters:
         dtype: The dtype of the input and output buffers.
@@ -818,7 +822,7 @@ def softmax[
     def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
         return input.load[width=_simd_width, alignment=1](coords)
 
-    softmax[dtype, simd_width, rank, input_fn](
+    softmax_inline[dtype, simd_width, rank, input_fn](
         input.layout.shape_coord(),
         output,
         axis,
@@ -1303,7 +1307,7 @@ def _softmax_gpu[
         )
 
 
-def softmax[
+def softmax_inline[
     dtype: DType,
     simd_width: Int,
     rank: Int,
@@ -2915,3 +2919,147 @@ def _online_softmax_correction[
             rowmax_tensor[col_tile] - sfr
         )
         rowmax_tensor[col_tile] = sfr
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based softmax (free-form body layer).
+#
+# Three phases over a Row: ReduceMax, ReduceSum-of-exp (reads the max via a
+# captured scalar), then a per-element `map`. On the cache-eligible tier the row
+# is materialized once and replayed from registers across both reductions + the
+# map (one load per element); otherwise it streams. A sink term — which the
+# declarative pipeline could not carry — would fold into `l` as one extra line.
+# ===----------------------------------------------------------------------=== #
+
+
+def softmax[
+    dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, coord_rank: Int
+        ](IndexList[coord_rank]) -> SIMD[dtype, width]
+    ),
+    AxisSizeT: CoordLike,
+    /,
+    target: StaticString,
+    logsoftmax: Bool = False,
+    reduce_dim: Int = rank - 1,
+](
+    input_fn: InputFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    output: TileTensor[mut=True, dtype, ...],
+    axis: Int,
+    context: Optional[DeviceContext] = None,
+) raises:
+    # softmax's two dependent reduces (row max, then sum of `exp(x - max)`)
+    # plus its final normalizing write are passed to the scaffolder as
+    # `num_phases=3`, which lets it split each row across many blocks on the
+    # GPU when a few rows leave the device under-occupied (e.g. Kimi
+    # 8x163840); CPU ignores it. No real caller has ever needed a different
+    # value, so it's hardcoded at the `launch` call below rather than
+    # exposed here.
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "softmax requires fp accum"
+    comptime simd_width = rowwise.pick_simd_width[
+        ReduceSum[accum, 1], target, 64, dtype, accum
+    ]()
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size, var output, var input_fn
+    }:
+        comptime row_rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            return input_fn[width, alignment, row_rank](
+                rebind[IndexList[row_rank]](idx)
+            )
+
+        var row = rowwise.Row[
+            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        # Reduce (phase 1): row max.
+        @always_inline
+        def vmax[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {} -> SIMD[
+            accum, width
+        ]:
+            return tile.cast[accum]()
+
+        # Row stats held W-wide (one value broadcast to every lane, or one
+        # per output column, depending on how the launch maps threads to
+        # outputs); read via `.slice[width]` uniformly either way.
+        var row_max = row.reduce[ReduceMax[accum, params.simd_width]](
+            vmax, load
+        ).acc
+
+        # Reduce (phase 2): sum of exp(tile - row_max).
+        @always_inline
+        def vexp[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {
+            var row_max
+        } -> SIMD[accum, width]:
+            return exp(tile.cast[accum]() - row_max.slice[width]())
+
+        var denom = row.reduce[ReduceSum[accum, params.simd_width]](
+            vexp, load
+        ).acc
+        var recip = SIMD[accum, params.simd_width](1) / denom
+        var log_denom = log(denom)
+
+        # Emit: per-element normalize + store.
+        @always_inline
+        def write[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {
+            var row_max,
+            var recip,
+            var log_denom,
+            var output,
+            var ctx_p,
+        }:
+            comptime alignment = ctx_p.alignment[dtype, width]()
+            var tile_accum = tile.cast[accum]()
+
+            comptime if logsoftmax:
+                var shifted = (
+                    tile_accum
+                    - row_max.slice[width]()
+                    - log_denom.slice[width]()
+                )
+                var result = shifted.cast[dtype]()
+                output.store_linear[width=width, alignment=alignment](
+                    rebind[IndexList[rank]](idx), result
+                )
+            else:
+                var numerator = exp(tile_accum - row_max.slice[width]())
+                var result = (numerator * recip.slice[width]()).cast[dtype]()
+                output.store_linear[width=width, alignment=alignment](
+                    rebind[IndexList[rank]](idx), result
+                )
+
+        # `row_max`/`recip`/`log_denom`/`output` ride `write`'s capture list
+        # into `elementwise`.
+        row.elementwise(write, load)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        computationally_expensive=True,
+        num_phases=3,
+        dtype_size=size_of[dtype](),
+    ](body, shape, context)

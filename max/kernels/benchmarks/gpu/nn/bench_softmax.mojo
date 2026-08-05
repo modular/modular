@@ -24,7 +24,7 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, row_major
-from nn.softmax import softmax, softmax_with_temperature
+from nn.softmax import softmax_inline, softmax_with_temperature
 
 from std.utils.index import IndexList
 
@@ -48,7 +48,7 @@ def bench_softmax_gpu[
 
     ctx.enqueue_copy(data_d, data_h)
 
-    # The no-lambda `softmax` overload defaults to target="cpu".
+    # The no-lambda `softmax_inline` overload defaults to target="cpu".
     @parameter
     @__copy_capture(data_buf)
     def input_fn[_simd_width: Int](coords: Coord) -> SIMD[dtype, _simd_width]:
@@ -61,7 +61,7 @@ def bench_softmax_gpu[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            softmax[
+            softmax_inline[
                 dtype,
                 simd_width_of[dtype, target=get_gpu_target()](),
                 rank,

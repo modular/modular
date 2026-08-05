@@ -21,6 +21,7 @@ mojo_library(
         "//max:_cudnn",
         "//max:_cufft",
         "//max:_miopen",
+        "//max:algorithm",
         "//max:comm",
         "//max:extensibility",
         "//max:kv_cache",

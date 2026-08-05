@@ -44,7 +44,7 @@ from linalg.matmul import matmul
 from linalg.utils import elementwise_compute_lambda_type
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
-from nn.softmax import softmax
+from nn.softmax import softmax_inline
 
 
 from std.utils.index import Index, IndexList
@@ -451,7 +451,7 @@ def bench_manual[
         ](coords: Coord) -> SIMD[qkv_type, _simd_width]:
             return score_3d.load[width=_simd_width, alignment=1](coords)
 
-        softmax[qkv_type, 1, 3, input_fn, target="gpu"](
+        softmax_inline[qkv_type, 1, 3, input_fn, target="gpu"](
             Coord(total_heads, seq_len, num_keys),
             score_3d,
             2,

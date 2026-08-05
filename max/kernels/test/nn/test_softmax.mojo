@@ -19,7 +19,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.softmax import logsoftmax, softmax_2_pass
+from nn.softmax import logsoftmax_inline, softmax_2_pass
 
 
 from std.utils import IndexList
@@ -38,7 +38,7 @@ def test_logsoftmax() raises:
             var out_stack = Array[Scalar[type], shape[0]](uninitialized=True)
             arange(in_tt)
             var out_tt = TileTensor(out_stack, row_major[shape[0]]()).fill(0)
-            logsoftmax[type, simd_width, rank](in_tt, out_tt, rank - 1)
+            logsoftmax_inline[type, simd_width, rank](in_tt, out_tt, rank - 1)
             for i in range(out_tt.num_elements()):
                 print(out_tt[i])
         else:
@@ -53,7 +53,9 @@ def test_logsoftmax() raises:
                 var out_tt = TileTensor(
                     out_stack, row_major[shape[0], shape[1]]()
                 ).fill(0)
-                logsoftmax[type, simd_width, rank](in_tt, out_tt, rank - 1)
+                logsoftmax_inline[type, simd_width, rank](
+                    in_tt, out_tt, rank - 1
+                )
                 # Print as flat 1D
                 var out_flat = TileTensor(out_tt._storage, row_major[sz]())
                 for i in range(out_flat.num_elements()):

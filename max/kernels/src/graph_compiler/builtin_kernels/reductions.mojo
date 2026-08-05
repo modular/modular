@@ -18,7 +18,6 @@
 
 """Registers reduction graph ops (sum, mean, argmax, and related) over tensor axes."""
 
-from std.sys.info import simd_width_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -51,7 +50,7 @@ from nn.normalization import (
     row_mean_of_squares,
     row_mean_of_squares_qk,
 )
-from nn.softmax import logsoftmax, softmax
+from nn.softmax import softmax
 from nn.topk import top_k, top_k_shape_impl
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
@@ -70,7 +69,7 @@ comptime logger = Logger()
 """Logger for the reductions module."""
 
 from std.utils import IndexList
-from std.utils.coord import Coord
+from std.utils.coord import ComptimeInt, Coord
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -1896,29 +1895,40 @@ struct Softmax:
             Error: If the operation parameters are invalid.
         """
 
-        # For adapting input fusion lambda required by call
-        @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            output.dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords)
+            )
 
-        comptime simd_width = simd_width_of[
-            output.dtype, target=get_gpu_target()
-        ]() if is_gpu[target]() else simd_width_of[output.dtype]()
+        # Pass the static reduced-axis width when known so the Row
+        # register-caches the input strip (`_fuse`), avoiding a second global
+        # read of the input in the map phase; a dynamic width falls back to
+        # streaming.
+        comptime sm_cols = Int(input.static_spec.shape_tuple[axis])
 
-        softmax[
-            output.dtype,
-            simd_width,
-            output.rank,
-            input_fn,
-            target,
-            has_prologue_fusion=has_prologue_fusion,
-        ](
-            Coord(output.shape()),
-            output.to_tile_tensor[DType.int64](),
-            axis,
-            context=ctx,
-        )
+        comptime if sm_cols != UNKNOWN_VALUE:
+            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+                input_fn,
+                Coord(output.shape()),
+                ComptimeInt[sm_cols](),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
+        else:
+            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+                input_fn,
+                Coord(output.shape()),
+                Scalar[DType.int](Int(input.shape()[axis])),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
 
 
 @extensibility.register("mo.reduce.logsoftmax")
@@ -1951,25 +1961,52 @@ struct LogSoftmax:
             Error: If the operation parameters are invalid.
         """
 
-        # For adapting input fusion lambda required by call
-        @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            output.dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords)
+            )
 
-        logsoftmax[
-            output.dtype,
-            simd_width_of[output.dtype](),
-            output.rank,
-            input_fn,
-            target,
-            has_prologue_fusion=has_prologue_fusion,
-        ](
-            Coord(output.shape()),
-            output.to_tile_tensor[DType.int64](),
-            axis,
-            context=ctx,
-        )
+        # Pass the static reduced-axis width when known so the Row
+        # register-caches the input strip (`_fuse`), avoiding a second global
+        # read of the input in the map phase; a dynamic width falls back to
+        # streaming.
+        comptime lsm_cols = Int(input.static_spec.shape_tuple[axis])
+
+        comptime if lsm_cols != UNKNOWN_VALUE:
+            softmax[
+                output.dtype,
+                output.rank,
+                target=target,
+                logsoftmax=True,
+                reduce_dim=axis,
+            ](
+                input_fn,
+                Coord(output.shape()),
+                ComptimeInt[lsm_cols](),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
+        else:
+            softmax[
+                output.dtype,
+                output.rank,
+                target=target,
+                logsoftmax=True,
+                reduce_dim=axis,
+            ](
+                input_fn,
+                Coord(output.shape()),
+                Scalar[DType.int](Int(input.shape()[axis])),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
 
 
 @extensibility.register("mo.cumsum")

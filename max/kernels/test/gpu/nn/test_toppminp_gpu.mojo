@@ -25,7 +25,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.softmax import softmax
+from nn.softmax import softmax_inline
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from std.testing import assert_almost_equal, assert_equal
 
@@ -330,7 +330,7 @@ def test_case_sampling[
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
 
-    softmax[simd_width=1, rank=rank](
+    softmax_inline[simd_width=1, rank=rank](
         in_logits_cpu_test,
         probs_cpu_test,
         axis=1,
