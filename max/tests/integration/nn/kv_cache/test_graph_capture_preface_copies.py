@@ -15,25 +15,29 @@
 
 Two layers, no GPU required:
 
-- Real CPU ``Buffer`` objects: verify ``Buffer.batch_inplace_copy_from``
-  produces the same values as a per-buffer ``inplace_copy_from`` loop and that
-  identity pairs (``dst is src``) are no-ops.
+- Real CPU ``Buffer`` objects: verify ``batch_inplace_copy`` produces the same
+  values as a per-buffer ``inplace_copy_from`` loop and that identity pairs
+  (``dst is src``) are no-ops.
 - Fake-device simulation: exercise ``ServeGraphCaptureRunner.replay``'s routing
   without a GPU -- host destinations copy inline, accelerator destinations go
-  through the batched call, multi-device grouping preserves output parity, and
-  the identity-stable short-circuit still holds.
-  Mixed-device rejection is covered by the multi-GPU driver tests.
+  through the batched call, destinations spanning devices preserve output
+  parity, and the identity-stable short-circuit still holds.
+  Per-device submit grouping is the driver's job and is covered by the
+  multi-GPU driver tests.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
 import numpy as np
-from max.driver import Buffer
+import pytest
+from max.driver import Buffer, batch_inplace_copy
 from max.nn.kv_cache import BatchCharacteristics, MLAAttnKey
+from max.pipelines.lib import graph_capture
 from max.pipelines.lib.graph_capture import GraphEntry, ServeGraphCaptureRunner
 
 # ---------------------------------------------------------------------------
@@ -66,10 +70,7 @@ class _FakeDevice:
 
 
 class _FakeBuffer:
-    """Minimal buffer fake with inplace_copy_from and batch_inplace_copy_from.
-
-    Tracks a ``value`` so callers can assert copy results without a GPU.
-    """
+    """Minimal buffer fake tracking a ``value`` so copies assert without a GPU."""
 
     def __init__(self, device: _FakeDevice, *, value: object = None) -> None:
         self.device = device
@@ -78,15 +79,28 @@ class _FakeBuffer:
     def inplace_copy_from(self, src: _FakeBuffer) -> None:
         self.value = src.value
 
-    def batch_inplace_copy_from(
-        self,
-        dsts: list[_FakeBuffer],
-        srcs: list[_FakeBuffer],
-    ) -> None:
-        """Mirrors the real Buffer wrapper: skip identity pairs, copy the rest."""
-        for dst, src in zip(dsts, srcs, strict=True):
-            if dst is not src:
-                dst.inplace_copy_from(src)
+
+def _fake_batch_inplace_copy(
+    dsts: Sequence[_FakeBuffer], srcs: Sequence[_FakeBuffer]
+) -> None:
+    """Mirrors the real driver call: skip identity pairs, copy the rest."""
+    for dst, src in zip(dsts, srcs, strict=True):
+        if dst is not src:
+            dst.inplace_copy_from(src)
+
+
+@pytest.fixture
+def fake_batch_copy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Routes ``replay``'s batched copies at the fake buffers.
+
+    ``batch_inplace_copy`` is a module-level driver call rather than a Buffer
+    method, so the fakes are installed by patching the name ``graph_capture``
+    resolves. The real-Buffer tests below hold their own reference and are
+    unaffected.
+    """
+    monkeypatch.setattr(
+        graph_capture, "batch_inplace_copy", _fake_batch_inplace_copy
+    )
 
 
 def _make_replay_runner() -> ServeGraphCaptureRunner:
@@ -138,8 +152,8 @@ def _install_scenario(
 # -- Real CPU Buffer tests -------------------------------------------------
 
 
-def test_batch_inplace_copy_from_cpu_parity() -> None:
-    """batch_inplace_copy_from on CPU buffers matches a per-copy loop.
+def test_batch_inplace_copy_cpu_parity() -> None:
+    """batch_inplace_copy on CPU buffers matches a per-copy loop.
 
     Five source buffers each filled with a distinct scalar; batch-copies all
     into zero-initialised destinations and checks every pair bit-exactly.
@@ -152,8 +166,7 @@ def test_batch_inplace_copy_from_cpu_parity() -> None:
     dsts = [
         Buffer.from_numpy(np.zeros((4,), dtype=np.float32)) for _ in range(n)
     ]
-    # Use the first dst as context owner (all share the same CPU device).
-    dsts[0].batch_inplace_copy_from(dsts, srcs)
+    batch_inplace_copy(dsts, srcs)
 
     for i, (dst, src) in enumerate(zip(dsts, srcs, strict=True)):
         np.testing.assert_array_equal(
@@ -163,7 +176,7 @@ def test_batch_inplace_copy_from_cpu_parity() -> None:
         )
 
 
-def test_batch_inplace_copy_from_skips_identity() -> None:
+def test_batch_inplace_copy_skips_identity() -> None:
     """Identity pairs (src is dst) are no-ops; adjacent pairs still copy.
 
     Passes one self-referential pair plus one real copy in a single batch call.
@@ -173,7 +186,7 @@ def test_batch_inplace_copy_from_skips_identity() -> None:
     other_src = Buffer.from_numpy(np.array([99.0], dtype=np.float32))
     other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.float32))
 
-    stable.batch_inplace_copy_from([stable, other_dst], [stable, other_src])
+    batch_inplace_copy([stable, other_dst], [stable, other_src])
 
     np.testing.assert_array_equal(stable.to_numpy(), [42.0])
     np.testing.assert_array_equal(other_dst.to_numpy(), [99.0])
@@ -182,12 +195,14 @@ def test_batch_inplace_copy_from_skips_identity() -> None:
 # -- Routing tests via fake buffers (no GPU required) ---------------------
 
 
-def test_batched_preface_multi_device_output_parity() -> None:
+def test_batched_preface_multi_device_output_parity(
+    fake_batch_copy: None,
+) -> None:
     """Batched preface delivers each destination its paired source value.
 
-    Three device IDs interleaved; replay() must group by device and issue one
-    batch_inplace_copy_from call per device. Every destination must end up with
-    its paired source's value.
+    Three device IDs interleaved; replay() hands them all to one
+    batch_inplace_copy and the driver groups by destination device. Every
+    destination must end up with its paired source's value.
     """
     runner = _make_replay_runner()
     bc, model_inputs, dst_buffers = _install_scenario(
@@ -200,7 +215,9 @@ def test_batched_preface_multi_device_output_parity() -> None:
     assert [buf.value for buf in dst_buffers] == expected
 
 
-def test_batched_preface_host_destinations_copy_inline() -> None:
+def test_batched_preface_host_destinations_copy_inline(
+    fake_batch_copy: None,
+) -> None:
     """Host-resident destinations copy inline via inplace_copy_from.
 
     Device ID 9 is modelled as host-resident; its copies must go through the
@@ -218,8 +235,8 @@ def test_batched_preface_host_destinations_copy_inline() -> None:
     assert [buf.value for buf in dst_buffers] == expected
 
 
-def test_batched_preface_single_device() -> None:
-    """Single-accelerator model: all pairs go through one batch_inplace_copy_from."""
+def test_batched_preface_single_device(fake_batch_copy: None) -> None:
+    """Single-accelerator model: all pairs go through one batch_inplace_copy."""
     runner = _make_replay_runner()
     bc, model_inputs, dst_buffers = _install_scenario(runner, [0, 0, 0])
     expected = [src.value for src in model_inputs.buffers]
@@ -229,7 +246,7 @@ def test_batched_preface_single_device() -> None:
     assert [buf.value for buf in dst_buffers] == expected
 
 
-def test_batched_preface_identity_short_circuit() -> None:
+def test_batched_preface_identity_short_circuit(fake_batch_copy: None) -> None:
     """replay() identity pairs are no-ops; adjacent non-identity pairs copy.
 
     One slot where src IS dst (identity-stable device metadata, short-circuits)

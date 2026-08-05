@@ -34,6 +34,7 @@ from .buffer import (
     DevicePinnedBuffer,
     _unsafe_alloc_fast_pinned_buffer,
     _unsafe_free_fast_pinned_buffer,
+    batch_inplace_copy,
     copy_pinned_to_destinations,
     load_max_buffer,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "accelerator_api",
     "accelerator_architecture_name",
     "accelerator_count",
+    "batch_inplace_copy",
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
     "copy_pinned_to_destinations",
