@@ -794,14 +794,28 @@ def pjoin[
         if ctx._is_last_block:
             # Cross-block join: the first `blocks_per_row` threads each
             # load one partial, the rest pad with the monoid identity,
-            # then `BlockReducer.generic` reduces across the block.
+            # then one block-wide combine folds them.
+            #
+            # Goes through `join_parallel`, not `BlockReducer.generic`
+            # directly: `generic` is only the *default* implementation of
+            # the cross-thread step, and a monoid that overrides it does
+            # so because a field-wise `join` alone does not finish the
+            # combine. `ArgMax`/`ArgMin` are the case in point -- their
+            # override publishes the winning index into `acc_indices[0]`,
+            # which is the field the body's emit reads, after resetting
+            # the SIMD acc that `join` compares. Calling `generic` here
+            # skipped that publish and left every partial's acc tied at
+            # the identity, so the lowest per-block index won the
+            # tie-break instead of the row's argmax. The split-K tier
+            # runs at `simd_width == 1`, so `State` is already its own
+            # `Single` and `join_parallel`'s post-`reduce` contract holds.
             var local = State()
             if Int(tid_) < blocks_per_row_:
                 var slot_ptr = (
                     row_base_bytes + Int(tid_) * _SPLITK_STATE_BYTES
                 ).bitcast[State]()
                 local = slot_ptr[0]
-            BlockReducer[ctx.BLOCK_SIZE]().generic(local)
+            local.join_parallel(BlockReducer[ctx.BLOCK_SIZE]())
             state = local
     else:
         # Block tier: collapse to width-1, block-join the small scalar (register
