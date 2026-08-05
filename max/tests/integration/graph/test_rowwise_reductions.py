@@ -299,6 +299,7 @@ _INNER_BOTH = [
     "reduce_product",
     "softmax",
     "layer_norm",
+    "rms_norm",
     "row_mean_of_squares",
 ]
 _INNER_BF16_ONLY = [

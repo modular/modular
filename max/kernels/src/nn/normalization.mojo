@@ -63,11 +63,17 @@ from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
+from std.utils.coord import ComptimeInt, CoordLike
 from std.utils.index import Index, IndexList
+from algorithm.rowwise import strided_load
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
 from max.gpu.primitives.grid_controls import PDLLevel
+
+# Free-form row-wise scaffolder (Row) + monoids.
+from algorithm import rowwise
+from algorithm.reduce_op import ReduceSum, Welford
 from .reshape import reshape
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
@@ -3591,66 +3597,6 @@ def rms_norm_rope_gpu[
         )
 
 
-@always_inline
-def rms_norm[
-    dtype: DType,
-    rank: Int,
-    input_0_fn: def[width: Int, alignment: Int](Coord) capturing -> SIMD[
-        dtype, width
-    ],
-    output_0_fn: def[width: SIMDLength, rank: Int, alignment: Int](
-        idx: IndexList[rank], val: SIMD[dtype, width]
-    ) capturing -> None,
-    /,
-    target: StaticString = "cpu",
-    multiply_before_cast: Bool = True,
-](
-    shape: Coord,
-    gamma: TileTensor[mut=False, dtype, ...],
-    epsilon: Float32,
-    weight_offset: Scalar[dtype],
-    ctx: DeviceContext,
-) raises:
-    # Boundary `IndexList` -> `Coord` migration (softmax PR #88203 form).
-    # `input_0_fn` and `shape` are `Coord`; `output_0_fn` keeps its n-D
-    # `IndexList` form for source compatibility and is wrapped to the
-    # `Coord`-form `_rms_norm_impl` expects. `shape_il` materializes the
-    # runtime `IndexList` once for the trace string.
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-
-    @always_inline
-    @parameter
-    def output_fn_wrapper[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        output_0_fn[width, rank, alignment](
-            rebind[IndexList[rank]](coord_to_index_list(coords)), val
-        )
-
-    @always_inline
-    @parameter
-    def description_fn() -> String:
-        return trace_arg(
-            "input",
-            rebind[IndexList[rank]](coord_to_index_list(shape)),
-            dtype,
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "rms_norm",
-        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
-        task_id=Int(ctx.id()),
-    ):
-        _rms_norm_impl[
-            dtype,
-            rank,
-            input_0_fn,
-            output_fn_wrapper,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](shape, gamma, epsilon, weight_offset, ctx)
-
-
 # ===----------------------------------------------------------------------=== #
 # Row mean-of-squares: dispatcher + CPU/GPU entry points
 # ===----------------------------------------------------------------------=== #
@@ -5451,3 +5397,163 @@ def group_norm[
             )
         else:
             comptime assert False, "unsupported target " + target
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based rms_norm + layer_norm (free-form body layer).
+#
+# rms_norm: one ReduceSum-of-squares phase -> per-element map
+# (normalize * gamma). layer_norm: one Welford phase (mean + variance in a
+# single pass) -> map (normalize * gamma + beta). gamma/beta are broadcast
+# side-loads inside the map, like the GC IR's `%weight` load. The row is
+# cached once and replayed across the reduce + map on the
+# cache-eligible tier.
+# ===----------------------------------------------------------------------=== #
+
+
+def rms_norm[
+    dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, coord_rank: Int
+        ](IndexList[coord_rank]) -> SIMD[dtype, width]
+    ),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int, alignment: Int
+        ](IndexList[rank], SIMD[dtype, width]) -> None
+    ),
+    AxisSizeT: CoordLike,
+    /,
+    target: StaticString,
+    multiply_before_cast: Bool = True,
+    reduce_dim: Int = rank - 1,
+](
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, dtype, ...],
+    epsilon: Scalar[dtype],
+    weight_offset: Scalar[dtype],
+    context: Optional[DeviceContext] = None,
+) raises:
+    comptime accum = get_accum_type[dtype]()
+    comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
+    comptime simd_width = rowwise.pick_simd_width[
+        ReduceSum[accum, 1], target, 64, dtype, accum
+    ]()
+    var axis_size_accum = Scalar[accum](Int(axis_size.value()))
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var gamma,
+        var epsilon,
+        var weight_offset,
+        var axis_size_accum,
+        var input_fn,
+        var output_fn,
+    }:
+        comptime row_rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            return input_fn[width, alignment, row_rank](
+                rebind[IndexList[row_rank]](idx)
+            )
+
+        var row = rowwise.Row[
+            params, accum, dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        # Reduce: sum of squares -> inv_rms.
+        @always_inline
+        def square[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {} -> SIMD[
+            accum, width
+        ]:
+            var tile_accum = tile.cast[accum]()
+            return tile_accum * tile_accum
+
+        # `inv_rms` held W-wide (one value broadcast to every lane, or one per
+        # output column, depending on how the launch maps threads to
+        # outputs); read via `.slice[width]` uniformly either way.
+        var ssq = row.reduce[ReduceSum[accum, params.simd_width]](
+            square, load
+        ).acc
+        var inv_rms = rsqrt(ssq / axis_size_accum + epsilon.cast[accum]())
+
+        # gamma indexed by the reduced axis. Its inner (lane) stride is 1 when
+        # the reduced axis is inner (lanes are consecutive reduced positions),
+        # else 0 (lanes are columns at one position — one gamma, splatted). A
+        # strided load handles both via a compile-time stride, no branching.
+        comptime g_stride = 1 if reduce_dim == rank - 1 else 0
+
+        # Emit: per-element normalize, scale by gamma, and store.
+        @always_inline
+        def write[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[row_rank]) {
+            var gamma,
+            var inv_rms,
+            var weight_offset,
+            var output_fn,
+            var ctx_p,
+        }:
+            comptime alignment = ctx_p.alignment[dtype, width]()
+            var col = idx[reduce_dim]
+            var g_raw = strided_load[width, g_stride, alignment=alignment](
+                gamma.ptr_at_offset(Coord(IndexList[1](col)))
+            )
+            var normed = tile.cast[accum]() * inv_rms.slice[width]()
+
+            # `multiply_before_cast` matches legacy: True multiplies gamma in
+            # `accum` then casts; False casts the normed value first, then
+            # multiplies gamma in the input dtype.
+            comptime if multiply_before_cast:
+                var gamma_with_offset = (
+                    g_raw.cast[accum]() + weight_offset.cast[accum]()
+                )
+                var result = (normed * gamma_with_offset).cast[dtype]()
+                output_fn[width, rank, alignment](
+                    rebind[IndexList[rank]](idx), result
+                )
+            else:
+                var gamma_with_offset = g_raw + weight_offset
+                var result = normed.cast[dtype]() * gamma_with_offset
+                output_fn[width, rank, alignment](
+                    rebind[IndexList[rank]](idx), result
+                )
+
+        # `gamma`/`inv_rms`/`weight_offset`/`output_fn` ride into `elementwise`.
+        row.elementwise(write, load)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=2,
+        computationally_expensive=True,
+    ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based rms_norm_rope (the IR litmus test): multiple inputs of
+# differing dtypes (primary input; cos/sin side-loads in cos_sin_dtype; gamma),
+# one ReduceSum-of-squares phase, then a map that loads the rotate-half partner
+# (a second axis position) — the IR's `imap.concat.select` / `imap.slice.index`.
+# The primary input is cached and reused by the reduce + the map's normed term;
+# the partner is an additional load (inherent to rope, not a re-read).
+# ===----------------------------------------------------------------------=== #
