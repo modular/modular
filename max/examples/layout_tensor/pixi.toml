@@ -1,6 +1,6 @@
 [workspace]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "Examples of using the LayoutTensor struct"
 name = "LayoutTensor examples"
 platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
