@@ -230,43 +230,17 @@ Who are you? Edna
 Hi, Edna!
 ```
 
-Notice that this code uses a `String` type annotation that indicates the type of
-value the variable can contain. The Mojo compiler performs [static type
-checking](https://en.wikipedia.org/wiki/Type_system#Static_type_checking), which
-means you'll encounter a compile-time error if your code tries to assign a
-value of one type to a variable of a different type.
+Notice that this code uses a `String` type annotation that indicates the
+type of value the variable can contain. The Mojo compiler performs [static
+type
+checking](https://en.wikipedia.org/wiki/Type_system#Static_type_checking),
+which means you'll encounter a compile-time error if your code tries to
+assign a value of one type to a variable of a different type.
 
-Mojo also lets you declare a variable by assigning a value to a new name,
-without the `var` keyword and without indicating its type. The following prints
-the same greeting:
-
-<!-- The block below is deliberately NOT mirrored by a compiled example: it
-     shows the spelling this passage advises against, so a compiled twin would
-     be a first-party use of it. -->
-
-```mojo
-def main() raises:
-    name = input("Who are you? ")
-    greeting = "Hi, " + name + "!"
-    print(greeting)
-```
-
-The two forms aren't interchangeable, though. Assigning to a new name is
-deprecated and now warns, so prefer `var`: it says on the line that a
-declaration is happening. The warning also catches a later typo in a name,
-which would otherwise create a second variable silently. You will still meet
-the other form in existing code, and what differs there is scope: a `var`
-declaration belongs to the block it appears in, whereas a variable declared by
-assignment belongs to the whole function. In a program with nested blocks, that
-changes which code can see the variable.
-
-Either way, the variable has a fixed type: the annotation gives it when there is
-one, and otherwise Mojo infers it from the initial value assignment. In both
-versions above, `name` and `greeting` are `String` variables. If you then try to
-assign an integer value like 42 to the `name` variable, you'll get a
-compile-time error because of the type mismatch. You can learn more about Mojo
-variables in the [Variables](/docs/manual/variables/) section of the Mojo
-manual.
+If you then try to assign an integer value like 42 to the `name` variable,
+you'll get a compile-time error because of the type mismatch. You can learn
+more about Mojo variables in the [Variables](/docs/manual/variables/)
+section of the Mojo manual.
 
 ## 4. Use Mojo `Int` and `List` types to represent the game state
 
@@ -312,27 +286,12 @@ var row = List[Int]()
 var names = List[String]()
 ```
 
-We can also create a `List` with an initial set of values and let the compiler
-infer the type. Use the *list literal* syntax and simply enclose the values in
-square brackets (`[]`):
-
-```mojo
-# Create a List[Int] with the list literal syntax, inferring the type
-var nums2 = [12, -7, 64]
-```
-
-which is equivalent to:
-
-```mojo
-var nums2: List[Int] = [12, -7, 64]
-```
-
 The Mojo `List` type includes the ability to append to the list, pop values from
 the list, and access list items using subscript notation. Here's a taste of
 those operations:
 
 ```mojo
-var nums = [12, -7, 64]
+var nums: List[Int] = [12, -7, 64]
 nums.append(-937)
 print("Number of elements in the list:", len(nums))
 print("Popping last element off the list:", nums.pop())
@@ -352,7 +311,7 @@ Last element of the list: 64
 We can also nest `List`s:
 
 ```mojo
-var grid = [
+var grid: List[List[Int]] = [
     [11, 22],
     [33, 44]
 ]
@@ -387,7 +346,7 @@ any raising functions, we can omit it. For more about error handling, see
 def main():
     var num_rows = 8
     var num_cols = 8
-    var glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -410,7 +369,7 @@ like `Int` and `String` and more complex types like `List`:
   copy it like this:
 
   ```mojo
-  var first = [1, 2, 3]
+  var first: List[Int] = [1, 2, 3]
   var second = first.copy()  # explicit copy
   ```
 
@@ -519,7 +478,7 @@ of iterating over the values of a `range()` and then accessing the `List`
 elements by their numeric index.
 
 ```mojo
-var nums = [12, -7, 64]
+var nums: List[Int] = [12, -7, 64]
 for value in nums:
     print("Value:", value)
 ```
@@ -705,7 +664,7 @@ def grid_str(grid: Grid) -> String:
     return str
 
 def main():
-    var glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -821,7 +780,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 from gridv1 import Grid
 
 def main():
-    var glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
