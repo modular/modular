@@ -128,9 +128,7 @@ class KVConnector(Protocol):
 
     All block hashes crossing this Protocol are in canonical bytes form:
     8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
-    32 bytes for full SHA-256 digests. ``parent_seq_hash`` is ``None`` to
-    denote the root of the chain; otherwise it is in the same bytes form
-    as each element of ``block_hashes``. The block hasher produces this
+    32 bytes for full SHA-256 digests. The block hasher produces this
     canonical form directly, so callers pass the hashes through unchanged;
     a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)
     validates and converts at its own boundary.
@@ -192,25 +190,18 @@ class KVConnector(Protocol):
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offload the device blocks to the external cache.
 
-        The blocks form one ordered sequence whose first block chains onto
-        ``parent_seq_hash`` (``None`` denotes the root of the chain).
-        Connectors that key blocks purely by hash (host/disk tiers) ignore
-        ``parent_seq_hash``; the dKV connector uses it to chain the
-        sequence server-side.
+        The blocks form one ordered sequence. Every connector keys blocks
+        purely by hash, so the order carries no parentage.
 
         Args:
             block_ids: Device block IDs to offload, in prefix order.
             block_hashes: Hashes for the blocks being offloaded, in prefix
                 order. Canonical bytes form (8 big-endian bytes for
                 ahash64-family, 32 bytes for SHA-256).
-            parent_seq_hash: Hash of the block preceding ``block_hashes[0]``
-                in the prefix in the same bytes form as ``block_hashes``,
-                or ``None`` if this run begins at the root.
             replica_idx: DP replica whose device buffers source the offloaded
                 blocks. The external tier itself is replica-agnostic.
 

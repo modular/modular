@@ -255,12 +255,9 @@ class BlockManager:
         )
 
         # Ordered offload sequences pending delivery to each replica's
-        # connector. Each entry is (parent_seq_hash, ordered block hashes): one
-        # contiguous run of newly-committed blocks, in prefix order, chaining
-        # onto parent_seq_hash (None = root). Ordering and parentage are
-        # preserved so connectors that chain sequences (dKV) can reconstruct the
-        # prefix; hash-keyed connectors (host/disk) ignore the parent.
-        self._pending_offloads: list[list[tuple[bytes | None, list[bytes]]]] = [
+        # connector. Each entry is one contiguous run of newly-committed block
+        # hashes, in prefix order.
+        self._pending_offloads: list[list[list[bytes]]] = [
             [] for _ in range(self.num_replicas)
         ]
 
@@ -918,21 +915,10 @@ class BlockManager:
             if new_block is not None:
                 req_blocks[block_idx] = new_block
 
-        # Queue the newly-committed blocks as one ordered offload sequence. Its
-        # parent is the block immediately before this run in the prefix
-        # (None = root); that block was committed and offloaded in a previous
-        # step.
+        # Queue the newly-committed blocks as one ordered offload sequence.
         if num_computed_blocks > num_committed_blocks:
-            parent_seq_hash = (
-                req_hashes[num_committed_blocks - 1]
-                if num_committed_blocks > 0
-                else None
-            )
-            new_block_hashes = req_hashes[
-                num_committed_blocks:num_computed_blocks
-            ]
             self._pending_offloads[replica_idx].append(
-                (parent_seq_hash, new_block_hashes)
+                req_hashes[num_committed_blocks:num_computed_blocks]
             )
 
         # Bump the committed index.
@@ -943,15 +929,13 @@ class BlockManager:
     def offload(self, replica_idx: int = 0) -> None:
         """Offload the pending sequences to the replica's connector.
 
-        Each pending sequence is delivered as one ordered ``offload`` call so
-        connectors can chain it onto ``parent_seq_hash``. Hashes are re-resolved
-        to their current device blocks here; if a block was evicted since it was
-        committed, the run is truncated at that point (the remaining blocks'
-        parent would be absent), so the connector never sees a gap-chain.
+        Each pending sequence is delivered as one ordered ``offload`` call.
+        Hashes are re-resolved to their current device blocks here; if a block
+        was evicted since it was committed, the run is truncated at that point.
         """
         prefix_cache = self.device_block_pools[replica_idx].prefix_cache
         connector = self.connector
-        for parent_seq_hash, hashes in self._pending_offloads[replica_idx]:
+        for hashes in self._pending_offloads[replica_idx]:
             block_ids = []
             block_hashes = []
             src_blocks = []
@@ -967,7 +951,6 @@ class BlockManager:
                 event = connector.offload(
                     block_ids,
                     block_hashes,
-                    parent_seq_hash,
                     replica_idx=replica_idx,
                 )
                 # Asynchronous connector: pin the device source blocks until the

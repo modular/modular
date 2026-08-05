@@ -272,7 +272,6 @@ class _StubConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
     ) -> None:
         raise NotImplementedError("StubConnector.offload must not be called")
 

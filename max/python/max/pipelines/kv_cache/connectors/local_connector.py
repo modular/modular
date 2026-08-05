@@ -163,12 +163,9 @@ class LocalConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offload ``replica_idx``'s device blocks to the host cache.
-
-        ``parent_seq_hash`` is ignored: host blocks are keyed by hash.
 
         Kicks off the D2H copies on the auxiliary stream without synchronizing.
         The main/aux stream sync runs once per forward pass in

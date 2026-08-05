@@ -65,7 +65,6 @@ class _CountingConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         return CompletedTransfer(TransferDirection.OFFLOAD)

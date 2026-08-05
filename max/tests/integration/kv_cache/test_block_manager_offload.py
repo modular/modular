@@ -15,10 +15,9 @@
 
 These run CPU-only and construct a ``BlockManager`` directly with a recording
 connector — no graph, session, or device memory. They cover the subtle parts of
-delivering committed blocks as ordered parented offload sequences: hash
-re-resolution to current device blocks, truncation of a run at the first block
-evicted since commit (so the connector never sees a gap-chain), parent
-pass-through, multi-run ordering, and that the pending queue is drained.
+delivering committed blocks as ordered offload sequences: hash re-resolution to
+current device blocks, truncation of a run at the first block evicted since
+commit, multi-run ordering, and that the pending queue is drained.
 """
 
 from __future__ import annotations
@@ -52,7 +51,7 @@ class RecordingConnector:
     """Connector stub that records ``offload``, ``touch`` and ``load`` calls."""
 
     def __init__(self) -> None:
-        self.offloads: list[tuple[list[int], list[bytes], bytes | None]] = []
+        self.offloads: list[tuple[list[int], list[bytes]]] = []
         self.touches: list[tuple[list[bytes], int]] = []
         # Ordered log of ``load``/``touch`` call names, so a test can assert the
         # load-path anchor touch fires AFTER the load (CLIN-1533).
@@ -75,10 +74,9 @@ class RecordingConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
-        self.offloads.append((block_ids, list(block_hashes), parent_seq_hash))
+        self.offloads.append((block_ids, list(block_hashes)))
         return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
 
     def touch(
@@ -242,45 +240,32 @@ def _commit_device_block(pool: BlockPool, block_hash: int) -> KVCacheBlock:
 def test_offload_delivers_run_resolving_hashes_to_bids() -> None:
     bm, connector = _make_block_manager()
     _commit(bm, {_b(111): 5, _b(222): 6, _b(333): 7})
-    # One run of three committed blocks chaining onto parent 999.
-    bm._pending_offloads = [[(_b(999), [_b(111), _b(222), _b(333)])]]
+    # One run of three committed blocks.
+    bm._pending_offloads = [[[_b(111), _b(222), _b(333)]]]
 
     bm.offload()
 
-    assert connector.offloads == [
-        ([5, 6, 7], [_b(111), _b(222), _b(333)], _b(999))
-    ]
+    assert connector.offloads == [([5, 6, 7], [_b(111), _b(222), _b(333)])]
     # Pending queue drained.
     assert bm._pending_offloads == [[]]
 
 
-def test_offload_root_run_uses_parent_none() -> None:
-    bm, connector = _make_block_manager()
-    _commit(bm, {_b(111): 5, _b(222): 6})
-    bm._pending_offloads = [[(None, [_b(111), _b(222)])]]
-
-    bm.offload()
-
-    assert connector.offloads == [([5, 6], [_b(111), _b(222)], None)]
-
-
 def test_offload_truncates_run_at_evicted_block() -> None:
     bm, connector = _make_block_manager()
-    # 222 was evicted since commit; the run must stop before it so the chain
-    # has no gap (333's parent would otherwise be missing).
+    # 222 was evicted since commit; the run stops there.
     _commit(bm, {_b(111): 5, _b(333): 7})
-    bm._pending_offloads = [[(None, [_b(111), _b(222), _b(333)])]]
+    bm._pending_offloads = [[[_b(111), _b(222), _b(333)]]]
 
     bm.offload()
 
-    assert connector.offloads == [([5], [_b(111)], None)]
+    assert connector.offloads == [([5], [_b(111)])]
 
 
 def test_offload_skips_fully_evicted_run() -> None:
     bm, connector = _make_block_manager()
     # First (and only) block of the run is gone -> nothing to deliver.
     _commit(bm, {})
-    bm._pending_offloads = [[(None, [_b(111)])]]
+    bm._pending_offloads = [[[_b(111)]]]
 
     bm.offload()
 
@@ -291,19 +276,19 @@ def test_offload_skips_fully_evicted_run() -> None:
 def test_offload_preserves_multi_run_order() -> None:
     bm, connector = _make_block_manager()
     _commit(bm, {_b(111): 1, _b(222): 2, _b(333): 3, _b(444): 4})
-    # Two runs queued across two commits; second chains onto the first's tail.
+    # Two runs queued across two commits.
     bm._pending_offloads = [
         [
-            (None, [_b(111), _b(222)]),
-            (_b(222), [_b(333), _b(444)]),
+            [_b(111), _b(222)],
+            [_b(333), _b(444)],
         ]
     ]
 
     bm.offload()
 
     assert connector.offloads == [
-        ([1, 2], [_b(111), _b(222)], None),
-        ([3, 4], [_b(333), _b(444)], _b(222)),
+        ([1, 2], [_b(111), _b(222)]),
+        ([3, 4], [_b(333), _b(444)]),
     ]
 
 

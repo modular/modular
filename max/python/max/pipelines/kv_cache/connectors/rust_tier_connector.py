@@ -225,7 +225,6 @@ class RustTierConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         return self._rust.offload(block_ids, list(block_hashes), replica_idx)
