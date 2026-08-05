@@ -701,6 +701,9 @@ def quantized_fused_qkv_index_matmul(
     ``index_kv_collection`` while returning ``Q`` and ``IndexQ`` as two separate
     output tensors.
 
+    The scatter rides the GEMM's own epilogue on both vendors; only the weight
+    scale layout differs, so the interleave below is SM100-only.
+
     Only the MXFP8 dynamic-activation-quant format is supported; callers must
     gate on it (other formats keep the separate QKV + IndexQK matmuls).
 
@@ -735,9 +738,10 @@ def quantized_fused_qkv_index_matmul(
         scales_type=DType.float8_e8m0fnu,
         out_type=DType.float8_e4m3fn,
     )
-    weight_scale = block_scales_interleave(
-        weight_scale.to(x.device), sf_vector_size=32
-    )
+    if not _is_amd_gpu():
+        weight_scale = block_scales_interleave(
+            weight_scale.to(x.device), sf_vector_size=32
+        )
     return _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         kv_params=kv_params,
         index_kv_params=index_kv_params,
