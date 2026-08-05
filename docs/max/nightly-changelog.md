@@ -40,6 +40,14 @@ This version is still a work in progress.
   compute path too, so eager `group_norm` runs on CPU the same way
   `layer_norm`/`rms_norm` already do.
 
+- Fixed the BF16 Expert Parallelism (EP) dispatch path failing to compile.
+  The `ep.dispatch_async` kernel requires a `dispatch_scale_dtype` comptime
+  parameter, but the BF16 branch of `call_ep_dispatch_async` only set
+  `dispatch_fmt_str` and omitted the scale dtype, so any model using BF16 EP
+  dispatch (for example, a non-quantized MoE) hit a graph-compile error. The
+  BF16 branch now sets `dispatch_scale_dtype = float32` to match the kernel
+  signature.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,

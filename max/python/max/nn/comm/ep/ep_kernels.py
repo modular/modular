@@ -419,6 +419,7 @@ def call_ep_dispatch_async(
 
     elif config.dispatch_dtype == DType.bfloat16:
         parameters["dispatch_fmt_str"] = "BF16"
+        parameters["dispatch_scale_dtype"] = DType.float32
     else:
         raise ValueError(f"Unsupported dispatch dtype: {config.dispatch_dtype}")
 
