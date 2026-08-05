@@ -76,6 +76,7 @@ from nn.rope_split_store import (
 )
 from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_rel_logits,
     generic_flash_attention_kv_cache_ragged_sink,
     generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qkv_matmul_kv_cache_paged_ragged,
@@ -1886,6 +1887,64 @@ def _execute_mha_ragged_paged_scalar_args[
             context,
             decode_dispatch_metadata,
         )
+
+
+@always_inline
+def _execute_mha_ragged_paged_rel_logits[
+    q_dtype: DType,
+    //,
+    target: StaticString,
+    local_window_size: Int = -1,
+    output_dtype: DType = q_dtype,
+    cache_dtype: DType = q_dtype,
+](
+    output: OutputTensor[dtype=output_dtype, rank=3, ...],
+    q: InputTensor[dtype=q_dtype, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+    layer_idx: UInt32,
+    scale: Float32,
+    bias: InputTensor[dtype=q_dtype, rank=3, ...],
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    context: DeviceContext,
+) raises:
+    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+        mha_decode_dispatch_metadata
+    )
+    var kv_collection = generic_get_paged_cache(
+        kv_blocks,
+        cache_lengths,
+        kv_lookup_table,
+        max_prompt_length,
+        max_cache_length,
+    )
+    var input_row_offsets_lt = as_dynamic_row_major_1d(
+        input_row_offsets.to_layout_tensor().as_imm()
+    )
+    var cache_lengths_lt = as_dynamic_row_major_1d(
+        cache_lengths.to_layout_tensor().as_imm()
+    )
+
+    generic_flash_attention_kv_cache_ragged_rel_logits[
+        target=target,
+        local_window_size=local_window_size,
+        output_dtype=output_dtype,
+    ](
+        q.to_layout_tensor(),
+        input_row_offsets_lt,
+        kv_collection,
+        layer_idx,
+        scale,
+        bias.to_layout_tensor(),
+        cache_lengths_lt,
+        output.to_layout_tensor(),
+        context,
+        decode_dispatch_metadata,
+    )
 
 
 # ===-----------------------------------------------------------------------===#

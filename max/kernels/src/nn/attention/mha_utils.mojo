@@ -48,6 +48,7 @@ from nn.attention.mha_mask import (
     MaterializedMask,
     MHAMask,
     NullMask,
+    RelativeLogitsMask,
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
@@ -799,6 +800,47 @@ def dispatch_materialized_mask[
 
     var mask = MaterializedMask(mask_nd, start_pos_nd)
     return callback_fn(mask)
+
+
+@always_inline
+def dispatch_relative_logits_mask[
+    dtype: DType,
+    layout: Layout,
+    //,
+    callback_fn: callback_fn_type,
+    local_window_size: Int = -1,
+](
+    bias_nd: LayoutTensor[mut=False, dtype, layout, _],
+    cache_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+) raises -> None:
+    """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
+
+    Like `dispatch_materialized_mask`, this carries runtime state (the bias
+    table plus the tensors that recover its ragged-flat row), so it lives
+    outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
+    picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
+    "no window" value) -> `CausalMask`, else
+    `SlidingWindowCausalMask[local_window_size]`. The mask structs
+    themselves report "no window" as `sliding_window_size() == 0`; this
+    function is where the two conventions meet.
+    """
+    comptime if local_window_size <= 0:
+        return callback_fn(
+            RelativeLogitsMask[visibility=CausalMask()](
+                bias_nd, cache_lengths, input_row_offsets
+            )
+        )
+    else:
+        return callback_fn(
+            RelativeLogitsMask[
+                visibility=SlidingWindowCausalMask[local_window_size]()
+            ](bias_nd, cache_lengths, input_row_offsets)
+        )
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

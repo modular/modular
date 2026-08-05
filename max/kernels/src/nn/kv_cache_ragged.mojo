@@ -68,6 +68,7 @@ from nn.attention.mha_utils import (
     MHAConfig,
     as_dynamic_row_major_1d,
     dispatch_mask,
+    dispatch_relative_logits_mask,
 )
 from nn.attention.gpu.mla import (
     _k_cache_to_buffer,
@@ -3851,6 +3852,70 @@ def generic_flash_attention_kv_cache_ragged[
         )
 
 
+@always_inline
+def _launch_flash_attention_with_mask[
+    dtype: DType,
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    //,
+    *,
+    target: StaticString,
+    output_dtype: DType = dtype,
+    sink: Bool = False,
+](
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: LayoutTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    k: cache_t,
+    v: cache_t,
+    mask: mask_t,
+    scale: Float32,
+    output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: DeviceContext,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    if q.dim[0]() == 0:
+        return
+
+    comptime if is_cpu[target]():
+        comptime assert output_dtype == dtype, (
+            "CPU flash attention requires output dtype == q dtype;"
+            " the distinct-output-dtype (fp8->bf16) path is GPU-only."
+        )
+        return flash_attention_kv_cache_cpu(
+            q,
+            input_row_offsets,
+            input_row_offsets,
+            k,
+            v,
+            mask,
+            scale,
+            output.bitcast[dtype](),
+            sink_weights,
+        )
+    else:
+        gpu_flash_attention[ragged=True, sink=sink](
+            output,
+            q,
+            k,
+            v,
+            mask,
+            input_row_offsets,
+            scale,
+            context,
+            sink_weights=sink_weights,
+            decode_dispatch_metadata=OptionalReg[MHADecodeDispatchMetadata](
+                decode_dispatch_metadata
+            ),
+        )
+
+
 def _flash_attention_dispatch[
     dtype: DType,
     collection_t: KVCollectionT,
@@ -3880,47 +3945,27 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    var has_inputs = q.dim[0]() > 0
-    if not has_inputs:
-        # no-op if there are no inputs
-        return
-
     @parameter
     @__copy_capture(k, v)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @parameter
         def call_flash_attention[sink: Bool]() raises:
-            comptime if is_cpu[target]():
-                comptime assert output_dtype == dtype, (
-                    "CPU flash attention requires output dtype == q dtype;"
-                    " the distinct-output-dtype (fp8->bf16) path is GPU-only."
-                )
-                return flash_attention_kv_cache_cpu(
-                    q,
-                    input_row_offsets,
-                    input_row_offsets,
-                    k,
-                    v,
-                    mask,
-                    scale,
-                    output.bitcast[dtype](),
-                    sink_weights,
-                )
-            else:
-                gpu_flash_attention[ragged=True, sink=sink](
-                    output,
-                    q,
-                    k,
-                    v,
-                    mask,
-                    input_row_offsets,
-                    scale,
-                    context,
-                    sink_weights=sink_weights,
-                    decode_dispatch_metadata=OptionalReg[
-                        MHADecodeDispatchMetadata
-                    ](decode_dispatch_metadata),
-                )
+            return _launch_flash_attention_with_mask[
+                target=target,
+                output_dtype=output_dtype,
+                sink=sink,
+            ](
+                q,
+                input_row_offsets,
+                k,
+                v,
+                mask,
+                scale,
+                output,
+                context,
+                decode_dispatch_metadata,
+                sink_weights,
+            )
 
         unswitch[call_flash_attention](Bool(sink_weights))
 
@@ -3929,6 +3974,109 @@ def _flash_attention_dispatch[
         _dispatch_flash_attention,
         local_window_size,
     ]()
+
+
+@always_inline
+def generic_flash_attention_kv_cache_ragged_rel_logits[
+    collection_t: KVCollectionT,
+    dtype: DType,
+    //,
+    *,
+    target: StaticString,
+    local_window_size: Int = -1,
+    output_dtype: DType = dtype,
+](
+    q: LayoutTensor[mut=False, dtype, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    bias: LayoutTensor[
+        mut=False, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+    output: LayoutTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    context: DeviceContext,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
+) raises:
+    """Flash attention over a ragged batch with a relative-position bias.
+
+    `bias` is gathered by `rel_dist = q_pos - k_pos` inside the kernel via
+    `RelativeLogitsMask`; `local_window_size` picks the visibility mask
+    (`-1` -> global causal). `cache_lengths` is the same tensor used to build
+    `kv_collection`, passed again so the mask can recover each query's
+    ragged-flat row into `bias` (the collection only exposes a per-sequence
+    scalar accessor, not the raw tensor).
+    """
+
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        var desc_parts = List[String]()
+        desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
+        desc_parts.append("scale=" + String(scale))
+        desc_parts.append("layer_idx=" + String(layer_idx))
+        desc_parts.append(
+            "num_heads=" + String(collection_t.kv_params.num_heads)
+        )
+        desc_parts.append(
+            "head_size=" + String(collection_t.kv_params.head_size)
+        )
+        desc_parts.append("local_window_size=" + String(local_window_size))
+        desc_parts.append("relative_position_bias=True")
+        return String(";").join(desc_parts)
+
+    comptime name = "mo.mha.ragged." + collection_t.name_str + ".rel_logits.nhead_" + String(
+        collection_t.kv_params.num_heads
+    ) + ".hdim_" + String(
+        collection_t.kv_params.head_size
+    )
+
+    var k = kv_collection.get_key_cache(Int(layer_idx))
+    var v = kv_collection.get_value_cache(Int(layer_idx))
+
+    @parameter
+    @__copy_capture(k, v)
+    def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+        return _launch_flash_attention_with_mask[
+            target=target,
+            output_dtype=output_dtype,
+        ](
+            q,
+            input_row_offsets,
+            k,
+            v,
+            mask,
+            scale,
+            output,
+            context,
+            decode_dispatch_metadata,
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=Int(context.id()),
+    ):
+        return dispatch_relative_logits_mask[
+            _dispatch_flash_attention,
+            local_window_size,
+        ](
+            LayoutTensor[bias.dtype, bias.layout, bias.origin](
+                bias.ptr,
+                RuntimeLayout[bias.layout].row_major(
+                    bias.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_lengths,
+            input_row_offsets,
+        )
 
 
 @always_inline

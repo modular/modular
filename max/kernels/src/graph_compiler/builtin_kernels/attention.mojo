@@ -99,6 +99,7 @@ from std.utils import IndexList
 # ===-----------------------------------------------------------------------===#
 from .kernels import *
 from .kernels import (
+    _execute_mha_ragged_paged_rel_logits,
     _execute_mha_ragged_paged_scalar_args,
     _unmarshal_mha_decode_dispatch_metadata,
     _unsafe_str_to_coord,
@@ -1821,6 +1822,63 @@ struct Struct_mha_ragged_paged_sink_weights_scalar_args:
                     dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
                 ]
             ](sink_weights_rebound),
+        )
+
+
+@extensibility.register("mo.mha.ragged.paged.rel_logits")
+struct Struct_mha_ragged_paged_rel_logits:
+    """Registers the `mo.mha.ragged.paged.rel_logits` graph op.
+
+    Adds a relative-position bias to pre-softmax scores, gathered by
+    `rel_dist = q_pos - k_pos` via `RelativeLogitsMask` rather than
+    materializing a dense `(q, k)` mask.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        q_dtype: DType,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        bias: InputTensor[dtype=q_dtype, rank=3, ...],
+        mha_decode_dispatch_metadata: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        context: DeviceContext,
+    ) raises:
+        _execute_mha_ragged_paged_rel_logits[
+            target=target,
+            local_window_size=local_window_size,
+            output_dtype=out_dtype,
+            cache_dtype=cache_dtype,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            layer_idx,
+            scale,
+            bias,
+            mha_decode_dispatch_metadata,
+            context,
         )
 
 
