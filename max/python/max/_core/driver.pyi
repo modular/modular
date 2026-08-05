@@ -137,6 +137,7 @@ class Device:
         - ``cpu`` for host devices.
         - ``cuda`` for NVIDIA GPUs.
         - ``hip`` for AMD GPUs.
+        - ``metal`` for Apple GPUs.
 
         .. code-block:: python
 

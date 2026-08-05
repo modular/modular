@@ -564,8 +564,8 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     default=None,
     help=(
         "Target API and architecture to compile for (e.g., cuda, cuda:sm_90, "
-        "hip:gfx942). When specified, uses virtual devices for compilation "
-        "without requiring physical hardware."
+        "hip:gfx942, metal). When specified, uses virtual devices for "
+        "compilation without requiring physical hardware."
     ),
 )
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
