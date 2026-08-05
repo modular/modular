@@ -1163,15 +1163,11 @@ def _launch_mxfp4_split_k[
     the partials and cast to `c`'s dtype. Targets the small-M decode
     regime where the natural launch geometry leaves the GPU starved.
     """
-    # Split-K is MXFP4-only: the reduce kernel and the byte extents below
-    # assume nibble packing. Enforced here rather than at the call sites so a
-    # future caller cannot silently get FP4 extents for MXFP8 data.
-    comptime assert lane_bytes == 16, (
-        "split-K is MXFP4-only; the reduce kernel and byte extents assume"
-        " nibble packing"
-    )
+    comptime assert (
+        lane_bytes == 16 or lane_bytes == 32
+    ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8)"
     comptime Kernel = MXFP4MatmulAMD[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN, lane_bytes=lane_bytes
     ]
     comptime N = type_of(c).static_shape[1]
     comptime c_dtype = type_of(c).dtype
@@ -1338,12 +1334,12 @@ def mxfp4_block_scaled_matmul_amd[
         return
 
     # Split-K small-M config: 4-warp BM=64,BN=128 tile (WM=64,WN=32 →
-    # num_warps_n=4, num_warps_m=1) with BK_ELEMS=256 (BK_BYTES=128).
-    # At small M the whole problem is one M-tile, so the plain kernel
-    # launches only ceildiv(N, BN) CTAs and starves the GPU. Splitting
-    # K into `_sk_splits` disjoint bands (one extra CTA dim) multiplies
-    # the CTA count up toward `_sk_cta_cap`. `_sk_splits == 1` means no
-    # split qualified — fall back to the plain launch.
+    # num_warps_n=4, num_warps_m=1) with BK_ELEMS=256 (BK_BYTES=128 at
+    # MXFP4, 256 at MXFP8). At small M the whole problem is one M-tile,
+    # so the plain kernel launches only ceildiv(N, BN) CTAs and starves
+    # the GPU. Splitting K into `_sk_splits` disjoint bands (one extra
+    # CTA dim) multiplies the CTA count up toward `_sk_cta_cap`.
+    # `_sk_splits == 1` means no split qualified — fall back to the plain launch.
     #
     # `_sk_cta_cap` is derived from the device CU count rather than
     # hardcoded: total split-K CTAs ≈ ceildiv(N, BN) * num_splits, and we
@@ -1359,7 +1355,8 @@ def mxfp4_block_scaled_matmul_amd[
     comptime SK_BM = 64
     comptime SK_BN = 128
     comptime SK_BK_ELEMS = 256
-    comptime SK_BK_BYTES = SK_BK_ELEMS // 2  # 128
+    # Bytes, not elements -- see _bk_256_bytes above.
+    comptime SK_BK_BYTES = SK_BK_ELEMS // _elems_per_byte
     comptime SK_WM = 64
     comptime SK_WN = 32
     comptime _sk_splits = _pick_num_splits[
@@ -1423,7 +1420,7 @@ def mxfp4_block_scaled_matmul_amd[
             _launch_mxfp4[
                 BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16, lane_bytes=lane_bytes
             ](c, a, b, a_scales, b_scales, M, ctx)
-        elif can_use_bk_256 and _sk_splits > 1 and lane_bytes == 16:
+        elif can_use_bk_256 and _sk_splits > 1:
             _launch_mxfp4_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
@@ -1431,6 +1428,7 @@ def mxfp4_block_scaled_matmul_amd[
                 WM=SK16_WM,
                 WN=SK16_WN,
                 num_splits=_sk_splits,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
             _launch_mxfp4[
@@ -1457,7 +1455,7 @@ def mxfp4_block_scaled_matmul_amd[
                 lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
     elif M <= 64:
-        comptime if can_use_bk_256 and _sk_splits > 1 and lane_bytes == 16:
+        comptime if can_use_bk_256 and _sk_splits > 1:
             _launch_mxfp4_split_k[
                 BM=SK_BM,
                 BN=SK_BN,
@@ -1465,6 +1463,7 @@ def mxfp4_block_scaled_matmul_amd[
                 WM=SK_WM,
                 WN=SK_WN,
                 num_splits=_sk_splits,
+                lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
             # Non-split BK_ELEMS=512 fallback. Reached only when
