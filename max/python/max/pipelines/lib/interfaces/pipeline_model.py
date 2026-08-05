@@ -22,11 +22,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
-from max.driver import (
-    Buffer,
-    Device,
-    is_virtual_device_mode,
-)
+from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
@@ -101,12 +97,6 @@ class AlwaysSignalBuffersMixin:
             List of signal buffer tensors, one per device, or empty list
             in compile-only mode.
         """
-        # In compile-only mode (virtual device mode), skip signal buffer
-        # allocation since VirtualDevice does not support memory allocation.
-        # Signal buffers are only needed during model execution, not compilation.
-        if is_virtual_device_mode():
-            return []
-
         # Import here to avoid circular dependency
         from max.nn.comm import Signals
 
@@ -486,11 +476,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             List of signal buffer tensors, one per device for multi-device setups,
             or an empty list for single-device setups or compile-only mode.
         """
-        # In compile-only mode (virtual device mode), skip signal buffer
-        # allocation since VirtualDevice does not support memory allocation.
-        if is_virtual_device_mode():
-            return []
-
         if len(self.devices) <= 1:
             return []
 
