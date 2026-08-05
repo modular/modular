@@ -873,7 +873,7 @@ struct LayerNorm:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
@@ -898,50 +898,58 @@ struct LayerNorm:
         """
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
+        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Gamma size does not match dimension of reduction.")
+        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Beta size does not match dimension of reduction.")
 
-        # `IndexList` -> `Coord` boundary migration (mirror of
-        # `ReduceRMSNorm.execute`). The input fusion lambda takes a `Coord`
-        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
-        # and the shape is passed via `input.shape_coord()`, which preserves
-        # statically-known dims in the `Coord` type instead of erasing them to
-        # an all-runtime `IndexList` as `input.shape()` would. `gamma_fn` and
-        # `output_fn` keep their n-D `IndexList` form to match `layer_norm`'s
-        # `input_1_fn` / `output_0_fn`.
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) -> SIMD[dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
-        @parameter
-        @always_inline
-        def gamma_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return gamma._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[1]](coords)
-            )
-
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
-            input.shape_coord(),
-            gamma.shape(),
-            beta.to_tile_tensor[DType.int64](),
-            epsilon,
-            ctx,
-        )
+        # gamma / beta are passed as tile tensors (the Row body loads them
+        # via a strided load); gamma's producer fusion, if any, is not used.
+        # Pass the static row width when known so the Row register-caches the
+        # input strip (`_fuse`), avoiding a second global read of the input in
+        # the map phase; a dynamic width falls back to streaming inside the
+        # kernel.
+        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if ln_cols != UNKNOWN_VALUE:
+            layer_norm[dtype, rank, target=target](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[ln_cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                ctx,
+            )
+        else:
+            layer_norm[dtype, rank, target=target](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.reduce.layer_norm")
