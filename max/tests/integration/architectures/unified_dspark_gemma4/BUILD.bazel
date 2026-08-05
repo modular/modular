@@ -20,6 +20,14 @@ modular_py_test(
     name = "test_markov_head",
     size = "medium",
     srcs = ["test_markov_head.py"],
+    # Import-bound: the torch + max imports dominate the wall time, dwarfing the
+    # two short test bodies. That startup cost starves on contended macOS
+    # workers and trips the timeout; the markov head itself is exercised on the
+    # GPU lanes, so macOS coverage buys nothing here.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
