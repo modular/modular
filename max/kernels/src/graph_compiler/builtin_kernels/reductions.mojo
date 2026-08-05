@@ -47,8 +47,8 @@ from nn.normalization import (
     rms_norm_fused_residual_add,
     rms_norm_rope_gpu,
     rms_norm,
-    row_mean_of_squares,
     row_mean_of_squares_qk,
+    row_mean_of_squares,
 )
 from nn.softmax import softmax
 from nn.topk import top_k, top_k_shape_impl
@@ -342,22 +342,24 @@ struct RowMeanOfSquares:
         if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
             raise Error("output must have shape [input_rows, 1]")
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[input.dtype, width]:
+        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
-        def output_fn(row: Int, val: Scalar[output.dtype]):
-            output.store[width=1](Index(row, 0), val)
+        def output_fn[
+            width: SIMDLength, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            # `output` is `[M, 1]`, so `width` adjacent rows (tiled tier) at
+            # column 0 sit contiguously -- one vector store, no lane splitting.
+            output.store[width=width](Index(coords[0], 0), val)
 
-        row_mean_of_squares[input_fn, output_fn, target=target](
-            input.shape(), ctx
+        row_mean_of_squares[input.dtype, output.dtype, 2, target=target](
+            input_fn, output_fn, input.shape(), ctx
         )
 
 
