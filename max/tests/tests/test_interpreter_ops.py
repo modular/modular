@@ -3934,36 +3934,84 @@ class TestRmsNormOp:
         )
 
 
+def _numpy_group_norm(
+    x: np.ndarray,
+    gamma: np.ndarray,
+    beta: np.ndarray,
+    num_groups: int,
+    eps: float = 1e-5,
+) -> np.ndarray:
+    """Numerically stable group normalization reference implementation."""
+    n, c, *spatial = x.shape
+    x_grouped = x.astype(np.float64).reshape(
+        n, num_groups, c // num_groups, *spatial
+    )
+    axes = tuple(range(2, x_grouped.ndim))
+    mean = x_grouped.mean(axis=axes, keepdims=True)
+    var = x_grouped.var(axis=axes, keepdims=True)
+    normed = ((x_grouped - mean) / np.sqrt(var + eps)).reshape(x.shape)
+    broadcast_shape = (1, c) + (1,) * len(spatial)
+    result = normed * gamma.astype(np.float64).reshape(
+        broadcast_shape
+    ) + beta.astype(np.float64).reshape(broadcast_shape)
+    return result.astype(x.dtype)
+
+
 class TestGroupNormOp:
     """Tests for group_norm interpreter op via F.group_norm.
 
-    group_norm's graph-compiler kernel (nn.normalization.group_norm) is
-    GPU-only (see group_norm_gc.py's module docstring); CPU calls raise
-    NotImplementedError. GPU correctness is covered by TestGroupNormGPU in
-    test_interpreter_ops_gpu.py.
+    Routes through F.group_norm -> ops.group_norm -> mo.ReduceGroupNormOp ->
+    _handle_group_norm -> group_norm_gc.group_norm_model. GPU correctness is
+    covered by TestGroupNormGPU in test_interpreter_ops_gpu.py.
     """
 
-    def test_group_norm_cpu_raises(self) -> None:
-        """group_norm on CPU raises NotImplementedError (no CPU GC kernel)."""
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_group_norm_4d(self, dtype: DType) -> None:
+        """Test group_norm on a 4D (N, C, H, W) tensor."""
+        np_dtype = dtype.to_numpy()
         rng = np.random.default_rng(50)
-        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np.float32)
-        gamma_np = rng.standard_normal(4).astype(np.float32)
-        beta_np = rng.standard_normal(4).astype(np.float32)
+        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np_dtype)
+        gamma_np = rng.standard_normal(4).astype(np_dtype)
+        beta_np = rng.standard_normal(4).astype(np_dtype)
 
         x = Tensor.from_dlpack(x_np)
         gamma = Tensor.from_dlpack(gamma_np)
         beta = Tensor.from_dlpack(beta_np)
-        # Realization is lazy: NotImplementedError only raises inside
-        # EagerRealizationContext.__exit__, so pytest.raises must wrap that
-        # exit rather than sit as a sibling in the same `with (...)` tuple
-        # (which would exit, and fail, first).
-        with pytest.raises(NotImplementedError, match="group_norm"):
-            with (
-                rc.EagerRealizationContext() as ctx,
-                realization_context(ctx),
-            ):
-                y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
-                assert y is not None
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+
+        expected = _numpy_group_norm(
+            x_np, gamma_np, beta_np, num_groups=2, eps=1e-5
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
+
+    def test_group_norm_3d(self) -> None:
+        """Test group_norm on a 3D (N, C, L) tensor."""
+        rng = np.random.default_rng(51)
+        x_np = rng.standard_normal((2, 8, 5)).astype(np.float32)
+        gamma_np = rng.standard_normal(8).astype(np.float32)
+        beta_np = rng.standard_normal(8).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-5)
+
+        expected = _numpy_group_norm(
+            x_np, gamma_np, beta_np, num_groups=4, eps=1e-5
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
 
 
 class TestSliceOp:
