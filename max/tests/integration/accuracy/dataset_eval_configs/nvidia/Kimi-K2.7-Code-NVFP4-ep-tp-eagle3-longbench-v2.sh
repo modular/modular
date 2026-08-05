@@ -12,19 +12,31 @@
 ##===----------------------------------------------------------------------===##
 
 # shellcheck disable=SC2034  # Variables are used when sourced
-pipeline=nvidia/Kimi-K2.5-NVFP4
+pipeline=nvidia/Kimi-K2.7-Code-NVFP4
 
 batch_size=64
 max_length=262144
 
 extra_pipelines_args=(
-  --device-memory-utilization=0.8
+  --device-memory-utilization=0.75
   --ep-size 8
+  --ep-use-allreduce
   --data-parallel-degree 1
-  --max-batch-input-tokens 8192
+  --max-batch-input-tokens 4096
   --enable-prefix-caching
   --kv-cache-format float8_e4m3fn
   --trust-remote-code
+  --speculative-method eagle
+  --draft-model-path nvidia/Kimi-K2.6-Eagle3
+  # No Eagle3 draft is trained for K2.7-Code; the K2.6 draft is reused in
+  # production. draft.sliding_window override mirrors the production
+  # deployment; it is not declared in the K2.6 draft's HF config.
+  --model-override=draft.sliding_window=12288
+  --num-speculative-tokens 3
+  --reasoning-parser kimik2_5
+  --tool-parser kimik2_5
+  --enable-structured-output
+  --enable-penalties
 )
 extra_longbench_v2_args=(
   --max_new_tokens 8192

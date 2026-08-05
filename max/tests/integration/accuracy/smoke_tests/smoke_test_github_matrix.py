@@ -17,7 +17,6 @@
 
 import json
 import re
-from pathlib import Path
 
 import click
 
@@ -68,9 +67,8 @@ INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
 HF_MODELS: dict[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
-    "amd/Kimi-K2.5-MXFP4": NON_XL | {"8xB200"},
     "amd/Kimi-K2.7-Code-MXFP4": NON_XL | {"8xB200"},
-    "amd/MiniMax-M2.7-MXFP4": NON_XL | {"8xB200"},
+    "nvidia/Kimi-K2.7-Code-NVFP4": NON_XL | {"4xMI355"},
     # MODELS-1611: M3 is a private arch, so max-ci only.
     "amd/MiniMax-M3-MXFP4": NON_XL | {"8xB200", "max"},
     "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
@@ -87,16 +85,13 @@ HF_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
-    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"4xMI355", "sglang"},
     # MODELS-1611: MXFP8 runs on 8xB200 only (MI355 comes later). max-ci
     # exercises the private M3 arch; sglang serves the HF checkpoint as a
     # reference. vLLM and released MAX are excluded.
     "MiniMaxAI/MiniMax-M3-MXFP8": NON_XL | {"4xMI355", "max", "vllm"},
-    "lukealonso/MiniMax-M2.7-NVFP4": NON_XL | {"4xMI355", "sglang"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
     "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4": NON_XL | {"4xMI355"},
     "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
     "Qwen/Qwen2.5-7B-Instruct": MULTI,
     "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
@@ -128,8 +123,6 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI,
     "meta-llama/Llama-3.1-8B-Instruct__dflash": MULTI,
-    "nvidia/Kimi-K2.5-NVFP4__dflash_tp": DISABLE,  # MXSERV-84
-    "nvidia/Kimi-K2.5-NVFP4__dflash_dp": DISABLE,  # MXSERV-84
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"4xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
     # DSpark arch is not in a released MAX yet, so max-ci only.
@@ -140,29 +133,11 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": MULTI | {"MI355"},
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
-    "nvidia/Kimi-K2.5-NVFP4__tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": NON_XL | {"4xMI355"},
-    "nvidia/Kimi-K2.6-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": NON_XL | {"4xMI355"},
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
-
-# Aliases whose recipe may not be present in every checkout. Mirror the
-# _OPTIONAL_MODEL_RECIPES guard in smoke_test.py so both dicts stay in sync.
-_max_dir = Path(__file__).resolve().parents[4]
-if (
-    _max_dir
-    / "python/max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml"
-).is_file():
-    # Runs exclusively on the dedicated internal 8xB200 runner. The recipe
-    # loads weights pre-staged on the runner; see the matching MODEL_RECIPES
-    # entry in smoke_test.py.
-    CUSTOM_MODELS["nvidia/Kimi-K2.5-NVFP4__internal"] = INTERNAL_ONLY
-    MODELS["nvidia/Kimi-K2.5-NVFP4__internal"] = INTERNAL_ONLY
 
 
 def excluded(framework: str, gpu: str, model: str) -> bool:

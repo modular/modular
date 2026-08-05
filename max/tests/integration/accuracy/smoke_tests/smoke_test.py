@@ -93,9 +93,6 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
     "google/gemma-3-27b-it__modulev3": "max/pipelines/architectures/gemma3_modulev3/recipes/gemma3_27b.yaml",
-    "MiniMaxAI/MiniMax-M2.7": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
-    "amd/MiniMax-M2.7-MXFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_mxfp4_8x_mi355.yaml",
-    "lukealonso/MiniMax-M2.7-NVFP4": "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__dflash": "max/pipelines/architectures/llama3/recipes/llama31_8b_dflash.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
@@ -110,30 +107,10 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
-    "amd/Kimi-K2.5-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
-    "nvidia/Kimi-K2.5-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_with_vision_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_tpep_with_vision_8x_b200.yaml",
-    "nvidia/Kimi-K2.6-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__dflash_tp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_tp_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__dflash_dp": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_dflash_dp_8x_b200.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
-    "nvidia/Kimi-K2.5-NVFP4__mha_eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_mha_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200_with_vision.yaml",
-    "nvidia/Kimi-K2.6-NVFP4__eagle_tpep": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_tpep_8x_b200.yaml",
-    "nvidia/Kimi-K2.6-NVFP4__eagle_rust_tiered_kvconnector_tpep_ar": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_6_eagle_rust_tiered_kvconnector_tpep_ar_8x_b200.yaml",
+    "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
 })
 # fmt: on
-
-# Aliases whose recipe may not be present in every checkout. Register
-# only when the YAML exists on disk so unit tests that iterate
-# ``MODEL_RECIPES`` don't try to open a file that isn't there.
-_OPTIONAL_MODEL_RECIPES = {
-    "nvidia/Kimi-K2.5-NVFP4__internal": "max/pipelines/architectures/kimik2_5/recipes/internal/nvfp4_8x_b200.yaml",
-}
-_max_dir = Path(__file__).resolve().parents[4]
-for _alias, _path in _OPTIONAL_MODEL_RECIPES.items():
-    if (_max_dir / "python" / _path).is_file():
-        MODEL_RECIPES[_alias] = _path
 
 
 class RecipeConfig(BaseModel):
