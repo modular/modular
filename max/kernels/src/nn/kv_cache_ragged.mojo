@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements KV-cache kernels for ragged (variable-length) sequences used in continuous batching."""
 
-from std.sys.info import _current_target, simd_width_of
+from std.sys.info import (
+    _current_target,
+    has_amd_gpu_accelerator,
+    simd_width_of,
+)
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
@@ -53,6 +57,7 @@ from layout import (
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import block_scaled_matmul
+from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
 from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
@@ -2507,6 +2512,35 @@ def _matmul_blockwise_scaled_fp4_common[
     # before any dependent grid runs. The upstream RMSNorm-block-scaled and
     # downstream attention kernels already default `PDLLevel.ON`; keeping this
     # GEMM OFF forced a full serialization bubble on both sides.
+    # AMD reaches the same band-routing epilogue through its own block-scaled
+    # kernel: `block_scaled_matmul` is SM10x/SM12x only, and the AMD kernel
+    # consumes rank-2 E8M0 scales and raw byte operands rather than the SM100
+    # SF-atom layout. The per-block scales already carry the whole scaling, so
+    # there is no `tensor_sf` to apply.
+    #
+    # The callee bottoms out in `cdna4_block_scaled_mfma`, so this needs CDNA4
+    # (gfx950) in practice; the gate is any-AMD to match the predicate used
+    # across the rest of the AMD kernels.
+    comptime if has_amd_gpu_accelerator():
+        if tensor_sf != 1.0:
+            raise Error(
+                "CDNA4 block-scaled fused QKV+index expects a unit tensor"
+                " scale; MXFP8 carries all scaling in the E8M0 blocks."
+            )
+        comptime assert (
+            scales_dtype == DType.float8_e8m0fnu
+        ), "CDNA4 block-scaled fused QKV+index requires E8M0 scales"
+        return mxfp4_block_scaled_matmul_amd[
+            lane_bytes=32, elementwise_lambda_fn=elementwise_lambda_fn
+        ](
+            c_tt,
+            lt_to_tt(hidden_state).bitcast[DType.uint8](),
+            lt_to_tt(weight).bitcast[DType.uint8](),
+            a_scales_tt.bitcast[DType.float8_e8m0fnu](),
+            b_scales_tt.bitcast[DType.float8_e8m0fnu](),
+            context,
+        )
+
     block_scaled_matmul[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         transpose_b=True,

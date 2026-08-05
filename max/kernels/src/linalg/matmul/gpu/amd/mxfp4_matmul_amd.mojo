@@ -78,7 +78,12 @@ from linalg.arch.amd.block_scaled_mma import (
     CDNA4F8F6F4MatrixFormat,
     cdna4_block_scaled_mfma,
 )
-from structured_kernels.amd_tile_io import RegTileLoader, RegTileWriter
+from structured_kernels.amd_tile_io import (
+    RegTileEpilogue,
+    RegTileLoader,
+    RegTileWriter,
+)
+from ....utils import elementwise_epilogue_type
 from .amd_matmul_schedule import build_default_matmul_schedule
 from .amd_matmul_schedule import (
     DefaultMatmulOps,
@@ -596,6 +601,7 @@ struct MXFP4MatmulAMD[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Native MXFP4 block-scaled matmul for AMD CDNA4.
 
@@ -615,6 +621,11 @@ struct MXFP4MatmulAMD[
         lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
             32 (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS`
             costs twice the registers and LDS at MXFP8.
+        elementwise_lambda_fn: Optional fused epilogue. When set, each
+            output fragment is handed to the lambda with its global
+            `(m, n)` instead of being stored to `c`, which lets a caller
+            route output bands elsewhere (e.g. scattering K/V into a
+            paged KV cache). Requires `MMA_M == 16` and `num_splits == 1`.
     """
 
     # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
@@ -842,6 +853,26 @@ struct MXFP4MatmulAMD[
             out_dtype, Self.MMA_M, WARP_SIZE // Self.MMA_M
         ](c_split)
 
+        # A fused epilogue has to see the FINAL value, so it cannot ride a
+        # per-split partial; `RegTileEpilogue`'s contract sends that case to
+        # the reduce kernel instead. The 32x32 MFMA's per-lane fragment is
+        # spread over non-contiguous columns, which the chunked writer below
+        # cannot address as one span.
+        comptime if Bool(Self.elementwise_lambda_fn):
+            comptime assert num_splits == 1, (
+                "fused epilogue is unsupported with split-K: it would fire on"
+                " each K partial rather than the reduced output"
+            )
+            comptime assert Self.MMA_M == 16, (
+                "fused epilogue requires the 16x16 MFMA; the 32x32 fragment is"
+                " column-strided per lane"
+            )
+        var c_epilogue = RegTileEpilogue[
+            out_dtype,
+            Self.c_frag_size,
+            elementwise_lambda_fn=Self.elementwise_lambda_fn,
+        ](c_split)
+
         # === Pipeline helpers ===
         # Both counters start at this split's first BK-tile. The DRAM
         # loaders index `a_blockrow.tile[BM, BK_BYTES](0, k_counter)`, so
@@ -1067,14 +1098,41 @@ struct MXFP4MatmulAMD[
         # which iterates the source as 4 register groups of 4 floats and
         # reorders them via the CDNA 32x32 register permutation
         # (`src[4*n + 16*m]` → fragment position `4*m + n`).
-        comptime for m_mma in range(num_m_mmas):
-            comptime for n_mma in range(num_n_mmas):
-                c_writer.store[mfma32=Self.MMA_M == 32](
-                    c_warp.tile[Self.MMA_M, Self.MMA_N](m_mma, n_mma).vectorize[
-                        1, 4
-                    ](),
-                    c_reg.tile[1, c_frag_size](m_mma, n_mma),
-                )
+        comptime if Bool(Self.elementwise_lambda_fn):
+            # The lambda mode addresses the output by global (m, n) rather than
+            # through the buffer resource, so it loses the V#'s row clamp and
+            # has to gate `m` itself. For the 16x16 MFMA each lane owns
+            # `c_frag_size` contiguous columns of one row: row = lane % MMA_M,
+            # first column = (lane // MMA_M) * c_frag_size.
+            var lane_group, thread_m = divmod(Int(lane_id()), Self.MMA_M)
+            var m_warp_base = Int(block_idx.y) * Self.BM + Int(warp_m) * Self.WM
+            var n_warp_base = Int(block_idx.x) * Self.BN + Int(warp_n) * Self.WN
+
+            comptime for m_mma in range(num_m_mmas):
+                var m_global = m_warp_base + m_mma * Self.MMA_M + Int(thread_m)
+                if m_global < M:
+                    comptime for n_mma in range(num_n_mmas):
+                        var v = (
+                            c_reg.tile[1, c_frag_size](m_mma, n_mma)
+                            .raw_load[width=c_frag_size](0)
+                            .cast[out_dtype]()
+                        )
+                        c_epilogue.store(
+                            v,
+                            m=m_global,
+                            n=n_warp_base
+                            + n_mma * Self.MMA_N
+                            + Int(lane_group) * c_frag_size,
+                        )
+        else:
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
+                    c_writer.store[mfma32=Self.MMA_M == 32](
+                        c_warp.tile[Self.MMA_M, Self.MMA_N](
+                            m_mma, n_mma
+                        ).vectorize[1, 4](),
+                        c_reg.tile[1, c_frag_size](m_mma, n_mma),
+                    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1092,6 +1150,7 @@ def _launch_mxfp4[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -1112,6 +1171,7 @@ def _launch_mxfp4[
         MMA_N=MMA_N,
         MMA_K=MMA_K,
         lane_bytes=lane_bytes,
+        elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     comptime N = type_of(c).static_shape[1]
 
@@ -1267,6 +1327,7 @@ def mxfp4_block_scaled_matmul_amd[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[mut=False, DType.uint8, ...],
@@ -1293,6 +1354,10 @@ def mxfp4_block_scaled_matmul_amd[
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
         lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
             32 (MXFP8), which selects the operand format and byte extents.
+        elementwise_lambda_fn: Optional fused epilogue receiving each output
+            fragment with its global `(m, n)`; `c` is left untouched. Forces
+            the non-split-K launch, since the lambda has to fire on the
+            reduced value rather than a per-split partial.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -1418,9 +1483,19 @@ def mxfp4_block_scaled_matmul_amd[
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
             # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
             _launch_mxfp4[
-                BM=16, BN=32, BK_ELEMS=512, WM=16, WN=16, lane_bytes=lane_bytes
+                BM=16,
+                BN=32,
+                BK_ELEMS=512,
+                WM=16,
+                WN=16,
+                lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
-        elif can_use_bk_256 and _sk_splits > 1:
+        elif (
+            can_use_bk_256
+            and _sk_splits > 1
+            and not Bool(elementwise_lambda_fn)
+        ):
             _launch_mxfp4_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
@@ -1441,6 +1516,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
             _launch_mxfp4[
@@ -1453,9 +1529,14 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
     elif M <= 64:
-        comptime if can_use_bk_256 and _sk_splits > 1:
+        comptime if (
+            can_use_bk_256
+            and _sk_splits > 1
+            and not Bool(elementwise_lambda_fn)
+        ):
             _launch_mxfp4_split_k[
                 BM=SK_BM,
                 BN=SK_BN,
@@ -1487,6 +1568,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
             _launch_mxfp4[
@@ -1499,6 +1581,7 @@ def mxfp4_block_scaled_matmul_amd[
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
                 lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
     else:
         _launch_mxfp4[
@@ -1511,4 +1594,5 @@ def mxfp4_block_scaled_matmul_amd[
             MMA_N=MMA_N,
             MMA_K=MMA_K,
             lane_bytes=lane_bytes,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ](c, a, b, a_scales, b_scales, M, ctx)

@@ -1049,7 +1049,13 @@ def _fused_qkv_index_ragged_matmul_scaled_mxfp8(
         "IQ_DIM": iq_dim,
     }
 
-    op_name = "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
+    # The two ops share every operand but the scale layout: SM100 takes the
+    # rank-5 SF-atom interleave, CDNA4 the checkpoint's rank-2 E8M0 scales.
+    op_name = (
+        "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8.amd"
+        if _is_amd_gpu()
+        else "mo.fused_qkv_index_matmul.ragged.paged.scale.mxfp8"
+    )
     values = [
         input,
         input_row_offsets,

@@ -43,8 +43,11 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import (
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
+    dynamic_block_scaled_matmul_mxfp4,
     fused_qkv_ragged_matmul,
     quantize_dynamic_block_scaled,
+    store_k_cache_ragged,
+    store_v_cache_ragged,
 )
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
@@ -53,6 +56,15 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedCacheValues,
 )
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.nn.quant_ops import quantized_fused_qkv_index_matmul
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
@@ -65,6 +77,33 @@ def _skip_if_not_supported() -> None:
         pytest.skip("MXFP8 block-scaled MMA only supports NVIDIA GPUs")
     if not is_b100_b200():
         pytest.skip("MXFP8 block-scaled MMA requires B100 or B200 (SM100)")
+
+
+def _skip_if_not_amd() -> None:
+    if accelerator_count() == 0:
+        pytest.skip("No GPU available for the CDNA4 stacked QKV+index test")
+    if accelerator_api() != "hip":
+        pytest.skip("The stacked QKV+index path is the CDNA4 path")
+
+
+def _mxfp8_quant_config() -> QuantConfig:
+    """MXFP8 dynamic-activation-quant config, as MiniMax-M3 builds for attention."""
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float8_e8m0fnu,
+            block_size=(1, 32),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e8m0fnu,
+            block_size=(1, 32),
+        ),
+        mlp_quantized_layers={0},
+        attn_quantized_layers={0},
+        format=QuantFormat.MXFP8,
+    )
 
 
 def _cosine_and_rel_l2(out: np.ndarray, ref: np.ndarray) -> tuple[float, float]:
@@ -96,6 +135,27 @@ def _make_cache(
     manager.claim(context.request_id, replica_idx=0)
     manager.alloc(context, replica_idx=0)
     return manager.runtime_inputs_for_leaf([[context]]).inputs[0]
+
+
+def _make_cache_batch(
+    kv_params: KVCacheParams,
+    session: InferenceSession,
+    prompt_lens: list[int],
+) -> KVCacheInputsPerDevice[Buffer, Buffer]:
+    """Allocate one request per prompt length and return the runtime inputs."""
+    manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=32,
+        session=session,
+        max_batch_size=8,
+    )
+    contexts = []
+    for n in prompt_lens:
+        context = create_text_context(np.empty(n))
+        manager.claim(context.request_id, replica_idx=0)
+        manager.alloc(context, replica_idx=0)
+        contexts.append(context)
+    return manager.runtime_inputs_for_leaf([contexts]).inputs[0]
 
 
 def _build_qkv_value(
@@ -511,3 +571,229 @@ def test_fused_qkv_index_mxfp8_matmul_fp8_main_cache() -> None:
     np.testing.assert_array_equal(iq_fp8, iq_bf16)
     # K/V differ only by the FP8 store rounding.
     assert kv_cos > 0.99, f"FP8 vs BF16 K/V cosine {kv_cos:.5f} too low"
+
+
+@pytest.mark.parametrize(
+    "prompt_lens",
+    [[96], [1], [1, 1, 1, 1], [3, 17], [200]],
+    ids=["single", "decode", "decode_batch", "ragged", "page_crossing"],
+)
+def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
+    prompt_lens: list[int],
+) -> None:
+    """CDNA4's stacked 5-way QKV+index GEMM matches five separate projections.
+
+    The CDNA4 block-scaled matmul has no epilogue hook, so
+    ``quantized_fused_qkv_index_matmul`` runs one GEMM over the stacked
+    ``[Wq | Wk | Wv | Wiq | Wik]`` weight and places K/V/IndexK with standalone
+    paged stores. Both paths quantize the same activation the same way, so the
+    stacked GEMM has to agree with five band-sliced GEMMs on Q, IndexQ and both
+    caches -- which is what pins each column band to the right destination.
+
+    Not asserted bit-exact: ``N`` drives the AMD tile and split-K dispatch, so
+    the stacked GEMM reduces K in a different order than the narrow per-band
+    GEMMs do.
+    """
+    _skip_if_not_amd()
+
+    seq_len = sum(prompt_lens)
+    n_heads, n_kv_heads, head_dim = 16, 4, 128
+    # As in the SM100 test above: an MLA-dispatch-supported index head count,
+    # since the index cache binds dispatch metadata when its inputs are built.
+    num_index_heads, idx_head_dim = 16, 128
+    hidden = 768
+    q_dim = n_heads * head_dim
+    kv_dim = n_kv_heads * head_dim
+    iq_dim = num_index_heads * idx_head_dim
+    ik_dim = idx_head_dim
+    n_total = q_dim + 2 * kv_dim + iq_dim + ik_dim
+
+    rng = np.random.default_rng(0)
+    a_np = (rng.standard_normal((seq_len, hidden)) * 0.1).astype(np.float32)
+    wqkv_np = (rng.standard_normal((n_total, hidden)) * 0.1).astype(np.float32)
+
+    device = Accelerator()
+    device_ref = DeviceRef(device.label, device.id)
+    session = InferenceSession(devices=[device])
+
+    main_params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        page_size=128,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        num_layers=1,
+        devices=[device_ref],
+    )
+    index_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        page_size=128,
+        head_dim=idx_head_dim,
+        num_layers=1,
+        devices=[device_ref],
+        num_q_heads=num_index_heads,
+    )
+
+    def _run(
+        stacked: bool,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32."""
+        main_sym = main_params.get_symbolic_inputs().inputs[0]
+        index_sym = index_params.get_symbolic_inputs().inputs[0]
+        n_main = len(main_sym.flatten())
+
+        with Graph(
+            f"qkv_index_mxfp8_amd_{'stacked' if stacked else 'separate'}",
+            input_types=[
+                TensorType(
+                    DType.bfloat16, (seq_len, hidden), device=device_ref
+                ),
+                TensorType(
+                    DType.uint32,
+                    (len(prompt_lens) + 1,),
+                    device=device_ref,
+                ),
+                TensorType(
+                    DType.bfloat16, (n_total, hidden), device=device_ref
+                ),
+                *main_sym.flatten(),
+                *index_sym.flatten(),
+            ],
+        ) as graph:
+            a, iro, wqkv, *rest = graph.inputs
+            main_in, index_in = rest[:n_main], rest[n_main:]
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
+            main_kv = PagedCacheValues(
+                main_in[0].buffer,
+                main_in[1].tensor,
+                main_in[2].tensor,
+                main_in[3].tensor,
+                main_in[4].tensor,
+            )
+            index_kv = PagedCacheValues(
+                index_in[0].buffer,
+                index_in[1].tensor,
+                index_in[2].tensor,
+                index_in[3].tensor,
+                index_in[4].tensor,
+            )
+            # On AMD this returns rank-2 [N, K // 32] E8M0 scales -- the
+            # checkpoint layout, which the CDNA4 matmul consumes uninterleaved.
+            w_q, w_scales = quantize_dynamic_block_scaled(
+                wqkv.tensor,
+                sf_vector_size=32,
+                scales_type=DType.float8_e8m0fnu,
+                out_type=DType.float8_e4m3fn,
+            )
+            if stacked:
+                q, index_q = quantized_fused_qkv_index_matmul(
+                    kv_params=main_params,
+                    index_kv_params=index_params,
+                    x=a.tensor,
+                    wqkv=w_q,
+                    kv_collection=main_kv,
+                    index_kv_collection=index_kv,
+                    layer_idx=layer_idx,
+                    input_row_offsets=iro.tensor,
+                    n_heads=n_heads,
+                    num_index_heads=num_index_heads,
+                    idx_head_dim=idx_head_dim,
+                    quant_config=_mxfp8_quant_config(),
+                    weight_scale=w_scales,
+                )
+            else:
+                a_q, a_scales = quantize_dynamic_block_scaled(
+                    a.tensor,
+                    sf_vector_size=32,
+                    scales_type=DType.float8_e8m0fnu,
+                    out_type=DType.float8_e4m3fn,
+                )
+                projections = []
+                start = 0
+                for width in (q_dim, kv_dim, kv_dim, iq_dim, ik_dim):
+                    stop = start + width
+                    projections.append(
+                        dynamic_block_scaled_matmul_mxfp4(
+                            a_q,
+                            w_q[start:stop],
+                            a_scales,
+                            w_scales[start:stop],
+                            out_type=DType.bfloat16,
+                        )
+                    )
+                    start = stop
+                q, k, v, index_q, index_k = projections
+                store_k_cache_ragged(
+                    main_kv,
+                    ops.reshape(k, [seq_len, n_kv_heads, head_dim]),
+                    iro.tensor,
+                    layer_idx,
+                )
+                store_v_cache_ragged(
+                    main_kv,
+                    ops.reshape(v, [seq_len, n_kv_heads, head_dim]),
+                    iro.tensor,
+                    layer_idx,
+                )
+                store_k_cache_ragged(
+                    index_kv,
+                    ops.reshape(index_k, [seq_len, 1, idx_head_dim]),
+                    iro.tensor,
+                    layer_idx,
+                )
+            graph.output(q, index_q)
+
+        model = session.load(graph)
+        main_rt = _make_cache_batch(main_params, session, prompt_lens)
+        index_rt = _make_cache_batch(index_params, session, prompt_lens)
+
+        a_buf = Buffer.from_dlpack(
+            torch.from_numpy(a_np).to(torch.bfloat16)
+        ).to(device)
+        wqkv_buf = Buffer.from_dlpack(
+            torch.from_numpy(wqkv_np).to(torch.bfloat16)
+        ).to(device)
+        iro_buf = Buffer.from_dlpack(
+            torch.tensor(np.cumsum([0] + prompt_lens), dtype=torch.uint32)
+        ).to(device)
+
+        q_buf, iq_buf = model.execute(
+            a_buf, iro_buf, wqkv_buf, *main_rt.flatten(), *index_rt.flatten()
+        )
+
+        # The caches are bf16, which numpy can't represent, so read through torch.
+        def to_np(buf: Buffer) -> np.ndarray:
+            return torch.from_dlpack(buf).to(torch.float32).cpu().numpy()
+
+        return (
+            to_np(q_buf),
+            to_np(iq_buf),
+            to_np(main_rt.kv_blocks),
+            to_np(index_rt.kv_blocks),
+        )
+
+    q_st, iq_st, main_st, index_st = _run(stacked=True)
+    q_sep, iq_sep, main_sep, index_sep = _run(stacked=False)
+
+    q_cos, q_rel = _cosine_and_rel_l2(q_st, q_sep)
+    iq_cos, iq_rel = _cosine_and_rel_l2(iq_st, iq_sep)
+    main_cos, main_rel = _cosine_and_rel_l2(main_st, main_sep)
+    index_cos, index_rel = _cosine_and_rel_l2(index_st, index_sep)
+    print(
+        f"\n=== fused_qkv_index_mxfp8 CDNA4 stacked vs separate ===\n"
+        f"  Q       cosine / rel-L2 : {q_cos:.6f} / {q_rel:.6f}\n"
+        f"  IndexQ  cosine / rel-L2 : {iq_cos:.6f} / {iq_rel:.6f}\n"
+        f"  main KV cosine / rel-L2 : {main_cos:.6f} / {main_rel:.6f}\n"
+        f"  indexK  cosine / rel-L2 : {index_cos:.6f} / {index_rel:.6f}",
+        flush=True,
+    )
+
+    # A mis-routed band writes another projection's values, which collapses the
+    # cosine long before it reaches these thresholds.
+    assert q_cos > 0.9999, f"Q cosine {q_cos:.6f} too low"
+    assert iq_cos > 0.9999, f"IndexQ cosine {iq_cos:.6f} too low"
+    assert main_cos > 0.9999, f"main K/V cosine {main_cos:.6f} too low"
+    assert index_cos > 0.9999, f"IndexK cosine {index_cos:.6f} too low"
+    assert np.any(main_st != 0.0), "stacked path left the main cache unwritten"
+    assert np.any(index_st != 0.0), (
+        "stacked path left the index cache unwritten"
+    )
