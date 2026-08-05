@@ -448,6 +448,14 @@ struct Span[
 
     @always_inline
     @implicit
+    def __init__(
+        out self: Span[Self.T, Self.origin],
+        ref[Self.origin] array: Array[downcast[Self.T, Movable], _],
+    ):
+        pass
+
+    @always_inline
+    @implicit
     def __init__[U: Copyable](out self, ref[Self.origin] list: List[U]):
         self = {}  # Stub impl.
 
@@ -705,7 +713,9 @@ struct List[T: Copyable](Copyable, Iterable):
     def __init__(out self):
         pass
 
-    def __init__(out self, var *elements: Self.T, __list_literal__: NoneType):
+    def __init__(
+        out self, var *elements: Self.T, __list_literal__: NoneType = None
+    ):
         pass
 
     def append(

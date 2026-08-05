@@ -94,14 +94,16 @@ private:
 
   FailureOr<SmartVariant<CValue, ASTType>>
   inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
-              CallSyntax syntax, ASTType expectedType);
+              CallSyntax syntax, ASTType expectedType,
+              OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
 
   /// Core type matching logic for parameter inference, this matches expected
   /// type against the RValue type of the operand (which means this does not
   /// handle calling convention).
-  LogicalResult inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
-                                ASTType expectedType, PogListAttr argPogs,
-                                CallSyntax syntax);
+  LogicalResult inferFromRVType(
+      ASTExprAnd<AnyValue> operand, size_t argIdx, ASTType expectedType,
+      PogListAttr argPogs, CallSyntax syntax,
+      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
 
   /// Infer and emit a single value for a parameter binding. This returns
   /// failure if it emits a diagnostic, otherwise is returns a parameter value

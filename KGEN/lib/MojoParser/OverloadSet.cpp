@@ -448,8 +448,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
 /// will succeed.
 static LogicalResult emitOperandsNeedingOriginsToMemory(
     const OperandsNeedingOriginsList &operandsNeedingOrigins,
-    FnOrFnLiteralTypeGeneratorType expectedSig, CallOperands &operands,
-    IREmitter &emitter) {
+    CallOperands &operands, IREmitter &emitter) {
   assert(!operandsNeedingOrigins.empty() && "should emit something");
 
   SmallPtrSet<size_t, 4> operandsAlreadySpilled;
@@ -457,7 +456,6 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
   // Emit each of the arguments that needs a origin to an MValue.
   for (const OperandNeedingOrigin &info : operandsNeedingOrigins) {
     auto operandIdx = info.operandIdx;
-    auto argIdx = info.argIdx;
     auto expectedArgType = info.expectedArgType;
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
@@ -478,10 +476,16 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
       continue;
     }
 
-    // If the argument is a variadic, get the expected element type from it.
-    ArgConvention argConvention = expectedSig.getArgConvention(argIdx);
-    if (expectedSig.isPosVarArg(argIdx) || expectedSig.isPack(argIdx))
-      argConvention = expectedSig.getVariadicConvention(argIdx);
+    // Derive the convention from the signature this argument belongs to, which
+    // is the implicit constructor's signature when the operand is spilled to
+    // feed a conversion rather than the call itself.  If the argument is a
+    // variadic, the elements have their own convention.
+    ArgConvention argConvention = [&]() {
+      FnTypeGeneratorType sig = info.signature;
+      if (sig.isPosVarArg(info.argIdx) || sig.isPack(info.argIdx))
+        return sig.getVariadicConvention(info.argIdx);
+      return sig.getArgConvention(info.argIdx);
+    }();
 
     // If the argument is a DLValue, then we might have a getter/setter pair,
     // but we are only going to use the getter.  In the case when the getter
@@ -589,11 +593,10 @@ bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
 /// list, e.g. when calling a static method that doesn't need a self value, and
 /// by pre-emitting PValues when not in an parameter context. The actual
 /// emission needs to use the updated argument list.
-PValue OverloadSet::filterOverloadSet(CallOperands &operands,
-                                      bool emitDiagnosticOnFailure,
-                                      IREmitter &emitter,
-                                      bool disableMaterialization) const {
-
+PValue OverloadSet::filterOverloadSet(
+    CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
+    bool disableMaterialization,
+    OperandsNeedingOriginsList *forwardedNeedingOrigins) const {
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
@@ -842,22 +845,23 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    if (!bestFitness.getOperandsNeedingOrigins().empty() &&
-        !disableMaterialization) {
-      // Emit one or more operands to memory.  We know this can't infinitely
-      // loop because there is a forward progress guarantee here.
-      if (failed(emitOperandsNeedingOriginsToMemory(
-              bestFitness.getOperandsNeedingOrigins(),
-              FnOrFnLiteralTypeGeneratorType::get(boundFunction.getType()),
-              operands, emitter)))
-        return {};
+    if (!bestFitness.getOperandsNeedingOrigins().empty()) {
+      if (forwardedNeedingOrigins)
+        *forwardedNeedingOrigins = bestFitness.getOperandsNeedingOrigins();
+      if (!disableMaterialization) {
+        // Emit one or more operands to memory.  We know this can't infinitely
+        // loop because there is a forward progress guarantee here.
+        if (failed(emitOperandsNeedingOriginsToMemory(
+                bestFitness.getOperandsNeedingOrigins(), operands, emitter)))
+          return {};
 
-      // Now that we mutated the operand list by introducing some new memory
-      // types to provide origins, try again.  This will re-evaluate parameter
-      // bindings and either succeed or fail based on the new information.
-      // The recursive call will push deferred body constraints (if any) onto
-      // the context itself, so do not push them here.
-      return filterOverloadSet(operands, emitDiagnosticOnFailure, emitter);
+        // Now that we mutated the operand list by introducing some new memory
+        // types to provide origins, try again.  This will re-evaluate parameter
+        // bindings and either succeed or fail based on the new information.
+        // The recursive call will push deferred body constraints (if any) onto
+        // the context itself, so do not push them here.
+        return filterOverloadSet(operands, emitDiagnosticOnFailure, emitter);
+      }
     }
 
     // If body-constraint deferral applies to this candidate, record the
@@ -1508,9 +1512,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(
-            fitness.getOperandsNeedingOrigins(),
-            cast<FnTypeGeneratorType>(boundCalleeRV.getType()), operands,
-            *this))) {
+            fitness.getOperandsNeedingOrigins(), operands, *this))) {
       operands.dest.resetForError(*this);
       return {};
     }
@@ -1720,9 +1722,9 @@ CValue IREmitter::emitConstructorCall(ASTType type,
 /// If there were erroneous declarations, an error has been raised about a
 /// constructor that likely would have applied, which should be considered in
 /// any error reporting. This does not generate any IR.
-FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
-                                                CallOperands &operands,
-                                                ASTDecl &declScope) {
+FailureOr<PValue> OverloadSet::canConstructType(
+    ASTType requiredType, CallOperands &operands, ASTDecl &declScope,
+    OperandsNeedingOriginsList *forwardedNeedingOrigins) {
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   requiredType = getConstructorLookupType(requiredType, declScope);
@@ -1745,11 +1747,11 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
 
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
-  // be able to allow implicit conversions.
-  PValue result =
-      callee.filterOverloadSet(operands,
-                               /*emitDiagnosticOnFailure=*/false, paramEmitter,
-                               /*disableMaterialization*/ true);
+  PValue result = callee.filterOverloadSet(
+      operands,
+      /*emitDiagnosticOnFailure=*/false, paramEmitter,
+      /*disableMaterialization=*/true, forwardedNeedingOrigins);
+
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   if (!result)

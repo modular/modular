@@ -139,13 +139,17 @@ public:
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
   ///
+  /// When `forwardedNeedingOrigins` is non-null, instead of materializing the
+  /// operands that need origins, simply forward the information to the caller.
+  ///
   /// NOTE: This can mutate the operand list, e.g. when calling a static method
   /// that doesn't need a self value, and by pre-emitting PValues when not in an
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
-  PValue filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
-                           IREmitter &emitter,
-                           bool disableMaterialization = false) const;
+  PValue filterOverloadSet(
+      CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
+      bool disableMaterialization = false,
+      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings on the overload
@@ -204,9 +208,9 @@ public:
   ///
   /// This allows implicit conversions of operands so long as "operands" doesn't
   /// indicate that this is itself an implicit conversion.
-  static FailureOr<PValue> canConstructType(ASTType requiredType,
-                                            CallOperands &operands,
-                                            ASTDecl &declScope);
+  static FailureOr<PValue> canConstructType(
+      ASTType requiredType, CallOperands &operands, ASTDecl &declScope,
+      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
 
   LLVM_DUMP_METHOD void dump() const;
 

@@ -236,8 +236,36 @@ raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 /// This list keeps track of those cases.
 struct OperandNeedingOrigin {
   size_t operandIdx; // The index of the operand in the call operands list.
-  size_t argIdx;     // The index of the argument in the callee's signature.
+  size_t argIdx;     // The index of the argument in `signature`.
   ASTType expectedArgType; // The expected RValue type of the argument.
+
+  // The signature that `argIdx` indexes into.  This is not necessarily the
+  // signature of the call being evaluated: when the operand only fits after an
+  // implicit conversion, this is the signature of that conversion's
+  // constructor.  Consider:
+  //
+  //   struct RW[o: ImmOrigin](Copyable, Movable):
+  //
+  //     @implicit
+  //     def __init__[vo: ImmOrigin, //](ref[vo] value: Int, out self: RW[vo]):
+  //         self.n = value
+  //
+  // def grw(w: RW) -> Int:
+  //     pass
+  //
+  // def main():
+  //     var a, b = 1, 2
+  //     _ = grw(a + b)
+  //
+  // `a + b` will need to be spilled to memory to get an origin to construct a
+  // `RW`, so the spill has to use the implicit ctor's convention for `value`
+  // (ref) rather than `grw`'s convention for `w` (readMem), since we want to
+  // eventually emit `grw(RW(a + b))`.  Emission derives the convention from
+  // this signature, which also tells it whether `argIdx` is variadic.
+  //
+  // TODO: figure out the subtleties related to variadic convention etc, then we
+  // can collapse signature and argIdx into a single ArgConvention field.
+  FnTypeGeneratorType signature;
 
   enum {
     /// This is a sentinel representing the the "operand" that needs spilling is

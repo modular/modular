@@ -112,7 +112,8 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
 FailureOr<SmartVariant<CValue, ASTType>>
 ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
                       PogListAttr argPogs, CallSyntax syntax,
-                      ASTType expectedType) {
+                      ASTType expectedType,
+                      OperandsNeedingOriginsList *forwardedNeedingOrigins) {
   // If this is already a CValue then we're done.
   if (auto cv = operand.ir.getIfCValue())
     return SmartVariant<CValue, ASTType>(cv);
@@ -162,6 +163,28 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     if (succeeded(matcher.matchTypes(initType, expectedType)))
       return SmartVariant<CValue, ASTType>(initType);
 
+    // Check whether an implicit conversion
+    if (allowImplicitConversions) {
+      CallOperands callOperands(CallSyntax::kImplicitConvert, operand.expr,
+                                EC_OverloadResolution, {operand});
+      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+          expectedType.getWithUnknownParametersReplaced(getShared()),
+          callOperands, getDeclScope(), forwardedNeedingOrigins);
+
+      // If we found one, we succeed if the returned type is compatible with the
+      // expected type.  Infer the parameters of this overload candidate against
+      // the computed result type of the initializer.
+      if (succeeded(pValue) && pValue.value()) {
+        auto sig =
+            FnOrFnLiteralTypeGeneratorType::get(pValue.value().getType());
+        if (succeeded(
+                matcher.matchTypes(sig.getUserResultType(), expectedType))) {
+          ++numImplicitConversions;
+          return SmartVariant<CValue, ASTType>(
+              ASTType(sig.getUserResultType()));
+        }
+      }
+    }
     // TODO: Could improve this to talk about initializers.
     auto &diag = emitWrongTypeDiag(expectedType);
     matcher.failureReason->addExplanation(diag, &getDeclScope());
@@ -215,10 +238,11 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
 /// while 'OverloadFitness::scoreOperandFitness' computes fitness metrics
 /// after inference is complete. They serve different phases of overload
 /// resolution and should remain separate.
-LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
-                                        size_t argIdx, ASTType expectedType,
-                                        PogListAttr argPogs,
-                                        CallSyntax syntax) {
+LogicalResult
+ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
+                          ASTType expectedType, PogListAttr argPogs,
+                          CallSyntax syntax,
+                          OperandsNeedingOriginsList *forwardedNeedingOrigins) {
   // Make sure the diagnostic machinery knows about our getDeclScope() so
   // parameter names get emitted correctly.
   DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
@@ -235,8 +259,8 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
   // resolve the argument to a CValue.
-  FailureOr<SmartVariant<CValue, ASTType>> argValOr =
-      inferCValue(operand, argIdx, argPogs, syntax, expectedType);
+  FailureOr<SmartVariant<CValue, ASTType>> argValOr = inferCValue(
+      operand, argIdx, argPogs, syntax, expectedType, forwardedNeedingOrigins);
   if (failed(argValOr))
     return failure();
   CValue argVal = dyn_cast<CValue>(*argValOr);
@@ -357,7 +381,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
                               EC_TypeParamValue, {{argVal, operand.expr}});
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
-        nonParamType, ctorOperands, getDeclScope());
+        nonParamType, ctorOperands, getDeclScope(), forwardedNeedingOrigins);
     if (failed(pValue)) {
       auto &diag = getMojoDiag(operand.expr->getLoc());
       diag << "cannot convert to type with a previously diagnosed error";
@@ -1473,9 +1497,27 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   // Call the core matching logic after handling the convention.
+  OperandsNeedingOriginsList forwardedNeedingOrigins;
   if (failed(inferFromRVType(operand, argIdx, expectedRVType, argPogs,
-                             callOperands.syntax)))
+                             callOperands.syntax, &forwardedNeedingOrigins)))
     return failure();
+
+  // TODO: We can potentially generalize beyond `operand.ir.getIfCValue()`?
+  if (!needsArgInMemory && !forwardedNeedingOrigins.empty()) {
+    // In order to construct the current argument, we need to to invoke a
+    // implicit conversion that turns the argument into a memory value.  Keep
+    // the conversion's signature and argument index, since the spill has to
+    // satisfy the constructor rather than this call.
+    OperandNeedingOrigin forwarded = forwardedNeedingOrigins.front();
+    // The argIdx has to be 0 in order to match, because the implicit
+    // ctor we picked during `inferFromRVType` must only take one argument.
+    assert(forwarded.argIdx == 0 &&
+           forwarded.operandIdx != OperandNeedingOrigin::kExprDestOperandIdx &&
+           forwardedNeedingOrigins.size() == 1);
+    // Adjust the operand idx.
+    forwarded.operandIdx = operandIdx;
+    operandsNeedingOrigins.push_back(forwarded);
+  }
 
   // We may have refined expectedRVType.
   expectedRVType = evaluator.getReboundType(expectedRVType);
@@ -1485,7 +1527,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // selected from the overload set, but with the argument in a temporary
   // vardecl.
   if (needsArgInMemory)
-    operandsNeedingOrigins.push_back({operandIdx, argIdx, expectedRVType});
+    operandsNeedingOrigins.push_back(
+        {operandIdx, argIdx, expectedRVType, calleeSignature});
 
   // If a register-passable type is being passed in-memory, remember this.
   if (expectedConvention != ArgConvention::ReadReg &&
@@ -1621,8 +1664,10 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
     // If the ExprDest lacks a concrete MLValue, we can't infer anything. We
     // need the caller to spill the result into a buffer and reinfer us. Until
     // then, bind it as AnyOrigin to avoid failing to infer the parameters.
+
     operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
-                                      argIdx, expectedRef.getElementType()});
+                                      argIdx, expectedRef.getElementType(),
+                                      calleeSignature});
 
     if (needsOrigin)
       actualRef = expectedRef.getWithOrigin(
@@ -1903,8 +1948,9 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // The value isn't in memory (or isn't usable in memory) yet.  We will
       // tell call emission that it needs to dump it in memory and try again
       // to use this callee.  Until then, we use AnyOrigin as a placeholder.
-      operandsNeedingOrigins.push_back(
-          {operandIdx, argIdx, evaluator.getReboundType(expectedType)});
+      operandsNeedingOrigins.push_back({operandIdx, argIdx,
+                                        evaluator.getReboundType(expectedType),
+                                        calleeSignature});
       return AnyOriginAttr::get(expectedOriginType);
     };
 
