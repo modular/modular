@@ -21,10 +21,12 @@ namespace M {
 /// the caller must pick one before the NIXL plugin manager reads
 /// NIXL_PLUGIN_DIR. Each vendor is detected explicitly via its kernel device
 /// node (/dev/nvidiactl for NVIDIA, /dev/kfd for amdgpu) — never assumed from
-/// the absence of the other. On AMD hosts the verbs flavor (a strict superset
-/// of the plain rocm flavor that adds the uct_ib RDMA transports for
-/// internode transfers) is preferred when its hard load-time dependencies
-/// (rdma-core) resolve.
+/// the absence of the other. On AMD hosts the rocm-uccl flavor is the default;
+/// an explicit MODULAR_NIXL_TRANSFER_BACKEND=ucx (or libfabric), or an
+/// environment where rocm-uccl is not staged, falls back to the UCX flavors,
+/// where the verbs flavor (a strict superset of the plain rocm flavor that
+/// adds the uct_ib RDMA transports for internode transfers) is preferred when
+/// its hard load-time dependencies (rdma-core) resolve.
 ///
 /// Returns std::nullopt when no vendor (or no staged flavor for the detected
 /// vendor) is found; callers then leave NIXL_PLUGIN_DIR unset and NIXL
