@@ -24,13 +24,13 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from max.algorithm.reduction import _reduce_generator
 from algorithm.reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_max,
     reduce_mean,
     reduce_min,
+    reduce_min_and_max,
     reduce_product,
     reduce_sum,
 )
@@ -69,7 +69,7 @@ from std.logger import Logger
 comptime logger = Logger()
 """Logger for the reductions module."""
 
-from std.utils import IndexList, StaticTuple
+from std.utils import IndexList
 from std.utils.coord import Coord
 from std.utils.index import Index
 
@@ -1328,95 +1328,42 @@ struct ReduceMinAndMax:
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
 
-        comptime num_reductions = 2
         comptime norm_axis = axis + rank if axis < 0 else axis
         comptime assert (
             0 <= norm_axis < rank
         ), "axis must be between [0, <input rank>)"
 
-        @parameter
         @always_inline
-        def input_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._fused_load[width=width](
+        def input_fn[
+            width: Int, alignment: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            return input._fused_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
+        # The op packs both reductions into one `[..., 2, ...]` output tensor:
+        # min at slot 0, max at slot 1 of the reduced axis.
         @always_inline
-        def output_0_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
-            output._fused_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        @always_inline
-        @parameter
-        def input_0_fn_wrapper[
-            _type: DType, width: Int, rank: Int
-        ](idx: IndexList[rank]) -> SIMD[_type, width]:
-            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+        def output_min_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            var idx = rebind[IndexList[output.rank]](coords)
+            idx[norm_axis] = 0
+            output._fused_store[width=width](idx, val)
 
         @always_inline
-        @parameter
-        def output_0_fn_wrapper[
-            _type: DType,
-            width: SIMDLength,
-            rank: Int,
-        ](
-            indices: IndexList[rank],
-            val: StaticTuple[SIMD[_type, width], num_reductions],
-        ):
-            # TODO: once we support multiple outputs, change this to route to
-            # TODO: multiple output tensors.
-            var indices_min = indices
-            indices_min[norm_axis] = 0
-            output_0_fn[width, rank](
-                indices_min, rebind[SIMD[dtype, width]](val[0])
-            )
+        def output_max_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            var idx = rebind[IndexList[output.rank]](coords)
+            idx[norm_axis] = 1
+            output._fused_store[width=width](idx, val)
 
-            var indices_max = indices
-            indices_max[norm_axis] = 1
-            output_0_fn[width, rank](
-                indices_max, rebind[SIMD[dtype, width]](val[1])
-            )
-
-        @always_inline
-        @parameter
-        def reduce_fn[
-            ty: DType,
-            width: SIMDLength,
-            reduction_idx: Int,
-        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
-            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
-
-            comptime if reduction_idx == 0:
-                return min(left, right)
-            else:
-                return max(left, right)
-
-        var init_min = Scalar[dtype].MAX
-        var init_max = Scalar[dtype].MIN
-        var init = StaticTuple[Scalar[dtype], num_reductions](
-            init_min, init_max
-        )
-
-        _reduce_generator[
-            num_reductions,
+        reduce_min_and_max[
             dtype,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_fn,
             target=target,
             reduce_dim=norm_axis,
-        ](
-            Coord(input.shape()),
-            init=init,
-            context=Optional[DeviceContext](ctx),
-        )
+        ](input_fn, output_min_fn, output_max_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")

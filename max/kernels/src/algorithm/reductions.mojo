@@ -13,10 +13,10 @@
 """Row-based row-wise reductions (free-form body layer).
 
 Pure-reduction entry points (`reduce_sum` / `reduce_max` / `reduce_min` /
-`reduce_product` / `reduce_mean` / `reduce_argmax` / `reduce_argmin`) built
-on the `algorithm.rowwise` scaffolder and the `algorithm.reduce_op` monoid
-library. Each authors one free-form body — a single reduce phase plus a
-per-row `emit` — and runs on both CPU and GPU.
+`reduce_product` / `reduce_mean` / `reduce_argmax` / `reduce_argmin` /
+`reduce_min_and_max`) built on the `algorithm.rowwise` scaffolder and the
+`algorithm.reduce_op` monoid library. Each authors one free-form body — a
+single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 """
 
 from max.gpu.host import DeviceContext
@@ -28,6 +28,7 @@ from algorithm import rowwise
 from algorithm.reduce_op import (
     ArgMax,
     ArgMin,
+    MinMax,
     ReduceMax,
     ReduceMin,
     ReduceProduct,
@@ -665,3 +666,103 @@ def reduce_argmax[
 # Row-based fused min-and-max: one axis walk, two outputs via the
 # MinMax monoid (min_acc / max_acc).
 # ===----------------------------------------------------------------------=== #
+
+
+def reduce_min_and_max[
+    dtype: DType,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, rank: Int
+        ](IndexList[rank]) -> SIMD[dtype, width]
+    ),
+    OutputMinFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int
+        ](IndexList[rank], SIMD[dtype, width]) -> None
+    ),
+    OutputMaxFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int
+        ](IndexList[rank], SIMD[dtype, width]) -> None
+    ),
+    /,
+    target: StaticString,
+    *,
+    reduce_dim: Int,
+](
+    input_fn: InputFn,
+    output_min_fn: OutputMinFn,
+    output_max_fn: OutputMaxFn,
+    input_shape: Coord,
+    context: Optional[DeviceContext] = None,
+) raises:
+    """Computes min and max in one axis walk (`MinMax` monoid), two
+    outputs."""
+    comptime simd_width = rowwise.pick_simd_width[
+        MinMax[dtype, 1], target, 64, dtype
+    ]()
+    var axis_size = Int(input_shape[reduce_dim].value())
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx: rowwise.Context[params]) {
+        var axis_size, var input_fn, var output_min_fn, var output_max_fn
+    }:
+        comptime rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[dtype, width]:
+            return input_fn[width, alignment, rank](
+                rebind[IndexList[rank]](idx)
+            )
+
+        # Prepare Row: build the row view over the axis size (always
+        # dynamic here — these entry points take no static_cols param).
+        var row = rowwise.Row[
+            params, dtype, dtype, reduce_dim, rank, is_cached=False
+        ](row_coords, Scalar[DType.int](axis_size), ctx, load)
+
+        # Reduce: min and max in one pass via the MinMax monoid.
+        @always_inline
+        def val[
+            width: Int
+        ](tile: SIMD[dtype, width], idx: IndexList[rank]) {} -> SIMD[
+            dtype, width
+        ]:
+            return tile
+
+        var stats = row.reduce[MinMax[dtype, params.simd_width]](val, load)
+        var mn = stats.min_acc
+        var mx = stats.max_acc
+
+        # Emit: per-row output — both the min and the max.
+        @always_inline
+        def write(
+            oc: IndexList[rank],
+        ) {var mn, var mx, var output_min_fn, var output_max_fn,}:
+            output_min_fn[params.emit_tile_width, rank](
+                oc, mn.slice[params.emit_tile_width]()
+            )
+            output_max_fn[params.emit_tile_width, rank](
+                oc, mx.slice[params.emit_tile_width]()
+            )
+
+        # `mn`/`mx`/`output_min_fn`/`output_max_fn` ride into `emit`.
+        row.emit(write)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=1,
+    ](body, input_shape, context)
