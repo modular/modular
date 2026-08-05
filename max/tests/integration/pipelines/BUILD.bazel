@@ -26,6 +26,14 @@ modular_py_test(
     name = "test_modulev3_lora_manager",
     size = "small",
     srcs = ["test_modulev3_lora_manager.py"],
+    # Import-bound: ~80% of the wall time is importing the max stack, not the
+    # 13 assertions themselves. That startup cost starves on contended macOS
+    # workers and trips the timeout, and the LoRA manager logic under test is
+    # platform-independent, so macOS coverage buys nothing here.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
