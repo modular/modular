@@ -39,6 +39,7 @@ from std.math import (
     log,
     log1p,
     log2,
+    mul_no_contraction,
     perm,
     pi,
     rsqrt,
@@ -1004,6 +1005,23 @@ def test_acos() raises:
     assert_almost_equal(acos(Float64(-1)), pi)
     assert_almost_equal(acos(Float64(0)), pi / 2.0)
     assert_true(isnan(acos(nan[DType.float64]())))
+
+
+def test_mul_no_contraction() raises:
+    var a = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
+    var b = SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0)
+    var c = SIMD[DType.float32, 4](9.0, 10.0, 11.0, 12.0)
+
+    var product = mul_no_contraction(a, b)
+    assert_equal(product, SIMD[DType.float32, 4](5.0, 12.0, 21.0, 32.0))
+
+    var result = product + c
+    assert_equal(result, SIMD[DType.float32, 4](14.0, 22.0, 32.0, 44.0))
+
+    var a64 = SIMD[DType.float64, 2](1.5, 2.5)
+    var b64 = SIMD[DType.float64, 2](3.0, 4.0)
+    var product64 = mul_no_contraction(a64, b64)
+    assert_equal(product64, SIMD[DType.float64, 2](4.5, 10.0))
 
 
 def main() raises:

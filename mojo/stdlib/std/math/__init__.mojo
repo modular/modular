@@ -74,6 +74,7 @@ from .math import (
     hypot,
     iota,
     isclose,
+    mul_no_contraction,
     rsqrt,
     j0,
     j1,
