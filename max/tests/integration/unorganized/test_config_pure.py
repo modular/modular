@@ -219,24 +219,15 @@ class TestPipelineConfigUtilityMethods:
         assert "unrelated_param2" in kwargs
 
     @mock_pipeline_config_resolve
-    def test_create_lora_config_if_needed_with_lora_paths(self) -> None:
-        """Test LoRA config creation when lora_paths are provided."""
-        config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path="test/model")}
-            ),
+    def test_lora_config_built_when_enabled(self) -> None:
+        """LoRA flags build a LoRAConfig when ``enable_lora`` is set."""
+        config = PipelineConfig.from_flat_kwargs(
+            model_path="test/model",
+            enable_lora=True,
+            lora_paths=["/path/to/lora1", "/path/to/lora2"],
+            max_lora_rank=32,
         )
 
-        kwargs = {
-            "enable_lora": True,
-            "lora_paths": ["/path/to/lora1", "/path/to/lora2"],
-            "max_lora_rank": 32,
-            "other_param": "value",
-        }
-
-        config._create_lora_config_if_needed(kwargs)
-
-        # Should create LoRA config
         assert config.lora is not None
         assert config.lora.lora_paths == [
             "/path/to/lora1",
@@ -244,28 +235,18 @@ class TestPipelineConfigUtilityMethods:
         ]
         assert config.lora.max_lora_rank == 32
 
-        # Should remove LoRA-related kwargs
-        assert "lora_paths" not in kwargs
-        assert "max_lora_rank" not in kwargs
-        assert "other_param" in kwargs  # Non-LoRA params should remain
-
     @mock_pipeline_config_resolve
-    def test_create_lora_config_if_needed_error_on_incomplete_config(
-        self,
-    ) -> None:
-        """Test error when LoRA config detected but no lora_paths provided."""
-        config = PipelineConfig(
-            models=ModelManifest(
-                {"main": MAXModelConfig(model_path="test/model")}
-            ),
-        )
+    def test_lora_config_absent_without_enable_lora(self) -> None:
+        """LoRA flags alone don't enable LoRA -- only ``enable_lora`` does.
 
-        kwargs = {
-            "max_lora_rank": 32,
-            "max_num_loras": 10,
-        }
-        config._create_lora_config_if_needed(kwargs)
-        # LoRA config should not be created if no lora_paths are provided.
+        The CLI supplies a default for every LoRA flag, so their presence
+        cannot be read as intent.
+        """
+        config = PipelineConfig.from_flat_kwargs(
+            model_path="test/model",
+            max_lora_rank=32,
+            max_num_loras=10,
+        )
         assert config.lora is None
 
     @mock_pipeline_config_resolve

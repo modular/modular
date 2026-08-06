@@ -18,6 +18,10 @@ This version is still a work in progress.
 
 ### `max` CLI
 
+- Fixed LoRA and denoising-cache CLI flags replacing, rather than
+  overriding, the matching `--config-file` section; `--enable-lora=false`
+  now also disables LoRA that a recipe enabled, instead of being ignored.
+
 ### Python API
 
 ### C API

@@ -50,6 +50,7 @@ from pydantic import (
     PrivateAttr,
     TypeAdapter,
     field_validator,
+    model_validator,
 )
 from typing_extensions import Self
 
@@ -120,6 +121,57 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
         if isinstance(candidate, type) and issubclass(candidate, BaseModel):
             return candidate
     return None
+
+
+# Sub-configs whose CLI flags are flat but whose config-file form is nested,
+# mapped to their dotted path in the PipelineConfig schema.
+_FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigFileModel]], ...] = (
+    ("speculative", SpeculativeConfig),
+    ("lora", LoRAConfig),
+    ("profiling", ProfilingConfig),
+    ("runtime", PipelineRuntimeConfig),
+    ("runtime.denoising_cache", DenoisingCacheConfig),
+)
+
+# Inherited from ConfigFileModel by every sub-config, so they identify no
+# subtree; both are consumed at the top level.
+_SHARED_CONFIG_FIELDS = frozenset({"config_file", "section_name"})
+
+
+def _nest_flat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Reshape flat CLI kwargs into the nested shape used by config files.
+
+    ``num_speculative_tokens=2`` becomes
+    ``{"speculative": {"num_speculative_tokens": 2}}``. Run before the
+    config-file merge so both sides share one shape: otherwise the CLI's flat
+    key and the recipe's nested subtree sit under different top-level keys and
+    the merge cannot reconcile them, silently dropping the CLI value.
+    """
+    nested = dict(kwargs)
+    for path, config_class in _FLAT_KWARG_SUBTREES:
+        popped = {
+            field: nested.pop(field)
+            for field in config_class.model_fields
+            if field in nested and field not in _SHARED_CONFIG_FIELDS
+        }
+        # ``None`` means "flag not supplied", so dropping it lets the config
+        # file (then the field default) win instead of a placeholder.
+        section = {k: v for k, v in popped.items() if v is not None}
+        if not section:
+            continue
+        target = nested
+        *parents, leaf = path.split(".")
+        for parent in parents:
+            existing = target.get(parent)
+            target[parent] = (
+                dict(existing) if isinstance(existing, dict) else {}
+            )
+            target = target[parent]
+        existing_leaf = target.get(leaf)
+        if isinstance(existing_leaf, dict):
+            section = {**existing_leaf, **section}
+        target[leaf] = section
+    return nested
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -223,6 +275,25 @@ class PipelineConfig(ConfigFileModel):
                 else value
             )
         return result
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_unrequested_optional_subtrees(cls, data: Any) -> Any:
+        """Drop optional subtrees whose enabling field wasn't supplied.
+
+        The CLI generates a default for every flag, so a subtree's presence
+        cannot signal intent -- only its enabling field can.
+        """
+        if not isinstance(data, dict):
+            return data
+        for subtree, enabling_field in (
+            ("lora", "enable_lora"),
+            ("speculative", "speculative_method"),
+        ):
+            section = data.get(subtree)
+            if isinstance(section, dict) and not section.get(enabling_field):
+                data = {k: v for k, v in data.items() if k != subtree}
+        return data
 
     @field_validator("models", mode="wrap")
     @classmethod
@@ -437,32 +508,6 @@ class PipelineConfig(ConfigFileModel):
             del kwargs[key]
 
         return extracted
-
-    def _create_denoising_cache_config_if_needed(
-        self, kwargs: dict[str, Any]
-    ) -> None:
-        """Extract denoising cache kwargs and set on runtime.denoising_cache."""
-        cache_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, DenoisingCacheConfig
-        )
-        if cache_kwargs:
-            # Remove None values so DenoisingCacheConfig defaults are used
-            filtered = {k: v for k, v in cache_kwargs.items() if v is not None}
-            if filtered:
-                self.runtime.denoising_cache = DenoisingCacheConfig(**filtered)
-
-    def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
-        """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
-        lora_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, LoRAConfig
-        )
-
-        if lora_kwargs.get("enable_lora", False):
-            self.lora = LoRAConfig(**lora_kwargs)
-        # TODO: We should add an elif to check / error out if other LoRA params
-        # are provided, but enable_lora is not. We can't do this today as our
-        # click PipelineConfig autogenerates defaults for all fields, including
-        # required ones.
 
     def _build_models_from_kwargs(
         self, unmatched_kwargs: dict[str, Any]
@@ -696,29 +741,13 @@ class PipelineConfig(ConfigFileModel):
             parsed_value = raw_value
         return component, field_name, adapter.validate_python(parsed_value)
 
-    def _create_speculative_config_if_needed(
-        self, kwargs: dict[str, Any]
-    ) -> None:
-        """Extract speculative config kwargs and create SpeculativeConfig if any speculative parameters provided."""
-        speculative_kwargs = PipelineConfig._extract_kwargs_for_config(
-            kwargs, SpeculativeConfig
-        )
-        filtered_kwargs = {
-            k: v for k, v in speculative_kwargs.items() if v is not None
-        }
+    def _apply_speculative_draft_architecture(self) -> None:
+        """Rewrite the draft model's HuggingFace architecture for the method.
 
-        if self.speculative is not None:
-            # Merge CLI overrides onto the config-file's speculative config so a
-            # partial override (e.g. --num-speculative-tokens) wins over the
-            # recipe instead of being dropped (mirrors the kv_cache merge).
-            if not filtered_kwargs:
-                return
-            self.speculative = SpeculativeConfig(
-                **{**self.speculative.model_dump(), **filtered_kwargs}
-            )
-        elif filtered_kwargs.get("speculative_method") is not None:
-            self.speculative = SpeculativeConfig(**filtered_kwargs)
-        else:
+        Runs after the models are built, since it edits the draft's loaded
+        HuggingFace config rather than any MAX config field.
+        """
+        if self.speculative is None:
             return
         # We need to set the architecture to LlamaForCausalLMEagle for Eagle speculative decoding
         if self.speculative.is_eagle() and self.draft_model is not None:
@@ -767,15 +796,10 @@ class PipelineConfig(ConfigFileModel):
         Args:
             unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
         """
-        # NOTE: runtime must come before sampling so that its
-        # fields are consumed first.
-        # NOTE: model must be built before sampling so that
-        # SamplingConfig can use generation_config from the model.
-        # Model is handled in _build_models_from_kwargs, which runs
-        # before this method.
-        config_mappings = ["runtime", "sampling", "profiling"]
-
-        for config_name in config_mappings:
+        # Sampling is the only subtree still routed from flat kwargs: it needs
+        # the model's generation_config, which exists only once
+        # _build_models_from_kwargs has run.
+        for config_name in ["sampling"]:
             config_class = self._CONFIG_TYPE_MAPPING[config_name]
             matched_kwargs = {}
 
@@ -850,6 +874,10 @@ class PipelineConfig(ConfigFileModel):
         via ``PipelineConfig(models=..., runtime=..., ...)`` with properly typed
         sub-configs is also supported and requires no routing.
         """
+        # Reshape to the config file's nested shape first so the merge below
+        # compares like with like and can resolve precedence per field.
+        kwargs = _nest_flat_kwargs(kwargs)
+
         # Merge YAML config file values before routing, then clear config_file
         # so the Pydantic model_validator on ConfigFileModel doesn't reload it
         # when cls(**pydantic_kwargs) is called below.
@@ -919,13 +947,10 @@ class PipelineConfig(ConfigFileModel):
         # Route unmatched kwargs into sub-configs.  Ordering matters:
         # - models before sampling (sampling needs generation_config from model)
         # - models before speculative (speculative needs draft_model)
-        # - runtime before denoising_cache (denoising_cache is set on runtime)
-        instance._create_lora_config_if_needed(unmatched_kwargs)
         instance._build_models_from_kwargs(unmatched_kwargs)
-        instance._create_speculative_config_if_needed(unmatched_kwargs)
+        instance._apply_speculative_draft_architecture()
         if unmatched_kwargs:
             instance._process_remaining_config_classes(unmatched_kwargs)
-        instance._create_denoising_cache_config_if_needed(unmatched_kwargs)
 
         if unmatched_kwargs:
             raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")

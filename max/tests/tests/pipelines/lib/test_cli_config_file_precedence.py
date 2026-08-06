@@ -407,6 +407,19 @@ def test_speculative_flag_via_cli_preserves_config_file_fields(
     assert result.output.strip() == "mtp|2"
 
 
+def test_speculative_flag_alone_does_not_enable_speculative() -> None:
+    """A speculative tuning flag without a method leaves speculative disabled.
+
+    Only ``--speculative-method`` turns speculative decoding on; the other
+    flags merely tune it.
+    """
+    config = PipelineConfig.from_flat_kwargs(
+        model_path="fake/model",
+        num_speculative_tokens=2,
+    )
+    assert config.speculative is None
+
+
 def test_recipe_speculative_intact_without_speculative_flags(
     tmp_path: Path,
 ) -> None:
