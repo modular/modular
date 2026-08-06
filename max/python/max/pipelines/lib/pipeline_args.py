@@ -15,13 +15,19 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from max.config import ConfigFileModel
 from max.driver import DeviceSpec
+from max.pipelines.diffusion.cache import DenoisingCacheConfig
 from max.pipelines.kv_cache.config import KVCacheConfig
-from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.model_config import (
+    MAXModelConfig,
+    _parse_component_overrides,
+    _strip_default_model_kwargs,
+)
 from max.pipelines.lib.config.profiling_config import ProfilingConfig
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
@@ -37,11 +43,68 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
-from pydantic import ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Self
 
-if TYPE_CHECKING:
-    from max.pipelines.lib.config.config import PipelineConfig
+_logger = logging.getLogger("max.pipelines")
+
+# Sub-configs whose CLI flags are flat but whose config-file form is nested,
+# mapped to their dotted path in the PipelineArgs schema.
+_FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigFileModel]], ...] = (
+    ("speculative", SpeculativeConfig),
+    ("lora", LoRAConfig),
+    ("profiling", ProfilingConfig),
+    ("runtime", PipelineRuntimeConfig),
+    ("runtime.denoising_cache", DenoisingCacheConfig),
+    ("sampling", SamplingConfig),
+    ("kv_cache", KVCacheConfig),
+)
+
+# Inherited from ConfigFileModel by every sub-config, so they identify no
+# subtree; both are consumed at the top level.
+_SHARED_CONFIG_FIELDS = frozenset({"config_file", "section_name"})
+
+
+def _nest_flat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Reshape flat CLI kwargs into the nested shape used by config files.
+
+    ``num_speculative_tokens=2`` becomes
+    ``{"speculative": {"num_speculative_tokens": 2}}``. Run before the
+    config-file merge so both sides share one shape: otherwise the CLI's flat
+    key and the recipe's nested subtree sit under different top-level keys and
+    the merge cannot reconcile them, silently dropping the CLI value.
+    """
+    nested = dict(kwargs)
+    for path, config_class in _FLAT_KWARG_SUBTREES:
+        popped = {
+            field: nested.pop(field)
+            for field in config_class.model_fields
+            if field in nested and field not in _SHARED_CONFIG_FIELDS
+        }
+        # ``None`` means "flag not supplied", so dropping it lets the config
+        # file (then the field default) win instead of a placeholder.
+        section = {k: v for k, v in popped.items() if v is not None}
+        if not section:
+            continue
+        target = nested
+        *parents, leaf = path.split(".")
+        for parent in parents:
+            existing = target.get(parent)
+            target[parent] = (
+                dict(existing) if isinstance(existing, dict) else {}
+            )
+            target = target[parent]
+        existing_leaf = target.get(leaf)
+        if isinstance(existing_leaf, dict):
+            section = {**existing_leaf, **section}
+        target[leaf] = section
+    return nested
 
 
 class PipelineArgs(ConfigFileModel):
@@ -294,8 +357,29 @@ class PipelineArgs(ConfigFileModel):
         self, *, models: ModelManifest | None = None, **data: Any
     ) -> None:
         super().__init__(**data)
-        if models is not None:
+        # An empty manifest carries no configuration; treat it as absent so
+        # the flat model fields stay authoritative.
+        if models:
             object.__setattr__(self, "_manifest_override", models)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_unrequested_optional_subtrees(cls, data: Any) -> Any:
+        """Drop optional subtrees whose enabling field wasn't supplied.
+
+        The CLI generates a default for every flag, so a subtree's presence
+        cannot signal intent -- only its enabling field can.
+        """
+        if not isinstance(data, dict):
+            return data
+        for subtree, enabling_field in (
+            ("lora", "enable_lora"),
+            ("speculative", "speculative_method"),
+        ):
+            section = data.get(subtree)
+            if isinstance(section, dict) and not section.get(enabling_field):
+                data = {k: v for k, v in data.items() if k != subtree}
+        return data
 
     # ------------------------------------------------------------------ #
     # Convenience properties
@@ -325,12 +409,22 @@ class PipelineArgs(ConfigFileModel):
     def from_flat_kwargs(cls, **kwargs: Any) -> Self:
         """Construct a :class:`PipelineArgs` from a flat CLI kwargs namespace.
 
-        Routes flat kwargs (the same format accepted by
-        :meth:`PipelineConfig.from_flat_kwargs`) into the appropriate flat
-        fields of :class:`PipelineArgs`. Delegates to
-        :meth:`PipelineConfig.from_flat_kwargs` for the heavy-lifting of
-        routing and sub-config construction, then extracts the user-facing
-        fields.
+        Owns the full flat-to-nested routing for CLI and legacy callers:
+
+        - Flat sub-config kwargs (e.g. ``max_batch_size``, ``enable_lora``,
+          ``num_speculative_tokens``) are nested under their sub-config
+          section (``runtime``, ``lora``, ``speculative``, ...) before the
+          ``--config-file`` merge, so CLI flags and config-file subtrees
+          reconcile per field.
+        - A config file's ``model:`` section (the :class:`PipelineConfig`
+          schema shape) is folded into the flat model fields; explicit CLI
+          kwargs win per field, ``--model-override`` entries win over both.
+        - ``draft_``-prefixed kwargs build :attr:`draft_model`, inheriting
+          ``trust_remote_code``/``device_specs``/``data_parallel_degree``
+          from the target model when unset.
+        - Multi-component (e.g. diffusion) model paths are detected via
+          :meth:`ModelManifest.from_model_path` and carried as a manifest
+          override.
 
         Args:
             **kwargs: Flat keyword arguments, e.g. ``model_path``,
@@ -339,84 +433,208 @@ class PipelineArgs(ConfigFileModel):
         Returns:
             A :class:`PipelineArgs` populated from the flat kwargs.
         """
-        from max.pipelines.lib.config.config import PipelineConfig
+        kwargs = _nest_flat_kwargs(kwargs)
 
-        pipeline_config = PipelineConfig.from_flat_kwargs(**kwargs)
-        return cls.from_pipeline_config(pipeline_config)
+        # Merge YAML config file values, then clear config_file so the
+        # model_validator on ConfigFileModel doesn't reload it when the
+        # instance is constructed below.
+        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
+        kwargs.pop("config_file", None)
 
-    @classmethod
-    def from_pipeline_config(cls, pipeline_config: PipelineConfig) -> Self:
-        """Construct a :class:`PipelineArgs` from an existing :class:`PipelineConfig`.
+        # The CLI generates a --models flag from PipelineConfig's field, so
+        # every invocation carries an empty-manifest default; only a
+        # populated manifest is an explicit override.
+        manifest = kwargs.pop("models", None) or None
+        model_kwarg = kwargs.pop("model", None)
+        draft_model_kwarg = kwargs.pop("draft_model", None)
 
-        Extracts the user-facing fields from a :class:`PipelineConfig`
-        and returns a :class:`PipelineArgs` populated from them.
+        component_overrides = _parse_component_overrides(
+            kwargs.get("model_override") or []
+        )
 
-        This exists to let :meth:`from_flat_kwargs` reuse
-        :meth:`PipelineConfig.from_flat_kwargs`'s flat-kwarg routing logic
-        (parsing ``--model-override``, building the draft model config,
-        etc.) instead of duplicating it. It is not a general round-trip:
-        ``pipeline_config`` is expected to be freshly constructed and not
-        yet resolved. Resolution-derived state (e.g. an applied dtype cast
-        recorded during architecture-level resolution) is *not* preserved --
-        :class:`PipelineArgs` is deliberately isolated from resolution
-        mutations (see #90128), so passing an already-resolved
-        ``pipeline_config`` here will silently drop that state.
+        # CLI kv-cache flags, captured before the recipe's ``model.kv_cache``
+        # is merged in: the draft model's kv_cache is built from these flags
+        # alone, never from the main model's recipe section.
+        cli_kv_kwargs = (
+            dict(kwargs["kv_cache"])
+            if isinstance(kwargs.get("kv_cache"), dict)
+            else {}
+        )
 
-        Args:
-            pipeline_config: The source :class:`PipelineConfig` to extract
-                from. Should not have had :meth:`PipelineConfig.resolve`
-                called on it.
+        # Fold a config file's ``model:`` section (or a pre-built
+        # MAXModelConfig) into the flat model fields. Explicit CLI kwargs win
+        # per field; --model-override entries win over both.
+        if isinstance(model_kwarg, MAXModelConfig):
+            model_kwarg = {
+                field: getattr(model_kwarg, field)
+                for field in model_kwarg.model_fields_set
+                if field in cls.model_fields or field == "kv_cache"
+            }
+        if model_kwarg is not None:
+            model_kwarg = dict(model_kwarg)
+            recipe_kv = model_kwarg.pop("kv_cache", None)
+            if isinstance(recipe_kv, KVCacheConfig):
+                recipe_kv = recipe_kv.model_dump()
+            if recipe_kv:
+                existing_kv = kwargs.get("kv_cache", {})
+                if isinstance(existing_kv, KVCacheConfig):
+                    existing_kv = existing_kv.model_dump()
+                kwargs["kv_cache"] = {**recipe_kv, **existing_kv}
+            new_model_path = kwargs.get("model_path")
+            recipe_model_path = model_kwarg.get("model_path")
+            if (
+                new_model_path
+                and recipe_model_path
+                and new_model_path != recipe_model_path
+            ):
+                _logger.warning(
+                    "--model-path %r overrides the model_path %r loaded "
+                    "from --config-file. The rest of the config file "
+                    "(device_specs, kv_cache, etc) was tuned for the "
+                    "original model and may not be appropriate for %r.",
+                    new_model_path,
+                    recipe_model_path,
+                    new_model_path,
+                )
+            for field, value in model_kwarg.items():
+                if field not in cls.model_fields:
+                    raise ValueError(
+                        f"Unknown model field in config file: {field!r}"
+                    )
+                kwargs.setdefault(field, value)
+        kwargs.update(component_overrides.get("main", {}))
 
-        Returns:
-            A :class:`PipelineArgs` populated from the given config.
+        # ``draft_``-prefixed kwargs build the draft model config directly.
+        # A config file's ``draft_model:`` section is the fallback base.
+        # ``None`` values (unset CLI flags) are consumed but dropped.
+        flat_draft_kwargs = {
+            key[len("draft_") :]: value
+            for key in list(kwargs)
+            if key.startswith("draft_")
+            and key[len("draft_") :] in MAXModelConfig.model_fields
+            and (value := kwargs.pop(key)) is not None
+        }
+        draft_model: MAXModelConfig | None = None
+        if flat_draft_kwargs.get("model_path", "") != "":
+            cls._apply_draft_model_defaults(flat_draft_kwargs, kwargs)
+            # "draft" overrides are applied after inheritance so explicit
+            # user intent wins over copied target-model defaults.
+            flat_draft_kwargs.update(component_overrides.get("draft", {}))
+            if cli_kv_kwargs:
+                flat_draft_kwargs["kv_cache"] = KVCacheConfig(**cli_kv_kwargs)
+            draft_model = MAXModelConfig(**flat_draft_kwargs)
+        elif isinstance(draft_model_kwarg, MAXModelConfig):
+            draft_model = draft_model_kwarg
+        elif draft_model_kwarg is not None:
+            draft_model = MAXModelConfig(
+                **{**draft_model_kwarg, **component_overrides.get("draft", {})}
+            )
+
+        # Detect multi-component (e.g. diffusion) models, whose per-component
+        # configs cannot be represented by the flat model fields. Single-model
+        # ("main") manifests are dropped -- the flat fields carry the same
+        # information and remain the canonical source for from_args().
+        if manifest is None and model_kwarg is None:
+            model_path = kwargs.get("model_path")
+            if model_path:
+                # KV-cache CLI flags are excluded from the probe, matching
+                # the flat path's historical behavior: they are merged into
+                # the main model's kv_cache during from_args(), and diffusion
+                # manifests forbid extra kwargs.
+                probe_kwargs = _strip_default_model_kwargs(
+                    {
+                        field: value
+                        for field, value in kwargs.items()
+                        if field in MAXModelConfig.model_fields
+                        and field not in ("model_path", "kv_cache")
+                    }
+                )
+                if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
+                    probe_kwargs["kv_cache"] = kwargs["kv_cache"]
+                    probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
+                revision = probe_kwargs.pop("huggingface_model_revision", None)
+                probe = ModelManifest.from_model_path(
+                    model_path,
+                    revision=revision,
+                    **probe_kwargs,
+                )
+                if "main" not in probe:
+                    manifest = probe
+        elif manifest is not None and "main" in manifest:
+            # An explicitly passed manifest is the canonical model source, so
+            # flat model kwargs and kv-cache flags must be merged into it --
+            # from_args() uses the manifest verbatim and never reads the flat
+            # fields.
+            explicit_model_kwargs = {
+                field: value
+                for field, value in kwargs.items()
+                if field in MAXModelConfig.model_fields and field != "kv_cache"
+            }
+            if explicit_model_kwargs:
+                manifest = manifest.with_override(
+                    "main", **explicit_model_kwargs
+                )
+            if cli_kv_kwargs:
+                merged_kv = KVCacheConfig(
+                    **{
+                        **manifest["main"].kv_cache.model_dump(),
+                        **cli_kv_kwargs,
+                    }
+                )
+                manifest = manifest.with_override("main", kv_cache=merged_kv)
+
+        if manifest is not None and draft_model is not None:
+            manifest = manifest.with_override("draft", config=draft_model)
+            draft_model = None
+
+        unknown = set(kwargs) - set(cls.model_fields)
+        if unknown:
+            unmatched = {key: kwargs[key] for key in sorted(unknown)}
+            raise ValueError(f"Unmatched kwargs: {unmatched}")
+
+        return cls(models=manifest, draft_model=draft_model, **kwargs)
+
+    @staticmethod
+    def _apply_draft_model_defaults(
+        draft_kwargs: dict[str, Any], target_kwargs: dict[str, Any]
+    ) -> None:
+        """Inherit certain fields from the target model for the draft model.
+
+        When running speculative decoding, the draft model typically shares
+        configuration with the target model (same devices, same trust
+        settings, same parallelism). Copies these fields from the target
+        model kwargs into the draft kwargs if they weren't explicitly
+        specified.
+
+        ``quantization_encoding`` is NOT inherited because draft models
+        (especially EAGLE3) often use bfloat16 regardless of the target
+        model's quantization; the draft auto-detects its encoding from its
+        weights.
         """
-        main = pipeline_config.models.get("main") or MAXModelConfig()
-        # Multi-component (diffusion) manifests have no "main" entry; their
-        # per-component configs can't be reconstructed from the flat fields,
-        # so carry the manifest through verbatim.
-        manifest = (
-            pipeline_config.models
-            if "main" not in pipeline_config.models
-            else None
-        )
-        return cls(
-            models=manifest,
-            # top-level
-            model_override=list(pipeline_config.model_override),
-            task=pipeline_config.task,
-            debug_verify_replay=pipeline_config.debug_verify_replay,
-            # MAXModelConfig fields
-            model_path=main.model_path,
-            served_model_name=main.served_model_name,
-            weight_path=list(main.weight_path),
-            quantization_encoding=main.quantization_encoding,
-            huggingface_model_revision=main.huggingface_model_revision,
-            huggingface_weight_revision=main.huggingface_weight_revision,
-            trust_remote_code=main.trust_remote_code,
-            subfolder=main.subfolder,
-            device_specs=list(main.device_specs),
-            force_download=main.force_download,
-            vision_config_overrides=dict(main.vision_config_overrides),
-            rope_type=main.rope_type,
-            sliding_window=main.sliding_window,
-            enable_echo=main.enable_echo,
-            chat_template=main.chat_template,
-            use_subgraphs=main.use_subgraphs,
-            data_parallel_degree=main.data_parallel_degree,
-            pool_embeddings=main.pool_embeddings,
-            max_length=main.max_length,
-            kv_cache=main.kv_cache.model_copy(deep=True),
-            # sub-configs
-            runtime=pipeline_config.runtime.model_copy(deep=True),
-            sampling=pipeline_config.sampling.model_copy(deep=True),
-            profiling=pipeline_config.profiling.model_copy(deep=True),
-            lora=pipeline_config.lora.model_copy(deep=True)
-            if pipeline_config.lora
-            else None,
-            speculative=pipeline_config.speculative.model_copy(deep=True)
-            if pipeline_config.speculative
-            else None,
-            draft_model=pipeline_config.draft_model.model_copy(deep=True)
-            if pipeline_config.draft_model is not None
-            else None,
-        )
+        if "trust_remote_code" not in draft_kwargs:
+            if target_kwargs.get("trust_remote_code"):
+                _logger.info(
+                    "Inheriting trust_remote_code=True from target model "
+                    "for draft model"
+                )
+                draft_kwargs["trust_remote_code"] = True
+
+        if "device_specs" not in draft_kwargs:
+            device_specs = (
+                target_kwargs.get("device_specs") or _default_device_specs()
+            )
+            _logger.info(
+                f"Inheriting device_specs={device_specs} "
+                "from target model for draft model"
+            )
+            draft_kwargs["device_specs"] = device_specs
+
+        if "data_parallel_degree" not in draft_kwargs:
+            data_parallel_degree = target_kwargs.get("data_parallel_degree", 1)
+            if data_parallel_degree != 1:
+                _logger.info(
+                    f"Inheriting data_parallel_degree="
+                    f"{data_parallel_degree} from target model "
+                    "for draft model"
+                )
+            draft_kwargs["data_parallel_degree"] = data_parallel_degree

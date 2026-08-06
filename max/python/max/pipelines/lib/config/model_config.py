@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -60,6 +61,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    TypeAdapter,
     computed_field,
     field_validator,
 )
@@ -1635,3 +1637,89 @@ def _format_config_entries(
     """
     max_key_len = max(len(key) for key, _ in entries)
     return [f"{indent}{key:<{max_key_len}} : {value}" for key, value in entries]
+
+
+def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
+    """Parse ``component.field=value`` into ``(component, field, value)``.
+
+    The value is coerced to the target field's type via Pydantic's
+    ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
+
+    Raises:
+        ValueError: if the string is malformed or names an unknown
+            ``MAXModelConfig`` field.
+    """
+    dot_pos = override_str.find(".")
+    if dot_pos < 1:
+        raise ValueError(
+            f"Invalid --model-override format: {override_str!r}. "
+            f"Expected 'component.field=value'."
+        )
+    eq_pos = override_str.find("=", dot_pos)
+    if eq_pos < dot_pos + 2:
+        raise ValueError(
+            f"Invalid --model-override format: {override_str!r}. "
+            f"Expected 'component.field=value'."
+        )
+    component = override_str[:dot_pos]
+    field_name = override_str[dot_pos + 1 : eq_pos]
+    raw_value = override_str[eq_pos + 1 :]
+
+    if field_name not in MAXModelConfig.model_fields:
+        raise ValueError(
+            f"Unknown MAXModelConfig field: {field_name!r}. "
+            f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
+        )
+
+    # For compound types (list, dict) the raw CLI string is JSON, so try
+    # json.loads first; fall back to the raw string for plain scalars.
+    field_info = MAXModelConfig.model_fields[field_name]
+    adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+    try:
+        parsed_value = json.loads(raw_value)
+    except (json.JSONDecodeError, ValueError):
+        parsed_value = raw_value
+    return component, field_name, adapter.validate_python(parsed_value)
+
+
+def _parse_component_overrides(
+    override_strs: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Group parsed ``--model-override`` entries by target component."""
+    component_overrides: dict[str, dict[str, Any]] = {}
+    for override_str in override_strs:
+        component, field_name, value = _parse_model_override(override_str)
+        component_overrides.setdefault(component, {})[field_name] = value
+    return component_overrides
+
+
+def _strip_default_model_kwargs(
+    model_kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Return *model_kwargs* with entries that match MAXModelConfig defaults removed.
+
+    Fields declared with ``default_factory`` have ``field.default`` set to
+    ``PydanticUndefined``, so we must invoke the factory to obtain the
+    comparable default value.
+    """
+    from pydantic_core import PydanticUndefined
+
+    fields = MAXModelConfig.model_fields
+    non_default: dict[str, Any] = {}
+    for k, v in model_kwargs.items():
+        field = fields.get(k)
+        if field is None:
+            # Not a MAXModelConfig field — keep it.
+            non_default[k] = v
+            continue
+        if field.default is not PydanticUndefined:
+            if v == field.default:
+                continue
+        elif field.default_factory is not None:
+            try:
+                if v == field.default_factory():  # type: ignore[call-arg]
+                    continue
+            except Exception:
+                pass
+        non_default[k] = v
+    return non_default

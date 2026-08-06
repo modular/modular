@@ -30,17 +30,27 @@ This version is still a work in progress.
 
 ## Breaking changes
 
-- `max.pipelines.PipelineArgs` now nests its runtime, sampling, and profiling
-  fields in `runtime`, `sampling`, and `profiling` sub-configs
-  (`PipelineRuntimeConfig`, `SamplingConfig`, and `ProfilingConfig`), matching
-  the nested shape already used by recipes and `PipelineConfig`. Flat
-  constructor kwargs for those fields (for example `max_batch_size=1` or
-  `enable_structured_output=True`) are rejected; pass
-  `runtime=PipelineRuntimeConfig(max_batch_size=1)` or
-  `sampling=SamplingConfig(enable_structured_output=True)` instead, and use
-  the nested keys in config files validated into `PipelineArgs`.
-  `PipelineArgs.from_flat_kwargs` (the CLI path) still accepts the flat
-  spellings. `PipelineRuntimeConfig` is now exported from `max.pipelines`.
+- Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction
+  around a single path and a single (nested) shape:
+  - `PipelineArgs` now nests its runtime, sampling, and profiling fields in
+    `runtime`, `sampling`, and `profiling` sub-configs
+    (`PipelineRuntimeConfig`, `SamplingConfig`, and `ProfilingConfig`),
+    matching the nested shape already used by recipes and `PipelineConfig`.
+    Flat constructor kwargs for those fields (for example `max_batch_size=1`)
+    are rejected; pass `runtime=PipelineRuntimeConfig(max_batch_size=1)`
+    instead, and use the nested keys in config files validated into
+    `PipelineArgs`. `PipelineArgs.from_flat_kwargs` (the CLI path) still
+    accepts the flat spellings and routes them to the sub-configs.
+  - Removed `PipelineConfig.from_flat_kwargs` and
+    `PipelineArgs.from_pipeline_config`; `PipelineConfig.from_args` is the
+    single way to construct a `PipelineConfig` from user input. Replace
+    `PipelineConfig.from_flat_kwargs(...)` with
+    `PipelineConfig.from_args(PipelineArgs.from_flat_kwargs(...))`.
+  - `PipelineConfig.from_args` now also applies the model generation config's
+    sampling defaults, applies `--model-override` entries, and resolves the
+    speculative draft architecture, so programmatically constructed
+    `PipelineArgs` behave the same as CLI invocations.
+  - `PipelineRuntimeConfig` is now exported from `max.pipelines`.
 
 - The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
   passed as graph inputs) is now the only supported LoRA implementation.

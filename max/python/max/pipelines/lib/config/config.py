@@ -15,18 +15,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Literal, get_args
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
 from max.driver import accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.diffusion.cache import DenoisingCacheConfig
-from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     ArchConfigWithKVCache,
@@ -48,7 +45,6 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
-    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -56,6 +52,7 @@ from typing_extensions import Self
 
 from .model_config import (
     MAXModelConfig,
+    _parse_component_overrides,
     _select_dtype_cast,
     _select_quantization_encoding,
 )
@@ -77,38 +74,6 @@ else:
     _ModelsType = dict[str, MAXModelConfig]
 
 
-def _strip_default_model_kwargs(
-    model_kwargs: dict[str, Any],
-) -> dict[str, Any]:
-    """Return *model_kwargs* with entries that match MAXModelConfig defaults removed.
-
-    Fields declared with ``default_factory`` have ``field.default`` set to
-    ``PydanticUndefined``, so we must invoke the factory to obtain the
-    comparable default value.
-    """
-    from pydantic_core import PydanticUndefined
-
-    fields = MAXModelConfig.model_fields
-    non_default: dict[str, Any] = {}
-    for k, v in model_kwargs.items():
-        field = fields.get(k)
-        if field is None:
-            # Not a MAXModelConfig field — keep it.
-            non_default[k] = v
-            continue
-        if field.default is not PydanticUndefined:
-            if v == field.default:
-                continue
-        elif field.default_factory is not None:
-            try:
-                if v == field.default_factory():  # type: ignore[call-arg]
-                    continue
-            except Exception:
-                pass
-        non_default[k] = v
-    return non_default
-
-
 def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     """Return the Pydantic model class for a field annotation, if any.
 
@@ -123,55 +88,21 @@ def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
-# Sub-configs whose CLI flags are flat but whose config-file form is nested,
-# mapped to their dotted path in the PipelineConfig schema.
-_FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigFileModel]], ...] = (
-    ("speculative", SpeculativeConfig),
-    ("lora", LoRAConfig),
-    ("profiling", ProfilingConfig),
-    ("runtime", PipelineRuntimeConfig),
-    ("runtime.denoising_cache", DenoisingCacheConfig),
-)
-
-# Inherited from ConfigFileModel by every sub-config, so they identify no
-# subtree; both are consumed at the top level.
-_SHARED_CONFIG_FIELDS = frozenset({"config_file", "section_name"})
+_SubConfigT = TypeVar("_SubConfigT", bound=ConfigFileModel)
 
 
-def _nest_flat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Reshape flat CLI kwargs into the nested shape used by config files.
+def _construct_from_user_fields(sub: _SubConfigT) -> _SubConfigT:
+    """Constructs a fresh sub-config from only the caller-set fields.
 
-    ``num_speculative_tokens=2`` becomes
-    ``{"speculative": {"num_speculative_tokens": 2}}``. Run before the
-    config-file merge so both sides share one shape: otherwise the CLI's flat
-    key and the recipe's nested subtree sit under different top-level keys and
-    the merge cannot reconcile them, silently dropping the CLI value.
+    The result is built once, through the class constructor: unset fields
+    re-derive from the class defaults and nested models are rebuilt rather
+    than aliased, so it shares no mutable state with ``sub``.
     """
-    nested = dict(kwargs)
-    for path, config_class in _FLAT_KWARG_SUBTREES:
-        popped = {
-            field: nested.pop(field)
-            for field in config_class.model_fields
-            if field in nested and field not in _SHARED_CONFIG_FIELDS
-        }
-        # ``None`` means "flag not supplied", so dropping it lets the config
-        # file (then the field default) win instead of a placeholder.
-        section = {k: v for k, v in popped.items() if v is not None}
-        if not section:
-            continue
-        target = nested
-        *parents, leaf = path.split(".")
-        for parent in parents:
-            existing = target.get(parent)
-            target[parent] = (
-                dict(existing) if isinstance(existing, dict) else {}
-            )
-            target = target[parent]
-        existing_leaf = target.get(leaf)
-        if isinstance(existing_leaf, dict):
-            section = {**existing_leaf, **section}
-        target[leaf] = section
-    return nested
+    return type(sub)(
+        **sub.model_dump(
+            include=sub.model_fields_set - {"config_file", "section_name"}
+        )
+    )
 
 
 def _is_disable_parser_sentinel(value: str | None) -> bool:
@@ -467,280 +398,6 @@ class PipelineConfig(ConfigFileModel):
 
         return Signals.NUM_BYTES * count_per_gpu * ngpus
 
-    @staticmethod
-    def _extract_kwargs_for_config(
-        kwargs: dict[str, Any],
-        config_class: type[ConfigFileModel],
-        key_prefix: str = "",
-        strip_prefix: bool = False,
-    ) -> dict[str, Any]:
-        """Extracts kwargs that match a config class's fields.
-
-        Args:
-            kwargs: Source kwargs dictionary (modified in place)
-            config_class: The ConfigFileModel dataclass to match fields against
-            key_prefix: Optional prefix to filter keys (for example, ``"draft_"``)
-            strip_prefix: Whether to strip the prefix from extracted keys
-
-        Returns:
-            Dictionary of extracted kwargs
-        """
-        extracted = {}
-        keys_to_remove = []
-
-        for key, value in kwargs.items():
-            # Check if key matches the prefix filter
-            if key_prefix and not key.startswith(key_prefix):
-                continue
-
-            # Determine the field name to check
-            field_name = key.replace(key_prefix, "") if strip_prefix else key
-
-            # Check if this field exists in the config class (Pydantic model)
-            if field_name in config_class.model_fields:
-                # Use original key or stripped key as specified
-                extracted_key = field_name if strip_prefix else key
-                extracted[extracted_key] = value
-                keys_to_remove.append(key)
-
-        # Remove extracted keys from original kwargs
-        for key in keys_to_remove:
-            del kwargs[key]
-
-        return extracted
-
-    def _build_models_from_kwargs(
-        self, unmatched_kwargs: dict[str, Any]
-    ) -> None:
-        """Build the ModelManifest from unmatched model kwargs.
-
-        Uses ``ModelManifest.from_model_path()`` as the single entry point
-        for creating the main model config. Handles KV cache kwargs
-        separately and adds draft model via ``with_override``.
-
-        When the manifest is already populated (e.g. passed directly via
-        ``models=``), this method only processes KV cache and draft kwargs
-        without rebuilding the manifest.
-        """
-        # Extract model kwargs (model_path, quantization_encoding, etc.)
-        model_kwargs = PipelineConfig._extract_kwargs_for_config(
-            unmatched_kwargs, MAXModelConfig
-        )
-        kv_cache_kwargs: dict[str, Any] = {}
-        for key in list(unmatched_kwargs):
-            if key in KVCacheConfig.model_fields:
-                kv_cache_kwargs[key] = unmatched_kwargs.pop(key)
-
-        # Parse --model-override entries once, grouped by target component, so
-        # "main"/"draft" overrides can be folded into the constructor kwargs
-        # below.  HuggingFaceRepo.__post_init__ and the MAXModelConfig
-        # validator eagerly hit HF using the dataclass-default revision, which
-        # fails under HF_HUB_OFFLINE for repos cached only at a pinned SHA.
-        component_overrides: dict[str, dict[str, Any]] = {}
-        for override_str in self.model_override:
-            component, field_name, value = self._parse_model_override(
-                override_str
-            )
-            component_overrides.setdefault(component, {})[field_name] = value
-
-        # Only rebuild the manifest when explicit model kwargs were provided
-        # in unmatched_kwargs.  When a pre-built ModelManifest was passed via
-        # the ``models=`` kwarg, ``model_kwargs`` will be empty and we should
-        # not reconstruct the manifest (which would trigger HF validation).
-        if model_kwargs:
-            model_kwargs.update(component_overrides.get("main", {}))
-            if "main" in self.models:
-                # The main model came from a YAML recipe (or a pre-built
-                # manifest via ``models=``). Merge CLI overrides -- including
-                # --model-path -- into it via with_override() so the same
-                # recipe can be reused across different multi-GPU setups or
-                # models, instead of rebuilding the manifest from scratch and
-                # losing the recipe's other settings (device_specs, kv_cache,
-                # etc).
-                new_model_path = model_kwargs.get("model_path")
-                if (
-                    new_model_path
-                    and new_model_path != self.models["main"].model_path
-                ):
-                    logger.warning(
-                        "--model-path %r overrides the model_path %r loaded "
-                        "from --config-file. The rest of the config file "
-                        "(device_specs, kv_cache, etc) was tuned for the "
-                        "original model and may not be appropriate for %r.",
-                        new_model_path,
-                        self.models["main"].model_path,
-                        new_model_path,
-                    )
-                if model_kwargs:
-                    self.models = self.models.with_override(
-                        "main", **model_kwargs
-                    )
-            else:
-                model_path = model_kwargs.pop("model_path", "")
-                if model_path:
-                    revision = model_kwargs.pop(
-                        "huggingface_model_revision", None
-                    )
-                    # Strip kwargs that match MAXModelConfig defaults so
-                    # from_model_path() doesn't reject them for diffusion
-                    # pipelines (which forbid extra kwargs).
-                    non_default_kwargs = _strip_default_model_kwargs(
-                        model_kwargs
-                    )
-                    self.models = ModelManifest.from_model_path(
-                        model_path,
-                        revision=revision,
-                        **non_default_kwargs,
-                    )
-
-        # Merge CLI kv-cache flags onto the model's existing kv_cache (which
-        # may hold --config-file values) rather than replacing it: a fresh
-        # KVCacheConfig would reset unset fields to defaults, silently dropping
-        # the recipe's device_memory_utilization.
-        if kv_cache_kwargs and "main" in self.models:
-            existing_kv = self.models["main"].kv_cache
-            merged_kv = KVCacheConfig(
-                **{**existing_kv.model_dump(), **kv_cache_kwargs}
-            )
-            self.models = self.models.with_override("main", kv_cache=merged_kv)
-
-        # Extract draft model kwargs and add via with_override
-        draft_kwargs = PipelineConfig._extract_kwargs_for_config(
-            unmatched_kwargs,
-            MAXModelConfig,
-            key_prefix="draft_",
-            strip_prefix=True,
-        )
-        if draft_kwargs.get("model_path", "") != "":
-            # Inherit certain fields from the target model if not explicitly
-            # specified for the draft model. This simplifies CLI usage for
-            # speculative decoding (e.g. --draft-trust-remote-code is not
-            # needed if --trust-remote-code is already set).
-            if "main" in self.models:
-                self._apply_draft_model_defaults(draft_kwargs, self.model)
-
-            # "draft" overrides are applied after inheritance so explicit
-            # user intent wins over copied target-model defaults.
-            draft_kwargs.update(component_overrides.get("draft", {}))
-            if kv_cache_kwargs:
-                draft_kwargs["kv_cache"] = KVCacheConfig(**kv_cache_kwargs)
-
-            draft_config = MAXModelConfig(**draft_kwargs)
-            self.models = self.models.with_override(
-                "draft", config=draft_config
-            )
-
-        # Apply parsed overrides via with_override.  This is idempotent for
-        # "main"/"draft" fields already folded into kwargs above, and is the
-        # only path that runs when a pre-built manifest was passed via
-        # ``models=``.
-        for component, fields in component_overrides.items():
-            if component not in self.models:
-                raise ValueError(
-                    f"Component {component!r} not found in manifest. "
-                    f"Available: {list(self.models.keys())}"
-                )
-            self.models = self.models.with_override(component, **fields)
-
-    @staticmethod
-    def _apply_draft_model_defaults(
-        draft_kwargs: dict[str, Any], target_model: MAXModelConfig
-    ) -> None:
-        """Inherit certain fields from the target model for the draft model.
-
-        When running speculative decoding, the draft model typically shares
-        configuration with the target model (same devices, same trust settings,
-        same parallelism). This method copies these fields from the target
-        model config into the draft kwargs if they weren't explicitly specified.
-
-        Fields inherited:
-        - ``trust_remote_code``: If the target model requires custom code,
-          the draft model (from the same model family) likely does too.
-        - ``device_specs``: The draft model runs on the same devices as the
-          target model.
-        - ``data_parallel_degree``: Both models use the same parallelism.
-
-        Note: ``quantization_encoding`` is NOT inherited because draft models
-        (especially EAGLE3) often use bfloat16 regardless of the target model's
-        quantization. The draft model should auto-detect its encoding from its
-        weights.
-
-        Args:
-            draft_kwargs: The draft model kwargs dict (modified in place).
-            target_model: The target model configuration to inherit from.
-        """
-        # Inherit trust_remote_code if not explicitly specified
-        if "trust_remote_code" not in draft_kwargs:
-            if target_model.trust_remote_code:
-                logger.info(
-                    "Inheriting trust_remote_code=True from target model "
-                    "for draft model"
-                )
-                draft_kwargs["trust_remote_code"] = True
-
-        # Inherit device_specs if not explicitly specified
-        if "device_specs" not in draft_kwargs:
-            logger.info(
-                f"Inheriting device_specs={target_model.device_specs} "
-                "from target model for draft model"
-            )
-            draft_kwargs["device_specs"] = target_model.device_specs
-
-        # Inherit data_parallel_degree if not explicitly specified
-        if "data_parallel_degree" not in draft_kwargs:
-            if target_model.data_parallel_degree != 1:
-                logger.info(
-                    f"Inheriting data_parallel_degree="
-                    f"{target_model.data_parallel_degree} from target model "
-                    "for draft model"
-                )
-            draft_kwargs["data_parallel_degree"] = (
-                target_model.data_parallel_degree
-            )
-
-    @staticmethod
-    def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
-        """Parse ``component.field=value`` into ``(component, field, value)``.
-
-        The value is coerced to the target field's type via Pydantic's
-        ``TypeAdapter`` (JSON-first, raw-string fallback for scalars).
-
-        Raises:
-            ValueError: if the string is malformed or names an unknown
-                ``MAXModelConfig`` field.
-        """
-        dot_pos = override_str.find(".")
-        if dot_pos < 1:
-            raise ValueError(
-                f"Invalid --model-override format: {override_str!r}. "
-                f"Expected 'component.field=value'."
-            )
-        eq_pos = override_str.find("=", dot_pos)
-        if eq_pos < dot_pos + 2:
-            raise ValueError(
-                f"Invalid --model-override format: {override_str!r}. "
-                f"Expected 'component.field=value'."
-            )
-        component = override_str[:dot_pos]
-        field_name = override_str[dot_pos + 1 : eq_pos]
-        raw_value = override_str[eq_pos + 1 :]
-
-        if field_name not in MAXModelConfig.model_fields:
-            raise ValueError(
-                f"Unknown MAXModelConfig field: {field_name!r}. "
-                f"Valid fields: {sorted(MAXModelConfig.model_fields.keys())}"
-            )
-
-        # For compound types (list, dict) the raw CLI string is JSON, so try
-        # json.loads first; fall back to the raw string for plain scalars.
-        field_info = MAXModelConfig.model_fields[field_name]
-        adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
-        try:
-            parsed_value = json.loads(raw_value)
-        except (json.JSONDecodeError, ValueError):
-            parsed_value = raw_value
-        return component, field_name, adapter.validate_python(parsed_value)
-
     def _apply_speculative_draft_architecture(self) -> None:
         """Rewrite the draft model's HuggingFace architecture for the method.
 
@@ -777,82 +434,6 @@ class PipelineConfig(ConfigFileModel):
                     "LlamaForCausalLM"
                 )
 
-    # Explicit type mapping for config classes that are processed from
-    # unmatched kwargs.  "model" is handled separately in
-    # _build_models_from_kwargs via ModelManifest.from_model_path().
-    _CONFIG_TYPE_MAPPING: dict[str, type[ConfigFileModel]] = {
-        "runtime": PipelineRuntimeConfig,
-        "sampling": SamplingConfig,
-        "profiling": ProfilingConfig,
-    }
-
-    def _process_remaining_config_classes(
-        self, unmatched_kwargs: dict[str, Any]
-    ) -> None:
-        """Processes remaining kwargs for other config classes.
-
-        Note: model kwargs are handled separately in ``_build_models_from_kwargs``.
-
-        Args:
-            unmatched_kwargs: Dictionary of kwargs that haven't been matched yet
-        """
-        # Sampling is the only subtree still routed from flat kwargs: it needs
-        # the model's generation_config, which exists only once
-        # _build_models_from_kwargs has run.
-        for config_name in ["sampling"]:
-            config_class = self._CONFIG_TYPE_MAPPING[config_name]
-            matched_kwargs = {}
-
-            for key, value in unmatched_kwargs.items():
-                if key in config_class.model_fields:
-                    matched_kwargs[key] = value
-
-            if matched_kwargs:
-                self._create_and_set_config(
-                    config_name, config_class, matched_kwargs
-                )
-
-                # Remove matched kwargs
-                for key in matched_kwargs:
-                    _ = unmatched_kwargs.pop(key, None)
-
-    def _create_and_set_config(
-        self,
-        config_name: str,
-        config_class: type,
-        matched_kwargs: dict[str, Any],
-    ) -> None:
-        """Creates and sets a config object with special handling for config types.
-
-        Args:
-            config_name: Name of the config attribute (for example, ``"sampling"``)
-            config_class: The config class to instantiate
-            matched_kwargs: kwargs that matched the config class fields
-        """
-        if config_name == "sampling":
-            if "main" in self.models:
-                assert isinstance(self.model, MAXModelConfig)
-                assert hasattr(
-                    config_class, "from_generation_config_sampling_defaults"
-                )
-                sampling_config = config_class.from_generation_config_sampling_defaults(
-                    sampling_params_defaults=self.model.sampling_params_defaults,
-                    **matched_kwargs,
-                )
-            else:
-                sampling_config = config_class(**matched_kwargs)
-
-            if "main" in self.models and self.model.enable_echo:
-                sampling_config.enable_variable_logits = True
-            setattr(self, config_name, sampling_config)
-        else:
-            existing = getattr(self, config_name, None)
-            if existing is not None and isinstance(existing, config_class):
-                merged = existing.model_copy(update=matched_kwargs)
-                setattr(self, config_name, merged)
-            else:
-                setattr(self, config_name, config_class(**matched_kwargs))
-
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
 
@@ -861,102 +442,6 @@ class PipelineConfig(ConfigFileModel):
         """
         for model in self.models.values():
             model.validate_repo_access()
-
-    @classmethod
-    def from_flat_kwargs(cls, **kwargs: Any) -> Self:
-        """Construct a :class:`PipelineConfig` from a flat CLI kwargs namespace.
-
-        Accepts the flat kwargs produced by ``pipeline_config_options`` (for
-        example ``model_path``, ``kv_cache_size``, ``enable_lora``) and routes
-        them into the appropriate sub-configs before constructing the instance.
-
-        This is the entry point for CLI and legacy callers. Direct construction
-        via ``PipelineConfig(models=..., runtime=..., ...)`` with properly typed
-        sub-configs is also supported and requires no routing.
-        """
-        # Reshape to the config file's nested shape first so the merge below
-        # compares like with like and can resolve precedence per field.
-        kwargs = _nest_flat_kwargs(kwargs)
-
-        # Merge YAML config file values before routing, then clear config_file
-        # so the Pydantic model_validator on ConfigFileModel doesn't reload it
-        # when cls(**pydantic_kwargs) is called below.
-        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
-        kwargs.pop("config_file", None)
-
-        # Intercept legacy model/draft_model kwargs — these are no longer
-        # Pydantic fields but some callers still pass them directly.
-        model_kwarg = kwargs.pop("model", None)
-        draft_model_kwarg = kwargs.pop("draft_model", None)
-
-        # Fold --model-override entries into the directly-passed model/draft
-        # dicts BEFORE constructing MAXModelConfig. The constructor eagerly
-        # resolves the HuggingFace repo handle, and under HF_HUB_OFFLINE a repo
-        # cached only at a pinned SHA has no "main" snapshot — so constructing
-        # at the dataclass-default revision raises. A recipe passed via
-        # --config-file supplies the model as a dict here and pins the revision
-        # via --model-override, so that override must reach the constructor and
-        # not just a later with_override(). (The --model-path CLI path folds
-        # these overrides in _build_models_from_kwargs.)
-        component_overrides: dict[str, dict[str, Any]] = {}
-        for override_str in kwargs.get("model_override") or []:
-            component, field_name, value = cls._parse_model_override(
-                override_str
-            )
-            component_overrides.setdefault(component, {})[field_name] = value
-
-        # If a MAXModelConfig (or plain dict from config file) was passed
-        # directly, wrap it in a manifest.
-        if model_kwarg is not None:
-            if isinstance(model_kwarg, dict) and not isinstance(
-                model_kwarg, MAXModelConfig
-            ):
-                model_kwarg = MAXModelConfig(
-                    **{**model_kwarg, **component_overrides.get("main", {})}
-                )
-            kwargs["models"] = ModelManifest({"main": model_kwarg})
-
-        # Separate PipelineConfig-own fields from sub-config fields.
-        pydantic_kwargs: dict[str, Any] = {}
-        unmatched_kwargs: dict[str, Any] = {}
-        for key, value in kwargs.items():
-            if key in cls.model_fields:
-                pydantic_kwargs[key] = value
-            else:
-                unmatched_kwargs[key] = value
-
-        instance = cls(**pydantic_kwargs)
-
-        # Add draft model via with_override. Fold draft --model-override
-        # entries in before construction for the same offline-revision reason
-        # as the main model above.
-        if draft_model_kwarg is not None:
-            if isinstance(draft_model_kwarg, dict) and not isinstance(
-                draft_model_kwarg, MAXModelConfig
-            ):
-                draft_model_kwarg = MAXModelConfig(
-                    **{
-                        **draft_model_kwarg,
-                        **component_overrides.get("draft", {}),
-                    }
-                )
-            instance.models = instance.models.with_override(
-                "draft", config=draft_model_kwarg
-            )
-
-        # Route unmatched kwargs into sub-configs.  Ordering matters:
-        # - models before sampling (sampling needs generation_config from model)
-        # - models before speculative (speculative needs draft_model)
-        instance._build_models_from_kwargs(unmatched_kwargs)
-        instance._apply_speculative_draft_architecture()
-        if unmatched_kwargs:
-            instance._process_remaining_config_classes(unmatched_kwargs)
-
-        if unmatched_kwargs:
-            raise ValueError(f"Unmatched kwargs: {unmatched_kwargs}")
-
-        instance._validate_repo_access()
-        return instance
 
     def _validate_required_arguments_against_architecture(
         self, architecture: Any
@@ -1555,12 +1040,49 @@ class PipelineConfig(ConfigFileModel):
                 models_dict["draft"] = args.draft_model.model_copy(deep=True)
             manifest = ModelManifest(models_dict)
 
+        # The model's HF generation_config may declare default sampling
+        # params (e.g. repetition_penalty) that the sampler can only honor
+        # if the matching feature is compiled in. Build sampling from the
+        # user-set fields only (Pydantic fields-set), then let
+        # from_generation_config_sampling_defaults switch on
+        # enable_penalties/enable_min_tokens where the generation config
+        # requires them.
+        if "main" in manifest:
+            main_model = manifest["main"]
+            explicit_sampling = args.sampling.model_dump(
+                include=args.sampling.model_fields_set
+                - {"config_file", "section_name"}
+            )
+            if main_model.enable_echo:
+                explicit_sampling["enable_variable_logits"] = True
+            sampling = SamplingConfig.from_generation_config_sampling_defaults(
+                sampling_params_defaults=main_model.sampling_params_defaults,
+                **explicit_sampling,
+            )
+        else:
+            sampling = _construct_from_user_fields(args.sampling)
+
+        # Apply --model-override entries to the manifest before construction
+        # (with_override returns a new manifest). Idempotent for "main"/
+        # "draft" fields that from_flat_kwargs already folded into the flat
+        # fields; this is the only application path for pre-built manifests
+        # and programmatically constructed PipelineArgs.
+        for component, fields in _parse_component_overrides(
+            args.model_override
+        ).items():
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+            manifest = manifest.with_override(component, **fields)
+
         config = cls(
             models=manifest,
             model_override=list(args.model_override),
-            sampling=args.sampling.model_copy(deep=True),
-            runtime=args.runtime.model_copy(deep=True),
-            profiling=args.profiling.model_copy(deep=True),
+            sampling=sampling,
+            runtime=_construct_from_user_fields(args.runtime),
+            profiling=_construct_from_user_fields(args.profiling),
             lora=args.lora.model_copy(deep=True) if args.lora else None,
             speculative=args.speculative.model_copy(deep=True)
             if args.speculative
@@ -1568,6 +1090,8 @@ class PipelineConfig(ConfigFileModel):
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
         )
+
+        config._apply_speculative_draft_architecture()
         config._validate_repo_access()
         return config
 
