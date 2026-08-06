@@ -241,17 +241,7 @@ struct Optional[T: AnyType](
         print(opt.value().value)  # Output: 7
         ```
         """
-        # MOCO-4408: forwarding the closure into `Variant`'s `init_with=` ctor, which
-        # infers the stored type from the closure return, cannot resolve that
-        # type from an abstract `def() -> Self.T`. `Self.T` is fixed here, so
-        # pass it explicitly to the storage primitives and init_with `init_with()` at the
-        # emplacement site instead.
-        self._value = Self._type(unsafe_uninitialized=())
-        self._value._unsafe_set_active[Self.T]()
-        # TODO(MSTDL-2924): Replace with `Pointer.unsafe_write(init_with=)`.
-        __get_address_as_uninit_lvalue(
-            self._value._unsafe_ptr[Self.T]()._mlir_value
-        ) = init_with()
+        self._value = Self._type(init_with=init_with)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
@@ -793,11 +783,7 @@ struct Optional[T: AnyType](
         """
         if self:
             return self._value^.unsafe_unwrap[Self.T]()
-        # TODO(MOCO-4141): Replace with `return default^`. That transfer is
-        # rejected today because the `where`-clause `Movable` evidence isn't
-        # visible at the return slot, so route it through Variant's
-        # `Movable`-bounded value constructor, which does see the evidence.
-        return Variant[_NoneType, Self.T](default^).unsafe_unwrap[Self.T]()
+        return default^
 
     @__allow_legacy_custom_self_type
     def copied[

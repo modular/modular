@@ -870,21 +870,6 @@ struct Dict[
         self._table = SwissTable[Self.K, Self.V, Self.H](copy=copy._table)
         self._order = copy._order.copy()
 
-    # TODO(MOCO-4228): remove this __deinit__
-    def __deinit__(
-        deinit self,
-    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
-        """Destroy all keys and values in the dictionary and free memory.
-
-        Constraints:
-            Both `K` and `V` must be `Deinitable`. When either is not,
-            the dictionary has no implicit destructor and must be torn down with
-            `deinit_with()`.
-        """
-        # _table.__deinit__ handles destroying occupied slots and freeing memory.
-        # _order is cleaned up by List destructor.
-        pass
-
     def deinit_with(
         deinit self, deinit_func: Some[def(var Self.K, var Self.V)], /
     ):
@@ -2002,18 +1987,6 @@ struct StringDict[V: Movable](
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, Self.V, default_comp_time_hasher]()
 
-    # TODO(MOCO-4228): remove this __deinit__ once an explicit __deinit__ is synthesized
-    def __deinit__(deinit self) where conforms_to(Self.V, Deinitable):
-        """Destroy all values in the dictionary and free memory.
-
-        Constraints:
-            `V` must be `Deinitable`. When it is not, the dictionary has
-            no implicit destructor and must be torn down with `deinit_with()`.
-        """
-        # `_dict`'s conditional destructor handles the
-        # occupied entries and frees memory.
-        pass
-
     def deinit_with(
         deinit self, deinit_func: Some[def(var String, var Self.V)], /
     ):
@@ -2027,13 +2000,7 @@ struct StringDict[V: Movable](
                 value.
         """
 
-        # TODO(MOCO-4295): forwarding this *existential* (`Some[def(...)]`)
-        # closure straight to `Dict.deinit_with` doesn't compile — its `K`
-        # won't bind to `String`. Drop this wrapper once fixed.
-        def forward(var key: String, var value: Self.V) {imm deinit_func}:
-            deinit_func(key^, value^)
-
-        self._dict^.deinit_with(forward)
+        self._dict^.deinit_with(deinit_func)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

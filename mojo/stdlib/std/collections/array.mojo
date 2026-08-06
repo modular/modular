@@ -954,8 +954,7 @@ struct Array[T: AnyType, length: Int](
         Returns:
             An iterator that owns the array's elements.
         """
-        # TODO(MOCO-4309): return Self.IteratorOwnedType(self^)
-        return _ArrayIterOwned(self^)
+        return Self.IteratorOwnedType(self^)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the array, returning immutable references.

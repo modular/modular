@@ -25,7 +25,6 @@ from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
-from std.memory import is_trivially_deletable
 from std.os import abort
 
 from std.sys import align_of, size_of
@@ -89,20 +88,6 @@ struct Node[
         self.value = value^
         self._prev = prev.value() if prev else Self._OpaquePointer()
         self._next = next.value() if next else Self._OpaquePointer()
-
-    # TODO(MOCO-4228)
-    comptime __del__is_trivial = is_trivially_deletable[Self.ElementType]()
-
-    # TODO(MOCO-4228): Let the compiler synthesize this method
-    def __deinit__(
-        deinit self,
-    ) where conforms_to(Self.ElementType, Deinitable):
-        """Destroy the entry's key and value.
-
-        Constraints:
-            `ElementType` must be `Deinitable`.
-        """
-        pass
 
     def _into_value(deinit self) -> Self.ElementType:
         return self.value^
