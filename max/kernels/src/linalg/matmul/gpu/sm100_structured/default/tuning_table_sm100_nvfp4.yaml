@@ -25,8 +25,8 @@ defaults: &defaults
   BATCH_SIZE: 1
 params:
 # Gemma-4-31B-IT-NVFP4 (hidden 5376, intermediate 21504) MLP, decode M=1.
-# The small-M fallback picks k_group_size by K-iteration parity and never
-# tries the legal, faster kg=3 for gate_up's 21 K-iterations.
+# The small-M fallback only considers k_group_size in {4, 2, 1} based on num_k_iters divisibility,
+# so for gate_up's 21 k-iters it never tries the legal, faster kg=3.
 - <<: *defaults
   M: 1
   M_END: 2
