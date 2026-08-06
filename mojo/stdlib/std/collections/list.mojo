@@ -766,6 +766,7 @@ struct List[T: Movable, /](
         """
         return self._len
 
+    @always_inline("nodebug")
     def __bool__(self) -> Bool:
         """Checks whether the list has any elements or not.
 
