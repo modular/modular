@@ -505,6 +505,26 @@ struct FA4Config[
         )
 
     @always_inline
+    def first_s_alias_o(self) -> Bool:
+        """Whether the peel first-S0/S1 alias to O0/O1 (and the sfree-barrier
+        deletion) applies to THIS config.
+
+        Single gate for both coupled optimizations: the alias relocates the
+        peel `S0(0)/S1(0)` MMA destinations into the idle O0/O1 TMEM region,
+        which removes the peel-S RAW hazard the `sfree0/sfree1` mbarriers
+        protected -- so the sfree barriers are deleted iff the alias is on.
+        Gated on `crossp_on()` (the alias is CrossP-only) AND the geometry
+        guard `s_cols <= padded_ov_depth` (the `s_cols`-wide peel S tile must
+        fit in the `padded_ov_depth`-wide O region). d64 has `use_shared_kv ==
+        False` so `crossp_on()` is False and the alias/sfree never apply --
+        no d64 TMEM layout change is needed. See
+        `.claude/agent-memory/mojo-kernel-engineer/sm100-crossp-sfree-deletion.md`.
+        """
+        return self.crossp_on() and (
+            self.BN // self.m_pack <= self.padded_ov_depth
+        )
+
+    @always_inline
     def num_rope_buffers(self) -> Int:
         """Number of separate rope smem buffers (shared mode only).
 
@@ -941,11 +961,19 @@ struct FA4Config[
         # for P@V)
         self.BK1 = self.BN
 
-        # Cross-stage P appends 10 mbars (2 sfree + 2x4 depth-4 inplace). Added
-        # here rather than with the other misc mbars because `crossp_supported`
-        # needs `use_shared_kv`, which is only decided above. Same predicate
-        # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
-        # layout cannot drift.
+        # Cross-stage P appends mbars after Publish: 2 sfree + 2x4 depth-4
+        # inplace (10 total) when the alias is OFF; the sfree pair is deleted
+        # when the first-S-alias-O gate holds (the alias relocates the peel S
+        # into the O TMEM region, removing the peel-S RAW hazard sfree
+        # protected), leaving 8 (2*InplaceDepth). Added here rather than with
+        # the other misc mbars because `crossp_supported` needs `use_shared_kv`,
+        # which is only decided above. The geometry guard (`s_cols <=
+        # padded_ov_depth`, i.e. `BN // m_pack <= padded_ov_depth`) is inlined
+        # as field reads (not a `self.first_s_alias_o()` call) because Mojo
+        # definite-assignment rejects instance-method calls before `smem_used`
+        # is initialized; the field reads here are all of fields set above.
+        # `FA4MiscMBars.SfreeCount` is threaded from the same predicate, so
+        # the accounting and the layout cannot drift.
         if EnableTMEMCrossP and Self.crossp_supported(
             self.num_q,
             self.use_ws,
@@ -955,7 +983,10 @@ struct FA4Config[
             self.page_size,
             self.BN,
         ):
-            smem_use += 10 * Self.mbar_size
+            var _crossp_mbars: Int = 8
+            if self.BN // self.m_pack > self.padded_ov_depth:
+                _crossp_mbars += 2
+            smem_use += _crossp_mbars * Self.mbar_size
 
         # BLASST skip-vote region: must match SM100AttentionSMem.blasst_vote_bytes
         # or the launch smem_used undershoots -> CUDA_ERROR_ILLEGAL_ADDRESS.

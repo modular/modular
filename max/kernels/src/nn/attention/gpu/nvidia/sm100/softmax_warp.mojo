@@ -2309,6 +2309,11 @@ def fa4_softmax[
     # longer overwrites the S it just read -- letting S release right after
     # LDTM, before exp2. Default OFF => p_tmem == s_tmem, byte-identical.
     comptime CrossP = crossp_effective and MiscMBarsType.CrossP_enabled
+    # first-S-alias-O + sfree-deletion gate (see `FA4Config.first_s_alias_o()`).
+    # When ON the peel S0(0)/S1(0) were written to the O0/O1 TMEM region by the
+    # MMA, so the peel loads here read them back from O0/O1 (swapped below) and
+    # the sfree producer commit is absent.
+    comptime FirstSAliasO = config.first_s_alias_o()
     var p_tmem: UInt32
     comptime if CrossP:
         p_tmem = tmem_addr + (
@@ -2590,8 +2595,9 @@ def fa4_softmax[
             # order this ahead of the mbar arrives so the MMA can't race the read.
             tcgen05_load_wait()
             tcgen05_fence_before()
-            var sfree_p = mbars.sfree_producer(warp_group_idx)
-            sfree_p.commit()
+            comptime if not FirstSAliasO:
+                var sfree_p = mbars.sfree_producer(warp_group_idx)
+                sfree_p.commit()
             inplace_prod.commit()
         return vrow_max
 
@@ -3285,10 +3291,26 @@ def fa4_softmax[
             warp_group_idx * UInt32(wg_row_offset) + row
         ].cast[accum_dtype]()
 
+    # first-S-alias-O: the peel S0(0)/S1(0) were written to the O0/O1 TMEM
+    # region by the MMA, so read them back from there for the peel loads, then
+    # restore `s_tmem` to the S0/S1 region for the main loop.
+    comptime if FirstSAliasO:
+        s_tmem = tmem_addr + (
+            UInt32(config.TMEM_O0) if warp_group_idx
+            == UInt32(0) else UInt32(config.TMEM_O1)
+        )
+
     var row_max: Float32 = peel_mask[
         rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
         init_load_mask_max,
     ](mask_iters, kv_row)
+
+    comptime if FirstSAliasO:
+        s_tmem = (
+            tmem_addr
+            + UInt32(config.TMEM_S0)
+            + UInt32(config.TMEM_S1 - config.TMEM_S0) * warp_group_idx
+        )
     var sink_weight: Scalar[accum_dtype]
 
     # Split-K: the sink mass must land in the *cluster-global* sum exactly
