@@ -26,7 +26,7 @@ from std.sys import size_of
 from std.sys._assembly import inlined_assembly
 
 import std.gpu.primitives.warp as warp
-from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma import st_matrix
 from layout import (
@@ -61,8 +61,17 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,
     TransientScheduler,
 )
+
+# The optional-pointer trio lives in `mha_utils` because `MHAPartitionScheme`
+# names `OptionalPointer` in its interface and this module already imports that
+# trait — housing them here instead would be a cycle. They are re-exported so
+# existing consumers (including the `sm90/attention` re-export layer) keep
+# resolving them through this module.
 from nn.attention.mha_utils import (
     MHAPartitionScheme,
+    NonNullPointer,
+    NullPointer,
+    OptionalPointer,
     OptionallyStaticInt,
     _is_decoding,
     get_start_and_end_for_partitions,
@@ -121,91 +130,6 @@ comptime ImmutTileTensor1D[dtype: DType] = TileTensor[
     _1d_row_major_tt_layout,
     ImmutAnyOrigin,
 ]
-
-
-trait OptionalPointer(Copyable, TrivialRegisterPassable):
-    """Abstracts over nullable pointers, providing a uniform interface for `NonNullPointer` and `NullPointer`.
-    """
-
-    comptime dtype: DType
-    comptime is_null: Bool
-    comptime address_space: AddressSpace
-
-    @always_inline
-    def value(
-        self,
-    ) -> UnsafePointer[
-        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
-    ]:
-        ...
-
-
-struct NonNullPointer[
-    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
-](OptionalPointer):
-    """A pointer with a compile-time guarantee of being non-null.
-
-    Parameters:
-        dtype_: Element type of the pointed-to values.
-        address_space_: GPU address space of the pointer (defaults to
-            `AddressSpace.GENERIC`).
-    """
-
-    comptime dtype: DType = Self.dtype_
-    comptime is_null: Bool = False
-    comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
-        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
-    ]
-
-    @__allow_legacy_any_origin_fields
-    var ptr: Self.PtrType
-
-    @always_inline
-    def __init__(out self, ptr: Self.PtrType):
-        self.ptr = ptr
-
-    @always_inline
-    def __init__(out self, ptr: DeviceBuffer[Self.dtype]):
-        comptime assert Self.address_space == AddressSpace.GENERIC
-        self.ptr = rebind[Self.PtrType](ptr.unsafe_ptr())
-
-    @always_inline
-    def value(self) -> Self.PtrType:
-        assert Int(self.ptr) != 0, (
-            "NonNullPointer is supposed to provide a compile-time guarantee"
-            " of being non-null"
-        )
-        return self.ptr
-
-
-struct NullPointer[
-    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
-](OptionalPointer):
-    """A pointer known at compile time to be null, used when an optional pointer argument is absent.
-
-    Parameters:
-        dtype_: Element type of the pointed-to values.
-        address_space_: GPU address space of the pointer (defaults to
-            `AddressSpace.GENERIC`).
-    """
-
-    comptime dtype: DType = Self.dtype_
-    comptime is_null: Bool = True
-    comptime address_space: AddressSpace = Self.address_space_
-    comptime PtrType = UnsafePointer[
-        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
-    ]
-
-    @always_inline
-    def __init__(out self):
-        pass
-
-    @always_inline
-    def value(self) -> Self.PtrType:
-        # NullPointer.value() should never be called at runtime — it exists
-        # only for trait conformance. Return dangling as a safe sentinel.
-        return Self.PtrType.unsafe_dangling()
 
 
 struct Pack[
@@ -459,11 +383,39 @@ struct MHAPosition[
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
         UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin],
     ]:
+        # Every caller already reaches this under `comptime if
+        # PartitionType.do_partition`; asserting it here is what makes the
+        # mutability laundering below sound, since only `SplitKPartition` owns a
+        # real buffer.
+        comptime assert partition_t.do_partition, (
+            "exp_sum_qk_max_ptr is split-K only; a non-partitioning scheme has"
+            " no partial-statistics buffer to point at"
+        )
+        # `NullPointer.value()` returns a dangling address rather than trapping,
+        # so non-nullness has to be established before the unwrap below. The
+        # SM100 2Q kernel pins the full biconditional
+        # (`do_partition == not LSEPointerType.is_null`), but it is instantiated
+        # only from `sm100/kernel.mojo` — the sm90, MSA, and `mha_1q` callers of
+        # this method never reach it. For those this assert is the only check,
+        # not a redundant one.
+        comptime assert not partition_t.LSEPointerType.is_null, (
+            "the split-K LSE pointer must be the non-null conformer before"
+            " `value()`"
+        )
+        # Both conformers derive `LSEPointerType` from `accum_dtype`, but that
+        # tie is not expressible in the trait, so the equality is asserted here
+        # and the `rebind` below reconciles the (identically-represented) types.
+        comptime assert (
+            partition_t.LSEPointerType.dtype == partition_t.accum_dtype
+        ), "the split-K LSE buffer must be typed by the scheme's accum_dtype"
         var exp_sum_offset = UInt32(Self.q_num_heads) * (
             self.prompt_idx + batch_size * self.prompt_offset
         )
         var exp_sum_ptr = (
-            partition.get_exp_sum_qk_max_pointer() + exp_sum_offset
+            rebind[
+                UnsafePointer[Scalar[partition_t.accum_dtype], MutAnyOrigin]
+            ](partition.lse_pointer().value().unsafe_mut_cast[True]())
+            + exp_sum_offset
         )
         var qk_max_ptr = exp_sum_ptr + (
             UInt32(Self.q_num_heads) * batch_size * partition.num_partitions()
@@ -585,13 +537,18 @@ def get_seq_info[
     # for num_q==1 split-K (pair_cta=False) wrongly yields cluster_size=1 and
     # maps the partition CTAs (block_idx.x % P != 0) to nonexistent tiles, so
     # they are marked invalid and skip all compute.
+    # Pass the RUNTIME partition count so the transient scheduler divides
+    # `block_idx.x` by it to recover a valid prompt tile on the workspace
+    # (traditional/unfused) split-K path. `num_partitions()` is 1 for every
+    # non-workspace scheme (NoPartition, cluster split-K), leaving the tile
+    # mapping byte-identical.
     var scheduler = TransientScheduler[
         UInt32(BM),
         UInt32(num_heads),
         flip_prompt_idx=flip_prompt_idx,
         pair_cta=pair_cta,
         splitk_partitions=splitk_partitions,
-    ]()
+    ](partition.num_partitions())
     # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[

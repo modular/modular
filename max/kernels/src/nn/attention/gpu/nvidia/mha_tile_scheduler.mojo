@@ -550,6 +550,14 @@ struct TransientScheduler[
 
     comptime device_type: AnyType = Self
 
+    # Runtime split-K partition count for the WORKSPACE (traditional/unfused)
+    # split-K path, which keeps `splitk_partitions == 1` at comptime (no launch
+    # cluster) but over-launches grid.x by a runtime `P`. Defaults to 1, so for
+    # every non-workspace config (non-split, pair-CTA, cluster split-K) the tile
+    # divisor and flip below fold back to their prior comptime values —
+    # byte-identical. `get_seq_info` sets it from `partition.num_partitions()`.
+    var num_partitions: UInt32
+
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
@@ -573,7 +581,11 @@ struct TransientScheduler[
 
     @always_inline
     def __init__(out self):
-        pass
+        self.num_partitions = 1
+
+    @always_inline
+    def __init__(out self, num_partitions: UInt32):
+        self.num_partitions = num_partitions
 
     @always_inline
     def get_current_work_info(self, num_prompt_tiles: UInt32) -> WorkInfo:
@@ -588,10 +600,26 @@ struct TransientScheduler[
         comptime if Self.splitk_partitions > 1 and not Self.pair_cta:
             raw_idx = UInt32(block_idx.x) // UInt32(cluster_dim.x)
         else:
-            raw_idx = UInt32(block_idx.x) // Self.cluster_size
+            # `cluster_size` folds to a shift (pair-CTA `>> 1`, identity at 1);
+            # `num_partitions` is 1 except on the WORKSPACE split-K path, where it
+            # is the runtime `P` that over-launched grid.x. Dividing by it maps
+            # `block_idx.x` -> a VALID prompt tile in `[0, real_tiles)` (the
+            # partition index is recovered separately as `block_idx.x % P` in the
+            # warps). For every non-workspace config `num_partitions == 1`, so this
+            # is byte-identical to the prior `// cluster_size`.
+            raw_idx = UInt32(block_idx.x) // (
+                Self.cluster_size * self.num_partitions
+            )
+        # Un-inflate the prompt-tile count for the flip: on the workspace path the
+        # scheduler tile space was multiplied by `num_partitions`, so the real
+        # per-partition tile count is `num_prompt_tiles // num_partitions` (== the
+        # original count for every other config, leaving the flip unchanged).
+        var real_num_prompt_tiles: UInt32 = (
+            num_prompt_tiles // self.num_partitions
+        )
         var prompt_tile_idx: UInt32
         comptime if Self.flip_prompt_idx:
-            prompt_tile_idx = num_prompt_tiles - 1 - raw_idx
+            prompt_tile_idx = real_num_prompt_tiles - 1 - raw_idx
         else:
             prompt_tile_idx = raw_idx
         return WorkInfo(

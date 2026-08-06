@@ -14,7 +14,6 @@
 
 from std.sys import size_of
 from std.gpu import thread_idx
-from std.gpu.primitives.id import cluster_dim
 from std.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
@@ -32,6 +31,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     mul_ftz,
     splitk_window,
     splitk_partition_idx,
+    splitk_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
 from .smem import SM100AttentionSMem
@@ -48,6 +48,10 @@ def fa4_correction[
         qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
     ],
     page_size: Int,
+    # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME
+    # partition count even at `config.splitk_partitions == 1`. Defaulted so
+    # every non-workspace caller (incl. MLA) is byte-identical.
+    workspace_split: Bool = False,
 ](
     smem: SM100AttentionSMem[config],
     tmem_addr: UInt32,
@@ -55,6 +59,7 @@ def fa4_correction[
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
+    ws_num_partitions: UInt32 = 1,
 ):
     comptime accum_type = DType.float32
     comptime assert size_of[accum_type]() == 4
@@ -244,12 +249,10 @@ def fa4_correction[
     # Split-K (1Q): slice the combined tile count to this partition's window
     # before the per-WG c0/c1 split. Identical window to the other warps
     # (total_iters == last_masked_set_end for check_mask==False masks).
-    comptime if config.num_q == 1 and config.splitk_partitions > 1:
-        var _np: UInt32
-        comptime if config.dynamic_cluster_dim:
-            _np = UInt32(cluster_dim.x)
-        else:
-            _np = UInt32(config.splitk_partitions)
+    comptime if config.num_q == 1 and (
+        config.splitk_partitions > 1 or workspace_split
+    ):
+        var _np = splitk_num_partitions[config](ws_num_partitions)
         var _w = splitk_window(
             total_iters_runtime,
             _np,

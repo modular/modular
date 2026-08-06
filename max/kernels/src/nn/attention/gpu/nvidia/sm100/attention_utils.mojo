@@ -29,6 +29,7 @@ from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu import block_idx
 from std.gpu.globals import WARP_SIZE
+from std.gpu.primitives.id import cluster_dim
 from std.gpu.primitives.warp import broadcast
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -3795,6 +3796,66 @@ def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
 
 
 @always_inline
+def splitk_p_ladder[sm_count: Int]() -> List[Int]:
+    """The rung ladder of split-K partition counts `P`, shared by the producer
+    and the consumer of a workspace split-K launch.
+
+    Single source of truth for two consumers that MUST agree:
+
+    * `dispatch.mojo`'s `_bucket_ws` snaps a desired count UP to a rung (then
+      caps it), so every `P` the production auto-route picks is a rung of this
+      list or the cap.
+    * `fa4_splitk_combine`'s launcher compiles one comptime-unrolled combine
+      specialization per rung, and falls back to a generic runtime-`P` kernel
+      for anything off it.
+
+    Keeping them as two hand-copied lists silently costs the specialization
+    whenever one side gains a rung the other does not (which is exactly what
+    happened to the sub-12 rungs).
+
+    `sm_count` is the top rung: `_bucket_ws` reaches it exactly when
+    `raw_grid == 1`.
+    """
+    return [2, 4, 6, 8, 10, 12, 16, 18, 20, 24, 32, 48, 64, 96, sm_count]
+
+
+@always_inline
+def splitk_num_partitions[
+    config: FA4Config
+](ws_num_partitions: UInt32) -> UInt32:
+    """The split-K partition count `P` this CTA must divide its KV range by.
+
+    Single source of truth for the two split-K mechanisms. All four FA4 warps
+    (`load`, `mma`, `softmax`, `correction`) feed this to `splitk_window` and
+    MUST derive the same window: a disagreement makes the producer over- or
+    under-fill relative to its consumers, which HANGS rather than producing a
+    wrong number.
+
+    * Cluster/DSMEM split-K bakes `P` into the launch cluster, so it is the
+      comptime `config.splitk_partitions` (or `cluster_dim.x` once the cluster
+      dimension becomes dynamic).
+    * Workspace (traditional/unfused) split-K keeps `config.splitk_partitions
+      == 1` -- no launch cluster -- and carries `P` at runtime by over-launching
+      `grid.x`; `ws_num_partitions` is that count.
+
+    Parameters:
+        config: The FA4 config, supplying the comptime cluster partition count.
+
+    Args:
+        ws_num_partitions: Runtime partition count for the workspace scheme.
+            Ignored when `config.splitk_partitions > 1`. Its `1` default makes
+            this a no-op for a caller with no split-K at all.
+    """
+    comptime if config.splitk_partitions > 1:
+        comptime if config.dynamic_cluster_dim:
+            return UInt32(cluster_dim.x)
+        else:
+            return UInt32(config.splitk_partitions)
+    else:
+        return ws_num_partitions
+
+
+@always_inline
 def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     """This CTA's split-K partition index `[0, splitk_partitions)`.
 
@@ -3837,9 +3898,11 @@ def splitk_window(
     weights them to zero. M6 routes idle CTAs (`partition_idx >=
     num_partitions`) through that same neutral path.
 
-    `T` is a tile count (small) and `num_partitions <= 16`, so the products
-    cannot overflow `UInt32`. `num_partitions` is comptime at every call
-    site, so the `//`/`%` lower to multiply-shift, not real divides.
+    `T` is a tile count (small) and `num_partitions <= sm_count`, so the
+    products cannot overflow `UInt32`. On the cluster split-K path
+    `num_partitions` is comptime and the `//`/`%` lower to multiply-shift; the
+    workspace (unfused) path passes a runtime `P`, so it pays one real `divmod`
+    -- once per warp per kernel, outside every key-tile loop.
 
     Args:
         T: Total number of K-tiles to divide across partitions.

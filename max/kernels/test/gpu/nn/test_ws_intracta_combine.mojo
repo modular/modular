@@ -229,7 +229,7 @@ def combine_kernel[
     )
 
     # ---- (C) Level 2: cross-WG reduce-scatter + normalize -> o_smem (WG0) ----
-    fa4_ws_level2_reduce_scatter_write[M_PACK, ROWS, depth, use_fma=True](
+    _ = fa4_ws_level2_reduce_scatter_write[M_PACK, ROWS, depth, use_fma=True](
         UInt32(row),
         UInt32(g),
         UInt32(wg),
