@@ -27,7 +27,12 @@ import hf_repo_lock
 import numpy as np
 import pytest
 from max.driver import DeviceSpec
-from max.pipelines import PipelineArgs, PipelineConfig
+from max.pipelines import (
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+    SamplingConfig,
+)
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
@@ -91,9 +96,11 @@ def test_eagle_structured_output_json_schema_gpu(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -215,9 +222,11 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=2,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=2,
+            enable_overlap_scheduler=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -396,9 +405,11 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
             speculative_method="eagle",
             num_speculative_tokens=2,
         ),
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(

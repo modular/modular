@@ -240,8 +240,10 @@ def create_pipeline_config_with_lora(
             lora_paths=lora_paths,
             max_lora_rank=max_lora_rank,
         ),
-        max_batch_size=4,
-        prefer_module_v3=prefer_module_v3,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=4,
+            prefer_module_v3=prefer_module_v3,
+        ),
     )
 
 

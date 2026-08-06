@@ -21,7 +21,12 @@ from unittest.mock import patch
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.lib.registry import (
     SupportedArchitecture,
@@ -93,7 +98,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
         # This forces it to fail if we don't have it.
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(ValueError):
         PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
@@ -110,7 +115,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         model_path="GSAI-ML/LLaDA-8B-Instruct",
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(
         ValueError,
@@ -169,7 +174,7 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
         model_path="dummy/pixel-model",
         quantization_encoding="bfloat16",
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     PIPELINE_REGISTRY.retrieve_factory(
         PipelineConfig.from_args(pipeline_args),

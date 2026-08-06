@@ -26,7 +26,11 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 
 
 def test_from_args_threads_fold_sampler_and_pending_futures() -> None:
-    args = PipelineArgs(fold_sampler_into_graph=True, max_pending_futures=2)
+    args = PipelineArgs(
+        runtime=PipelineRuntimeConfig(
+            fold_sampler_into_graph=True, max_pending_futures=2
+        )
+    )
     config = PipelineConfig.from_args(args)
     assert config.runtime.fold_sampler_into_graph is True
     assert config.runtime.max_pending_futures == 2

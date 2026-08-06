@@ -30,6 +30,18 @@ This version is still a work in progress.
 
 ## Breaking changes
 
+- `max.pipelines.PipelineArgs` now nests its runtime, sampling, and profiling
+  fields in `runtime`, `sampling`, and `profiling` sub-configs
+  (`PipelineRuntimeConfig`, `SamplingConfig`, and `ProfilingConfig`), matching
+  the nested shape already used by recipes and `PipelineConfig`. Flat
+  constructor kwargs for those fields (for example `max_batch_size=1` or
+  `enable_structured_output=True`) are rejected; pass
+  `runtime=PipelineRuntimeConfig(max_batch_size=1)` or
+  `sampling=SamplingConfig(enable_structured_output=True)` instead, and use
+  the nested keys in config files validated into `PipelineArgs`.
+  `PipelineArgs.from_flat_kwargs` (the CLI path) still accepts the flat
+  spellings. `PipelineRuntimeConfig` is now exported from `max.pipelines`.
+
 - The legacy alias-buffer LoRA path has been removed. ModuleV3 LoRA (adapters
   passed as graph inputs) is now the only supported LoRA implementation.
   Serving a non-ModuleV3 architecture with `--lora-paths` now raises a clear

@@ -728,19 +728,15 @@ class TestPipelineArgsWriteThroughRegressions:
             == "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
         )
 
-    def test_multi_component_manifest_rejects_nested_runtime_kwarg(
+    def test_multi_component_manifest_accepts_nested_runtime_kwarg(
         self,
     ) -> None:
-        """Regression guard for the FLUX/QUA-727 crash.
+        """`PipelineArgs` accepts nested `runtime=PipelineRuntimeConfig(...)`.
 
-        Unlike PipelineConfig, PipelineArgs has no `runtime` field -- its
-        runtime knobs (`prefer_module_v3`, `denoising_cache`, etc.) are flat
-        top-level fields. `create_pipelines.py`'s FLUX oracle used to pass
-        `runtime=PipelineRuntimeConfig(...)` (a leftover from the pre-
-        PipelineArgs `PipelineConfig(models=..., runtime=...)` pattern),
-        which raises "Extra inputs are not permitted" since ConfigFileModel
-        forbids extra fields -- a hard crash for every multi-component
-        (diffusion) pipeline that set prefer_module_v3 or denoising_cache.
+        Nested is the canonical shape shared with recipes and
+        `PipelineConfig`; runtime knobs like `prefer_module_v3` and
+        `denoising_cache` live on the `runtime` sub-config, including for
+        multi-component (diffusion) manifests.
         """
         from max.pipelines.diffusion.cache import DenoisingCacheConfig
         from max.pipelines.lib import (
@@ -748,7 +744,6 @@ class TestPipelineArgsWriteThroughRegressions:
             PipelineArgs,
             PipelineRuntimeConfig,
         )
-        from pydantic import ValidationError
 
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
@@ -760,17 +755,12 @@ class TestPipelineArgsWriteThroughRegressions:
                 }
             )
 
-            with pytest.raises(ValidationError, match="runtime"):
-                PipelineArgs(
-                    models=models,
-                    runtime=PipelineRuntimeConfig(prefer_module_v3=True),
-                )
-
-            # The correct pattern: pass runtime knobs as flat fields.
             args = PipelineArgs(
                 models=models,
-                prefer_module_v3=True,
-                denoising_cache=DenoisingCacheConfig(taylorseer=True),
+                runtime=PipelineRuntimeConfig(
+                    prefer_module_v3=True,
+                    denoising_cache=DenoisingCacheConfig(taylorseer=True),
+                ),
             )
-            assert args.prefer_module_v3 is True
-            assert args.denoising_cache.taylorseer is True
+            assert args.runtime.prefer_module_v3 is True
+            assert args.runtime.denoising_cache.taylorseer is True

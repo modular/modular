@@ -65,7 +65,7 @@ def serve_api_server_and_model_worker(
     # arch that overrides a built-in must be imported first, or the stale lazy
     # built-in entry is materialized instead (and may fail to import).
     PIPELINE_REGISTRY._import_custom_architectures(
-        pipeline_args.custom_architectures
+        pipeline_args.runtime.custom_architectures
     )
 
     # Auto-detect pipeline task from the model architecture if not explicitly set.
