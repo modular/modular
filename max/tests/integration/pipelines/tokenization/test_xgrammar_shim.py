@@ -1303,14 +1303,14 @@ def test_or_format_json_schema_rejects_unenforceable() -> None:
         _compiler().compile_structural_tag(tag)
 
 
-def test_string_value_exclude_tokens_without_delimiter_rejected() -> None:
+def test_string_value_forbidden_tokens_without_delimiter_rejected() -> None:
     # Token-level string-content exclusion only applies to token-delimited string
-    # values, so string_value_exclude_tokens without string_value_delimiter_token
+    # values, so string_value_forbidden_tokens without string_value_delimiter_token
     # is a misconfiguration and is rejected rather than silently ignored.
     tag = xgr.StructuralTag(
         format=JSONSchemaFormat(
             json_schema={"type": "object"},
-            string_value_exclude_tokens=["<x>"],
+            string_value_forbidden_tokens=["<x>"],
         )
     )
     with pytest.raises(Exception):
@@ -1394,7 +1394,7 @@ def test_gemma_4_builtin_tag_registered() -> None:
     dumped = tag.model_dump_json().replace(" ", "")
     assert '"style":"json"' in dumped
     assert '"string_value_delimiter_token":"<|\\"|>"' in dumped
-    assert '"bare_key_terminal":"[a-zA-Z_][-a-zA-Z0-9_.]*"' in dumped
+    assert '"additional_bare_key_terminal":"[a-zA-Z_][-a-zA-Z0-9_.]*"' in dumped
 
 
 # The real Gemma tokenizer encodes <|"|>, <|tool_call>, and <tool_call|> as
@@ -1839,7 +1839,54 @@ def test_gemma_4_cache_key_annotation_named_property_not_collided() -> None:
     )
 
 
-def test_bare_key_terminal_undecomposable_rejected() -> None:
+@pytest.mark.parametrize(
+    ("terminal", "literal_forbidden", "pattern_forbidden"),
+    [
+        pytest.param(
+            r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            "",
+            "",
+            id="terminal_only",
+        ),
+        pytest.param(
+            "",
+            r":{},\x00-\x20\x7f",
+            r" \t\n\r\f:{},\"\\\x00-\x1f",
+            id="all_but_terminal",
+        ),
+        pytest.param(
+            "",
+            r":{},\x00-\x20\x7f",
+            "",
+            id="literal_forbidden_only",
+        ),
+    ],
+)
+def test_partial_bare_key_config_rejected(
+    terminal: str, literal_forbidden: str, pattern_forbidden: str
+) -> None:
+    # The bare-key options are a group: setting the terminal without the
+    # forbidden-character sets (or vice versa) would leave the parser and
+    # converter disagreeing about whether keys are bare, so a partial set is
+    # rejected rather than silently producing a mixed grammar.
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"foo": {"type": "integer"}},
+            },
+            string_value_delimiter_token='<|"|>',
+            additional_bare_key_terminal=terminal,
+            bare_key_literal_forbidden=literal_forbidden,
+            bare_key_pattern_forbidden=pattern_forbidden,
+            require_object_root=True,
+        )
+    )
+    with pytest.raises(Exception):
+        _gemma_compiler().compile_structural_tag(tag)
+
+
+def test_additional_bare_key_terminal_undecomposable_rejected() -> None:
     # A bare-key terminal in an unsupported shape (here: grouped
     # subexpressions rather than a plain class-with-repetition form) cannot
     # keep declared property names out of the additional keys; the schema
@@ -1852,7 +1899,7 @@ def test_bare_key_terminal_undecomposable_rejected() -> None:
                 "properties": {"foo": {"type": "integer"}},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal="([a-zA-Z_])([-a-zA-Z0-9_.])*",
+            additional_bare_key_terminal="([a-zA-Z_])([-a-zA-Z0-9_.])*",
             max_whitespace_cnt=1,
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
@@ -1895,7 +1942,7 @@ def test_bare_key_class_escape_unambiguous_before_hex_digit_member() -> None:
                 "properties": {"a": {"type": "integer"}},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a0\x01][a0\x01]*",
+            additional_bare_key_terminal=r"[a0\x01][a0\x01]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2070,7 +2117,7 @@ def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:
                 "properties": {"a": {"type": "integer"}},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a][a ]*",
+            additional_bare_key_terminal=r"[a][a ]*",
             bare_key_literal_forbidden=r":{},\x00-\x1f\x7f",
             bare_key_pattern_forbidden=r"\t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2092,7 +2139,7 @@ def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:
                 "properties": {"a": {"type": "integer"}},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a][a\x0c]*",
+            additional_bare_key_terminal=r"[a][a\x0c]*",
             bare_key_literal_forbidden=r":{},\x00-\x1f\x7f",
             bare_key_pattern_forbidden=r"\t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2105,7 +2152,7 @@ def test_bare_key_alphabet_overlapping_key_terminator_rejected() -> None:
         _gemma_compiler().compile_structural_tag(tag)
 
 
-def test_bare_key_terminal_non_ascii_rejected() -> None:
+def test_additional_bare_key_terminal_non_ascii_rejected() -> None:
     # Excluding declared names from a bare-key alphabet is only supported
     # for ASCII alphabets; a terminal with a non-ASCII member must fail
     # closed under reject_unsupported rather than be partially enforced.
@@ -2116,7 +2163,7 @@ def test_bare_key_terminal_non_ascii_rejected() -> None:
                 "properties": {"a": {"type": "integer"}},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal="[aé][aé]*",
+            additional_bare_key_terminal="[aé][aé]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2240,7 +2287,7 @@ def test_property_names_max_length_zero_permissive_forces_empty_object() -> (
         format=JSONSchemaFormat(
             json_schema={"type": "object", "propertyNames": {"maxLength": 0}},
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            additional_bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2279,7 +2326,7 @@ def test_property_names_max_length_zero_with_declared_properties_forces_empty() 
                 "propertyNames": {"maxLength": 0},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            additional_bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2310,7 +2357,7 @@ def test_property_names_empty_only_with_min_properties_rejected() -> None:
                 "propertyNames": {"maxLength": 0},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            additional_bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2334,7 +2381,7 @@ def test_property_names_empty_only_with_required_rejected() -> None:
                 "propertyNames": {"maxLength": 0},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            additional_bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,
@@ -2361,7 +2408,7 @@ def test_property_names_empty_only_with_additional_properties_forces_empty() -> 
                 "additionalProperties": {"type": "string"},
             },
             string_value_delimiter_token='<|"|>',
-            bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+            additional_bare_key_terminal=r"[a-zA-Z_][-a-zA-Z0-9_.]*",
             bare_key_literal_forbidden=r":{},\x00-\x20\x7f",
             bare_key_pattern_forbidden=r" \t\n\r\f:{},\"\\\x00-\x1f",
             max_whitespace_cnt=1,

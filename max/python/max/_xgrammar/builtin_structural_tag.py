@@ -1663,8 +1663,8 @@ def get_gemma_4_structural_tag(
     JSON_CONFIG: dict[str, Any] = {
         "style": "json",
         "string_value_delimiter_token": '<|"|>',
-        "string_value_exclude_tokens": ["<|tool_call>", "<tool_call|>"],
-        "bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
+        "string_value_forbidden_tokens": ["<|tool_call>", "<tool_call|>"],
+        "additional_bare_key_terminal": r"[a-zA-Z_][-a-zA-Z0-9_.]*",
         "bare_key_literal_forbidden": r":{},\x00-\x20\x7f",
         "bare_key_pattern_forbidden": r" \t\n\r\f:{},\"\\\x00-\x1f",
         "max_whitespace_cnt": 1,
