@@ -58,6 +58,8 @@ def _mojo_doc_implementation(ctx):
     markdown_args.add(mojodoc_output.path)
     if ctx.attr.docs_title:
         markdown_args.add("--docs-title", ctx.attr.docs_title)
+    if ctx.attr.stability_doc_url:
+        markdown_args.add("--stability-doc-url", ctx.attr.stability_doc_url)
     if ctx.attr.docs_hosted_on_mojolang:
         markdown_args.add("--hosted-on-mojolang")
 
@@ -110,6 +112,10 @@ mojo_doc = rule(
             default = "none",
             values = ["all", "stable", "none"],
             doc = "Show stability markers in generated docs",
+        ),
+        "stability_doc_url": attr.string(
+            default = "",
+            doc = "URL that stability markers link to. Markers are plain text when unset.",
         ),
         "copts": attr.string_list(
             default = [],
