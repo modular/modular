@@ -511,6 +511,63 @@ def _select_dtype_cast(
     return cast_from, cast_to
 
 
+def _downcast_device_specs_for_encoding(
+    device_specs: list[DeviceSpec],
+    quantization_encoding: SupportedEncoding,
+) -> list[DeviceSpec]:
+    """Returns ``device_specs`` downcast to CPU for a CPU-only encoding.
+
+    When *quantization_encoding* is only supported on CPU and every device in
+    *device_specs* is a GPU, returns ``[DeviceSpec.cpu()]``; otherwise returns
+    *device_specs* unchanged. Going the other way (CPU -> GPU) is not a downcast
+    and is rejected by the compatibility check at the call site. Read-only.
+    """
+    if supported_encoding_supported_devices(quantization_encoding) == (
+        "cpu",
+    ) and all(d.device_type == "gpu" for d in device_specs):
+        logger.warning(
+            f"Encoding '{quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
+        )
+        return [DeviceSpec.cpu()]
+    return device_specs
+
+
+def _discover_default_weight_paths(
+    weight_repo: HuggingFaceRepo,
+    quantization_encoding: SupportedEncoding,
+    applied_dtype_cast_from: SupportedEncoding | None,
+    default_weights_format: WeightsFormat,
+) -> list[Path]:
+    """Discovers the default weight files for an encoding in *weight_repo*.
+
+    Mirrors the fallback chain used when a config provides no explicit
+    ``weight_path``: the resolved encoding, then the load-time cast source, then
+    float32 (a float16/bfloat16 graph can load float32 weights cast at load
+    time). Prefers *default_weights_format*, else any available format. Returns
+    ``[]`` when nothing matches (the caller decides whether that is an error).
+    Read-only -- does not mutate any config.
+    """
+    weight_files = weight_repo.files_for_encoding(
+        encoding=quantization_encoding
+    )
+    if not weight_files and applied_dtype_cast_from:
+        # We allow ourselves to load float32 safetensors weights as bfloat16.
+        weight_files = weight_repo.files_for_encoding(
+            encoding=applied_dtype_cast_from
+        )
+    if not weight_files and quantization_encoding in ("float16", "bfloat16"):
+        # A float16/bfloat16 graph can load float32 weights cast at load time by
+        # the architecture's weight adapter.
+        weight_files = weight_repo.files_for_encoding(encoding="float32")
+
+    if default_weight_files := weight_files.get(default_weights_format, []):
+        return default_weight_files
+    if weight_files:
+        # Load any available weight file.
+        return next(iter(weight_files.values()))
+    return []
+
+
 class MAXModelConfigBase(ConfigFileModel):
     """Abstract base class for MAX model configuration.
 
@@ -1260,17 +1317,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Should only be called after the quantization encoding has been set.
         """
-        # If the current encoding is only supported on CPU, and all devices are
-        # GPU, switch to CPU automatically. This "downcast" is possible. Going
-        # the other way (CPU -> GPU) is not supported and will error out in the
-        # loop check below.
-        if supported_encoding_supported_devices(quantization_encoding) == (
-            "cpu",
-        ) and all(d.device_type == "gpu" for d in self.device_specs):
-            logger.warning(
-                f"Encoding '{quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
-            )
-            self.device_specs = [DeviceSpec.cpu()]
+        # Downcast GPU devices to CPU for a CPU-only encoding (see the free
+        # function); the incompatible CPU->GPU direction is rejected below.
+        self.device_specs = _downcast_device_specs_for_encoding(
+            self.device_specs, quantization_encoding
+        )
         # Check that the quantization encoding is supported on the specified
         # devices.
         for device_spec in self.device_specs:
@@ -1302,36 +1353,16 @@ class MAXModelConfig(MAXModelConfigBase):
                 time, or ``None`` when no cast applies.
             default_weights_format: The default weights format to use if no weight_path is provided.
         """
-        # If no weight_path is provided, we should grab the default.
+        # If no weight_path is provided, discover the default files (see the
+        # free function).
         if not self.weight_path:
-            # Retrieve the default files for each weights format.
-            weight_files = self.huggingface_weight_repo.files_for_encoding(
-                encoding=quantization_encoding
-            )
-
-            if not weight_files and applied_dtype_cast_from:
-                # We allow ourselves to load float32 safetensors weights as bfloat16.
-                weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding=applied_dtype_cast_from
-                )
-
-            if not weight_files and quantization_encoding in (
-                "float16",
-                "bfloat16",
+            if discovered := _discover_default_weight_paths(
+                self.huggingface_weight_repo,
+                quantization_encoding,
+                applied_dtype_cast_from,
+                default_weights_format,
             ):
-                # A float16/bfloat16 graph can load float32 weights cast at
-                # load time by the architecture's weight adapter.
-                weight_files = self.huggingface_weight_repo.files_for_encoding(
-                    encoding="float32"
-                )
-
-            if default_weight_files := weight_files.get(
-                default_weights_format, []
-            ):
-                self.weight_path = default_weight_files
-            elif weight_files:
-                # Load any available weight file.
-                self.weight_path = next(iter(weight_files.values()))
+                self.weight_path = discovered
 
         if not self.weight_path:
             raise ValueError(
