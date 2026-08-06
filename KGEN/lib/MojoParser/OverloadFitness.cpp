@@ -347,6 +347,24 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
   SMLoc callLoc = callable.getExpr()->getLoc();
   SharedState &shared = callable.getShared();
 
+  // An implicit conversion can only be performed by a constructor marked
+  // @implicit, so reject other candidates before running parameter inference.
+  // Types with large __init__ overload sets (e.g. SIMD) make the inference
+  // cost significant when converting many values, as in collection literals.
+  if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
+      !cast<FnOp>(funcIfDirect->getIfOperation()).isImplicitConversion()) {
+    // Name the target with the concrete Self type rather than the signature's
+    // result type, which is still unsubstituted this early.
+    assert(callable.selfResultType &&
+           "implicit conversion without a self result type?");
+    MojoInflightDiag diag = shared.emitError(callLoc);
+    diag << "cannot implicitly convert";
+    if (ASTType fromType = operands[0].ir.getRValueTypeIfResolvable())
+      diag << " " << fromType;
+    diag << " to " << callable.selfResultType << ": add an explicit cast";
+    return std::move(diag);
+  }
+
   if (!operands.empty()) {
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
       if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
@@ -486,17 +504,6 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
         return std::move(resultTypeDiag);
       }
     }
-  }
-
-  // Fail if this is an implicit conversion but the ctor is not marked @implicit
-  if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
-      !cast<FnOp>(funcIfDirect->getIfOperation()).isImplicitConversion()) {
-    MojoInflightDiag diag = shared.emitError(callLoc);
-    diag << "cannot implicitly convert";
-    if (ASTType fromType = operands[0].ir.getRValueTypeIfResolvable())
-      diag << " " << fromType;
-    diag << " to " << signature.getUserResultType() << ": add an explicit cast";
-    return std::move(diag);
   }
 
   // Otherwise we succeeded!
