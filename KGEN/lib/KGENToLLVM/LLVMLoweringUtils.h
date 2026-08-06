@@ -508,6 +508,9 @@ protected:
 /// Return true if fpType is an fp8 type.
 bool isFP8(Type fpType);
 
+/// Return true if fpType is an fp6 type.
+bool isFP6(Type fpType);
+
 /// Return true if fpType is an fp4 type.
 bool isFP4(Type fpType);
 

@@ -139,6 +139,10 @@ bool KGEN::isFP8(Type fpType) {
       fpType);
 }
 
+bool KGEN::isFP6(Type fpType) {
+  return isa<mlir::Float6E2M3FNType, mlir::Float6E3M2FNType>(fpType);
+}
+
 bool KGEN::isFP4(Type fpType) { return isa<mlir::Float4E2M1FNType>(fpType); }
 
 // If the type is a floating-point type lowered to an integer, return the
@@ -146,6 +150,8 @@ bool KGEN::isFP4(Type fpType) { return isa<mlir::Float4E2M1FNType>(fpType); }
 std::optional<int> KGEN::isFPTyLoweredAsInt(Type fpType) {
   if (isFP4(fpType))
     return 4;
+  if (isFP6(fpType))
+    return 6;
   if (isFP8(fpType))
     return 8;
   return std::nullopt;

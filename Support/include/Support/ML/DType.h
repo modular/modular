@@ -98,6 +98,10 @@ public:
 
     /// Bits 0 through 3 indicate the kind of FP value.
     f4e2m1fn = 0 | mIsFloat,
+    /// The OCP MX FP6 encodings. Both are finite-only (no inf/NaN), hence the
+    /// `fn` suffix, matching LLVM's `Float6E2M3FN` / `Float6E3M2FN`.
+    f6e2m3fn = 1 | mIsFloat,
+    f6e3m2fn = 2 | mIsFloat,
     /// Some slots are left blank here to enable us to support more lower
     /// precision types in the future.
     f8e8m0fnu = 9 | mIsFloat,

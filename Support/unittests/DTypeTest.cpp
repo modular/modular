@@ -30,6 +30,8 @@ static std::vector<DType> getAllKnownDTypes() {
       DType(DType::si128),
       DType(DType::ui128),
       DType(DType::f4e2m1fn),
+      DType(DType::f6e2m3fn),
+      DType(DType::f6e3m2fn),
       DType(DType::f8e8m0fnu),
       DType(DType::f8e5m2),
       DType(DType::f8e5m2fnuz),
@@ -83,6 +85,8 @@ TEST(DType, getWidthInBits) {
   EXPECT_EQ(128, DType(DType::si128).getWidthInBits());
   EXPECT_EQ(128, DType(DType::ui128).getWidthInBits());
   EXPECT_EQ(4, DType(DType::f4e2m1fn).getWidthInBits());
+  EXPECT_EQ(6, DType(DType::f6e2m3fn).getWidthInBits());
+  EXPECT_EQ(6, DType(DType::f6e3m2fn).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e8m0fnu).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2).getWidthInBits());
   EXPECT_EQ(8, DType(DType::f8e5m2fnuz).getWidthInBits());
@@ -131,6 +135,12 @@ TEST(DType, getSizeInBytesPacked) {
   EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(1), 1);
   EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(2), 1);
   EXPECT_EQ(DType(DType::f4e2m1fn).getSizeInBytes(3), 2);
+  // FP6 packs 4 elements into exactly 3 bytes.
+  EXPECT_EQ(DType(DType::f6e2m3fn).getSizeInBytes(1), 1);
+  EXPECT_EQ(DType(DType::f6e2m3fn).getSizeInBytes(2), 2);
+  EXPECT_EQ(DType(DType::f6e2m3fn).getSizeInBytes(4), 3);
+  EXPECT_EQ(DType(DType::f6e2m3fn).getSizeInBytes(32), 24);
+  EXPECT_EQ(DType(DType::f6e3m2fn).getSizeInBytes(4), 3);
 }
 
 TEST(DType, getSizeInBytes) {

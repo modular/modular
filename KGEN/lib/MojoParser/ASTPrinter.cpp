@@ -1720,6 +1720,8 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
               {KGENDType::si256, "Int256"},
               {KGENDType::ui256, "UInt256"},
               {KGENDType::f4e2m1fn, "Float4_e2m1fn"},
+              {KGENDType::f6e2m3fn, "Float6_e2m3fn"},
+              {KGENDType::f6e3m2fn, "Float6_e3m2fn"},
               {KGENDType::f8e8m0fnu, "Float8_e8m0fnu"},
               {KGENDType::f8e5m2, "Float8_e5m2"},
               {KGENDType::f8e5m2fnuz, "Float8_e5m2fnuz"},
