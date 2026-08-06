@@ -53,13 +53,15 @@ comptime test_lengths = (
     8 * 1024 + 3,  # Not a multiple of simd_width
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
+    # For 8 GPUs this stays on 1-stage (< 2 MiB) and exercises 1-stage tail handling.
+    256 * 1024 + 3,
     16 * 1024 * 1024,  # Bandwidth bound
     16 * 1024 * 1024 + 3,  # Large non-aligned: tests 2-stage tail handling
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
 # Test hyperparameters.
-comptime test_dtypes = (DType.bfloat16, DType.float32)
+comptime test_dtypes = (DType.bfloat16, DType.float32, DType.uint8)
 comptime test_gpu_counts = (2, 4, 8)
 
 
