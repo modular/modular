@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import rsqrt
+from std.sys import align_of
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
@@ -69,14 +70,16 @@ def run_layer_norm_gpu[
     ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.raw_load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](idx)
 
     @always_inline
     def output_fn[
         width: SIMDLength, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]) {var out_buf}:
         var idx = out_buf.layout(Coord(coords))
-        out_buf.raw_store[width=width, alignment=alignment](
+        out_buf.raw_store[width=width, alignment=alignment * align_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
