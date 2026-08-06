@@ -75,6 +75,16 @@ def _precompiled_pipeline_mefs_impl(ctx):
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)
 
+    # The pipeline is named by HuggingFace repo id, so the producer has to
+    # resolve the model's config and weights -- but a build action must not
+    # reach the network to do it, and the build platforms rightly run with
+    # `dockerNetwork = off`. The executors mount the shared HuggingFace cache
+    # read-only at the default location, and a flag set names an explicit
+    # revision, so offline mode resolves straight to that snapshot. Same bargain
+    # as the sibling rule in `precompile_pipeline.bzl`; a machine whose cache is
+    # missing the pinned revision has to populate it before building this.
+    env["HF_HUB_OFFLINE"] = "1"
+
     args = ctx.actions.args()
     args.add(binary.executable)
     args.add(mef_dir.path)
@@ -104,12 +114,6 @@ cd "${EXE}.runfiles/_main"
         use_default_shell_env = True,
         env = env,
         outputs = [mef_dir],
-        # The pipeline is named by HuggingFace repo id, so the producer resolves
-        # the model's config and weight metadata the way the consuming test does.
-        # This opens the local sandbox's network; a remote executor also needs
-        # the `dockerNetwork` exec property the macro sets, since the build
-        # platforms default to `dockerNetwork = off`.
-        execution_requirements = {"requires-network": ""},
         mnemonic = "PrecompilePipelineMefs",
         progress_message = "Precompiling pipeline MEFs %{output}",
     )
@@ -146,7 +150,6 @@ def precompiled_pipeline_mefs(
         producer,
         producer_args = [],
         testonly = True,
-        exec_properties = {"dockerNetwork": "bridge"},
         **kwargs):
     """Precompiles a pipeline's graphs to MEFs on a CPU build action.
 
@@ -161,9 +164,6 @@ def precompiled_pipeline_mefs(
         producer_args: Extra arguments for the producer, naming which pipeline
             configuration to compile for.
         testonly: Whether the target is test-only. Defaults to ``True``.
-        exec_properties: Remote-execution properties. Defaults to enabling
-            container networking, which the producer needs to resolve the
-            pipeline's HuggingFace repo.
         **kwargs: Common attrs (visibility, tags, target_compatible_with, ...).
     """
     _precompiled_pipeline_mefs(
@@ -171,6 +171,5 @@ def precompiled_pipeline_mefs(
         producer = producer,
         producer_args = producer_args,
         testonly = testonly,
-        exec_properties = exec_properties,
         **kwargs
     )
