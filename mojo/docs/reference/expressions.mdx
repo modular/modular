@@ -10,8 +10,8 @@ description: >
   and comprehensions.
 ---
 
-<!-- VERIFIED: ParserExprs.cpp, ExprNode.h, ParserBase.h,
-     ExprNodes.h -->
+{/* VERIFIED: ParserExprs.cpp, ExprNode.h, ParserBase.h,
+     ExprNodes.h */}
 
 An *expression* is any piece of code that produces a value.
 Expressions are the building blocks of computation: you combine
@@ -371,6 +371,27 @@ def(T) -> T
 
 Function type expressions can include argument types with
 conventions, return types, and effects like `raises`.
+
+## Lambda expressions
+
+A `lambda` is an anonymous, single-expression function. Its arguments are
+parenthesized and typed, like a function declaration, and its body is a
+single expression with no `return`:
+
+```text
+lambda [[parameter-list]] [(argument-list)] [effects]
+       [{capture-list}] [-> ResultType] : expression
+```
+
+For example, this lambda returns its argument value incremented by 1:
+
+```mojo
+var inc = lambda (x: Int) {} -> Int: x + 1
+var y = inc(4)  # 5
+```
+
+For complete syntax, semantics, and examples, see the
+[lambda expressions reference](/docs/reference/lambda-expressions).
 
 ## Comprehension expressions
 
