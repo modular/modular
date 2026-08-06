@@ -119,6 +119,23 @@ struct float4_e2m1fn_t
 }; // namespace Float4
 
 //===----------------------------------------------------------------------===//
+// Float6
+//===----------------------------------------------------------------------===//
+
+namespace Float6 {
+struct float6_e2m3fn_t
+    : Detail::float_conversion_generic_t<llvm::APFloat::S_Float6E2M3FN, 6> {
+  explicit float6_e2m3fn_t(uint8_t rawBits)
+      : float_conversion_generic_t<llvm::APFloat::S_Float6E2M3FN, 6>(rawBits) {}
+};
+struct float6_e3m2fn_t
+    : Detail::float_conversion_generic_t<llvm::APFloat::S_Float6E3M2FN, 6> {
+  explicit float6_e3m2fn_t(uint8_t rawBits)
+      : float_conversion_generic_t<llvm::APFloat::S_Float6E3M2FN, 6>(rawBits) {}
+};
+}; // namespace Float6
+
+//===----------------------------------------------------------------------===//
 // Float8
 //===----------------------------------------------------------------------===//
 

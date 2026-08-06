@@ -237,7 +237,11 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK: i = #kgen<simd 18446744073709551615> : !kgen.scalar<ui64>
   i = #kgen.cast_from_builtin< 0xffffffffffffffff : ui64> : !kgen.scalar<ui64>,
   // CHECK: j = #kgen<simd 0> : !kgen.scalar<si128>
-  j = #kgen.cast_from_builtin< 0 : si128> : !kgen.scalar<si128>
+  j = #kgen.cast_from_builtin< 0 : si128> : !kgen.scalar<si128>,
+  // CHECK: k = #kgen<simd "0"> : !kgen.scalar<f6e2m3fn>
+  k = #kgen.cast_from_builtin< 0.0 : f6E2M3FN> : !kgen.scalar<f6e2m3fn>,
+  // CHECK: l = #kgen<simd "0"> : !kgen.scalar<f6e3m2fn>
+  l = #kgen.cast_from_builtin< 0.0 : f6E3M2FN> : !kgen.scalar<f6e3m2fn>
 } : () -> ()
 
 "some.op"() {
@@ -246,7 +250,11 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
     // CHECK: b = #kgen.dtype.constant<si16>
     b = #pop.dtype_from_ui8<137 : ui8> : !dtype.si16,
     // CHECK: c = #kgen.dtype.constant<f8e5m2>
-    c = #pop.dtype_from_ui8<77 : ui8> : !dtype.f8e5m2
+    c = #pop.dtype_from_ui8<77 : ui8> : !dtype.f8e5m2,
+    // CHECK: d = #kgen.dtype.constant<f6e2m3fn>
+    d = #pop.dtype_from_ui8<65 : ui8> : !dtype.f6e2m3fn,
+    // CHECK: e = #kgen.dtype.constant<f6e3m2fn>
+    e = #pop.dtype_from_ui8<66 : ui8> : !dtype.f6e3m2fn
 } : () -> ()
 
 "some.op"() {
