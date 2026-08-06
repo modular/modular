@@ -247,9 +247,12 @@ struct StmtParser : public ParserBase {
       : ParserBase(emitter.shared, lexer), parentDecl(emitter.getDeclScope()),
         curDeclScope(&emitter.getDeclScope()),
         builder(emitter.builder ? emitter.builder.value()
-                                : curDeclScope->getDeclEndBuilder()) {
-    initializeBuilderForFunctions(emitter.getDeclScope(), builder,
-                                  varDeclCursor);
+                                : curDeclScope->getDeclEndBuilder()),
+        varDeclCursor(emitter.varDeclCursor) {
+    if (!emitter.builder) {
+      initializeBuilderForFunctions(emitter.getDeclScope(), builder,
+                                    varDeclCursor);
+    }
   }
 
   ASTDecl &getDeclScope() const { return *curDeclScope; }
