@@ -1106,7 +1106,7 @@ struct Row[
         comptime if Self._fuse:
             var participant = Self._participant()
             var base = self.row_il
-            comptime al = ctx.alignment[Self.dtype, Self._W]()
+            comptime al = ctx.element_alignment[Self.dtype, Self._W]()
 
             comptime for chunk in range(Self._NCH):
                 var pos = participant * Self._W + chunk * Self._PSTRIDE
@@ -1211,7 +1211,7 @@ struct Row[
             ](mut state: M, coords: IndexList[_r]) {
                 var input_fn, var contribute, var ctx
             }:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 var pos = Int(coords[Self.axis])
                 state.accumulate[Self.accum, ws](
@@ -1254,7 +1254,7 @@ struct Row[
             ](mut state: M, coords: IndexList[_r]) {
                 var input_fn, var contribute, var ctx
             }:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 var pos = Int(coords[Self.axis])
                 state.accumulate[Self.accum, ws](
@@ -1331,7 +1331,7 @@ struct Row[
                 def splitk_emit_tile[
                     ws: Int, _r: Int
                 ](coords: IndexList[_r]) {var input_fn, var g, var ctx}:
-                    comptime al = ctx.alignment[Self.dtype, ws]()
+                    comptime al = ctx.element_alignment[Self.dtype, ws]()
                     var idx = rebind[IndexList[Self.rank]](coords)
                     g[ws](input_fn[ws, al, Self.rank](idx), idx)
 
@@ -1362,7 +1362,7 @@ struct Row[
             def emit_tile[
                 ws: Int, _r: Int
             ](coords: IndexList[_r]) {var input_fn, var g, var ctx}:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 g[ws](input_fn[ws, al, Self.rank](idx), idx)
 

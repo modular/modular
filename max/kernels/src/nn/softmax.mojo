@@ -3031,7 +3031,7 @@ def softmax[
             var output,
             var ctx_p,
         }:
-            comptime alignment = ctx_p.alignment[dtype, width]()
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
             var tile_accum = tile.cast[accum]()
 
             comptime if logsoftmax:

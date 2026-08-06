@@ -2918,7 +2918,7 @@ def rms_norm[
             var output_fn,
             var ctx_p,
         }:
-            comptime alignment = ctx_p.alignment[dtype, width]()
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
             var col = idx[reduce_dim]
             var g_raw = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(IndexList[1](col)))
@@ -3148,7 +3148,7 @@ def rms_norm_rope[
             var output_fn,
             var ctx_p,
         }:
-            comptime alignment = ctx_p.alignment[input_dtype, width]()
+            comptime alignment = ctx_p.element_alignment[input_dtype, width]()
             var col = idx[reduce_dim]
             var normed_c = nc.cast[accum]()
 
@@ -3177,7 +3177,9 @@ def rms_norm_rope[
                 rebind[IndexList[row_rank]](idx)
             ).cast[accum]()
             var out = normed_c * cos_c + rotated * sin_c
-            comptime output_alignment = ctx_p.alignment[output_dtype, width]()
+            comptime output_alignment = ctx_p.element_alignment[
+                output_dtype, width
+            ]()
             var result = out.cast[output_dtype]()
             output_fn[width, rank, output_alignment](
                 rebind[IndexList[rank]](idx), result
@@ -3307,7 +3309,7 @@ def layer_norm[
             var output_fn,
             var ctx_p,
         }:
-            comptime alignment = ctx_p.alignment[dtype, width]()
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
             var col = idx[reduce_dim]
             var gamma_val = strided_load[width, g_stride, alignment=alignment](
                 gamma.ptr_at_offset(Coord(IndexList[1](col)))
@@ -3639,7 +3641,7 @@ def rms_norm_fused_residual_add[
             var output_residual_fn,
             var ctx_p,
         } -> SIMD[dtype, width]:
-            comptime alignment = ctx_p.alignment[dtype, width]()
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
             var col = idx[reduce_dim]
             var gamma1_val = strided_load[width, g_stride, alignment=alignment](
                 gamma1.ptr_at_offset(Coord(IndexList[1](col)))
@@ -3694,7 +3696,7 @@ def rms_norm_fused_residual_add[
             var output_0_fn,
             var ctx_p,
         }:
-            comptime alignment = ctx_p.alignment[dtype, width]()
+            comptime alignment = ctx_p.element_alignment[dtype, width]()
             var col = idx[reduce_dim]
             var gamma2_val = strided_load[width, g_stride, alignment=alignment](
                 gamma2.ptr_at_offset(Coord(IndexList[1](col)))
@@ -3910,7 +3912,7 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
                 tile.cast[accum]() * inv_rms.slice[width]()
             ) * gamma_load[width](gamma, idx[reduce_dim], weight_offset)
             var out_fp8 = fp8_quantize[out_dtype](normed, scale_recip)
-            comptime alignment = ctx_p.alignment[out_dtype, width]()
+            comptime alignment = ctx_p.element_alignment[out_dtype, width]()
             output_fn[width, rank, alignment](
                 rebind[IndexList[rank]](idx), out_fp8
             )
