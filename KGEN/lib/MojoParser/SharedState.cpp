@@ -49,6 +49,7 @@
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -1139,7 +1140,13 @@ std::optional<SharedState::ModuleSpec>
 SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
   unsigned includeBufferId = getSourceMgr().FindBufferContainingLoc(includeLoc);
 
+  // A closed (non-directory) candidate in the earliest directory wins
+  // outright. Plain directories are namespace portions: they only name the
+  // namespace when no closed candidate exists anywhere on the path, and the
+  // returned spec records just the first portion; submodule resolution
+  // re-derives the full portion set from the spec's namespace components.
   std::optional<ModuleSpec> result;
+  std::optional<ModuleSpec> firstPortion;
   traverseImportDirectories(includeBufferId, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
     if (Filesystem::isMojoSourcePackagePath(dir.str())) {
@@ -1148,13 +1155,101 @@ SharedState::resolveModulePath(StringRef moduleName, SMLoc includeLoc) {
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(moduleName, dir, disablePrebuiltPackages,
-                                    /*isInsideSourcePackage=*/false)))
+    std::optional<ModuleSpec> candidate =
+        resolveModulePath(moduleName, dir, disablePrebuiltPackages,
+                          /*isInsideSourcePackage=*/false);
+    if (!candidate)
+      return WalkResult::advance();
+    if (candidate->kind != ModuleSpec::Kind::SourceDir) {
+      result = candidate;
       return WalkResult::interrupt();
+    }
+    if (!firstPortion) {
+      firstPortion = std::move(candidate);
+      firstPortion->namespaceComponents.push_back(moduleName.str());
+    }
     return WalkResult::advance();
   });
 
-  return result;
+  return result ? result : firstPortion;
+}
+
+SmallVector<std::string>
+SharedState::collectNamespacePortions(const ModuleSpec &parentSpec,
+                                      unsigned importBufferFileId) {
+  assert(parentSpec.isNamespace() && "expected a namespace spec");
+  SmallVector<std::string> portions;
+  llvm::StringSet<> seenPortions;
+  traverseImportDirectories(importBufferFileId, [&](StringRef dir) {
+    if (Filesystem::isMojoSourcePackagePath(dir.str()))
+      return WalkResult::advance();
+    std::filesystem::path portion(dir.str());
+    for (const std::string &component : parentSpec.namespaceComponents) {
+      std::error_code ec;
+      auto iter = std::filesystem::directory_iterator(portion, ec);
+      if (ec)
+        return WalkResult::advance();
+      // Only a plain directory contributes a portion; a source package (or
+      // any other kind) owning this name is closed and resolves by itself.
+      std::optional<std::filesystem::path> child;
+      for (const auto &entry : iter) {
+        if (auto spec = ModuleSpec::classify(entry.path(), component);
+            spec && spec->kind == ModuleSpec::Kind::SourceDir) {
+          child = entry.path();
+          break;
+        }
+      }
+      if (!child)
+        return WalkResult::advance();
+      portion = std::move(*child);
+    }
+    // Deduplicate: the buffer-derived working directory may coincide with an
+    // include directory, and a duplicate portion must not fake an ambiguity.
+    std::error_code ec;
+    std::filesystem::path canonical =
+        std::filesystem::weakly_canonical(portion, ec);
+    std::string key = (ec ? portion.lexically_normal() : canonical).string();
+    if (seenPortions.insert(key).second)
+      portions.push_back(portion.string());
+    return WalkResult::advance();
+  });
+  return portions;
+}
+
+SmallVector<SharedState::ModuleSpec>
+SharedState::resolveNamespaceSubModule(StringRef moduleName,
+                                       const ModuleSpec &parentSpec,
+                                       unsigned importBufferFileId) {
+  // Per portion, in-directory precedence picks one candidate. Across
+  // portions, closed candidates win over directory candidates (plain
+  // directories carry no marker, so a stray non-Mojo directory must not
+  // shadow a real module), and directory candidates merge into a single
+  // nested namespace. Every closed candidate is returned: more than one is
+  // an ambiguity for the caller to report.
+  SmallVector<ModuleSpec> closed;
+  std::optional<ModuleSpec> firstDir;
+  for (const std::string &portion :
+       collectNamespacePortions(parentSpec, importBufferFileId)) {
+    std::optional<ModuleSpec> candidate =
+        resolveModulePath(moduleName, portion, disablePrebuiltPackages,
+                          /*isInsideSourcePackage=*/false);
+    if (!candidate)
+      continue;
+    if (candidate->kind == ModuleSpec::Kind::SourceDir) {
+      if (!firstDir)
+        firstDir = std::move(candidate);
+      continue;
+    }
+    closed.push_back(std::move(*candidate));
+  }
+  if (!closed.empty())
+    return closed;
+
+  if (!firstDir)
+    return {};
+  firstDir->namespaceComponents = parentSpec.namespaceComponents;
+  firstDir->namespaceComponents.push_back(moduleName.str());
+  return {std::move(*firstDir)};
 }
 
 ASTDecl &SharedState::importModule(const ImportPath &path,
@@ -1186,26 +1281,76 @@ void SharedState::registerSourcePackageChildren(ASTDecl &packageDecl) {
   ModuleState *parentState = impl->moduleStates.lookup(&packageDecl);
   if (!parentState || !parentState->sourcePath())
     return;
-  std::error_code ec;
-  std::filesystem::path directory(*parentState->sourcePath());
-  if (!std::filesystem::is_directory(directory, ec) || ec)
-    return;
+  // A namespace parent enumerates the union of all its portions; other
+  // parents enumerate their single directory.
+  SmallVector<std::string> directories;
+  if (!parentState->spec->isNamespace()) {
+    directories.push_back(*parentState->sourcePath());
+  } else {
+    unsigned bufferId =
+        getSourceMgr().FindBufferContainingLoc(parentState->importLoc);
+    directories = collectNamespacePortions(*parentState->spec, bufferId);
+  }
 
   // Collect the directory entries and sort them, so children are registered in
-  // a deterministic order across platforms.
+  // a deterministic order across platforms. In-directory precedence applies
+  // first, so cross-portion merging sees one candidate per name per portion:
+  // portions merge, a closed candidate beats portions, and two closed
+  // candidates from different portions are ambiguous; such a name is not
+  // registered, and a direct import of it reports the ambiguity.
   std::map<std::string, ModuleSpec> packageChildren;
-  for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
-    auto moduleSpec = ModuleSpec::classify(entry.path());
-    if (!moduleSpec)
+  llvm::StringSet<> ambiguousChildren;
+  for (const std::string &directory : directories) {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(directory, ec) || ec)
       continue;
-    // Precompiled children aren't supported in source packages.
-    if ((disablePrebuiltPackages || parentState->spec->isSourcePackage()) &&
-        moduleSpec->isPrecompiled())
-      continue;
-    if (auto it = packageChildren.find(moduleSpec->name);
-        it == packageChildren.end() ||
-        moduleSpec->takesImportPrecedence(it->second)) {
-      packageChildren[moduleSpec->name] = *moduleSpec;
+    std::map<std::string, ModuleSpec> portionChildren;
+    for (const auto &entry :
+         std::filesystem::directory_iterator(directory, ec)) {
+      auto moduleSpec = ModuleSpec::classify(entry.path());
+      if (!moduleSpec)
+        continue;
+      // Precompiled children aren't supported in source packages.
+      if ((disablePrebuiltPackages || parentState->spec->isSourcePackage()) &&
+          moduleSpec->isPrecompiled())
+        continue;
+      if (auto it = portionChildren.find(moduleSpec->name);
+          it == portionChildren.end() ||
+          moduleSpec->takesImportPrecedence(it->second)) {
+        portionChildren[moduleSpec->name] = *moduleSpec;
+      }
+    }
+    for (auto &[childName, childSpec] : portionChildren) {
+      auto it = packageChildren.find(childName);
+      if (it == packageChildren.end()) {
+        packageChildren[childName] = childSpec;
+        continue;
+      }
+      bool haveDir = it->second.kind == ModuleSpec::Kind::SourceDir;
+      bool newDir = childSpec.kind == ModuleSpec::Kind::SourceDir;
+      // Portions merge; the first portion remains the (advisory) home.
+      if (haveDir && newDir)
+        continue;
+      // A closed candidate beats portion directories in either order.
+      if (haveDir != newDir) {
+        if (haveDir)
+          it->second = childSpec;
+        continue;
+      }
+      ambiguousChildren.insert(childName);
+    }
+  }
+  for (const auto &ambiguous : ambiguousChildren)
+    packageChildren.erase(ambiguous.getKey().str());
+
+  // A directory child of a namespace is itself a namespace: tag it with its
+  // component chain so its own submodules resolve across portions.
+  if (parentState->spec->isNamespace()) {
+    for (auto &[childName, childSpec] : packageChildren) {
+      if (childSpec.kind != ModuleSpec::Kind::SourceDir)
+        continue;
+      childSpec.namespaceComponents = parentState->spec->namespaceComponents;
+      childSpec.namespaceComponents.push_back(childName);
     }
   }
 
@@ -1434,11 +1579,32 @@ SharedState::ModuleState *SharedState::importSubModuleStateImpl(
   // Resolve the path for this module.
   std::optional<ModuleSpec> modulePath;
   if (parentState->decl != impl->topLevelDecl) {
-    if (!parentState->sourcePath())
+    if (parentState->spec && parentState->spec->isNamespace()) {
+      // A plain directory from the import path is a namespace: one dotted
+      // name may span several roots, so search every portion visible from
+      // this import site rather than the single directory the name first
+      // resolved through.
+      SmallVector<ModuleSpec> candidates = resolveNamespaceSubModule(
+          name, *parentState->spec,
+          getSourceMgr().FindBufferContainingLoc(loc));
+      if (candidates.size() > 1) {
+        std::string paths;
+        for (const ModuleSpec &candidate : candidates) {
+          if (!paths.empty())
+            paths += ", ";
+          paths += "'" + candidate.path.string() + "'";
+        }
+        return notFound("ambiguous import '" + name + "': found " + paths);
+      }
+      if (!candidates.empty())
+        modulePath = std::move(candidates.front());
+    } else if (parentState->sourcePath()) {
+      modulePath = resolveModulePath(name, *parentState->sourcePath(),
+                                     disablePrebuiltPackages,
+                                     parentState->spec->isSourcePackage());
+    } else {
       return notFoundModule();
-    modulePath = resolveModulePath(
-        name, *parentState->sourcePath(), disablePrebuiltPackages,
-        /*isInsideSourcePackage=*/parentState->spec->isSourcePackage());
+    }
   } else {
     // Otherwise, go through the normal import path.
     modulePath = resolveModulePath(name, loc);
@@ -2714,10 +2880,14 @@ void SharedState::traverseImportDirectories(
     }
   }
 
-  // Check the working directory.
-  {
+  // Check the working directory: the entry point's directory, derived once
+  // from the main buffer and visible to every import site alike. No import site
+  // sees its own file's directory, meaning that resolution is stable and cannot
+  // depend on which file triggered it. A null buffer id requests no working
+  // directory at all.
+  if (importBufferFileId) {
     std::filesystem::path cwd =
-        deriveWorkingDirectory(getSourceMgr(), importBufferFileId);
+        deriveWorkingDirectory(getSourceMgr(), getSourceMgr().getMainFileID());
     if (!cwd.empty() && callback(cwd.string()).wasInterrupted())
       return;
   }
