@@ -510,10 +510,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred
   }
 
-  // If we have a UValue or something else, convert it to a PValue now that we
-  // know the expected type.
-  TypedAttr bindingVal = binding.ir.getIfPValue();
-  if (!bindingVal) {
+  // If we have a UValue or something else, convert it to a PValue.
+  if (!binding.ir.getIfPValue()) {
     FailureOr<SmartVariant<CValue, ASTType>> cvOr =
         inferCValue(binding, paramIdx, declaredParamPogs,
                     CallSyntax::kParamBindings, expectedType);
@@ -534,8 +532,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     }
 
     // Finally, check that this CValue is a PValue.
-    bindingVal = argVal.getIfPValue();
-    if (!bindingVal) {
+    binding.ir = argVal.getIfPValue();
+    if (!binding.ir) {
       getMojoDiag(binding.expr->getLoc())
           << "cannot use a dynamic value in a parameter list"
           << binding.expr->getRange();
@@ -561,6 +559,7 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred.
   }
 
+  TypedAttr bindingVal = binding.ir.getIfPValue();
   // Reject invalid *'s, varargs will have been already handled.
   if (sugarIsa<UnpackedAttr>(bindingVal)) {
     getMojoDiag(binding.expr->getLoc())
