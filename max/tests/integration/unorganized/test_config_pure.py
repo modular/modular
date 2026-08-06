@@ -1263,8 +1263,10 @@ def test_config__test_retrieve_factory_with_known_architecture(
         model_path=modular_ai_llama_3_1_local_path,
         quantization_encoding="bfloat16",
         max_length=1,
-        max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            prefer_module_v3=True,
+        ),
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
@@ -2418,7 +2420,7 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     short-circuited ``_resolve_default_structured_output_backend`` and the
     global ``xgrammar`` default (and any arch pin) was never reached."""
     args = PipelineArgs(model_path="test/model")
-    assert args.structured_output_backend is None
+    assert args.sampling.structured_output_backend is None
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
         config = PipelineConfig.from_args(args)
@@ -2447,7 +2449,8 @@ def test_from_args__explicit_backend_is_preserved() -> None:
     """An explicit ``--structured-output-backend`` value survives
     ``from_args`` and wins over resolution."""
     args = PipelineArgs(
-        model_path="test/model", structured_output_backend="llguidance"
+        model_path="test/model",
+        sampling=SamplingConfig(structured_output_backend="llguidance"),
     )
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):

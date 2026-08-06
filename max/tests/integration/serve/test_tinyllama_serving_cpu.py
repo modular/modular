@@ -22,7 +22,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
@@ -43,7 +43,7 @@ pipeline_config = PipelineArgs(
     quantization_encoding="float32",
     kv_cache=KVCacheConfig(),
     max_length=512,
-    max_batch_size=16,
+    runtime=PipelineRuntimeConfig(max_batch_size=16),
 )
 
 

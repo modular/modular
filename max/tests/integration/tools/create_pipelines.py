@@ -296,10 +296,12 @@ def _create_vision_max_pipeline(
         trust_remote_code=trust_remote_code,
         max_length=max_length,
         kv_cache=kv_cache,
-        enable_chunked_prefill=(
-            enable_chunked_prefill
-            if enable_chunked_prefill is not None
-            else True
+        runtime=pipelines.PipelineRuntimeConfig(
+            enable_chunked_prefill=(
+                enable_chunked_prefill
+                if enable_chunked_prefill is not None
+                else True
+            ),
         ),
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
@@ -1051,8 +1053,10 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
             max_length=4096,
             trust_remote_code=self.trust_remote_code,
             data_parallel_degree=8,
-            max_batch_input_tokens=4096,
-            ep_size=8,
+            runtime=pipelines.PipelineRuntimeConfig(
+                max_batch_input_tokens=4096,
+                ep_size=8,
+            ),
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             PipelineConfig.from_args(config)
@@ -1543,25 +1547,20 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
-        pipeline_args_kwargs: dict[str, Any] = {
+        runtime_kwargs: dict[str, Any] = {
             "prefer_module_v3": prefer_module_v3,
         }
 
         # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
         denoising_cache = self.config_params.get("denoising_cache")
         if denoising_cache is not None:
-            pipeline_args_kwargs["denoising_cache"] = DenoisingCacheConfig(
+            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
                 **denoising_cache
             )
 
-        # NOTE: PipelineArgs has no `runtime` field -- unlike PipelineConfig,
-        # its runtime knobs (prefer_module_v3, denoising_cache, etc.) are flat
-        # top-level fields, so they must be passed directly rather than
-        # wrapped in a PipelineRuntimeConfig (which raises "Extra inputs are
-        # not permitted", since ConfigFileModel forbids extra fields).
         config = pipelines.PipelineArgs(
             models=models,
-            **pipeline_args_kwargs,
+            runtime=pipelines.PipelineRuntimeConfig(**runtime_kwargs),
         )
 
         # retrieve resolves the manifest and picks the tokenizer/executor

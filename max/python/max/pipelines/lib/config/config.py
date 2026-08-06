@@ -1545,13 +1545,6 @@ class PipelineConfig(ConfigFileModel):
             A fully constructed :class:`PipelineConfig` ready for
             architecture-driven resolution via :meth:`resolve`.
         """
-        from max.pipelines.lib.pipeline_runtime_config import (
-            PipelineRuntimeConfig,
-        )
-        from max.pipelines.sampling import SamplingConfig
-
-        from .profiling_config import ProfilingConfig
-
         if args._manifest_override is not None:
             manifest = args._manifest_override
         else:
@@ -1565,63 +1558,9 @@ class PipelineConfig(ConfigFileModel):
         config = cls(
             models=manifest,
             model_override=list(args.model_override),
-            sampling=SamplingConfig(
-                in_dtype=args.in_dtype,
-                out_dtype=args.out_dtype,
-                enable_structured_output=args.enable_structured_output,
-                structured_output_backend=args.structured_output_backend,
-                enable_variable_logits=args.enable_variable_logits,
-                enable_penalties=args.enable_penalties,
-                enable_min_tokens=args.enable_min_tokens,
-                sample_on_host=args.sample_on_host,
-            ),
-            runtime=PipelineRuntimeConfig(
-                pipeline_role=args.pipeline_role,
-                max_batch_size=args.max_batch_size,
-                precompiled_mefs=args.precompiled_mefs,
-                export_mefs=args.export_mefs,
-                max_queue_size_tg=args.max_queue_size_tg,
-                min_batch_size_tg=args.min_batch_size_tg,
-                ep_size=args.ep_size,
-                ep_use_allreduce=args.ep_use_allreduce,
-                eplb_profile=args.eplb_profile,
-                ce_delay_ms=args.ce_delay_ms,
-                enable_prioritize_first_decode=args.enable_prioritize_first_decode,
-                enable_chunked_prefill=args.enable_chunked_prefill,
-                chunked_prefill_min_chunk_size=args.chunked_prefill_min_chunk_size,
-                enable_in_flight_batching=args.enable_in_flight_batching,
-                eplb_replicas_per_gpu=args.eplb_replicas_per_gpu,
-                max_batch_input_tokens=args.max_batch_input_tokens,
-                use_experimental_kernels=args.use_experimental_kernels,
-                use_vendor_blas=args.use_vendor_blas,
-                use_vendor_ccl=args.use_vendor_ccl,
-                custom_architectures=list(args.custom_architectures),
-                execute_empty_batches=args.execute_empty_batches,
-                max_batch_total_tokens=args.max_batch_total_tokens,
-                device_graph_capture=args.device_graph_capture,
-                fold_sampler_into_graph=args.fold_sampler_into_graph,
-                max_pending_futures=args.max_pending_futures,
-                force=args.force,
-                decode_stall_timeout_s=args.decode_stall_timeout_s,
-                decode_request_ttl_s=args.decode_request_ttl_s,
-                enable_overlap_scheduler=args.enable_overlap_scheduler,
-                dp_ce_balance_timeout_ms=args.dp_ce_balance_timeout_ms,
-                dp_ce_balance_threshold=args.dp_ce_balance_threshold,
-                dp_ce_balance_enable_dynamic_chunk_size=args.dp_ce_balance_enable_dynamic_chunk_size,
-                allow_unsupported_logprobs=args.allow_unsupported_logprobs,
-                allow_extra_request_fields=args.allow_extra_request_fields,
-                prefer_module_v3=args.prefer_module_v3,
-                reasoning_parser=args.reasoning_parser,
-                tool_parser=args.tool_parser,
-                emit_reasoning_content=args.emit_reasoning_content,
-                temperature=args.temperature,
-                thinking_temperature=args.thinking_temperature,
-                max_vision_cache_entries=args.max_vision_cache_entries,
-                denoising_cache=args.denoising_cache.model_copy(deep=True),
-            ),
-            profiling=ProfilingConfig(
-                gpu_profiling=args.gpu_profiling,
-            ),
+            sampling=args.sampling.model_copy(deep=True),
+            runtime=args.runtime.model_copy(deep=True),
+            profiling=args.profiling.model_copy(deep=True),
             lora=args.lora.model_copy(deep=True) if args.lora else None,
             speculative=args.speculative.model_copy(deep=True)
             if args.speculative

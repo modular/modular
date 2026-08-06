@@ -25,7 +25,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineArgs
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.serve.config import MetricRecordingMethod
 from max.serve.schemas.openai import CreateChatCompletionResponse
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
@@ -157,7 +157,7 @@ def _metric_total(metrics_text: str, name: str) -> float:
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -290,7 +290,7 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -355,7 +355,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -389,7 +389,7 @@ async def test_metrics_e2e_validate_disable_works_v1(app: FastAPI) -> None:
             quantization_encoding="float32",
             kv_cache=KVCacheConfig(),
             max_length=512,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

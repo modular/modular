@@ -19,7 +19,13 @@ from typing import cast
 import hf_repo_lock
 import numpy as np
 from max.driver import DeviceSpec
-from max.pipelines import PipelineArgs, PipelineConfig, TextGenerationPipeline
+from max.pipelines import (
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+    SamplingConfig,
+    TextGenerationPipeline,
+)
 from max.pipelines.context import (
     SamplingParams,
     TextContext,
@@ -53,8 +59,8 @@ def test_smollm_with_structured_output_gpu(
         device_specs=[DeviceSpec.accelerator()],
         huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
-        max_batch_size=1,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -167,13 +173,15 @@ def test_multistep_structured_output_gpu(
         device_specs=[DeviceSpec.accelerator()],
         huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        max_batch_size=1,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -260,13 +268,15 @@ def test_multi_step_guided_decoding_gpu(
         device_specs=[DeviceSpec.accelerator()],
         huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Disable overlap scheduler: multi-step execution (num_steps > 1) is
         # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
         # Use force=True to prevent auto-enable from overriding our setting.
-        max_batch_size=1,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -341,9 +351,11 @@ def test_overlap_pipeline_structured_output_gpu(
         device_specs=[DeviceSpec.accelerator()],
         huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
-        max_batch_size=1,
-        enable_overlap_scheduler=True,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -447,12 +459,14 @@ def test_heterogeneous_batch_structured_output_gpu(
         device_specs=[DeviceSpec.accelerator()],
         huggingface_model_revision=revision,
         max_length=8192,
-        enable_structured_output=True,
+        sampling=SamplingConfig(enable_structured_output=True),
         # Use batch_size=2 for heterogeneous batch testing.
         # Disable overlap scheduler for simpler output handling.
-        max_batch_size=2,
-        enable_overlap_scheduler=False,
-        force=True,
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=2,
+            enable_overlap_scheduler=False,
+            force=True,
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
