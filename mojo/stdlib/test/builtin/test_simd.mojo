@@ -913,35 +913,16 @@ def test_mod() raises:
 
 
 def test_divmod() raises:
-    # TODO(MSTDL-1946): test using tuple comparison.
-    var a, b = divmod(Int32(99), Int32(1))
-    assert_equal(a, Int32(99))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(99), Int32(3))
-    assert_equal(a, Int32(33))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(99), Int32(-2))
-    assert_equal(a, Int32(-50))
-    assert_equal(b, Int32(-1))
-    a, b = divmod(Int32(99), Int32(8))
-    assert_equal(a, Int32(12))
-    assert_equal(b, Int32(3))
-    a, b = divmod(Int32(99), Int32(-8))
-    assert_equal(a, Int32(-13))
-    assert_equal(b, Int32(-5))
-    a, b = divmod(Int32(2), Int32(-1))
-    assert_equal(a, Int32(-2))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(2), Int32(-2))
-    assert_equal(a, Int32(-1))
-    assert_equal(b, Int32(0))
+    assert_equal(divmod(Int32(99), Int32(1)), (Int32(99), Int32(0)))
+    assert_equal(divmod(Int32(99), Int32(3)), (Int32(33), Int32(0)))
+    assert_equal(divmod(Int32(99), Int32(-2)), (Int32(-50), Int32(-1)))
+    assert_equal(divmod(Int32(99), Int32(8)), (Int32(12), Int32(3)))
+    assert_equal(divmod(Int32(99), Int32(-8)), (Int32(-13), Int32(-5)))
+    assert_equal(divmod(Int32(2), Int32(-1)), (Int32(-2), Int32(0)))
+    assert_equal(divmod(Int32(2), Int32(-2)), (Int32(-1), Int32(0)))
 
-    var c, d = divmod(UInt32(99), UInt32(3))
-    assert_equal(c, UInt32(33))
-    assert_equal(d, UInt32(0))
-    c, d = divmod(UInt32(99), UInt32(4))
-    assert_equal(c, UInt32(24))
-    assert_equal(d, UInt32(3))
+    assert_equal(divmod(UInt32(99), UInt32(3)), (UInt32(33), UInt32(0)))
+    assert_equal(divmod(UInt32(99), UInt32(4)), (UInt32(24), UInt32(3)))
 
     # fmt: off
     var e = SIMD[DType.float32, 16](
@@ -956,18 +937,19 @@ def test_divmod() raises:
          1.2, -3.2, -2.2, -1.2,
          3.1, -3.1,  3.1, -3.1,
     )
-    var g, h = divmod(e, f)
-    assert_equal(g, SIMD[DType.float32, 16](
-         0.0,  1.0,  2.0, -1.0,
-        -2.0, -3.0, -1.0, -2.0,
-        -3.0,  0.0,  1.0,  2.0,
-         1.0, -1.0, -1.0,  1.0,
-    ))
-    assert_equal(h, SIMD[DType.float32, 16](
-         3.1,         0.89999986,  0.6999998,  -0.10000014,
-        -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
-         0.50000024, -3.1,        -0.89999986, -0.6999998,
-         0.0,         0.0,         0.0,         0.0,
+    assert_equal(divmod(e, f), (
+        SIMD[DType.float32, 16](
+             0.0,  1.0,  2.0, -1.0,
+            -2.0, -3.0, -1.0, -2.0,
+            -3.0,  0.0,  1.0,  2.0,
+             1.0, -1.0, -1.0,  1.0,
+        ),
+        SIMD[DType.float32, 16](
+             3.1,         0.89999986,  0.6999998,  -0.10000014,
+            -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
+             0.50000024, -3.1,        -0.89999986, -0.6999998,
+             0.0,         0.0,         0.0,         0.0,
+        ),
     ))
     # fmt: on
 
@@ -975,9 +957,13 @@ def test_divmod() raises:
     # result is zero.
     var i = SIMD[DType.int32, 4](99, 0, 8, 0)
     var j = SIMD[DType.int32, 4](4, 3, -2, 0)
-    var k, l = divmod(i, j)
-    assert_equal(k, SIMD[DType.int32, 4](24, 0, -4, 0))
-    assert_equal(l, SIMD[DType.int32, 4](3, 0, 0, 0))
+    assert_equal(
+        divmod(i, j),
+        (
+            SIMD[DType.int32, 4](24, 0, -4, 0),
+            SIMD[DType.int32, 4](3, 0, 0, 0),
+        ),
+    )
 
 
 def test_rmod() raises:

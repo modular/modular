@@ -2357,14 +2357,6 @@ struct Pointer[
     ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
         return self.as_imm()
 
-    # TODO(MSTDL-2846): Remove once `Imm` is consolidated with and
-    # once we have a single pointer type.
-    @doc_hidden
-    @always_inline
-    @deprecated(use=as_imm)
-    def get_immutable(self) -> type_of(self.as_imm()):
-        return self.as_imm()
-
     @always_inline("builtin")
     def as_unsafe_any_origin(
         self,

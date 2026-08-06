@@ -23,6 +23,7 @@ from std.hashlib import Hasher, default_hasher
 
 from .dict import (
     Dict,
+    DictEntry,
     KeyElement,
     _DictEntryIter,
     _DictEntryIterOwned,
@@ -141,19 +142,6 @@ struct Set[
         self = Self()
         for e in elements:
             self.add(e.copy())
-
-    # TODO(MOCO-4228): remove this __deinit__ once an explicit __deinit__ is
-    # synthesized for conditionally-deletable types.
-    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
-        """Destroy all elements in the set and free its memory.
-
-        Constraints:
-            `T` must be `Deinitable`. When it is not, the set has no
-            implicit destructor and must be torn down with `deinit_with()`.
-        """
-        # `_data`'s conditional destructor handles the occupied entries and
-        # frees memory.
-        pass
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consume the set, deinitializing each element with a closure.
@@ -552,20 +540,10 @@ struct Set[
             otherwise an empty `Optional`.
         """
 
-        # TODO(MOCO-4413): collapse to `self._data.insert(t^, None).map(...)`
-        # once that compiler crash is fixed. Today a mapper closure that
-        # captures `T` (bound by the comptime trait-alias `KeyElement`) crashes
-        # `ClosureEmitter`, so consume the linear `Optional[DictEntry]`
-        # directly: reap the displaced key (its `NoneType` value slot is
-        # trivial) and destroy the emptied `Optional` explicitly — it cannot be
-        # dropped implicitly when `T` is linear.
-        var displaced = self._data.insert(t^, None)
-        if displaced:
-            var entry = displaced.unsafe_take()
-            displaced^.deinit_assert_empty()
+        def reap(var entry: DictEntry[Self.T, NoneType, Self.H]) -> Self.T:
             return entry^.reap_key()
-        displaced^.deinit_assert_empty()
-        return None
+
+        return self._data.insert(t^, None).map(reap)
 
     def remove(
         mut self, t: Self.T
