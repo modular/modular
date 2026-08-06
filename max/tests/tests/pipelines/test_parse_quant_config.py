@@ -18,6 +18,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -801,6 +802,38 @@ def test_parse_float4_from_standalone_hf_quant_config(
 
     assert quant_config is not None
     assert quant_config.format == QuantFormat.NVFP4
+
+
+def test_standalone_hf_quant_config_reads_config_snapshot(
+    hf_config_instruct_fbgemm: AutoConfig,
+    tmp_path: Path,
+) -> None:
+    """The hub lookup for hf_quant_config.json must pass the commit sha that
+    config.json was resolved to (recorded by transformers as _commit_hash),
+    so a pinned model revision doesn't silently read the sidecar from main.
+    """
+    hf_quant_config = {
+        "producer": {"name": "modelopt", "version": "0.0"},
+        "quantization": {"quant_algo": "NVFP4"},
+    }
+    sidecar = tmp_path / "hf_quant_config.json"
+    sidecar.write_text(json.dumps(hf_quant_config))
+
+    commit_sha = "0123456789abcdef0123456789abcdef01234567"
+    hf_config = deepcopy(hf_config_instruct_fbgemm)
+    if hasattr(hf_config, "quantization_config"):
+        del hf_config.quantization_config
+    hf_config._name_or_path = "nvidia/DeepSeek-R1-0528-NVFP4-v2"
+    hf_config._commit_hash = commit_sha
+
+    with patch(
+        "huggingface_hub.hf_hub_download", return_value=str(sidecar)
+    ) as mock_download:
+        quant_config = parse_quant_config(hf_config, {}, DType.uint8)
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.NVFP4
+    assert mock_download.call_args.kwargs["revision"] == commit_sha
 
 
 @pytest.fixture
