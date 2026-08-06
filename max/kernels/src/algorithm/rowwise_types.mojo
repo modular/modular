@@ -61,9 +61,9 @@ def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
     `row_size % simd == 0`; the warp tier matches via the same guard, else
     falls through to the block tier)). The two coincide at `ws == 1`.
 
-    Both `Context.alignment` (the store) and the public-op wrappers'
-    synthesized `input_fn` (the load) call this, so the rule lives in
-    one place.
+    Both `Context.element_alignment` (the store) and the public-op
+    wrappers' synthesized `input_fn` (the load) call this, so the rule
+    lives in one place.
 
     Parameters:
         dtype: The tile's element dtype.
@@ -262,22 +262,32 @@ struct Context[params: ContextParams](TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    def alignment[dtype: DType, ws: Int]() -> Int:
+    def element_alignment[dtype: DType, ws: Int]() -> Int:
         """Store/load alignment for a width-`ws` tile of `dtype` on this
         `Context`'s target — element-natural on CPU, SIMD-natural on GPU.
 
         A `@staticmethod` so it's usable in a `comptime` initializer:
-        the receiver in `ctx.alignment[dtype, ws]()` is only a type
-        carrier (runtime value never read), which `comptime` allows.
-        Delegates to the module-level `tile_alignment`, the single
-        source of truth shared with the public-op wrappers' loads.
+        the receiver in `ctx.element_alignment[dtype, ws]()` is only a
+        type carrier (runtime value never read), which `comptime`
+        allows. Delegates to the module-level `tile_alignment`, the
+        single source of truth shared with the public-op wrappers'
+        loads.
 
         Parameters:
             dtype: The tile's element dtype.
             ws: The tile's SIMD width.
 
         Returns:
-            The alignment in elements.
+            The alignment in elements -- matches `element_alignment` in
+            `graph_compiler/extensibility/tensor_arg_traits.mojo` and
+            `managed_tensor_slice.mojo`, which multiply this by
+            `align_of[dtype]()` to get the byte alignment passed to the
+            backend. Named to match that convention explicitly, since a
+            caller that instead hands this straight to a raw byte-level
+            primitive (e.g. `TileTensor.raw_load`/`raw_store`, which
+            wants bytes) without that multiplication under-claims
+            alignment -- silently harmless for 4-byte-and-wider dtypes,
+            a real miscompilation risk for narrower ones.
         """
         return tile_alignment[dtype, ws, Self.target]()
 
