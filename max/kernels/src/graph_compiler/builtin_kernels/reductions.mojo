@@ -45,7 +45,7 @@ from nn.normalization import (
     group_norm,
     layer_norm,
     rms_norm_fused_residual_add,
-    rms_norm_rope_gpu,
+    rms_norm_rope,
     rms_norm,
     row_mean_of_squares_qk,
     row_mean_of_squares,
@@ -70,6 +70,7 @@ comptime logger = Logger()
 
 from std.utils import IndexList
 from std.utils.coord import ComptimeInt, Coord
+from layout import UNKNOWN_VALUE
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -1141,58 +1142,90 @@ struct ReduceRMSNormRoPE:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def cos_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var cos_vals} -> SIMD[
+            cos_sin_dtype, width
+        ]:
             return cos_vals._fused_load[
                 width=width, element_alignment=alignment
             ](rebind[IndexList[cos_vals.rank]](coords))
 
-        @parameter
         @always_inline
         def sin_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var sin_vals} -> SIMD[
+            cos_sin_dtype, width
+        ]:
             return sin_vals._fused_load[
                 width=width, element_alignment=alignment
             ](rebind[IndexList[sin_vals.rank]](coords))
 
-        @parameter
         @always_inline
         def output_fn[
-            width: Int, alignment: Int
-        ](coords: IndexList[rank], val: SIMD[output_dtype, width]):
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
+            var output
+        }:
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        rms_norm_rope_gpu[
-            input_fn,
-            cos_fn,
-            sin_fn,
-            output_fn,
-            multiply_before_cast,
-        ](
-            input.shape(),
-            weight.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            cos_vals.to_tile_tensor[DType.int64](),
-            sin_vals.to_tile_tensor[DType.int64](),
-            ctx,
-        )
+        # Pass the row width when statically known so the kernel can use a SIMD
+        # rotate-half (needs `half` divisible by the SIMD width); a dynamic or
+        # non-divisible width falls back to scalar inside the kernel.
+        comptime rope_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if rope_cols != UNKNOWN_VALUE:
+            rms_norm_rope[
+                dtype,
+                output_dtype,
+                cos_sin_dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                cos_fn,
+                sin_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[rope_cols](),
+                weight.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
+        else:
+            rms_norm_rope[
+                dtype,
+                output_dtype,
+                cos_sin_dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                cos_fn,
+                sin_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                weight.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.composite.rms_norm_rope")
