@@ -15,7 +15,6 @@
 from std.math import ceildiv
 from std.sys import size_of
 from max.gpu.memory import CacheEviction
-from std.gpu.primitives.id import cluster_dim
 from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
@@ -35,6 +34,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     kv_num_sub_tiles,
     splitk_window,
     splitk_partition_idx,
+    splitk_num_partitions,
     kv_tma_fold_chunks,
 )
 from nn.attention.gpu.nvidia.common import (
@@ -63,6 +63,11 @@ def fa4_load[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool,
     is_leader: Bool,
+    # Workspace (traditional/unfused) split-K: when True, window the KV by a
+    # RUNTIME partition count (`ws_num_partitions`) even though
+    # `config.splitk_partitions == 1` (no launch cluster). Defaulted so every
+    # non-workspace caller is byte-identical.
+    workspace_split: Bool = False,
     # Effective cross-stage-P switch, computed once at the kernel level where
     # config, MaskType and the store shape are all visible. Defaults True so
     # the config-level gate alone decides for callers that do not thread it;
@@ -102,6 +107,7 @@ def fa4_load[
         BK=config.v_tma_box_cols(),
     ],
     kv_lut: KVLUTType,
+    ws_num_partitions: UInt32 = 1,
 ):
     """Issues the TMA loads for the Q, K, and V tiles consumed by one FA4
     attention warp group on SM100.
@@ -136,6 +142,10 @@ def fa4_load[
             pair-CTA cluster, or always `True` in single-CTA mode; the
             leader issues `expect_bytes` and selects the first half of
             K/V rows.
+        workspace_split: When `True`, windows the KV range by the runtime
+            `ws_num_partitions` count for workspace (unfused) split-K even
+            though `config.splitk_partitions == 1`; defaulted so every
+            non-workspace caller is byte-identical.
         crossp_effective: Whether cross-stage P is enabled for this
             instantiation. Computed once at the kernel level from the
             config, mask type, and store shape, then threaded
@@ -152,6 +162,8 @@ def fa4_load[
         k_tma_op: TMA descriptor for the K tile load.
         v_tma_op: TMA descriptor for the V tile load.
         kv_lut: Paged KV-cache lookup table producing per-tile row indices.
+        ws_num_partitions: Runtime split-K partition count that windows the
+            KV range when `workspace_split` is `True`; `1` disables windowing.
     """
     comptime assert KVLUTType.dtype == config.qkv_dtype
     comptime qkv_type = KVLUTType.dtype
@@ -395,15 +407,13 @@ def fa4_load[
     # check_mask==False masks (mha_mask.mojo:641-644/...).
     var part_first_tile: UInt32 = 0
     var part_local_iters: UInt32 = 0
-    comptime if config.num_q == 1 and config.splitk_partitions > 1:
+    comptime if config.num_q == 1 and (
+        config.splitk_partitions > 1 or workspace_split
+    ):
         var _gT: UInt32 = mask.last_masked_set_end[BM_mask, BN, page_size](
             seq_info.prompt_idx, score_row, num_keys
         )
-        var _np: UInt32
-        comptime if config.dynamic_cluster_dim:
-            _np = UInt32(cluster_dim.x)
-        else:
-            _np = UInt32(config.splitk_partitions)
+        var _np = splitk_num_partitions[config](ws_num_partitions)
         var _w = splitk_window(
             _gT,
             _np,
@@ -771,9 +781,14 @@ def fa4_load[
             # of _produce_k comptime-prune.
 
             var T: UInt32
-            comptime if config.splitk_partitions > 1:
+            comptime if config.splitk_partitions > 1 or workspace_split:
                 # Per-partition local tile count (window + kv_row offset
                 # computed above). T==1 here means a single-tile partition.
+                # Covers BOTH cluster split-K and the workspace (do_partition)
+                # path -- the shared-KV (num_qk_stages==1, depth<128) producer
+                # loop must window here too, else it emits the full range while
+                # mma/softmax/correction consume only `part_local_iters` tiles
+                # (producer over-fills -> deadlock; cf. the two-load-path trap).
                 T = part_local_iters
             else:
                 T = mask.last_masked_set_end[BM_mask, BN, page_size](

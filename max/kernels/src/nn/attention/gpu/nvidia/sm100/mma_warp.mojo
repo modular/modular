@@ -14,7 +14,6 @@
 
 from std.math import align_up, ceildiv
 from std.sys import size_of, get_defined_bool
-from std.gpu.primitives.id import cluster_dim
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
@@ -36,6 +35,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarType,
     splitk_window,
     splitk_partition_idx,
+    splitk_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
 from linalg.arch.sm100.mma import smem_descriptor
@@ -49,6 +49,10 @@ def fa4_mma[
     config: FA4Config,
     *,
     page_size: Int,
+    # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME
+    # partition count even at `config.splitk_partitions == 1`. Defaulted so
+    # every non-workspace caller is byte-identical.
+    workspace_split: Bool = False,
     # Effective cross-stage-P switch, computed once at the kernel level where
     # config, MaskType and the store shape are all visible. Defaults True so
     # the config-level gate alone decides for callers that do not thread it;
@@ -61,6 +65,7 @@ def fa4_mma[
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
+    ws_num_partitions: UInt32 = 1,
 ):
     """Executes the FA4 MMA warp loop for SM100 Flash Attention.
 
@@ -78,6 +83,8 @@ def fa4_mma[
         score_row: Row offset of the query tile within the sequence.
         num_keys: Number of valid key columns to attend to.
         mask: Attention mask controlling tile iteration and masking bounds.
+        ws_num_partitions: Runtime split-K partition count that windows the
+            KV range when `workspace_split` is `True`; `1` disables windowing.
     """
     comptime accum_type = DType.float32
     comptime BM = config.BM
@@ -533,12 +540,10 @@ def fa4_mma[
         # `total_iters == last_masked_set_end` for check_mask==False masks
         # (mha_mask.mojo:510-513/641-644/...), so all four warps derive the
         # same window.
-        comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32
-            comptime if config.dynamic_cluster_dim:
-                _np = UInt32(cluster_dim.x)
-            else:
-                _np = UInt32(config.splitk_partitions)
+        comptime if config.num_q == 1 and (
+            config.splitk_partitions > 1 or workspace_split
+        ):
+            var _np = splitk_num_partitions[config](ws_num_partitions)
             var _w = splitk_window(
                 total_iters_runtime,
                 _np,
@@ -1165,12 +1170,10 @@ def fa4_mma[
         # `total_iters == last_masked_set_end` for check_mask==False masks
         # (mha_mask.mojo:510-513/641-644/...), so all four warps derive the
         # same window.
-        comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32
-            comptime if config.dynamic_cluster_dim:
-                _np = UInt32(cluster_dim.x)
-            else:
-                _np = UInt32(config.splitk_partitions)
+        comptime if config.num_q == 1 and (
+            config.splitk_partitions > 1 or workspace_split
+        ):
+            var _np = splitk_num_partitions[config](ws_num_partitions)
             var _w = splitk_window(
                 total_iters_runtime,
                 _np,

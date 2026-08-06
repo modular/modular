@@ -2461,11 +2461,43 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
     def start_column[
         BM: Int, BN: Int, page_size: Int
     ](self, seq_id: UInt32, row: UInt32) -> UInt32:
-        return naively_get_first_nonempty_mask_col[BM, BN](self, seq_id, row)
+        # Closed form, so O(1) instead of the O(start_column / BN)
+        # `status()`-stepping scan the generic fallback runs. That scan sits on
+        # the HOST dispatch path for every caller that sizes split-K from mask
+        # geometry (`sm100/dispatch.mojo`'s `_visible_keys`, `mha.mojo`'s FA2
+        # decode correction), where a `ChunkedCausalMask` over a long cache cost
+        # ~960 iterations per launch.
+        #
+        # WHY `max`: an `OrMask` masks an element off when EITHER child does, so
+        # its visible region is the INTERSECTION of the children's. Each child's
+        # non-`FULL_MASK` region is an interval `[start_i, end_i]`, so the
+        # intersection begins at `max(start_i)` -- exactly what the scan finds
+        # (`ChunkedCausalMask` = `Causal | Chunked` => `max(0, chunk_start)`).
+        # Were a child's visible region ever NOT an interval, `max` is a LOWER
+        # bound on the true first non-full column, which is the safe direction:
+        # iteration starts earlier over a superset of the non-skipped tiles and
+        # never skips a visible key. It is also better behaved than the scan when
+        # the intersection is EMPTY -- the scan has no upper bound and walks past
+        # `num_keys`, while this returns a finite value.
+        #
+        # `align_down` to BN keeps `start_column_alignment`'s promise below
+        # intact: a child may align only to `min(page_size, BN)`, so a bare `max`
+        # could return a non-BN-multiple while this type advertises BN. It also
+        # makes the result bit-identical to the scan, which yields the first
+        # non-full BN-*tile*, i.e. `align_down(first_visible, BN)` --
+        # `align_down(align_down(x, page_size), BN) == align_down(x, BN)`
+        # because BN is a multiple of `page_size` whenever `page_size < BN`.
+        return align_down(
+            max(
+                self.lhs.start_column[BM, BN, page_size](seq_id, row),
+                self.rhs.start_column[BM, BN, page_size](seq_id, row),
+            ),
+            UInt32(BN),
+        )
 
     @staticmethod
     def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
-        # `naively_get_first_nonempty_mask_col` steps by BN from 0.
+        # `start_column` above aligns its result down to BN.
         return BN
 
     @always_inline
