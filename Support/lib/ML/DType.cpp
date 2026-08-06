@@ -84,7 +84,11 @@ FailureOr<size_t> DType::getSizeInBytesChecked(size_t numElements) const {
     widthShift = getIntegerWidthInLogBits();
   } else if (isFloat()) {
     ssize_t bitCount = getWidthInBits();
-    assert(llvm::isPowerOf2_32(bitCount) && "all FP types are power of 2 size");
+    if (!llvm::isPowerOf2_32(bitCount)) {
+      if (numElements > std::numeric_limits<size_t>::max() / bitCount)
+        return failure();
+      return llvm::divideCeil(numElements * bitCount, 8);
+    }
     widthShift = llvm::Log2_32(bitCount);
   } else if (isBool()) {
     widthShift = 3; // kBool is stored in a single byte each.
