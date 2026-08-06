@@ -418,6 +418,36 @@ public:
     std::filesystem::path path;
     Kind kind;
 
+    /// For a SourceDir resolved from the import path: the dotted chain of
+    /// directory names (including `name`) relative to the import roots. A
+    /// plain directory is a namespace whose one name may span several roots, so
+    /// submodules resolve against these components under every import root, not
+    /// against `path`, which records only the first root's portion. Empty for
+    /// every other kind, and for directories nested inside a source package,
+    /// which stay single-homed and resolve through `path`.
+    ///
+    /// For example, given `-I one -I two` and
+    ///
+    ///   one/foo/bar/baz.mojo
+    ///   two/foo/bar/qux.mojo
+    ///
+    /// the name `foo.bar` is one namespace spanning both roots. Its spec is
+    ///
+    ///   { name = "bar", path = "one/foo/bar", kind = SourceDir,
+    ///     namespaceComponents = ["foo", "bar"] }
+    ///
+    /// and resolving `foo.bar.qux` searches `<root>/foo/bar` under every
+    /// root, finding two/foo/bar/qux.mojo even though `path` names the
+    /// first root's directory. The closed candidate baz.mojo gets
+    ///
+    ///   { name = "baz", path = "one/foo/bar/baz.mojo", kind = SourceModule,
+    ///     namespaceComponents = [] }
+    std::vector<std::string> namespaceComponents = {};
+
+    bool isNamespace() const {
+      return kind == Kind::SourceDir && !namespaceComponents.empty();
+    }
+
     /// Return the module classification of a given path, optionally matching a
     /// specific name. Returns std::nullopt if not a (matching) ModuleSpec.
     static std::optional<ModuleSpec> classify(const std::filesystem::path &path,
@@ -466,6 +496,35 @@ public:
   std::optional<SharedState::ModuleSpec>
   resolveModulePath(StringRef moduleName, StringRef includeDir,
                     bool ignorePrebuilt, bool isInsideSourcePackage);
+
+  /// Collect the portion directories of the namespace described by
+  /// `parentSpec`: for each import directory visible from
+  /// `importBufferFileId`, descend the spec's namespace components as plain
+  /// directories. Portions are returned in traversal order, deduplicated.
+  ///
+  /// A "portion" is one root's directory contributing to the namespace. For the
+  /// example on `namespaceComponents`, the portions of `foo.bar` are
+  ///
+  ///   [ one/foo/bar, two/foo/bar ]
+  ///
+  /// The search path always contains the same directories for every
+  /// import site, and portions are recomputed from it at each resolution
+  /// step, so a root where `foo` is missing, or is claimed by a source
+  /// package or module file (a closed candidate), simply contributes no
+  /// portion.
+  SmallVector<std::string>
+  collectNamespacePortions(const ModuleSpec &parentSpec,
+                           unsigned importBufferFileId);
+
+  /// Resolve the name as a submodule of the namespace described by
+  /// `parentSpec`, searching every portion. Returns every distinct thing the
+  /// name could be: closed (non-directory) candidates win over directory
+  /// candidates, which merge into a single nested-namespace spec rather than
+  /// competing. More than one element therefore means the import is
+  /// ambiguous; several portions provide a closed candidate.
+  SmallVector<ModuleSpec>
+  resolveNamespaceSubModule(StringRef moduleName, const ModuleSpec &parentSpec,
+                            unsigned importBufferFileId);
 
   void registerWrapperBuffer(unsigned bufferId, StringRef wrappedSourcePath);
   std::optional<StringRef> getWrappedSourcePath(unsigned bufferId) const;
