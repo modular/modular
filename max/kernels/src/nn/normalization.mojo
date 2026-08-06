@@ -70,11 +70,12 @@ from algorithm.rowwise import strided_load
 from std.utils.static_tuple import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite, min_finite
 from comm.rms_norm_fp8 import rms_norm_fused_fp8
+from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 from max.gpu.primitives.grid_controls import PDLLevel
 
 # Free-form row-wise scaffolder (Row) + monoids.
 from algorithm import rowwise
-from algorithm.reduce_op import ReduceSum, Welford
+from algorithm.reduce_op import ReduceMax, ReduceSum, Welford
 from .reshape import reshape
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
@@ -3723,6 +3724,200 @@ def rms_norm_fused_residual_add[
         # `inv_rms1` read only inside the comptime `intermediate` cache
         # closure; discard-read marks it used.
         _ = inv_rms1
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=2,
+        computationally_expensive=True,
+    ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based rms_norm + dynamic-scaled FP8 quantization: sum-of-squares and
+# max(|gamma*x|) reduced in one cached pass, then a per-row FP8 scale is emitted
+# and the normalized row is quantized to FP8.
+# ===----------------------------------------------------------------------=== #
+
+
+def rms_norm_fused_quantize_dynamic_scaled_fp8[
+    in_dtype: DType,
+    out_dtype: DType,
+    scale_dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, coord_rank: Int
+        ](IndexList[coord_rank]) -> SIMD[in_dtype, width]
+    ),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int, alignment: Int
+        ](IndexList[rank], SIMD[out_dtype, width]) -> None
+    ),
+    ScaleFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[coord_rank: Int](IndexList[coord_rank], Scalar[scale_dtype]) -> None
+    ),
+    AxisSizeT: CoordLike,
+    /,
+    target: StaticString,
+    reduce_dim: Int = rank - 1,
+](
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    scale_fn: ScaleFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, in_dtype, ...],
+    epsilon: Scalar[in_dtype],
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+    context: Optional[DeviceContext] = None,
+) raises:
+    comptime accum = get_accum_type[in_dtype]()
+    comptime assert accum.is_floating_point(), "rms_norm requires fp accum"
+    comptime assert out_dtype in (
+        DType.float8_e4m3fn,
+        DType.float8_e4m3fnuz,
+    ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+    comptime simd_width = rowwise.pick_simd_width[
+        ReduceSum[accum, 1], target, 64, in_dtype, accum
+    ]()
+    var axis_size_accum = Scalar[accum](Int(axis_size.value()))
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var gamma,
+        var epsilon,
+        var weight_offset,
+        var scale_ub,
+        var axis_size_accum,
+        var input_fn,
+        var output_fn,
+        var scale_fn,
+    }:
+        comptime row_rank = row_coords.rank
+
+        # Load: fuses the caller's input closure into the row's primary load.
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[in_dtype, width]:
+            return input_fn[width, alignment, row_rank](
+                rebind[IndexList[row_rank]](idx)
+            )
+
+        var row = rowwise.Row[
+            params, accum, in_dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        # gamma indexed by the reduced axis: inner stride 1 when that axis is
+        # inner (consecutive), else 0 (splat).
+        comptime g_stride = 1 if reduce_dim == rank - 1 else 0
+
+        # Plain non-capturing helper: receives the gamma tensor + weight offset
+        # as arguments (captures no runtime value), so the value-closure
+        # callbacks below can call it by name while capturing only plain values.
+        @always_inline
+        def gamma_load[
+            width: Int
+        ](
+            gamma_tensor: TileTensor[mut=False, in_dtype, ...],
+            col: Int,
+            weight_offset: Scalar[in_dtype],
+        ) -> SIMD[accum, width]:
+            var gamma_raw = strided_load[
+                width, g_stride, alignment=align_of[SIMD[in_dtype, width]]()
+            ](gamma_tensor.ptr_at_offset(Coord(IndexList[1](col))))
+            return gamma_raw.cast[accum]() + weight_offset.cast[accum]()
+
+        @always_inline
+        def square[
+            width: Int
+        ](tile: SIMD[in_dtype, width], idx: IndexList[row_rank]) {} -> SIMD[
+            accum, width
+        ]:
+            var tile_accum = tile.cast[accum]()
+            return tile_accum * tile_accum
+
+        # Reduce (phase 1): mean of squares of the input -> inv_rms.
+        var ssq = row.reduce[ReduceSum[accum, params.simd_width]](
+            square, load
+        ).acc
+        var inv_rms = rsqrt(ssq / axis_size_accum + epsilon.cast[accum]())
+
+        # Reduce (phase 2): max(|gamma*x|) over the same cached row. The norm
+        # factor is a positive scalar, so max(|gamma*x*inv_rms|) ==
+        # max(|gamma*x|)*inv_rms; the FP8 scale is derived from the raw input
+        # without staging the normalized row.
+        @always_inline
+        def abs_gamma_x[
+            width: Int
+        ](tile: SIMD[in_dtype, width], idx: IndexList[row_rank]) {
+            var gamma, var weight_offset
+        } -> SIMD[accum, width]:
+            return abs(
+                tile.cast[accum]()
+                * gamma_load[width](gamma, idx[reduce_dim], weight_offset)
+            )
+
+        # `gamma`/`weight_offset` ride `abs_gamma_x`'s captures into `reduce`;
+        # `gamma_load` is called by name (captures nothing).
+        var row_abs_max = row.reduce[ReduceMax[accum, params.simd_width]](
+            abs_gamma_x, load
+        ).acc
+        var row_max = (row_abs_max * inv_rms).reduce_max()
+        var scale_result = compute_dynamic_fp8_scale[out_dtype](
+            row_max, scale_ub.cast[scale_dtype]()
+        )
+        var scale_factor = scale_result[0]
+        var scale_recip = scale_result[1]
+
+        # Emit (scale): per-row output, the dynamic FP8 scale (reduced axis
+        # pinned to 0).
+        @always_inline
+        def write_scale(
+            oc: IndexList[row_rank],
+        ) {var scale_factor, var scale_fn}:
+            scale_fn[row_rank](oc, scale_factor)
+
+        # `scale_factor`/`scale_fn` ride `write_scale`'s captures into `emit`.
+        row.emit(write_scale)
+
+        # Emit (per-element): normalize, scale by gamma, quantize to FP8.
+        @always_inline
+        def write[
+            width: Int
+        ](tile: SIMD[in_dtype, width], idx: IndexList[row_rank]) {
+            var gamma,
+            var weight_offset,
+            var inv_rms,
+            var scale_recip,
+            var output_fn,
+            var ctx_p,
+        }:
+            var normed = (
+                tile.cast[accum]() * inv_rms.slice[width]()
+            ) * gamma_load[width](gamma, idx[reduce_dim], weight_offset)
+            var out_fp8 = fp8_quantize[out_dtype](normed, scale_recip)
+            comptime alignment = ctx_p.alignment[out_dtype, width]()
+            output_fn[width, rank, alignment](
+                rebind[IndexList[rank]](idx), out_fp8
+            )
+
+        # `gamma`/`weight_offset`/`inv_rms`/`scale_recip`/`output_fn` ride
+        # `write`'s captures into `elementwise`.
+        row.elementwise(write, load)
 
     rowwise.launch[
         axis=reduce_dim,
