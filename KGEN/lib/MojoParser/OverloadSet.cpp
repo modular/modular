@@ -1740,6 +1740,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // be inferred from the result.
   callee.paramBindings = ParamBindings::getForDeclaredType(
       declScope, requiredType, operands.getExpr());
+  callee.selfResultType = requiredType;
 
   // Determine if we can emit this using an IREmitter in the parameter domain.
   // This ensures we don't emit any code converting parameters to MValues etc.
