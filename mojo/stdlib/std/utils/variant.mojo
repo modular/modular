@@ -159,7 +159,7 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
         comptime assert (
             align_of[Self.Storage.NicheStorage]()
             == align_of[UnsafeMaybeUninit[T]]()
-        ), "Custom storage must have the the same alignment as Self"
+        ), "Custom storage must have the same alignment as Self"
         return (
             Pointer(to=self._memory)
             .unsafe_bitcast[UnsafeMaybeUninit[T]]()
