@@ -32,7 +32,52 @@ def make_nested() -> List[List[StaticString]]:
     return outer^
 
 
-def main():
+# Wrapping the strings in a struct is the interesting part: the wrapper is
+# written to constant-global memory as a string-bearing aggregate, which
+# re-enters constant-global mapping for each embedded string (MOCO-3738).
+struct Flat(Copyable, Movable):
+    var items: List[StaticString]
+
+    def __init__(out self, items: List[StaticString]):
+        self.items = items.copy()
+
+
+struct Inner(Copyable, Movable):
+    var pattern: StaticString
+    var leading: InlineArray[StaticString, 1]
+    var count: Int
+
+    def __init__(
+        out self,
+        pattern: StaticString,
+        leading: InlineArray[StaticString, 1],
+        count: Int,
+    ):
+        self.pattern = pattern
+        self.leading = leading.copy()
+        self.count = count
+
+
+struct Outer(Copyable, Movable):
+    var id: StaticString
+    var items: List[Inner]
+
+    def __init__(out self, id: StaticString, items: List[Inner]):
+        self.id = id
+        self.items = items.copy()
+
+
+comptime WRAPPED: Flat = Flat(items=["foo", "bar"])
+
+comptime REGIONS: Dict[String, Outer] = {
+    "ES": Outer(
+        id="ES",
+        items=[Inner(pattern="(\\d{4})", leading=["905"], count=1)],
+    ),
+}
+
+
+def main() raises:
     comptime lst = make_int_list()
     var dyn_lst = materialize[lst]()
     # CHECK: [1, 2, 3]
@@ -47,3 +92,20 @@ def main():
     var nested_names = materialize[nested]()
     # CHECK-LITERAL: [[alpha, beta], [gamma, epsilon]]
     print(nested_names)
+
+    # Compare rather than just print: a stale pointer in a materialized
+    # StaticString only shows up once the bytes are dereferenced.
+    var wrapped = materialize[WRAPPED]()
+    # CHECK: wrapped: True True
+    print("wrapped:", wrapped.items[0] == "foo", wrapped.items[1] == "bar")
+
+    var regions = materialize[REGIONS]()
+    ref region = regions["ES"]
+    ref inner = region.items[0]
+    # CHECK: region: True True True
+    print(
+        "region:",
+        region.id == "ES",
+        inner.pattern == "(\\d{4})",
+        inner.leading[0] == "905",
+    )
