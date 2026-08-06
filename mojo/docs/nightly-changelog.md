@@ -6,6 +6,12 @@ This version is still a work in progress.
 
 ## Highlights
 
+- Code that performs many implicit conversions, most visibly large collection
+  literals, compiles faster: the compiler no longer runs parameter inference on
+  constructors that cannot be used for an implicit conversion in the first
+  place. Files that are mostly data, such as the standard library's Unicode
+  lookup tables, compile about 1.3x faster.
+
 ## Documentation
 
 ## Language enhancements
