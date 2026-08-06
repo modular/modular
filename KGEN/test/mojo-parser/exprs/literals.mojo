@@ -179,6 +179,45 @@ def test_list_comprehension():
     # CHECK-NEXT  lit.call {{.*}}@IntList::@"append{{.*}}(%c_collection, [[RES]])
     var c_collection: IntList = [i4 for i4 in SimpleIntRange() if i4]
 
+    var xs = [1, 2, 3]
+
+    # CHECK: hlcf.elif {
+    # CHECK:   [[LEN:%.*]] = {{.*}}@List::@"__len__
+    # CHECK:   [[LEN0:%.*]] = kgen.rebind [[LEN]]
+    # CHECK:   [[ZERO:%.*]] = kgen.param.constant:{{.*}}{:scalar<index> 0}
+    # CHECK:   [[NE:%.*]] = {{.*}}@SIMD::@"__ne__{{.*}}([[LEN0]], [[ZERO]])
+    # CHECK:   [[RET:%.*]] = {{.*}}@Bool::@"__mlir_bool__{{.*}}([[NE]])
+    # CHECK:   hlcf.elif.yield [[RET]]
+    # CHECK: } then {
+    # CHECK:   [[NONE:%.*]] = kgen.param.constant: none = <#kgen.none>
+    # CHECK:   lit.return [[NONE]]
+    # CHECK:   hlcf.yield
+    # CHECK: } else {
+    # CHECK:   hlcf.yield
+    # CHECK: }
+    if [x > 1 for x in xs].__len__() != 0:
+        return
+
+    # CHECK: [[LIST:%.*]] = lit.var.decl{{.*}} : !lit.ref<!lit.struct<#List
+    # CHECK: lit.loop {
+    # CHECK:   [[GT:%.*]] = lit.call {{.*}}@SIMD::@"__gt__
+    # CHECK:   [[ANON:%.*]] = lit.var.decl
+    # CHECK:   lit.ref.store [[GT]], [[ANON]]
+    # CHECK:   lit.call {{.*}}@List::@"append{{.*}}([[LIST]],
+    # CHECK:   lit.loop.continue
+    # CHECK: } else {
+    # CHECK:   lit.loop.yield
+    # CHECK-NEXT: }
+
+    # CHECK: lit.loop {
+    # CHECK: %y = lit.var.decl "y" ref :
+    # CHECK: lit.loop.continue
+    # CHECK: } else {
+    # CHECK: lit.loop.yield
+    # CHECK-NEXT: }
+    for y in [x > 1 for x in xs]:
+        pass
+
 
 # ===----------------------------------------------------------------------=== #
 # Dictionary Literals
