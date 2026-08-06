@@ -45,25 +45,33 @@ logger = logging.getLogger("max.pipelines")
 
 # The layer prefix is optional: Kimi keeps a `language_model.` prefix, while
 # MiniMax-M3 strips it, leaving keys like `layers.N.mlp.experts.J...`.
+#
+# `decoder_layer` is the MiniMax-M3 MTP draft block, a single unindexed block
+# that `minimax_m3_mtp/weight_adapters.py` attaches under that prefix. Without
+# it the draft's experts match nothing, the helpers no-op silently, and a
+# caller that flips `mxfp4_preshuffled_b` anyway gets row-major weights read as
+# preshuffled.
+_LAYER = r"(?:layers\.\d+|decoder_layer)"
+
 _EXPERT_WEIGHT_RE = re.compile(
-    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.experts)"
+    rf"^(?P<prefix>(?:.+\.)?{_LAYER}\.mlp\.experts)"
     r"\.(?P<idx>\d+)"
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
 )
 
 _EXPERT_SCALE_RE = re.compile(
-    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.experts)"
+    rf"^(?P<prefix>(?:.+\.)?{_LAYER}\.mlp\.experts)"
     r"\.(?P<idx>\d+)"
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight_scale$"
 )
 
 _SHARED_EXPERT_WEIGHT_RE = re.compile(
-    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.shared_experts)"
+    rf"^(?P<prefix>(?:.+\.)?{_LAYER}\.mlp\.shared_experts)"
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
 )
 
 _SHARED_EXPERT_SCALE_RE = re.compile(
-    r"^(?P<prefix>(?:.+\.)?layers\.\d+\.mlp\.shared_experts)"
+    rf"^(?P<prefix>(?:.+\.)?{_LAYER}\.mlp\.shared_experts)"
     r"\.(?P<proj>gate_proj|up_proj|down_proj)\.weight_scale$"
 )
 
