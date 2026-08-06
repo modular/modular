@@ -109,5 +109,21 @@ def test_from_str() raises:
         assert_equal(DType._from_str(String(dt)), dt)
 
 
+def test_mantissa_width() raises:
+    """Mantissa widths must match each format's specification.
+
+    Sub-byte dtypes are the interesting case: `bit_width_of` rounds them up to
+    a whole byte, so a width derived from it reports a mantissa several bits
+    too wide.
+    """
+    assert_equal(DType.mantissa_width[DType.float4_e2m1fn](), 1)
+    assert_equal(DType.mantissa_width[DType.float8_e4m3fn](), 3)
+    assert_equal(DType.mantissa_width[DType.float8_e5m2](), 2)
+    assert_equal(DType.mantissa_width[DType.float16](), 10)
+    assert_equal(DType.mantissa_width[DType.bfloat16](), 7)
+    assert_equal(DType.mantissa_width[DType.float32](), 23)
+    assert_equal(DType.mantissa_width[DType.float64](), 52)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

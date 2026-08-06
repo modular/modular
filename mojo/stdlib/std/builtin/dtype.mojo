@@ -674,7 +674,10 @@ struct DType(
         comptime assert (
             dtype.is_floating_point()
         ), "dtype must be floating point"
-        return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
+        comptime if dtype == DType.float4_e2m1fn:
+            return 1
+        else:
+            return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
     @staticmethod
     @always_inline("nodebug")
