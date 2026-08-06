@@ -129,6 +129,7 @@
     "docs/reference/compound-statements",
     "docs/reference/function-declarations",
     "docs/reference/closure-declarations",
+    "docs/reference/lambda-expressions",
     "docs/reference/struct-declarations",
     "docs/reference/trait-declarations",
     "docs/reference/inline-mlir",
