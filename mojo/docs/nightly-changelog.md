@@ -18,6 +18,25 @@ This version is still a work in progress.
 
 ## Language changes
 
+- The module & package system:
+
+  - Directories may now have "namespace" semantics; a single directory name may
+    resolve across distinct locations on disk which share that name.
+
+    ```mojo
+    # .
+    # ├── one
+    # │   └── foo
+    # │       └── bar.mojo
+    # └── two
+    #     └── foo
+    #         └── baz.mojo
+    #
+    # Compiles with -Ione -Itwo
+    import foo.bar
+    import foo.baz
+    ```
+
 ## Library stabilizations
 
 ## Library changes
