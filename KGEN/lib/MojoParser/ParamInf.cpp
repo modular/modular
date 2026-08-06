@@ -510,24 +510,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred
   }
 
-  // If the expected type has unresolved bindings, try to infer them from the
-  // argument.  This is a non-trivial operation because we support inferring
-  // from the value directly, but also inferring as a result of implicit
-  // conversions.
-  if (paramFinder.hasReferences(expectedType)) {
-    if (failed(inferFromRVType(binding, paramIdx, expectedType,
-                               declaredParamPogs, CallSyntax::kParamBindings)))
-      return failure();
-  }
-
-  // We might have inferred more parameter after `inferOneOperand`.
-  expectedType = evaluator.getReboundType(expectedType);
-
-  if (paramFinder.hasReferences(expectedType)) {
-    deferredGivenParams.set(paramIdx);
-    return TypedAttr(); // Deferred.
-  }
-
   // If we have a UValue or something else, convert it to a PValue now that we
   // know the expected type.
   TypedAttr bindingVal = binding.ir.getIfPValue();
@@ -559,6 +541,24 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
           << binding.expr->getRange();
       return failure();
     }
+  }
+
+  // If the expected type has unresolved bindings, try to infer them from the
+  // argument.  This is a non-trivial operation because we support inferring
+  // from the value directly, but also inferring as a result of implicit
+  // conversions.
+  if (paramFinder.hasReferences(expectedType)) {
+    if (failed(inferFromRVType(binding, paramIdx, expectedType,
+                               declaredParamPogs, CallSyntax::kParamBindings)))
+      return failure();
+  }
+
+  // We might have inferred more parameter after `inferOneOperand`.
+  expectedType = evaluator.getReboundType(expectedType);
+
+  if (paramFinder.hasReferences(expectedType)) {
+    deferredGivenParams.set(paramIdx);
+    return TypedAttr(); // Deferred.
   }
 
   // Reject invalid *'s, varargs will have been already handled.
