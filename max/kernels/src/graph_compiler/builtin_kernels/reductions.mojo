@@ -1500,39 +1500,37 @@ struct ReduceRMSNormFusedResidualAdd:
         if input.shape() != residual_input.shape():
             raise Error("Input and residual input buffers are not same shape")
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def residual_input_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        ](coords: IndexList[_rank]) {var residual_input} -> SIMD[dtype, width]:
             return residual_input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
             output._fused_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        @parameter
         @always_inline
         def residual_output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {
+            var residual_output
+        }:
             residual_output._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -1540,23 +1538,52 @@ struct ReduceRMSNormFusedResidualAdd:
                 rebind[SIMD[residual_output.dtype, width]](val),
             )
 
-        rms_norm_fused_residual_add[
-            input_fn,
-            residual_input_fn,
-            output_fn,
-            residual_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape(),
-            gamma1.to_tile_tensor[DType.int64](),
-            epsilon1,
-            weight_offset1,
-            gamma2.to_tile_tensor[DType.int64](),
-            epsilon2,
-            weight_offset2,
-            ctx,
-        )
+        # Preserve a statically-known reduced-axis length (enables the Row
+        # register cache); dynamic dims fall back to streaming.
+        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if cols != UNKNOWN_VALUE:
+            rms_norm_fused_residual_add[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                residual_input_fn,
+                output_fn,
+                residual_output_fn,
+                input.shape_coord(),
+                ComptimeInt[cols](),
+                gamma1.to_tile_tensor[DType.int64](),
+                epsilon1.cast[dtype](),
+                weight_offset1,
+                gamma2.to_tile_tensor[DType.int64](),
+                epsilon2.cast[dtype](),
+                weight_offset2,
+                ctx,
+            )
+        else:
+            rms_norm_fused_residual_add[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                residual_input_fn,
+                output_fn,
+                residual_output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma1.to_tile_tensor[DType.int64](),
+                epsilon1.cast[dtype](),
+                weight_offset1,
+                gamma2.to_tile_tensor[DType.int64](),
+                epsilon2.cast[dtype](),
+                weight_offset2,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function(
