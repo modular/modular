@@ -115,9 +115,18 @@ std::string KGEN::mangleParameterValues(GeneratorOpInterface generator,
   // linking stage, so replace them.  We replace "@" with "\eA" and "\e" with
   // "\e\e" to make sure there are no collisions. \e is a non-standard C++
   // extension so we use \033 for portability.
-  for (size_t pos = result.find_first_of("@\033"); pos != std::string::npos;
-       pos = result.find_first_of("@\033", pos + 2)) {
-    result.replace(pos, 1, result[pos] == '@' ? "\033" : "\033\033");
+  std::string escaped;
+  escaped.reserve(result.size());
+  for (char c : result) {
+    if (c == '@') {
+      escaped += "\033A";
+    } else {
+      if (c == '\033')
+        escaped += '\033';
+      escaped += c;
+    }
   }
+  result = std::move(escaped);
+
   return result;
 }
