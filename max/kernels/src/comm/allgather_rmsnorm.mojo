@@ -178,9 +178,15 @@ def _allgather_rmsnorm_kernel[
                 Coord(grow, col_idx), normalized.cast[in_dtype]()
             )
 
-    # No end barrier (like the AR/RS+norm kernels): local consumers rely on
-    # stream order (a remote one adds its own). Peers P2P-read this rank's
-    # shard, so don't reuse it before the next collective's start barrier.
+    # No end barrier: local consumers rely on stream order (a remote one adds
+    # its own). Peers P2P-read this rank's shard, so don't reuse it before the
+    # next collective's start barrier.
+    #
+    # That deferral is unsound once a second grouped collective shares this
+    # barrier domain -- the next collective on a fast rank is then not the
+    # peers' next one. The RS+norm sibling now pairs start with end; this
+    # kernel gets the same treatment when it grows `domain_id`, so do NOT read
+    # it as a precedent for omitting the end barrier.
 
 
 # --- Launcher ---
@@ -301,7 +307,10 @@ def allgather_rmsnorm[
     Note:
         No end barrier: outputs are safe to read only on the local GPU (a remote
         consumer adds its own), and peers P2P-read the input shards, so callers
-        must not overwrite them before the next collective's start barrier.
+        must not overwrite them before the next collective's start barrier. That
+        contract is weaker than the reduce-scatter+norm sibling's, which now
+        pairs its start barrier with an end barrier -- see the note at the end
+        of the kernel.
     """
     comptime assert ngpus >= 2, "allgather_rmsnorm requires at least 2 GPUs"
     comptime assert (

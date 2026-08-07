@@ -519,6 +519,13 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     reduce-scatter sum shard (`outResidual`, the residual stream). The norm is
     inherently `multiply_before_cast=true`: gamma is folded in f32 and the value
     is cast to the input dtype once, last. bf16 in/out only (no quantization).
+
+    `group_size` matches `mo.distributed.reducescatter.sum`: the devices split
+    into contiguous groups of that many, each reducing independently, so the op
+    works under TP-within-DP topologies. It must be at least 2 and must divide
+    the device count; `group_size == num_devices` is a full-world collective.
+    The builder always sets it -- the `0` attribute default is not a usable
+    value.
     """
 
     def __init__(
@@ -534,6 +541,7 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
         epsilon: Sequence[max._core.Value[max._core.Type]],
         weight_offset: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -547,6 +555,12 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class CompositeConcatSliceOp(max._core.Operation):
     """

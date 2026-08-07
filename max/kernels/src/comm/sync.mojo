@@ -146,11 +146,17 @@ in-block thread index, not the global device rank. When subgroup collectives
 generation counters desync -- a subsequent full-world barrier then spins
 forever waiting for a generation a peer will never publish.
 
-Giving each collective scope its own counter bank makes the barrier histories
-disjoint so scopes can never poison each other. `MAX_GPUS` banks is the loosest
-sufficient bound: there can be at most one distinct device-group per GPU, so a
-`1 + group_start // group_size` scope mapping never exceeds this. The cost is
-negligible -- the counters are tiny next to the embedded Lamport region.
+Giving each collective domain its own counter bank makes the barrier histories
+disjoint so domains can never poison each other. `MAX_GPUS` banks is the loosest
+sufficient bound: there can be at most one distinct device-group per GPU.
+
+Callers map by group WIDTH (`0 if group_size == num_devices else group_size`),
+so DIFFERENT ops of the same width share a bank. Sharing is sound only while
+every rank in the domain issues the same barrier sequence: every collective must
+pair start with end (a start-only one lets a fast rank overwrite a shard its
+peers are still P2P-reading), and any conditional skip must be group-uniform.
+Sibling groups are safe regardless -- their `rank_sigs` are disjoint. The cost is
+negligible next to the embedded Lamport region.
 """
 
 

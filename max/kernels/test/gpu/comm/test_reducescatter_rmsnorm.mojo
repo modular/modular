@@ -37,7 +37,7 @@ from std.math import rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
-from std.testing import assert_true
+from std.testing import assert_raises, assert_true
 
 from layout import Coord, TileTensor, row_major
 
@@ -516,6 +516,7 @@ def _run_prod_oracle_case[
     ngpus: Int,
     num_cols: Int,
     use_dispatch: Bool = False,
+    group_size: Int = ngpus,
 ](num_rows: Int, list_of_ctx: List[DeviceContext]) raises -> Int:
     """Compare the fused `normed_out` to the ACTUAL M3 production norm; return the
     fused-vs-production exact-mismatch count.
@@ -533,8 +534,22 @@ def _run_prod_oracle_case[
     invariant, gated). This is the exact dispatch `distributed.mojo` uses.
 
     Also asserts `sum_out` == the standalone RS shard at every M (the
-    residual-stream contract)."""
-    var config = ReduceScatterConfig[in_dtype, ngpus](
+    residual-stream contract).
+
+    With `group_size < ngpus` the devices split into `ngpus // group_size`
+    independent contiguous groups (production TP4xDP2xEP8), so every collective
+    here is group-local: `local_rank` is the rank WITHIN the group, the peer
+    arrays hold only the group's devices, and the rows are binned across
+    `group_size`. A global-rank or full-world-slicing bug lands on the wrong
+    peers and fails the bit-identity gates below."""
+    comptime assert (
+        ngpus % group_size == 0
+    ), "group_size must evenly divide the device count"
+    # Mirrors the handler: a full-world collective keeps barrier domain 0; a
+    # subgroup gets its own counter bank so both can share `Signal` buffers.
+    comptime domain_id = 0 if group_size == ngpus else group_size
+
+    var config = ReduceScatterConfig[in_dtype, group_size](
         axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
     )
     var length = num_rows * num_cols
@@ -574,7 +589,7 @@ def _run_prod_oracle_case[
         )
         list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_host)
 
-        var alloc_i = config.rank_num_elements(i)
+        var alloc_i = config.rank_num_elements(i % group_size)
         if alloc_i < 1:
             alloc_i = 1
         normed.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
@@ -613,26 +628,35 @@ def _run_prod_oracle_case[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
-    comptime for i in range(ngpus):
-        in_bufs[i] = InTensorType(
-            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
-                in_dev[i].unsafe_ptr()
-            ),
-            row_major(Coord(Index(num_rows, num_cols))),
-        )
 
     # --- Fused kernel directly, or the op's dispatch (auto-route at the real
     # threshold) with the production `two_launch` fallback. ---
     group_start()
     for i in range(ngpus):
+        var local = i % group_size
+        var base = (i // group_size) * group_size
+        # Group-local peer/signal arrays: ranks 0..group_size-1 are this
+        # device's group, exactly what the handler hands the kernel.
+        var bufs = Array[InTensorType, group_size](uninitialized=True)
+        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
+        for k in range(group_size):
+            sigs[k] = rank_sigs[base + k]
+            bufs[k] = InTensorType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    in_dev[base + k].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_rows, num_cols))),
+            )
+
         var normed_view = OutShardType(
             normed[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(Index(config.rank_units(local), num_cols))),
         )
         var sum_view = OutShardType(
             sum_shard[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(Index(config.rank_units(local), num_cols))),
         )
         var gamma_view = GammaType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -647,11 +671,14 @@ def _run_prod_oracle_case[
             @parameter
             @always_inline
             def two_launch() raises:
-                reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-                    in_bufs, sum_view, rank_sigs, list_of_ctx[i]
-                )
+                reducescatter[
+                    dtype=in_dtype,
+                    ngpus=group_size,
+                    axis=0,
+                    domain_id=domain_id,
+                ](bufs, sum_view, sigs, list_of_ctx[i], local_rank=local)
                 _rms_norm_shard[in_dtype, num_cols](
-                    config.rank_units(i),
+                    config.rank_units(local),
                     sum_shard[i],
                     normed[i],
                     gamma_dev[i],
@@ -660,26 +687,28 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch](
-                in_bufs,
+            _dispatch_rs_norm[two_launch=two_launch, domain_id=domain_id](
+                bufs,
                 normed_view,
                 sum_view,
                 gamma_view,
                 epsilon,
                 weight_offset,
-                rank_sigs,
+                sigs,
                 list_of_ctx[i],
+                local_rank=local,
             )
         else:
-            reducescatter_rmsnorm(
-                in_bufs,
+            reducescatter_rmsnorm[domain_id=domain_id](
+                bufs,
                 normed_view,
                 sum_view,
                 gamma_view,
                 epsilon,
                 weight_offset,
-                rank_sigs,
+                sigs,
                 list_of_ctx[i],
+                local_rank=local,
             )
     group_end()
     for i in range(ngpus):
@@ -693,19 +722,34 @@ def _run_prod_oracle_case[
 
     group_start()
     for i in range(ngpus):
+        var local = i % group_size
+        var base = (i // group_size) * group_size
+        var bufs = Array[InTensorType, group_size](uninitialized=True)
+        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
+        for k in range(group_size):
+            sigs[k] = rank_sigs[base + k]
+            bufs[k] = InTensorType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    in_dev[base + k].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_rows, num_cols))),
+            )
+
         var rs_view = OutShardType(
             rs_ref[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Index(config.rank_units(i), num_cols))),
+            row_major(Coord(Index(config.rank_units(local), num_cols))),
         )
-        reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
-            in_bufs, rs_view, rank_sigs, list_of_ctx[i]
-        )
+        reducescatter[
+            dtype=in_dtype, ngpus=group_size, axis=0, domain_id=domain_id
+        ](bufs, rs_view, sigs, list_of_ctx[i], local_rank=local)
     group_end()
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     for i in range(ngpus):
-        var local_rows = config.rank_units(i)
+        var local_rows = config.rank_units(i % group_size)
         if local_rows == 0:
             continue
         _rms_norm_shard[in_dtype, num_cols](
@@ -728,7 +772,7 @@ def _run_prod_oracle_case[
     var sum_max_ulp = 0
 
     for i in range(ngpus):
-        var local_rows = config.rank_units(i)
+        var local_rows = config.rank_units(i % group_size)
         if local_rows == 0:
             continue
         var n = local_rows * num_cols
@@ -773,7 +817,9 @@ def _run_prod_oracle_case[
         String(
             "  M=",
             num_rows,
-            " (rank0 units=",
+            " (G=",
+            group_size,
+            " rank0 units=",
             config.rank_units(0),
             "): ",
             mode_tag,
@@ -837,6 +883,489 @@ def _run_prod_oracle_case[
     _ = signal_buffers^
 
     return normed_mismatch
+
+
+def _run_interleaved_barrier_case[
+    in_dtype: DType,
+    ngpus: Int,
+    group_size: Int,
+    num_cols: Int,
+](num_rows: Int, rounds: Int, list_of_ctx: List[DeviceContext]) raises:
+    """Deadlock gate: a GROUPED fused RS+norm interleaved with a FULL-WORLD
+    reduce-scatter on the SAME `Signal` buffers, looped `rounds` times with a
+    single up-front barrier init.
+
+    This is the production hazard under TP4xDP2xEP8: a TP-group collective and an
+    EP/full-world collective share each device's `Signal`. `_multi_gpu_barrier`
+    keys its counter slots by in-block thread index, not global rank, so with both
+    in barrier domain 0 the two histories alias the same slots -- the generation
+    counters desync and a later full-world barrier spins forever, or returns
+    early on a stale flag and reduces unready peer data (`sync.mojo`
+    NUM_BARRIER_DOMAINS). Both failure modes are gated: this case must TERMINATE
+    and both collectives' sums must still be exact afterwards.
+    """
+    comptime assert (
+        ngpus % group_size == 0
+    ), "group_size must evenly divide the device count"
+    comptime assert (
+        group_size < ngpus
+    ), "interleaving is only meaningful for a subgroup collective"
+    comptime domain_id = group_size
+
+    var grp_cfg = ReduceScatterConfig[in_dtype, group_size](
+        axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
+    )
+    var world_cfg = ReduceScatterConfig[in_dtype, ngpus](
+        axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
+    )
+    var length = num_rows * num_cols
+    var epsilon = Float32(1e-6)
+    var weight_offset = Scalar[in_dtype](1.0)
+
+    var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
+    var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var world_out = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+
+    var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
+    for c in range(num_cols):
+        gamma_host[c] = (Float64(c + num_cols) / Float64(num_cols)).cast[
+            in_dtype
+        ]()
+
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
+        var h = List[Scalar[in_dtype]](length=length, fill=Scalar[in_dtype](0))
+        for j in range(length):
+            h[j] = Scalar[in_dtype](i + 1) + Scalar[in_dtype](j % 251)
+        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        host_bufs.append(h^)
+
+        gamma_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](num_cols)
+        )
+        list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_host)
+
+        var g_alloc = grp_cfg.rank_num_elements(i % group_size)
+        if g_alloc < 1:
+            g_alloc = 1
+        normed.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](g_alloc))
+        sum_shard.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](g_alloc)
+        )
+
+        var w_alloc = world_cfg.rank_num_elements(i)
+        if w_alloc < 1:
+            w_alloc = 1
+        world_out.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](w_alloc)
+        )
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+        )
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+
+    # ONE init for the whole run: continuously advancing shared counters are
+    # exactly what desyncs when both collectives sit in domain 0.
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    comptime InTensorType = TileTensor[
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        ImmutAnyOrigin,
+    ]
+    comptime OutShardType = TileTensor[
+        mut=True,
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        MutAnyOrigin,
+    ]
+    comptime GammaType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+    ]
+
+    var world_bufs = Array[InTensorType, ngpus](uninitialized=True)
+    comptime for i in range(ngpus):
+        world_bufs[i] = InTensorType(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                in_dev[i].unsafe_ptr()
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+
+    for _round in range(rounds):
+        group_start()
+        for i in range(ngpus):
+            var local = i % group_size
+            var base = (i // group_size) * group_size
+            var bufs = Array[InTensorType, group_size](uninitialized=True)
+            var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+                uninitialized=True
+            )
+            for k in range(group_size):
+                sigs[k] = rank_sigs[base + k]
+                bufs[k] = InTensorType(
+                    rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                        in_dev[base + k].unsafe_ptr()
+                    ),
+                    row_major(Coord(Index(num_rows, num_cols))),
+                )
+
+            var normed_view = OutShardType(
+                normed[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(grp_cfg.rank_units(local), num_cols))),
+            )
+            var sum_view = OutShardType(
+                sum_shard[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(grp_cfg.rank_units(local), num_cols))),
+            )
+            var gamma_view = GammaType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    gamma_dev[i].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_cols))),
+            )
+            reducescatter_rmsnorm[domain_id=domain_id](
+                bufs,
+                normed_view,
+                sum_view,
+                gamma_view,
+                epsilon,
+                weight_offset,
+                sigs,
+                list_of_ctx[i],
+                local,
+            )
+        group_end()
+
+        # Full-world collective on the SAME buffers, barrier domain 0.
+        group_start()
+        for i in range(ngpus):
+            var w_view = OutShardType(
+                world_out[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(world_cfg.rank_units(i), num_cols))),
+            )
+            reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
+                world_bufs, w_view, rank_sigs, list_of_ctx[i]
+            )
+        group_end()
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # Both collectives must still be exact: a barrier that returned early
+    # reduces peer data that was not ready yet. Integer inputs sum exactly in
+    # f32, so the reference is a plain accumulate-then-round.
+    var grp_bad = 0
+    var world_bad = 0
+    for i in range(ngpus):
+        var local = i % group_size
+        var base = (i // group_size) * group_size
+
+        var g_rows = grp_cfg.rank_units(local)
+        if g_rows > 0:
+            var n = g_rows * num_cols
+            var got = List[Scalar[in_dtype]](length=n, fill=Scalar[in_dtype](0))
+            list_of_ctx[i].enqueue_copy(got, sum_shard[i])
+            list_of_ctx[i].synchronize()
+            var start = grp_cfg.rank_unit_start(local)
+            for rr in range(g_rows):
+                for c in range(num_cols):
+                    var s = Float32(0)
+                    for k in range(group_size):
+                        s += host_bufs[base + k][
+                            (start + rr) * num_cols + c
+                        ].cast[DType.float32]()
+                    if got[rr * num_cols + c] != s.cast[in_dtype]():
+                        grp_bad += 1
+            _ = got^
+
+        var w_rows = world_cfg.rank_units(i)
+        if w_rows > 0:
+            var n = w_rows * num_cols
+            var got = List[Scalar[in_dtype]](length=n, fill=Scalar[in_dtype](0))
+            list_of_ctx[i].enqueue_copy(got, world_out[i])
+            list_of_ctx[i].synchronize()
+            var start = world_cfg.rank_unit_start(i)
+            for rr in range(w_rows):
+                for c in range(num_cols):
+                    var s = Float32(0)
+                    for k in range(ngpus):
+                        s += host_bufs[k][(start + rr) * num_cols + c].cast[
+                            DType.float32
+                        ]()
+                    if got[rr * num_cols + c] != s.cast[in_dtype]():
+                        world_bad += 1
+            _ = got^
+
+    print(
+        String(
+            "  interleaved barrier (",
+            ngpus,
+            " GPUs, ",
+            ngpus // group_size,
+            "x TP",
+            group_size,
+            ", ",
+            rounds,
+            " rounds, M=",
+            num_rows,
+            "): completed; grouped-sum errors=",
+            grp_bad,
+            " full-world-sum errors=",
+            world_bad,
+        )
+    )
+
+    if grp_bad != 0 or world_bad != 0:
+        raise Error(
+            String(
+                (
+                    "interleaved grouped/full-world collectives corrupted"
+                    " results (grouped errors="
+                ),
+                grp_bad,
+                ", full-world errors=",
+                world_bad,
+                "): the two barrier domains are aliasing.",
+            )
+        )
+
+    _ = in_dev^
+    _ = host_bufs^
+    _ = gamma_dev^
+    _ = gamma_host^
+    _ = normed^
+    _ = sum_shard^
+    _ = world_out^
+    _ = signal_buffers^
+
+
+def _run_rank_validation_case[
+    in_dtype: DType,
+    group_size: Int,
+    num_cols: Int,
+](list_of_ctx: List[DeviceContext]) raises:
+    """Gate the public API's rank / shard-shape validation.
+
+    A wrong-but-in-range rank is a SELF-CONSISTENT out-of-bounds write -- the
+    values are right, they just land past the shard -- so every numeric oracle
+    in this file reports zero mismatches. It has to be caught at the host
+    boundary instead.
+
+    Both mistakes are reachable now that the rank is caller-supplied: a GLOBAL
+    device id (out of range for the group-local peer/signal arrays), and a rank
+    that disagrees with the shard the caller allocated. `num_rows` is
+    deliberately ragged (`group_size + 1`), so rank 0 owns one row more than the
+    others and the second mistake overruns by exactly one row of `num_cols`."""
+    var num_rows = group_size + 1
+    var config = ReduceScatterConfig[in_dtype, group_size](
+        axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
+    )
+    var epsilon = Float32(1e-6)
+    var weight_offset = Scalar[in_dtype](1.0)
+    var length = num_rows * num_cols
+    # Allocate for the largest shard so a deliberately mis-sized VIEW below
+    # still points at real memory (nothing launches -- the raises fire first).
+    var max_shard = config.rank_num_elements(0)
+
+    var in_dev = List[DeviceBuffer[in_dtype]](capacity=group_size)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=group_size)
+    var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    for i in range(group_size):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+        )
+        sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+    var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
+    var normed = list_of_ctx[0].enqueue_create_buffer[in_dtype](max_shard)
+    var sum_shard = list_of_ctx[0].enqueue_create_buffer[in_dtype](max_shard)
+    list_of_ctx[0].synchronize()
+
+    comptime InTensorType = TileTensor[
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        ImmutAnyOrigin,
+    ]
+    comptime OutShardType = TileTensor[
+        mut=True,
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        MutAnyOrigin,
+    ]
+    comptime GammaType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+    ]
+
+    var bufs = Array[InTensorType, group_size](uninitialized=True)
+    for k in range(group_size):
+        bufs[k] = InTensorType(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                in_dev[k].unsafe_ptr()
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+    var gamma_view = GammaType(
+        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            gamma_dev.unsafe_ptr()
+        ),
+        row_major(Coord(Index(num_cols))),
+    )
+
+    comptime domain_id = group_size
+    var rank0_rows = config.rank_units(0)
+    var rank1_rows = config.rank_units(1)
+    assert_true(
+        rank0_rows != rank1_rows,
+        (
+            "ragged M must give rank 0 a different shard height than rank 1,"
+            " else the shape case below cannot discriminate"
+        ),
+    )
+
+    var normed_ok = OutShardType(
+        normed.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(Coord(Index(rank0_rows, num_cols))),
+    )
+    var sum_ok = OutShardType(
+        sum_shard.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(Coord(Index(rank0_rows, num_cols))),
+    )
+    # Sized for rank 1, passed with rank 0: one row short.
+    var normed_short = OutShardType(
+        normed.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(Coord(Index(rank1_rows, num_cols))),
+    )
+    var sum_short = OutShardType(
+        sum_shard.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(Coord(Index(rank1_rows, num_cols))),
+    )
+
+    # 1. A global device id on the trailing group: out of range for arrays that
+    #    only hold `group_size` entries.
+    with assert_raises(contains="local_rank"):
+        reducescatter_rmsnorm[domain_id=domain_id](
+            bufs,
+            normed_ok,
+            sum_ok,
+            gamma_view,
+            epsilon,
+            weight_offset,
+            sigs,
+            list_of_ctx[0],
+            local_rank=group_size,
+        )
+
+    # 2. In-range rank, shard allocated for a different rank: the one-row
+    #    self-consistent overrun.
+    with assert_raises(contains="normed_out"):
+        reducescatter_rmsnorm[domain_id=domain_id](
+            bufs,
+            normed_short,
+            sum_ok,
+            gamma_view,
+            epsilon,
+            weight_offset,
+            sigs,
+            list_of_ctx[0],
+            local_rank=0,
+        )
+
+    with assert_raises(contains="sum_out"):
+        reducescatter_rmsnorm[domain_id=domain_id](
+            bufs,
+            normed_ok,
+            sum_short,
+            gamma_view,
+            epsilon,
+            weight_offset,
+            sigs,
+            list_of_ctx[0],
+            local_rank=0,
+        )
+
+    print("rank / shard-shape validation passed.")
+
+
+def _run_grouped_suite[
+    in_dtype: DType,
+    ngpus: Int,
+    group_size: Int,
+    num_cols: Int,
+]() raises:
+    """Grouped-TP suite: `ngpus // group_size` independent groups of
+    `group_size`, i.e. what TP4xDP2 hands the op on 8 GPUs.
+
+    The full-world cases cannot fail on any of the grouping logic (local rank ==
+    device id, one group, whole-world bins), so these are the only cases that
+    cover it."""
+    var list_of_ctx = List[DeviceContext]()
+    for i in range(ngpus):
+        list_of_ctx.append(DeviceContext(device_id=i))
+
+    print(
+        "\n=== grouped: ",
+        ngpus,
+        " GPUs as ",
+        ngpus // group_size,
+        "x TP",
+        group_size,
+        " (H=",
+        num_cols,
+        ") ===",
+    )
+
+    # Every case routes through the dispatch, so `normed_out` bit-identity vs
+    # the grouped two-launch path is GATED at each M, not merely printed: fused
+    # below the threshold, two-launch above, plus a ragged M.
+    for num_rows in [group_size, 8, group_size + group_size // 2, 512, 1024]:
+        _ = _run_prod_oracle_case[
+            in_dtype, ngpus, num_cols, use_dispatch=True, group_size=group_size
+        ](num_rows, list_of_ctx)
+
+    # One direct call into `reducescatter_rmsnorm` (bypassing the dispatcher) so
+    # the fused entry point itself is covered; gates `sum_out` bit-identity.
+    _ = _run_prod_oracle_case[in_dtype, ngpus, num_cols, group_size=group_size](
+        8, list_of_ctx
+    )
+
+    # Narrower H than the suite on purpose: the deadlock gate needs barrier
+    # traffic, not the H=6144 the fuse-threshold oracle is calibrated at, and a
+    # narrow row keeps the per-round allocation small.
+    comptime BARRIER_GATE_COLS = 1024
+    # 2 rounds suffice: in domain 0 the desync is off by one in both the counter
+    # value and its parity, so round 1's first full-world barrier already hangs.
+    _run_interleaved_barrier_case[
+        in_dtype, ngpus, group_size, BARRIER_GATE_COLS
+    ](32, 2, list_of_ctx)
+
+    _run_rank_validation_case[in_dtype, group_size, num_cols](list_of_ctx)
+
+    print("grouped ", ngpus // group_size, "x TP", group_size, " passed.")
+    _ = list_of_ctx^
 
 
 def _run_suite[
@@ -959,5 +1488,33 @@ def main() raises:
     _run_suite[in_dtype, 2, num_cols]()
     if num_devices >= 4:
         _run_suite[in_dtype, 4, num_cols]()
+
+    # 4 GPUs as 2xTP2 is the smallest topology exercising the rank remap,
+    # group-local slicing and per-group ragged binning; 8 as 2xTP4 is M3's
+    # production shape. Announce the skip loudly -- a 2-GPU lane covers none of
+    # the grouping logic and a green run there would read as coverage.
+    if num_devices >= 4:
+        _run_grouped_suite[in_dtype, 4, 2, num_cols]()
+    else:
+        print(
+            "\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found",
+            num_devices,
+            (
+                "): local-rank remap, group-local slicing, per-group binning"
+                " and the barrier-domain deadlock gate are NOT exercised in"
+                " this run."
+            ),
+        )
+    if num_devices >= 8:
+        _run_grouped_suite[in_dtype, 8, 4, num_cols]()
+    else:
+        print(
+            (
+                "\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology,"
+                " needs 8 GPUs, found"
+            ),
+            num_devices,
+            ").",
+        )
 
     print("All fused reduce-scatter + RMSNorm tests passed!")
