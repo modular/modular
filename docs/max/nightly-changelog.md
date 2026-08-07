@@ -78,6 +78,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed DeepSeek-V3.2 and GLM-5.x pipelines ignoring `--max-length`: the
+  resolved maximum sequence length was silently pinned to the DeepSeek
+  default (163840) regardless of the flag or the checkpoint's advertised
+  limit. These models also now size their rotary-embedding tables from the
+  resolved maximum sequence length instead of the checkpoint's
+  `max_position_embeddings`.
+
 - Fixed `ops.group_norm()` raising `NotImplementedError` in eager mode on
   CPU. `group_norm` previously had a GPU-only kernel; it now has a CPU
   compute path too, so eager `group_norm` runs on CPU the same way
