@@ -11,23 +11,31 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-# AMD MXFP4 dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4 Triton kernel).
-# Computes Y = A @ B^T with both operands MXFP4 (E2M1 + per-32-block E8M0),
-# where B is the weight [N=out_features, K=in_features] and A is [M, K].
-# Each params block fixes a (N, K) weight shape and sweeps M (small M = decode
-# weight-streaming, large M = prefill). Shapes mirror the canonical per-model
-# shape sets:
+# AMD MXFP4/MXFP8 dense GEMM benchmark: MAX (vs aiter for MXFP4; aiter has no
+# native MX-format FP8 kernel, so MXFP8 runs MAX-only).
+# Computes Y = A @ B^T with both operands MX block-scaled (one E8M0 scale per
+# 32-element K block), where B is the weight [N=out_features, K=in_features]
+# and A is [M, K]. Each params block fixes a (N, K) weight shape and sweeps M
+# (small M = decode weight-streaming, large M = prefill). Shapes mirror the
+# canonical per-model shape sets:
 #   Llama-3.1-405B (hidden=16384): attention QKV/O + MLP up/down, at tp=8 & tp=4.
 #   Kimi-K2.5 (hidden=7168, moe_inter=2048, shared_inter=18432): routed +
 #     shared expert GEMMs at tp=8/ep=8 (per-GPU shapes).
+#   MiniMax M3 (hidden=6144), MXFP8, at tp=4 (per-GPU shapes).
 
-name: bench_amd_mxfp4_gemm
-file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_amd_mxfp4_gemm.py
+name: bench_amd_mx_gemm
+file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_amd_mx_gemm.py
 
 commons: &commons
   $dtype: ["mxfp4"]
   $engine: ["modular_max", "aiter"]
-  $M: [1, 4, 8, 16, 32, 64]
+  $M: [1, 4, 8, 16, 32, 64, 128, 256, 512]
+
+# aiter has no MX-format FP8 kernel, so MXFP8 entries skip the aiter engine.
+commons_mxfp8: &commons_mxfp8
+  $dtype: ["mxfp8"]
+  $engine: ["modular_max"]
+  $M: [1, 4, 8, 16, 32, 64, 128, 256, 512]
 
 params:
 # ---------------------------------------------------------------------------
@@ -108,3 +116,34 @@ params:
 - <<: *commons
   $N: [36864]
   $K: [7168]
+
+# ---------------------------------------------------------------------------
+# MiniMax M3, tp=4 (per-GPU shapes). Attn Q/K/V/O and dense/shared-expert MLP
+# gate/up/down; the fused QKV+indexer projection (sparse layers) is a
+# separate epilogue-only path, benchmarked in
+# bench_fused_qkv_index_matmul_mxfp8_amd.mojo instead.
+# ---------------------------------------------------------------------------
+# Attn Q proj
+- <<: *commons_mxfp8
+  $N: [2048]
+  $K: [6144]
+
+# Attn K/V proj
+- <<: *commons_mxfp8
+  $N: [128]
+  $K: [6144]
+
+# Attn O proj
+- <<: *commons_mxfp8
+  $N: [6144]
+  $K: [2048]
+
+# Dense/shared-expert MLP gate/up proj
+- <<: *commons_mxfp8
+  $N: [3072]
+  $K: [6144]
+
+# Dense/shared-expert MLP down proj
+- <<: *commons_mxfp8
+  $N: [6144]
+  $K: [3072]

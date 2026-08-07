@@ -239,17 +239,18 @@ modular_py_binary(
     ],
 )
 
-# AMD MXFP4 dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4 Triton kernel).
-# Run via: bazel run //max/kernels/benchmarks/misc/comparison:bench_amd_mxfp4_gemm
-# Or via kbench: kbench bench_amd_mxfp4_gemm.yaml
+# AMD MX block-scaled dense GEMM benchmark: MAX vs aiter (gemm_afp4wfp4
+# Triton kernel; MXFP4 only, see the file docstring).
+# Run via: bazel run //max/kernels/benchmarks/misc/comparison:bench_amd_mx_gemm
+# Or via kbench: kbench bench_amd_mx_gemm.yaml
 modular_py_binary(
-    name = "bench_amd_mxfp4_gemm",
-    srcs = ["bench_amd_mxfp4_gemm.py"],
+    name = "bench_amd_mx_gemm",
+    srcs = ["bench_amd_mx_gemm.py"],
     env = {
         "AITER_JIT_DIR": "$$BUILD_WORKSPACE_DIRECTORY/.derived/aiter_jit_cache",
         "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/rocm/bin",
     },
-    main = "bench_amd_mxfp4_gemm.py",
+    main = "bench_amd_mx_gemm.py",
     tags = [
         "gpu",
         "manual",

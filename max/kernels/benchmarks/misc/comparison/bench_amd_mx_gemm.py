@@ -11,16 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# AMD MXFP4 dense GEMM benchmark comparing MAX against aiter.
+# AMD MXFP4/MXFP8 dense GEMM benchmark comparing MAX against aiter.
 #
 # Computes Y = A @ B^T where A is [M, K] and B is [N, K], both quantized to
-# MXFP4 (E2M1 packed 2-per-uint8 along K, with one E8M0 scale per 32-element
-# K block). Output is BF16.
-#   * MAX path  -> `dynamic_block_scaled_matmul_mxfp4`
-#                  (custom op `mo.matmul.dynamic.block.scaled.mxfp4` ->
-#                   the CDNA4 kernel `mxfp4_block_scaled_matmul_amd`).
-#   * aiter path -> `aiter.ops.triton.gemm.basic.gemm_afp4wfp4`
-#                   (the Triton `_gemm_afp4wfp4_kernel`).
+# the same MX block-scaled format (one E8M0 scale per 32-element K block):
+# MXFP4 packs 2 E2M1 elements per uint8 along K; MXFP8 stores one E4M3
+# element per byte. Output is BF16.
+#   * MAX path  -> `dynamic_block_scaled_matmul_mxfp4` (same Python entry
+#                  point for both formats; it picks the packing from the
+#                  input dtype) -> custom op
+#                  `mo.matmul.dynamic.block.scaled.mxfp4` -> the CDNA4
+#                  kernel `mxfp4_block_scaled_matmul_amd`.
+#   * aiter path -> `aiter.ops.triton.gemm.basic.gemm_afp4wfp4` (the Triton
+#                  `_gemm_afp4wfp4_kernel`), MXFP4 only. aiter has no native
+#                  MX-format FP8 kernel in this version, so MXFP8 runs
+#                  MAX-only.
 #
 # Timing mirrors bench_amd_mla.py's chained-call strategy: ncopies distinct
 # rotating weight buffers (total footprint > L2) are chained into ONE
@@ -28,7 +33,7 @@
 # cold-HBM GEMMs back-to-back, free of per-replay launch gaps. Reported latency
 # is whole-graph time / ncopies (per-op).
 #
-# Run via kbench: kbench bench_amd_mxfp4_gemm.yaml
+# Run via kbench: kbench bench_amd_mx_gemm.yaml
 
 from __future__ import annotations
 
@@ -166,6 +171,44 @@ def _gen_mxfp4_inputs(
     return a, b, a_s, b_s
 
 
+def _dequant_mxfp8(packed: torch.Tensor, scales: torch.Tensor) -> torch.Tensor:
+    """Dequantize a [R, K] uint8 (1 E4M3/byte) + [R, K//32] E8M0 uint8 scale
+    tensor to a [R, K] float32 reference."""
+    out = packed.view(torch.float8_e4m3fn).float()
+    sc = torch.exp2(scales.float() - 127.0).repeat_interleave(
+        _SCALE_BLOCK, dim=1
+    )
+    return out * sc
+
+
+def _gen_mxfp8_inputs(
+    m: int, n: int, k: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Random valid MXFP8 GEMM inputs on the GPU. Values are drawn from
+    [-1, 1] and cast through float8_e4m3fn (rather than filled with raw
+    random bytes, since E4M3 has NaN codes E2M1 doesn't). Scale bytes stay
+    in [124, 128) so the E8M0 scale ~= 1 and never hits the 0xFF NaN code."""
+    if k % _SCALE_BLOCK != 0:
+        raise ValueError(f"K={k} must be a multiple of {_SCALE_BLOCK}")
+    a = (
+        (torch.rand(m, k, device="cuda") * 2 - 1)
+        .to(torch.float8_e4m3fn)
+        .view(torch.uint8)
+    )
+    b = (
+        (torch.rand(n, k, device="cuda") * 2 - 1)
+        .to(torch.float8_e4m3fn)
+        .view(torch.uint8)
+    )
+    a_s = torch.randint(
+        124, 128, (m, k // _SCALE_BLOCK), dtype=torch.uint8, device="cuda"
+    )
+    b_s = torch.randint(
+        124, 128, (n, k // _SCALE_BLOCK), dtype=torch.uint8, device="cuda"
+    )
+    return a, b, a_s, b_s
+
+
 def _check_close(
     out: torch.Tensor,
     a: torch.Tensor,
@@ -173,9 +216,11 @@ def _check_close(
     a_s: torch.Tensor,
     b_s: torch.Tensor,
     label: str,
+    dtype: str = "mxfp4",
 ) -> None:
     """Compare a kernel output against the float32 dequantized reference."""
-    ref = _dequant_mxfp4(a, a_s) @ _dequant_mxfp4(b, b_s).T
+    dequant = _dequant_mxfp4 if dtype == "mxfp4" else _dequant_mxfp8
+    ref = dequant(a, a_s) @ dequant(b, b_s).T
     out_f = out.detach().to(torch.float32)
     denom = ref.abs().max().clamp_min(1e-6)
     max_rel = (out_f - ref).abs().max() / denom
@@ -197,21 +242,42 @@ def bench_matmul_max(
     num_iters: int,
     check: bool = False,
     ncopies: int | None = None,
+    dtype: str = "mxfp4",
 ) -> tuple[float, int] | None:
-    """MAX dynamic_block_scaled_matmul_mxfp4 (dense MXFP4 GEMM).
+    """MAX dynamic_block_scaled_matmul_mxfp4 (dense MX block-scaled GEMM;
+    the same entry point serves both MXFP4 and MXFP8, keyed off input dtype).
 
     Builds ONE device-graph chaining `ncopies` GEMM ops, op i reading a
     distinct rotating weight buffer (total > L2). A single replay sweeps all
     `ncopies` cold-HBM GEMMs; per-op latency = whole-graph time / ncopies.
     """
     ncopies = _NCOPIES if ncopies is None else ncopies
+    # MXFP4 packs 2 elements/byte along K; MXFP8 stores 1 element/byte.
+    k_bytes = k // 2 if dtype == "mxfp4" else k
     if ncopies <= 0:
-        ncopies = _auto_ncopies(n * (k // 2))
+        ncopies = _auto_ncopies(n * k_bytes)
 
-    a_t, b_t, a_s_t, b_s_t = _gen_mxfp4_inputs(m, n, k)
+    if dtype == "mxfp4":
+        a_t, b_t, a_s_t, b_s_t = _gen_mxfp4_inputs(m, n, k)
+        elem_dtype = DType.uint8
 
-    a_type = TensorType(DType.uint8, shape=[m, k // 2], device=DeviceRef.GPU())
-    b_type = TensorType(DType.uint8, shape=[n, k // 2], device=DeviceRef.GPU())
+        def _gen_weight_copy() -> torch.Tensor:
+            return torch.randint(
+                0, 256, (n, k_bytes), dtype=torch.uint8, device="cuda"
+            )
+    else:
+        a_t, b_t, a_s_t, b_s_t = _gen_mxfp8_inputs(m, n, k)
+        elem_dtype = DType.float8_e4m3fn
+
+        def _gen_weight_copy() -> torch.Tensor:
+            return (
+                (torch.rand(n, k_bytes, device="cuda") * 2 - 1)
+                .to(torch.float8_e4m3fn)
+                .view(torch.uint8)
+            )
+
+    a_type = TensorType(elem_dtype, shape=[m, k_bytes], device=DeviceRef.GPU())
+    b_type = TensorType(elem_dtype, shape=[n, k_bytes], device=DeviceRef.GPU())
     a_s_type = TensorType(
         DType.float8_e8m0fnu,
         shape=[m, k // _SCALE_BLOCK],
@@ -223,15 +289,19 @@ def bench_matmul_max(
         device=DeviceRef.GPU(),
     )
 
+    # Inputs are uint8-viewed so the dequant reference can share
+    # `_dequant_mxfp4`/`_dequant_mxfp8`'s uint8 signature; reinterpret back
+    # to `elem_dtype` for the MAX buffer.
+    def _as_buffer(t: torch.Tensor) -> Buffer:
+        return Buffer.from_dlpack(t).view(elem_dtype)
+
     # Rotating weight copies (op i reads copy i in the chained graph below).
     keepalive: list[Any] = []
-    b_bufs: list[Buffer] = [Buffer.from_dlpack(b_t)]
+    b_bufs: list[Buffer] = [_as_buffer(b_t)]
     for _ in range(ncopies - 1):
-        bt = torch.randint(
-            0, 256, (n, k // 2), dtype=torch.uint8, device="cuda"
-        )
+        bt = _gen_weight_copy()
         keepalive.append(bt)
-        b_bufs.append(Buffer.from_dlpack(bt))
+        b_bufs.append(_as_buffer(bt))
 
     session = InferenceSession(devices=[Accelerator()])
     with Graph(
@@ -260,7 +330,7 @@ def bench_matmul_max(
 
     model = session.load(graph)
 
-    a_buf = Buffer.from_dlpack(a_t)
+    a_buf = _as_buffer(a_t)
     a_s_buf = Buffer.from_dlpack(a_s_t).view(DType.float8_e8m0fnu)
     b_s_buf = Buffer.from_dlpack(b_s_t).view(DType.float8_e8m0fnu)
     graph_inputs = (a_buf, a_s_buf, b_s_buf, *b_bufs)
@@ -277,7 +347,7 @@ def bench_matmul_max(
             model.replay(0, *graph_inputs)
             torch.cuda.synchronize()
             out0 = torch.from_dlpack(outs[0]).clone()
-            _check_close(out0, a_t, b_t, a_s_t, b_s_t, "MAX")
+            _check_close(out0, a_t, b_t, a_s_t, b_s_t, "MAX", dtype=dtype)
         except Exception as e:
             print(f"  [MAX check skipped: {e}]")
 
@@ -295,7 +365,7 @@ def bench_matmul_max(
     torch.cuda.synchronize()
     per_op_s = start.elapsed_time(end) / 1e3 / nrun / ncopies
 
-    w_mb = (n * (k // 2)) / (1024.0 * 1024.0)
+    w_mb = (n * k_bytes) / (1024.0 * 1024.0)
     print(
         f"[MAX chained device-graph] chain={ncopies} "
         f"weight_per_copy~{w_mb:.1f}MB working_set~{w_mb * ncopies:.1f}MB (cold)"
@@ -317,6 +387,7 @@ def bench_matmul_aiter(
     num_iters: int,
     check: bool = False,
     ncopies: int | None = None,
+    dtype: str = "mxfp4",
 ) -> tuple[float, int] | None:
     """aiter gemm_afp4wfp4 (Triton `_gemm_afp4wfp4_kernel`).
 
@@ -324,6 +395,12 @@ def bench_matmul_aiter(
     chained into ONE CUDA graph, one output buffer per chained call to avoid a
     false write-after-write dependency. per-op = whole-graph time / ncopies.
     """
+    if dtype != "mxfp4":
+        print(
+            f"aiter has no native MX-format {dtype} kernel in this version, "
+            "skipping bench_matmul_aiter"
+        )
+        return None
     if _aiter_gemm is None:
         print("aiter not available, skipping bench_matmul_aiter")
         return None
@@ -406,9 +483,10 @@ def bench_matmul(
     k: int,
     num_iters: int,
     check: bool,
+    dtype: str = "mxfp4",
 ) -> tuple[float, int] | None:
     print("=" * 80)
-    print(f"AMD MXFP4 GEMM (M={m}, N={n}, K={k}, dtype=mxfp4, engine={engine})")
+    print(f"AMD {dtype.upper()} GEMM (M={m}, N={n}, K={k}, engine={engine})")
     print("=" * 80)
 
     fn = _ENGINE_MAP.get(engine)
@@ -418,7 +496,7 @@ def bench_matmul(
         )
 
     try:
-        result = fn(m, n, k, num_iters, check=check)
+        result = fn(m, n, k, num_iters, check=check, dtype=dtype)
     except Exception as e:
         print(f"{engine} benchmark failed: {e}")
         import traceback
@@ -442,9 +520,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--dtype",
-        choices=["mxfp4"],
+        choices=["mxfp4", "mxfp8"],
         default="mxfp4",
-        help="Quantization format (only mxfp4 is supported).",
+        help="Quantization format. mxfp8 runs MAX-only: aiter has no "
+        "native MX-format FP8 kernel in this version.",
     )
     parser.add_argument("--M", "--m", type=int, default=4096, help="GEMM M")
     parser.add_argument("--N", "--n", type=int, default=16384, help="GEMM N")
@@ -469,13 +548,19 @@ def main() -> None:
     _NCOPIES = args.ncopies
 
     print(
-        f"[bench_amd_mxfp4_gemm] engine={args.engine} dtype={args.dtype} "
+        f"[bench_amd_mx_gemm] engine={args.engine} dtype={args.dtype} "
         f"M={args.M} N={args.N} K={args.K}",
         file=sys.stderr,
     )
 
     result = bench_matmul(
-        args.engine, args.M, args.N, args.K, args.num_iters, args.check
+        args.engine,
+        args.M,
+        args.N,
+        args.K,
+        args.num_iters,
+        args.check,
+        dtype=args.dtype,
     )
 
     if result is None:
@@ -484,7 +569,7 @@ def main() -> None:
     time_s, flops = result
     metric = ThroughputMeasure(Bench.flops, flops)
     name = (
-        f"Matmul_MXFP4/M={args.M}/N={args.N}/K={args.K}/"
+        f"Matmul_{args.dtype.upper()}/M={args.M}/N={args.N}/K={args.K}/"
         f"dtype={args.dtype}/engine={args.engine}/"
     )
     b = Bench(name, iters=1, met=time_s, metric_list=[metric])
