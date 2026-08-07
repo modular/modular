@@ -22,6 +22,32 @@ def empty_def():
     pass
 
 
+# Thin function types whose only unbound parameters are singletons (origins,
+# including those implied by a variadic pack) are valid runtime arguments.
+
+# CHECK-LABEL: lit.fn @"pack_fn_as_arg
+def pack_fn_as_arg[*Args: AnyType](func: def(*args: *Args) thin):
+    pass
+
+
+struct PackFnType[*Args: AnyType]:
+    comptime type = def(*args: *Self.Args) thin
+
+
+# CHECK-LABEL: lit.fn @"pack_fn_alias_as_arg
+def pack_fn_alias_as_arg[*Args: AnyType](func: PackFnType[*Args].type):
+    pass
+
+
+# Explicit Origin parameters are singletons, so this is a valid runtime
+# argument (unlike bare `def(ref arg: Int)`, which invents a Bool mutability
+# parameter).
+
+# CHECK-LABEL: lit.fn @"origin_fn_as_arg
+def origin_fn_as_arg(func: def[a: MutOrigin](ref [a] arg: Int) thin -> None):
+    pass
+
+
 # CHECK-LABEL: lit.fn @"slash
 # CHECK-SAME: (%a: !Int, |, %b: !Int)
 def slash(a: Int, /, b: Int):

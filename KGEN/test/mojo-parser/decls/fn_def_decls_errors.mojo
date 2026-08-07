@@ -101,6 +101,23 @@ def two_variadic_packs[*Ts: TrivialRegisterPassable](*a: *Ts, *b: *Ts):
 def foo(x: def[a: Int] () thin -> None):
     pass
 
+# Member-alias sugar must not bypass the non-singleton parameter check.
+struct ParametricFnType:
+    comptime type = def[a: Int] () thin -> None
+
+
+# expected-error @+2 {{parametric functions must not be used as arguments; pass as a parameter instead}}
+# expected-note @+1 {{alternatively, bind its type parameters to create a concrete function}}
+def parametric_fn_alias_as_arg(func: ParametricFnType.type):
+    pass
+
+# Bare `ref` invents a non-singleton Bool mutability parameter; only unbound
+# origin / other singleton parameters are allowed on runtime function arguments.
+# expected-error @+2 {{parametric functions must not be used as arguments; pass as a parameter instead}}
+# expected-note @+1 {{alternatively, bind its type parameters to create a concrete function}}
+def unbound_ref_fn_as_arg(func: def(ref arg: Int) thin -> None):
+    pass
+
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
 def borrowed_kwargs(imm **kwargs: Int):
     pass

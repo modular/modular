@@ -1972,9 +1972,13 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   assert(type && "must have an argument type");
   tcSignature.argTypes.push_back(type);
 
-  // Check if the argument is a parametric function.
-  if (auto fType = dyn_cast<FnTypeGeneratorType>(type)) {
-    if (!fType.getInputParamTypes().empty()) {
+  // Reject function types with unbound parameters that cannot be bound at a
+  // call site. Singleton parameters (e.g. origins, including those implied by
+  // a variadic pack) are fine: they are removed before elaboration.
+  if (auto fType = sugarDynCast<FnTypeGeneratorType>(type)) {
+    for (Type paramType : fType.getInputParamTypes()) {
+      if (ASTType(paramType).isSingleton(shared))
+        continue;
       arg.isErroneous = true;
       auto diag = shared.emitError(arg.typeExpr->getLoc(),
                                    "parametric functions must not be used as "
@@ -1982,6 +1986,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
       diag.attachNote(arg.typeExpr->getLoc())
           << "alternatively, bind its type parameters to create a concrete "
              "function";
+      break;
     }
   }
 

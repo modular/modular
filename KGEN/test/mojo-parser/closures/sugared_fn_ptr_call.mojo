@@ -19,7 +19,10 @@
 # parameters are bound. Each case below checks the sugar kind it covers on the
 # rebind operand.
 
-comptime FnT = def(ref arg: Int) thin abi("C") -> Int
+# Use an explicit Origin parameter so the type is a valid runtime fn pointer
+# argument (bare `def(ref arg: Int)` invents a non-singleton Bool mutability
+# parameter and is rejected as an argument type).
+comptime FnT = def[a: MutOrigin](ref [a] arg: Int) thin abi("C") -> Int
 
 
 # CHECK-LABEL: lit.fn @"__call__{{.*}}PackWrapper
@@ -35,17 +38,17 @@ struct PackWrapper[*Args: AnyType, Ret: AnyType]:
 
 
 # The sugar is what needs rebinding, not the argument pack: a fixed-arity
-# callee with implicit origins to bind takes the same path.
+# callee with a singleton Origin parameter takes the same path.
 
 # CHECK-LABEL: lit.fn @"__call__{{.*}}RefWrapper
 # CHECK: %[[FP2:[0-9]+]] = kgen.rebind {{.*}}sugar_member_alias
 # CHECK-NEXT: %[[BP2:[0-9]+]] = lit.bind_params %[[FP2]]
 # CHECK-NEXT: lit.call_indirect tail %[[BP2]]
 struct RefWrapper[Arg: AnyType, Ret: AnyType]:
-    comptime T = def(ref arg: Self.Arg) thin abi("C") -> Self.Ret
+    comptime T = def[a: MutOrigin](ref [a] arg: Self.Arg) thin abi("C") -> Self.Ret
     var ptr: Self.T
 
-    def __call__(self, ref arg: Self.Arg) -> Self.Ret:
+    def __call__(self, mut arg: Self.Arg) -> Self.Ret:
         return self.ptr(arg)
 
 
@@ -57,7 +60,7 @@ struct RefWrapper[Arg: AnyType, Ret: AnyType]:
 # CHECK: %[[FP3:[0-9]+]] = kgen.rebind {{.*}} : !alias_FnT
 # CHECK-NEXT: %[[BP3:[0-9]+]] = lit.bind_params %[[FP3]]
 # CHECK-NEXT: lit.call_indirect tail %[[BP3]]
-def call_through_alias(p: FnT, ref x: Int) -> Int:
+def call_through_alias(p: FnT, mut x: Int) -> Int:
     return p(x)
 
 
@@ -71,5 +74,5 @@ def call_through_alias(p: FnT, ref x: Int) -> Int:
 struct PlainAliasWrapper:
     var ptr: FnT
 
-    def __call__(self, ref x: Int) -> Int:
+    def __call__(self, mut x: Int) -> Int:
         return self.ptr(x)
