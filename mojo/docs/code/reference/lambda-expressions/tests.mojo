@@ -119,6 +119,11 @@ def test_concrete() raises:
     assert_equal(hello("Mojo"), "Hello, Mojo")
 
 
+def test_no_arguments() raises:
+    var no_args = lambda -> Int: 42
+    assert_equal(no_args(), 42)
+
+
 def test_base_capture() raises:
     var z = 10
     var f = lambda (x: Int) -> Int: x + z  # `z` is captured
@@ -499,6 +504,7 @@ def main() raises:
     test_explicit_form()
     test_conventions()
     test_parameterized()
+    test_no_arguments()
     test_concrete()
     test_base_capture()
     test_mut_capture()
