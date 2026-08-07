@@ -1771,7 +1771,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
     // It is ok if the self type has different parameters than the
     // declaration, this is a form of conditional conformance.
     // TODO(requires / cond conformance): replace this with a better mechanism.
-    if (!ASTType(requiredType).isEqualAllowingUnknownAttr(resultTy, shared))
+    if (!ASTType(requiredType).isEqualAllowingUnbound(resultTy, shared))
       return failure();
   }
 
