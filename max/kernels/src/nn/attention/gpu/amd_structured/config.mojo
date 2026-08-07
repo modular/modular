@@ -27,6 +27,38 @@ from std.utils import IndexList
 from nn.attention.mha_utils import MHAConfig
 
 
+@always_inline
+def decode_mma_shape[
+    dtype: DType, depth: Int, num_heads: Int, mla_mode: Bool = False
+]() -> IndexList[3]:
+    """Return the MFMA shape the gfx950 decode kernels use for this shape.
+
+    Split out of `AMDStructuredConfig.get_mma_shape` so host-side dispatch can
+    ask for the shape without building a full config, and so there is one
+    definition of the rule rather than two that can drift.
+
+    Parameters:
+        dtype: Element type shared by Q, K, and V.
+        depth: Attention head depth.
+        num_heads: Number of query heads.
+        mla_mode: Whether multi-latent attention tiling is active.
+
+    Returns:
+        The `(M, N, K)` MFMA shape.
+    """
+    comptime if dtype.is_float8():
+        # MLA decode with `num_heads <= 16` packs at most one MFMA row group,
+        # so `16x16x128` with `BM=WM=16` puts one warp on one full tile with
+        # no wasted M lanes (Kimi-K2.5 per-GPU under TP=4 lands at exactly 16
+        # query heads). Otherwise prefer `16x16x128` when `depth % 128 == 0`
+        # and fall back to `32x32x64` for full M-dim utilization.
+        comptime if (mla_mode and num_heads <= 16) or depth % 128 == 0:
+            return IndexList[3](16, 16, 128)
+        return IndexList[3](32, 32, 64)
+    # BF16 decode: 16x16x32 regardless of depth.
+    return IndexList[3](16, 16, 32)
+
+
 @fieldwise_init
 struct AMDStructuredConfig[
     config: MHAConfig,
@@ -96,24 +128,16 @@ struct AMDStructuredConfig[
     @staticmethod
     @always_inline
     def get_mma_shape() -> IndexList[3]:
-        comptime if Self.config.dtype.is_float8():
-            comptime if Self.token_gen:
-                # MLA decode with `num_heads <= 16` packs at most one MFMA
-                # row group, so `16x16x128` with `BM=WM=16` puts one warp
-                # on one full tile with no wasted M lanes (Kimi-K2.5
-                # per-GPU under TP=4 lands at exactly 16 query heads).
-                # Otherwise prefer `16x16x128` when `depth % 128 == 0`
-                # and fall back to `32x32x64` for full M-dim utilization.
-                comptime if (
-                    Self.mla_mode and Self.config.num_heads <= 16
-                ) or Self.config.depth % 128 == 0:
-                    return IndexList[3](16, 16, 128)
-                return IndexList[3](32, 32, 64)
-            # FP8 prefill: 32x32x64.
-            return IndexList[3](32, 32, 64)
-        # BF16 decode: 16x16x32 regardless of depth.  BF16 prefill: 32x32x16.
         comptime if Self.token_gen:
-            return IndexList[3](16, 16, 32)
+            return decode_mma_shape[
+                Self.config.dtype,
+                Self.config.depth,
+                Self.config.num_heads,
+                Self.mla_mode,
+            ]()
+        # FP8 prefill: 32x32x64.  BF16 prefill: 32x32x16.
+        comptime if Self.config.dtype.is_float8():
+            return IndexList[3](32, 32, 64)
         return IndexList[3](32, 32, 16)
 
     @staticmethod
