@@ -629,7 +629,7 @@ def zip[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
     @parameter
-    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
         Pointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
@@ -982,7 +982,7 @@ def chain[
     res._idx = 0
 
     @parameter
-    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
         Pointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
