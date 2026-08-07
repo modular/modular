@@ -82,7 +82,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     "google/gemma-4-31B-it": MULTI,
     "nvidia/Gemma-4-26B-A4B-NVFP4": MULTI | {"MI355"},
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": MULTI | {"max", "max-ci", "MI355"},
-    "nvidia/Gemma-4-31B-IT-NVFP4": MULTI | {"MI355"},
+    "nvidia/Gemma-4-31B-IT-NVFP4": XL | {"MI355", "2xMI355"},
     "meta-llama/Llama-3.1-8B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
