@@ -1,7 +1,14 @@
 # ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
-# This file is Modular Inc proprietary.
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
 #
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
 # ===----------------------------------------------------------------------=== #
@@ -284,8 +291,8 @@ def read_data_from_file(file_name: Path) -> Tuple[str, str]:
         lines = test.readlines()
 
     # We added a proprietary header to our files, so we need to skip it.
-    if lines[2].startswith("# This file is Modular Inc proprietary."):
-        lines = lines[14:]
+    if lines[1].startswith("# Copyright (c)"):
+        lines = lines[21:]
 
     _input: List[str] = []
     _output: List[str] = []
