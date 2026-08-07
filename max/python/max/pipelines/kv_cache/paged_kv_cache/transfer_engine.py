@@ -35,6 +35,7 @@ import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
 
+from ._ucx_env import configure_ucx_env
 from .cache_manager import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
@@ -462,6 +463,12 @@ class TensorAgent:
         backend_params = plugin_params[0]
         if not device.is_host:
             backend_params["gpu_device_id"] = str(device.id)
+
+        # Fill in UCX transport defaults (TLS + the GPU-local IB device) before
+        # the backend — and thus the UCX worker that reads them — is created.
+        # A no-op for non-CUDA devices (ROCm UCX configures itself).
+        if backend_type == "ucx":
+            configure_ucx_env(device)
 
         backend = agent.create_backend(
             type=upstream_backend_type,
@@ -1037,8 +1044,11 @@ class TransferEngine:
                 "UCX_NET_DEVICES" in os.environ and "UCX_TLS" in os.environ
             ):
                 raise ValueError(
-                    f"Attempted to connect to a TransferEngine on a different node but UCX transports are not configured ({hostname} <-> {remote.hostname}). "
-                    "Please re-run and specify both the UCX_TLS and UCX_NET_DEVICES env vars."
+                    "Inter-node UCX transfer is not configured "
+                    f"({hostname} <-> {remote.hostname}): MAX could not "
+                    "auto-derive the GPU-local InfiniBand device. Set "
+                    "UCX_NET_DEVICES (e.g. mlx5_0:1) and UCX_TLS (e.g. "
+                    "cuda_ipc,cuda_copy,rc,sm,self) explicitly."
                 )
             if backend_type == "libfabric" and not os.environ.get(
                 "FI_EFA_USE_DEVICE_RDMA"

@@ -465,6 +465,39 @@ cc_binary(
     deps = [":ucx_plugin_lib_cuda"],
 )
 
+# CUDA + verbs flavor: a strict superset of the cuda flavor that adds the
+# uct_ib RDMA transports for internode transfers over an InfiniBand fabric
+# (UCX picks transports per connection at runtime — same-node peers still use
+# cuda_ipc/shm). The plain cuda flavor above lacks uct_ib and falls back to
+# TCP/IPoIB on IB hosts; the CUDA inter-node path historically went through
+# libfabric/EFA on AWS, so verbs was never needed there. On a pure-IB fabric
+# (no EFA) this flavor is what makes NIXL transfer RDMA. Like the rocm-verbs
+# flavor, the verbs libs make libibverbs.so.1 and libmlx5.so.1 hard load-time
+# dependencies, so max._core selects this flavor only when those resolve
+# (rdma-core present) and otherwise falls back to the plain cuda flavor.
+cc_binary(
+    name = "cuda-verbs/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <root>/lib/nixl/cuda-verbs/ → <root>/lib.
+        "-Wl,-rpath,$$ORIGIN/../../../lib",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":ucx_plugin_lib_cuda_verbs",
+        # Link against a real libibverbs.so.1 so the plugin's ibv_* undefined
+        # symbols are recorded WITH version info (@IBVERBS_1.1 etc.). Left
+        # unversioned (via -z undefs alone), the dynamic linker binds them to
+        # the IBVERBS_1.0 compat definitions, whose struct ibv_device ABI
+        # differs — device names read as garbage and UCX silently enumerates
+        # zero RDMA devices. The DT_NEEDED this adds is the verbs flavor's
+        # intended hard dependency on rdma-core.
+        "@efa_libfabric_prebuilt//:libibverbs_import",
+    ],
+)
+
 # CPU flavor of the UCX plugin, linked against the CUDA-free static UCX
 # (tcp/shm/cma transports only). Unlike the CUDA flavor it has no load-time
 # GPU driver dependencies, so it is dlopen-able on hosts with no GPU stack.
@@ -634,6 +667,7 @@ cc_library(
     name = "nixl_runtime",
     data = select({
         "@@//:linux_x86_64": [
+            ":cuda-verbs/libplugin_UCX.so",
             ":cuda/libplugin_LIBFABRIC.so",
             ":cuda/libplugin_UCX.so",
             ":rocm-verbs/libplugin_UCX.so",
