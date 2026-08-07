@@ -1417,11 +1417,21 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     return CaptureConvention::kConventionUnspecified;
   };
 
+  auto isDuplicateCapture = [&](StringRef name) {
+    return llvm::any_of(parsedCaptures, [&](const auto &existing) {
+      return std::get<0>(existing) == name;
+    });
+  };
+
   auto parseArgument = [&]() -> ParseResult {
     SMLoc captureLocation = p.getToken().getLoc();
     CaptureConvention parsedConvention = parseConvention();
     StringAttr nameValue;
     if (succeeded(p.parseOptionalIdentifier(nameValue))) {
+      if (isDuplicateCapture(nameValue.getValue())) {
+        return p.emitError(captureLocation, "duplicate capture of '")
+               << nameValue.getValue() << "'; remove the duplicate entry";
+      }
       if (p.getToken().is(Token::comma) || p.getToken().is(Token::r_brace)) {
         CaptureConvention convention = [parsedConvention]() {
           if (parsedConvention == CaptureConvention::kConventionUnspecified)
@@ -1450,7 +1460,7 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
         return success();
       }
       return p.emitError(captureLocation,
-                         "unexpected token, expected ',' to separate captures");
+                         "capture lists expect references to variables");
     }
 
     // We parsed a convention but there is no identifier after it, then it must

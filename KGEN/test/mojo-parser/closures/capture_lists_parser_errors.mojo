@@ -79,3 +79,68 @@ def toy(rogue: String):
     # CHECK: error: Could not infer capture convention of the captured value rogue
     def myclosure() {} -> String:
         return rogue
+
+
+# // -----
+
+# COM: MAXR-2403: malformed capture lists must diagnose, not crash.
+
+def duplicate_capture():
+    var x = 0
+    # CHECK: error: duplicate capture of 'x'; remove the duplicate entry
+    def f() {x, x}:
+        pass
+
+
+def duplicate_capture_conflicting_conventions():
+    var x = 0
+    # CHECK: error: duplicate capture of 'x'; remove the duplicate entry
+    def f() {imm x, mut x}:
+        pass
+
+
+def grandparent_without_intermediate_capture():
+    var x = 1
+    def f():
+        # CHECK: error: Could not infer capture convention of the captured value x
+        def g() {imm x}:
+            pass
+
+
+def capture_comptime_value():
+    comptime N = 1
+    # CHECK: error: 'N' does not name a capturable value
+    _ = lambda () {imm N} -> Int: N
+
+
+trait Tr:
+    pass
+
+
+def capture_trait():
+    # CHECK: error: 'Tr' does not name a capturable value
+    def f() {imm Tr}:
+        pass
+
+
+def capture_comptime_trait_alias():
+    comptime Alias = Tr
+    # CHECK: error: 'Alias' does not name a capturable value
+    def f() {imm Alias}:
+        pass
+
+
+def capture_nested_def():
+    def g():
+        pass
+
+    # CHECK: error: 'g' does not name a capturable value
+    def f() {imm g}:
+        g()
+
+
+def capture_expression():
+    var g = 1
+    # CHECK: error: capture lists expect references to variables
+    def f() {imm g + 2}:
+        pass
