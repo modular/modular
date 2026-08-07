@@ -17,6 +17,7 @@ from .moe import (
     MoE,
     MoEGate,
     make_concatenated_gated_activation_fn,
+    make_interleaved_gated_activation_fn,
 )
 from .moe_fp8 import MoEQuantized
 from .quant_strategy import (
@@ -44,5 +45,6 @@ __all__ = [
     "StackedMoE",
     "forward_moe_sharded_layers",
     "make_concatenated_gated_activation_fn",
+    "make_interleaved_gated_activation_fn",
     "make_stacked_gated_activation_fn",
 ]

@@ -453,24 +453,29 @@ class MoEQuantized(MoE):
             estimated_total_m=estimated_total_m,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Runs quantized MoE routing and expert computation."""
-        if self._ep_batch_manager:
-            raise ValueError(
-                "Use forward_moe_sharded_layers for expert-parallel inference "
-                "instead of calling MoEQuantized directly."
-            )
+    def _expert_matmuls(
+        self,
+        x: TensorValue,
+        router_idx: TensorValue,
+        router_weight: TensorValue | None = None,
+    ) -> TensorValue:
+        """Runs the quantized expert matmuls for one flat expert assignment.
 
-        strategy = self._strategy()
-        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
+        Overrides :meth:`MoE._expert_matmuls`; same contract. Without a
+        ``quant_config`` this defers to the unquantized base implementation,
+        so one architecture class can serve a checkpoint that quantizes only
+        some of its MoE layers.
+        """
+        if self.quant_config is None:
+            return super()._expert_matmuls(x, router_idx, router_weight)
 
         assert not self.apply_router_weight_first, (
             "apply_router_weight_first must be False for quantized MoE"
         )
 
-        router_idx, router_weight = self.gate(x)
+        strategy = self._strategy()
+        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
-        router_idx = ops.reshape(router_idx, [-1])
         seq_len = x.shape[0]
 
         create_indices_result = moe_create_indices(
@@ -486,9 +491,6 @@ class MoEQuantized(MoE):
             if self._uses_nvidia_block_scaled_ep_layout
             else None
         )
-
-        if self.pre_expert_norm is not None:
-            x = self.pre_expert_norm(x)
 
         permuted = ops.gather(
             x,
@@ -578,14 +580,6 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        down = ops.gather(down, restore_order, axis=0).reshape(
+        return ops.gather(down, restore_order, axis=0).reshape(
             [seq_len, self.num_experts_per_token, down.shape[-1]]
         )
-
-        out = ops.unsqueeze(router_weight, axis=1) @ down
-        out = ops.squeeze(out, axis=1).cast(x.dtype)
-
-        if self.has_shared_experts:
-            out += self.shared_experts(x)
-
-        return out
