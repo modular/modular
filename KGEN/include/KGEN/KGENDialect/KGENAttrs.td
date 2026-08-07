@@ -2153,6 +2153,64 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
 }
 
 //===----------------------------------------------------------------------===//
+// ParamIdenticalAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamIdenticalAttr
+    : KGEN_ExprAttr<"ParamIdentical", "param.identical", [
+    DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                ["evaluateWithContext"]>,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface,
+                                ["validateForElaborator"]>
+  ]> {
+  let summary = "Parameter identity proposition";
+  let description = [{
+    The `#kgen.param.identical` attribute is the proposition that its operands
+    all denote the same parameter value (as considered post-elaboration).
+    Its result is always `!kgen.scalar<bool>`.
+
+    Important: This is categorically different from `POC::EQ`, which is a
+    *lane-wise numeric* comparison whose result inherits the operand lane count.
+
+    Example:
+
+    ```mlir
+    #kgen.param.identical<#kgen.param.decl.ref<"T"> : !kgen.type,
+                          #kgen.param.decl.ref<"U"> : !kgen.type>
+    ```
+  }];
+
+  let parameters = (ins ArrayRefParameter<"TypedAttr">:$operands);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Build the proposition. This canonicalizes and folds, so it may not
+    // return a ParamIdenticalAttr.
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$operands), "",
+                                   "TypedAttr">,
+
+    // Verbose form with MLIRContext, needed for the ODS constructors used by
+    // the generated parser.
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands), "", "TypedAttr">,
+
+    // Build a binary proposition for convenience.
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$lhs, "TypedAttr":$rhs), "",
+                                   "TypedAttr">
+  ];
+
+  let assemblyFormat = "`<` $operands `>`";
+  let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    /// The result is always `!kgen.scalar<bool>`.
+    Type getType() const;
+
+    size_t getNumOperands() const { return getOperands().size(); }
+    TypedAttr getOperand(size_t i) const { return getOperands()[i]; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // MLIROpAttr
 //===----------------------------------------------------------------------===//
 

@@ -2364,3 +2364,31 @@ kgen.generator export @score() -> index {
   %fp = kgen.param.constant: () -> index = <@scorer_table>
   kgen.return %0 : index
 }
+
+// -----
+
+// Parameter substitution must re-fold `param.identical`: it is symbolic inside
+// the generator, but has to decide once the operands are bound at the call site.
+// This works without any per-evaluator handling because the generic
+// sub-element rebuild re-runs `ParamIdenticalAttr::get`, which folds.
+
+// CHECK-LABEL: kgen.func @"identical_operands,T=i32,U=i32"
+// CHECK: kgen.param.constant: scalar<bool> = <true>
+// CHECK-LABEL: kgen.func @"identical_operands,T=i32,U=i64"
+// CHECK: kgen.param.constant: scalar<bool> = <false>
+kgen.generator @identical_operands<T: type, U: type>() {
+  kgen.param.constant: scalar<bool> = <identical(:type T, U)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @identical_same
+kgen.generator @identical_same() {
+  kgen.call @identical_operands<:type i32, :type i32>() : () -> ()
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @identical_different
+kgen.generator @identical_different() {
+  kgen.call @identical_operands<:type i32, :type i64>() : () -> ()
+  kgen.return
+}

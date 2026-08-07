@@ -537,3 +537,22 @@ kgen.generator @check() {
   kgen.call @type_of_unknown<:type i32, :i32 1>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// Identity against an unknown value stays symbolic, so it cannot be
+// concretized during elaboration.
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @identical_to_unknown<T: type, value: !kgen.param<T>>() {
+  // expected-note @below {{could not prove whether 1 and *? are the same value}}
+  kgen.param.constant: scalar<bool> = <identical(:!kgen.param<T> value, *?)>
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @check_identical() {
+  // expected-note @below {{call expansion failed with parameter value(s): (..., "value": 1)}}
+  kgen.call @identical_to_unknown<:type i32, :i32 1>() : () -> ()
+  kgen.return
+}

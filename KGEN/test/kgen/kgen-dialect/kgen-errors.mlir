@@ -519,3 +519,34 @@ kgen.generator @bind_params_discharged_mask_size() {
     <#kgen.bind_params<:!lit.generator<<index, {<true, loc("bind_params":3:1)>, <true, loc("bind_params":3:2)>}>index> ?, 1 | "1">>
   kgen.return
 }
+
+// -----
+
+// COM: `param.identical` is binary for now; both the generic and the compact
+// COM: spelling report the arity through the same verifier.
+// expected-error @+2 {{'param.identical' must have exactly two operands}}
+"some.op"() {
+  b = #kgen.param.identical<#kgen.type<i32> : !kgen.type>
+} : () -> ()
+
+// -----
+
+// expected-error @+2 {{'param.identical' must have exactly two operands}}
+"some.op"() {
+  b = #kgen.param.identical<#kgen.type<i32> : !kgen.type,
+                            #kgen.type<i64> : !kgen.type,
+                            #kgen.type<f32> : !kgen.type>
+} : () -> ()
+
+// -----
+
+// expected-error @+1 {{'kgen.param.constant' 'param.identical' must have exactly two operands}}
+%0 = kgen.param.constant: scalar<bool> = <identical(:dtype f32)>
+
+// -----
+
+// expected-error @+2 {{operand type mismatch}}
+"some.op"() {
+  b = #kgen.param.identical<#kgen.type<i32> : !kgen.type,
+                            #kgen<simd 1> : !kgen.scalar<index>>
+} : () -> ()

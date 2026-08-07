@@ -193,7 +193,14 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   // CHECK-SAME: constraint4 = #kgen.constraint<true, #[[LOC_C1]], "N must be positive">
   constraint4 = #kgen.constraint<true, loc("test.mojo":10:5), "N must be positive">,
   // CHECK-SAME: constraint5 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]], "must be at least 4">
-  constraint5 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10), "must be at least 4">
+  constraint5 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10), "must be at least 4">,
+  // CHECK-SAME: constraint6 = #kgen.constraint<identical(:type T, U), #[[LOC_C2]]>
+  constraint6 = #kgen.constraint<identical(:type T, U), loc("test.mojo":15:10)>,
+  // Operands are canonically ordered, so this prints identically to the above.
+  // CHECK-SAME: constraint7 = #kgen.constraint<identical(:type T, U), #[[LOC_C2]]>
+  constraint7 = #kgen.constraint<identical(:type U, T), loc("test.mojo":15:10)>,
+  // CHECK-SAME: constraint8 = #kgen.constraint<true, #[[LOC_C2]], "T must match">
+  constraint8 = #kgen.constraint<identical(:type T, T), loc("test.mojo":15:10), "T must match">
 } : () -> ()
 
 // CHECK: llvm_bitcode_lib_unused = #kgen.llvm.bitcode.lib<used = false, library = "/path/to/lib.bc">
