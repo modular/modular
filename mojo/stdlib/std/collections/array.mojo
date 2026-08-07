@@ -44,15 +44,13 @@ from std.hashlib.hasher import Hasher
 from std.memory import (
     UnsafeMaybeUninit,
     forget_deinit,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
     unsafe_destroy_n,
     unsafe_uninit_move_n,
 )
-from std.memory.unsafe_maybe_uninit import (
-    _is_trivially_copyable,
-    _is_trivially_movable,
+from std.traits import (
+    TriviallyCopyable,
+    TriviallyDeinitable,
+    TriviallyMovable,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -263,9 +261,9 @@ struct Array[T: AnyType, length: Int](
     comptime size = Self.length
     """The number of elements in the array. Deprecated alias for `length`."""
 
-    comptime __del__is_trivial: Bool = is_trivially_deletable[Self.T]()
-    comptime __copy_ctor_is_trivial: Bool = _is_trivially_copyable[Self.T]()
-    comptime __move_ctor_is_trivial: Bool = _is_trivially_movable[Self.T]()
+    comptime __del__is_trivial: Bool = TriviallyDeinitable[Self.T]
+    comptime __copy_ctor_is_trivial: Bool = TriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial: Bool = TriviallyMovable[Self.T]
 
     # Fields
     comptime type = __mlir_type[
@@ -533,7 +531,7 @@ struct Array[T: AnyType, length: Int](
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
-        comptime if is_trivially_copyable[Self.T]():
+        comptime if TriviallyCopyable[Self.T]:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -554,7 +552,7 @@ struct Array[T: AnyType, length: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if is_trivially_movable[Self.T]():
+        comptime if TriviallyMovable[Self.T]:
             self._array = move._array
         else:
             self = Self(uninitialized=True)

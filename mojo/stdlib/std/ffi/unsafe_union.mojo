@@ -27,10 +27,10 @@ type-checked sum types.
 
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import (
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
+from std.traits import (
+    TriviallyCopyable,
+    TriviallyDeinitable,
+    TriviallyMovable,
 )
 from std.sys import align_of, size_of
 
@@ -53,39 +53,6 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     return True
 
 
-def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial destructors."""
-
-    comptime for i in range(Ts.length):
-        if not is_trivially_deletable[Ts[i]]():
-            return False
-    return True
-
-
-def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial copy constructors."""
-
-    comptime for i in range(Ts.length):
-        comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[Ts[i]]():
-                return False
-        else:
-            return False
-    return True
-
-
-def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial move constructors."""
-
-    comptime for i in range(Ts.length):
-        comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[Ts[i]]():
-                return False
-        else:
-            return False
-    return True
-
-
 @always_inline("nodebug")
 def _check_union_types[*Ts: AnyType]():
     """Compile-time check that union types are valid.
@@ -99,14 +66,14 @@ def _check_union_types[*Ts: AnyType]():
     comptime assert _all_types_unique[
         *Ts
     ](), "UnsafeUnion requires all types to be unique"
-    comptime assert _all_trivial_del[
-        *Ts
+    comptime assert Ts.all[
+        TriviallyDeinitable
     ](), "UnsafeUnion requires all types to have trivial destructors"
-    comptime assert _all_trivial_copyinit[
-        *Ts
+    comptime assert Ts.all[
+        TriviallyCopyable
     ](), "UnsafeUnion requires all types to have trivial copy constructors"
-    comptime assert _all_trivial_moveinit[
-        *Ts
+    comptime assert Ts.all[
+        TriviallyMovable
     ](), "UnsafeUnion requires all types to have trivial move constructors"
 
 

@@ -31,9 +31,9 @@ from std.memory import (
     unsafe_memcpy,
     unsafe_memset,
     pack_bits,
-    is_trivially_deletable,
 )
 from std.memory.alloc import Layout
+from std.traits import TriviallyDeinitable
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
@@ -504,9 +504,9 @@ struct SwissTable[
             Both `K` and `V` must be `Deinitable`, since entries are
             destroyed in place.
         """
-        comptime if not is_trivially_deletable[
+        comptime if not TriviallyDeinitable[
             SwissTableEntry[Self.K, Self.V, Self.H]
-        ]():
+        ]:
             for i in range(self._capacity):
                 if is_occupied(self._ctrl[unsafe_offset=i]):
                     (self._slots.unsafe_offset(i)).unsafe_deinit_pointee()

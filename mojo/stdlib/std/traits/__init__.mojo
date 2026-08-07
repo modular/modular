@@ -20,6 +20,6 @@ prelude.
 """
 
 from .anytype import AnyType
-from .copyable import Copyable, ImplicitlyCopyable
-from .deinitable import Deinitable
-from .movable import Movable
+from .copyable import Copyable, ImplicitlyCopyable, TriviallyCopyable
+from .deinitable import Deinitable, TriviallyDeinitable
+from .movable import Movable, TriviallyMovable

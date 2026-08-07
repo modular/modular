@@ -60,6 +60,13 @@ This version is still a work in progress.
   another floating-point type is unsupported on every target, so values cannot
   be printed either.
 
+- Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
+  `is_trivially_deletable()` in `std.memory` in favor of
+  `TriviallyMovable[T]`, `TriviallyCopyable[T]`, and `TriviallyDeinitable[T]`
+  in `std.traits`. The replacements are `comptime` predicates rather than
+  functions, so drop the call parens at use sites, for example
+  `TriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
+
 ## GPU programming
 
 ## Tooling changes
