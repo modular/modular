@@ -2161,17 +2161,21 @@ static void meetOriginMutability(DenseMap<StringAttr, bool> &originMutability,
 // separately.
 static bool checkOriginMutableCast(DenseMap<StringAttr, bool> &originMutability,
                                    Attribute attr) {
-  auto handleOriginValue = [&](TypedAttr originValue, bool isKnownImmutable) {
-    if (auto ref = dyn_cast<ParamDeclRefAttr>(
-            OriginType::stripMutCastAndRebind(originValue)))
-      meetOriginMutability(originMutability, ref.getName(), isKnownImmutable);
-  };
+  auto typed = dyn_cast<TypedAttr>(attr);
+  if (!typed || !isa<OriginType>(typed.getType()))
+    return true;
 
-  if (auto typed = dyn_cast<TypedAttr>(attr);
-      typed && isa<OriginType>(typed.getType())) {
-    handleOriginValue(typed, OriginType::isMutableKnown(typed, false));
+  if (auto ref = dyn_cast<ParamDeclRefAttr>(
+          OriginType::stripMutCastAndRebind(typed))) {
+    meetOriginMutability(originMutability, ref.getName(),
+                         OriginType::isMutableKnown(typed, false));
     return false;
   }
+
+  // Otherwise this is a derived origin such as a field or interior projection,
+  // which holds the origins it is derived from in its sub-elements. Keep
+  // walking so those are counted at their own mutability; stopping here would
+  // leave a mutably-used origin unrecorded and let it be wrongly promoted.
   return true;
 }
 
