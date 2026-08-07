@@ -136,25 +136,26 @@ class DeepseekV3_2DecoderLayer(Module):
             and config.indexer_types[layer_idx] == "shared"
         )
 
-        sparse_attn_kwargs: dict[str, Any] = dict(
-            rope=rope,
-            num_attention_heads=config.num_attention_heads,
-            num_key_value_heads=config.num_key_value_heads,
-            hidden_size=config.hidden_size,
-            kv_params=mla_kv_params,
-            q_lora_rank=config.q_lora_rank,
-            kv_lora_rank=config.kv_lora_rank,
-            qk_nope_head_dim=config.qk_nope_head_dim,
-            qk_rope_head_dim=config.qk_rope_head_dim,
-            v_head_dim=config.v_head_dim,
-            devices=config.devices,
-            graph_mode=config.graph_mode,
-            buffer_size=config.max_batch_context_length,
-            index_n_heads=config.index_n_heads,
-            index_head_dim=config.index_head_dim,
-            index_topk=config.index_topk,
-            skip_topk=skip_topk,
-        )
+        sparse_attn_kwargs: dict[str, Any] = {
+            "rope": rope,
+            "num_attention_heads": config.num_attention_heads,
+            "num_key_value_heads": config.num_key_value_heads,
+            "hidden_size": config.hidden_size,
+            "kv_params": mla_kv_params,
+            "q_lora_rank": config.q_lora_rank,
+            "kv_lora_rank": config.kv_lora_rank,
+            "qk_nope_head_dim": config.qk_nope_head_dim,
+            "qk_rope_head_dim": config.qk_rope_head_dim,
+            "v_head_dim": config.v_head_dim,
+            "devices": config.devices,
+            "graph_mode": config.graph_mode,
+            "buffer_size": config.max_batch_context_length,
+            "index_n_heads": config.index_n_heads,
+            "index_head_dim": config.index_head_dim,
+            "index_topk": config.index_topk,
+            "skip_topk": skip_topk,
+            "indexer_rope_interleave": config.indexer_rope_interleave,
+        }
 
         self.tp_attention = num_devices > 1 and config.data_parallel_degree == 1
         self.self_attn: (
@@ -255,13 +256,13 @@ class DeepseekV3_2DecoderLayer(Module):
             else:
                 ep_size = 1
 
-            moe_kwargs: dict[str, Any] = dict(
-                devices=config.devices,
-                hidden_dim=config.hidden_size,
-                num_experts=config.n_routed_experts,
-                num_experts_per_token=config.num_experts_per_tok,
-                moe_dim=config.moe_intermediate_size,
-                gate_cls=functools.partial(
+            moe_kwargs: dict[str, Any] = {
+                "devices": config.devices,
+                "hidden_dim": config.hidden_size,
+                "num_experts": config.n_routed_experts,
+                "num_experts_per_token": config.num_experts_per_tok,
+                "moe_dim": config.moe_intermediate_size,
+                "gate_cls": functools.partial(
                     DeepseekV3_2TopKRouter,
                     routed_scaling_factor=config.routed_scaling_factor,
                     scoring_func=config.scoring_func,
@@ -273,21 +274,21 @@ class DeepseekV3_2DecoderLayer(Module):
                     gate_dtype=DType.bfloat16,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
-                mlp_cls=DeepseekV3_2MLP,
-                has_shared_experts=True,
-                shared_experts_dim=config.n_shared_experts
+                "mlp_cls": DeepseekV3_2MLP,
+                "has_shared_experts": True,
+                "shared_experts_dim": config.n_shared_experts
                 * config.moe_intermediate_size,
-                dtype=mlp_dtype,
-                ep_size=ep_size,
-                apply_router_weight_first=False,
-                ep_batch_manager=self.ep_manager,
-                quant_config=layer_quant_config,
-                shared_experts_dtype=(
+                "dtype": mlp_dtype,
+                "ep_size": ep_size,
+                "apply_router_weight_first": False,
+                "ep_batch_manager": self.ep_manager,
+                "quant_config": layer_quant_config,
+                "shared_experts_dtype": (
                     quant_cfg.shared_experts_dtype(mlp_dtype)
                     if quant_cfg is not None
                     else DType.bfloat16
                 ),
-            )
+            }
 
             moe: DeepseekV3_2MoE | MoE
             if mlp_quantized:

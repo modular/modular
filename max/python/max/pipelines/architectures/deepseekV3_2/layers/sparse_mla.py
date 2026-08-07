@@ -133,6 +133,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         index_head_dim: int = 128,
         index_topk: int = 2048,
         skip_topk: bool = False,
+        indexer_rope_interleave: bool = False,
     ):
         super().__init__(
             rope=rope,
@@ -158,6 +159,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         self.index_head_dim = index_head_dim
         self.index_topk = index_topk
         self.skip_topk = skip_topk
+        self.indexer_rope_interleave = indexer_rope_interleave
 
         # ``shared`` layers carry no indexer weights, and instead reuse the
         # previous full layer's top-k selection.
@@ -172,6 +174,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 qk_rope_head_dim=qk_rope_head_dim,
                 index_topk=index_topk,
                 q_lora_rank=q_lora_rank,
+                rope_interleaved=indexer_rope_interleave,
                 devices=self.devices,
                 quant_config=self.quant_config,
                 k_norm_dtype=norm_dtype,
@@ -494,6 +497,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 index_head_dim=self.index_head_dim,
                 index_topk=self.index_topk,
                 skip_topk=self.skip_topk,
+                indexer_rope_interleave=self.indexer_rope_interleave,
             )
 
             replica.q_a_proj = q_a_proj_shards[shard_idx]
@@ -772,6 +776,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         index_head_dim: int = 128,
         index_topk: int = 2048,
         skip_topk: bool = False,
+        indexer_rope_interleave: bool = False,
     ):
         super().__init__(
             rope=rope,
@@ -794,6 +799,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         )
         self.indexer_quant_config = indexer_quant_config
         self.skip_topk = skip_topk
+        self.indexer_rope_interleave = indexer_rope_interleave
         self.index_n_heads = index_n_heads
         self.index_head_dim = index_head_dim
         self.index_topk = index_topk
@@ -807,6 +813,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 qk_rope_head_dim=qk_rope_head_dim,
                 index_topk=index_topk,
                 q_lora_rank=q_lora_rank,
+                rope_interleaved=indexer_rope_interleave,
                 devices=self.devices,
                 quant_config=indexer_quant_config,
                 k_norm_dtype=norm_dtype,
@@ -1114,6 +1121,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 index_head_dim=self.index_head_dim,
                 index_topk=self.index_topk,
                 skip_topk=self.skip_topk,
+                indexer_rope_interleave=self.indexer_rope_interleave,
             )
 
             replica.q_a_proj = q_a_proj_shards[shard_idx]

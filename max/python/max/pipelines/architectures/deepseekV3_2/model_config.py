@@ -81,6 +81,8 @@ class DeepseekV3_2Config(DeepseekV3Config):
     index_n_heads: int = 64
     index_topk: int = 2048
     indexer_types: list[str] = field(default_factory=list)
+    # GLM-5.x sets indexer_rope_interleave=true.
+    indexer_rope_interleave: bool = False
 
     @staticmethod
     def construct_kv_params(
@@ -230,6 +232,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
             index_topk=config.index_topk,
             indexer_types=resolve_indexer_types(
                 config, config.num_hidden_layers
+            ),
+            indexer_rope_interleave=getattr(
+                config, "indexer_rope_interleave", False
             ),
             quantization_encoding=quantization_encoding,
         )
