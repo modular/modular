@@ -71,6 +71,11 @@ This version is still a work in progress.
   functions, so drop the call parens at use sites, for example
   `TriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
 
+- `Atomic` is now parameterized on a value type `T` instead of a `DType`.
+  Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
+  atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
+  and so on) still only support `Scalar` types.
+
 ## GPU programming
 
 ## Tooling changes

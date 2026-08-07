@@ -466,11 +466,13 @@ def _multi_gpu_barrier[
         # peer.
         comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
-            Atomic[flag_t].store[ordering=Ordering.RELEASE](
+            Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
                 peer_counter_ptr, val
             )
             while (
-                Atomic[flag_t].load[ordering=Ordering.ACQUIRE](self_counter_ptr)
+                Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
+                    self_counter_ptr
+                )
                 != val
             ):
                 pass

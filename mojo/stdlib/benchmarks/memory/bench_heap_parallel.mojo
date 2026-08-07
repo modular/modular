@@ -54,7 +54,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
             num_tasks = 1
 
         var per_task = ceildiv(ALLOCS_PER_ITER, num_tasks)
-        var checksum = Atomic[DType.int64](0)
+        var checksum = Atomic[Int64](0)
 
         @always_inline
         def task_body(

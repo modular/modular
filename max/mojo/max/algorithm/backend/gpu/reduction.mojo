@@ -651,7 +651,7 @@ def twophase_reduce_kernel[
             comptime for i in range(num_reductions):
                 partials[unsafe_offset=base + i] = partial[i]
 
-            var finished = Atomic[DType.int32].fetch_add(
+            var finished = Atomic[Int32].fetch_add(
                 counters.unsafe_offset(row_idx), Int32(1)
             )
             is_last_block = finished == Int32(_bpr - 1)

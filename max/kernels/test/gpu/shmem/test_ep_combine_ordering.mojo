@@ -34,7 +34,7 @@ from std.testing import assert_equal
 from std.utils.numerics import isnan, nan
 
 comptime DEVICE_SCOPE = "agent"
-comptime _flag_atomic = Atomic[DType.int32, scope=DEVICE_SCOPE]
+comptime _flag_atomic = Atomic[Int32, scope=DEVICE_SCOPE]
 comptime DATA_READY = Int32(1024)
 
 comptime N_ITERS = 100

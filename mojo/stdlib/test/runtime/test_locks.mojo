@@ -23,7 +23,7 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 def test_basic_lock() raises:
     var lock = BlockingSpinLock()
     var rawCounter = 0
-    var counter = Atomic[DType.int64](0)
+    var counter = Atomic[Int64](0)
     comptime maxI = 100
     comptime maxJ = 100
 

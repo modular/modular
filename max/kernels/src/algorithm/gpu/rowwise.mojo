@@ -787,7 +787,7 @@ def pjoin[
                 row_base_bytes + block_in_row_ * _SPLITK_STATE_BYTES
             ).bitcast[State]()
             slot_ptr[0] = state
-            var prev = Atomic[DType.int32].fetch_add(counter_ptr, Int32(1))
+            var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
             last_shmem[0] = Int(prev) + 1 == blocks_per_row_
         barrier()
         ctx._is_last_block = last_shmem[0]
