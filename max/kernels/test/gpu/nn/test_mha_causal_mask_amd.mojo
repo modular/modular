@@ -322,11 +322,13 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
         # MiniMax-M3 shape: head_dim=128, 64 query heads, 4 KV heads.
         test[dtype, depth=depth, num_heads=64, group=16](1, 1024, ctx)
     # Speculative-verify query lengths. On AMD these take the decode kernel's
-    # query-token fold, one instantiation per S; elsewhere, and outside the fold's
-    # bf16 / depth <= 128 window, they take prefill. The num_keys span a single
-    # partition (29), a BN=128 straddle (208), an aligned length (1024), and
-    # split-K-heavy (5000).
-    comptime if not USE_FP8 and depth <= 128:
+    # query-token fold, one instantiation per S; where the fold does not apply
+    # they take prefill, so gate on the predicate itself rather than restating
+    # its dtype/depth window here — `test_fold_eligibility` is what stops that
+    # gate from going quietly false and dropping the coverage. The num_keys span
+    # a single partition (29), a BN=128 straddle (208), an aligned length
+    # (1024), and split-K-heavy (5000).
+    comptime if _mha_decode_fold_ok[dtype, depth, 16, 1, 4]():
         # Single KV head: rows are contiguous heads, BM = num_heads*S = 32/48/64
         # stacked over warp M-tiles. S=5 is excluded by `num_heads*S <= 4*WM`.
         for seq_len in [2, 3, 4]:
@@ -389,6 +391,10 @@ def test_fold_eligibility() raises:
         ](),
         available,
     )
+    # FP8 folds on both arms wherever its decode MFMA is the 16-row 16x16x128.
+    comptime fp8 = DType.float8_e4m3fn
+    assert_equal(_mha_decode_fold_ok[fp8, 128, 16, 1, 4](), available)
+    assert_equal(_mha_decode_fold_ok[fp8, 128, 16, 16, 4](), available)
 
     # S=1 is plain decode, not a fold arm.
     assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 1]())
@@ -404,6 +410,10 @@ def test_fold_eligibility() raises:
     assert_false(_mha_decode_fold_ok[bf16, 256, 16, 1, 4]())
     # fp16 shares the MMA shape but is untested through the fold.
     assert_false(_mha_decode_fold_ok[DType.float16, 128, 16, 1, 4]())
+    # FP8 at depth 64 picks the 32x32x64 decode MFMA, whose MMA_M outruns the
+    # fold's 16-row warp M-tile.
+    assert_false(_mha_decode_fold_ok[fp8, 64, 16, 1, 4]())
+    assert_false(_mha_decode_fold_ok[fp8, 64, 16, 16, 4]())
     # A sink lookup is the folded head only while num_heads == MMA_M.
     assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 4, sink=True]())
     # A padded batch can hold a sequence shorter than S, whose split-K stats go

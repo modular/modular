@@ -110,6 +110,7 @@ from .apple.fa_prefill import (
     fa_prefill_apple,
 )
 from .amd_structured.attention import Attention
+from .amd_structured.config import decode_mma_shape
 from .amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
     MhaPrefillV2,
@@ -341,9 +342,14 @@ def _mha_decode_fold_ok[
     return (
         has_amd_gpu_accelerator()
         and not _is_amd_rdna()
-        # fp16 shares the bf16 decode MMA shape and should work, but is untested
-        # through the fold; widen once a test covers it.
-        and dtype == DType.bfloat16
+        # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
+        # is tested through the fold; widen once a test covers them.
+        and (dtype == DType.bfloat16 or dtype.is_float8())
+        # The fold stacks query rows over `_MHA_DECODE_FOLD_WM`-row warp
+        # M-tiles, so it needs a decode MFMA that tall. bf16 always is; fp8
+        # picks between a 16-row and a 32-row shape by depth.
+        and decode_mma_shape[dtype, depth, num_heads]()[0]
+        == _MHA_DECODE_FOLD_WM
         # At WN == BN each warp's K and V register tiles span the whole depth,
         # so anything wider spills.
         and depth <= 128
