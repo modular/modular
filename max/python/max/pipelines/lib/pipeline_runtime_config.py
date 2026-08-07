@@ -19,6 +19,7 @@ import os
 
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib.vision_encoder_cache import VisionCachePlan
 from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
 
@@ -110,8 +111,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     eplb_profile: bool = Field(
-        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "When True, enables expert-parallel load balancing (EPLB) MoE "
             "routing histogram profiling in the pipeline. Mirrors "
@@ -460,6 +463,22 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    experimental_vision_cache_utilization: float = Field(
+        default=float(
+            os.environ.get("MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION", "0")
+        ),
+        description=(
+            "Fraction of the KV cache pool budget (not total device "
+            "memory) reserved for the experimental block-based vision "
+            "encoder cache; the remainder stays with the KV cache. "
+            "Greater than 0 activates block mode on architectures whose "
+            "memory planner reports a vision row spec; 0 (the default) "
+            "keeps the entry-count cache. Set via the "
+            "MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION environment "
+            "variable. Only used by VLMs."
+        ),
+    )
+
     max_vision_cache_entries: int = Field(
         default=256,
         description=(
@@ -469,6 +488,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "to disable caching. Only used by VLMs."
         ),
     )
+
+    _vision_cache_plan: VisionCachePlan | None = PrivateAttr(default=None)
+    """Resolved block-mode vision cache reservation.
+
+    Set by memory estimation when ``experimental_vision_cache_utilization``
+    reserves a block budget: the per-device byte grant plus the memory
+    planner's ``(hidden_size, dtype)`` row spec. ``None`` keeps the legacy
+    entry-count cache."""
 
     denoising_cache: DenoisingCacheConfig = Field(
         default_factory=DenoisingCacheConfig,

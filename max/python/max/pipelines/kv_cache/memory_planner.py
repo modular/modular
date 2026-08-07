@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
+from max.dtype import DType
 from max.nn.kv_cache import KVCacheParamInterface
 
 
@@ -171,6 +172,27 @@ class MemoryPlanner:
             models.
         """
         return 0
+
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: Any,
+    ) -> tuple[int, DType] | None:
+        """Describes one merged vision token's embedding row in the cache.
+
+        A non-None spec opts the architecture into the vision encoder
+        cache and lets the cache's block pool allocate at startup: the
+        reservation is a byte budget carved into fixed-size blocks of
+        ``(hidden_size, dtype)`` rows, so one large video no longer
+        collapses the cache's capacity for images.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            ``(hidden_size, dtype)`` of one embedding row per device, or
+            ``None`` for architectures without a vision cache.
+        """
+        return None
 
 
 class PagedMemoryPlanner(MemoryPlanner):
