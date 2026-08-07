@@ -40,9 +40,9 @@ from layout.tile_layout import TensorLayout
 from std.logger import Logger
 from std.gpu.primitives import warp
 from std.gpu.primitives.warp import lane_group_max, shuffle_xor
-from std.math import isfinite, recip
+from std.math import recip
+from .block_scaled_utils import compute_mxfp8_block_scale
 from .fp4_utils import (
-    E4M3_MAXABS_RECIP,
     cast_float_to_fp4e2m1_amd,
     cast_fp32_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
@@ -2627,23 +2627,13 @@ def _quantize_mx_amd_kernel[
             # reciprocal of the resulting power of two.
             var e8m0_scale: Scalar[DType.float8_e8m0fnu]
             comptime if elems_per_byte == 1:
-                e8m0_scale = (group_max * E4M3_MAXABS_RECIP).cast[
-                    DType.float8_e8m0fnu
-                ]()
-                var out_scale = Float32(0.0)
-                if group_max != 0:
-                    out_scale = recip(e8m0_scale.cast[DType.float32]())
-                # `recip` is non-finite at both ends of E8M0's range: the
-                # 2^-127 floor is an fp32 subnormal that V_RCP_F32 flushes to
-                # inf, and a non-finite `group_max` casts to E8M0 NaN. Either
-                # way a zero lane would store `0 * inf = NaN`, so zero the
-                # block -- it is entirely outside E4M3's representable range.
+                var out_scale: Float32
+                var block_is_dead: Bool
+                e8m0_scale, out_scale, block_is_dead = (
+                    compute_mxfp8_block_scale[DType.float8_e8m0fnu](group_max)
+                )
                 var data = input_vector.cast[DType.float32]()
-                if not isfinite(out_scale):
-                    out_scale = Float32(0.0)
-                    e8m0_scale = bitcast[DType.float8_e8m0fnu](UInt8(0))
-                    # Zeroing the scale alone is not enough: a non-finite lane
-                    # would still store `inf * 0.0 = NaN`.
+                if block_is_dead:
                     data = type_of(data)(0.0)
                 output.store[width=ELEMENTS_PER_THREAD](
                     Coord(global_row_idx, global_col_idx),

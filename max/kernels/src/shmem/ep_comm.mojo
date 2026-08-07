@@ -26,8 +26,8 @@ from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.ffi import c_size_t
 
+from linalg.block_scaled_utils import compute_mxfp8_block_scale
 from linalg.fp4_utils import (
-    E4M3_MAXABS_RECIP,
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     NVFP4_SF_VECTOR_SIZE,
@@ -87,7 +87,7 @@ from layout.tma_async import (
     create_tensor_tile,
     _default_desc_shape,
 )
-from std.math import exp, isfinite, recip
+from std.math import exp, recip
 from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
@@ -1597,23 +1597,14 @@ struct MXTokenFormat[
 
             var fp8_scale_factor: Scalar[Self.scales_dtype]
             var scale_f32: Float32
+            var block_is_dead = False
             comptime if Self.elems_per_byte == 1:
-                # MXFP8: E8M0 = group_max / 448 (E4M3 maxabs), and the data
-                # path multiplies by its RECIPROCAL -- unlike the FP4 path
-                # below, which hands the scale itself to the packing helper.
-                # Same derivation as `fused_silu_mx_kernel`.
-                fp8_scale_factor = (group_max * E4M3_MAXABS_RECIP).cast[
-                    Self.scales_dtype
-                ]()
-                scale_f32 = 0.0 if group_max == 0 else recip(
-                    fp8_scale_factor.cast[DType.float32]()
+                # MXFP8 multiplies the data by the scale's RECIPROCAL, unlike
+                # the FP4 path below, which hands the scale itself to the
+                # packing helper.
+                fp8_scale_factor, scale_f32, block_is_dead = (
+                    compute_mxfp8_block_scale[Self.scales_dtype](group_max)
                 )
-                # E8M0's 2^-127 floor is an fp32 subnormal whose reciprocal is
-                # not finite on CDNA4, so a zero lane in a block that tiny
-                # would store `0 * inf = NaN`. See `fused_silu_mx_kernel`.
-                if not isfinite(scale_f32):
-                    scale_f32 = 0.0
-                    fp8_scale_factor = bitcast[Self.scales_dtype](UInt8(0))
             else:
                 # Use MXFP4 even-mode rounding for the E8M0 scale.
                 fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
@@ -1631,12 +1622,12 @@ struct MXTokenFormat[
                 )
 
             comptime if Self.elems_per_byte == 1:
-                # `scale_f32 == 0` marks a block outside E4M3's range (see the
-                # guard above); zero the data too, or a non-finite lane stores
+                # A dead block has no E4M3 representation, so its data must be
+                # zeroed too -- a non-finite lane would otherwise store
                 # `inf * 0.0 = NaN`.
-                var data = loaded_vec if scale_f32 != 0.0 else type_of(
-                    loaded_vec
-                )(0.0)
+                var data = type_of(loaded_vec)(
+                    0.0
+                ) if block_is_dead else loaded_vec
                 var fp8_vec = (data * scale_f32).cast[Self.quant_dtype]()
                 buf_p.store[alignment=byte_width](
                     i * byte_width,
@@ -5069,21 +5060,11 @@ def fused_silu_mx_kernel[
             var fp8_scale_factor: Scalar[scales_dtype]
             var scale_f32: Float32
             comptime if elems_per_byte == 1:
-                fp8_scale_factor = (group_max * E4M3_MAXABS_RECIP).cast[
-                    scales_dtype
-                ]()
-                scale_f32 = 0.0 if group_max == 0 else recip(
-                    fp8_scale_factor.cast[DType.float32]()
+                var block_is_dead: Bool
+                fp8_scale_factor, scale_f32, block_is_dead = (
+                    compute_mxfp8_block_scale[scales_dtype](group_max)
                 )
-                # `recip` is non-finite at both ends of E8M0's range: the
-                # 2^-127 floor is an fp32 subnormal that V_RCP_F32 flushes to
-                # inf, and an activation that overflowed fp32 casts to E8M0
-                # NaN. Without this the block stores NaN -- `0 * inf` for a
-                # zero lane below the floor, `inf * 0` for an overflowed one.
-                # No MX encoding exists for either, so emit a zeroed block.
-                if not isfinite(scale_f32):
-                    scale_f32 = 0.0
-                    fp8_scale_factor = bitcast[scales_dtype](UInt8(0))
+                if block_is_dead:
                     output_val = type_of(output_val)(0.0)
             else:
                 fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
