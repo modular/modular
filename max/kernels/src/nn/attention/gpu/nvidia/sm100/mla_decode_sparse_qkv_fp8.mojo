@@ -261,6 +261,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride_dev: Int32,
+        # Logical sparse indices (same layout as `d_indices`, -1 padding) for
+        # position-based causal masking. See mla_decode_utils.mojo.
+        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         attn_sink_ptr: OptionalReg[
@@ -577,6 +580,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
                 attn_sink_log2=attn_sink_log2,
+                logical_indices=logical_indices,
+                logical_indices_stride=indices_stride,
+                logical_indices_len=topk,
             )
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()

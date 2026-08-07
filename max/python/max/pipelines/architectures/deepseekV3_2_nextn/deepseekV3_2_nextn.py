@@ -178,6 +178,11 @@ class DeepseekV3_2NextN(Module):
 
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        # When False, ``deepseek_logits_postprocess`` skips the last-token
+        # lm_head projection and omits ``last_logits`` from the output tuple.
+        # Default True keeps the standalone ragged contract (``last_logits``
+        # at index 0) unchanged.
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -325,6 +330,7 @@ class DeepseekV3_2NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
         )
 
         # Append the per-device top-k selection so the unified MTP module can

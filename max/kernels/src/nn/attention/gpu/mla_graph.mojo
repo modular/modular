@@ -1096,6 +1096,9 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1167,6 +1170,8 @@ def mla_decode_branch_fp8[
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
         num_partitions_in: Capturable-graph num_partitions override.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1343,6 +1348,7 @@ def mla_decode_branch_fp8[
             extra_topk_lengths=extra_topk_lengths,
             extra_scales_ptr=extra_scales_ptr,
             num_partitions_in=num_partitions_in,
+            logical_indices=logical_indices,
         )
     else:
         generic_flare_mla_decode_kv_cache_ragged[
@@ -1369,6 +1375,7 @@ def mla_decode_branch_fp8[
             extra_topk_lengths=extra_topk_lengths,
             extra_scales_ptr=extra_scales_ptr,
             num_partitions_in=num_partitions_in,
+            logical_indices=logical_indices,
         )
 
     # Create a view of the output tensor with logical shape

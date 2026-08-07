@@ -825,6 +825,9 @@ def mla_decode_sm100_dispatch[
     # the host-side grid sizing matches the device-side divmod on
     # scalar_args_buf[2].
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     var scales_ptr = k.scales_raw_ptr()
 
@@ -972,6 +975,7 @@ def mla_decode_sm100_dispatch[
             extra_indices_stride=extra_indices_stride,
             extra_topk_lengths=extra_topk_lengths,
             extra_scales_ptr=extra_scales_ptr,
+            logical_indices=logical_indices,
         )
 
     comptime if k_t.page_size == 0 or k_t.page_size >= 128:
@@ -1053,6 +1057,7 @@ def _mla_decode_sm100_dispatch_impl[
     extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
@@ -1176,6 +1181,7 @@ def _mla_decode_sm100_dispatch_impl[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 effective_max_cache_len=effective_max_cache_len,
+                logical_indices=logical_indices,
             )
 
             # Dispatch to specialized kernel based on num_partitions for compile-time unrolling.
@@ -1425,6 +1431,7 @@ def _mla_decode_sm100_dispatch_impl[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 effective_max_cache_len=effective_max_cache_len,
+                logical_indices=logical_indices,
             )
 
         if attn_sink_ptr:
@@ -1500,6 +1507,9 @@ def mla_decode_sm100_sink_split_k[
     # `num_heads * q_len <= BM_G(32)`.  Defaults to 0 so unrelated callers
     # (BF16, sparse, etc.) pass through to the BN_QK=64 branch unchanged.
     effective_max_cache_len: Int = 0,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
     # Use native FP8 path when:
@@ -1806,6 +1816,7 @@ def mla_decode_sm100_sink_split_k[
                             extra_scales_ptr,
                             scalar_args_buf,
                             ctx,
+                            logical_indices=logical_indices,
                         )
                     else:
                         comptime ValidLengthType = NullPointer[DType.uint32]
@@ -1851,6 +1862,7 @@ def mla_decode_sm100_sink_split_k[
                             extra_scales_ptr,
                             scalar_args_buf,
                             ctx,
+                            logical_indices=logical_indices,
                         )
 
                 @parameter
@@ -3817,6 +3829,9 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """Launches the native FP8 sparse MLA decode kernel (3 warpgroups).
 
@@ -3878,6 +3893,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         mla_decode_pack,
         d_indices,
         Int32(indices_stride),
+        logical_indices,
         topk_lengths,
         scales_ptr,
         attn_sink_ptr,

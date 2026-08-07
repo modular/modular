@@ -2602,6 +2602,11 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
 
         var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
         var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+        # `sparse_indices` still holds the logical key positions here; the
+        # remap below produces the physical gather buffer and drops them.
+        # Capture them for position-based causal masking (see
+        # mla_decode_utils.mojo).
+        var logical_indices_ptr = sparse_indices.to_layout_tensor().ptr
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8.sparse",
@@ -2656,6 +2661,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
                 # passing num_partitions would override that. Let the kernel
                 # compute its own values.
                 num_partitions_in=None,
+                logical_indices=logical_indices_ptr,
             )
 
 
