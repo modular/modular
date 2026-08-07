@@ -60,3 +60,7 @@ Each entry names its replacement.
   a GPU profiler such as Nsight Systems or `rocprof` for device timings.
 
 ## Fixed
+
+- An integer `range()` with a step of zero is now always empty. It previously
+  used to be an infinite loop - iterating forever at runtime, and hanging the
+  compiler at comptime.
