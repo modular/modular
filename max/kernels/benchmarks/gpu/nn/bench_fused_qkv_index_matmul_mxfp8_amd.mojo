@@ -547,9 +547,17 @@ def main() raises:
     seed(0)
     var m = Bench()
     with DeviceContext() as ctx:
-        for bs in [1, 8, 16, 32, 64, 128, 256]:
+        for bs in [1, 8, 16, 32, 64, 128, 256, 512]:
             var decode_lens = List[Int](length=bs, fill=1)
             bench_shape(ctx, m, decode_lens, "decode")
 
         bench_shape(ctx, m, [256, 256], "prefill")
+
+        # Speculative decoding: the target verifies num_spec+1 tokens per
+        # sequence in one pass, so M = bs * (num_spec+1). 3 is what M3
+        # actually runs on AMD.
+        var num_spec = 3
+        for bs in [1, 8, 16, 32, 64, 128, 256]:
+            var spec_lens = List[Int](length=bs, fill=num_spec + 1)
+            bench_shape(ctx, m, spec_lens, "decode_spec" + String(num_spec))
     m.dump_report()
