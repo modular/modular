@@ -1651,3 +1651,7 @@ This version is still a work in progress.
   under `mojo run` but failed to link, for example with `undefined reference to
   symbol 'hypot@@GLIBC_2.35'` followed by `libm.so.6: error adding symbols: DSO
   missing from command line`.
+
+- An integer `range()` with a step of zero is now always empty. It previously
+  used to be an infinite loop - iterating forever at runtime, and hanging the
+  compiler at comptime.
