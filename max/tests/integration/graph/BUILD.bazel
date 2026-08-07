@@ -36,6 +36,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
+    "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
     "test_graph_error_messages.py",
     "test_graph_pinned.py",
@@ -381,9 +382,36 @@ modular_py_test(
     ],
 )
 
+# End-to-end coverage for the device graph synthesis pathway. Separate from the
+# `graph` target because it needs a GPU, and separate from
+# `test_engine_device_graph` because that covers the record/replay API instead.
+modular_py_test(
+    name = "test_device_graph_synthesis",
+    srcs = [
+        "conftest.py",
+        "test_device_graph_synthesis.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "test_engine_device_graph",
     srcs = [
+        "conftest.py",
         "test_engine_device_graph.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
@@ -399,6 +427,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -453,6 +482,7 @@ modular_py_test(
 modular_py_test(
     name = "test_tile_based_fusion",
     srcs = [
+        "conftest.py",
         "test_tile_based_fusion.py",
     ],
     # NVIDIA-only: tile-based fusion is not yet validated on AMD/Apple GPUs —
@@ -466,6 +496,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("hypothesis"),
         requirement("numpy"),
     ],
 )

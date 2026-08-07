@@ -22,6 +22,7 @@ from std.testing import (
 )
 
 from max.gpu.host import (
+    DeviceBuffer,
     DeviceGraph,
     DeviceGraphBuilder,
     DeviceGraphCache,
@@ -860,6 +861,58 @@ struct _TaggedInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
     def write_graph_key(self, mut writer: Some[Writer]):
         writer.write(self.tag)
 
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        # Backed by no memory, so there is nothing to give a stable location.
+        return Self(copy=self)
+
+
+@fieldwise_init
+struct _BufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A graph input backed by a device buffer, for exercising `add_input`."""
+
+    var buf: DeviceBuffer[DType.uint8]
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(t"BufferInput({len(self.buf)})")
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        return Self(
+            builder.create_input_buffer[DType.uint8](
+                len(self.buf), is_host=False
+            )
+        )
+
+
+def test_add_input(ctx: DeviceContext) raises:
+    print("Test add_input gives the graph a stable location to record against.")
+    comptime length = 64
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    var caller_buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        assert_equal(builder.num_inputs(), 0)
+        var stable = builder.add_input(_BufferInput(caller_buf.copy()))
+        assert_equal(builder.num_inputs(), 1)
+
+        # The stable location is the graph's own allocation, not the caller's.
+        assert_true(stable.buf.unsafe_ptr() != caller_buf.unsafe_ptr())
+
+        # Record against the stable location and copy it out, so the readback
+        # observes what the graph actually wrote.
+        var memset = builder.add_memset(stable.buf, UInt8(0x7E))
+        _ = builder.add_copy(host_dst, stable.buf, dependencies=[memset])
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x7E))
+
 
 def test_cache_key_separates_inputs() raises:
     print("Test cache keys keep adjacent input contributions apart.")
@@ -1025,3 +1078,4 @@ def main() raises:
         test_cache_without_cache_always_builds(ctx)
         test_cache_lookup_and_add(ctx)
         test_cache_key_separates_inputs()
+        test_add_input(ctx)
