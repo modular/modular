@@ -44,13 +44,13 @@ struct Flat(Copyable, Movable):
 
 struct Inner(Copyable, Movable):
     var pattern: StaticString
-    var leading: InlineArray[StaticString, 1]
+    var leading: Array[StaticString, 1]
     var count: Int
 
     def __init__(
         out self,
         pattern: StaticString,
-        leading: InlineArray[StaticString, 1],
+        leading: Array[StaticString, 1],
         count: Int,
     ):
         self.pattern = pattern
