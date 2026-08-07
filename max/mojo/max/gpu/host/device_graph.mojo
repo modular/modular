@@ -272,6 +272,29 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         """
         ...
 
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        """Returns a graph-owned value of this type for the graph to record.
+
+        Allocate through
+        [`DeviceGraphBuilder.create_input_buffer()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#create_input_buffer),
+        which reserves the address for the graph's lifetime and registers it, and
+        describe the result with the same shape and dtype as `self`.
+
+        Read only `self`'s shape. The result must **not** retain `self`'s
+        storage: doing so pins the caller's memory for as long as the graph
+        lives, which is exactly the coupling a stable location exists to remove.
+
+        Args:
+            builder: The builder for the graph under construction.
+
+        Returns:
+            A value of the same type backed by the graph's memory pool.
+
+        Raises:
+            If allocating from the graph's memory pool fails.
+        """
+        ...
+
 
 struct DeviceGraph(ImplicitlyCopyable):
     """Represents an instantiated device graph that can be replayed.
@@ -435,7 +458,7 @@ struct DeviceGraph(ImplicitlyCopyable):
             return found.take()
 
         var graph = Self.create(ctx, build)
-        return cache[].cache(key^, graph)
+        return cache[].cache(key^, graph^)
 
     @staticmethod
     def create(
@@ -1631,6 +1654,49 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             ](self._handle)
         )
 
+    def add_input[T: DeviceGraphInput](mut self, input: T) raises -> T:
+        """Gives an input a stable location the graph can record against.
+
+        A recorded graph bakes in the addresses it was built with, so it cannot
+        read a caller's buffer directly if it is to be replayed later. This
+        allocates a graph-owned twin of `input` and registers it, so replay can
+        be fed by copying the live input into that fixed location. Record the
+        body against the returned value, not against `input`.
+
+        Inputs must be added in graph-signature order.
+
+        Parameters:
+            T: The device graph input type.
+
+        Args:
+            input: The input to allocate a stable location for. Only its shape
+                is read; its storage is not retained.
+
+        Returns:
+            A graph-owned value of the same type, backed by the graph's memory
+            pool.
+
+        Raises:
+            If allocating the stable buffer fails.
+        """
+        return input.allocate_stable(self)
+
+    def num_inputs(self) -> Int:
+        """Returns the number of stable inputs registered on the device graph.
+
+        Returns:
+            The number of inputs added via `add_input`.
+        """
+        # int64_t AsyncRT_DeviceGraphBuilder_numInputs(
+        #     DeviceGraphBuilder *builder)
+        return Int(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_numInputs",
+                Int64,
+                _DeviceGraphBuilderPtr[mut=True],
+            ](self._handle)
+        )
+
     @doc_hidden
     def instantiate(var self) raises -> DeviceGraph:
         """Instantiates the constructed graph into an executable device graph.
@@ -1708,6 +1774,41 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
 
         result = {cpp_handle, device_ptr.value()}
+
+    def create_input_buffer[
+        dtype: DType
+    ](self, size: Int, is_host: Bool, out result: DeviceBuffer[dtype]) raises:
+        """Allocates a buffer and registers it as a stable graph input.
+
+        Allocation and registration are one step so a `DeviceGraphInput` cannot
+        allocate a stable location without the graph learning about it, which
+        would leave replay with nothing to copy into.
+
+        Parameters:
+            dtype: The element type of the resulting buffer.
+
+        Args:
+            size: The number of elements to allocate for the buffer.
+            is_host: Allocate host-addressable memory instead of device memory.
+
+        Returns:
+            The newly allocated buffer, already registered with the graph.
+
+        Raises:
+            If memory allocation fails.
+        """
+        result = self.create_buffer[dtype](size, is_host=is_host)
+
+        # void AsyncRT_DeviceGraphBuilder_addInput(
+        #     DeviceGraphBuilder *builder, DeviceBuffer *input)
+        #
+        # The handle is borrowed rather than surrendered: the graph retains its
+        # own reference so the pool cannot reissue this address, and the caller
+        # keeps using the buffer as the input it records against.
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addInput",
+            NoneType,
+        ](self._handle, result._handle)
 
 
 @doc_hidden

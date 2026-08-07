@@ -31,8 +31,6 @@ broadcast ``mo.mul`` store epilogue.
 
 from __future__ import annotations
 
-from collections.abc import Generator
-
 import numpy as np
 import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
@@ -41,14 +39,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 _SHAPE = [256, 256]
-
-
-@pytest.fixture(autouse=True)
-def clean_up_gpus() -> Generator[None, None, None]:
-    """Synchronize all accelerators after each test to surface pending errors."""
-    yield
-    for i in range(accelerator_count()):
-        Accelerator(i).synchronize()
 
 
 def _run_tile_based_fusion(

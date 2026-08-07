@@ -41,6 +41,7 @@ from max.gpu.host import (
 from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import Layout, ThinAllocation, UnsafeMaybeUninit, alloc, dealloc
+from std.os import abort
 from layout import (
     Coord,
     Idx,
@@ -231,6 +232,17 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
     def write_graph_key(self, mut writer: Some[Writer]):
         writer.write(t"Buffer({self.size()})")
 
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        # An `mgp.buffer` graph input is a mutable buffer the graph writes in
+        # place (a KV cache, say), so giving it a private stable location would
+        # silently discard those writes. Such inputs must instead contribute
+        # their address to the cache key, so a moved buffer forces a rebuild.
+        #
+        # Reaching here means lowering routed a buffer through `add_input`,
+        # which it must not do until mutability survives synthesis and the two
+        # cases can be told apart.
+        abort("device graph inputs of buffer type are not supported yet")
+
 
 struct OwnedTensor[dtype: DType, rank: Int](
     DeviceGraphInput, ImplicitlyCopyable, Movable
@@ -334,6 +346,26 @@ struct OwnedTensor[dtype: DType, rank: Int](
 
     def write_graph_key(self, mut writer: Some[Writer]):
         writer.write(t"Tensor({self.dtype}, {self.shape()})")
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        var shape = self.shape()
+
+        # Device memory: a graph input is read by recorded kernels, so it lives
+        # where they run. The op verifiers reject host-placed inputs, so this
+        # cannot silently mismatch the input's declared placement.
+        # TODO(GEX-4051): take the placement from the input once a host/device
+        # flag reaches here.
+        var buffer = builder.create_input_buffer[Self.dtype](
+            shape.flattened_length(), is_host=False
+        )
+
+        var view = DynamicTensor[Self.dtype, Self.rank](
+            buffer.unsafe_ptr(), shape
+        )
+
+        # Storage is the pool buffer, never `self.storage` -- retaining the
+        # caller's handle would pin its memory for the graph's lifetime.
+        return Self(view, AnyAsyncValueRef(storage_buf=buffer^))
 
 
 @no_inline
