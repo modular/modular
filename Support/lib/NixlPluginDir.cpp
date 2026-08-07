@@ -36,6 +36,21 @@ static std::string requestedBackend() {
   return s;
 }
 
+bool M::preloadStagedLibfabric(const std::filesystem::path &pluginDir) {
+  if (requestedBackend() != "libfabric")
+    return false;
+  // The plugin dir is <prefix>/lib/nixl/<flavor>; libfabric is staged flat in
+  // <prefix>/lib next to libnixl.
+  const std::filesystem::path lib =
+      pluginDir.parent_path().parent_path() / "libfabric.so.1";
+  std::error_code ec;
+  if (!std::filesystem::exists(lib, ec))
+    return false;
+  // Deliberately never dlclosed: the point is to hold the SONAME for the life
+  // of the process.
+  return ::dlopen(lib.c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr;
+}
+
 std::optional<std::filesystem::path>
 M::resolveNixlPluginDir(const std::filesystem::path &base) {
   std::error_code ec;

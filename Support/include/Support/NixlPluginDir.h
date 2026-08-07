@@ -36,6 +36,29 @@ namespace M {
 std::optional<std::filesystem::path>
 resolveNixlPluginDir(const std::filesystem::path &base);
 
+/// Claims the `libfabric.so.1` SONAME with the copy staged alongside
+/// `pluginDir`, for hosts that asked for the libfabric backend.
+///
+/// The libfabric plugin binds versioned symbols (FABRIC_1.8) that only the EFA
+/// libfabric staged in `<prefix>/lib` provides, yet it records the generic
+/// `libfabric.so.1` SONAME — which a much older distro libfabric also claims
+/// (Ubuntu packages 1.14, FABRIC_1.3, for the Open MPI we install for expert
+/// parallelism), and which other components pull in: torch's bundled NVSHMEM
+/// ships its own libfabric transport, for one. Whichever copy loads first owns
+/// the SONAME process-wide, because an already-loaded SONAME is never
+/// re-resolved against the plugin's rpath, so losing that race leaves the
+/// plugin permanently unloadable under a generic "backend not found".
+///
+/// Loading our copy up front (and keeping it loaded) makes the outcome
+/// independent of load order: it is a strict superset of the distro's symbol
+/// versions, so later consumers bind against it happily.
+///
+/// Returns false when nothing was preloaded — another backend was requested, no
+/// libfabric is staged next to the plugins, or the load failed (e.g. no CUDA
+/// driver, which the EFA build needs). None of those are errors here; the
+/// backend that needs it reports its own failure downstream.
+bool preloadStagedLibfabric(const std::filesystem::path &pluginDir);
+
 } // namespace M
 
 #endif // SUPPORT_NIXLPLUGINDIR_H

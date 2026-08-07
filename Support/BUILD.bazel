@@ -301,6 +301,7 @@ modular_cc_library(
     # shared by max._core (runtime) and the MLRT NIXL unittests.
     visibility = [
         "//MLRT/unittests/Driver/NIXL:__pkg__",
+        "//Support/unittests:__pkg__",
         "//max/python/max:__pkg__",
     ],
 )

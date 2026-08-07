@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -329,4 +330,61 @@ modular_cc_test(
         "//Support:Metrics",
         "@llvm-project//llvm:Support",
     ],
+)
+
+# NIXL plugin-flavor resolution is Linux-x86-only, and the fixtures below rely on
+# ELF symbol versioning to reproduce the SONAME collision the preload guards
+# against.
+_NIXL_PLATFORM = [
+    "@platforms//cpu:x86_64",
+    "@platforms//os:linux",
+]
+
+# Two libfabric stand-ins sharing one SONAME: the EFA build we stage (exports
+# FABRIC_1.8) and an older distro build that stops at FABRIC_1.0.
+[
+    cc_binary(
+        name = "nixl_libfabric_{}_fixture.so".format(flavor),
+        srcs = ["NixlLibfabricFixture.cpp"],
+        additional_linker_inputs = ["nixl_libfabric_{}.map".format(flavor)],
+        defines = ["FIXTURE_HAS_FABRIC_1_8={}".format(1 if flavor == "efa" else 0)],
+        linkopts = [
+            "-Wl,-soname,libfabric.so.1",
+            "-Wl,--version-script,$(location nixl_libfabric_{}.map)".format(flavor),
+        ],
+        linkshared = True,
+        tags = ["manual"],
+        target_compatible_with = _NIXL_PLATFORM,
+    )
+    for flavor in [
+        "efa",
+        "distro",
+    ]
+]
+
+# Plugin stand-in: binds a symbol only the EFA fixture exports at FABRIC_1.8, so
+# it loads against that copy and fails against the distro one.
+modular_cc_binary(
+    name = "libplugin_FIXTURE.so",
+    srcs = ["NixlPluginFixture.cpp"],
+    additional_linker_inputs = [":nixl_libfabric_efa_fixture.so"],
+    # Linked straight against the EFA fixture so the DT_NEEDED on
+    # libfabric.so.1 and the FABRIC_1.8 version requirement are both recorded,
+    # like the real plugin's.
+    linkopts = ["$(location :nixl_libfabric_efa_fixture.so)"],
+    linkshared = True,
+    tags = ["manual"],
+    target_compatible_with = _NIXL_PLATFORM,
+)
+
+modular_cc_test(
+    name = "NixlPluginDirTest",
+    srcs = ["NixlPluginDirTest.cpp"],
+    data = [
+        ":libplugin_FIXTURE.so",
+        ":nixl_libfabric_distro_fixture.so",
+        ":nixl_libfabric_efa_fixture.so",
+    ],
+    target_compatible_with = _NIXL_PLATFORM,
+    deps = ["//Support:NixlPluginDir"],
 )
