@@ -10,103 +10,105 @@ description: >
 
 {/*
 Compiler verified: 2026-08-05, Mojo 1.0.0.dev0 (modular b6e7701fac1)
-Last updated: 2026-08-05 (new page)
+Last updated: 2026-08-05 (new page); 2026-08-06 (polish, clarity)
 
 VERIFIED: ParserExprs.cpp (parseLambda, lambda_expr grammar comment,
-kw_lambda in canParseAtom, unparenthesized-args diagnostic),
-ExprNodes.h / ExprNodes.cpp / ExprNodePrinters.cpp (LambdaNode),
-DeclResolution.cpp (LambdaNode::emitIR: isThin test =
-bodyCaptures.values.empty() && node->captures.empty() &&
-!node->captureAllByConvention, plus the input-param singleton test;
-promoteClosure fold; emitClosureInstance fallback;
-"cannot use a capturing lambda" diagnostics),
-Signatures.cpp (parseCaptureList, ParsedCaptureList,
-captureAllByConvention), mblib2to3/Grammar.txt (lambdef,
-old_lambdef), mblack/nodes.py (space after `lambda`).
-Tests: KGEN/test/mojo-integration/lambda.mojo,
+kw_lambda in canParseAtom, unparenthesized-args diagnostic), ExprNodes.h /
+ExprNodes.cpp / ExprNodePrinters.cpp (LambdaNode), DeclResolution.cpp
+(LambdaNode::emitIR: isThin test = bodyCaptures.values.empty() &&
+node->captures.empty() && !node->captureAllByConvention, plus the
+input-param singleton test; promoteClosure fold; emitClosureInstance
+fallback; "cannot use a capturing lambda" diagnostics), Signatures.cpp
+(parseCaptureList, ParsedCaptureList, captureAllByConvention),
+mblib2to3/Grammar.txt (lambdef, old_lambdef), mblack/nodes.py (space after
+`lambda`). Tests: KGEN/test/mojo-integration/lambda.mojo,
 KGEN/test/mojo-parser/exprs/lambda.mojo,
-KGEN/test/mojo-parser/exprs/expressions_errors.mojo.
-All runnable examples on this page execute in
-docs/code/reference/lambda-expressions/tests.mojo; the rejected
-forms were each confirmed against the compiler individually.
+KGEN/test/mojo-parser/exprs/expressions_errors.mojo. All runnable examples
+on this page execute in docs/code/reference/lambda-expressions/tests.mojo;
+the rejected forms were each confirmed against the compiler individually.
 */}
 
 A *lambda* is an anonymous, single-expression function. It has no name,
-only one body expression, and no `return` statement. Once compiled, it's
-equivalent to a standard but restricted function:
+its body is a single expression, and it doesn't use `return`. Lambda
+expressions are commonly passed to other functions as arguments, making
+them useful for higher-order programming, callbacks, event handlers, and
+other localized behavior.
+
+In Mojo, lambda expressions are part of the function declaration family:
 
 ```mojo
 def main():
-    var inc = lambda (x: Int) {} -> Int: x + 1  # No `return`
+    var inc = lambda (x: Int) -> Int: x + 1
     print(inc(4))  # 5
 ```
 
-This is just like declaring:
+This lambda is equivalent to the following function declaration:
 
 ```mojo
-def inc(x: Int) {} -> Int:
+def inc(x: Int) -> Int:
     return x + 1
 
 print(inc(4))  # 5
 ```
 
-Capture lists are optional. Lambda expressions can be used as function
-pointers and closures.
+Lambdas complement `def` functions. Use `def` for named, reusable
+functions and lambdas for short, inline behavior.
 
 :::caution
 Lambda expressions are under active development.
 
-At this time, return-type inference isn't implemented.
-
-Omitting the return type defaults it to `None`. Mojo won't infer the return
-type from the body or the use site.
+Return-type inference isn't implemented. If you omit the return type, the
+lambda returns `None`, even when its body produces a value.
 
 The rules on this page describe Mojo's current behavior.
 :::
 
 ## Syntax
 
-Lambda expressions use a precise and compact syntax.
-
-Most parts are optional, depending
-on what the lambda captures, accepts, and returns. You must include the
-`lambda` keyword, the colon, and a body expression:
+Lambda expressions use a compact syntax. Most parts are optional,
+depending on what the lambda captures, accepts, and returns. Every lambda
+includes the `lambda` keyword, a body expression, and the `:` that
+introduces it:
 
 ```text
 lambda [[parameter-list]] [(argument-list)] [effects]
        [{capture-list}] [-> ResultType] : expression
 ```
 
-The simplest, empty lambda is as follows. It takes no arguments, captures
-nothing, and returns `None`:
+The simplest lambda takes no arguments, captures nothing, and returns
+`None`:
 
 ```text
 lambda: None
 ```
 
-Lambda elements follow the same order as functions:
+Each part follows the same convention as standard functions:
 
 ```mojo
 def main():
-    # Fully explicit.
+    # Fully explicit. Uses an empty "no-capture" capture list `{}`
     var a = lambda (x: Int) {} -> Int: x + 1
 
-    # Capture list elided.
-    var b = lambda (x: Int) -> Int: x * 2
+    # Parameterized
+    var b = lambda [T: Intable](x: T) -> Int: Int(x) + 1
 
-    # Return type elided, defaults to `None`.
+    var y = 1
+    # Capture list omitted. `y` defaults to `imm`
+    var c = lambda (x: Int) -> Int: x * 2 + y
+
+    # Return type omitted (`None`)
     var list: List[Int] = [1]
-    var c = lambda (x: Int) {mut list}: list.append(x)
+    var d = lambda (x: Int) {mut list}: list.append(x)
 
-    # Everything elided: no arguments, no captures, `None` result.
-    var d = lambda {mut list}: list.append(0)
+    # Arguments and return type omitted. Mutable capture
+    var e = lambda {mut list}: list.append(0)
     print(a(4), b(4))  # 5 8
 ```
 
 ## Arguments
 
-Each argument must be typed and appear in the parenthesized argument list.
-Types can be concrete (`String`) or parameterized (`T`, `Self.U`):
+Each argument must appear in parentheses and have a type. Types can be
+concrete (`String`) or parameterized (`T`, `Self.U`):
 
 ```mojo
 # Concrete argument
@@ -116,17 +118,21 @@ var hello = lambda (x: String) {} -> String: "Hello, " + x
 var inc = lambda [T: Intable](x: T) -> Int: Int(x) + 1
 ```
 
-Omit argument lists for lambdas that don't take arguments.
+Omit the argument list for lambdas that don't take arguments:
+
+```mojo
+var no_args = lambda -> Int: 42
+```
 
 ### Argument conventions
 
-Arguments use the same conventions as functions. The default is `imm` for
-an immutable reference:
+Arguments use the same conventions as functions. The default convention is
+`imm`, which captures an immutable reference:
 
 ```mojo
 def main():
     var read_arg = lambda (x: Int) {} -> Int: x + 1
-    # AKA: var read_arg = lambda (imm x: Int) {} -> Int: x + 1
+    # Same as: var read_arg = lambda (imm x: Int) {} -> Int: x + 1
     var own_arg = lambda (var x: Int) {} -> Int: x + 1
     var mut_arg = lambda (mut x: Int) {}: x.__iadd__(1)
 
@@ -159,12 +165,12 @@ lambda (x: Int) {}: x + 1     # Error: can't convert Int to None
 
 ## Lambda closures and capture lists
 
-Some lambda expressions are *closures*. A closure carries state from its
-enclosing scope, or binds the parameters it declares at each call site.
+A lambda becomes a *closure* when it carries state from its enclosing
+scope or binds the parameters it declares at each call site.
 
 Lambda capture lists use the same
 [conventions](/docs/reference/closure-declarations/#capture-conventions) as
-nested `def` closures, namely `imm`, `mut`, `ref`, `var`, plus copyable and
+nested `def` closures: `imm`, `mut`, `ref`, `var`, plus copyable and
 movable.
 
 A lambda becomes a closure under these circumstances:
@@ -194,7 +200,7 @@ A lambda becomes a closure under these circumstances:
   the body. Explicitly naming captures turns accidental references into
   errors instead of silent captures.
 
-- The lambda declares a parameter list.
+- The lambda declares its own parameter list.
 
   ```mojo
   # N is lambda-owned, bound at each call
@@ -202,7 +208,7 @@ A lambda becomes a closure under these circumstances:
   print(f[5](3))  # 8
   ```
 
-Parameters owned by the surrounding scope are compile-time substituted,
+Parameters declared by an enclosing scope are compile-time substituted,
 not captured:
 
 ```mojo
@@ -226,26 +232,25 @@ var z = 10
 var f = lambda (x: Int) {} -> Int: x + z  # Error: z isn't captured
 ```
 
-Any capture convention makes a lambda a closure even when it captures
-nothing. `lambda (x: Int) {imm} -> Int: x + 1` is a closure. The same
-lambda with the capture list omitted is thin.
+Any explicit capture convention makes a lambda a closure, even when it
+captures nothing. For example, `lambda (x: Int) {imm} -> Int: x + 1` is a
+closure, while the same lambda with the capture list omitted is *thin*.
 
 ## Thin lambdas {#thin}
 
 A lambda that isn't a closure is `thin`. To be thin, a lambda captures
 nothing, uses no explicit capture conventions, and doesn't declare its
-own parameters. In return, it unlocks the following capabilities. A
-thin lambda can be:
+own parameters. Thin lambdas can be:
 
 - Used as a thin function pointer, including `abi("C")` callbacks.
+- Passed as a thin function-type parameter.
 - Bound to a symbol with `comptime`.
-- Used as a thin function-type parameter.
 - Returned from a function.
 - Stored in a struct field.
 - Used as a default argument or parameter value.
 
-Thin matters when a lambda callable must outlive the scope that created it
-or it is needed at compile-time.
+Thin matters when a lambda must outlive the scope that created it or is
+needed at compile time.
 
 ### C ABI boundaries
 
@@ -261,21 +266,21 @@ The `abi("C")` effect must appear on the lambda declaration. It's not
 enough to type the variable. If you choose to use explicit typing, the type
 must *also* carry the `abi("C")` effect.
 
-### Runtime and compile-time
+### Compile-time use
 
-You can call any lambda directly. You can pass any lambda as a runtime
-argument to higher-order functions with function-shaped infer-only
+You can call any lambda directly. You can also pass any lambda as a
+runtime argument to higher-order functions with function-shaped infer-only
 parameter types:
 
 ```mojo
 def hof[T: def(x: Int) -> Int, //](f: T): # ...
 ```
 
-Compile-time parameters are different. Unless a parameter is explicitly
-typed as `thin`, you can't pass lambdas. When it is, the lambda must be
-thin.
+Compile-time parameters are different. Unless a parameter is typed as
+`thin`, you can't pass lambdas at compile time. When it *is*, the lambda
+must be thin.
 
-Thin lambdas can be executed at compile time, with the result assigned to a
+Mojo can execute thin lambdas at compile time, and assign the result to a
 comptime name:
 
 ```mojo
@@ -316,15 +321,6 @@ def main():
     print(f(6))  # 9
 ```
 
-## Formatting
-
-`mojo format` adds a space after `lambda` before any argument list or
-parameter list opener. A lambda reads as `lambda (x: Int) -> Int: e`, not
-`lambda(x: Int) -> Int: e`.
-
-Short lambdas stay on one line; one that exceeds the line width wraps
-using standard expression-splitting rules.
-
 ## Restrictions
 
 Lambda expressions have the following restrictions:
@@ -335,25 +331,23 @@ Lambda expressions have the following restrictions:
   solved type.
 - **Arguments need types**: There's no argument-type inference from the
   use site.
-- **No escape**: Lambda closures can't outlive their enclosing scope, the
-  same restriction `def` closures carry.
-- **No `thin` in the signature**: Thin effects apply to function *types*,
-  not to a lambda declaration.
+- **No `thin` in the signature**: `thin` applies to function *types*, not
+  to lambda declarations. So long as the lambda doesn't declare any
+  parameters that must be supplied from call sites, adding the `{}`
+  capture list ensures the lambda is thin.
 
 ## Errors
 
 {/* markdownlint-disable MD013 */}
 
-| Compiler complaint                            | Trigger                                         |
-|-----------------------------------------------|-------------------------------------------------|
-| Unparenthesized lambda arguments              | Python's `lambda x, y: ...`                     |
-| Argument type must be specified               | A parenthesized but untyped argument            |
-| Can't convert value to `None` in return value | A non-`None` body with the return type omitted  |
-| Could not infer capture convention            | A free variable under an explicit `{}`          |
-| Mutating method on an immutable value         | Mutation through an `imm` capture               |
-| Capturing lambda in comptime initializer      | A lambda closure bound to a `comptime`          |
-| Capturing lambda in type parameter            | A lambda closure passed as a parameter          |
-| Capturing lambda in default parameter         | A lambda closure as a parameter's default value |
-| Can't implicitly convert to a `thin` type     | A lambda closure passed to a `thin` parameter   |
+| Compiler complaint                            | Trigger                                                                             |
+|-----------------------------------------------|-------------------------------------------------------------------------------------|
+| Can't convert value to `None` in return value | Returns a value from a lambda with no return type                                   |
+| Could not infer capture convention            | Excludes capture conventions (`{}`) but references a value from the enclosing scope |
+| Mutating method on an immutable value         | Mutation through an `imm` capture                                                   |
+| Capturing lambda in comptime initializer      | A lambda closure bound to a `comptime` name                                         |
+| Capturing lambda in type parameter            | A lambda closure passed to a type parameter                                         |
+| Capturing lambda in default parameter         | A lambda closure used as a default parameter value                                  |
+| Can't implicitly convert to a `thin` type     | A lambda closure passed where a thin function is required                           |
 
 {/* markdownlint-enable MD013 */}
