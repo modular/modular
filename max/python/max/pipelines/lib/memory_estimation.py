@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
 
-from max.driver import Device, is_virtual_device_mode
+from max.driver import Device, DeviceSpec, is_virtual_device_mode
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     compute_max_seq_len_fitting_in_cache,
@@ -91,6 +91,24 @@ class _MemoryPlan:
     available_cache_memory: int | None = None
     """Committed KV-cache byte budget; ``None`` when not computed (virtual-device
     early-outs and non-KV models)."""
+
+    device_specs: tuple[DeviceSpec, ...] | None = None
+    """The device specs this plan was computed against, attached by the
+    registry. Specs rather than ``Device`` objects because the plan is
+    pickled into the model-worker process. ``None`` until attached (and for
+    pixel-generation plans, which don't consume a memory plan)."""
+
+    def require_device_specs(self) -> tuple[DeviceSpec, ...]:
+        """Returns the device specs, which must be attached.
+
+        Pipeline constructors call this: it requires a plan built by the
+        registry (or a test plan that sets ``device_specs``).
+        """
+        assert self.device_specs is not None, (
+            "memory plan lacks device specs; pipelines require a "
+            "plan built by the registry's memory-planning step"
+        )
+        return self.device_specs
 
 
 # Vision encoder cache and paged token KV share the same pre-KV memory pool

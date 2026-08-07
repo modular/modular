@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import importlib
 import json
@@ -559,16 +560,23 @@ def _run_memory_planning(
 
     model_config = pipeline_config.model
 
-    # Non-PipelineModel architectures skip KV-cache memory estimation.
     if not issubclass(arch.pipeline_model, PipelineModel):
         return _MemoryPlan(
             max_batch_size=pipeline_config.runtime.max_batch_size or 1,
             footprint=0,
+            device_specs=tuple(
+                _effective_device_specs(model_config, arch.default_encoding)
+            ),
         )
 
-    devices = load_devices(
-        _effective_device_specs(model_config, arch.default_encoding)
+    effective_specs = _effective_device_specs(
+        model_config, arch.default_encoding
     )
+    logger.info(
+        "devices: %s",
+        ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
+    )
+    devices = load_devices(effective_specs)
     arch_config = arch.config.initialize(
         pipeline_config, model_config=model_config
     )
@@ -668,7 +676,9 @@ def _run_memory_planning(
             to_human_readable_bytes(plan.available_cache_memory),
         )
 
-    return plan
+    # Specs rather than Device objects: the plan is pickled into the
+    # model-worker process.
+    return dataclasses.replace(plan, device_specs=tuple(effective_specs))
 
 
 def _retrieve_chat_template(chat_template: Path | None) -> str | None:

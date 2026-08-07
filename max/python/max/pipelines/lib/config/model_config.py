@@ -1329,6 +1329,8 @@ class MAXModelConfig(MAXModelConfigBase):
         )
         self._validate_final_architecture_model_path_weight_path()
 
+    # TODO(MXF-517): Move this check (and device resolution generally) to
+    # arch-config construction, so PipelineConfig has no resolution logic.
     def _validate_quantization_encoding_device_compatibility(
         self,
         quantization_encoding: SupportedEncoding,
