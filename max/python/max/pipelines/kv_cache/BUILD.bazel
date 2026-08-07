@@ -12,6 +12,10 @@ filegroup(
     name = "_nixl_gpu_flavor_plugins",
     srcs = select({
         "//:nvidia_gpu": [
+            # The verbs flavor adds the uct_ib RDMA transports for InfiniBand
+            # internode transfers; max._core prefers it on hosts with a real IB
+            # port, else falls back to the plain cuda flavor.
+            "@nixl_upstream//:cuda-verbs/libplugin_UCX.so",
             "@nixl_upstream//:cuda/libplugin_LIBFABRIC.so",
             "@nixl_upstream//:cuda/libplugin_UCX.so",
         ],
@@ -22,6 +26,7 @@ filegroup(
             "@nixl_upstream//:rocm/libplugin_UCX.so",
         ],
         "//conditions:default": [
+            "@nixl_upstream//:cuda-verbs/libplugin_UCX.so",
             "@nixl_upstream//:cuda/libplugin_LIBFABRIC.so",
             "@nixl_upstream//:cuda/libplugin_UCX.so",
             "@nixl_upstream//:rocm-verbs/libplugin_UCX.so",

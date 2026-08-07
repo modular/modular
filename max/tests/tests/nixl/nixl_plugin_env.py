@@ -59,6 +59,26 @@ def preload_gpu_libs() -> None:
             pass  # not available on this machine; ignore silently
 
 
+def _force_plain_flavor() -> None:
+    """Repoints NIXL_PLUGIN_DIR from a ``*-verbs`` flavor to its plain sibling.
+
+    These tests build two NIXL agents in one process. On an InfiniBand host the
+    verbs flavor opens two mlx5 device contexts on the same HCA, which host
+    rdma-core cannot tear down cleanly (a reserved-QPN mutex assertion in
+    mlx5_free_context aborts the process). The plain flavor omits the verbs
+    transports, so it never opens an mlx5 context; the rc/InfiniBand path is
+    covered cross-process by the perf-smoke cross-node lane instead. No-op off
+    an IB host, where the resolver already picked the plain flavor.
+    """
+    plugin_dir = os.environ.get("NIXL_PLUGIN_DIR")
+    if not plugin_dir:
+        return
+    head, flavor = os.path.split(plugin_dir.rstrip("/"))
+    plain = {"cuda-verbs": "cuda", "rocm-verbs": "rocm"}.get(flavor)
+    if plain is not None:
+        os.environ["NIXL_PLUGIN_DIR"] = os.path.join(head, plain)
+
+
 def configure() -> None:
     """Configures NIXL plugin discovery and preloads GPU runtime libraries.
 
@@ -67,6 +87,10 @@ def configure() -> None:
     singleton is constructed.
     """
     preload_gpu_libs()
+    # max._core resolved NIXL_PLUGIN_DIR at import; drop the verbs flavor for
+    # these in-process multi-agent tests (see _force_plain_flavor) before the
+    # plugin-manager singleton reads it.
+    _force_plain_flavor()
     if os.environ.get("NIXL_PLUGIN_DIR"):
         return
     gpu_nodes = [
