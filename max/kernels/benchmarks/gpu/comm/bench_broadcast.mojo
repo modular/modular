@@ -257,6 +257,7 @@ def bench_broadcast[
                     ctx_inner,
                     root,
                     max_num_blocks,
+                    rank=ctx_idx,
                 )
 
         bencher_iter_custom[call_fn](bencher, ctx)
@@ -322,6 +323,7 @@ def bench_broadcast[
                 list_of_ctx[i],
                 root,
                 max_num_blocks,
+                rank=i,
             )
 
     # Copy results back and verify - reuse host_buffer for each GPU
