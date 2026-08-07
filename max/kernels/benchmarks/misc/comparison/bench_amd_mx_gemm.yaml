@@ -147,3 +147,32 @@ params:
 - <<: *commons_mxfp8
   $N: [6144]
   $K: [3072]
+
+# ---------------------------------------------------------------------------
+# MiniMax M3, tp=4, MXFP4 (amd/MiniMax-M3-MXFP4). Same shapes as the MXFP8
+# block above; M3 ships both formats, and this one isn't actively tuned yet.
+# ---------------------------------------------------------------------------
+# Attn Q proj
+- <<: *commons
+  $N: [2048]
+  $K: [6144]
+
+# Attn K/V proj
+- <<: *commons
+  $N: [128]
+  $K: [6144]
+
+# Attn O proj
+- <<: *commons
+  $N: [6144]
+  $K: [2048]
+
+# Dense/shared-expert MLP gate/up proj
+- <<: *commons
+  $N: [3072]
+  $K: [6144]
+
+# Dense/shared-expert MLP down proj
+- <<: *commons
+  $N: [6144]
+  $K: [3072]
