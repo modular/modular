@@ -14,7 +14,9 @@
 #include "Support/Threading/ThreadAffinity.h"
 
 #include "Support/ErrorOr.h"
+#include "Support/Threading/SignalAltStack.h"
 #include "gtest/gtest.h"
+#include <thread>
 
 using namespace M;
 
@@ -32,4 +34,34 @@ TEST(Threading, haveThreadAffinity) {
   // On macos, we don't have/use thread affinity.
   EXPECT_FALSE(haveThreadAffinity());
 #endif
+}
+
+TEST(Threading, signalAltStack) {
+  if (!signalAltStackEnabled())
+    GTEST_SKIP() << "No altstack in this build";
+
+  // A freshly spawned thread has no alternate stack of its own. The test main
+  // thread does, from LLVM's crash handler registration.
+  bool preinstalled = false;
+  std::thread([&]() {
+    preinstalled = hasSignalAltStack();
+    if (preinstalled)
+      return;
+
+    {
+      ScopedSignalAltStack altStack;
+      EXPECT_TRUE(hasSignalAltStack());
+
+      // A nested guard must not disturb the outer one when it goes away.
+      {
+        ScopedSignalAltStack nested;
+        EXPECT_TRUE(hasSignalAltStack());
+      }
+      EXPECT_TRUE(hasSignalAltStack());
+    }
+    EXPECT_FALSE(hasSignalAltStack());
+  }).join();
+
+  if (preinstalled)
+    GTEST_SKIP() << "threads on this configuration already have one";
 }
