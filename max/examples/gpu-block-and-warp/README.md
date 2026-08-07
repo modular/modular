@@ -20,8 +20,8 @@ This directory contains the following examples:
 
 - `tiled_matmul.mojo`: A tiled matrix multiplication example to demonstrate the
   proper use of
-  [`barrier()`](https://mojolang.org/docs/std/gpu/sync/sync/barrier/) for
-  thread block synchronization in GPU kernels.
+  [`barrier()`](https://docs.modular.com/api/mojo/max/gpu/sync/sync/barrier/)
+  for thread block synchronization in GPU kernels.
 
 - `pixi.toml`: a [Pixi](https://pixi.sh) project file containing the project
   dependencies and task definitions.
