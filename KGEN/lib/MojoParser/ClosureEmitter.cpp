@@ -3138,10 +3138,12 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   ASTDecl *fnParentDecl = closure.getParentDecl()->getNearestDeclOfType<FnOp>();
   auto parentFn = cast<FnOp>(fnParentDecl->getIfOperation());
   ASTDecl *result = nullptr;
-  if (usesClosurePipeline(parentFn))
+  if (usesClosurePipeline(parentFn)) {
     result = addCaptureValue(shared, *fnParentDecl, name, location);
-
-  if (!result) {
+    // Propagate failure.
+    if (!result)
+      return nullptr;
+  } else {
     auto hitMaybe = partialLookup(StringAttr::get(shared.getContext(), name),
                                   closure, location);
     if (failed(hitMaybe))
@@ -3170,6 +3172,11 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
 
   CValue valueInParent =
       ASTDeclToCValue(result, *emitter.builder, funcOp->getLoc());
+  if (!valueInParent) {
+    shared.emitError(location, "'")
+        << name << "' does not name a capturable value";
+    return nullptr;
+  }
   emitter.builder->setInsertionPoint(closure.getIfOperation());
 
   CaptureConvention convention;
@@ -3321,9 +3328,13 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
       return nullptr;
     break;
   }
-  default:
-    llvm_unreachable("All capture conventions should be handled above");
-    break;
+  case CaptureConvention::kConventionTrivialCopy:
+    llvm_unreachable("trivial copy is derived from by-copy, not parsed");
+  case CaptureConvention::kConventionUnspecified:
+    shared.emitError(
+        location, "Could not infer capture convention of the captured value ")
+        << name;
+    return nullptr;
   }
   assert(captureValue && "must set capture value");
   // Ensure the capture value we created is used when parsing the body of the
