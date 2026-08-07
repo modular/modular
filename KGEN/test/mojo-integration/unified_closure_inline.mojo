@@ -34,7 +34,7 @@ def test_always_inline_closure():
 
 
 # COM: Closure body is not inlined. Wrapper __call__ is still inlined.
-# CHECK: kgen.func @"unified_closure_inline::bool_closure{{.*}}"
+# CHECK: kgen.func @"{{.*}}bool_closure{{.*}}"
 # CHECK-NOT: __call__{{.*}}def(flag: Bool, count: Int) -> Bool
 
 

@@ -113,30 +113,32 @@ public:
     ArgConvention convention;
   };
 
-  /// Promote `nestedFnDecl` to a top-level method and wire its captured values
-  /// to the fields of the closure struct. Returns the promoted function decl.
+  /// Move `nestedFnDecl` into `storageStructDecl` as a method and wire its
+  /// captured values to the storage struct fields. Returns the method decl.
   ASTDecl *
-  liftClosureIntoMethod(ASTDecl &nestedFnDecl,
-                        ArrayRef<ParamDeclAttr> concreteParams,
+  liftClosureIntoMethod(ASTDecl &nestedFnDecl, ASTDecl &storageStructDecl,
                         PromotedClosureSelfArg selfArg,
                         ArrayRef<StructDefFieldAttr> concreteFieldDecls,
                         ArrayRef<Value> concreteFieldCaptures,
                         ArrayRef<CaptureConvention> captureConventions,
                         ArrayRef<Type> selfBoundFieldTypes, Location location);
 
-  /// Promote a closure decl to a top-level function decl.
+  /// Promote a closure decl into `targetParent`. nullptr → nearest FileModuleOp
+  /// (thin/stateless promotions).
   ASTDecl *
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 std::optional<bool> capturingOverride = std::nullopt);
+                 std::optional<bool> capturingOverride = std::nullopt,
+                 ASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
   ASTDecl *
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 std::optional<bool> capturingOverride = std::nullopt);
+                 std::optional<bool> capturingOverride = std::nullopt,
+                 ASTDecl *targetParent = nullptr);
 
   Value emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                     ArrayRef<Capture> captures, TraitDeclOp trait,
@@ -285,7 +287,7 @@ public:
   /// Bundles the IR artifacts produced by liftClosure.
   struct Closure {
     ASTDecl *structDecl;         ///< The closure storage struct.
-    ASTDecl *promotedCallMethod; ///< The lifted __call__ function.
+    ASTDecl *promotedCallMethod; ///< The storage struct's `__call__` method.
     TypedAttr typeAttr;          ///< Bound closure storage struct type.
   };
 

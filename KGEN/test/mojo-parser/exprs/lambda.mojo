@@ -43,17 +43,14 @@ def withNoCapture():
 
 # COM: Default-all capture by mut: `{mut}` captures every used outer var by mut.
 
-# The captured `z` becomes a field of the closure storage struct.
+# Nested storage methods print inside the struct (before the enclosing fn's
+# init call), so body checks are CHECK-DAG.
 # CHECK-DAG: lit.struct.decl @"withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
-
-# The lambda instantiates the scope-qualified storage, capturing `z`.
+# CHECK-DAG: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
+# CHECK-DAG: lit.ref.struct.ger %{{.*}}[z]
+# CHECK-DAG: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 # CHECK: lit.call @{{.*}}::@"withCapturingMut()::`lambda_0::__storage"::@"__init__
-
-# The body (x + z) loads the captured `z` out of storage before adding.
-# CHECK: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
-# CHECK: lit.ref.struct.ger %{{.*}}[z]
-# CHECK: lit.call tail @{{.*}}::@"__add__{{.*}}"{{.*}}(%x, %{{.*}})
 
 
 def withCapturingMut():
@@ -244,13 +241,14 @@ def withComptimeBound() -> Int:
 
 # COM: Elided return type defaults to `None`, like a `def` with no `->`. `f` is
 # COM: thin (promotes, no storage); `g` captures `lst`, so it stays a closure.
+# COM: Nested `lambda_1` methods print inside storage before thin `lambda_0`.
 
 # CHECK-NOT: @"withElidedReturn()::`lambda_0::__storage"
 # CHECK-DAG: lit.struct.decl @"withElidedReturn()::`lambda_1::__storage"
 # CHECK-DAG: lit.struct.field lst : !lit.ref<{{.*}}, mut {{.*}}>
+# CHECK-DAG: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
+# CHECK-DAG: lit.call @{{.*}}List{{.*}}append
 # CHECK: lit.fn @"{{.*}}`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"(%x: !Int) -> !kgen.none
-# CHECK: lit.fn @"{{.*}}`lambda_1(){{.*}}"{{.*}} capturing -> !kgen.none
-# CHECK: lit.call @{{.*}}List{{.*}}append
 
 
 def withElidedReturn():

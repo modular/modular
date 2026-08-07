@@ -658,36 +658,6 @@ buildSymbolWithBindings(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams,
   return symbolConstant;
 }
 
-static SymbolConstantAttr buildSymbolWithBoundPrependedParams(
-    FnOp impl, ArrayRef<ParamDeclAttr> boundPrependedParams) {
-  MLIRContext *ctx = impl.getContext();
-  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(impl.getOperation()));
-
-  SmallVector<TypedAttr> boundParams = llvm::map_to_vector(
-      boundPrependedParams, [](ParamDeclAttr param) -> TypedAttr {
-        return ParamDeclRefAttr::get(param);
-      });
-  FnTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
-  ArrayRef<ParamDeclAttr> explicitParams = impl.getInputParams().drop_back(
-      impl.getFuncTypeGenerator().getNumImplicitOriginDecls());
-  size_t explicitParamCount = explicitParams.size();
-  assert(boundParams.size() <= explicitParamCount &&
-         "cannot bind more prepended params than explicit function params");
-  SmallVector<TypedAttr> specializationBindings = boundParams;
-  specializationBindings.reserve(explicitParamCount);
-  ParameterEvaluator evaluator(boundParams);
-  for (ParamDeclAttr param : explicitParams.drop_front(boundParams.size())) {
-    auto unbound = UnboundAttr::get(evaluator.replace(param.getType()));
-    specializationBindings.push_back(unbound);
-    evaluator.overwriteDeclBinding(param, unbound);
-  }
-  FuncTypeGeneratorType specializedSigGen = baseSigGen.getSpecializedGenerator(
-      specializationBindings, /*evaluationContext=*/nullptr, impl.getLoc());
-  return SymbolConstantAttr::get(ctx, implSymbol, specializationBindings,
-                                 specializedSigGen);
-}
-
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
 ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
                                           bool synthetic, StringAttr customName,
@@ -1999,11 +1969,10 @@ static PromotedSignature buildPromotedSignature(
           std::move(newParams)};
 }
 
-ASTDecl *
-ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
-                               ArrayRef<ParamDeclAttr> prependedParams,
-                               std::optional<PromotedClosureSelfArg> selfArg,
-                               std::optional<bool> capturingOverride) {
+ASTDecl *ClosureEmitter::promoteClosure(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
+    std::optional<PromotedClosureSelfArg> selfArg,
+    std::optional<bool> capturingOverride, ASTDecl *targetParent) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   // Mark dead unparsed code as resolved to prevent resolution dependent on
@@ -2018,7 +1987,9 @@ ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
   MLIRContext *ctx = shared.getContext();
   FnOp function = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
-  ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+  if (!targetParent)
+    targetParent = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
+  assert(targetParent && "expected a target parent for promotion");
 
   auto [promotedSignature, promotedFunctionType, selfRuntimeArgType,
         newParams] =
@@ -2026,15 +1997,11 @@ ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
                              function.getParams(), prependedParams, selfArg,
                              capturingOverride);
 
-  OpBuilder builder = moduleDecl->getDeclEndBuilder();
+  OpBuilder builder = targetParent->getDeclEndBuilder();
   function->moveBefore(builder.getInsertionBlock(),
                        builder.getInsertionPoint());
-  // We need to mangle the symbol name because we're lifting these into the file
-  // scope - if you have two closures with the same name in different functions,
-  // that's fine, but when we lift them to the file scope they need to have
-  // unique names.
   function.setSymName(
-      moduleDecl->mangleParamName(function.getSymName()->str()));
+      targetParent->mangleParamName(function.getSymName()->str()));
 
   // Update function attributes and body to reflect self argument addition.
   if (selfArg) {
@@ -2092,7 +2059,7 @@ ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
   function.setNoDocRequired(true);
   function.setSynthetic(true);
   auto &decl = shared.declResolver->addFullyResolvedDecl(
-      function, /*name=*/StringAttr(), loc, moduleDecl);
+      function, /*name=*/StringAttr(), loc, targetParent);
   // Transfer child decls from the original to the promoted decl. Since the op
   // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
@@ -2126,17 +2093,16 @@ ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
   return &decl;
 }
 
-ASTDecl *
-ClosureEmitter::promoteClosure(ASTDecl &nestedFnDecl,
-                               ArrayRef<ParamDeclRefAttr> prependedParamRefs,
-                               std::optional<PromotedClosureSelfArg> selfArg,
-                               std::optional<bool> capturingOverride) {
+ASTDecl *ClosureEmitter::promoteClosure(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
+    std::optional<PromotedClosureSelfArg> selfArg,
+    std::optional<bool> capturingOverride, ASTDecl *targetParent) {
   SmallVector<ParamDeclAttr> prependedParams =
       llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
         return ParamDeclAttr::get(paramRef);
       });
   return promoteClosure(nestedFnDecl, prependedParams, selfArg,
-                        capturingOverride);
+                        capturingOverride, targetParent);
 }
 
 template <typename T>
@@ -2338,16 +2304,18 @@ addOriginReplacements(mlir::AttrTypeReplacer &originReplacer,
 }
 
 ASTDecl *ClosureEmitter::liftClosureIntoMethod(
-    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> concreteParams,
+    ASTDecl &nestedFnDecl, ASTDecl &storageStructDecl,
     PromotedClosureSelfArg selfArg,
     ArrayRef<StructDefFieldAttr> concreteFieldDecls,
     ArrayRef<Value> concreteFieldCaptures,
     ArrayRef<CaptureConvention> captureConventions,
     ArrayRef<Type> selfBoundFieldTypes, Location location) {
   MLIRContext *ctx = shared.getContext();
-  ASTDecl *promotedDecl = promoteClosure(nestedFnDecl, concreteParams,
-                                         /*selfArg=*/selfArg,
-                                         /*capturingOverride=*/true);
+  // Nest under the storage struct as a method. Captured parameters already
+  // live on the storage struct, so do not prepend them to the method.
+  ASTDecl *promotedDecl = promoteClosure(
+      nestedFnDecl, ArrayRef<ParamDeclAttr>{}, /*selfArg=*/selfArg,
+      /*capturingOverride=*/true, /*targetParent=*/&storageStructDecl);
   FnOp promotedCallFunction = cast<FnOp>(promotedDecl->getIfOperation());
   assert(concreteFieldDecls.size() == concreteFieldCaptures.size() &&
          "expected one capture value per closure field");
@@ -2529,7 +2497,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
          "expected nested closure declaration to be a function");
   PromotedClosureSelfArg selfArg{closureStructType, ArgConvention::ReadMem};
   ASTDecl *promotedCallDecl = liftClosureIntoMethod(
-      nestedFnDecl, concreteParams, selfArg, concreteFieldDecls,
+      nestedFnDecl, structDecl, selfArg, concreteFieldDecls,
       concreteFieldCaptures, concreteFieldCaptureConventions,
       selfBoundFieldTypes, location);
   FnOp promotedCallFunction = cast<FnOp>(promotedCallDecl->getIfOperation());
@@ -2703,30 +2671,6 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     emitter.emitNormalReturn(initFnOp.getLoc(), /*returnVal=*/Value());
   }
 
-  // Keep the synthesized methods at top level until closure methods are moved
-  // into the storage struct.
-  auto promoteToTopLevel = [&](FnOp methodFn) -> FnOp {
-    ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(
-        getFullyResolvedSymbolRef(methodFn));
-    assert(decl && "synthesized value method must be registered");
-    decl->resolvedness = DeclResolvedness::body;
-    ASTDecl *promoted =
-        promoteClosure(*decl, concreteParams, /*selfArg=*/std::nullopt,
-                       /*capturingOverride=*/false);
-    return cast<FnOp>(promoted->getIfOperation());
-  };
-  for (ClosureMethod method :
-       {ClosureMethod::DEL, ClosureMethod::MOVE, ClosureMethod::COPY}) {
-    auto it = methodImpls.find(method);
-    if (it != methodImpls.end())
-      it->second = promoteToTopLevel(it->second);
-  }
-
-  // The synthesized methods remain at top level, so the storage struct does
-  // not directly provide move or copy initializers yet.
-  structOp.removeMoveInitAttr();
-  structOp.removeCopyInitAttr();
-
   TraitType traitType = getTraitType(closureParents, moduleDecl);
   structOp.setCanonicalTrait(traitType);
 
@@ -2758,8 +2702,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     auto it = methodImpls.find(method);
     assert(it != methodImpls.end() &&
            "non-marker closure method missing an implementation");
-    TypedAttr symbol =
-        buildSymbolWithBoundPrependedParams(it->second, concreteParams);
+
+    TypedAttr symbol = buildSymbol(it->second, structOp.getInputParams());
     WitnessOp::create(builder, fnOp.getSymNameAttr(), symbol);
 
     // add the alias entries
@@ -3067,7 +3011,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       std::move(deviceCaptureFieldTypes), allCapturesEncodable, nestedFnDecl);
   TypedAttr witnessTable = liftedClosure.typeAttr;
 
-  // Promoting the nested closure function moves it to module scope.
+  // The nested closure function is moved into the storage struct as a method.
   // Emit closure materialization ops back in the original parent function body.
   if (closureInsertBefore &&
       closureInsertBefore->getBlock() == closureInsertBlock)
