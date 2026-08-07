@@ -11,17 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Multi-GPU smoke test for the fused all-gather + RMSNorm graph op.
+"""Multi-GPU execution test for the fused all-gather + RMSNorm graph op.
 
-Exercises both dispatch branches: the fused kernel (decode M, below the fuse
-threshold) and the two-launch fallback (prefill M, standalone all-gather +
-rms_norm_gpu with the @__copy_capture closures). Verifies the gathered residual
-is bit-identical to a plain all-gather (concat) and the normed output matches a
-host RMSNorm reference (mbc=True, weight_offset=1.0, full-H divisor).
+The only test that runs the Mojo handler: the kernel-level test re-implements the
+grouping itself, so it cannot catch a handler bug (wrong group window, wrong
+gamma index, wrong output arity). Exercises both dispatch branches -- the fused
+kernel (decode M, below the fuse threshold) and the two-launch fallback (prefill
+M, standalone all-gather + rms_norm_gpu through the @__copy_capture closures) --
+full-world and grouped, with a DISTINCT gamma per device so a gamma indexed by
+the group-local rank instead of the device index fails here.
 """
 
 from __future__ import annotations
 
+import itertools
 from typing import Any, cast
 
 import ml_dtypes
@@ -36,6 +39,9 @@ from max.nn import Signals
 COLS = 6144  # M3 hidden size; the fuse threshold is bytes = rows*COLS*2.
 EPS = 1e-6
 WEIGHT_OFFSET = 1.0  # M3 Gemma-style: gamma_eff = gamma + 1.0.
+# The op fuses at/below this many GATHERED rows (the group's total, not per-rank
+# as in reduce-scatter). Mirrors AG_NORM_FUSE_THRESHOLD at H=COLS.
+FUSE_THRESHOLD_GATHERED_ROWS = 128
 
 
 def _to_device_bf16(arr: np.ndarray, device: Accelerator) -> Buffer:
@@ -55,7 +61,15 @@ def _from_device_bf16(buf: Buffer) -> np.ndarray:
     )
 
 
-def _ag_rms_norm_graph(signals: Signals, shard_rows: int) -> Graph:
+def _bf16(arr: np.ndarray) -> np.ndarray:
+    return arr.astype(ml_dtypes.bfloat16).astype(np.float32)
+
+
+def _ag_rms_norm_graph(
+    signals: Signals,
+    rows_per_device: list[int],
+    group_size: int | None,
+) -> Graph:
     devices = signals.devices
     num_devices = len(devices)
     with Graph(
@@ -65,10 +79,10 @@ def _ag_rms_norm_graph(signals: Signals, shard_rows: int) -> Graph:
             [
                 TensorType(
                     dtype=DType.bfloat16,
-                    shape=[shard_rows, COLS],
+                    shape=[rows_per_device[i], COLS],
                     device=device,
                 )
-                for device in devices
+                for i, device in enumerate(devices)
             ]
             + [
                 TensorType(dtype=DType.bfloat16, shape=[COLS], device=device)
@@ -86,87 +100,260 @@ def _ag_rms_norm_graph(signals: Signals, shard_rows: int) -> Graph:
             gammas=gammas,
             epsilon=EPS,
             weight_offset=WEIGHT_OFFSET,
+            group_size=group_size,
         )
         graph.output(*normed, *residual)
         return graph
 
 
-def _host_rmsnorm(gathered_f32: np.ndarray) -> np.ndarray:
-    """Reference RMSNorm: gamma=0 so gamma_eff=WEIGHT_OFFSET(=1.0); mbc=True."""
+def _host_rmsnorm(
+    gathered_f32: np.ndarray, gamma_f32: np.ndarray
+) -> np.ndarray:
+    """Reference norm of the gathered rows, gamma folded in f32 (mbc=True)."""
     m2 = np.mean(gathered_f32**2, axis=-1, keepdims=True)
     nf = 1.0 / np.sqrt(m2 + EPS)
-    gamma_eff = 0.0 + WEIGHT_OFFSET
-    return (
-        (gathered_f32 * nf * gamma_eff)
-        .astype(ml_dtypes.bfloat16)
-        .astype(np.float32)
-    )
+    return _bf16(gathered_f32 * nf * (gamma_f32 + WEIGHT_OFFSET))
+
+
+def _inputs_and_gammas(
+    rows_per_device: list[int], devices: list[Accelerator]
+) -> tuple[list[Buffer], list[Buffer], list[np.ndarray], list[np.ndarray]]:
+    """Positive varied per-device shards + a DISTINCT gamma per device."""
+    tensor_inputs: list[Buffer] = []
+    gamma_inputs: list[Buffer] = []
+    host_shards: list[np.ndarray] = []
+    host_gammas: list[np.ndarray] = []
+    offset = 0
+    for i, rows in enumerate(rows_per_device):
+        size = rows * COLS
+        arr = (((np.arange(size) + offset) % 251) + 1).reshape(rows, COLS)
+        arr = arr.astype(np.float32)
+        host_shards.append(_bf16(arr))
+        tensor_inputs.append(_to_device_bf16(arr, devices[i]))
+        # Distinct per device (the running offset), so gathering a sibling
+        # group's shards cannot reproduce this group's tensor.
+        offset += size
+
+        # Per-device gamma spaced 0.5 apart, WELL outside the 2e-2 tolerance
+        # below: at 0.01 the tolerance swallows the difference and a
+        # group-local-vs-device gamma index swap goes undetected.
+        gamma = ((np.arange(COLS) % 7) * 0.01) + (i * 0.5)
+        gamma = gamma.astype(np.float32)
+        host_gammas.append(_bf16(gamma))
+        gamma_inputs.append(_to_device_bf16(gamma, devices[i]))
+    return tensor_inputs, gamma_inputs, host_shards, host_gammas
+
+
+def _check(
+    outputs: list[Any],
+    num_gpus: int,
+    group_size: int,
+    host_shards: list[np.ndarray],
+    host_gammas: list[np.ndarray],
+    label: str,
+) -> None:
+    normed_out = outputs[:num_gpus]
+    residual_out = outputs[num_gpus : 2 * num_gpus]
+
+    for group_start in range(0, num_gpus, group_size):
+        group = list(range(group_start, group_start + group_size))
+        # The all-gather concatenates ONLY this group's shards, in group-rank
+        # order; a handler that slices the wrong window gathers a different set,
+        # and one that gathers in global-device order permutes the rows.
+        gathered = np.concatenate([host_shards[d] for d in group], axis=0)
+
+        for local_rank, dev_idx in enumerate(group):
+            res = _from_device_bf16(cast(Buffer, residual_out[dev_idx]))
+            assert res.shape == gathered.shape, (
+                f"{label}: residual shape on GPU {dev_idx}: {res.shape} != "
+                f"{gathered.shape}"
+            )
+            # A gathered row is a verbatim copy, so this is a bit-identity gate.
+            assert np.array_equal(res, gathered), (
+                f"{label}: residual mismatch on GPU {dev_idx} "
+                f"(local_rank={local_rank})"
+            )
+
+            nrm = _from_device_bf16(cast(Buffer, normed_out[dev_idx]))
+            ref = _host_rmsnorm(gathered, host_gammas[dev_idx])
+            max_abs = float(np.max(np.abs(nrm - ref)))
+            # Loose bf16 reduction-order tolerance; the tight ULP gate and
+            # bit-identity vs `rms_norm_gpu` live in
+            # test/gpu/comm/test_allgather_rmsnorm.mojo. A wrong gamma index,
+            # eps, divisor or group window is far larger than this.
+            assert np.allclose(nrm, ref, rtol=2e-2, atol=2e-2), (
+                f"{label}: normed mismatch on GPU {dev_idx} "
+                f"(local_rank={local_rank}): max_abs={max_abs}"
+            )
+
+    # Groups must be SEPARATED, not merely self-consistent: a handler that
+    # gathered the whole world, or a sibling group's window, still satisfies
+    # every within-group gate above if both groups end up holding the same data.
+    for a, b in itertools.combinations(range(0, num_gpus, group_size), 2):
+        ra = _from_device_bf16(cast(Buffer, residual_out[a]))
+        rb = _from_device_bf16(cast(Buffer, residual_out[b]))
+        if ra.shape == rb.shape:
+            assert not np.array_equal(ra, rb), (
+                f"{label}: the groups led by GPU {a} and GPU {b} gathered "
+                "identical data, so the per-group gates above cannot "
+                "distinguish a cross-group read"
+            )
 
 
 @pytest.mark.parametrize(
     "num_gpus, shard_rows, regime",
     [
-        (4, 2, "fused"),  # 8 total rows -> below threshold -> fused kernel
-        (4, 128, "two_launch"),  # 512 total rows -> above -> two-launch path
+        (4, 2, "fused"),  # 8 gathered rows -> below threshold -> fused kernel
+        (4, 128, "two_launch"),  # 512 gathered rows -> above -> two-launch
     ],
 )
 def test_allgather_rms_norm_execution(
     num_gpus: int, shard_rows: int, regime: str
 ) -> None:
+    """Full-world op: both dispatch branches, per-device gamma."""
     if num_gpus > accelerator_count():
         pytest.skip(
             f"Not enough GPUs ({num_gpus}) for {regime} allgather_rms_norm."
         )
 
+    rows_per_device = [shard_rows] * num_gpus
     signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
-    graph = _ag_rms_norm_graph(signals, shard_rows)
+    graph = _ag_rms_norm_graph(signals, rows_per_device, group_size=None)
     host = CPU()
     devices = [Accelerator(n) for n in range(num_gpus)]
     session = InferenceSession(devices=[host, *devices])
     compiled = session.load(graph)
 
-    # Positive, varied shard data (avoids all-equal rows / pow-of-two aliasing).
-    numpy_shards = []
-    tensor_inputs = []
-    offset = 0
-    for i in range(num_gpus):
-        size = shard_rows * COLS
-        arr = (
-            ((np.arange(size) + offset) % 251 + 1).reshape(shard_rows, COLS)
-        ).astype(np.float32)
-        numpy_shards.append(arr.astype(ml_dtypes.bfloat16).astype(np.float32))
-        tensor_inputs.append(_to_device_bf16(arr, devices[i]))
-        offset += size
-    gammas = [
-        _to_device_bf16(np.zeros(COLS, dtype=np.float32), devices[i])
-        for i in range(num_gpus)
-    ]
+    tensor_inputs, gamma_inputs, host_shards, host_gammas = _inputs_and_gammas(
+        rows_per_device, devices
+    )
+    outputs = compiled.execute(
+        *tensor_inputs, *gamma_inputs, *signals.buffers()
+    )
+    _check(list(outputs), num_gpus, num_gpus, host_shards, host_gammas, regime)
 
-    outputs = compiled.execute(*tensor_inputs, *gammas, *signals.buffers())
 
-    gathered = np.concatenate(
-        numpy_shards, axis=0
-    )  # bit-exact gather ref (f32)
-    normed_ref = _host_rmsnorm(gathered)
+@pytest.mark.parametrize("group_size", [None, 2])
+def test_allgather_rms_norm_empty_batch(group_size: int | None) -> None:
+    """A data-parallel replica can legitimately be handed an empty batch.
 
-    normed_out = outputs[:num_gpus]
-    residual_out = outputs[num_gpus : 2 * num_gpus]
+    Zero gathered rows makes the fused launcher compute a zero grid, which
+    `enqueue_function` rejects ("Dim value grid_dim.x must be a positive
+    number"). The reduce-scatter sibling crashed the serving worker this way on
+    the very first request under TP4xDP2, where one replica owns the single
+    request and the other owns nothing; this op has the same launcher shape.
+    """
+    num_gpus = 4
+    if num_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({num_gpus}) for empty-batch execution.")
 
-    for n in range(num_gpus):
-        res = _from_device_bf16(cast(Buffer, residual_out[n]))
-        # Residual is a verbatim gather -> bit-identical to concat on every GPU.
-        assert np.array_equal(res, gathered), (
-            f"residual mismatch on GPU {n} ({regime})"
+    rows_per_device = [0] * num_gpus
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _ag_rms_norm_graph(signals, rows_per_device, group_size=group_size)
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, _, _ = _inputs_and_gammas(
+        rows_per_device, devices
+    )
+    outputs = compiled.execute(
+        *tensor_inputs, *gamma_inputs, *signals.buffers()
+    )
+
+    # The contract is that it does not raise and returns empty tensors. Every
+    # rank skips together, so no peer is stranded at the start barrier.
+    assert len(outputs) == 2 * num_gpus
+    for out in outputs:
+        assert _from_device_bf16(cast(Buffer, out)).shape[0] == 0
+
+
+def test_grouped_allgather_rms_norm_execution() -> None:
+    """Grouped op (TP-within-DP): 4 GPUs as 2 groups of 2, per-group shapes.
+
+    The two groups are deliberately sized on OPPOSITE sides of the fuse
+    threshold, so one group runs the fused kernel while the other takes the
+    two-launch fallback in the same execution. That divergence is what
+    `_dispatch_ag_norm`'s per-group invariance comment asserts is safe (the
+    groups' `rank_sigs` sets are disjoint); if it were not, this hangs.
+    """
+    num_gpus = 4
+    group_size = 2
+    if num_gpus > accelerator_count():
+        pytest.skip(
+            f"Not enough GPUs ({num_gpus}) for grouped allgather_rms_norm."
         )
 
-        nrm = _from_device_bf16(cast(Buffer, normed_out[n]))
-        max_abs = float(np.max(np.abs(nrm - normed_ref)))
-        # Loose bf16 reduction-order tolerance (values are O(1) after norm); a
-        # wrong eps/cols-divisor/gamma-order bug is far larger than this. This is
-        # NOT the real numeric gate -- the tight one (frac>1ULP <= 1%, max_ulp
-        # <= 4, plus bit-identity vs `rms_norm_gpu`) lives in the kernel-level
-        # test/gpu/comm/test_allgather_rmsnorm.mojo; here we only sanity-check the
-        # op lowers and runs end-to-end through both dispatch branches.
-        assert np.allclose(nrm, normed_ref, rtol=2e-2, atol=2e-2), (
-            f"normed mismatch on GPU {n} ({regime}): max_abs={max_abs}"
+    # Group 0 gathers 8 rows -> fused. Group 1 gathers 256 -> two-launch.
+    # Different per-group totals also cover the per-device (not device-0)
+    # gathered dim in the output-shape computation.
+    shard_rows = [4, 128]
+    assert shard_rows[0] * group_size <= FUSE_THRESHOLD_GATHERED_ROWS, (
+        "group 0 must be below the fuse threshold"
+    )
+    assert shard_rows[1] * group_size > FUSE_THRESHOLD_GATHERED_ROWS, (
+        "group 1 must be above the fuse threshold"
+    )
+
+    rows_per_device = [shard_rows[i // group_size] for i in range(num_gpus)]
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _ag_rms_norm_graph(signals, rows_per_device, group_size=group_size)
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, host_shards, host_gammas = _inputs_and_gammas(
+        rows_per_device, devices
+    )
+    outputs = compiled.execute(
+        *tensor_inputs, *gamma_inputs, *signals.buffers()
+    )
+    _check(
+        list(outputs),
+        num_gpus,
+        group_size,
+        host_shards,
+        host_gammas,
+        "grouped-2xTP2",
+    )
+
+
+def test_grouped_allgather_rms_norm_separation() -> None:
+    """Grouped op where both groups gather the SAME shape but different data.
+
+    This is the case that can actually catch a cross-group read: with matching
+    shapes the separation gate in `_check` fires, so a handler that gathered the
+    whole world -- or a sibling group's window -- produces two identical outputs
+    and fails, where the shape-differing case above would still pass.
+    """
+    num_gpus = 4
+    group_size = 2
+    if num_gpus > accelerator_count():
+        pytest.skip(
+            f"Not enough GPUs ({num_gpus}) for grouped allgather_rms_norm."
         )
+
+    rows_per_device = [4] * num_gpus  # both groups gather 8 rows
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _ag_rms_norm_graph(signals, rows_per_device, group_size=group_size)
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, host_shards, host_gammas = _inputs_and_gammas(
+        rows_per_device, devices
+    )
+    outputs = compiled.execute(
+        *tensor_inputs, *gamma_inputs, *signals.buffers()
+    )
+    _check(
+        list(outputs),
+        num_gpus,
+        group_size,
+        host_shards,
+        host_gammas,
+        "grouped-separation",
+    )

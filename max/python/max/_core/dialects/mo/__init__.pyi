@@ -421,6 +421,14 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
     raw gathered residual (`outResidual`); a gathered row is a verbatim copy, so
     the residual is bit-identical to a standalone all-gather (no f32 peer-sum).
     `multiply_before_cast=true`, bf16 in/out only (no quantization).
+
+    `group_size` matches `mo.distributed.allgather`: the devices split into
+    contiguous groups of that many, each gathering independently, so the op
+    works under TP-within-DP topologies and every output is the group's gathered
+    tensor rather than the whole world's. It must be at least 2 and must divide
+    the device count; `group_size == num_devices` is a full-world collective.
+    The builder always sets it -- the `0` attribute default is not a usable
+    value.
     """
 
     def __init__(
@@ -436,6 +444,7 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
         epsilon: Sequence[max._core.Value[max._core.Type]],
         weight_offset: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -449,6 +458,12 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
     def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
 
 class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
     """

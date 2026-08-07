@@ -35,6 +35,12 @@ This version is still a work in progress.
   previously full-world only and silently disabled itself whenever the
   tensor-parallel degree was smaller than the device count.
 
+- `max.graph.ops.allgather_rms_norm` takes an optional `group_size` argument,
+  matching `max.graph.ops.allgather`: the devices split into contiguous groups
+  of that many, each gathering independently, so the fused op also works under
+  tensor-parallel-within-data-parallel topologies. It was previously full-world
+  only.
+
 ### C API
 
 ## MAX kernels
