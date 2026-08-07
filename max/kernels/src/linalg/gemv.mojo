@@ -364,9 +364,7 @@ def gemv_kernel_vector_multirow[
     # `_m`. Clamping the row index keeps those loads in bounds; the stores
     # below drop the out-of-range results.
     var last_row = _m - 1
-    var local_accum = InlineArray[SIMD[accum_type, simd_width], rows_per_warp](
-        fill=0
-    )
+    var local_accum = Array[SIMD[accum_type, simd_width], rows_per_warp](fill=0)
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
