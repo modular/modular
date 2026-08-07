@@ -37,6 +37,10 @@ This version is still a work in progress.
     import foo.baz
     ```
 
+  - Importing functions with the same name from different modules, combining
+    them into one overload set, is now an error, following a period of
+    deprecation.
+
 ## Library stabilizations
 
 ## Library changes
