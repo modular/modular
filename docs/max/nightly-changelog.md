@@ -12,6 +12,16 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- The vision encoder cache can store embeddings in fixed-size blocks,
+  enabled by setting the `MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION`
+  environment variable to a fraction in (0, 0.5] of the KV cache pool
+  budget (`0`, the default, keeps the entry-count cache) on
+  architectures whose memory planner reports a vision row spec (Gemma 4
+  and Kimi K2.5). Capacity is a byte budget carved into 128-token
+  blocks — a video spans many blocks and an image a few — so a
+  video-capable model no longer collapses the cache to a handful of
+  worst-case-video slots that starve image workloads.
+
 ### Inference server
 
 ### Server metrics

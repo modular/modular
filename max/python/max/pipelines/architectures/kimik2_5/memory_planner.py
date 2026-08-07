@@ -396,7 +396,27 @@ class KimiK25MemoryPlanner(PagedMemoryPlanner):
                 "init_pos_emb_height and init_pos_emb_width"
             )
         max_tokens = (pos_h * pos_w) // merge_sq
-        return max_tokens * hidden * 2
+        spec = self.get_vision_cache_row_spec(huggingface_config)
+        assert spec is not None
+        row_hidden, dtype = spec
+        return max_tokens * row_hidden * dtype.size_in_bytes
+
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16."""
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "KimiK2.5 requires a text_config in the HuggingFace config"
+            )
+        hidden = getattr(text_config, "hidden_size", 0)
+        if hidden <= 0:
+            raise ValueError(
+                "KimiK2.5 text_config.hidden_size must be positive"
+            )
+        return (hidden, DType.bfloat16)
 
 
 # ------------------------------------------------------------------

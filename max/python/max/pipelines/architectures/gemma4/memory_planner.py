@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
@@ -108,5 +109,26 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             return 0
         k = vision_config.pooling_kernel_size
         max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16
+        spec = self.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden, dtype = spec
+        return max_tokens * hidden * dtype.size_in_bytes
+
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16.
+
+        ``None`` for the text-only ``gemma4_unified`` checkpoints, which
+        have no vision cache.
+        """
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            return None
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        return (text_config.hidden_size, DType.bfloat16)

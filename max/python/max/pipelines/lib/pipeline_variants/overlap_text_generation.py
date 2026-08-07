@@ -1694,7 +1694,8 @@ class OverlapTextGenerationPipeline(
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
                 max_entries=pipeline_config.runtime.max_vision_cache_entries,
-                n_devices=len(self._devices),
+                plan=pipeline_config.runtime._vision_cache_plan,
+                devices=self._devices,
             )
 
         # Load sampler(s) for the non-spec-decode path. The bitmask-aware
