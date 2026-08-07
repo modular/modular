@@ -1377,7 +1377,7 @@ comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
 comptime _IsNotTuplePredicate[T: CoordLike] = not T.is_tuple
 
-comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
+comptime _IsFlat[*element_types: CoordLike] = element_types.all[
     _IsNotTuplePredicate,
 ]()
 """True iff no element in the variadic is a tuple. Single-pass; lets
@@ -1385,9 +1385,7 @@ comptime _IsFlat[*element_types: CoordLike] = element_types.all_satisfies[
 on the (typical) flat path."""
 
 
-comptime _AllStaticFlat[
-    *element_types: CoordLike
-] = element_types.all_satisfies[
+comptime _AllStaticFlat[*element_types: CoordLike] = element_types.all[
     _IsStaticPredicate,
 ]()
 
@@ -1400,9 +1398,7 @@ compile-time-known dim."""
 
 comptime _AllEqualPredicate[T1: AnyType, T2: type_of(T1)] = T1 == T2
 
-comptime _AllEqual[
-    T: AnyType, *element_types: AnyType
-] = element_types.all_satisfies[
+comptime _AllEqual[T: AnyType, *element_types: AnyType] = element_types.all[
     _AllEqualPredicate[T, _],
 ]()
 

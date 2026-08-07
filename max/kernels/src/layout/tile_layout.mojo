@@ -939,7 +939,7 @@ comptime _RowMajorMapperIdx[
 
 
 comptime _AnyTuple[*element_types: CoordLike] = (
-    not element_types.all_satisfies[_IsNotTuplePredicate]()
+    not element_types.all[_IsNotTuplePredicate]()
 )
 """True iff `element_types` contains at least one tuple element."""
 
@@ -2263,7 +2263,7 @@ comptime _AllEltsSatisfy[
     pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
 ]: Bool = a.length == b.length and ParameterList.tabulate[
     a.length, _tabulatePredicate[a, b, pred, _]
-]().all_satisfies[
+]().all[
     _BoolIsTrue,
 ]()
 

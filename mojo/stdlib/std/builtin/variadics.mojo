@@ -353,7 +353,7 @@ struct TypeList[
 
     @always_inline("builtin")
     @staticmethod
-    def any_satisfies[
+    def any[
         predicate: __generator_type[Type: Self.Trait] Bool,
     ]() -> Bool:
         """Returns true if `predicate` holds for at least one type in this list.
@@ -391,7 +391,7 @@ struct TypeList[
 
     @always_inline("builtin")
     @staticmethod
-    def all_satisfies[
+    def all[
         predicate: __generator_type[Type: Self.Trait] Bool,
     ]() -> Bool:
         """Returns true if `predicate` holds for every type in this list.
@@ -425,7 +425,7 @@ struct TypeList[
         Returns:
             True if the type is contained in this type list, False otherwise.
         """
-        return Self.any_satisfies[Self._ContainsTypePredicate[type, ...],]()
+        return Self.any[Self._ContainsTypePredicate[type, ...],]()
 
     # ===-------------------------------------------------------------------===#
     # Mappings
@@ -884,10 +884,8 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 
     @always_inline("builtin")
     @staticmethod
-    def any_satisfies[
-        predicate: __generator_type[Elt: Self.type] Bool
-    ]() -> Bool:
-        """'any_satisfies' applies a function to each element and returns true if
+    def any[predicate: __generator_type[Elt: Self.type] Bool]() -> Bool:
+        """'any' applies a function to each element and returns true if
         the function returns True for any element.
 
         Parameters:
@@ -909,10 +907,8 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 
     @always_inline("builtin")
     @staticmethod
-    def all_satisfies[
-        predicate: __generator_type[Elt: Self.type] Bool
-    ]() -> Bool:
-        """'all_satisfies' applies a function to each element and returns true if
+    def all[predicate: __generator_type[Elt: Self.type] Bool]() -> Bool:
+        """'all' applies a function to each element and returns true if
         the function returns True for all elements.
 
         Parameters:
@@ -954,7 +950,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         Returns:
             True if the value is contained in the list, False otherwise.
         """
-        return Self.any_satisfies[Self._ContainsValuePredicate[value, ...]]()
+        return Self.any[Self._ContainsValuePredicate[value, ...]]()
 
     # ===-------------------------------------------------------------------===#
     # Mappings
