@@ -102,6 +102,30 @@ def _preload_nixl_plugin_deps() -> None:
     _nixl_plugin_deps_preloaded = True
 
 
+def _plugin_load_error(upstream_backend_type: str) -> str | None:
+    """Returns the dynamic-loader error behind an unloadable NIXL plugin.
+
+    Upstream NIXL reports a plugin whose ``dlopen`` failed exactly as it reports
+    one that does not exist -- ``NIXL_ERR_NOT_FOUND`` -- and logs the loader
+    error at INFO, below its default WARN level. Retrying the load here recovers
+    that message, which is what distinguishes a broken runtime dependency (a
+    conflicting SONAME already in the process, a missing driver library) from a
+    packaging gap.
+
+    Returns ``None`` when the plugin loads here, so the failure lies elsewhere,
+    or when no plugin directory is set.
+    """
+    plugin_dir = os.environ.get("NIXL_PLUGIN_DIR")
+    if not plugin_dir:
+        return None
+    path = os.path.join(plugin_dir, f"libplugin_{upstream_backend_type}.so")
+    try:
+        ctypes.CDLL(path, mode=ctypes.RTLD_LOCAL)
+    except OSError as e:
+        return str(e)
+    return None
+
+
 def _get_nixl_backend_type() -> NixlBackendType:
     """Returns the NIXL backend type from the environment.
 
@@ -424,7 +448,18 @@ class TensorAgent:
 
         # All groups for one shard live on the same device.
         device = tensors[0].device
-        backend_params = agent.get_plugin_params(upstream_backend_type)[0]
+        try:
+            plugin_params = agent.get_plugin_params(upstream_backend_type)
+        except Exception as e:
+            reason = _plugin_load_error(upstream_backend_type)
+            detail = f": {reason}" if reason else ""
+            raise RuntimeError(
+                f"NIXL backend {backend_type!r} is present in "
+                f"{os.environ.get('NIXL_PLUGIN_DIR')} but could not be "
+                f"loaded{detail}. Set NIXL_LOG_LEVEL=INFO for the full NIXL "
+                "plugin log."
+            ) from e
+        backend_params = plugin_params[0]
         if not device.is_host:
             backend_params["gpu_device_id"] = str(device.id)
 
