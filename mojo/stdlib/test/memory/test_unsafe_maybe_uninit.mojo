@@ -35,15 +35,15 @@ def test_maybe_uninitialized() raises:
 
     var ptr = Pointer(to=destructor_recorder).as_imm()
     var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
-    a.init_from(DelRecorder(42, ptr))
+    a.unsafe_write(DelRecorder(42, ptr))
 
-    assert_equal(a.unsafe_assume_init_ref().value, 42)
+    assert_equal(a.unsafe_assume_init().value, 42)
     assert_equal(len(destructor_recorder), 0)
 
     assert_equal(a.unsafe_ptr()[].value, 42)
     assert_equal(len(destructor_recorder), 0)
 
-    a.unsafe_assume_init_destroy()
+    a.unsafe_ptr().unsafe_deinit_pointee()
     assert_equal(len(destructor_recorder), 1)
     assert_equal(destructor_recorder[0], 42)
     _ = a
@@ -55,7 +55,7 @@ def test_maybe_uninitialized() raises:
 
 def test_write_does_not_trigger_destructor() raises:
     var a = UnsafeMaybeUninit[AbortOnDel]()
-    a.init_from(AbortOnDel(42))
+    a.unsafe_write(AbortOnDel(42))
 
     # Using the initializer should not trigger the destructor too.
     _ = UnsafeMaybeUninit[AbortOnDel](AbortOnDel(42))
@@ -67,26 +67,26 @@ def test_write_does_not_trigger_destructor() raises:
 def test_init_from() raises:
     var a = "hello"
     var uninit = UnsafeMaybeUninit[String]()
-    uninit.init_from(a^)
-    assert_equal(uninit.unsafe_assume_init_ref(), "hello")
-    uninit.unsafe_assume_init_destroy()
+    uninit.unsafe_write(a^)
+    assert_equal(uninit.unsafe_assume_init(), "hello")
+    uninit.unsafe_ptr().unsafe_deinit_pointee()
 
 
 def test_take() raises:
     var a = MoveCounter(0)
     var uninit = UnsafeMaybeUninit[MoveCounter[Int]](a^)
-    var moved = uninit.unsafe_assume_init_take()
+    var moved = uninit^.unsafe_assume_init()
     assert_equal(moved.move_count, 2)
 
 
 def test_zeroed() raises:
     # For Int, zeroed memory is valid and should be 0.
     var a = UnsafeMaybeUninit[Int].zeroed()
-    assert_equal(a.unsafe_assume_init_ref(), 0)
+    assert_equal(a.unsafe_assume_init(), 0)
 
     # For UInt64, zeroed memory should also be 0.
     var b = UnsafeMaybeUninit[UInt64].zeroed()
-    assert_equal(b.unsafe_assume_init_ref(), 0)
+    assert_equal(b.unsafe_assume_init(), 0)
 
     var c = UnsafeMaybeUninit[String].zeroed()
     var arr = Array[Byte, size_of[String]()](fill=0)

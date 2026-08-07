@@ -195,9 +195,9 @@ def test_array_unsafe_assume_initialized_constructor_string() raises:
     var maybe_uninitialized_arr = Array[UnsafeMaybeUninit[String], 3](
         uninitialized=True
     )
-    maybe_uninitialized_arr[0].init_from("hello")
-    maybe_uninitialized_arr[1].init_from("mojo")
-    maybe_uninitialized_arr[2].init_from("world")
+    maybe_uninitialized_arr[0].unsafe_write("hello")
+    maybe_uninitialized_arr[1].unsafe_write("mojo")
+    maybe_uninitialized_arr[2].unsafe_write("world")
 
     var initialized_arr = Array[String, 3](
         unsafe_assume_initialized=maybe_uninitialized_arr^

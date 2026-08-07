@@ -735,7 +735,7 @@ def test_unsafe_pointer_niche() raises:
     UP.write_niche(Pointer(to=storage))
     assert_true(UP.isa_niche(Pointer(to=storage)))
 
-    storage.init_from(UP(to=x))
+    storage.unsafe_write(UP(to=x))
     assert_false(UP.isa_niche(Pointer(to=storage)))
 
 
