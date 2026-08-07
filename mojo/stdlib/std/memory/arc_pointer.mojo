@@ -44,8 +44,8 @@ struct _ArcPointerInner[T: Movable & Deinitable]:
     Carries the atomic refcounts and the T itself.
     """
 
-    var strong: Atomic[DType.uint64]
-    var weak: Atomic[DType.uint64]
+    var strong: Atomic[UInt64]
+    var weak: Atomic[UInt64]
     var payload: UnsafeMaybeUninit[Self.T]
 
     @doc_hidden

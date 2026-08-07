@@ -289,7 +289,7 @@ struct String(
 
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    comptime REF_COUNT_SIZE = size_of[Atomic[Int]]()
     """Size of the reference count prefix for heap strings."""
 
     # ===------------------------------------------------------------------=== #
@@ -673,11 +673,11 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    def _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[DType.int]:
+    def _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[Int]:
         # The header is stored before the string data.
         return self._ptr_or_data.unsafe_offset(
             -Self.REF_COUNT_SIZE
-        ).unsafe_bitcast[Atomic[DType.int]]()[]
+        ).unsafe_bitcast[Atomic[Int]]()[]
 
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
@@ -710,7 +710,7 @@ struct String(
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
-            var refcount = ptr.unsafe_bitcast[Atomic[DType.int]]()
+            var refcount = ptr.unsafe_bitcast[Atomic[Int]]()
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
                 dealloc(
@@ -730,8 +730,8 @@ struct String(
 
         # Initialize the Atomic refcount into the header.
         __get_address_as_uninit_lvalue(
-            ptr.unsafe_bitcast[Atomic[DType.int]]()._get_kgen_pointer()
-        ) = Atomic[DType.int](1)
+            ptr.unsafe_bitcast[Atomic[Int]]()._get_kgen_pointer()
+        ) = Atomic[Int](1)
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.

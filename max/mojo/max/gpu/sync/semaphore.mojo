@@ -39,7 +39,7 @@ from std.sys import is_nvidia_gpu, llvm_intrinsic
 
 from .sync import MaxHardwareBarriers, barrier, named_barrier
 
-comptime _device_atomic = Atomic[DType.int32, scope="device"]
+comptime _device_atomic = Atomic[Int32, scope="device"]
 
 
 @always_inline

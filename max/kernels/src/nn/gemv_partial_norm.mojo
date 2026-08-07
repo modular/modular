@@ -348,7 +348,7 @@ def gemv_partial_norm_kernel[
             # before the counter increment; the acquire half in the
             # global-last arriver's fetch_add makes every peer's
             # writes visible when it reads normed_output back below.
-            var prev_global = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+            var prev_global = Atomic[Int32, scope=DEVICE_SCOPE].fetch_add[
                 ordering=Ordering.ACQUIRE_RELEASE
             ](finish_counter, Int32(1))
             comptime if enable_trace:

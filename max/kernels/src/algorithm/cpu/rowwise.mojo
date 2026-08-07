@@ -430,7 +430,7 @@ def pjoin[
         var counter_ptr = ctx._counters_base + row_idx_
         # `fetch_add` returns the prior value; `prev + 1 == num_splits`
         # means this worker arrived last.
-        var prev = Atomic[DType.int32].fetch_add(counter_ptr, Int32(1))
+        var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
         var is_last = Int(prev) + 1 == num_splits
         ctx._is_last_block = is_last
         if is_last:

@@ -560,7 +560,7 @@ struct TaskGroup(Defaultable):
     It provides mechanisms to create, track, and wait for the completion of tasks.
     """
 
-    var counter: Atomic[DType.int]
+    var counter: Atomic[Int]
     """Atomic counter tracking the number of active tasks in the group."""
 
     var chain: _Chain
@@ -574,7 +574,7 @@ struct TaskGroup(Defaultable):
         """
         var chain = _Chain()
         _init_asyncrt_chain(Pointer(to=chain))
-        self.counter = Atomic[DType.int](1)
+        self.counter = Atomic[Int](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 

@@ -203,7 +203,7 @@ def max_reduction_scale_kernel[
         )
 
         if tid == 0:
-            _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
+            _ = Atomic[Float32].max(scale_global.ptr, row_max / fp8_max)
 
 
 @always_inline

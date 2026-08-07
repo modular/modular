@@ -34,7 +34,7 @@ def test_compile_atomic() raises:
     @parameter
     def my_add_function[
         dtype: DType
-    ](mut x: Atomic[dtype, scope="agent"]) -> Scalar[dtype]:
+    ](mut x: Atomic[Scalar[dtype], scope="agent"]) -> Scalar[dtype]:
         return x.fetch_add(1)
 
     var asm = compile_info[
@@ -58,9 +58,7 @@ def test_compile_fence() raises:
 
 
 def test_compile_compare_exchange() raises:
-    def my_cmpxchg_function(
-        mut atm: Atomic[DType.int32, scope="agent"]
-    ) -> Bool:
+    def my_cmpxchg_function(mut atm: Atomic[Int32, scope="agent"]) -> Bool:
         var expected = Int32(0)
         return atm.compare_exchange(expected, 42)
 
@@ -76,11 +74,9 @@ def test_compile_compare_exchange() raises:
 
 
 def test_compile_store() raises:
-    def my_store_function(
-        mut atm: Atomic[DType.int32, scope="agent"], v: Int32
-    ):
-        Atomic[DType.int32, scope="agent"].store[ordering=Ordering.RELEASE](
-            Pointer(to=atm.value), v
+    def my_store_function(mut atm: Atomic[Int32, scope="agent"], v: Int32):
+        Atomic[Int32, scope="agent"].store[ordering=Ordering.RELEASE](
+            Pointer(to=atm._value), v
         )
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
@@ -90,9 +86,9 @@ def test_compile_store() raises:
 
 
 def test_compile_store_default_scope() raises:
-    def my_store_function(mut atm: Atomic[DType.int64], v: Int64):
-        Atomic[DType.int64].store[ordering=Ordering.RELEASE](
-            Pointer(to=atm.value), v
+    def my_store_function(mut atm: Atomic[Int64], v: Int64):
+        Atomic[Int64].store[ordering=Ordering.RELEASE](
+            Pointer(to=atm._value), v
         )
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
@@ -104,11 +100,11 @@ def test_compile_store_default_scope() raises:
 
 def test_compile_xchg() raises:
     def my_xchg_function(
-        mut atm: Atomic[DType.int32, scope="agent"], v: Int32
+        mut atm: Atomic[Int32, scope="agent"], v: Int32
     ) -> Int32:
-        return Atomic[DType.int32, scope="agent"]._xchg[
-            ordering=Ordering.SEQUENTIAL
-        ](Pointer(to=atm.value), v)
+        return Atomic[Int32, scope="agent"]._xchg[ordering=Ordering.SEQUENTIAL](
+            Pointer(to=atm._value), v
+        )
 
     var asm = compile_info[my_xchg_function, emission_kind="llvm"]()
 

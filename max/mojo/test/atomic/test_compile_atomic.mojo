@@ -38,7 +38,7 @@ def _assert_ordered(text: String, first: String, second: String) raises:
 def test_compile_store_nvptx_default_scope() raises:
     # Default (empty) scope maps to NVPTX's system syncscope.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
 
     var ptx = String(compile_info[my_store, target=A100.target()]())
 
@@ -50,9 +50,7 @@ def test_compile_store_nvptx_default_scope() raises:
 
 def test_compile_store_nvptx_device_scope() raises:
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[DType.int32, scope="device"].store[ordering=Ordering.RELEASE](
-            ptr, v
-        )
+        Atomic[Int32, scope="device"].store[ordering=Ordering.RELEASE](ptr, v)
 
     var ptx = String(compile_info[my_store, target=A100.target()]())
 
@@ -65,7 +63,7 @@ def test_compile_load_nvptx_default_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[DType.int32].load[ordering=Ordering.ACQUIRE](ptr)
+        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
 
     var ptx = String(compile_info[my_load, target=A100.target()]())
 
@@ -77,9 +75,9 @@ def test_compile_load_nvptx_device_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[DType.int32, scope="device"].load[
-            ordering=Ordering.ACQUIRE
-        ](ptr)
+        dst[] = Atomic[Int32, scope="device"].load[ordering=Ordering.ACQUIRE](
+            ptr
+        )
 
     var ptx = String(compile_info[my_load, target=A100.target()]())
 
@@ -91,7 +89,7 @@ def test_compile_store_amdgpu_default_scope() raises:
     # SC0/SC1 bypass-cache flags on the `global_store` itself. Memory model:
     # https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)
+        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
 
     var asm = String(compile_info[my_store, target=_MI300X_TARGET]())
 
@@ -107,7 +105,7 @@ def test_compile_load_amdgpu_default_scope() raises:
         dst: Pointer[Int32, MutAnyOrigin],
         ptr: Pointer[Int32, MutAnyOrigin],
     ):
-        dst[] = Atomic[DType.int32].load[ordering=Ordering.ACQUIRE](ptr)
+        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
 
     var asm = String(compile_info[my_load, target=_MI300X_TARGET]())
 
@@ -122,9 +120,7 @@ def test_compile_store_amdgpu_agent_scope() raises:
     # scope is no longer required. Absence of that sequence is the
     # concrete witness that scope narrowing reaches AMDGPU codegen.
     def my_store(ptr: Pointer[Int32, MutAnyOrigin], v: Int32):
-        Atomic[DType.int32, scope="agent"].store[ordering=Ordering.RELEASE](
-            ptr, v
-        )
+        Atomic[Int32, scope="agent"].store[ordering=Ordering.RELEASE](ptr, v)
 
     var asm = String(compile_info[my_store, target=_MI300X_TARGET]())
 
@@ -138,8 +134,8 @@ def test_compile_store_load_amdgpu_llvm_ir() raises:
         ptr: Pointer[Int32, MutAnyOrigin],
         v: Int32,
     ):
-        Atomic[DType.int32].store[ordering=Ordering.RELEASE](ptr, v)
-        dst[] = Atomic[DType.int32].load[ordering=Ordering.ACQUIRE](ptr)
+        Atomic[Int32].store[ordering=Ordering.RELEASE](ptr, v)
+        dst[] = Atomic[Int32].load[ordering=Ordering.ACQUIRE](ptr)
 
     var ir = String(
         compile_info[

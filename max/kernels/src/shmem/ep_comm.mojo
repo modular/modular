@@ -144,8 +144,8 @@ def _DEVICE_SCOPE() -> StaticString:
 comptime DEVICE_SCOPE = _DEVICE_SCOPE()
 comptime BLOCK_SCOPE = _BLOCK_SCOPE()
 
-comptime _counter_atomic = Atomic[DType.int32, scope=DEVICE_SCOPE]
-comptime _signal_atomic = Atomic[DType.uint64]
+comptime _counter_atomic = Atomic[Int32, scope=DEVICE_SCOPE]
+comptime _signal_atomic = Atomic[UInt64]
 
 
 @always_inline

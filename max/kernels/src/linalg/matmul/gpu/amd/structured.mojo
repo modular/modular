@@ -32,7 +32,7 @@ from std.atomic import Atomic, Ordering
 from std.sys._assembly import inlined_assembly
 from std.utils import IndexList, StaticTuple
 
-comptime _workgroup_atomic = Atomic[DType.int32, scope="workgroup"]
+comptime _workgroup_atomic = Atomic[Int32, scope="workgroup"]
 
 
 trait Enum(TrivialRegisterPassable):
