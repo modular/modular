@@ -1316,62 +1316,6 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     if (isSpeculative)
       return expr;
 
-    // Deprecated intra-package access. A file inside a package used to see two
-    // things through its enclosing package's scope, with no import:
-    //   1. its sibling modules (the package scope listed them), and
-    //   2. whatever __init__ exposed (the package scope wildcard-imported
-    //      __init__, so its re-exports - and its own defs/imports - leaked in).
-    // The package scope is now empty and the package->__init__ redirect does
-    // not fire on the upward walk, so neither resolves.
-    //
-    // Keep both working with a deprecation warning; afterwards they fall
-    // through to the hard "unknown declaration" error below.
-    //
-    // Only recover a *bare unqualified* reference. Member access (`mod.x`) also
-    // routes through emitUnqualLookup, but with `lookupScope` set to the
-    // accessed module rather than the emitter's own scope. A name missing from
-    // `mod` must stay a hard error there - it must not be silently resolved
-    // against the *current* file's enclosing package.
-    if (ASTDecl *package =
-            &lookupScope == &emitter.getDeclScope()
-                ? emitter.getDeclScope().getNearestDeclOfType<PackageOp>()
-                : nullptr) {
-      // Case 1: a bare reference to a sibling module.
-      if (ASTDecl *sibling =
-              emitter.shared.tryImportSubModule(*package, spelling, loc);
-          sibling && succeeded(emitter.getDeclResolver().resolve(
-                         *sibling, DeclResolvedness::signature, loc))) {
-        emitter.emitWarning(loc)
-            << "implicit reference to sibling module '" << spelling
-            << "' without an import is deprecated; import it explicitly with "
-               "'from . import "
-            << spelling << "'" << expr->getRange();
-        deprecatedDeclStorage.push_back(sibling);
-        declsRef = deprecatedDeclStorage;
-      } else if (FailureOr<ASTDecl *> init =
-                     emitter.getDeclResolver().bodyResolvePackageInit(*package,
-                                                                      loc);
-                 succeeded(init) && *init) {
-        // Case 2: a bare reference to a name exposed by the package's
-        // __init__ (a re-export, or __init__'s own definition/import).
-        LookupResult reexport = emitter.shared.lookupAndResolveDecl(
-            spelling, loc, **init, /*searchParentScopes=*/false);
-        if (!reexport.getIfSuccess().empty()) {
-          emitter.emitWarning(loc)
-              << "implicit reference to '" << spelling
-              << "' from the enclosing package's '__init__' is deprecated; "
-                 "import it explicitly with 'from . import "
-              << spelling << "'" << expr->getRange();
-          ArrayRef<ASTDecl *> reexportDecls = reexport.getIfSuccess();
-          deprecatedDeclStorage.assign(reexportDecls.begin(),
-                                       reexportDecls.end());
-          declsRef = deprecatedDeclStorage;
-        }
-      }
-    }
-  }
-
-  if (declsRef.empty()) {
     // Otherwise, diagnose the unknown declaration, and try to provide fixits.
     return diagnoseUnknownDeclaration(spelling, lookupScope,
                                       lookup.getIfFailure(), emitter, expr);
