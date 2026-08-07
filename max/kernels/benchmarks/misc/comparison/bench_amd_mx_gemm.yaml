@@ -19,8 +19,9 @@
 # (small M = decode weight-streaming, large M = prefill). Shapes mirror the
 # canonical per-model shape sets:
 #   Llama-3.1-405B (hidden=16384): attention QKV/O + MLP up/down, at tp=8 & tp=4.
-#   Kimi-K2.5 (hidden=7168, moe_inter=2048, shared_inter=18432): routed +
-#     shared expert GEMMs at tp=8/ep=8 (per-GPU shapes).
+#   Kimi-K2.5 (hidden=7168, moe_inter=2048, dense intermediate=18432): shared
+#     expert (moe_inter) + dense layer-0 MLP (intermediate) at tp=8/ep=8
+#     (per-GPU shapes). Routed experts use a separate grouped-matmul kernel.
 #   MiniMax M3 (hidden=6144), MXFP8, at tp=4 (per-GPU shapes).
 
 name: bench_amd_mx_gemm
@@ -85,34 +86,34 @@ params:
   $K: [13312]
 
 # ---------------------------------------------------------------------------
-# Kimi-K2.5 MoE, tp=8 / ep=8 (per-GPU expert GEMMs)
+# Kimi-K2.5, tp=8 / ep=8 (per-GPU shapes)
 # ---------------------------------------------------------------------------
-# Routed expert down
+# Shared expert down
 - <<: *commons
   $N: [7168]
   $K: [2048]
 
-# Routed expert up
+# Shared expert up
 - <<: *commons
   $N: [2048]
   $K: [7168]
 
-# Routed expert gate+up combined
+# Shared expert gate+up combined
 - <<: *commons
   $N: [4096]
   $K: [7168]
 
-# Shared expert down
+# Dense layer-0 MLP down
 - <<: *commons
   $N: [7168]
   $K: [18432]
 
-# Shared expert up
+# Dense layer-0 MLP up
 - <<: *commons
   $N: [18432]
   $K: [7168]
 
-# Shared expert gate+up combined
+# Dense layer-0 MLP gate+up combined
 - <<: *commons
   $N: [36864]
   $K: [7168]
