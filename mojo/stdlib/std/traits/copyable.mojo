@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std.builtin.rebind import downcast
 from std.traits.movable import Movable
 
 
@@ -86,6 +87,22 @@ trait Copyable(Movable):
     In practice, it means the value can be copied by copying the bits from
     one location to another without side effects.
     """
+
+
+# TODO(MOCO-4525): Remove `downcast`
+comptime TriviallyCopyable[T: AnyType]: Bool = conforms_to(
+    T, Copyable
+) and downcast[T, Copyable].__copy_ctor_is_trivial
+"""Indicates whether `T` is `Copyable` with a trivial copy initializer.
+
+A copy initializer is trivial when the compiler generates it and all of
+`T`'s fields are themselves trivially copyable — the value can be copied by
+duplicating its bits to a new location with no additional side effects.
+Evaluates to `False` for non-`Copyable` types.
+
+Parameters:
+    T: The type to check.
+"""
 
 
 @stable(since="1.0")

@@ -57,7 +57,7 @@ operations, including a comptime `size`, indexing at fixed indices (for example
 `Ts[i]` in `comptime` loops), and helpers such as `TypeList.of`, `splat`,
 `tabulate`, `map`, `reduce`, `filter_idx`, and `contains`. Typical uses are
 trait predicates over several type parameters (see
-`stdlib/std/reflection/traits.mojo`) and metaprogramming that walks or
+`stdlib/std/traits/movable.mojo`) and metaprogramming that walks or
 transforms type packs.
 
 **Value lists** bind a sequence of compile-time **values** that all share one

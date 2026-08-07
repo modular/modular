@@ -17,14 +17,14 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.memory import (
-    UnsafeMaybeUninit,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
-)
+from std.memory import UnsafeMaybeUninit
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
+from std.traits import (
+    TriviallyCopyable,
+    TriviallyDeinitable,
+    TriviallyMovable,
+)
 from ._nicheable import (
     UnsafeNicheable,
     NicheIndex,
@@ -186,9 +186,9 @@ struct _NichedOptionalStorage[
     pattern) is repurposed to encode the "empty" state, eliminating the extra
     byte of overhead that `_DefaultVariantStorage` would require."""
 
-    comptime __del__is_trivial = _all_trivial_del[Self.T]()
-    comptime __copy_ctor_is_trivial = _all_trivial_copyinit[Self.T]()
-    comptime __move_ctor_is_trivial = _all_trivial_moveinit[Self.T]()
+    comptime __del__is_trivial = TriviallyDeinitable[Self.T]
+    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial = TriviallyMovable[Self.T]
 
     var _memory: _NicheStorageFor[Self.T]
 
@@ -289,9 +289,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     tracks the active type via an integer discriminant. Used whenever the
     variant types do not qualify for the niche-optimized path."""
 
-    comptime __del__is_trivial = _all_trivial_del[*Self.Ts]()
-    comptime __copy_ctor_is_trivial = _all_trivial_copyinit[*Self.Ts]()
-    comptime __move_ctor_is_trivial = _all_trivial_moveinit[*Self.Ts]()
+    comptime __del__is_trivial = Self.Ts.all[TriviallyDeinitable]()
+    comptime __copy_ctor_is_trivial = Self.Ts.all[TriviallyCopyable]()
+    comptime __move_ctor_is_trivial = Self.Ts.all[TriviallyMovable]()
 
     comptime _mlir_type = __mlir_type[
         `!kgen.variant<[rebind(:`,
@@ -544,9 +544,9 @@ struct Variant[*Ts: AnyType](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = is_trivially_deletable[Self._Storage]()
-    comptime __copy_ctor_is_trivial = is_trivially_copyable[Self._Storage]()
-    comptime __move_ctor_is_trivial = is_trivially_movable[Self._Storage]()
+    comptime __del__is_trivial = TriviallyDeinitable[Self._Storage]
+    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self._Storage]
+    comptime __move_ctor_is_trivial = TriviallyMovable[Self._Storage]
 
     # Fields
     var _storage: Self._Storage
@@ -1101,36 +1101,3 @@ struct Variant[*Ts: AnyType](
 
         self._storage.unsafe_ptr[T]().unsafe_deinit_pointee_with(deinit_func)
         self._storage^.unsafe_discard()
-
-
-# ===-------------------------------------------------------------------===#
-# Helper functions
-# ===-------------------------------------------------------------------===#
-
-
-def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.length):
-        if not is_trivially_deletable[Ts[i]]():
-            return False
-    return True
-
-
-def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.length):
-        comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[Ts[i]]():
-                return False
-        else:
-            return False
-
-    return True
-
-
-def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    comptime for i in range(Ts.length):
-        comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[Ts[i]]():
-                return False
-        else:
-            return False
-    return True

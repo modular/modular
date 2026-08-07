@@ -15,6 +15,8 @@
 This is a Mojo built-in, so you don't need to import it.
 """
 
+from std.builtin.rebind import downcast
+
 
 @stable(since="1.0")
 trait Deinitable:
@@ -89,3 +91,18 @@ trait Deinitable:
 
     In practice, it means that the `__deinit__` can be considered as no-op.
     """
+
+
+# TODO(MOCO-4525): Remove `downcast`
+comptime TriviallyDeinitable[T: AnyType]: Bool = conforms_to(
+    T, Deinitable
+) and downcast[T, Deinitable].__del__is_trivial
+"""Indicates whether `T` is `Deinitable` with a trivial deinitializer.
+
+A deinitializer is trivial when the compiler generates it and all of `T`'s
+fields are themselves trivially destructible meaning `__deinit__` is a no-op.
+Evaluates to `False` for non-`Deinitable` types.
+
+Parameters:
+    T: The type to check.
+"""
