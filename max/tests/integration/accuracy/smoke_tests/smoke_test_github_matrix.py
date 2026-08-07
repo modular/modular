@@ -17,6 +17,7 @@
 
 import json
 import re
+from collections.abc import Mapping
 
 import click
 
@@ -64,7 +65,7 @@ INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
 #    3a) For VLMs, add it to the is_vision_model check in smoke_test.py
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
-HF_MODELS: dict[str, set[str]] = {
+HF_MODELS: Mapping[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
     "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
     "amd/Kimi-K2.7-Code-MXFP4": NON_XL | {"8xB200"},
@@ -108,7 +109,7 @@ HF_MODELS: dict[str, set[str]] = {
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in
 # smoke_test.py maps each alias to its reusable recipe config.
-CUSTOM_MODELS: dict[str, set[str]] = {
+CUSTOM_MODELS: Mapping[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
     "google/gemma-3-27b-it__modulev3": XL,
     "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
@@ -135,7 +136,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | {"4xMI355"},
 }
 
-MODELS = {**HF_MODELS, **CUSTOM_MODELS}
+MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}
 # fmt: on
 
 
