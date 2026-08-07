@@ -30,11 +30,12 @@ namespace M {
 /// explicitly via its kernel device node (/dev/nvidiactl for NVIDIA, /dev/kfd
 /// for amdgpu) — never assumed from the absence of the other.
 ///
-/// On NVIDIA the verbs flavor (cuda-verbs/, a strict superset of cuda/ that
-/// adds the uct_ib RDMA transports for internode InfiniBand) is preferred when
-/// rdma-core resolves AND a real InfiniBand port is present, so EFA hosts
-/// (rdma-core but no IB) keep resolving to the plain cuda flavor. On AMD the
-/// rocm-uccl flavor is the default; an explicit
+/// On NVIDIA the verbs flavor (cuda-verbs/, which adds the uct_ib RDMA
+/// transports for internode InfiniBand to UCX) is preferred when it stages the
+/// requested backend's plugin AND rdma-core resolves AND a real InfiniBand port
+/// is present, so EFA hosts (rdma-core but no IB) and libfabric requests (the
+/// verbs flavors are UCX-only) keep resolving to the plain cuda flavor. On AMD
+/// the rocm-uccl flavor is the default; an explicit
 /// MODULAR_NIXL_TRANSFER_BACKEND=ucx (or libfabric), or an environment where
 /// rocm-uccl is not staged, falls back to the UCX flavors, where rocm-verbs is
 /// preferred over rocm when its hard load-time dependencies (rdma-core)
@@ -56,6 +57,16 @@ namespace M {
 std::optional<std::filesystem::path>
 resolveNixlPluginDir(const std::filesystem::path &base,
                      bool allowVerbsFlavor = true);
+
+/// Whether `pluginDir` stages the plugin for the requested transfer backend.
+///
+/// NIXL loads exactly one plugin out of the directory it is pointed at — the
+/// one named after the backend the KVTransferEngine asks for
+/// (`libplugin_<BACKEND>.so`, uppercase; `MODULAR_NIXL_TRANSFER_BACKEND` unset
+/// means ucx). A flavor that omits that plugin cannot serve the host however
+/// well its hardware matches, so the resolver requires this of any flavor it
+/// prefers over the fully-stocked plain one.
+bool stagesRequestedBackend(const std::filesystem::path &pluginDir);
 
 /// Claims the `libfabric.so.1` SONAME with the copy staged alongside
 /// `pluginDir`, for hosts that asked for the libfabric backend.

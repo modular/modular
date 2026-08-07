@@ -109,6 +109,60 @@ void requestBackend(const char *backend) {
   setenv("MODULAR_NIXL_TRANSFER_BACKEND", backend, /*overwrite=*/1);
 }
 
+void requestNoBackend() { unsetenv("MODULAR_NIXL_TRANSFER_BACKEND"); }
+
+// A flavor directory holding just the plugin filenames the packages stage in
+// it. Only the names matter here -- nothing is loaded.
+class FlavorDir {
+public:
+  FlavorDir(const std::string &name,
+            std::initializer_list<const char *> plugins)
+      : dir_(std::filesystem::temp_directory_path() / ("nixl-flavor-" + name)) {
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    for (const char *plugin : plugins)
+      std::ofstream(dir_ / plugin);
+  }
+
+  ~FlavorDir() {
+    std::error_code ec;
+    std::filesystem::remove_all(dir_, ec);
+  }
+
+  const std::filesystem::path &path() const { return dir_; }
+
+private:
+  std::filesystem::path dir_;
+};
+
+// The dual-fabric host: an EFA device for libfabric alongside IB NICs whose
+// presence otherwise steers the resolver onto the UCX-only verbs flavor. That
+// flavor cannot serve the libfabric request, so it must not be a candidate.
+TEST(StagesRequestedBackend, TheVerbsFlavorCannotServeALibfabricRequest) {
+  FlavorDir verbs("verbs", {"libplugin_UCX.so"});
+  FlavorDir plain("plain", {"libplugin_UCX.so", "libplugin_LIBFABRIC.so"});
+  requestBackend("libfabric");
+
+  EXPECT_FALSE(M::stagesRequestedBackend(verbs.path()));
+  EXPECT_TRUE(M::stagesRequestedBackend(plain.path()));
+}
+
+// UCX is what the KVTransferEngine asks for when nothing says otherwise, so an
+// unset backend must not disqualify the UCX-only flavors.
+TEST(StagesRequestedBackend, AnUnsetBackendMeansUcx) {
+  FlavorDir verbs("unset", {"libplugin_UCX.so"});
+  requestNoBackend();
+
+  EXPECT_TRUE(M::stagesRequestedBackend(verbs.path()));
+}
+
+TEST(StagesRequestedBackend, AcceptsAnyCasingOfTheBackendRequest) {
+  FlavorDir plain("casing-flavor", {"libplugin_LIBFABRIC.so"});
+  requestBackend("LibFabric");
+
+  EXPECT_TRUE(M::stagesRequestedBackend(plain.path()));
+}
+
 // The trap this all exists for: an older libfabric that got into the process
 // first owns the SONAME, and the loader never reconsiders the plugin's rpath,
 // so the plugin becomes permanently unloadable. Asserts the loader's behavior

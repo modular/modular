@@ -44,6 +44,20 @@ static std::string requestedBackend() {
   return s;
 }
 
+bool M::stagesRequestedBackend(const std::filesystem::path &pluginDir) {
+  // Upstream plugin filenames are uppercase; the Modular-facing env var is
+  // lowercase. An unset backend means ucx, matching the KVTransferEngine
+  // default.
+  std::string backend = requestedBackend();
+  if (backend.empty())
+    backend = "ucx";
+  std::transform(backend.begin(), backend.end(), backend.begin(),
+                 [](unsigned char c) { return std::toupper(c); });
+  std::error_code ec;
+  return std::filesystem::exists(pluginDir / ("libplugin_" + backend + ".so"),
+                                 ec);
+}
+
 bool M::preloadStagedLibfabric(const std::filesystem::path &pluginDir) {
   if (requestedBackend() != "libfabric")
     return false;
@@ -84,21 +98,23 @@ static bool hasInfinibandPort() {
   return false;
 }
 
-// Selects a GPU vendor's plugin directory: the verbs flavor when its plugin is
-// staged and its rdma-core load-time deps (libibverbs/libmlx5) resolve, else
-// the plain flavor when staged, else nullopt. The verbs flavor is a strict
-// superset of the plain one, adding the uct_ib RDMA transports for internode
-// InfiniBand transfers (UCX still uses cuda_ipc/rocm_ipc/shm for same-node
-// peers). `requireIbPort` additionally gates the verbs flavor on a real IB
-// port, so a host with rdma-core but no IB — notably AWS EFA, where libmlx5
-// ships in ibverbs-providers — stays on the plain flavor, byte-identical to
-// before.
+// Selects a GPU vendor's plugin directory: the verbs flavor when it stages the
+// requested backend's plugin and its rdma-core load-time deps
+// (libibverbs/libmlx5) resolve, else the plain flavor when staged at all
+// (libplugin_UCX.so is its marker — it is the flavor that carries every
+// backend), else nullopt. The verbs flavor adds the uct_ib RDMA transports for
+// internode InfiniBand transfers (UCX still uses cuda_ipc/rocm_ipc/shm for
+// same-node peers) but stages UCX alone, so a host asking for libfabric stays
+// on the plain flavor even where its hardware would otherwise warrant verbs —
+// the dual-fabric case, an EFA device and IB NICs side by side. `requireIbPort`
+// additionally gates the verbs flavor on a real IB port, so a host with
+// rdma-core but no IB — notably AWS EFA, where libmlx5 ships in
+// ibverbs-providers — stays on the plain flavor, byte-identical to before.
 static std::optional<std::filesystem::path>
 selectVendorFlavor(const std::filesystem::path &base, const char *verbsDir,
                    const char *plainDir, bool requireIbPort, bool allowVerbs) {
   std::error_code ec;
-  if (allowVerbs &&
-      std::filesystem::exists(base / verbsDir / "libplugin_UCX.so", ec) &&
+  if (allowVerbs && M::stagesRequestedBackend(base / verbsDir) &&
       (!requireIbPort || hasInfinibandPort()) &&
       canLoadSharedLib("libibverbs.so.1") && canLoadSharedLib("libmlx5.so.1"))
     return base / verbsDir;
