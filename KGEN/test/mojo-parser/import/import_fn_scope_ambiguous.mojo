@@ -22,10 +22,9 @@ def merged_fn_overloads():
     _ = shadowed_fn()
 
 
-# CHECK: warning: importing 'shadowed_fn' from multiple modules is deprecated; import 'shadowed_fn' from a single module
+# CHECK: error: import of 'shadowed_fn' is ambiguous
 # CHECK: wildcard_shadow_a.mojo:{{[0-9]+}}:{{[0-9]+}}: note: 'shadowed_fn' declared here
 # CHECK: wildcard_shadow_b.mojo:{{[0-9]+}}:{{[0-9]+}}: note: 'shadowed_fn' also declared here
-# CHECK: error: ambiguous call to 'shadowed_fn'
 
 # // -----
 

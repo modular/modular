@@ -511,18 +511,9 @@ LogicalResult DeclResolver::checkImportNamingConflict(
       conflictB = incomingNonFn;
     }
   } else if (incomingFn && existingFn && incomingFn != existingFn) {
-    // Two functions from different origins merge into one overload set, but
-    // this is deprecated: an overload set resolves from one place only. Warn
-    // and let the merge proceed. The pointer check keeps re-imports of the
-    // same decls through different routes (e.g. a module and a package that
-    // re-exports it) quiet.
-    if (emitDiagnostics) {
-      auto diag = emitWarning(aliasLoc, "importing ")
-                  << name << " from multiple modules is deprecated; import "
-                  << name << " from a single module";
-      diag.attachNote(*existingFn) << name << " declared here";
-      diag.attachNote(*incomingFn) << name << " also declared here";
-    }
+    // An overload set resolves from one place only.
+    conflictA = existingFn;
+    conflictB = incomingFn;
   }
 
   if (!conflictA)
