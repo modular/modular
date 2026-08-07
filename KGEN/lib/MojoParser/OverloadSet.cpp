@@ -480,12 +480,7 @@ static LogicalResult emitOperandsNeedingOriginsToMemory(
     // is the implicit constructor's signature when the operand is spilled to
     // feed a conversion rather than the call itself.  If the argument is a
     // variadic, the elements have their own convention.
-    ArgConvention argConvention = [&]() {
-      FnTypeGeneratorType sig = info.signature;
-      if (sig.isPosVarArg(info.argIdx) || sig.isPack(info.argIdx))
-        return sig.getVariadicConvention(info.argIdx);
-      return sig.getArgConvention(info.argIdx);
-    }();
+    ArgConvention argConvention = info.getArgConvention();
 
     // If the argument is a DLValue, then we might have a getter/setter pair,
     // but we are only going to use the getter.  In the case when the getter
