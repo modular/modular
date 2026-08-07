@@ -12,20 +12,13 @@
 # re-exports `producer`, which makes `no_sibling_leak.producer` reachable from
 # *outside* but must NOT make `producer` visible to its siblings.
 #
-# As a migration aid, a bare reference to a sibling *module* still resolves for
-# one release, with a deprecation warning (it will become a hard error later); a
-# bare reference to a sibling's *symbol* was never reachable this way and is an
-# error. See inputs/no_sibling_leak/.
+# Note - diagnostics are emitted in the no_sibling_leak package: see there.
+# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file -I=%S/inputs %s
 
-# RUN: not %parse-mojo-isolated -split-input-file -I=%S/inputs %s 2>&1 | FileCheck %s
-
-# A sibling MODULE resolves with a deprecation warning (temporary migration aid).
 from no_sibling_leak.consumer_module import consume
 
 def main():
     _ = consume()
-
-# CHECK: consumer_module.mojo:{{[0-9]+}}:{{[0-9]+}}: warning: implicit reference to sibling module 'producer' without an import is deprecated
 
 # // -----
 
@@ -36,8 +29,6 @@ from no_sibling_leak.consumer_symbol import consume
 def main():
     _ = consume()
 
-# CHECK: consumer_symbol.mojo:{{[0-9]+}}:{{[0-9]+}}: error: use of unknown declaration 'producer_fn'
-
 # // -----
 
 # A symbol that __init__ DOES re-export is reachable from a sibling only via the
@@ -47,5 +38,3 @@ from no_sibling_leak.consumer_reexport import consume
 
 def main():
     _ = consume()
-
-# CHECK: consumer_reexport.mojo:{{[0-9]+}}:{{[0-9]+}}: warning: implicit reference to 'reexported_fn' from the enclosing package's '__init__' is deprecated
