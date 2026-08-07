@@ -17,7 +17,7 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "style": "style/index.css",
-  "license": "Appache 2.0 with LLVM Exceptions",
+  "license": "Apache 2.0 with LLVM Exceptions",
   "scripts": {
     "build": "jlpm build:lib && jlpm build:labextension:dev",
     "build:prod": "jlpm clean && jlpm build:lib:prod && jlpm build:labextension",
