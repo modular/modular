@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
+from max.pipelines.lib.config.model_config import _effective_device_specs
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
@@ -565,7 +566,9 @@ def _run_memory_planning(
             footprint=0,
         )
 
-    devices = load_devices(model_config.device_specs)
+    devices = load_devices(
+        _effective_device_specs(model_config, arch.default_encoding)
+    )
     arch_config = arch.config.initialize(
         pipeline_config, model_config=model_config
     )
