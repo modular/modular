@@ -500,7 +500,7 @@ class DeepseekV3_2(Module):
                     config.qk_rope_head_dim,
                     n_heads=config.num_attention_heads,
                     theta=config.rope_theta,
-                    max_seq_len=config.max_position_embeddings,
+                    max_seq_len=config.max_seq_len,
                     scaling_params=scaling_params,
                 )
             )
@@ -509,7 +509,7 @@ class DeepseekV3_2(Module):
                 dim=config.qk_rope_head_dim,
                 n_heads=config.num_attention_heads,
                 theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
+                max_seq_len=config.max_seq_len,
                 head_dim=config.qk_rope_head_dim,
                 interleaved=config.rope_interleave,
             )
