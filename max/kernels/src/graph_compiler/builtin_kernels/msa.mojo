@@ -21,19 +21,21 @@ index-K head.  Two ops:
     `msa_amd_decode_dispatch` (decode) / `msa_amd_prefill_run` (prefill) on
     AMD gfx950 (MI355).
 
-The attention op is dual-arch: its body comptime-branches on
-`has_amd_gpu_accelerator()` so the dead arch's kernels never codegen (the SM100
+Both ops are dual-arch, so the dead arch's kernels never codegen (the SM100
 tcgen05/TMA prefill cannot lower on gfx950, and the AMD MFMA path cannot lower
-on SM100).  The AMD prefill `plan` is the arch-neutral `msa_sm100_prefill_plan`
-(host sizing + buffer alloc only -- no SM100 device kernel), shared by both
-arches; only the pure-device run differs.  The indexer op is still SM100-only
-(the MSA indexer was not ported to AMD); an AMD M3 deployment must source
-`d_indices` from an AMD indexer or a host build -- the attention op only
-consumes `d_indices`.
+on SM100).  The attention op forks here, on `has_amd_gpu_accelerator()`; its AMD
+prefill `plan` is the arch-neutral `msa_sm100_prefill_plan` (host sizing +
+buffer alloc only -- no SM100 device kernel), shared by both arches, so only the
+pure-device run differs.  The indexer op forks at both levels: `USE_AMD_MTP_SCORER`
+picks the AMD-only speculative route *here*, because that route is a different
+pair of kernels rather than a different lowering of the same one; every other
+indexer route forks one level down, inside `sparse_indexer_{prefill,decode}`
+and their `_mtp` siblings, which dispatch to the `*_amd` scorers and bitonic
+top-k on gfx950.
 
 Each op takes the same arguments for prefill and decode and picks the kernel at
 runtime from `kv_collection.max_seq_length` (the max number of *new* query
-tokens in the batch): `== 1` is a single-token decode step, `2-4` is
+tokens in the batch): `== 1` is a single-token decode step, `2-8` is
 speculative decode, and anything larger is a prefill / context-encoding step.
 
 The indexer op emits top-k *block* ids per (index head, token); the attention
@@ -50,13 +52,13 @@ Modeled on the MLA FP8 indexer registration in `attention.mojo`
 `test_msa_d128_prefill_device_csr.mojo`) for the exact call shapes.
 
 Three attention routes, picked at runtime from `kv_collection.max_seq_length`
-(`max_q_len`, the max number of *new* query tokens; MAX draft length = 4):
+(`max_q_len`, the max number of *new* query tokens; MAX draft length = 8):
 
   * `== 1`            -> single-token DECODE (`msa_sm100_decode`, NullMask, the
                         SM-fill split-K heuristic).  Causal is a no-op (the
                         single query sits at the sequence END, so every selected
                         past KV position is causal-valid and nothing is masked).
-  * `2 / 3 / 4`        -> sparse SPECULATIVE decode (`msa_sm100_decode` on
+  * `2` through `8`    -> sparse SPECULATIVE decode (`msa_sm100_decode` on
                         NVIDIA, `msa_amd_decode_dispatch` on AMD) with
                         `spec_max_seq_len` bound to the matched length: one CTA
                         per (draft token, split-K partition), in-kernel
@@ -73,10 +75,10 @@ Three attention routes, picked at runtime from `kv_collection.max_seq_length`
                         tok_in_seq`, so the op never builds a `kv_logical_pos` or
                         `q_positions` array (mirrors the prefill `use_causal`
                         path, which derives the diagonal from cu_seqlens +
-                        cache_lengths).  A short prefill of 2-4 is correctly
+                        cache_lengths).  A short prefill of 2-8 is correctly
                         handled by this path, so no prefill/spec disambiguation
                         is needed.
-  * `> 4`              -> PREFILL (`msa_sm100_prefill_{plan,run}`, device CSR).
+  * `> 8`              -> PREFILL (`msa_sm100_prefill_{plan,run}`, device CSR).
 """
 
 import extensibility
@@ -109,6 +111,15 @@ from msa.msa_1q import msa_sm100_decode
 from msa.msa_2q import msa_sm100_prefill_plan, msa_sm100_prefill_run
 from msa.amd.decode import msa_amd_decode_dispatch
 from msa.amd.prefill import msa_amd_prefill_run
+
+
+# Widest draft window (`max_q_len`) the speculative-decode route accepts; above
+# this both ops fall to prefill.  BOTH ops must read this same bound: the
+# indexer capped lower would still emit a well-formed
+# `[num_index_heads, total_q, topk]`, so attention would keep running
+# speculative decode against prefill-scored blocks and the only symptom would be
+# the per-call prefill plan this route exists to avoid.
+comptime MAX_SPEC_DRAFT = 8
 
 
 # ===-----------------------------------------------------------------------===#
@@ -368,10 +379,10 @@ struct Struct_msa_indexer_ragged_paged:
                 tt_row_major(num_index_heads, total_q, max_num_blocks),
             )
 
-            # AMD speculative widths 2-4 use the decode-style scorer and top-k.
-            # Width one retains the established decode route; widths five
-            # through eight retain prefill until production enables wider AMD
-            # speculation.
+            # AMD speculative widths use the decode-style scorer and top-k;
+            # width one retains the established decode route.  The scorer loads
+            # each K vector once and reuses it across the compile-time query
+            # width, so the whole draft window costs one pass over index-K.
             comptime USE_AMD_MTP_SCORER = (
                 has_amd_gpu_accelerator()
                 and num_index_heads == 1
@@ -382,7 +393,7 @@ struct Struct_msa_indexer_ragged_paged:
             )
             comptime if USE_AMD_MTP_SCORER:
                 var max_q_len = Int(k_collection.max_seq_length)
-                comptime for query_width in range(2, 5):
+                comptime for query_width in range(2, MAX_SPEC_DRAFT + 1):
                     if max_q_len == query_width:
                         sparse_indexer_decode_score_mtp[
                             DType.bfloat16,
@@ -505,10 +516,10 @@ struct Struct_msa_attention_ragged_paged:
 
         Routing is purely by the runtime query length
         `max_q_len = kv_collection.max_seq_length` (the max new query tokens):
-        `== 1` decode, `2 / 3 / 4` sparse speculative decode (one CTA per draft
-        token, real per-token causal, capture-stable over-launch -- see the
+        `== 1` decode, `2` through `8` sparse speculative decode (one CTA per
+        draft token, real per-token causal, capture-stable over-launch -- see the
         module docstring; `spec_max_seq_len` is bound to the matched length per
-        branch), and `> 4` prefill.  A short 2-4 prefill is correctly handled by
+        branch), and `> 8` prefill.  A short 2-8 prefill is correctly handled by
         the spec path, so no prefill/spec disambiguation is needed.  Spec decode
         derives each draft token's logical query position in-kernel from
         `cache_lengths + tok_in_seq` (mirrors the prefill `use_causal` path), so
@@ -579,10 +590,8 @@ struct Struct_msa_attention_ragged_paged:
             ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
         )
 
-        # Route purely on the runtime query length.  AMD currently supports
-        # speculative widths through 4; other architectures support through 8.
-        # Larger query lengths use prefill.
-        comptime MAX_SPEC_DRAFT = 4 if has_amd_gpu_accelerator() else 8
+        # Route purely on the runtime query length.  Both architectures share
+        # the module-level `MAX_SPEC_DRAFT`; larger query lengths use prefill.
         var max_q_len = Int(kv_collection.max_seq_length)
 
         # Decode == one query token per sequence (`max_q_len == 1`).
