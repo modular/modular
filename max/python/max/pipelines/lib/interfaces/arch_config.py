@@ -43,19 +43,59 @@ from max.pipelines.kv_cache.config import (
     cache_dtype_for_encoding,
 )
 from max.pipelines.lib.config.model_config import (
+    _device_specs_for_encoding,
     _select_quantization_encoding,
 )
 from max.pipelines.lib.utils import upper_bounded_default
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
+    supported_encoding_supported_on,
 )
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from max.driver import DeviceSpec
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
+
+
+# TODO(MXF-517): Fold into ArchConfig.initialize once construction is a
+# template method (every arch currently overrides initialize freely).
+def validate_device_specs(
+    model_config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+    supported_encodings: Iterable[SupportedEncoding],
+) -> tuple[DeviceSpec, ...]:
+    """Returns the devices the model runs on, validating the combination.
+
+    Selects the encoding, overrides GPU devices to CPU when the encoding
+    cannot run on GPU (with the single per-model warning), and raises if
+    the encoding cannot run on the effective devices. Called by the
+    registry once per model when constructing its arch config. Read-only:
+    ``model_config`` is not mutated.
+
+    Raises:
+        ValueError: If the encoding is not supported on the effective
+            devices (e.g. a GPU-only encoding on a CPU target).
+    """
+    encoding = _select_quantization_encoding(model_config, default_encoding)
+    resolved = _device_specs_for_encoding(
+        model_config.device_specs, encoding, warn=True
+    )
+    for spec in resolved:
+        if not supported_encoding_supported_on(encoding, spec):
+            raise ValueError(
+                f"The encoding '{encoding}' is not compatible with the selected device type '{spec.device_type}'.\n\n"
+                f"You have two options to resolve this:\n"
+                f"1. Use a different device\n"
+                f"2. Use a different encoding (encodings available for this model: {', '.join(sorted(str(e) for e in supported_encodings))})\n\n"
+                f"Please use the --help flag for more information."
+            )
+    return tuple(resolved)
 
 
 @runtime_checkable

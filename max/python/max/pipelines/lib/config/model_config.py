@@ -233,8 +233,8 @@ def _infer_quantization_encoding(
     # yet — the filename/repo branches above otherwise disagree with the
     # supported-encodings branch on which encoding to pick. Scoped to the CPU
     # target only: a CPU-only encoding on a GPU target is handled downstream
-    # by the CPU override in _device_specs_for_encoding, and an explicit user
-    # encoding is validated separately.
+    # by the CPU override in validate_device_specs (arch_config),
+    # and an explicit user encoding is validated separately.
     if (
         config.quantization_encoding is None
         and encoding is not None
@@ -1305,59 +1305,27 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         resolved_encoding: SupportedEncoding,
         applied_dtype_cast_from: SupportedEncoding | None,
-        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         """Validates model path and weight path against resolved quantization encoding.
+
+        Device/encoding compatibility is validated separately, by
+        :func:`~max.pipelines.lib.interfaces.arch_config.validate_device_specs`
+        at arch-config construction.
 
         Args:
             resolved_encoding: The encoding the model will actually run with, as
                 resolved by :func:`_select_quantization_encoding`.
             applied_dtype_cast_from: The encoding weights are cast from at load
                 time, or ``None`` when no cast applies.
-            supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
             default_weights_format: The default weights format to use if no weights format is provided.
         """
-        self._validate_quantization_encoding_device_compatibility(
-            quantization_encoding=resolved_encoding,
-            supported_encodings_list=list(supported_encodings),
-        )
         self._resolve_weight_path(
             quantization_encoding=resolved_encoding,
             applied_dtype_cast_from=applied_dtype_cast_from,
             default_weights_format=default_weights_format,
         )
         self._validate_final_architecture_model_path_weight_path()
-
-    # TODO(MXF-517): Move this check (and device resolution generally) to
-    # arch-config construction, so PipelineConfig has no resolution logic.
-    def _validate_quantization_encoding_device_compatibility(
-        self,
-        quantization_encoding: SupportedEncoding,
-        supported_encodings_list: list[SupportedEncoding],
-    ) -> None:
-        """Validates that the quantization encoding is supported on the specified devices.
-
-        Should only be called after the quantization encoding has been set.
-        """
-        # An encoding that cannot run on GPU overrides GPU devices to CPU
-        # (see the free function); invalid combinations are rejected below.
-        self.device_specs = _device_specs_for_encoding(
-            self.device_specs, quantization_encoding, warn=True
-        )
-        # Check that the quantization encoding is supported on the specified
-        # devices.
-        for device_spec in self.device_specs:
-            if not supported_encoding_supported_on(
-                quantization_encoding, device_spec
-            ):
-                raise ValueError(
-                    f"The encoding '{quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
-                    f"You have two options to resolve this:\n"
-                    f"1. Use a different device\n"
-                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
-                    f"Please use the --help flag for more information."
-                )
 
     def _resolve_weight_path(
         self,

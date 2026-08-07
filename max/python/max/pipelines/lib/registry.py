@@ -58,7 +58,6 @@ if TYPE_CHECKING:
 from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
-from max.pipelines.lib.config.model_config import _effective_device_specs
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
@@ -66,6 +65,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
+from .interfaces.arch_config import validate_device_specs
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -564,13 +564,13 @@ def _run_memory_planning(
         return _MemoryPlan(
             max_batch_size=pipeline_config.runtime.max_batch_size or 1,
             footprint=0,
-            device_specs=tuple(
-                _effective_device_specs(model_config, arch.default_encoding)
+            device_specs=validate_device_specs(
+                model_config, arch.default_encoding, arch.supported_encodings
             ),
         )
 
-    effective_specs = _effective_device_specs(
-        model_config, arch.default_encoding
+    effective_specs = validate_device_specs(
+        model_config, arch.default_encoding, arch.supported_encodings
     )
     logger.info(
         "devices: %s",
@@ -636,6 +636,11 @@ def _run_memory_planning(
     # For speculative decoding, clamp max_length to the draft model's limit
     # (the draft shares the target model's KV cache).
     if draft_arch is not None and pipeline_config.draft_model is not None:
+        validate_device_specs(
+            pipeline_config.draft_model,
+            draft_arch.default_encoding,
+            draft_arch.supported_encodings,
+        )
         draft_arch_config = draft_arch.config.initialize(
             pipeline_config, model_config=pipeline_config.draft_model
         )

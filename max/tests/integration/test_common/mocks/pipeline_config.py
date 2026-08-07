@@ -68,7 +68,6 @@ class DummyMAXModelConfig(MAXModelConfig):
         self,
         resolved_encoding: SupportedEncoding,
         applied_dtype_cast_from: SupportedEncoding | None,
-        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         pass

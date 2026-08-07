@@ -43,6 +43,9 @@ from max.pipelines.lib.config.model_config import (
     _effective_device_specs,
     _select_quantization_encoding,
 )
+from max.pipelines.lib.interfaces.arch_config import (
+    validate_device_specs,
+)
 from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -1015,7 +1018,19 @@ class TestCpuOnlyEncodingDeviceHandling:
                 _resolve_config(config)
 
             assert _model(config).quantization_encoding == "q4_0"
-            assert _model(config).device_specs == [DeviceSpec.cpu()]
+            # Freeze semantics: resolution never mutates device_specs -- the
+            # field keeps the user's (defaulted) input, while the resolved
+            # devices the model actually runs on are the CPU downcast.
+            assert _model(config).device_specs == [GPU_DEVICE_SPEC]
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                architecture_name=config.models.main_architecture_name,
+                prefer_module_v3=config.runtime.prefer_module_v3,
+                task=PipelineTask.TEXT_GENERATION,
+            )
+            assert arch is not None
+            assert _effective_device_specs(
+                _model(config), arch.default_encoding
+            ) == [DeviceSpec.cpu()]
 
     @prepare_registry
     def test_gguf_q4_on_explicit_gpu_downcasts(self) -> None:
@@ -1027,7 +1042,12 @@ class TestCpuOnlyEncodingDeviceHandling:
             )
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            assert _model(config).device_specs == [DeviceSpec.cpu()]
+            # Freeze semantics: the field keeps the user's input; the
+            # resolved devices are the CPU downcast.
+            assert _model(config).device_specs == [GPU_DEVICE_SPEC]
+            assert _effective_device_specs(_model(config), "bfloat16") == [
+                DeviceSpec.cpu()
+            ]
 
 
 def test_downcast_free_function() -> None:
@@ -1104,6 +1124,68 @@ class TestMemoryPlanDevices:
                 _resolve_config(config)
                 plan = _run_memory_planning(config, self._retrieve_arch(config))
             assert plan.device_specs == (DeviceSpec.cpu(),)
+
+    @prepare_registry
+    def test_memory_planning_rejects_incompatible_devices(self) -> None:
+        """The encoding/device error fires at arch-config resolution in
+        memory planning, not during config resolve."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(
+                tmpdir,
+                device_specs=[CPU_DEVICE_SPEC],
+                quantization_encoding="bfloat16",
+            )
+            with _pipeline_resolve_mocks():
+                arch = self._retrieve_arch(config)
+                # resolve() passes: the device/encoding check no longer
+                # lives on the config.
+                config.resolve(arch)
+                with pytest.raises(
+                    ValueError,
+                    match="not compatible with the selected device type 'cpu'",
+                ):
+                    _run_memory_planning(config, arch)
+
+
+def test_validate_device_specs() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _make_local_repo(tmpdir, gguf_files=["model-Q4_K.gguf"])
+        gguf_config = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="q4_k",
+            device_specs=[GPU_DEVICE_SPEC],
+        )
+        assert validate_device_specs(
+            gguf_config, "bfloat16", {"q4_k", "bfloat16"}
+        ) == (DeviceSpec.cpu(),)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _make_local_repo(
+            tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+        )
+        bf16_on_gpu = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="bfloat16",
+            device_specs=[GPU_DEVICE_SPEC],
+        )
+        assert validate_device_specs(bf16_on_gpu, "bfloat16", {"bfloat16"}) == (
+            GPU_DEVICE_SPEC,
+        )
+
+        bf16_on_cpu = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="bfloat16",
+            device_specs=[CPU_DEVICE_SPEC],
+        )
+        with pytest.raises(
+            ValueError,
+            match="not compatible with the selected device type 'cpu'",
+        ):
+            validate_device_specs(bf16_on_cpu, "bfloat16", {"bfloat16"})
 
 
 def test_effective_device_type_without_arch_falls_back_to_raw() -> None:
