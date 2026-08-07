@@ -16,6 +16,9 @@
 # Test __get_current_function_name() magic function returns the correct
 # function name in various contexts.
 
+# Storage methods for unified closures print before enclosing functions, so
+# match the nested name string out of order.
+# CHECK-DAG: #StringLiteral <:string "nested_closure">
 
 # CHECK-LABEL: lit.fn @"test_simple_function
 def test_simple_function():
@@ -81,6 +84,9 @@ def test_nested_function():
     inner()
 
 
+# Storage methods print before the enclosing function, so the nested name
+# string is matched via CHECK-DAG near the top of this file.
+
 # CHECK-LABEL: lit.fn @"test_unified_clsoures
 def test_unified_clsoures():
     var capture = 1
@@ -88,7 +94,6 @@ def test_unified_clsoures():
     def closure[param: Int](arg: Int) {var capture}:
         def nested_closure[param: Int](arg: Int) {var capture}:
             _ = param + arg + capture
-            # CHECK: #StringLiteral <:string "nested_closure">
             var name = __get_current_function_name()
             _ = name
 

@@ -61,11 +61,11 @@ def use(y:String):
 
 def make_closure(x: Int, str:String):
     # COM: The outer closure copies its captures into its storage struct.
-    # CHECK: lit.var.decl "anonymous*"
-    # CHECK: lit.call {{.*}}my_closure::__storage"::@"__init__
+    # CHECK-DAG: lit.var.decl "anonymous*"
+    # CHECK-DAG: lit.call {{.*}}my_closure::__storage"::@"__init__
     # COM: The nested closure copies the outer copies again into its storage.
-    # CHECK: lit.var.decl "anonymous*"
-    # CHECK: lit.call {{.*}}my_nested_closure::__storage"::@"__init__
+    # CHECK-DAG: lit.var.decl "my_nested_closure.storage"
+    # CHECK-DAG: lit.call {{.*}}my_nested_closure::__storage"::@"__init__
     def my_closure(y: Int) {var x, var str} -> Int:
         def my_nested_closure(z: Int) {var x, var str} -> Int:
             use(str)

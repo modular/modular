@@ -46,6 +46,16 @@
 # S0-DAG: [[S0_INT:!.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S0-DAG: lit.trait.decl @"def(y: Int) -> Int"<?, *"_Self`{{.*}}": [[S0_PARENT]]>([[S0_PARENT]])
 # S0-DAG: lit.fn @"__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
+
+# S0: lit.struct.decl @"{{.*}}s0_make_closure{{.*}}::my_closure::__storage"([[S0_IMPL_PARENT]]) attributes {synthetic}
+# S0-NEXT: move :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
+# S0-NEXT: copy :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(copy:
+# S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> read_mem, |, %y: {{.*}}) capturing -> {{.*}}
+# S0: lit.fn @"__init__(move:{{.*}}::my_closure::__storage$)"
+# S0: lit.fn @"__deinit__({{.*}}::my_closure::__storage$)"
+# S0: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"my_closure{{.*}}"
+# S0: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
+# S0: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__deinit__(
 # S0: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl: [[S0_IMPL_PARENT]], origin_set: origin.set, |>([[S0_IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
 # S0-NEXT: move :
 # S0-NEXT: copy :
@@ -291,11 +301,11 @@ def nested[
 # S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String)::myclosure::__storage"
 # S11-DAG: kgen.conformance @"{{.*}}::AnyType" {
 # S11-DAG: kgen.conformance @"{{.*}}::Deinitable" {
-# S11-DAG: kgen.witness "__deinit__{{.*}}"
+# S11-DAG: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__deinit__
 # S11-DAG: kgen.conformance @"{{.*}}::Movable" {
-# S11-DAG: kgen.witness "__init__(move:$0$)"
+# S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
 # S11-DAG: kgen.conformance @"def(z: Int) -> Int" {
-# S11-DAG: kgen.witness "__call__{{.*}}"
+# S11-DAG: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"myclosure
 
 
 
@@ -310,7 +320,7 @@ def s11_bindIt(x: Int, y: Int, mem: String) -> Int:
 # S12: lit.struct.decl @"s12_bindIt({{.*}})::myclosure::__storage"
 # S12: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
 # S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> read_mem, |, "z": !Int1) capturing -> !kgen.none>
-# S12-SAME: = {{.*}}<:!AnyType ?>
+# S12-SAME: = @{{.*}}::@"s12_bindIt({{.*}})::myclosure::__storage"::@"myclosure{{.*}}"
 
 # S12-DAG: lit.file_module
 
