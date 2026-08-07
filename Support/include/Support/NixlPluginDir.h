@@ -22,26 +22,40 @@ namespace M {
 /// Picks the NIXL plugin directory for the detected host GPU vendor.
 ///
 /// The staged layout ships the NIXL transport plugins in per-vendor
-/// subdirectories of `base` (cuda/ for the CUDA flavor plus the EFA libfabric
-/// plugin, rocm/ and rocm-verbs/ for the ROCm flavors, cpu/ for the GPU-free
-/// flavor); NIXL discovers plugins by filename in exactly one directory, so
-/// the caller must pick one before the NIXL plugin manager reads
-/// NIXL_PLUGIN_DIR. Each vendor is detected explicitly via its kernel device
-/// node (/dev/nvidiactl for NVIDIA, /dev/kfd for amdgpu) — never assumed from
-/// the absence of the other. On AMD hosts the rocm-uccl flavor is the default;
-/// an explicit MODULAR_NIXL_TRANSFER_BACKEND=ucx (or libfabric), or an
-/// environment where rocm-uccl is not staged, falls back to the UCX flavors,
-/// where the verbs flavor (a strict superset of the plain rocm flavor that
-/// adds the uct_ib RDMA transports for internode transfers) is preferred when
-/// its hard load-time dependencies (rdma-core) resolve.
+/// subdirectories of `base` (cuda/ and cuda-verbs/ for the CUDA flavors plus
+/// the EFA libfabric plugin in cuda/; rocm/, rocm-verbs/, and rocm-uccl/ for
+/// the ROCm flavors; cpu/ for the GPU-free flavor); NIXL discovers plugins by
+/// filename in exactly one directory, so the caller must pick one before the
+/// NIXL plugin manager reads NIXL_PLUGIN_DIR. Each vendor is detected
+/// explicitly via its kernel device node (/dev/nvidiactl for NVIDIA, /dev/kfd
+/// for amdgpu) — never assumed from the absence of the other.
+///
+/// On NVIDIA the verbs flavor (cuda-verbs/, a strict superset of cuda/ that
+/// adds the uct_ib RDMA transports for internode InfiniBand) is preferred when
+/// rdma-core resolves AND a real InfiniBand port is present, so EFA hosts
+/// (rdma-core but no IB) keep resolving to the plain cuda flavor. On AMD the
+/// rocm-uccl flavor is the default; an explicit
+/// MODULAR_NIXL_TRANSFER_BACKEND=ucx (or libfabric), or an environment where
+/// rocm-uccl is not staged, falls back to the UCX flavors, where rocm-verbs is
+/// preferred over rocm when its hard load-time dependencies (rdma-core)
+/// resolve.
 ///
 /// Returns std::nullopt when no vendor (or no staged flavor for the detected
 /// vendor) is found; callers then leave NIXL_PLUGIN_DIR unset and NIXL
 /// transport construction fails downstream with its normal plugin-not-found
 /// error. This runs in contexts that include CPU-only and macOS hosts where
 /// NIXL is legitimately unused — so it must not hard-error.
+///
+/// `allowVerbsFlavor` (default true) selects the verbs flavor when the host
+/// warrants it. Pass false to force the plain flavor even on an IB host: two
+/// NIXL agents in ONE process open two mlx5 device contexts on the same HCA,
+/// which host rdma-core cannot tear down cleanly (a reserved-QPN mutex
+/// assertion in mlx5_free_context). Production creates one agent per process
+/// and is unaffected, but in-process loopback tests must opt out. The real IB
+/// transport is covered instead by the cross-process cross-node smoke.
 std::optional<std::filesystem::path>
-resolveNixlPluginDir(const std::filesystem::path &base);
+resolveNixlPluginDir(const std::filesystem::path &base,
+                     bool allowVerbsFlavor = true);
 
 /// Claims the `libfabric.so.1` SONAME with the copy staged alongside
 /// `pluginDir`, for hosts that asked for the libfabric backend.

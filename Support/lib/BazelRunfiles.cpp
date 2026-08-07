@@ -75,7 +75,8 @@ static constexpr RunfileMapping kRunfileMappings[] = {
     {"max.lib_path", "", "max/internal", true, "max"},
 
     // Directory paths. The upstream NIXL transport plugins live in per-vendor
-    // cpu/, cuda/, and rocm/ subdirectories of the @nixl_upstream repo;
+    // cpu/, cuda/, cuda-verbs/, rocm/, rocm-verbs/, and rocm-uccl/
+    // subdirectories of the @nixl_upstream repo;
     // resolve one plugin file and let the caller derive the vendor directory
     // to use as NIXL_PLUGIN_DIR (see Support/NixlPluginDir.h). Anchor on the
     // cpu flavor: it is the only one staged unconditionally — the GPU flavors

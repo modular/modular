@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <dlfcn.h>
+#include <fstream>
 #include <string>
 
 using namespace M;
@@ -58,30 +59,77 @@ bool M::preloadStagedLibfabric(const std::filesystem::path &pluginDir) {
   return ::dlopen(lib.c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr;
 }
 
-std::optional<std::filesystem::path>
-M::resolveNixlPluginDir(const std::filesystem::path &base) {
+// Returns true if this host has an RDMA device with an InfiniBand-link-layer
+// port. It distinguishes a real IB fabric (where the UCX verbs transports are
+// needed) from other rdma-core users — notably AWS EFA, whose device reports a
+// non-InfiniBand link layer. libmlx5 ships in ibverbs-providers and loads on
+// EFA hosts too, so the library probe alone would steer them onto the verbs
+// flavor; gating on an actual IB port keeps EFA (and any non-IB) host on the
+// plain flavor exactly as before.
+static bool hasInfinibandPort() {
   std::error_code ec;
-  // Prefer cuda when both vendors are present.
-  if (std::filesystem::exists("/dev/nvidiactl", ec) &&
-      std::filesystem::exists(base / "cuda" / "libplugin_UCX.so", ec))
-    return base / "cuda";
+  const std::filesystem::path root("/sys/class/infiniband");
+  for (std::filesystem::directory_iterator dev(root, ec), devEnd;
+       dev != devEnd && !ec; dev.increment(ec)) {
+    std::error_code pec;
+    const std::filesystem::path ports = dev->path() / "ports";
+    for (std::filesystem::directory_iterator port(ports, pec), portEnd;
+         port != portEnd && !pec; port.increment(pec)) {
+      std::ifstream f(port->path() / "link_layer");
+      std::string layer;
+      if (f && std::getline(f, layer) && layer == "InfiniBand")
+        return true;
+    }
+  }
+  return false;
+}
+
+// Selects a GPU vendor's plugin directory: the verbs flavor when its plugin is
+// staged and its rdma-core load-time deps (libibverbs/libmlx5) resolve, else
+// the plain flavor when staged, else nullopt. The verbs flavor is a strict
+// superset of the plain one, adding the uct_ib RDMA transports for internode
+// InfiniBand transfers (UCX still uses cuda_ipc/rocm_ipc/shm for same-node
+// peers). `requireIbPort` additionally gates the verbs flavor on a real IB
+// port, so a host with rdma-core but no IB — notably AWS EFA, where libmlx5
+// ships in ibverbs-providers — stays on the plain flavor, byte-identical to
+// before.
+static std::optional<std::filesystem::path>
+selectVendorFlavor(const std::filesystem::path &base, const char *verbsDir,
+                   const char *plainDir, bool requireIbPort, bool allowVerbs) {
+  std::error_code ec;
+  if (allowVerbs &&
+      std::filesystem::exists(base / verbsDir / "libplugin_UCX.so", ec) &&
+      (!requireIbPort || hasInfinibandPort()) &&
+      canLoadSharedLib("libibverbs.so.1") && canLoadSharedLib("libmlx5.so.1"))
+    return base / verbsDir;
+  if (std::filesystem::exists(base / plainDir / "libplugin_UCX.so", ec))
+    return base / plainDir;
+  return std::nullopt;
+}
+std::optional<std::filesystem::path>
+M::resolveNixlPluginDir(const std::filesystem::path &base,
+                        bool allowVerbsFlavor) {
+  std::error_code ec;
+  // Detect each vendor explicitly by its kernel device node (never assumed from
+  // the other's absence). NVIDIA additionally requires a real IB port before
+  // preferring verbs, so EFA hosts — rdma-core present, no IB — stay on cuda.
+  if (std::filesystem::exists("/dev/nvidiactl", ec))
+    if (auto dir = selectVendorFlavor(base, "cuda-verbs", "cuda",
+                                      /*requireIbPort=*/true, allowVerbsFlavor))
+      return dir;
   if (std::filesystem::exists("/dev/kfd", ec)) {
     // UCCL is the AMD default (speed-of-light on RoCE fabrics UCX cannot
     // saturate). An explicit UCX/libfabric request opts out; and where the
-    // UCCL flavor is not staged (e.g. the hermetic test runfiles), this
-    // falls through to the UCX flavors below.
+    // UCCL flavor is not staged (e.g. the hermetic test runfiles), this falls
+    // through to the UCX flavors below.
     const std::string backend = requestedBackend();
     if ((backend.empty() || backend == "uccl") &&
         std::filesystem::exists(base / "rocm-uccl" / "libplugin_UCCL.so", ec))
       return base / "rocm-uccl";
-    // Prefer the verbs flavor — a strict superset of the plain rocm flavor
-    // that adds the uct_ib RDMA transports for internode transfers — when its
-    // hard load-time dependencies (rdma-core) are present.
-    if (std::filesystem::exists(base / "rocm-verbs" / "libplugin_UCX.so", ec) &&
-        canLoadSharedLib("libibverbs.so.1") && canLoadSharedLib("libmlx5.so.1"))
-      return base / "rocm-verbs";
-    if (std::filesystem::exists(base / "rocm" / "libplugin_UCX.so", ec))
-      return base / "rocm";
+    if (auto dir =
+            selectVendorFlavor(base, "rocm-verbs", "rocm",
+                               /*requireIbPort=*/false, allowVerbsFlavor))
+      return dir;
   }
   return std::nullopt;
 }
