@@ -18,10 +18,10 @@
 
 # RUN: %debug \
 # RUN:   -X -b \
-# RUN:   -X -o -X 'b unsafe_pointer.mojo:20' \
-# RUN:   -X -o -X 'b unsafe_pointer.mojo:24' \
-# RUN:   -X -o -X 'b unsafe_pointer.mojo:28' \
-# RUN:   -X -o -X 'b unsafe_pointer.mojo:32' \
+# RUN:   -X -o -X 'b unsafe_pointer.mojo:27' \
+# RUN:   -X -o -X 'b unsafe_pointer.mojo:31' \
+# RUN:   -X -o -X 'b unsafe_pointer.mojo:35' \
+# RUN:   -X -o -X 'b unsafe_pointer.mojo:39' \
 # RUN:   -X -o -X 'run' \
 # RUN:   -X -o -X 'frame variable p_int' \
 # RUN:   -X -o -X 'continue' \

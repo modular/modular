@@ -1,7 +1,14 @@
 //===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
 //
-// This file is Modular Inc proprietary.
+// Licensed under the Apache License v2.0 with LLVM Exceptions:
+// https://llvm.org/LICENSE.txt
 //
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //===----------------------------------------------------------------------===//
 
 #include "Support.h"
@@ -39,19 +46,19 @@ TEST(StackTraceTest, testStackTraceFormat) {
   EXPECT_THAT(frameDescs[0],
               ContainsRegex(R"(stack_trace::Foo<...>::getParametrized<...>)"
                             R"(::nested_function\(z=105.25\) at)"
-                            R"( stack_trace.mojo:15:13)"));
+                            R"( stack_trace.mojo:22:13)"));
   EXPECT_THAT(
       frameDescs[1],
       ContainsRegex(
           R"(stack_trace::Foo<std::builtin::simd::SIMD,dtype=index,length=1, std::builtin::simd::SIMD,dtype=index,length=1>)"
           R"(::getParametrized<std::builtin::simd::SIMD,dtype=f32,length=1>\(self=.* @ 0x.*,)"
-          R"( val=105.25\) at stack_trace.mojo:17:31)"));
+          R"( val=105.25\) at stack_trace.mojo:24:31)"));
   EXPECT_THAT(
       frameDescs[2],
       ContainsRegex(
           R"(stack_trace::Foo<std::builtin::simd::SIMD,dtype=index,length=1, std::builtin::simd::SIMD,dtype=index,length=1>)"
           R"(::getFloat\(self=.* @ 0x.*, x=1.125, y=100\))"
-          R"( at stack_trace.mojo:20:48)"));
+          R"( at stack_trace.mojo:27:48)"));
   EXPECT_THAT(frameDescs[3],
-              HasSubstr("stack_trace::main() at stack_trace.mojo:26:35"));
+              HasSubstr("stack_trace::main() at stack_trace.mojo:33:35"));
 }

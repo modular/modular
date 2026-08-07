@@ -12,8 +12,8 @@
 
 # RUN: %debug \
 # RUN:   -X -b \
-# RUN:   -X -o -X 'b dict.mojo:13' \
-# RUN:   -X -o -X 'b dict.mojo:16' \
+# RUN:   -X -o -X 'b dict.mojo:20' \
+# RUN:   -X -o -X 'b dict.mojo:23' \
 # RUN:   -X -o -X 'run' \
 # RUN:   -X -o -X 'frame variable d' \
 # RUN:   -X -o -X 'continue' \
