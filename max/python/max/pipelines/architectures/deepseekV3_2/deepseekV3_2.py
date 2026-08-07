@@ -571,6 +571,7 @@ class DeepseekV3_2(Module):
             self.subgraph_layer_groups = []
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -691,6 +692,7 @@ class DeepseekV3_2(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
         )
 
     def input_types(

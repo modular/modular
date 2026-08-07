@@ -753,6 +753,11 @@ struct OffsetPosition[
     var kv_start_row: Int  # Starting KV row for this split
     var num_keys_this_split: Int  # Number of keys this split processes
     var q_token_idx: Int  # Global Q token index for per-token Q scale lookup
+    # Logical (pre-sparse-override) total key count for this batch. `num_keys`
+    # is overridden below (sparse=True) to the slot count (topk + extra_topk),
+    # which only equals the logical count when topk >= actual_tokens; sparse
+    # causal masking uses `cache_len_logical()` off this field instead.
+    var actual_num_keys: Int
 
     @always_inline
     def __init__(
@@ -784,6 +789,7 @@ struct OffsetPosition[
         self.kv_start_row = 0
         self.num_keys_this_split = 0
         self.q_token_idx = 0
+        self.actual_num_keys = 0
 
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
@@ -866,6 +872,10 @@ struct OffsetPosition[
 
         comptime if not Self.is_cache_length_accurate:
             self.num_keys += self.seq_len
+
+        # Logical total key count, captured before the sparse override
+        # below can replace num_keys with the (smaller) sparse slot count.
+        self.actual_num_keys = self.num_keys
 
         # Compute KV range for this split
         # Each split handles a portion of the KV cache: [kv_start_row, kv_start_row + num_keys_this_split)
@@ -955,6 +965,15 @@ struct OffsetPosition[
     def cache_len(self) -> Int:
         # num_keys is total keys, seq_len is chunk length
         return max(self.num_keys - self.seq_len, 0)
+
+    @always_inline
+    def cache_len_logical(self) -> Int:
+        # Logical cached-prefix length, unaffected by the sparse num_keys
+        # override. Equal to cache_len() in dense mode, and whenever sparse
+        # topk >= actual_tokens (topk clamps to the full causal set). Must
+        # be used (not cache_len()) for sparse causal masking by LOGICAL
+        # key position once topk < actual context length.
+        return max(self.actual_num_keys - self.seq_len, 0)
 
     @always_inline
     def start_pos(self, cache_start_pos: UInt32) -> UInt32:
@@ -3388,6 +3407,14 @@ struct MLA_SM100_Decode_Common[
         # the low bits of mask_bits below `causal_limit - SlidingWindowSize`).
         # Implies causal upper bound (CausalMask must be True).
         SlidingWindowSize: Int = 0,
+        # When True, `col_base + i` (the tile-relative gather SLOT) is not a
+        # logical key position -- it indexes a score-sorted sparse top-k
+        # selection. Causality must instead be decided by looking up each
+        # slot's LOGICAL key position via `logical_indices` and comparing it
+        # to `causal_limit`, rather than by counting slots. Requires
+        # CausalMask=True and SlidingWindowSize=0 (checked by the caller).
+        # See Kernels/claude_kb -- sparse-mla-decode-causal-slot-bug.
+        SparseCausalLogical: Bool = False,
     ](
         tiles_done: Int,
         col0: Int,
@@ -3401,6 +3428,19 @@ struct MLA_SM100_Decode_Common[
         start_pos: UInt32,
         cache_start_pos: UInt32,
         kv_start_row: Int = 0,  # Starting KV row for split-K (0 for non-split)
+        # Raw (pre-physical-remap) logical sparse indices, same
+        # [total_q_tokens, indices_stride] layout as the physical `d_indices`
+        # gather buffer, with -1 for invalid/padding slots. Only read when
+        # SparseCausalLogical=True.
+        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices_stride: Int = 0,
+        q_token_idx: Int = 0,
+        # Valid per-q_token length of `logical_indices` (the main sparse topk,
+        # excluding extra_d_indices). The physical gather clamps overflow slots
+        # to a duplicate in-range row, but `logical_indices` has no such row,
+        # so slots >= this bound must be masked without a read or they run off
+        # the end of the q_token's row.
+        logical_indices_len: Int = 0,
     ) -> Scalar[Self.AccumType]:
         # Tile / column base this thread covers in num_keys in global KV cache
         # For split-K: kv_start_row + tiles_done * BN_QK gives global position
@@ -3454,10 +3494,43 @@ struct MLA_SM100_Decode_Common[
         # instead of true -inf — keeps later softmax math NaN-free.
         var current_max: Scalar[Self.AccumType] = MASK_VALUE
 
+        comptime assert not (
+            SparseCausalLogical and SlidingWindowSize > 0
+        ), "SparseCausalLogical does not support sliding window."
+
+        # Runtime null guard: callers that request the logical-position path
+        # (comptime) but don't actually thread a logical index buffer (e.g.
+        # direct-kernel tests, or sparse kernels not yet wired for it) fall
+        # back to the prior slot-count behavior instead of a null deref.
+        var use_sparse_causal_logical: Bool = False
+        comptime if SparseCausalLogical:
+            use_sparse_causal_logical = Bool(logical_indices)
+
         comptime for i in range(0, half_load):
-            # rank1-style mask_r2p: turn bit into predicate and use it to select
-            var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
-            var in_bound: Bool = bit != UInt32(0)
+            var in_bound: Bool
+            comptime if SparseCausalLogical:
+                if use_sparse_causal_logical and (
+                    col_base + i < logical_indices_len
+                ):
+                    # Mask this score-sorted slot by its logical key position
+                    # (-1 = padding). Slots past logical_indices_len are the
+                    # gather's clamped overflow and are masked below without a
+                    # read (see logical_indices_len for the safety rationale).
+                    var logical_pos = Int(
+                        logical_indices.unsafe_value()[
+                            q_token_idx * logical_indices_stride + col_base + i
+                        ]
+                    )
+                    in_bound = logical_pos >= 0 and logical_pos < causal_limit
+                elif use_sparse_causal_logical:
+                    in_bound = False
+                else:
+                    var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
+                    in_bound = bit != UInt32(0)
+            else:
+                # rank1-style mask_r2p: turn bit into predicate and use it to select
+                var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
+                in_bound = bit != UInt32(0)
             # masked_val = s_row[i]      if in_bound
             #            = MASK_VALUE    otherwise (finite sentinel; see
             #            module-level comment on MASK_VALUE for why)
@@ -3563,6 +3636,12 @@ struct MLA_SM100_Decode_Common[
         attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
             min_or_neg_inf[DType.float32]()
         ),
+        # Logical sparse indices and their valid per-q_token length, forwarded
+        # to the inner apply_mask (documented there); required non-null when
+        # SparseCausalLogical is derived below.
+        logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+        logical_indices_stride: Int = 0,
+        logical_indices_len: Int = 0,
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime MaskTypeName: String = Self.MaskType.get_type_name()
@@ -3570,6 +3649,13 @@ struct MLA_SM100_Decode_Common[
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
+        # Sparse gather slots are ordered by indexer SCORE, not by logical
+        # key position, so the fast slot-count causal mask (correct for
+        # dense decode, where col_base IS the logical key index) is wrong
+        # once topk selects a genuine subset of the causal prefix. Gated to
+        # CausalMask only: sliding window is not supported on the sparse
+        # kernels (enforced by their own comptime asserts).
+        comptime SparseCausalLogical: Bool = _op_sparse and CausalMask
         # Sliding window: SlidingWindowCausalMask is causal + lower bound at
         # `causal_limit - window_size`. Detected via get_type_name (since
         # name() embeds the window value, e.g. "SlidingWindowCausalMask[64]").
@@ -3610,7 +3696,12 @@ struct MLA_SM100_Decode_Common[
             offset_position.kv_start_row
         )  # Starting KV position for this split
         var cache_start_pos: UInt32 = 0
-        var cache_len: Int = offset_position.cache_len()
+        # Logical cache length: equals cache_len() in dense mode and
+        # whenever sparse topk >= actual_tokens; diverges only when sparse
+        # topk genuinely subsets the causal prefix, which is exactly when
+        # the causal horizon must be computed against logical (not slot)
+        # positions. See cache_len_logical() docstring.
+        var cache_len: Int = offset_position.cache_len_logical()
         var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
 
         # S consumer / P producer (N-stage wrappers, works for any num_sp_stages)
@@ -3795,6 +3886,7 @@ struct MLA_SM100_Decode_Common[
                     CausalMask=_causal_for_apply,
                     fold_q_num_heads=_fold_q_num_heads,
                     SlidingWindowSize=_sliding_window_size,
+                    SparseCausalLogical=SparseCausalLogical,
                 ](
                     tiles_done,
                     col0,
@@ -3808,6 +3900,10 @@ struct MLA_SM100_Decode_Common[
                     start_pos,
                     cache_start_pos,
                     kv_start_row,  # Pass kv_start_row for split-K global position
+                    logical_indices=logical_indices,
+                    logical_indices_stride=logical_indices_stride,
+                    q_token_idx=offset_position.q_token_idx,
+                    logical_indices_len=logical_indices_len,
                 )
             else:
                 current_max = Self.apply_mask[

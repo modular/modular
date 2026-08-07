@@ -287,6 +287,9 @@ def flare_mla_decoding[
     # SM100 dispatcher uses this instead of recomputing num_partitions
     # at grid time.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -389,6 +392,8 @@ def flare_mla_decoding[
         num_partitions_in: Optional capturable-graph scalar from the
             Python resolver; when set, the SM100 dispatcher uses it
             instead of recomputing `num_partitions` at grid time.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
     comptime assert (
         ragged or rank == 4
@@ -484,6 +489,7 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
         else:
             # Build extra_k_operand when extra_k is provided.
@@ -524,6 +530,7 @@ def flare_mla_decoding[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
 
 
@@ -657,6 +664,9 @@ def flare_mla_decoding_dispatch[
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """Dispatches an MLA decoding request to the platform-specific kernel.
 
@@ -756,6 +766,8 @@ def flare_mla_decoding_dispatch[
         num_partitions_in: Optional capturable-graph scalar from the
             Python resolver; when set, the SM100 dispatcher uses it
             instead of recomputing `num_partitions` at grid time.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -885,6 +897,7 @@ def flare_mla_decoding_dispatch[
                 extra_topk_lengths=extra_topk_lengths,
                 extra_scales_ptr=extra_scales_ptr,
                 num_partitions_in=num_partitions_in,
+                logical_indices=logical_indices,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.

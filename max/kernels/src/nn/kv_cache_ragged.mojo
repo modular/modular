@@ -4267,6 +4267,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
     # Capturable-graph scalar: forwarded from the MoGG op so SM100 grid
     # sizing matches the kernel's divmod on scalar_args_buf[2].
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """Dispatches MLA decode attention over a ragged batch against a paged KV cache.
 
@@ -4315,6 +4318,8 @@ def generic_flare_mla_decode_kv_cache_ragged[
         extra_scales_ptr: Optional extra stream scales.
         num_partitions_in: Capturable-graph num_partitions override forwarded
             from the MoGG op so SM100 grid sizing matches the kernel.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
 
     @always_inline
@@ -4374,6 +4379,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             extra_topk_lengths,
             extra_scales_ptr,
             num_partitions_in,
+            logical_indices,
         )
 
 
@@ -4423,6 +4429,9 @@ def _flare_mla_decode_kv_cache_ragged[
     # is not @__copy_capture-able, so we unpack to (has, value) before the
     # closure and rebuild Optional[Int] inside it.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -4449,6 +4458,8 @@ def _flare_mla_decode_kv_cache_ragged[
         extra_topk_lengths: Optional per-batch lengths for extra stream.
         extra_scales_ptr: Optional extra stream scales.
         num_partitions_in: Capturable-graph num_partitions override.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -4485,6 +4496,7 @@ def _flare_mla_decode_kv_cache_ragged[
         extra_scales_ptr,
         has_num_partitions,
         num_partitions_val,
+        logical_indices,
     )
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         var _num_partitions_in: Optional[Int] = Optional[Int](
@@ -4517,6 +4529,7 @@ def _flare_mla_decode_kv_cache_ragged[
             extra_topk_lengths=extra_topk_lengths,
             extra_scales_ptr=extra_scales_ptr,
             num_partitions_in=_num_partitions_in,
+            logical_indices=logical_indices,
         )
 
     dispatch_mask[
