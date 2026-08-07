@@ -294,8 +294,10 @@ def _do_broadcast_units[
             imm stride,
         }:
             var out_tile = TileTensor(unit_ptrs[index], row_major(stride))
+            # `index` is the group rank, not the device id: a DP replica's
+            # devices need not start at 0.
             broadcast[ngpus, use_multimem=False](
-                in_tile, out_tile, rank_sigs, dev_ctxs[index], 0
+                in_tile, out_tile, rank_sigs, dev_ctxs[index], 0, rank=index
             )
 
         _launch_device_collective[ngpus](

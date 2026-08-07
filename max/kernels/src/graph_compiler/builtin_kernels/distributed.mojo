@@ -612,6 +612,7 @@ struct DistributedBroadcast:
                 rank_sigs,
                 dev_ctxs_input[index],
                 root,
+                rank=index,
             )
 
         _launch_device_collective[num_devices](
