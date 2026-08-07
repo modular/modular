@@ -28,6 +28,13 @@ This version is still a work in progress.
   shape specialization optimizations even for eager code, beating PyTorch
   performance in eager in the common case.
 
+- `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
+  argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
+  contiguous groups of that many, each reducing independently, so the fused op
+  also works under tensor-parallel-within-data-parallel topologies. It was
+  previously full-world only and silently disabled itself whenever the
+  tensor-parallel degree was smaller than the device count.
+
 ### C API
 
 ## MAX kernels

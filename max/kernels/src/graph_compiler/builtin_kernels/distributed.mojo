@@ -864,6 +864,7 @@ struct DistributedReduceScatterRMSNorm:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        group_size: Int = 0,
     ](
         outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         outputs_sum: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -888,6 +889,11 @@ struct DistributedReduceScatterRMSNorm:
             rank: Tensor rank of the inputs and outputs.
             target: Target device string for tracing.
             _trace_name: Trace name for profiling.
+            group_size: Number of contiguous devices per independent
+                reduce-scatter group; must be at least 2 and must evenly divide
+                the total number of devices. Equal to `num_devices` for a
+                full-world collective. The builder always sets it; the `0`
+                attribute default is not a usable value.
 
         Args:
             outputs_normed: Per-device normed output shards.
@@ -901,13 +907,20 @@ struct DistributedReduceScatterRMSNorm:
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo).
-            - Full-world reduce-scatter only (no device grouping); requires P2P.
+            - Requires P2P, and identical tensor shapes within each group.
         """
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
             "expected reduce_scatter_rms_norm inputs and signal buffers to have"
             " the same number of elements"
         )
+        # >= 2, unlike the plain op: the fused kernel asserts `ngpus >= 2` and
+        # this composite has no 1-input folder, so a 1-device group would fail
+        # deeper with an unrelated message.
+        comptime assert group_size >= 2, "group_size must be at least 2"
+        comptime assert (
+            num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
 
         # Like plain reduce-scatter, no scratch: only the Signal struct.
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
@@ -916,28 +929,12 @@ struct DistributedReduceScatterRMSNorm:
         # CPU scalars), so CPU devices must be removed.
         var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
 
-        comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
-        )
-        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-            uninitialized=True
-        )
-
-        comptime for i in range(num_devices):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
-
         @always_inline
         def launch_fused_rs_norm[
             index: Int
         ]() raises {
-            imm in_tensors,
-            imm rank_sigs,
+            imm inputs,
+            imm signal_buffers,
             imm dev_ctxs,
             imm gammas,
             imm epsilons,
@@ -945,6 +942,39 @@ struct DistributedReduceScatterRMSNorm:
             imm outputs_normed,
             imm outputs_sum,
         }:
+            comptime group_id, local_rank = divmod(index, group_size)
+            comptime group_start = group_id * group_size
+            # Full-world keeps domain 0; a grouped collective gets a nonzero
+            # domain so its counters never poison the full-world bank on the
+            # shared Signal buffers. Keying by WIDTH puts every grouped op of
+            # that width in one bank -- sound only under the same-barrier-
+            # sequence invariant in `sync.mojo`'s `NUM_BARRIER_DOMAINS`.
+            comptime domain_id = 0 if group_size == num_devices else group_size
+
+            # Marshal into fully dynamic TileTensors so groups can have
+            # different static shapes while sharing one Array type.
+            comptime InputTensorType = type_of(
+                inputs[group_start].to_tile_tensor[DType.int64]().as_immut()
+            )
+            var in_tensors = Array[InputTensorType, group_size](
+                uninitialized=True
+            )
+            var rank_sigs = Array[
+                UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+            ](uninitialized=True)
+
+            comptime for i in range(group_size):
+                in_tensors[i] = rebind[InputTensorType](
+                    inputs[group_start + i]
+                    .to_tile_tensor[DType.int64]()
+                    .as_immut()
+                )
+                rank_sigs[i] = (
+                    signal_buffers[group_start + i]
+                    ._ptr.bitcast[Signal]()
+                    .as_unsafe_any_origin()
+                )
+
             var normed_buf = outputs_normed[index].to_tile_tensor[DType.int64]()
             var sum_buf = outputs_sum[index].to_tile_tensor[DType.int64]()
             var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
@@ -959,8 +989,17 @@ struct DistributedReduceScatterRMSNorm:
             @parameter
             @always_inline
             def two_launch() raises:
-                reducescatter[dtype=dtype, ngpus=num_devices, axis=0](
-                    in_tensors, sum_buf, rank_sigs, dev_ctxs[index]
+                reducescatter[
+                    dtype=dtype,
+                    ngpus=group_size,
+                    axis=0,
+                    domain_id=domain_id,
+                ](
+                    in_tensors,
+                    sum_buf,
+                    rank_sigs,
+                    dev_ctxs[index],
+                    local_rank=local_rank,
                 )
 
                 # `@__copy_capture` is REQUIRED: embedded into the
@@ -999,7 +1038,7 @@ struct DistributedReduceScatterRMSNorm:
                     dev_ctxs[index],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch](
+            _dispatch_rs_norm[two_launch=two_launch, domain_id=domain_id](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -1008,6 +1047,7 @@ struct DistributedReduceScatterRMSNorm:
                 weight_offset,
                 rank_sigs,
                 dev_ctxs[index],
+                local_rank=local_rank,
             )
 
         _launch_device_collective[num_devices](
