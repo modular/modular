@@ -41,6 +41,9 @@ This version is still a work in progress.
     them into one overload set, is now an error, following a period of
     deprecation.
 
+  - Intra-package accesses without explicit `import`s are now an error,
+    following a period of deprecation.
+
 ## Library stabilizations
 
 ## Library changes
