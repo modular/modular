@@ -85,7 +85,7 @@ from std.collections import OptionalReg
 from max.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
-from std.sys.info import has_amd_gpu_accelerator
+from std.sys.info import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from layout import row_major, TileTensor, Coord
 from layout.tile_tensor import row_major as tt_row_major
@@ -100,6 +100,7 @@ from nn.attention.mha_utils import MHAConfig, StaticInt
 
 from msa.sparse_indexer_prefill import sparse_indexer_prefill
 from msa.sparse_indexer_decode import (
+    _MMA_REG_MAX_ROWS,
     sparse_indexer_decode,
     sparse_indexer_decode_score_mtp,
     sparse_indexer_decode_topk_mtp,
@@ -180,7 +181,13 @@ struct Struct_msa_indexer_ragged_paged:
                 msa_scalar_args[1] = max_cache_valid_length.
             layer_idx: Layer index for the index-K cache.
             score_scratch: Persistent decode score scratch
-                `[num_index_heads, max_batch, MAX_NUM_BLOCKS]`.
+                `[num_index_heads, max_rows, MAX_NUM_BLOCKS]`. `max_rows` must
+                cover `total_q` for every step served: `max_batch` for
+                single-token decode, and `max_batch * max_new_tokens_per_step`
+                for the multi-token (MTP / speculative) route below, which
+                writes at the ragged row `input_row_offsets[b] + t`. The route
+                predicate checks this and falls back to prefill when the scratch
+                is too narrow, so an old caller degrades rather than corrupts.
             scale: QK scale.
             ctx: Device context.
         """
@@ -201,9 +208,24 @@ struct Struct_msa_indexer_ragged_paged:
         # step's query width), so it is the exact block count the split-K
         # decode top-k routes on -- re-adding `max_prompt_length()` would tip
         # `chunk_blocks` over the split-K `CHUNK_CAP` at a block-aligned top
-        # context and misroute to the slow path. NVIDIA keeps the prior
-        # `+ max_prompt_length()` for now (unchanged): its decode top-k is the
-        # arch-forked `block_select_topk`, which does not route on this value.
+        # context and misroute to the slow path.
+        #
+        # Post-write-ness is a property of the accessor and the host that fills
+        # it, not of AMD, so NVIDIA could drop the term too. It keeps it for
+        # now, but no longer for the reason first recorded here: SM100's decode
+        # top-k is the bitonic arm, which DOES route on this value. The cost is
+        # bounded and narrow -- the term adds at most one block, and the only
+        # capacity where one block breaks split-K coverage is exactly 4096
+        # (`cap_chunks` 16 -> 32), where the misroute lands on monolithic. That
+        # fallback is not a cliff: ragged traffic crosses the 4096 boundary on
+        # its own (capacity follows the batch's longest request), and on the
+        # seeds where it does, monolithic still measures ~0.85 of the serial
+        # arm this replaced. Dropping the term is a separate
+        # change because it also shrinks the prefill scratch allocated below,
+        # and because the unified-MTP draft steps substitute an in-graph bumped
+        # `cache_lengths` for the host buffer while keeping the host
+        # `max_cache_length` -- there this term is the only remaining slack, and
+        # that bound is unproven.
         #
         # Safe because `max_context_length()` is >= every per-row post-write
         # context, so the kernel's own `num_blocks = ceildiv(seq_lens[b] +
@@ -218,9 +240,28 @@ struct Struct_msa_indexer_ragged_paged:
             block_size,
         )
 
+        # The register-MMA decode scorer accepts a multi-token step when the
+        # geometry is its own: NVIDIA, dim == block == 128, page-aligned,
+        # nh <= MMA_M // 2. Mirrors `sparse_indexer_decode`'s own PER_TOKEN
+        # comptime assert, so the elif body below is only elaborated where that
+        # assert would pass. `topk` is unconstrained -- the MTP route selects
+        # with the same unbounded `block_select_topk` as single-token decode.
+        comptime MTP_DECODE_OK = (
+            has_nvidia_gpu_accelerator()
+            and idx_head_dim == 128
+            and block_size == 128
+            and (type_of(k_operand).page_size % block_size) == 0
+            and num_index_heads <= _MMA_REG_MAX_ROWS // 2
+        )
+        var max_q_len = Int(k_collection.max_seq_length)
+
         # Decode == one new index-K token per sequence (`num_rows == batch`);
-        # anything larger is a prefill / context-encoding step.
-        if Int(k_collection.max_seq_length) == 1:
+        # anything larger is a prefill / context-encoding step, EXCEPT a small
+        # multi-token (MTP / speculative-decode) step, which the decode indexer
+        # scores far more cheaply than prefill's MMA_M=128 machinery -- it packs
+        # every (token, head) pair into ONE m16 fragment and reads K once. See
+        # the MTP elif.
+        if max_q_len == 1:
             var batch = total_q  # 1 token/seq on decode
             # Use persistent score scratch. This is required for graph capture.
             var score = score_scratch.to_tile_tensor[DType.int64]()
@@ -253,6 +294,68 @@ struct Struct_msa_indexer_ragged_paged:
                 scale,
                 ctx,
             )
+        elif (
+            MTP_DECODE_OK
+            # Rows must fit the m16 fragment, and the persistent scratch must
+            # have a row per ragged output row. The scratch shape is a true
+            # graph constant (fixed Python int at graph-build time).
+            # `max_seq_length` is not -- it's a runtime scalar read from the
+            # `k_max_prompt_length` graph input -- but the serving pipeline's
+            # device-graph-capture runner pins it to `num_speculative_tokens +
+            # 1` for every capture and replay of a bucket
+            # (`ServeGraphCaptureRunner` in pipelines/lib/graph_capture.py),
+            # and capture bakes this branch choice once per captured op
+            # sequence, so this predicate is not re-evaluated on replay. A
+            # scratch sized for single-token decode simply keeps the prefill
+            # route rather than writing past its end.
+            and num_index_heads * max_q_len <= _MMA_REG_MAX_ROWS
+            and Int(score_scratch.dim_size[1]())
+            >= (Int(input_row_offsets.dim_size[0]()) - 1) * max_q_len
+        ):
+            # ---- Small multi-token (MTP / speculative) decode step ----
+            # Score each (token, head) pair -- `num_index_heads * max_q_len <=
+            # 16` rows of one m16 fragment -- with its own Q-at-end causal
+            # horizon and its own top-k. `out_idxs` and the persistent `score`
+            # scratch use the ragged `[nh, total_q, ...]` prefill layout (row =
+            # `input_row_offsets[b] + t`), so this is a drop-in for the same
+            # sparse-attention consumer. Anything wider or non-layout-matching
+            # keeps the prefill route below.
+            #
+            # This step is inside the graph-capture region, so it writes the
+            # PERSISTENT scratch rather than allocating: the row-count predicate
+            # above is what guarantees the ragged writes fit, and it degrades to
+            # prefill instead of over-running a scratch sized for single-token
+            # decode. The `comptime if` keeps the decode body from codegen'ing
+            # where the geometry cannot support it.
+            comptime if MTP_DECODE_OK:
+                var batch = Int(input_row_offsets.dim_size[0]()) - 1
+                var score = score_scratch.to_tile_tensor[DType.int64]()
+                sparse_indexer_decode[
+                    DType.bfloat16,
+                    type_of(k_operand),
+                    num_index_heads,
+                    idx_head_dim,
+                    block_size,
+                    PER_TOKEN=True,
+                ](
+                    q.to_tile_tensor[DType.int64](),
+                    k_operand,
+                    prefix_lens.to_tile_tensor[DType.int64](),
+                    input_row_offsets.to_tile_tensor[DType.int64](),
+                    score,
+                    out_idxs.to_tile_tensor[DType.int64](),
+                    batch,
+                    max_num_blocks,
+                    topk,
+                    init_blocks,
+                    local_blocks,
+                    scale,
+                    ctx,
+                    # Graph-constant new-token cap. Bounds every per-request
+                    # `in_step_q`, so it is what specializes the scorer's row
+                    # count and keeps it inside the m16 fragment.
+                    max_q_len=max_q_len,
+                )
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
