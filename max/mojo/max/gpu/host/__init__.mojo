@@ -35,5 +35,7 @@ from .launch_attribute import LaunchAttribute
 from .device_graph import (
     DeviceGraph,
     DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInput,
     DeviceGraphNode,
 )

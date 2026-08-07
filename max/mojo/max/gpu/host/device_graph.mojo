@@ -28,9 +28,11 @@ from max.gpu.host import (
 
 from std.collections.optional import OptionalReg
 from std.ffi import c_size_t, external_call, _CPointer
+from std.logger import Logger
 from std.sys import bit_width_of, size_of
 from std.memory.unsafe import bitcast
 from std.reflection import call_location, SourceLocation
+from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.builtin.device_passable import DevicePassable
 
 from max.runtime.async_value import AnyAsyncValueRef
@@ -50,6 +52,8 @@ from max.gpu.host.device_context import (
     _DumpPath,
     _FunctionEnqueuer,
 )
+
+comptime _logger = Logger()
 
 
 struct _DeviceGraphBuilderCpp:
@@ -139,6 +143,134 @@ def _pack_dep_args[
         ids=deps.unsafe_ptr().unsafe_bitcast[Int32](),
         count=Int64(len(deps)),
     )
+
+
+struct DeviceGraphCache(Movable):
+    """Holds the device graphs a model has already built, keyed for reuse.
+
+    A graph is expensive to record and instantiate, so
+    [`DeviceGraph.create()`](/api/mojo/max/gpu/host/device_graph/DeviceGraph/#create)
+    consults a cache before doing either. The key is derived from the graph's
+    inputs, so a later call with equivalent inputs replays the graph the first
+    call built.
+
+    Each individual operation is safe to call concurrently. A miss is not
+    exclusive, though: callers that miss together will each build a graph and the
+    last one to `add()` wins, so concurrent first use of one key costs duplicated
+    recording rather than a single shared graph.
+    """
+
+    var _cache: Dict[String, DeviceGraph]
+    var _lock: BlockingSpinLock
+
+    def __init__(out self):
+        """Creates an empty cache."""
+        self._cache = {}
+        self._lock = BlockingSpinLock()
+
+    @staticmethod
+    def make_key[
+        *Ts: DeviceGraphInput
+    ](
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        *inputs: *Ts,
+    ) -> String:
+        """Derives the cache key for a graph built from the given inputs.
+
+        Two calls agree on a key exactly when they pass the same work function
+        and their inputs write the same contributions in the same order.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            build: The work function that records the graph. Its type is what
+                identifies the graph independently of its inputs; the function
+                is never called here.
+            inputs: The inputs whose contributions distinguish this graph.
+
+        Returns:
+            The cache key.
+        """
+        return Self._make_key(build, inputs)
+
+    # Takes the pack itself so a variadic caller can forward its own inputs,
+    # which the variadic spelling above cannot express.
+    @staticmethod
+    def _make_key[
+        origin: ImmOrigin, //, *Ts: DeviceGraphInput
+    ](
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        inputs: VariadicPack[
+            origin=origin, element_trait=DeviceGraphInput, False, *Ts
+        ],
+    ) -> String:
+        var key = String(reflect[type_of(build)].name())
+
+        # Every contribution is separated, so no set of inputs can spell the
+        # same key as a different set by running together -- inputs writing
+        # `1` then `23` must not collide with `12` then `3`. Framing the key
+        # here rather than in `write_graph_key` keeps that guarantee
+        # independent of how each input chooses to describe itself.
+        comptime for i in range(len(Ts)):
+            key.write("|")
+            inputs[i].write_graph_key(key)
+
+        return key^
+
+    def lookup(mut self, key: String) -> Optional[DeviceGraph]:
+        """Returns the graph stored under a key, if there is one.
+
+        Args:
+            key: The cache key to look up.
+
+        Returns:
+            The cached graph, or `None` on a miss.
+        """
+        with BlockingScopedLock(self._lock):
+            # A copy, so it stays valid once another thread may replace the
+            # entry.
+            return self._cache.find(key)
+
+    def cache(mut self, var key: String, var graph: DeviceGraph) -> DeviceGraph:
+        """Interns the device graph identified by the given key.
+
+        If there is already a graph identified by the given key, that graph is
+        returned. Otherwise, the supplied graph is inserted into the cache and
+        returned.
+
+        Args:
+            key: The cache key to store the graph under.
+            graph: The graph to store.
+
+        Returns:
+            The canonicalized graph in the cache.
+        """
+        with BlockingScopedLock(self._lock):
+            var result = self._cache.find(key)
+            if result:
+                return result.take()
+
+            self._cache[key^] = graph
+            return graph^
+
+
+trait DeviceGraphInput(ImplicitlyCopyable):
+    """A device graph input that contributes to the graph's cache key."""
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        """Writes this input's contribution to a graph's cache key.
+
+        Write whatever distinguishes graphs that must not be shared: two inputs
+        that write the same bytes are treated as interchangeable. Contributions
+        are separated from each other by
+        [`DeviceGraphCache.make_key()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphCache/#make_key),
+        so there is no need to delimit or tag the output for that purpose.
+
+        Args:
+            writer: The writer accumulating the cache key.
+        """
+        ...
 
 
 struct DeviceGraph(ImplicitlyCopyable):
@@ -232,6 +364,80 @@ struct DeviceGraph(ImplicitlyCopyable):
         )
 
     @staticmethod
+    def create[
+        *Ts: DeviceGraphInput,
+    ](
+        ctx: DeviceContext,
+        build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
+        *inputs: *Ts,
+        cache: Pointer[mut=True, DeviceGraphCache, _],
+    ) raises -> DeviceGraph:
+        """Builds and instantiates a device graph, reusing a cached one if it
+        can.
+
+        Behaves like the uncached overload, except that a graph an earlier call
+        built from equivalent `inputs` is returned as-is and `build` is never
+        called.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            ctx: Device context for the target device.
+            build: Callback that adds nodes to the supplied builder, called only
+                on a cache miss.
+            inputs: The device graph inputs the cache key is derived from.
+            cache: The cache to consult, and to store a newly built graph in.
+
+        Returns:
+            The instantiated device graph, which may be one a previous call
+            built.
+
+        Raises:
+            If graph builder creation, `build`, or instantiation fails.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import (
+            DeviceContext, DeviceGraph, DeviceGraphBuilder, DeviceGraphCache
+        )
+
+        def kernel():
+            print("replaying")
+
+        with DeviceContext() as ctx:
+            var compiled_fn = ctx.compile_function[kernel]()
+            var cache = DeviceGraphCache()
+
+            def build(mut builder: DeviceGraphBuilder) raises {imm}:
+                _ = builder.add_function(
+                    compiled_fn, grid_dim=1, block_dim=1, dependencies=[]
+                )
+
+            # The second call reuses the graph the first one built.
+            var graph = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+            var same = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+            ctx.synchronize()
+        ```
+        """
+        # Caching of command buffers can easily exceed the maximum number of
+        # supported command buffers. For now, restrict caching to genuine device
+        # graph implementations.
+        if ctx.api() not in ("cuda", "hip"):
+            return Self.create(ctx, build)
+
+        var key = DeviceGraphCache._make_key(build, inputs)
+
+        var found = cache[].lookup(key)
+        if found:
+            _logger.info("found existing device graph for key", key)
+            return found.take()
+
+        var graph = Self.create(ctx, build)
+        return cache[].cache(key^, graph)
+
+    @staticmethod
     def create(
         ctx: DeviceContext,
         build: Some[def[o: ImmOrigin](mut DeviceGraphBuilder[o]) raises],
@@ -244,6 +450,9 @@ struct DeviceGraph(ImplicitlyCopyable):
         duration of `build`: their origin is scoped to this call and cannot
         escape it, so a node handle cannot be stored beyond the callback or
         used with a different graph.
+
+        Pass a `cache` to the overload above to reuse a previously built graph
+        instead of recording one on every call.
 
         Args:
             ctx: Device context for the target device.
@@ -280,6 +489,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         ```
         """
         var result: _DeviceGraphBuilderPtr[mut=True] = {}
+
         # const char *AsyncRT_DeviceContext_createGraphBuilder(
         #     DeviceGraphBuilder **result, DeviceContext *ctx)
         _checked(
@@ -296,6 +506,7 @@ struct DeviceGraph(ImplicitlyCopyable):
         var arena: Int = 0
         var builder = DeviceGraphBuilder[origin_of(arena)](result, ctx)
         build(builder)
+
         return builder^.instantiate()
 
 
