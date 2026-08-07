@@ -14,9 +14,19 @@
 from std.math import ceildiv
 from std.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.testing import assert_equal
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
 
-from max.gpu.host import DeviceGraph, DeviceGraphBuilder
+from max.gpu.host import (
+    DeviceGraph,
+    DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInput,
+)
 from max.runtime.async_value import AnyAsyncValueRef
 
 
@@ -837,6 +847,159 @@ def test_create_buffer(ctx: DeviceContext) raises:
         assert_equal(host_dst[i], UInt8(0x5A))
 
 
+@fieldwise_init
+struct _TaggedInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A graph input whose cache key is just its tag.
+
+    Deliberately writes a bare, undelimited integer: framing is
+    `make_key`'s job, so this is the adversarial case for it.
+    """
+
+    var tag: Int
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(self.tag)
+
+
+def test_cache_key_separates_inputs() raises:
+    print("Test cache keys keep adjacent input contributions apart.")
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        return
+
+    # Undelimited, these two would both spell "...123".
+    var a = DeviceGraphCache.make_key(build, _TaggedInput(1), _TaggedInput(23))
+    var b = DeviceGraphCache.make_key(build, _TaggedInput(12), _TaggedInput(3))
+    assert_not_equal(a, b)
+
+    # Equal inputs still agree, or nothing would ever hit.
+    assert_equal(
+        a, DeviceGraphCache.make_key(build, _TaggedInput(1), _TaggedInput(23))
+    )
+
+    # Arity is part of the key too: one input must not look like two.
+    assert_not_equal(a, DeviceGraphCache.make_key(build, _TaggedInput(1)))
+
+    # A different work function keys a different graph even with equal inputs.
+    def other_build(mut builder: DeviceGraphBuilder) raises {imm}:
+        return
+
+    assert_not_equal(
+        a,
+        DeviceGraphCache.make_key(
+            other_build, _TaggedInput(1), _TaggedInput(23)
+        ),
+    )
+
+
+def test_cache_reuses_graph(ctx: DeviceContext) raises:
+    print("Test a cache hit returns the prior graph without rebuilding it.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    # Counted through a pointer so the closure can stay `imm`-capturing.
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x5A))
+
+    var first = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # Same closure and same (empty) input list, so the key matches and the build
+    # body must not run a second time.
+    var second = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # The graph handed back on a hit is a fully usable graph, not a husk.
+    second.replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x5A))
+
+
+def test_cache_distinguishes_inputs(ctx: DeviceContext) raises:
+    print("Test inputs writing different cache keys do not share a graph.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x11))
+
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(1), cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # A different key must miss and rebuild.
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(2), cache=Pointer(to=cache))
+    assert_equal(build_count, 2)
+
+    # Returning to the first key must hit the entry stored by the first call.
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(1), cache=Pointer(to=cache))
+    assert_equal(build_count, 2)
+
+
+def test_cache_without_cache_always_builds(ctx: DeviceContext) raises:
+    print("Test omitting the cache rebuilds the graph on every call.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x22))
+
+    _ = DeviceGraph.create(ctx, build)
+    _ = DeviceGraph.create(ctx, build)
+    assert_equal(build_count, 2)
+
+
+def test_cache_lookup_and_add(ctx: DeviceContext) raises:
+    print("Test DeviceGraphCache lookup/add semantics directly.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    assert_false(Bool(cache.lookup("absent")))
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        _ = builder.add_memset(buf, UInt8(0x33))
+
+    _ = cache.cache("key", DeviceGraph.create(ctx, build))
+
+    var found = cache.lookup("key")
+    assert_true(Bool(found))
+
+    # The looked-up graph is an independent handle on the same graph, so it
+    # replays even though the cache still holds its own reference.
+    found.take().replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x33))
+
+    # A second add under the same key replaces the entry rather than failing.
+    _ = cache.cache("key", DeviceGraph.create(ctx, build))
+    assert_true(Bool(cache.lookup("key")))
+    assert_false(Bool(cache.lookup("other")))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
@@ -857,3 +1020,8 @@ def main() raises:
         test_region_with_dependencies(ctx)
         test_region_passthrough_dependencies(ctx)
         test_create_buffer(ctx)
+        test_cache_reuses_graph(ctx)
+        test_cache_distinguishes_inputs(ctx)
+        test_cache_without_cache_always_builds(ctx)
+        test_cache_lookup_and_add(ctx)
+        test_cache_key_separates_inputs()

@@ -35,10 +35,12 @@ from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInput,
 )
 from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
-from std.memory import UnsafeMaybeUninit
+from std.memory import Layout, ThinAllocation, UnsafeMaybeUninit, alloc, dealloc
 from layout import (
     Coord,
     Idx,
@@ -119,7 +121,7 @@ def create_i1_async(
     external_call["MGP_RT_CreateAsync_bool", NoneType](value, async_ptr)
 
 
-struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
+struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
     """Owning composite for an `mgp.buffer` value: a non-owning `MutByteBuffer`
     view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
     that keeps the backing memory alive.
@@ -226,8 +228,13 @@ struct OwnedByteBuffer(ImplicitlyCopyable, Movable):
             self.unsafe_ptr(), Index(self.size())
         ).to_device_buffer(ctx)
 
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(t"Buffer({self.size()})")
 
-struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
+
+struct OwnedTensor[dtype: DType, rank: Int](
+    DeviceGraphInput, ImplicitlyCopyable, Movable
+):
     """Owning composite for an `mgp.tensor` value: a non-owning `DynamicTensor`
     view (precomputed pointer + shape) plus an `AnyAsyncValueRef` storage handle
     that keeps the backing memory alive.
@@ -324,6 +331,9 @@ struct OwnedTensor[dtype: DType, rank: Int](ImplicitlyCopyable, Movable):
             self.dtype,
         )
         return AnyAsyncValueRef(handle)
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(t"Tensor({self.dtype}, {self.shape()})")
 
 
 @no_inline
@@ -1399,8 +1409,8 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         ](
             slot,
             self._handle,
-            UnsafePointer(to=buffer_size),
-            UnsafePointer(to=buffer_data),
+            Pointer(to=buffer_size),
+            Pointer(to=buffer_data),
         )
 
         var buffer = MutByteBuffer(
@@ -1411,13 +1421,43 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
         return {buffer, mem_handle}
 
     @always_inline
-    def remove_cached_buffer(self, slot: Int):
-        """Removes the buffer cached in the state slot at the given index.
+    def get_device_graph_cache(
+        self,
+    ) -> ref[MutUntrackedOrigin] DeviceGraphCache:
+        """Returns the device graph cache, creating it on first use.
 
-        Args:
-            slot: The index of the state slot to clear.
+        Unlike the state slots, the cache is not indexed: there is a single
+        device graph cache per model. The state context holds it and outlives
+        every execution, so the returned reference is untracked.
+
+        Returns:
+            A mutable reference to the model's device graph cache.
         """
-        external_call["MGP_RT_RemoveCachedBuffer", NoneType](slot, self._handle)
+
+        # Allocating and initializing in one step keeps creation indivisible, so
+        # the state context can never publish storage that is not yet a usable
+        # `DeviceGraphCache`.
+        def create() -> Pointer[DeviceGraphCache, MutUntrackedOrigin]:
+            # Leaked because the state context takes over ownership; `destroy`
+            # below pairs the pointer back up with this layout to release it.
+            var cache = alloc(Layout[DeviceGraphCache].single()).unsafe_leak()
+            cache.unsafe_write(DeviceGraphCache())
+            return cache
+
+        # Paired with `create`: the state context adopts the allocation without
+        # taking over freeing it, so this both destroys and frees.
+        def destroy(cache: Pointer[DeviceGraphCache, MutUntrackedOrigin]):
+            cache.unsafe_deinit_pointee()
+            dealloc(
+                ThinAllocation(unsafe_owned_ptr=cache).unsafe_with_layout(
+                    Layout[DeviceGraphCache].single()
+                )
+            )
+
+        return external_call[
+            "MGP_RT_GetOrCreateDeviceGraphCache",
+            Pointer[DeviceGraphCache, MutUntrackedOrigin],
+        ](self._handle, create, destroy)[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1781,12 +1821,6 @@ def mgp_buffer_get_cached(
     # cached is (view, mem_handle); fold the cached buffer's memory handle into
     # the composite's storage by retaining it.
     return OwnedByteBuffer(cached[0], AnyAsyncValueRef(retain_handle=cached[1]))
-
-
-@register_internal("mgp.buffer.remove_cached")
-@no_inline
-def mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: Int):
-    ctx.remove_cached_buffer(buffer_slot)
 
 
 @register_internal("mgp.assert")
