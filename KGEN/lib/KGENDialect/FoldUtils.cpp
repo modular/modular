@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/FoldUtils.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/Interpreter/ParametricInterpreterState.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 namespace M::KGEN {
@@ -154,6 +155,116 @@ FoldValue foldSIMDCmp(CmpPredicate cc, FoldValues operands,
   }
 
   return {};
+}
+
+/// Whether this dtype's value depends on the target's index bit width.
+static bool isTargetDependentDType(KGENDType dtype) {
+  return dtype.isIndex() || dtype.isUIndex() || dtype.isAddress();
+}
+
+static bool hasTargetDependentDType(SIMDAttr attr) {
+  std::optional<KGENDType> dtype = attr.getType().getResolvedDType();
+  return dtype && isTargetDependentDType(*dtype);
+}
+
+/// What a value tree holds that stops its representation from being canonical
+/// for the value it denotes.
+struct NonCanonicalLeaves {
+  /// A value nobody knows. Nothing decides a comparison against it.
+  bool unknown = false;
+  /// Index-like data, so the target's index bit width decides the comparison.
+  bool targetDependent = false;
+};
+
+/// Find non-canonical leaves anywhere in an attribute tree.
+static NonCanonicalLeaves findNonCanonicalLeaves(Attribute attr) {
+  NonCanonicalLeaves found;
+  attr.walk([&](Attribute sub) {
+    if (isa<UnknownAttr>(sub)) {
+      // An unknown decides the whole verdict, so nothing further matters.
+      found.unknown = true;
+      return mlir::WalkResult::interrupt();
+    }
+    if (auto simd = dyn_cast<SIMDAttr>(sub);
+        simd && hasTargetDependentDType(simd)) {
+      found.targetDependent = true;
+    }
+    return mlir::WalkResult::advance();
+  });
+  return found;
+}
+
+bool containsUnknownValue(Attribute attr) {
+  return findNonCanonicalLeaves(attr).unknown;
+}
+
+/// Re-express `attr`'s index-like leaves as the values they denote at
+/// `indexBitWidth`, so that two trees denoting the same value at that width
+/// become the same uniqued attribute.
+static Attribute normalizeIndexData(Attribute attr, int64_t indexBitWidth) {
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](SIMDAttr simd) -> std::pair<Attribute, mlir::WalkResult> {
+        if (!hasTargetDependentDType(simd))
+          return {simd, mlir::WalkResult::advance()};
+
+        KGENDType dtype = *simd.getType().getResolvedDType();
+        // Index is signed; the other index-like dtypes are unsigned.
+        bool isUnsigned = !dtype.isIndex();
+        assert(!isUnsigned || dtype.isUIndex() || dtype.isAddress());
+        SmallVector<DTypeValue> values;
+        for (const DTypeValue &value : simd.getValues()) {
+          // Store at exactly `indexBitWidth`, so both sides of a comparison end
+          // up stored the same way.
+          const APInt &data = value.getData();
+          values.emplace_back(isUnsigned ? data.zextOrTrunc(indexBitWidth)
+                                         : data.sextOrTrunc(indexBitWidth),
+                              dtype);
+        }
+        // Nothing below a SIMD constant needs normalizing.
+        return {SIMDAttr::get(values, simd.getType()),
+                mlir::WalkResult::skip()};
+      });
+  return replacer.replace(attr);
+}
+
+std::optional<bool> areSimpleConstantsEqual(TypedAttr lhs, TypedAttr rhs,
+                                            TargetInfoAttr target) {
+  NonCanonicalLeaves lhsLeaves = findNonCanonicalLeaves(lhs);
+  NonCanonicalLeaves rhsLeaves = findNonCanonicalLeaves(rhs);
+
+  // An unknown stands in for a value nobody knows, so no comparison of the
+  // representations says anything about the values, not even the same
+  // representation twice.
+  if (lhsLeaves.unknown || rhsLeaves.unknown)
+    return std::nullopt;
+
+  // Uniquing already answers this, whatever the target.
+  if (lhs == rhs)
+    return true;
+
+  // With no index-like data anywhere in either tree, the representation is
+  // canonical for the value and inequality is the answer.
+  if (!lhsLeaves.targetDependent && !rhsLeaves.targetDependent)
+    return false;
+
+  if (target) {
+    int64_t indexBitWidth = target.resolveIndexBitWidth();
+    return normalizeIndexData(lhs, indexBitWidth) ==
+           normalizeIndexData(rhs, indexBitWidth);
+  }
+
+  // No target: decide only where both candidate index widths agree, mirroring
+  // how `foldSIMDOpIndex` folds target-dependent arithmetic without a target.
+  //
+  // Equal values at 64 bits truncate to equal values at 32, so agreement at 64
+  // settles every width. Only a mismatch there needs the 32-bit answer, to tell
+  // "a different value" apart from "depends on the target".
+  if (normalizeIndexData(lhs, 64) == normalizeIndexData(rhs, 64))
+    return true;
+  if (normalizeIndexData(lhs, 32) == normalizeIndexData(rhs, 32))
+    return std::nullopt;
+  return false;
 }
 
 } // namespace M::KGEN

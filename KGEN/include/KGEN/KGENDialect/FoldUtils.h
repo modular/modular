@@ -158,6 +158,28 @@ FailureOr<TypedAttr> foldAttrWithTarget(ParameterEvaluationContext &context,
                                         ArrayRef<Attribute> operands,
                                         TargetAwareFoldFn fold);
 
+/// Whether `attr` contains an unknown value at any depth, including inside
+/// nested types. An unknown carries no value, so no comparison of
+/// representations containing one decides anything, not even comparing a
+/// representation with itself.
+bool containsUnknownValue(Attribute attr);
+
+/// Decide whether two fully-evaluated parameter values denote the same value.
+///
+/// The caller must have established that both operands are simple constants
+/// (`ParameterAttr::isSimpleConstant`), which means equality is pointer
+/// equality, except for these two cases:
+///
+///  - target-dependent data, like index-typed values whose number depends on
+///    the index bit width.
+///  - unknown values, which carry no value for a representation to be canonical
+///    for. No target settles these.
+///
+/// Returns nullopt for both, i.e. whenever the comparison cannot be made on the
+/// information given.
+std::optional<bool> areSimpleConstantsEqual(TypedAttr lhs, TypedAttr rhs,
+                                            TargetInfoAttr target);
+
 /// Fold an op using a target-aware fold function.
 inline OpFoldResult foldOpWithTarget(FoldValues operands, TargetInfoAttr target,
                                      TargetAwareFoldFn fold) {

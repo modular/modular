@@ -305,6 +305,10 @@ def WrappedParamOperatorAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def ParamIdenticalAttr : DialectAttribute<(attr
+  TypedAttrArray:$operands
+)>;
+
 def CmpPredicateAttr : DialectAttribute<(attr
   EnumAttr<"CmpPredicate">:$value
 )>;
@@ -639,7 +643,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     SIMDSplatAttr,
     PogMetadataAttr,
     PogListAttr,
-    FuncPtrBitcastAttr
+    FuncPtrBitcastAttr,
+    ParamIdenticalAttr
   ];
 }
 

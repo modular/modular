@@ -1116,3 +1116,284 @@ kgen.generator @gen_attr<a: index>() {
 
   kgen.return
 }
+
+//===----------------------------------------------------------------------===//
+// ParamIdenticalAttr
+//===----------------------------------------------------------------------===//
+
+// COM: `identical` is parameter identity: it asks whether its operands denote
+// COM: the same value, and always returns a scalar bool. This is distinct from
+// COM: `eq`, which is a lane-wise SIMD compare whose result inherits the
+// COM: operand lane count. Nothing produces `identical` from Mojo source yet;
+// COM: these cases pin the fold, the canonical form and the round-trip.
+
+// CHECK-LABEL: @param_identical
+kgen.generator @param_identical<t1: type, t2: type, dt: dtype, s: string>() {
+  // COM: Symbolic operands cannot be decided, so the proposition survives.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:type t1, t2)>
+  kgen.param.constant: scalar<bool> = <identical(:type t1, t2)>
+
+  // COM: Pointer equality proves identity.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(:type t1, t1)>
+
+  // COM: Operands are canonically ordered, so this uniques to the same
+  // COM: attribute as the symbolic case above instead of printing `t2, t1`.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:type t1, t2)>
+  kgen.param.constant: scalar<bool> = <identical(:type t2, t1)>
+
+  // COM: Equal and distinct simple constants both decide.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(:dtype f32, f32)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(:dtype f32, f64)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(:string "a", "b")>
+
+  // COM: A symbolic side blocks the false fold: `s` may still become "b".
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:string s, "b")>
+  kgen.param.constant: scalar<bool> = <identical(:string s, "b")>
+
+  // COM: Identity involving an unknown value is undecidable: an unknown claims
+  // COM: to be a simple constant but carries no value, so neither attribute
+  // COM: equality nor inequality decides it.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:dtype f32, *?)>
+  kgen.param.constant: scalar<bool> = <identical(:dtype *?, f32)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:dtype *?, *?)>
+  kgen.param.constant: scalar<bool> = <identical(:dtype *?, *?)>
+
+  // COM: Negation has no dedicated sugar, unlike `eq`/`ne`; an inverted
+  // COM: identity prints through the generic `not`.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <not(identical(:type t1, t2))>
+  kgen.param.constant: scalar<bool> = <xor(identical(:type t1, t2), true)>
+
+  // COM: The result is exactly `scalar<bool>`, which is what lets an identity
+  // COM: proposition compose with `and`/`xor` -- those require all operands to
+  // COM: have the identical type. The conjunction sorts its own operands, so
+  // COM: the `dtype` proposition lands first.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <and(identical(:dtype dt, f32), identical(:type t1, t2))>
+  kgen.param.constant: scalar<bool> = <and(identical(:type t1, t2),
+                                          identical(:dtype dt, f32))>
+  kgen.return
+}
+
+// COM: Identity on numeric operands answers a *different question* than `eq`,
+// COM: rather than a lane-wise one: `identical` asks whether the two values are
+// COM: the same and always returns one scalar bool, while `eq` compares lane by
+// COM: lane. Both spellings are legal, so this pins the distinction. `eq` is
+// COM: the right operator for numeric operands; the follow-up that redirects
+// COM: non-numeric `eq` to `identical` must not redirect these.
+// CHECK-LABEL: @param_identical_vs_lanewise_eq
+kgen.generator @param_identical_vs_lanewise_eq() {
+  // COM: One scalar bool: the two vectors are not the same value.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.simd<4, si32> #kgen.simd<1, 2, 3, 4>, #kgen.simd<1, 2, 3, 5>)>
+
+  // COM: The same operands under `eq`: a four-lane result, differing only in
+  // COM: the lane where the values differ.
+  // CHECK-NEXT: = kgen.param.constant: simd<4, bool> = <<true, true, true, false>>
+  kgen.param.constant: simd<4, bool> = <eq(
+    :!kgen.simd<4, si32> #kgen.simd<1, 2, 3, 4>, #kgen.simd<1, 2, 3, 5>)>
+  kgen.return
+}
+
+// COM: Floats are where the two most visibly part ways, in both directions.
+// COM: `eq` is IEEE; identity asks whether the operands denote the same value.
+// CHECK-LABEL: @param_identical_vs_eq_floats
+kgen.generator @param_identical_vs_eq_floats() {
+  // COM: +0.0 and -0.0 are distinguishable values -- 1/+0.0 is +inf and 1/-0.0
+  // COM: is -inf, and signbit differs -- so identity must not equate them, or
+  // COM: substituting one for the other would change results.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :scalar<f32> #kgen<simd "0.0">, #kgen<simd "-0.0">)>
+
+  // COM: IEEE equality deliberately conflates them.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <eq(
+    :scalar<f32> #kgen<simd "0.0">, #kgen<simd "-0.0">)>
+
+  // COM: And the other direction: one attribute is one value whatever it holds,
+  // COM: while IEEE says NaN equals nothing, itself included.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(
+    :scalar<f32> #kgen<simd "NaN">, #kgen<simd "NaN">)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <eq(
+    :scalar<f32> #kgen<simd "NaN">, #kgen<simd "NaN">)>
+  kgen.return
+}
+
+// COM: Identity must not decide *distinct* numeric constants whose value depends
+// COM: on the target: 2^32 and 0 are the same value at 32-bit index width and
+// COM: different at 64-bit, so attribute inequality proves nothing. Both
+// COM: spellings defer here and settle during elaboration -- see
+// COM: @test_identical_index_32/_64 in kgen-elaborate/elaborate-pop-attrs.mlir.
+// CHECK-LABEL: @param_identical_index_defers
+kgen.generator @param_identical_index_defers() {
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <eq(:scalar<index> 4294967296, 0)>
+  kgen.param.constant: scalar<bool> = <eq(:scalar<index> 4294967296, 0)>
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <identical(:scalar<index> 4294967296, 0)>
+  kgen.param.constant: scalar<bool> = <identical(:scalar<index> 4294967296, 0)>
+  kgen.return
+}
+
+// COM: Reuses the @StructType0/@StructType1 and @StructTypeGen0/@StructTypeGen1
+// COM: declarations above, mirroring @param_expr_type_equality.
+// CHECK-LABEL: @param_identical_type_equality
+kgen.generator @param_identical_type_equality<p1>() {
+  // COM: Two identical type values are one uniqued attribute, so this decides
+  // COM: on pointer equality rather than on canonical type equality.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>
+  )>
+
+  // COM: Canonical type equality proper: these are *distinct* attributes -- they
+  // COM: differ in the metatype slot -- but their stripped type values compare
+  // COM: equal, which is the only thing that reaches that fold branch.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type #kgen.type<index>, #kgen.type<index, type>
+  )>
+
+  // COM: Struct types are nominal, so different references are never the same
+  // COM: value even though their layouts match.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<!lit.struct<@StructType1<:index 1, :index p1>>>
+  )>
+
+  // COM: One struct type reference and one non-struct type reference.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
+    #kgen.type<index>
+  )>
+
+  // COM: Different struct generator references.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
+    [typevalue<#kgen.genref<@StructTypeGen1<1, p1>>>, !kgen.struct<(index, index)>]
+  )>
+
+  // COM: One struct generator reference and one non-struct generator reference.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <identical(
+    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
+    #kgen.type<index>
+  )>
+  kgen.return
+}
+
+// COM: The generic attribute syntax round-trips as well, including through
+// COM: bytecode (see the second RUN line).
+// CHECK-LABEL: @param_identical_generic_syntax
+kgen.generator @param_identical_generic_syntax<t1: type, t2: type>() {
+  // CHECK: "test.someop"
+  "test.someop" () {
+    // CHECK-SAME: use1 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type, #kgen.param.decl.ref<"t2"> : !kgen.type> : !kgen.scalar<bool>
+    use1 = #kgen.param.identical<#kgen.param.decl.ref<"t1"> : !kgen.type,
+                                 #kgen.param.decl.ref<"t2"> : !kgen.type>
+  } : () -> ()
+  kgen.return
+}
+
+// COM: Index-like data nested inside an aggregate is target-dependent for the
+// COM: same reason a top-level `index` operand is, so identity defers rather
+// COM: than deciding -- see @test_identical_index_agg_32/_64 in
+// COM: kgen-elaborate/elaborate-pop-attrs.mlir for where these settle. `eq`
+// COM: answers the same operands from representation alone, which is the
+// COM: distinction this attribute exists to draw; both are pinned here.
+// COM: Attribute dictionaries print in alphabetical order, so the keys in each
+// COM: op below are named to keep the CHECK-SAME lines in source order.
+// CHECK-LABEL: @param_identical_nested_index
+kgen.generator @param_identical_nested_index() {
+  // CHECK: "test.someop"
+  "test.someop" () {
+    // CHECK-SAME: eq_answers_from_representation = #kgen<simd false>
+    eq_answers_from_representation = #kgen.param.expr<eq,
+      #kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
+      #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>> : !kgen.scalar<bool>,
+    // CHECK-SAME: identical_defers = #kgen.param.identical<#kgen.param_list<4294967296> : !kgen.param_list<scalar<index>>, #kgen.param_list<0> : !kgen.param_list<scalar<index>>> : !kgen.scalar<bool>
+    identical_defers = #kgen.param.identical<
+      #kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
+      #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>,
+
+    // COM: `index` is signed, so a negative value and its 32-bit unsigned
+    // COM: counterpart are the same value at 32-bit width only. This is the
+    // COM: only case that exercises sign-extension in the comparison.
+    // CHECK-SAME: negative_defers = #kgen.param.identical<#kgen.param_list<-1> : !kgen.param_list<scalar<index>>, #kgen.param_list<4294967295> : !kgen.param_list<scalar<index>>> : !kgen.scalar<bool>
+    negative_defers = #kgen.param.identical<
+      #kgen.param_list<#kgen<simd -1> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
+      #kgen.param_list<#kgen<simd 4294967295> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>
+  } : () -> ()
+
+  // COM: Deferral is limited to the actual ambiguity -- these three still
+  // COM: decide without a target.
+  // CHECK: "test.decidable"
+  "test.decidable" () {
+    // COM: Index leaves that agree at every width.
+    // CHECK-SAME: agrees_at_all_widths = #kgen<simd true>
+    agrees_at_all_widths = #kgen.param.identical<
+      #kgen.param_list<#kgen<simd 7> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
+      #kgen.param_list<#kgen<simd 7> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>,
+
+    // COM: An aggregate with no index-like leaf decides on representation alone.
+    // CHECK-SAME: no_index_data = #kgen<simd false>
+    no_index_data = #kgen.param.identical<
+      #kgen.param_list<#kgen<simd 1> : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
+      #kgen.param_list<#kgen<simd 2> : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>>,
+
+    // COM: A second leaf pair that no index width can reconcile decides the
+    // COM: whole proposition, even though the first pair is ambiguous.
+    // CHECK-SAME: other_leaf_differs = #kgen<simd false>
+    other_leaf_differs = #kgen.param.identical<
+      #kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>, #kgen<simd 5> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
+      #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>, #kgen<simd 6> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>
+  } : () -> ()
+  kgen.return
+}
+
+// COM: An unknown nested inside an aggregate is undecidable for the same reason
+// COM: a top-level one is: it carries no value, so the representations differing
+// COM: proves nothing. Unlike the index-width case, no target settles it -- it
+// COM: stays symbolic through elaboration and reaches `validateForElaborator`.
+// COM: `eq` decides the same operands from representation alone.
+// CHECK-LABEL: @param_identical_nested_unknown
+kgen.generator @param_identical_nested_unknown() {
+  // CHECK: "test.someop"
+  "test.someop" () {
+    // COM: Keys are in alphabetical order, which is the order the attribute
+    // COM: dictionary prints in and therefore the order CHECK-SAME must match.
+    // CHECK-SAME: eq_answers_from_representation = #kgen<simd false>
+    eq_answers_from_representation = #kgen.param.expr<eq,
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
+      #kgen.param_list<#kgen<simd 1> : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>> : !kgen.scalar<bool>,
+
+    // COM: Two *pointer-equal* nested unknowns are the one case where the two
+    // COM: spellings disagree: `eq` folds it to true through its own unguarded
+    // COM: representation-equality shortcut, while `identical` declines, because
+    // COM: the same representation twice still is not the same value when nobody
+    // COM: knows what that value is -- matching how it treats a top-level `*?`.
+    // CHECK-SAME: eq_same_unknown = #kgen<simd true>
+    eq_same_unknown = #kgen.param.expr<eq,
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>> : !kgen.scalar<bool>,
+
+    // CHECK-SAME: identical_defers = #kgen.param.identical<#kgen.param_list<1> : !kgen.param_list<scalar<si32>>, #kgen.param_list<*?> : !kgen.param_list<scalar<si32>>> : !kgen.scalar<bool>
+    identical_defers = #kgen.param.identical<
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
+      #kgen.param_list<#kgen<simd 1> : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>>,
+
+    // CHECK-SAME: identical_same_unknown = #kgen.param.identical<#kgen.param_list<*?> : !kgen.param_list<scalar<si32>>, #kgen.param_list<*?> : !kgen.param_list<scalar<si32>>> : !kgen.scalar<bool>
+    identical_same_unknown = #kgen.param.identical<
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
+      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>>
+  } : () -> ()
+  kgen.return
+}

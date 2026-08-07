@@ -177,3 +177,98 @@ kgen.generator export @test_simd_floordiv_index_64() -> !kgen.scalar<index> {
   kgen.return %0 : !kgen.scalar<index>
 }
 }
+
+// -----
+
+// #kgen.param.identical with index: identity asks whether two values are the
+// *same value*, which for `index` depends on the target just as `eq` does --
+// 2^32 truncates to 0 at 32-bit width. So it defers at construction and settles
+// here, and must agree with `eq`.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_index_32
+kgen.generator export @test_identical_index_32() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen<simd 4294967296> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+// The same operands at 64-bit width are different values.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_index_64
+kgen.generator export @test_identical_index_64() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen<simd 4294967296> : !kgen.scalar<index>, #kgen<simd 0> : !kgen.scalar<index>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+// Index data nested inside an aggregate defers at construction (see
+// @param_identical_nested_index in kgen-dialect/kgen-param-exprs.mlir) and
+// settles here, where the index width is known.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_index_agg_32
+kgen.generator export @test_identical_index_agg_32() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>, #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+// The same aggregates at 64-bit width hold different values.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_index_agg_64
+kgen.generator export @test_identical_index_agg_64() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>, #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+// `index` is signed: -1 and 4294967295 are the same value at 32-bit width and
+// different at 64-bit, which is the only case that exercises sign-extension in
+// the nested comparison.
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 32>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_negative_index_32
+kgen.generator export @test_identical_negative_index_32() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.param_list<#kgen<simd -1> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>, #kgen.param_list<#kgen<simd 4294967295> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <true>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "", arch = "", features = "", data_layout = "", simd_bit_width = 128, index_bit_width = 64>, kgen.env = #kgen.env<{}>} {
+// CHECK-LABEL: kgen.func export @test_identical_negative_index_64
+kgen.generator export @test_identical_negative_index_64() -> !kgen.scalar<bool> {
+  kgen.param.declare value : !kgen.scalar<bool> = <#kgen.param.identical<#kgen.param_list<#kgen<simd -1> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>, #kgen.param_list<#kgen<simd 4294967295> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>>>
+  // CHECK-NEXT: [[V0:%.*]] = kgen.param.constant: scalar<bool> = <false>
+  %0 = kgen.param.constant: !kgen.scalar<bool> = <value>
+  // CHECK-NEXT: kgen.return [[V0]] : !kgen.scalar<bool>
+  kgen.return %0 : !kgen.scalar<bool>
+}
+}

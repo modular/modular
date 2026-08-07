@@ -1234,6 +1234,24 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
         return success();
       }
 
+      if (keyword == "identical" && operandType) {
+        // All operands share the single leading `:<type>` prefix.
+        SmallVector<TypedAttr> operands;
+        if (p.parseCommaSeparatedList([&] {
+              return parseParamValue(p, operands.emplace_back(), operandType);
+            }) ||
+            p.parseRParen())
+          return failure();
+
+        if (failed(ParamIdenticalAttr::verify(
+                [&]() -> mlir::InFlightDiagnostic { return p.emitError(loc); },
+                operands)))
+          return failure();
+
+        value = ParamIdenticalAttr::get(operands);
+        return success();
+      }
+
       if (keyword == "sugar_alias" || keyword == "sugar_builtin" ||
           keyword == "sugar_preserved") {
         TypedAttr sugared, expanded;
@@ -1595,6 +1613,20 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     }
 
     return printExpr(stringifyEnum(expr.getOpcode()), expr.getOperands());
+  }
+
+  if (auto identical = dyn_cast<ParamIdenticalAttr>(value)) {
+    // Operands all share one type, so print it once as a prefix.  Unlike `eq`
+    // this always prints the prefix rather than defaulting to `index`, because
+    // the parser needs it to type the operands.
+    p << "identical(:";
+    printKGENType(p, identical.getOperand(0).getType());
+    p << ' ';
+    llvm::interleaveComma(identical.getOperands(), p, [&](TypedAttr operand) {
+      printParamValue(p, operand);
+    });
+    p << ')';
+    return;
   }
 
   if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(value)) {

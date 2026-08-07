@@ -17,6 +17,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/KGENDialect/FoldUtils.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -189,6 +190,30 @@ FailureOr<TypedAttr> ParamOperatorAttr::evaluateWithContext(
     return ParamOperatorAttr::get(getOpcode(), operands, getType());
 
   // Can not be further folded.
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
+// ParamIdenticalAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> ParamIdenticalAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  // `get()` decided everything that does not need a target, so the only thing
+  // left to contribute here is the index bit width.
+  TargetInfoAttr target = context.getTargetInfo();
+  if (!target)
+    return failure();
+
+  // The comparison is only legal when both sides are fully evaluated.
+  TypedAttr lhs = getCanonicalAttr(getOperand(0));
+  TypedAttr rhs = getCanonicalAttr(getOperand(1));
+  if (!ParameterAttr::isSimpleConstant(lhs) ||
+      !ParameterAttr::isSimpleConstant(rhs))
+    return failure();
+
+  if (std::optional<bool> same = areSimpleConstantsEqual(lhs, rhs, target))
+    return TypedAttr(SIMDAttr::getScalarBool(getContext(), *same));
   return failure();
 }
 
