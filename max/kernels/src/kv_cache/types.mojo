@@ -2123,6 +2123,15 @@ struct PagedKVCache[
     # KV Cache quantization scales
     var scales: OptionalReg[Self.scales_tt_type]
 
+    # Lookup table (batch -> page-id) for the quantization scales. Today this
+    # is identical to `lookup_table`: values and scales share one block-id
+    # space and one LUT. Storing it as a distinct field lets scales resolve
+    # their page through an independent LUT, so a scales page pool can have its
+    # own lifecycle/placement without touching the values LUT. `page_size`
+    # (tokens per page) is still shared, so `_get_scale_idx` keeps using the
+    # same `divmod(tok_idx, page_size)` to pick the LUT column.
+    var scales_lookup_table: Self.lookup_table_tt_type
+
     comptime device_type: AnyType = Self
 
     def _to_device_type(
@@ -2142,6 +2151,10 @@ struct PagedKVCache[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[Self.scales_tt_type] = None,
+        # Distinct LUT for scales. Defaults to `lookup_table` (values/scales
+        # share one LUT today); pass a separate one to give scales pages an
+        # independent block-id space.
+        scales_lookup_table: OptionalReg[Self.lookup_table_tt_type] = None,
     ):
         assert (
             Int(blocks.dim[1]()) == Self.page_size
@@ -2159,6 +2172,10 @@ struct PagedKVCache[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.scales = scales
+        if scales_lookup_table:
+            self.scales_lookup_table = scales_lookup_table.value()
+        else:
+            self.scales_lookup_table = lookup_table
 
     @staticmethod
     def max_tile_size() -> Int:
@@ -2680,13 +2697,13 @@ struct PagedKVCache[
 
         assert bs < self.cache_lengths.num_elements(), "batch_idx is oob"
         debug_assert(
-            lut_block_idx < Int(self.lookup_table.dim[1]()),
-            "lut_block_idx is OOB. Attempted to access LUT column ",
+            lut_block_idx < Int(self.scales_lookup_table.dim[1]()),
+            "lut_block_idx is OOB. Attempted to access scales LUT column ",
             lut_block_idx,
-            " with lookup_table inner dim ",
-            Int(self.lookup_table.dim[1]()),
+            " with scales_lookup_table inner dim ",
+            Int(self.scales_lookup_table.dim[1]()),
         )
-        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        var block_idx = Int(self.scales_lookup_table[bs, lut_block_idx])
         # floordiv: head_dim_idx is the *start* of the quantization block
         # (e.g. 0, 64, 128, …), so we want which block slot this maps to.
         # ceildiv would be wrong here: ceildiv(64, 64) == 1 (correct for the
@@ -2838,10 +2855,13 @@ struct PagedKVCache[
             scales_dtype == Self.scale_dtype
         ), "scales element dtype must match the cache's scale_dtype"
         var lut_block_idx, tok_in_block_idx = divmod(tok_idx, self.page_size)
-        var block_idx = Int(self.lookup_table[bs, lut_block_idx])
+        var block_idx = Int(self.scales_lookup_table[bs, lut_block_idx])
         debug_assert(
             block_idx < Int(self.blocks.dim[0]()),
-            "KVCache block_idx resolved to sentinel/unassigned LUT entry (",
+            (
+                "KVCache scales block_idx resolved to sentinel/unassigned LUT"
+                " entry ("
+            ),
             block_idx,
             ")",
         )
@@ -3272,6 +3292,10 @@ struct PagedKVCacheCollection[
     var blocks: Self.blocks_tt_type
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
     var lookup_table: Self.CacheType.lookup_table_tt_type
+    # Distinct LUT for scales pages. Defaults to `lookup_table` (values and
+    # scales share one block-id space today); a separate LUT lets a scales
+    # page pool have its own lifecycle. See `PagedKVCache.scales_lookup_table`.
+    var scales_lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
     var kv_cache_dynamic_shape: IndexList[4]
@@ -3307,6 +3331,13 @@ struct PagedKVCacheCollection[
                 scales_dtype, Layout.row_major[6](), MutUntrackedOrigin
             ]
         ](),
+        # Distinct LUT for scales pages. When absent, scales reuse
+        # `lookup_table` (values/scales share one block-id space today).
+        scales_lookup_table: OptionalReg[
+            LayoutTensor[
+                DType.uint32, Layout.row_major[2](), Self.lookup_table_origin
+            ]
+        ] = None,
     ):
         """Construct from LayoutTensor params (MOGG boundary)."""
         comptime assert blocks.rank == 6
@@ -3320,6 +3351,14 @@ struct PagedKVCacheCollection[
         self.lookup_table = lt_to_tt[
             ResultLayout=Self.CacheType.lookup_table_tt_layout
         ](lookup_table)
+        # Scales resolve their page through their own LUT when one is provided;
+        # otherwise they reuse the values LUT (shared block-id space).
+        if scales_lookup_table:
+            self.scales_lookup_table = lt_to_tt[
+                ResultLayout=Self.CacheType.lookup_table_tt_layout
+            ](scales_lookup_table.value())
+        else:
+            self.scales_lookup_table = self.lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
@@ -3355,11 +3394,19 @@ struct PagedKVCacheCollection[
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[Self.scales_tt_type] = None,
+        # Distinct LUT for scales pages; defaults to `lookup_table`.
+        scales_lookup_table: OptionalReg[
+            Self.CacheType.lookup_table_tt_type
+        ] = None,
     ):
         """Construct from TileTensor fields directly."""
         self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
+        if scales_lookup_table:
+            self.scales_lookup_table = scales_lookup_table.value()
+        else:
+            self.scales_lookup_table = lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
@@ -3437,6 +3484,7 @@ struct PagedKVCacheCollection[
             self.max_seq_length,
             self.max_cache_length,
             scales_tt,
+            self.scales_lookup_table,
         )
 
     def cache_length(self, bs_idx: Int) -> Int:
