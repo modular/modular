@@ -26,7 +26,6 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max:_core",
-        "//max/python/max:_eager_policy",
         "//max/python/max:_mlir_context",
         "//max/python/max:interpreter",
         "//max/python/max/driver",
