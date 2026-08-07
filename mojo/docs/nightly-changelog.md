@@ -47,6 +47,12 @@ This version is still a work in progress.
 
 ## Removed
 
+This release completes the removal of APIs deprecated during the v1.0 cycle.
+Each entry names its replacement.
+
+- Removed the temporary `InlineArray` alias for `Array`, including its
+  re-exports from `std.collections` and the prelude. Use `Array` directly.
+
 - Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
   It timed host wall-clock, not GPU work, and reported the elapsed time with the
   operands reversed. Time a block of host code with

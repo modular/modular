@@ -59,11 +59,6 @@ from std.memory.unsafe_maybe_uninit import (
 # Array
 # ===-----------------------------------------------------------------------===#
 
-comptime InlineArray = Array
-"""
-A comptime alias to `std.collections.Array` to enable migration.
-"""
-
 
 def _array_construction_checks[length: Int]():
     """Checks if the properties in `Array` are valid.

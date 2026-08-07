@@ -29,7 +29,7 @@ from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque
 from .dict import Dict, KeyElement, StringDict
-from .array import Array, InlineArray
+from .array import Array
 from .linked_list import LinkedList
 from .list import List
 from .optional import Optional, OptionalReg
