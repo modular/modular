@@ -84,9 +84,6 @@ public:
   ///  This removes any mangling (e.g. for parameters).
   std::optional<StringRef> getUserNameIfOperation() const;
 
-  /// If the IRValue is a function, return it as a PValue.
-  PValue getFuncAsPValue() const;
-
   /// If the IRValue is a concrete type, return it as an ASTType.
   ASTType getIfTypeValue() const;
 
