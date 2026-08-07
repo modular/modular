@@ -48,6 +48,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
+  `Ts`, standardizing the naming convention used across the standard library.
+  The old name, `element_types`, remains as a deprecated alias.
+
 - Added experimental `DType.float6_e2m3fn` and `DType.float6_e3m2fn`, the two
   6-bit encodings from the
   [Open Compute microscaling specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).

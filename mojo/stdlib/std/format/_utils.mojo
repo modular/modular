@@ -186,17 +186,17 @@ def write_sequence_to[
 
 
 @fieldwise_init
-struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
+struct TypeNames[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """A wrapper type that writes a comma-separated list of type names."""
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
         @parameter
         def elements[i: Int](mut writer: Some[Writer]):
-            writer.write_string(_unqualified_type_name[Self.Types[i]]())
+            writer.write_string(_unqualified_type_name[Self.Ts[i]]())
 
         write_sequence_to[
-            size=Self.Types.length,
+            size=Self.Ts.length,
             ElementFn=elements,
         ](writer, open="", close="")
 

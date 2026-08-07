@@ -410,7 +410,7 @@ def test_tuple_consume_elements_move_only() raises:
     var collected = [0, 0, 0]
 
     @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]):
         collected[idx] = elt.data
 
     t^.consume_elements[handler]()
@@ -430,7 +430,7 @@ def test_tuple_consume_elements_destroys_once() raises:
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
     @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]):
         # Discarding the owned `elt` runs its destructor exactly once.
         _ = elt^
 
@@ -447,7 +447,7 @@ def test_tuple_consume_elements_heterogeneous() raises:
     var got_sum = 0
 
     @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         elif idx == 1:
@@ -468,7 +468,7 @@ def test_tuple_consume_elements_single() raises:
     var collected = [0]
 
     @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]):
         collected[idx] = elt.data
 
     t^.consume_elements[handler]()
@@ -482,7 +482,7 @@ def _count_consumed[*Ts: Movable & Deinitable](var t: Tuple[*Ts]) -> Int:
     var count = 0
 
     @parameter
-    def handler[idx: Int](var elt: t.element_types[idx]):
+    def handler[idx: Int](var elt: t.Ts[idx]):
         _ = elt^
         count += 1
 
@@ -518,7 +518,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
     var got_val = 0
 
     @parameter
-    def dispose[idx: Int](var elt: t.element_types[idx]):
+    def dispose[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
         else:

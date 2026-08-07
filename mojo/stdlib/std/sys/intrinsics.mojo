@@ -746,15 +746,15 @@ def strided_store[
 # ===----------------------------------------------------------------------=== #
 
 
-struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
+struct _RegisterPackType[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     comptime _mlir_type = __mlir_type[
-        `!kgen.struct<`, ~Self.a.values, ` isParamPack>`
+        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
     ]
 
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __getitem_param__[i: Int](self) -> Self.a[i]:
+    def __getitem_param__[i: Int](self) -> Self.Ts[i]:
         """Get the element.
 
         Parameters:

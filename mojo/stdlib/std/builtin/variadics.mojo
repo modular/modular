@@ -162,14 +162,14 @@ struct TypeList[
         """Constructs a TypeList."""
         pass
 
-    comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
-        Trait=Trait, values.values
+    comptime of[Trait: type_of(AnyType), //, *Ts: Trait] = TypeList[
+        Trait=Trait, Ts.values
     ]
     """Form a compile-time list of types with some elements, uninstantiated.
 
     Parameters:
         Trait: The type of the elements in the list.
-        values: The values in the list.
+        Ts: The types in the list.
 
     Examples:
         ```mojo
@@ -1348,7 +1348,7 @@ struct VariadicPack[
     element_trait: type_of(AnyType),
     //,
     is_owned: Bool,
-    *element_types: element_trait,
+    *Ts: element_trait,
 ](
     Copyable where (not is_owned, "Cannot copy an owned variadic pack."),
     RegisterPassable,
@@ -1402,14 +1402,19 @@ struct VariadicPack[
         element_trait: The trait that each element of the pack conforms to.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        element_types: The list of types held by the argument pack.
+        Ts: The list of types held by the argument pack.
+    """
+
+    @deprecated(use=Ts)
+    comptime element_types = Self.Ts
+    """The list of types held by the argument pack. Deprecated alias for `Ts`.
     """
 
     comptime _mlir_type = __mlir_type[
         `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
-        Self.element_types.values,
+        Self.Ts.values,
         `, `,
         Self.origin._mlir_origin,
         `>`,
@@ -1459,7 +1464,7 @@ struct VariadicPack[
 
         comptime if Self.is_owned:
             comptime for i in reversed(range(Self.__len__())):
-                comptime element_type = Self.element_types[i]
+                comptime element_type = Self.Ts[i]
                 _constrained_conforms_to[
                     conforms_to(element_type, Deinitable),
                     Parent=Self,
@@ -1472,7 +1477,7 @@ struct VariadicPack[
                 Pointer(to=self[i]).mut_cast[True]().unsafe_deinit_pointee()
 
     def consume_elements[
-        elt_handler: def[idx: Int](var elt: Self.element_types[idx]) capturing
+        elt_handler: def[idx: Int](var elt: Self.Ts[idx]) capturing
     ](deinit self) where (
         Self.is_owned,
         "consume_elements may only be called on owned variadic packs",
@@ -1506,7 +1511,7 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-        return Self.element_types.length
+        return Self.Ts.length
 
     @always_inline
     def __len__(self) -> Int:
@@ -1522,9 +1527,7 @@ struct VariadicPack[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __getitem_param__[
-        index: Int
-    ](self) -> ref[Self.origin] Self.element_types[index]:
+    def __getitem_param__[index: Int](self) -> ref[Self.origin] Self.Ts[index]:
         """Return a reference to an element of the pack.
 
         Parameters:
@@ -1546,7 +1549,7 @@ struct VariadicPack[
     # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`]
-    ](Self.element_types.values)
+    ](Self.Ts.values)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
 
@@ -1612,7 +1615,7 @@ struct VariadicPack[
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ) where Self.element_types.all_conforms_to[Writable]():
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1648,7 +1651,7 @@ struct VariadicPack[
     def write_to(
         self,
         mut writer: Some[Writer],
-    ) where Self.element_types.all_conforms_to[Writable]():
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1664,7 +1667,7 @@ struct VariadicPack[
     def write_repr_to(
         self,
         mut writer: Some[Writer],
-    ) where Self.element_types.all_conforms_to[Writable]():
+    ) where Self.Ts.all_conforms_to[Writable]():
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

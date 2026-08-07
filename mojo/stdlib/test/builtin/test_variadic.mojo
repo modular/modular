@@ -27,15 +27,15 @@ def test_variadic_iterator() raises:
 
 def test_variadic_reverse_empty() raises:
     var _tup = ()
-    comptime ReversedVariadic = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.length, 0)
+    comptime ReversedVariadic = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 0)
     assert_equal(ReversedVariadic.length, 0)
 
 
 def test_variadic_reverse_odd() raises:
     var _tup = (String("hi"), Int(42), Float32(3.14))
-    comptime ReversedVariadic = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.length, 3)
+    comptime ReversedVariadic = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 3)
     assert_equal(ReversedVariadic.length, 3)
     assert_true(ReversedVariadic[0] == Float32)
     assert_true(ReversedVariadic[1] == Int)
@@ -44,8 +44,8 @@ def test_variadic_reverse_odd() raises:
 
 def test_variadic_reverse_even() raises:
     var _tup = (Int(1), String("a"))
-    comptime ReversedVariadic3 = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.length, 2)
+    comptime ReversedVariadic3 = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 2)
     assert_equal(ReversedVariadic3.length, 2)
     assert_true(ReversedVariadic3[0] == String)
     assert_true(ReversedVariadic3[1] == Int)
@@ -54,9 +54,9 @@ def test_variadic_reverse_even() raises:
 def test_variadic_concat_empty() raises:
     var _tup = ()
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup).Ts.values
     ]()
-    assert_equal(_tup.element_types.length, 0)
+    assert_equal(_tup.Ts.length, 0)
     assert_equal(ConcattedVariadic.length, 0)
 
 
@@ -64,9 +64,9 @@ def test_variadic_concat_singleton() raises:
     var _tup = (String("hi"), Int(42), Float32(3.14))
     var _tup2 = (Bool(True),)
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup2).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup2).Ts.values
     ]()
-    assert_equal(_tup.element_types.length, 3)
+    assert_equal(_tup.Ts.length, 3)
     assert_equal(ConcattedVariadic.length, 4)
     assert_true(ConcattedVariadic[0] == String)
     assert_true(ConcattedVariadic[1] == Int)
@@ -78,9 +78,9 @@ def test_variadic_concat_identity() raises:
     var _tup = (Int(1), String("a"))
     var _tup2 = ()
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup2).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup2).Ts.values
     ]()
-    assert_equal(_tup.element_types.length, 2)
+    assert_equal(_tup.Ts.length, 2)
     assert_equal(ConcattedVariadic.length, 2)
     assert_true(ConcattedVariadic[0] == Int)
     assert_true(ConcattedVariadic[1] == String)
@@ -494,7 +494,7 @@ def test_variadic_pack_some() raises:
     """Test using SomeTypeList in a variadic pack."""
 
     def foo(*args: *SomeTypeList[Writable]) raises:
-        comptime assert args.element_types.all_conforms_to[Writable]()
+        comptime assert args.Ts.all_conforms_to[Writable]()
         var s = String()
         args.write_to(s)
         assert_equal(s, "(a, True)")
