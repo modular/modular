@@ -41,6 +41,18 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added experimental `DType.float6_e2m3fn` and `DType.float6_e3m2fn`, the two
+  6-bit encodings from the
+  [Open Compute microscaling specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+  Both are finite-only, so neither has an inf nor a NaN encoding.
+
+  These are experimental storage formats for packed weights rather than
+  general-purpose numeric types, and standard library support is deliberately
+  partial. As with the existing `DType.float4_e2m1fn`, they are excluded from
+  `is_numeric()`, arithmetic is not implemented, and converting to or from
+  another floating-point type is unsupported on every target, so values cannot
+  be printed either.
+
 ## GPU programming
 
 ## Tooling changes

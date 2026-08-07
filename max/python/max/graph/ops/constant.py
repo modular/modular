@@ -204,6 +204,8 @@ _DTYPE_MIN_AND_MAX = {
     DType.uint32: (0, 2**32 - 1),
     DType.uint64: (0, 2**64 - 1),
     DType.float4_e2m1fn: (-0b0111, 0b0111),
+    DType.float6_e2m3fn: (-7.5, 7.5),
+    DType.float6_e3m2fn: (-28, 28),
     DType.float8_e8m0fnu: (2**-127, 2**127),
     DType.float8_e5m2: (float("-inf"), float("inf")),
     DType.float8_e5m2fnuz: (-57344, 57344),
