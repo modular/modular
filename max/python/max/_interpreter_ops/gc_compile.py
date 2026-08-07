@@ -579,7 +579,6 @@ class GCOpFamily:
             return
         if warm_stamp_matches():
             self.swept = True
-            _eager_policy.note_batched_adopt_start(self.name)
             start = time.perf_counter()
             try:
                 self.compile_sweep()

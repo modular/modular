@@ -30,7 +30,6 @@ OP_PRECOMPILE_ENV_VAR = "MAX_EAGER_OP_PRECOMPILE"
 
 _WARN_LOCK = threading.Lock()
 _warned_cold_compile = False
-_warned_batched_adopt = False
 
 
 class EagerLazyCompileDisallowed(RuntimeError):
@@ -136,28 +135,6 @@ def note_sweep_end(seconds: float) -> None:
     logger.info("eager op matrix ready (%.1fs).", seconds)
 
 
-def note_batched_adopt_start(family: str) -> None:
-    """Warns that *family*'s whole matrix is about to be batch-loaded.
-
-    The one path that still batches work under
-    ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``; a stale warm turns it into a compile.
-    Only the first family of the process reports.
-
-    Args:
-        family: The family id being adopted, for example ``"matmul"``.
-    """
-    global _warned_batched_adopt
-    with _WARN_LOCK:
-        if _warned_batched_adopt:
-            return
-        _warned_batched_adopt = True
-    logger.warning(
-        "adopting this machine's warm eager op cache in one batched load (%s"
-        " first); a stale cache makes that a compile.",
-        family,
-    )
-
-
 def note_batched_adopt_end(family: str, seconds: float) -> None:
     """Reports how long one family's batched adoption took.
 
@@ -169,8 +146,7 @@ def note_batched_adopt_end(family: str, seconds: float) -> None:
 
 
 def _reset_for_test() -> None:
-    """Clears the warned-once flags. For tests only."""
-    global _warned_cold_compile, _warned_batched_adopt
+    """Clears the warned-once flag. For tests only."""
+    global _warned_cold_compile
     with _WARN_LOCK:
         _warned_cold_compile = False
-        _warned_batched_adopt = False
