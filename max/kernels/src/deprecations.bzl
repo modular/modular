@@ -20,14 +20,9 @@ IGNORED_POINTER_DEPRECATIONS = [
     "Pointer.__getitem__",
     "Pointer.load",
     "Pointer.store",
-    "Pointer.strided_load",
-    "Pointer.strided_store",
-    "Pointer.gather",
-    "Pointer.scatter",
     "Pointer.free",
     "Pointer.bitcast",
     "Pointer.address_space_cast",
-    "Pointer.take_pointee",
 ]
 
 IGNORED_POINTER_DEPRECATIONS_COPTS = [
