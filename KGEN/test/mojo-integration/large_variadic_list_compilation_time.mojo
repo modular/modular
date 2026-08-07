@@ -21,7 +21,7 @@ struct C[i: Int](T & ImplicitlyCopyable):
 
 struct M[*ts: T]:
     comptime _Has[t: T] = Self.ts.contains[t]()
-    comptime _HasAll[*qs: T] = qs.all_satisfies[Self._Has]()
+    comptime _HasAll[*qs: T] = qs.all[Self._Has]()
 
     @staticmethod
     def check[*qs: T]():
