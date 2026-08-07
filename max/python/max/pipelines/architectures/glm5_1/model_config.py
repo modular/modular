@@ -153,5 +153,8 @@ class Glm5_1Config(DeepseekV3_2Config):
             indexer_types=resolve_indexer_types(
                 config, config.num_hidden_layers
             ),
+            indexer_rope_interleave=getattr(
+                config, "indexer_rope_interleave", False
+            ),
             quantization_encoding=quantization_encoding,
         )

@@ -114,6 +114,7 @@ class Indexer(Module):
         devices: Sequence[DeviceRef],
         quant_config: QuantConfig,
         k_norm_dtype: DType = DType.float32,
+        rope_interleaved: bool = False,
     ):
         super().__init__()
         self.dim: int = dim
@@ -121,6 +122,7 @@ class Indexer(Module):
         self.n_local_heads: int = index_n_heads // len(devices)
         self.head_dim: int = index_head_dim
         self.rope_head_dim: int = qk_rope_head_dim
+        self.rope_interleaved: bool = rope_interleaved
         self.index_topk: int = index_topk
         self.q_lora_rank: int = q_lora_rank
         self.softmax_scale = self.head_dim**-0.5
@@ -196,7 +198,7 @@ class Indexer(Module):
             input_row_offsets,
             indexer_k_collection.cache_lengths,
             freqs_cis,
-            interleaved=False,
+            interleaved=self.rope_interleaved,
         )
         q = ops.concat([q_pe, q_nope], axis=-1)
 
@@ -211,7 +213,7 @@ class Indexer(Module):
                 input_row_offsets,
                 indexer_k_collection.cache_lengths,
                 freqs_cis,
-                interleaved=False,
+                interleaved=self.rope_interleaved,
             ),
             axis=-2,
         )
