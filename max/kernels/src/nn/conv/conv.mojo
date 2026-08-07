@@ -1769,15 +1769,34 @@ struct ConvDirectNHWC[
             # Point to (n, 0, ho, f_tile_offset) mapped in input
             var output_base = output_curr_image + (f_tile_offset + F * WO * ho)
 
-            # The entire row fits in one micro kernel.
-            comptime if WO <= micro_kernel_height:
+            comptime left_pad_impact_end = min(
+                ceildiv(Self.conv_attr.pad_left(), Self.conv_attr.strides()[1]),
+                WO,
+            )
+            comptime right_pad_impact_start = max(
+                (
+                    W
+                    + Self.conv_attr.pad_left()
+                    - S * Self.conv_attr.dilations()[1]
+                )
+                // Self.conv_attr.strides()[1]
+                + 1,
+                left_pad_impact_end,
+            )
+            comptime for tile_wo in range(0, WO, micro_kernel_height):
+                comptime tile_height = min(micro_kernel_height, WO - tile_wo)
+                comptime padded_left = tile_wo < left_pad_impact_end
+                comptime padded_right = (
+                    tile_wo + tile_height > right_pad_impact_start
+                )
                 self._inner_loops_static[
-                    WO,
+                    tile_height,
                     micro_kernel_width,
-                    True,
-                    True,
+                    padded_left,
+                    padded_right,
                     has_residual,
                     last_c_tile,
+                    tile_wo,
                 ](
                     input_base,
                     filter_base,
@@ -1789,106 +1808,12 @@ struct ConvDirectNHWC[
                     c_tile_size,
                     n,
                     ho,
-                    0,  # wo
-                )
-            # The row is split into multiple micro kernels.
-            else:
-                # micro kernel height for left and right boundaries.
-                # IF WO is just 1-2 points more than micro kernel height, the
-                # following would divide the row evely by two micro kernels.
-                comptime micro_kernel_height_lbound = min(
-                    micro_kernel_height, WO // 2
-                )
-                comptime micro_kernel_height_rbound = min(
-                    micro_kernel_height, WO - WO // 2
-                )
-                # Left boundary
-                self._inner_loops_static[
-                    micro_kernel_height_lbound,
-                    micro_kernel_width,
-                    True,
-                    False,
-                    has_residual,
-                    last_c_tile,
-                ](
-                    input_base,
-                    filter_base,
-                    # Safety: turn off mutable aliasing pointer check
-                    output_base.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                    f_tile_offset,
-                    f_tile_size,
-                    c_tile_offset,
-                    c_tile_size,
-                    n,
-                    ho,
-                    0,  # beginning of wo dimension
+                    tile_wo,
                 )
                 input_base = input_base + (
-                    micro_kernel_height_lbound * conv_attr_dyn.strides()[1] * C
+                    tile_height * conv_attr_dyn.strides()[1] * C
                 )
-                output_base = output_base + micro_kernel_height_lbound * F
-
-                # Update middle points if any. They aren't effected by padding.
-                @__copy_capture(filter_base)
-                @always_inline
-                @parameter
-                def update_middle[height: Int](wo: Int):
-                    self._inner_loops_static[
-                        height,
-                        micro_kernel_width,
-                        False,
-                        False,
-                        has_residual,
-                        last_c_tile,
-                    ](
-                        input_base,
-                        filter_base,
-                        # Safety: turn off mutable aliasing pointer check
-                        output_base.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                        f_tile_offset,
-                        f_tile_size,
-                        c_tile_offset,
-                        c_tile_size,
-                        n,
-                        ho,
-                        wo,
-                    )
-                    input_base = input_base + (
-                        height * conv_attr_dyn.strides()[1] * C
-                    )
-                    output_base = output_base + height * F
-
-                # Middle points are the points not updated by micro kernels
-                # on left or right boundary
-                comptime num_middle_points = WO - micro_kernel_height_lbound - micro_kernel_height_rbound
-                # `tile` can't handle zero tile size.
-                comptime micro_kernel_height_middle = num_middle_points % micro_kernel_height if num_middle_points % micro_kernel_height > 0 else 1
-                tile[
-                    update_middle,
-                    [micro_kernel_height, micro_kernel_height_middle],
-                ](micro_kernel_height_lbound, WO - micro_kernel_height_rbound)
-
-                # Right boundary.
-                self._inner_loops_static[
-                    micro_kernel_height_rbound,
-                    micro_kernel_width,
-                    False,
-                    True,
-                    has_residual,
-                    last_c_tile,
-                ](
-                    input_base,
-                    filter_base,
-                    # Safety: turn off mutable aliasing pointer check
-                    output_base.unsafe_origin_cast[AnyOrigin[mut=True]](),
-                    f_tile_offset,
-                    f_tile_size,
-                    c_tile_offset,
-                    c_tile_size,
-                    n,
-                    ho,
-                    WO - micro_kernel_height_rbound,  # offset in wo dimension
-                )
+                output_base = output_base + tile_height * F
 
     @always_inline
     def _inner_loops_static[
@@ -1898,6 +1823,7 @@ struct ConvDirectNHWC[
         padded_right: Bool,
         has_residual: Bool,
         last_c_tile: Bool,
+        tile_wo: Int = 0,
     ](
         self,
         input_base: UnsafePointer[
@@ -1982,20 +1908,23 @@ struct ConvDirectNHWC[
                 # Adjustment of micro kernel height for left padding
                 # The first left_adjust x micro_kernel_width registers are
                 # ignored because they fall in padding.
+                comptime left_valid_start = ceildiv(
+                    Self.conv_attr.pad_left()
+                    - s * Self.conv_attr.dilations()[1],
+                    Self.conv_attr.strides()[1],
+                )
                 comptime left_adjust = max(
-                    ceildiv(
-                        Self.conv_attr.pad_left()
-                        - s * Self.conv_attr.dilations()[1],
-                        Self.conv_attr.strides()[1],
-                    ),
-                    0,
+                    left_valid_start - tile_wo, 0
                 ) if padded_left else 0
                 # Adjustment of micro kernel height for right padding
                 # The last left_adjust x micro_kernel_width registers are ignored.
                 # fmt: off
+                comptime right_valid_end = (
+                    W - 1 + Self.conv_attr.pad_left()
+                    - s * Self.conv_attr.dilations()[1]
+                ) // Self.conv_attr.strides()[1] + 1
                 comptime right_adjust = max(
-                    WO - 1 - (W - 1 + Self.conv_attr.pad_left() - s * Self.conv_attr.dilations()[1])
-                             // Self.conv_attr.strides()[1],
+                    tile_wo + micro_kernel_height - right_valid_end,
                     0,
                 ) if padded_right else 0
                 # fmt: on
