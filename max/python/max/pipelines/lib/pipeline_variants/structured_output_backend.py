@@ -75,6 +75,11 @@ def _log_if_slow(fn: _CompileFn) -> _CompileFn:
     admission-time validation alike -- surfaces a slow compile without
     per-call-site timing. Logs the backend name, method, and duration only;
     the schema/grammar body is never logged (may be large or sensitive).
+
+    The same three values are attached as ``extra`` so structured log
+    backends can facet and aggregate on them (a duration that lives only in
+    the message text is not queryable). ``grammar_backend`` rather than
+    ``name`` because ``LogRecord`` reserves the latter for the logger name.
     """
 
     @wraps(fn)
@@ -90,6 +95,12 @@ def _log_if_slow(fn: _CompileFn) -> _CompileFn:
                     fn.__name__,
                     elapsed_ms,
                     self.name,
+                    extra={
+                        "event": "grammar_compile_slow",
+                        "grammar_compile_method": fn.__name__,
+                        "grammar_compile_time_ms": elapsed_ms,
+                        "grammar_backend": self.name,
+                    },
                 )
 
     return cast(_CompileFn, wrapper)

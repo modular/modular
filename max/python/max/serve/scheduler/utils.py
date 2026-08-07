@@ -607,6 +607,13 @@ class BatchMetrics:
         JSON payload when ``MODULAR_STRUCTURED_LOGGING=True``; the plaintext
         formatter ignores them. Conditional clauses mirror :meth:`pretty_format`
         so it doesn't emit zeros from subsystems that didn't run.
+
+        Every quantity :meth:`pretty_format` prints appears here as its own
+        key, including the denominators (``max_batch_input_tokens``,
+        ``max_acceptance_length``) and the per-position acceptance rates. Log
+        backends such as Datadog facet on scalar attributes only, so a value
+        that lives solely in the message text is not queryable; lists are
+        flattened to indexed keys rather than emitted as arrays.
         """
         extra: dict[str, object] = {
             "event": "batch_metrics",
@@ -616,6 +623,7 @@ class BatchMetrics:
             "terminated_reqs": self.terminated_reqs,
             "num_pending_reqs": self.num_pending_reqs,
             "num_input_tokens": self.num_input_tokens,
+            "max_batch_input_tokens": self.max_batch_input_tokens,
             "num_context_tokens": self.num_context_tokens,
             "prompt_throughput": self.prompt_throughput,
             "generation_throughput": self.generation_throughput,
@@ -624,6 +632,9 @@ class BatchMetrics:
             "batch_execution_time_is_previous": self.batch_execution_time_is_previous,
             "total_preemption_count": self.total_preemption_count,
         }
+
+        if self.max_batch_total_tokens != 0:
+            extra["max_batch_total_tokens"] = self.max_batch_total_tokens
 
         if self.dp_active_token_occupancy_pct is not None:
             extra["dp_active_token_occupancy_pct"] = (
@@ -635,6 +646,18 @@ class BatchMetrics:
                 self.dp_context_token_occupancy_pct
             )
 
+        # Raw DP numerator/denominator and the cross-replica copy counters,
+        # under the same gate ``publish_metrics`` uses for them.
+        if self.dp_step_capacity_tokens > 0:
+            extra["dp_active_tokens"] = self.dp_active_tokens
+            extra["dp_step_capacity_tokens"] = self.dp_step_capacity_tokens
+            extra["cross_replica_blocks_copied"] = (
+                self.cross_replica_blocks_copied
+            )
+            extra["cross_replica_bytes_copied"] = (
+                self.cross_replica_bytes_copied
+            )
+
         if self.total_kv_blocks != 0:
             extra["used_kv_pct"] = self.used_kv_pct
             extra["total_kv_blocks"] = self.total_kv_blocks
@@ -644,6 +667,7 @@ class BatchMetrics:
             extra["cache_hit_rate"] = self.cache_hit_rate
             extra["cache_hit_tokens"] = self.cache_hit_tokens
             extra["cache_miss_tokens"] = self.cache_miss_tokens
+            extra["device_blocks_served"] = self.device_blocks_served
 
         if self.total_host_kv_blocks != 0:
             extra["total_host_kv_blocks"] = self.total_host_kv_blocks
@@ -656,11 +680,18 @@ class BatchMetrics:
             extra["used_disk_kv_pct"] = self.used_disk_kv_pct
             extra["disk_blocks_read"] = self.disk_blocks_read
             extra["disk_blocks_written"] = self.disk_blocks_written
+            extra["inflight_disk_ops"] = self.inflight_disk_ops
 
         if self.draft_tokens_generated > 0:
             extra["draft_tokens_generated"] = self.draft_tokens_generated
             extra["draft_tokens_accepted"] = self.draft_tokens_accepted
+            extra["draft_token_acceptance_rate"] = (
+                self.draft_tokens_accepted / self.draft_tokens_generated
+            )
             extra["avg_acceptance_length"] = self.avg_acceptance_length
+            extra["max_acceptance_length"] = self.max_acceptance_length
+            for position, rate in enumerate(self.acceptance_rate_per_position):
+                extra[f"acceptance_rate_p{position}"] = rate
 
         vm = self.vision_metrics
         if vm is not None and vm.num_images_total > 0:
