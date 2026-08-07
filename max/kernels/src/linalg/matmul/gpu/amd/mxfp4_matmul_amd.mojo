@@ -1552,8 +1552,11 @@ def mxfp4_block_scaled_matmul_amd[
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
     #   M <=  16  → decode → single small-BN kernel for the wide-N short-K
     #               regime, else narrow split-K (BM=16, no wasted M rows)
-    #   M <=  64  → decode / short-prefill → BM=64 split-K
-    #   else      → general prefill / training (unchanged, no split-K)
+    #   M >   16  → BM=64 split-K whenever `_sk_splits` found a legal factor,
+    #               regardless of M. `_sk_splits` is keyed on N/K/cta_cap, not
+    #               M, so a shape that's still CTA-starved at large M keeps
+    #               benefiting from the split there too. The BK512 fallback
+    #               below stays capped at M<=64 — see that branch for why.
     if M <= 16:
         comptime if _wide_n_short_k_decode:
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
@@ -1607,7 +1610,7 @@ def mxfp4_block_scaled_matmul_amd[
                 lane_bytes=lane_bytes,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
-    elif M <= 64:
+    else:
         comptime if (
             can_use_bk_256
             and _sk_splits > 1
@@ -1623,29 +1626,50 @@ def mxfp4_block_scaled_matmul_amd[
                 lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
-            # Non-split BK_ELEMS=512 fallback. Reached only when
-            # can_use_bk_256 holds, can_use_bk_512 holds, and
-            # _sk_splits == 1 — i.e. split-K found no legal factor. Since
-            # the split requires >=2 BK256-tiles per split (BK_BYTES=128),
-            # the only K that lands here is K_BYTES=256 (K=512 FP4 elems):
-            # 2 total K-tiles, so s=2 gives 1 tile/split (below the floor)
-            # and s>2 doesn't divide. A BK512 split is no better — at
-            # K_BYTES=256 there is exactly 1 BK512-tile, so no split is
-            # legal there either. There is simply nothing to split at
-            # K=512, so the non-split BK512 tile is correct for this
-            # tiny-K corner (rare in production: Kimi up=7168, down=2048).
-            _launch_mxfp4[
-                BM=64,
-                BN=32,
-                BK_ELEMS=512,
-                WM=64,
-                WN=32,
-                MMA_M=MMA_M,
-                MMA_N=MMA_N,
-                MMA_K=MMA_K,
-                lane_bytes=lane_bytes,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            # Non-split BK_ELEMS=512 fallback, M<=64 only (checked below at
+            # runtime — `M` isn't comptime-known here). Reached when
+            # can_use_bk_256 holds, can_use_bk_512 holds, and _sk_splits == 1
+            # — i.e. split-K found no legal factor. Since the split requires
+            # >=2 BK256-tiles per split (BK_BYTES=128), the only K that lands
+            # here at small M is K_BYTES=256 (K=512 FP4 elems): 2 total
+            # K-tiles, so s=2 gives 1 tile/split (below the floor) and s>2
+            # doesn't divide. A BK512 split is no better — at K_BYTES=256
+            # there is exactly 1 BK512-tile, so no split is legal there
+            # either. There is simply nothing to split at K=512, so the
+            # non-split BK512 tile is correct for this tiny-K corner (rare in
+            # production: Kimi up=7168, down=2048).
+            #
+            # Not extended past M=64 like the split-K branch above: split-K's
+            # legality is self-limiting by cta_cap, but this fallback isn't —
+            # at large M with a wide-N shape where split-K legitimately found
+            # no factor, this small decode-tuned tile is a worse choice than
+            # the general BM=128 kernel below, not a substitute for it.
+            if M <= 64:
+                _launch_mxfp4[
+                    BM=64,
+                    BN=32,
+                    BK_ELEMS=512,
+                    WM=64,
+                    WN=32,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    lane_bytes=lane_bytes,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
+            else:
+                _launch_mxfp4[
+                    BM=128,
+                    BN=128,
+                    BK_ELEMS=128,
+                    WM=64,
+                    WN=64,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    lane_bytes=lane_bytes,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
         else:
             _launch_mxfp4[
                 BM=128,
@@ -1659,16 +1683,3 @@ def mxfp4_block_scaled_matmul_amd[
                 lane_bytes=lane_bytes,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
-    else:
-        _launch_mxfp4[
-            BM=128,
-            BN=128,
-            BK_ELEMS=128,
-            WM=64,
-            WN=64,
-            MMA_M=MMA_M,
-            MMA_N=MMA_N,
-            MMA_K=MMA_K,
-            lane_bytes=lane_bytes,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, a_scales, b_scales, M, ctx)
