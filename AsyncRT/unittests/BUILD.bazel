@@ -82,6 +82,24 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "WorkerSignalAltStackTest",
+    size = "small",
+    srcs = ["WorkerSignalAltStackTest.cpp"],
+    # Asyncrt altstack is disabled on sanitizer builds, so there is nothing to test.
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Threading",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
     name = "TypeIDTest",
     size = "small",
     srcs = ["TypeIDTest.cpp"],

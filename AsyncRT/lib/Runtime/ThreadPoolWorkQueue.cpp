@@ -37,6 +37,7 @@
 #endif
 #include "Support/Threading/Atomics.h"
 #include "Support/Threading/HWInfo.h"
+#include "Support/Threading/SignalAltStack.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Compiler.h"
@@ -514,6 +515,11 @@ private:
 void WorkQueueThread::runOnThread() {
   assert((!sharedState.mainWillDonate || localWorkerID != 0) &&
          "the WorkQueueThread for the main thread should not be run");
+
+  // Work items recurse arbitrarily deep (inline expansion, type conversion
+  // search), so a worker can exhaust its stack. Without this the crash handler
+  // has nowhere to run and the overflow goes unreported.
+  ScopedSignalAltStack signalAltStack;
 
   // Set the current localWorkerID in thread local storage so we can find it
   // later when re-entering.
