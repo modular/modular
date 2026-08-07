@@ -303,6 +303,8 @@ def test_to_log_extra_required_fields() -> None:
 
     assert extra["batch_size"] == 1
     assert extra["num_input_tokens"] == 6
+    assert extra["max_batch_input_tokens"] == 7
+    assert extra["max_batch_total_tokens"] == 9
     assert extra["batch_execution_time_ms"] == 11000.0
     assert extra["batch_creation_time_ms"] == 10000.0
 
@@ -320,6 +322,56 @@ def test_to_log_extra_required_fields() -> None:
     for k, v in extra.items():
         assert not isinstance(v, (list, dict)), (
             f"{k} is nested ({type(v).__name__})"
+        )
+
+
+def test_to_log_extra_covers_every_pretty_format_number() -> None:
+    """Every number the log line prints must also be a queryable attribute.
+
+    A value that lives only in the message text cannot be faceted or graphed
+    in a log backend, so this pins down the full set for a batch that
+    exercises every clause at once.
+    """
+    metrics = _make_metrics(
+        batch_type=BatchType.TG,
+        disk_blocks_read=24,
+        disk_blocks_written=25,
+        used_disk_kv_pct=0.30,
+        total_disk_kv_blocks=100,
+        inflight_disk_ops=99,
+        draft_tokens_generated=95,
+        draft_tokens_accepted=42,
+        avg_acceptance_length=2.21,
+        max_acceptance_length=5,
+        acceptance_rate_per_position=[0.79, 0.47],
+        dp_active_tokens=8008,
+        dp_step_capacity_tokens=16000,
+        cross_replica_blocks_copied=3,
+        cross_replica_bytes_copied=4096,
+    )
+    extra = metrics.to_log_extra()
+
+    assert extra["inflight_disk_ops"] == 99
+    assert extra["disk_blocks_read"] == 24
+    assert extra["disk_blocks_written"] == 25
+
+    assert extra["max_acceptance_length"] == 5
+    assert extra["draft_token_acceptance_rate"] == 42 / 95
+    # Per-position rates flatten to indexed keys rather than an array.
+    assert extra["acceptance_rate_p0"] == 0.79
+    assert extra["acceptance_rate_p1"] == 0.47
+    assert "acceptance_rate_p2" not in extra
+
+    assert extra["dp_active_tokens"] == 8008
+    assert extra["dp_step_capacity_tokens"] == 16000
+    assert extra["cross_replica_blocks_copied"] == 3
+    assert extra["cross_replica_bytes_copied"] == 4096
+
+    assert extra["device_blocks_served"] == 0
+
+    for key, value in extra.items():
+        assert not isinstance(value, (list, dict)), (
+            f"{key} is nested ({type(value).__name__})"
         )
 
 
@@ -342,14 +394,23 @@ def test_to_log_extra_gating_continuation_only_ce() -> None:
     assert "cache_hit_tokens" not in extra
     assert "cache_miss_tokens" not in extra
     assert "num_new_admissions" not in extra
+    assert "device_blocks_served" not in extra
 
     assert "used_host_kv_pct" not in extra
     assert "total_host_kv_blocks" not in extra
     assert "h2d_blocks_copied" not in extra
     assert "d2h_blocks_copied" not in extra
 
+    assert "inflight_disk_ops" not in extra
+
     assert "draft_tokens_generated" not in extra
+    assert "draft_token_acceptance_rate" not in extra
+    assert "max_acceptance_length" not in extra
+    assert "acceptance_rate_p0" not in extra
     assert "nixl_read_latency_avg_ms" not in extra
+
+    assert "dp_active_tokens" not in extra
+    assert "cross_replica_blocks_copied" not in extra
 
 
 def test_to_log_extra_serializes_via_jsonlogger() -> None:

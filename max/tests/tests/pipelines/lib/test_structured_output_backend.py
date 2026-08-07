@@ -13,12 +13,17 @@
 """Tests for the structured-output grammar backends."""
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max.pipelines.lib.pipeline_variants import structured_output_backend
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    _log_if_slow,
+)
 from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.modeling.types import PipelineTokenizer
 from tokenizers import Tokenizer
@@ -133,3 +138,46 @@ def test_xgrammar_stop_tokens_cover_runtime_eos_set(
         "missing terminator forces an unnatural declared-EOS ending, an "
         "extra token would leak unconstrained output"
     )
+
+
+class _SlowBackend:
+    """Minimal stand-in carrying the ``name`` the decorator reads."""
+
+    name = "fake"
+
+    @_log_if_slow
+    def compile_json_schema(self, schema: str) -> str:
+        return schema
+
+
+def test_slow_grammar_compile_log_carries_structured_fields(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The duration must be a queryable attribute, not just message text."""
+    monkeypatch.setattr(
+        structured_output_backend, "_GRAMMAR_COMPILE_LOG_MS", -1.0
+    )
+    with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        _SlowBackend().compile_json_schema("{}")
+
+    record = next(
+        r for r in caplog.records if r.msg.startswith("grammar %s took")
+    )
+    fields = vars(record)
+    assert fields["event"] == "grammar_compile_slow"
+    assert fields["grammar_compile_method"] == "compile_json_schema"
+    assert fields["grammar_backend"] == "fake"
+    assert fields["grammar_compile_time_ms"] > 0.0
+    # ``name`` stays the logger name; the backend goes in its own key.
+    assert record.name == "max.pipelines"
+
+
+def test_fast_grammar_compile_logs_nothing(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        structured_output_backend, "_GRAMMAR_COMPILE_LOG_MS", 1e9
+    )
+    with caplog.at_level(logging.INFO, logger="max.pipelines"):
+        _SlowBackend().compile_json_schema("{}")
+    assert not [r for r in caplog.records if r.msg.startswith("grammar %s")]
