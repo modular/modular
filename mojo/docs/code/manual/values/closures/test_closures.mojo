@@ -21,7 +21,7 @@ from std.testing import assert_equal, assert_true
 
 
 def test_scale() raises:
-    """Intro example: read capture with multiplier."""
+    """Intro example: imm capture with multiplier."""
     var multiplier = 3
 
     def scale(x: Int) {imm multiplier} -> Int:
@@ -30,11 +30,11 @@ def test_scale() raises:
     assert_equal(scale(5), 15)
 
 
-# --- The capture list: mixed read + mut ---
+# --- The capture list: mixed imm + mut ---
 
 
-def test_capture_list_read_mut() raises:
-    """Capture list example: read x, mut y."""
+def test_capture_list_imm_mut() raises:
+    """Capture list example: imm x, mut y."""
     var x = 10
     var y = 20
 
@@ -46,11 +46,11 @@ def test_capture_list_read_mut() raises:
     assert_equal(y, 25)
 
 
-# --- Capture by immutable reference: read ---
+# --- Capture by immutable reference: imm ---
 
 
-def test_read_threshold() raises:
-    """Explicit read capture: is_over checks threshold."""
+def test_imm_threshold() raises:
+    """Explicit imm capture: is_over checks threshold."""
     var threshold = 100
 
     def is_over(x: Int) {imm threshold} -> Bool:
@@ -60,8 +60,8 @@ def test_read_threshold() raises:
     assert_true(is_over(200))
 
 
-def test_read_sees_live_updates() raises:
-    """Read captures a reference, so it sees later mutations."""
+def test_imm_sees_live_updates() raises:
+    """`imm` captures a reference, so it sees later mutations."""
     var limit = 10
 
     def check(x: Int) {imm limit} -> Bool:
@@ -72,8 +72,8 @@ def test_read_sees_live_updates() raises:
     assert_true(not check(5))
 
 
-def test_read_implicit() raises:
-    """Implicit read: {imm} captures all used outer values."""
+def test_imm_implicit() raises:
+    """Implicit `imm`: {imm} captures all used outer values."""
     var a = 1
     var b = 2
 
@@ -99,7 +99,7 @@ def test_mut_accumulate() raises:
 
 
 def test_mut_implicit() raises:
-    """Implicit mut: {mut} captures all used outer values mutably."""
+    """Implicit `mut`: {mut} captures all used outer values mutably."""
     var count = 0
     var items = List[String]()
 
@@ -119,7 +119,7 @@ def test_mut_implicit() raises:
 
 
 def test_var_snapshot() raises:
-    """Explicit var capture: closure keeps value at definition time."""
+    """Explicit `var` capture: closure keeps value at definition time."""
     var snapshot_val = 42
 
     def frozen() {var snapshot_val} -> Int:
@@ -131,7 +131,7 @@ def test_var_snapshot() raises:
 
 
 def test_var_implicit() raises:
-    """Implicit var: {var} copies all used outer values."""
+    """Implicit `var`: {var} copies all used outer values."""
     var x = 10
     var y = 20
 
@@ -149,7 +149,7 @@ def test_var_implicit() raises:
 
 
 def test_move_capture() raises:
-    """Move capture: var data^ transfers ownership into closure."""
+    """Move capture: `var data^` transfers ownership into closure."""
     var data: List[Int] = [1, 2, 3]
 
     def take_data() {var data^} -> Int:
@@ -163,7 +163,7 @@ def test_move_capture() raises:
 
 
 def test_var_caret_copyable() raises:
-    """Copyable closure: {var^} allows assigning closure to new var."""
+    """Copyable closure: `{var^}` allows assigning closure to new var."""
     var label = "sensor-1"
 
     def tag() {var^} -> String:
@@ -233,7 +233,7 @@ def test_empty_capture_list() raises:
 
 
 def test_mixed_conventions() raises:
-    """Mixed capture list: read + mut + var in one closure."""
+    """Mixed capture list: `imm` + `mut` + `var` in one closure."""
     var config = "prod"
     var count = 0
     var label = "run-1"
@@ -248,8 +248,8 @@ def test_mixed_conventions() raises:
     _ = label
 
 
-def test_bare_name_defaults_to_read() raises:
-    """Bare name in capture list defaults to read convention."""
+def test_bare_name_defaults_to_imm() raises:
+    """Bare name in capture list defaults to `imm` convention."""
     var x = 10
 
     def show() {x} -> Int:
@@ -348,12 +348,12 @@ def main() raises:
     test_scale()
 
     # The capture list
-    test_capture_list_read_mut()
+    test_capture_list_imm_mut()
 
     # read
-    test_read_threshold()
-    test_read_sees_live_updates()
-    test_read_implicit()
+    test_imm_threshold()
+    test_imm_sees_live_updates()
+    test_imm_implicit()
 
     # mut
     test_mut_accumulate()
@@ -378,7 +378,7 @@ def main() raises:
 
     # Mixed conventions
     test_mixed_conventions()
-    test_bare_name_defaults_to_read()
+    test_bare_name_defaults_to_imm()
     test_default_convention()
 
     # Practice examples
