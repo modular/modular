@@ -1823,14 +1823,15 @@ struct String(
     def strip(
         self, chars: StringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with leading and trailing characters
+        """Returns a view of the string with leading and trailing characters
         removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no leading or trailing characters.
+            A `StringSlice` into this string with no leading or trailing
+            characters.
         """
 
         return self.lstrip(chars).rstrip(chars)
@@ -1838,25 +1839,26 @@ struct String(
     def strip(
         self,
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with leading and trailing whitespaces
+        """Returns a view of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no leading or trailing whitespaces.
+            A `StringSlice` into this string with no leading or trailing
+            whitespaces.
         """
         return self.lstrip().rstrip()
 
     def rstrip(
         self, chars: StringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with trailing characters removed.
+        """Returns a view of the string with trailing characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no trailing characters.
+            A `StringSlice` into this string with no trailing characters.
         """
 
         return self._interior_slice().rstrip(chars)
@@ -1864,25 +1866,25 @@ struct String(
     def rstrip(
         self,
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with trailing whitespaces removed. This
+        """Returns a view of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no trailing whitespaces.
+            A `StringSlice` into this string with no trailing whitespaces.
         """
         return self._interior_slice().rstrip()
 
     def lstrip(
         self, chars: StringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with leading characters removed.
+        """Returns a view of the string with leading characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no leading characters.
+            A `StringSlice` into this string with no leading characters.
         """
 
         return self._interior_slice().lstrip(chars)
@@ -1890,12 +1892,12 @@ struct String(
     def lstrip(
         self,
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Return a copy of the string with leading whitespaces removed. This
+        """Returns a view of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no leading whitespaces.
+            A `StringSlice` into this string with no leading whitespaces.
         """
         return self._interior_slice().lstrip()
 
@@ -1971,14 +1973,16 @@ struct String(
     def removeprefix(
         self, prefix: StringSlice, /
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Returns a new string with the prefix removed if it was present.
+        """Returns a view of the string with the prefix removed if it was
+        present.
 
         Args:
             prefix: The prefix to remove from the string.
 
         Returns:
+            A `StringSlice` into this string:
             `string[byte=prefix.byte_length():]` if the string starts with
-            the prefix string, or a copy of the original string otherwise.
+            the prefix string, or the whole string otherwise.
 
         Examples:
 
@@ -1992,14 +1996,16 @@ struct String(
     def removesuffix(
         self, suffix: StringSlice, /
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Returns a new string with the suffix removed if it was present.
+        """Returns a view of the string with the suffix removed if it was
+        present.
 
         Args:
             suffix: The suffix to remove from the string.
 
         Returns:
+            A `StringSlice` into this string:
             `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the suffix string,
-            or a copy of the original string otherwise.
+            or the whole string otherwise.
 
         Examples:
 
