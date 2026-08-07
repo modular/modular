@@ -87,6 +87,7 @@ def retrieve_mock_text_generation_pipeline(
             memory_plan=_MemoryPlan(
                 max_batch_size=mock_config.runtime.max_batch_size or 1,
                 footprint=0,
+                device_specs=tuple(device_specs),
             ),
         )
 

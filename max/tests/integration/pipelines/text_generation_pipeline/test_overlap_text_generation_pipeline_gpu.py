@@ -432,7 +432,9 @@ def create_overlap_pipeline(
         weight_adapters=MagicMock(),
         tokenizer=MagicMock(spec=[]),
         memory_plan=_MemoryPlan(
-            max_batch_size=runtime.max_batch_size or 1, footprint=0
+            max_batch_size=runtime.max_batch_size or 1,
+            footprint=0,
+            device_specs=tuple(model_config.device_specs),
         ),
         disable_overlap=disable_overlap,
     )

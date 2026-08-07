@@ -245,10 +245,10 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
         # An encoding that cannot run on GPU (GGUF q4) overrides the GPU
         # default and runs on CPU.
-        resolved_device_specs = _device_specs_for_encoding(
+        device_specs = _device_specs_for_encoding(
             model_config.device_specs, quantization_encoding
         )
-        n_devices = len(resolved_device_specs)
+        n_devices = len(device_specs)
 
         _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
@@ -258,7 +258,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in resolved_device_specs[:n_devices]
+            for spec in device_specs[:n_devices]
         ]
 
         embedding_multiplier = getattr(

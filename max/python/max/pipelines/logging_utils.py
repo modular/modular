@@ -172,14 +172,9 @@ def log_basic_config(pipeline_config: PipelineConfig) -> None:
         ("pipeline", pipeline_class.__name__),
     ]
     if "main" in pipeline_config.models:
-        devices_str = ", ".join(
-            f"{d.device_type}[{d.id}]"
-            for d in pipeline_config.model.device_specs
-        )
         config_entries.extend(
             [
                 ("model", pipeline_config.model.model_path),
-                ("devices", devices_str),
                 ("max_seq_len", pipeline_config.model.max_length),
             ]
         )
