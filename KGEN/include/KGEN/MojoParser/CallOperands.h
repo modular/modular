@@ -262,10 +262,16 @@ struct OperandNeedingOrigin {
   // (ref) rather than `grw`'s convention for `w` (readMem), since we want to
   // eventually emit `grw(RW(a + b))`.  Emission derives the convention from
   // this signature, which also tells it whether `argIdx` is variadic.
-  //
+  FnTypeGeneratorType signature;
+
   // TODO: figure out the subtleties related to variadic convention etc, then we
   // can collapse signature and argIdx into a single ArgConvention field.
-  FnTypeGeneratorType signature;
+  ArgConvention getArgConvention() const {
+    FnTypeGeneratorType sig = signature;
+    if (sig.isPosVarArg(argIdx) || sig.isPack(argIdx))
+      return sig.getVariadicConvention(argIdx);
+    return sig.getArgConvention(argIdx);
+  }
 
   enum {
     /// This is a sentinel representing the the "operand" that needs spilling is

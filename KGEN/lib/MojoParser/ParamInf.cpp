@@ -63,6 +63,20 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
       .getUserResultType();
 }
 
+static void assertLegalForwardedOperandOrigins(
+    [[maybe_unused]] const OperandsNeedingOriginsList &needingOrigins) {
+  // Since we must have picked a single argument implicit conversion, make sure
+  // nothing surprising happened...
+  assert(needingOrigins.size() == 1 &&
+         "implicit conversion must spill exactly one operand");
+  // must be an __init__(ref ..., out self).
+  assert(needingOrigins.front().argIdx == 0 &&
+         "the spilled operand must be the ctor's first argument");
+  assert(needingOrigins.front().operandIdx !=
+             OperandNeedingOrigin::kExprDestOperandIdx &&
+         "the spilled operand must be a real operand, not the ExprDest");
+}
+
 /// Try to infer the type of an initializer list/dict/set/slice literal by
 /// first binding it to `preferred` and, on failure, to the literal's default
 /// type (e.g. `List[Int]` for a list literal).  Returns a null `Type` if
@@ -376,28 +390,52 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     // base element.  Our solution to this is to rip and replace parameters that
     // contain unbound parameters, replacing them with UnboundAttr so inference
     // can find them.
-    auto nonParamType =
-        expectedType.getWithUnknownParametersReplaced(getShared());
-    CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
-                              EC_TypeParamValue, {{argVal, operand.expr}});
-    FailureOr<PValue> pValue = OverloadSet::canConstructType(
-        nonParamType, ctorOperands, getDeclScope(), forwardedNeedingOrigins);
-    if (failed(pValue)) {
-      auto &diag = getMojoDiag(operand.expr->getLoc());
-      diag << "cannot convert to type with a previously diagnosed error";
-      return failure();
+    auto getImplicitConvertTarget =
+        [&](CValue argVal, OperandsNeedingOriginsList *needingOrigins) -> Type {
+      CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
+                                EC_TypeParamValue, {{argVal, operand.expr}});
+      auto nonParamType =
+          expectedType.getWithUnknownParametersReplaced(getShared());
+      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+          nonParamType, ctorOperands, getDeclScope(), needingOrigins);
+      if (failed(pValue) || !pValue.value())
+        return {};
+
+      // If we found one, we succeed if the returned type is compatible with the
+      // expected type.  Infer the parameters of this overload candidate against
+      // the computed result type of the initializer.
+      auto initSig =
+          FnOrFnLiteralTypeGeneratorType::get(pValue.value().getType());
+      return initSig.getUserResultType();
+    };
+
+    Type targetType = getImplicitConvertTarget(argVal, forwardedNeedingOrigins);
+    if (syntax == CallSyntax::kParamBindings && targetType &&
+        forwardedNeedingOrigins && !forwardedNeedingOrigins->empty()) {
+      // The implicit ctor picked during `inferFromRVType` must only take one
+      // argument, so the spill can only be for its first argument.
+      assertLegalForwardedOperandOrigins(*forwardedNeedingOrigins);
+      OperandNeedingOrigin forwarded = forwardedNeedingOrigins->front();
+      // Do the inference with a comptime.origin right away, we don't have to
+      // wait till emission time for origin refinement PValues.
+      CValue newVal;
+      if (forwarded.getArgConvention() != ArgConvention::OwnedMem)
+        newVal = PMBValue::getFromPValue(argVal.getIfPValue());
+      else
+        newVal = PMRValue::getFromPValue(argVal.getIfPValue());
+      targetType = getImplicitConvertTarget(newVal, forwardedNeedingOrigins);
+      // Must succeed because the target type is already checked in the previous
+      // call to `getImplicitConvertTarget`.
+      assert(targetType);
     }
 
-    // If we found one, we succeed if the returned type is compatible with the
-    // expected type.  Infer the parameters of this overload candidate against
-    // the computed result type of the initializer.
-    if (auto callee = pValue.value()) {
-      auto initSig = FnOrFnLiteralTypeGeneratorType::get(callee.getType());
+    if (targetType) {
+      // If we found one, we succeed if the returned type is compatible with
+      // the expected type.  Infer the parameters of this overload candidate
+      // against the computed result type of the initializer.
       ParamMatcher::FailableScope failableScope(matcher);
-      if (succeeded(
-              matcher.matchTypes(initSig.getUserResultType(), expectedType))) {
+      if (succeeded(matcher.matchTypes(targetType, expectedType)))
         return success();
-      }
       failableScope.revert();
     }
   }
@@ -546,13 +584,33 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (paramFinder.hasReferences(expectedType)) {
+    OperandsNeedingOriginsList paramOrigins;
     if (failed(inferFromRVType(binding, paramIdx, expectedType,
-                               declaredParamPogs, CallSyntax::kParamBindings)))
+                               declaredParamPogs, CallSyntax::kParamBindings,
+                               &paramOrigins)))
       return failure();
-  }
 
-  // We might have inferred more parameter after `inferOneOperand`.
-  expectedType = evaluator.getReboundType(expectedType);
+    // inferFromRVType above might have refined the expected type.
+    expectedType = evaluator.getReboundType(expectedType);
+    if (!paramOrigins.empty()) {
+      assertLegalForwardedOperandOrigins(paramOrigins);
+      // If we take the implicit conversion path and need to turn the value into
+      // a reference. The expected type must have be fully concretized in order
+      // for conversion to be successful.
+      assert(!paramFinder.hasReferences(expectedType));
+
+      if (paramOrigins.front().getArgConvention() != ArgConvention::OwnedMem)
+        binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
+      else
+        binding.ir = PMRValue::getFromPValue(binding.ir.getIfPValue());
+
+      // Eagerly issue the conversion right away with a comptime.origin ref.
+      return emitter
+          .emitPValue({binding.ir, binding.expr}, EC_ParameterList,
+                      expectedType)
+          .get();
+    }
+  }
 
   if (paramFinder.hasReferences(expectedType)) {
     deferredGivenParams.set(paramIdx);
@@ -1508,11 +1566,8 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // the conversion's signature and argument index, since the spill has to
     // satisfy the constructor rather than this call.
     OperandNeedingOrigin forwarded = forwardedNeedingOrigins.front();
-    // The argIdx has to be 0 in order to match, because the implicit
-    // ctor we picked during `inferFromRVType` must only take one argument.
-    assert(forwarded.argIdx == 0 &&
-           forwarded.operandIdx != OperandNeedingOrigin::kExprDestOperandIdx &&
-           forwardedNeedingOrigins.size() == 1);
+    assertLegalForwardedOperandOrigins(forwardedNeedingOrigins);
+
     // Adjust the operand idx.
     forwarded.operandIdx = operandIdx;
     operandsNeedingOrigins.push_back(forwarded);

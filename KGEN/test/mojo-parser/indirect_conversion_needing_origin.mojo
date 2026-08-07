@@ -26,6 +26,9 @@ def take_wrapper(w: RefWrapper) -> Int:
     return w.n
 
 
+def take_wrapper_param[w: RefWrapper]() -> Int:
+    return w.n
+
 # CHECK-LABEL: lit.fn @"infer_origin_of_materialized_rvalue()"
 def infer_origin_of_materialized_rvalue():
     var a = 1
@@ -40,6 +43,19 @@ def infer_origin_of_materialized_rvalue():
     # CHECK: lit.call @{{.*}}@RefWrapper::@"__init__{{.*}}"[mut {{.*}}]<:origin<false> (mutcast mut *"[[ORIGIN]]")
     # CHECK: lit.call @{{.*}}@"take_wrapper{{.*}}"[muttoimm {{.*}}]<:origin<false> (mutcast mut *"[[ORIGIN]]")
     _ = take_wrapper(a + b)
+
+    comptime c = 1
+    comptime d = 2
+
+    # Binding the conversion as a *parameter* has no runtime temporary to point
+    # at, so the origin is inferred as the comptime origin, and the `RefWrapper`
+    # is built by the interpreter from the folded `c + d` instead of being
+    # spilled to a stack slot.
+    # CHECK: lit.call tail @{{.*}}@"take_wrapper_param{{[^"]*}}"<:origin<false> #lit.comptime.origin
+    # CHECK-SAME: apply_result_slot
+    # CHECK-SAME: @RefWrapper::@"__init__{{[^"]*}}"<:origin<false> #lit.comptime.origin
+    # CHECK-SAME: store_to_mem({:scalar<index> 3})
+    _ = take_wrapper_param[c + d]()
 
 
 def take_span(s: Span[...]):
