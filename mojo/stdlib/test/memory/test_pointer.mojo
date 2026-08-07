@@ -117,7 +117,7 @@ def test_nicheable() raises:
     PointerType.write_niche(Pointer(to=memory))
     assert_true(PointerType.isa_niche(Pointer(to=memory)))
 
-    memory.init_from(Pointer(to=x))
+    memory.unsafe_write(Pointer(to=x))
     assert_false(PointerType.isa_niche(Pointer(to=memory)))
 
 

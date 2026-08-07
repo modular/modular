@@ -744,7 +744,7 @@ def mgp_buffer_bulk_slice[
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
     for i in range(N):
-        result[i].init_from(
+        result[i].unsafe_write(
             mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
         )
 
