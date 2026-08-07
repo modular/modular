@@ -54,20 +54,18 @@ def use_alias[x: Foo]():
 # // -----
 
 # ---------------------------------------------------------------------------
-# Functions: an overload set resolves from a single origin, so importing
-# functions with the same name from different modules is deprecated. Unlike
-# the non-function cases above this is a warning, not an error: the overload
-# sets still merge as they always have.
+# Functions: an overload set resolves from a single origin; importing
+# functions with the same name from different modules is not permitted.
 
 from fn_a import Foo
 
-# @expected-warning @below {{importing 'Foo' from multiple modules is deprecated; import 'Foo' from a single module}}
+# @expected-error @below {{import of 'Foo' is ambiguous}}
 from fn_b import Foo
 
 
-# The overload sets merge, so both overloads remain callable.
 def call_it():
     Foo()
+# @expected-error @below {{invalid call to 'Foo': unexpected argument}}
     Foo(True)
 
 
