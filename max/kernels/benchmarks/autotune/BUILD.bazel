@@ -301,7 +301,7 @@ modular_py_binary(
         "//:amd_gpu": [
             "//max/kernels/benchmarks/misc/comparison:bench_amd_mha",
             "//max/kernels/benchmarks/misc/comparison:bench_amd_mla",
-            "//max/kernels/benchmarks/misc/comparison:bench_amd_mxfp4_gemm",
+            "//max/kernels/benchmarks/misc/comparison:bench_amd_mx_gemm",
             "//max/kernels/benchmarks/misc/comparison:bench_softmax_lib",
         ],
         "//conditions:default": [],
