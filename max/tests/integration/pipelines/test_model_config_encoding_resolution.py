@@ -181,7 +181,6 @@ def _resolve_encoding(
 def _resolve_encoding_and_weight_path(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
-    supported_encodings: set[SupportedEncoding] | None = None,
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
     """Resolves both encoding and weight_path the way a consumer does in
@@ -194,7 +193,6 @@ def _resolve_encoding_and_weight_path(
     config.validate_and_resolve_with_resolved_quantization_encoding(
         resolved_encoding=encoding,
         applied_dtype_cast_from=cast_from,
-        supported_encodings=supported_encodings or {encoding},
         default_weights_format=default_weights_format,
     )
 

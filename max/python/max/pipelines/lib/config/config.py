@@ -981,7 +981,6 @@ class PipelineConfig(ConfigFileModel):
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             resolved_encoding=resolved_encoding,
             applied_dtype_cast_from=cast_from,
-            supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
 
