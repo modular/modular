@@ -2086,6 +2086,63 @@ def test_blocks_needed_probe_is_pure() -> None:
     assert len(cache._request_refs) == 0  # no refs acquired by the probe
 
 
+def test_processed_image_ref_released() -> None:
+    """A fully-processed image's ref drops during the selection walk."""
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.insert(0xB, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    cache.acquire(req, 0xB)
+    assert cache.num_free_or_evictable_blocks == 6
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    img_b = _make_image_meta(4, 8, image_hash=0xB)
+    ctx = FakeContext(
+        request_id=req,
+        images=[img_a, img_b],
+        processed_length=4,
+        active_length=4,
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    assert _ref_count(cache, 0xA) == 0
+    assert _ref_count(cache, 0xB) == 1
+    assert cache.num_free_or_evictable_blocks == 7
+
+
+def test_released_processed_entry_is_evictable_midrequest() -> None:
+    """Block pressure may reclaim a processed image while its request runs."""
+    cache = _make_block_cache(num_blocks=2, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    ctx = FakeContext(
+        request_id=req,
+        images=[img_a],
+        needs_vision=True,
+        processed_length=4,
+        active_length=1,
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    cache.insert(0xC, [_make_buffer(8)], 8)
+    assert cache.lookup(0xA) is None
+    assert cache.lookup(0xC) is not None
+
+
+def test_release_request_after_processed_release_is_noop() -> None:
+    cache = _make_block_cache(num_blocks=8, block_tokens=4)
+    req = RequestID("r1")
+    cache.insert(0xA, [_make_buffer(4)], 4)
+    cache.acquire(req, 0xA)
+    img_a = _make_image_meta(0, 4, image_hash=0xA)
+    ctx = FakeContext(
+        request_id=req, images=[img_a], processed_length=4, active_length=1
+    )
+    cache.get_uncached_contexts(_as_vlm_batch([ctx]))
+    cache.release_request(req)
+    assert _ref_count(cache, 0xA) == 0
+
+
 def test_block_free_or_evictable_through_ref_cycle() -> None:
     cache = _make_block_cache(num_blocks=8, block_tokens=4)
     req = RequestID("r1")

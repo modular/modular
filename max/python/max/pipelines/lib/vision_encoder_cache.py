@@ -649,6 +649,16 @@ class VisionEncoderCache(Generic[VLMContextType]):
             entry.ref_count += 1
         refs.add(image_hash)
 
+    def _release_ref(self, request_id: RequestID, image_hash: int) -> None:
+        """Release one (request, image) ref, if held."""
+        refs = self._request_refs.get(request_id)
+        if refs is None or image_hash not in refs:
+            return
+        refs.discard(image_hash)
+        entry = self._cache.get(image_hash)
+        if entry is not None:
+            entry.ref_count = max(0, entry.ref_count - 1)
+
     @traced
     def release_request(self, request_id: RequestID) -> None:
         """Release all cache refs held by a request.
@@ -750,6 +760,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
         not), refs for the cached images are acquired immediately and
         the context is returned.
 
+        Refs for images whose tokens are fully processed are released
+        here: their embeddings live on in the KV cache, so an entry only
+        needs to survive until its consuming chunk completes.
+
         Callers can check ``self.lookup(img.image_hash)`` to distinguish
         cached from uncached images within the returned contexts.
 
@@ -772,6 +786,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
+                if img.end_idx <= ctx.tokens.processed_length:
+                    # Evictable: these tokens now live in the KV cache.
+                    self._release_ref(ctx.request_id, img.image_hash)
+                    continue
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
                 else:
@@ -1114,6 +1132,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
         the returned selection: there is nothing to encode for them this
         iteration, and assembly reads their in-window hits from the cache and
         zero-fills out-of-window images from ``context_batch`` directly.
+        Fully-processed images (in ``ctx.images`` but not ``next_images``)
+        are skipped by that scan and their refs released — their embeddings
+        live on in the KV cache, and assembly zero-fills their rows if the
+        entry is later evicted.
         """
         uncached = self.get_uncached_contexts(context_batch)
         selection: list[tuple[VLMContextType, list[ImageMetadata]]] = []
