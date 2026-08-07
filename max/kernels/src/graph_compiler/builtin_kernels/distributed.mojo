@@ -1066,6 +1066,7 @@ struct DistributedAllGatherRMSNorm:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        group_size: Int = 0,
     ](
         outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -1090,11 +1091,17 @@ struct DistributedAllGatherRMSNorm:
             rank: Tensor rank of the inputs and outputs.
             target: Target device string for tracing.
             _trace_name: Trace name for profiling.
+            group_size: Number of contiguous devices per independent all-gather
+                group; must be at least 2 and must evenly divide the total
+                number of devices. Equal to `num_devices` for a full-world
+                collective. The builder always sets it; the `0` attribute
+                default is not a usable value.
 
         Args:
-            outputs_normed: Per-device normed output (full replicated `[rows, cols]`).
-            outputs_residual: Per-device gathered residual (full replicated,
-                the residual stream).
+            outputs_normed: Per-device normed output (the group's gathered
+                `[rows, cols]`, replicated within the group).
+            outputs_residual: Per-device gathered residual (same shape as
+                `outputs_normed`; the residual stream).
             inputs: Per-device input row-shards to gather.
             signal_buffers: Per-device synchronization buffers.
             gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
@@ -1104,13 +1111,21 @@ struct DistributedAllGatherRMSNorm:
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo).
-            - Full-world all-gather only (no device grouping); requires P2P.
+            - Requires P2P; within a group, shard shapes may differ only in the
+              gathered axis.
         """
         comptime num_devices = inputs.size
         comptime assert signal_buffers.size == num_devices, (
             "expected allgather_rms_norm inputs and signal buffers to have the"
             " same number of elements"
         )
+        # >= 2, unlike the plain op: the fused kernel asserts `ngpus >= 2` and
+        # this composite has no 1-input folder, so a 1-device group would fail
+        # deeper with an unrelated message.
+        comptime assert group_size >= 2, "group_size must be at least 2"
+        comptime assert (
+            num_devices % group_size == 0
+        ), "group_size must evenly divide the number of devices"
 
         # Like plain all-gather, no scratch: only the Signal struct.
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
@@ -1118,28 +1133,12 @@ struct DistributedAllGatherRMSNorm:
         # epsilon/weight_offset are rank-0 CPU scalars, so drop CPU devices.
         var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
 
-        comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[DType.int64]().as_immut()
-        )
-        var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
-        var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-            uninitialized=True
-        )
-
-        comptime for i in range(num_devices):
-            in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[DType.int64]().as_immut()
-            )
-            rank_sigs[i] = (
-                signal_buffers[i]._ptr.bitcast[Signal]().as_unsafe_any_origin()
-            )
-
         @always_inline
         def launch_fused_ag_norm[
             index: Int
         ]() raises {
-            imm in_tensors,
-            imm rank_sigs,
+            imm inputs,
+            imm signal_buffers,
             imm dev_ctxs,
             imm gammas,
             imm epsilons,
@@ -1147,6 +1146,41 @@ struct DistributedAllGatherRMSNorm:
             imm outputs_normed,
             imm outputs_residual,
         }:
+            comptime group_id, local_rank = divmod(index, group_size)
+            comptime group_start = group_id * group_size
+            # Full-world keeps domain 0; a grouped collective gets a nonzero
+            # domain so its counters never poison the full-world bank on the
+            # shared Signal buffers. Keying by WIDTH puts every grouped op of
+            # that width in one bank -- sound only under the same-barrier-
+            # sequence invariant in `sync.mojo`'s `NUM_BARRIER_DOMAINS`.
+            comptime domain_id = 0 if group_size == num_devices else group_size
+
+            # Derived per group, so groups may carry different static shapes.
+            # Within a group the `rebind` below rejects differing STATIC
+            # extents -- hence the builder's same-shape-outside-the-gathered-
+            # axis rule. Ragged gathered dims arrive symbolic and lower alike.
+            comptime InputTensorType = type_of(
+                inputs[group_start].to_tile_tensor[DType.int64]().as_immut()
+            )
+            var in_tensors = Array[InputTensorType, group_size](
+                uninitialized=True
+            )
+            var rank_sigs = Array[
+                UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+            ](uninitialized=True)
+
+            comptime for i in range(group_size):
+                in_tensors[i] = rebind[InputTensorType](
+                    inputs[group_start + i]
+                    .to_tile_tensor[DType.int64]()
+                    .as_immut()
+                )
+                rank_sigs[i] = (
+                    signal_buffers[group_start + i]
+                    ._ptr.bitcast[Signal]()
+                    .as_unsafe_any_origin()
+                )
+
             var normed_buf = outputs_normed[index].to_tile_tensor[DType.int64]()
             var sum_buf = outputs_residual[index].to_tile_tensor[DType.int64]()
             var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
@@ -1169,11 +1203,11 @@ struct DistributedAllGatherRMSNorm:
                 comptime OutViewType = type_of(
                     TileTensor(base, row_major(cols_rt, cols_rt))
                 )
-                var out_views = Array[OutViewType, num_devices](
+                var out_views = Array[OutViewType, group_size](
                     uninitialized=True
                 )
                 var row_off = 0
-                comptime for i in range(num_devices):
+                comptime for i in range(group_size):
                     var len_i = Int(in_tensors[i].num_elements()) // cols_rt
                     out_views[i] = TileTensor(
                         base + row_off * cols_rt,
@@ -1181,8 +1215,12 @@ struct DistributedAllGatherRMSNorm:
                     )
                     row_off += len_i
 
-                allgather[dtype=dtype, ngpus=num_devices](
-                    in_tensors, out_views, rank_sigs, dev_ctxs[index], index
+                allgather[dtype=dtype, ngpus=group_size, domain_id=domain_id](
+                    in_tensors,
+                    out_views,
+                    rank_sigs,
+                    dev_ctxs[index],
+                    local_rank,
                 )
 
                 # `@__copy_capture` REQUIRED: without it the local `var`
@@ -1219,7 +1257,7 @@ struct DistributedAllGatherRMSNorm:
                     dev_ctxs[index],
                 )
 
-            _dispatch_ag_norm[two_launch=two_launch](
+            _dispatch_ag_norm[two_launch=two_launch, domain_id=domain_id](
                 in_tensors,
                 normed_buf,
                 sum_buf,
@@ -1228,6 +1266,7 @@ struct DistributedAllGatherRMSNorm:
                 weight_offset,
                 rank_sigs,
                 dev_ctxs[index],
+                local_rank=local_rank,
             )
 
         _launch_device_collective[num_devices](
