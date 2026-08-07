@@ -605,7 +605,7 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   return *this;
 }
 
-bool ASTType::hasUnknownParameters() const {
+bool ASTType::hasUnboundParameters() const {
   return llvm::any_of(getParamBindings(),
                       [](TypedAttr param) { return isa<UnboundAttr>(param); });
 }
@@ -624,11 +624,10 @@ bool ASTType::isEqualCanon(ASTType other) const {
 }
 
 /// Return true if this is the same as another ASTType are the same, or if they
-/// match when UnknownAttr parameters in the 'this' type are treated as
+/// match when unbound parameters in the 'this' type are treated as
 /// the same as the corresponding parameter in the second type.
 ///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
-bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
-                                         SharedState &shared) const {
+bool ASTType::isEqualAllowingUnbound(ASTType other, SharedState &shared) const {
   if (isEqualCanon(other))
     return true;
 

@@ -2739,7 +2739,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
     // `_mlir_origin` open). That type annotation maybe dependent on the
     // parameters of the comptime.
     ASTType emissionType = type;
-    if (type && type.hasUnknownParameters()) {
+    if (type && type.hasUnboundParameters()) {
       if (paramSignature.paramDeclAttrs.empty()) {
         p.emitError(initExpr->getLoc(),
                     "cannot construct a value with parametric type: ")

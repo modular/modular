@@ -761,7 +761,7 @@ AnyValue IREmitter::emitResult(AnyValue value, const ExprNode *expr,
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
     if (!requiredType.isEqualCanon(rvType)) {
-      if (requiredType.hasUnknownParameters()) {
+      if (requiredType.hasUnboundParameters()) {
         dest.representation =
             cast<LValueContextualType>(dest.representation).expr;
         cValue = emitConstructorCall(
