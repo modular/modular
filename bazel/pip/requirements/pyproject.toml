@@ -234,7 +234,7 @@ nvidia = [
 # Separate dependency groups for large dependencies used in a few places,
 # to avoid conflicts with the other groups (mainly torch versions).
 nvidia-vllm = [
-  "vllm==0.22.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "vllm==0.24.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torch; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
