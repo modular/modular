@@ -2575,8 +2575,15 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
       // If we found no uses of the vardecl, we could return the terminator, but
       // be more conservative than that - return the VD itself.
       return varDecl;
+    } else if (Operation *definingOp = v.getDefiningOp()) {
+      return definingOp;
     } else {
-      return v.getDefiningOp();
+      // A block argument has no defining operation, but it is available from
+      // the moment its region is entered, so the enclosing operation is its
+      // program point. This is how an interior origin reaches a synthesized
+      // closure-storage initializer: the origin is carried by the type of a
+      // function parameter, so it is live on the function itself.
+      return cast<BlockArgument>(v).getOwner()->getParentOp();
     }
   }
 }
@@ -2655,7 +2662,6 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   if (operand && !isa<KGEN::ReturnOp, LIT::ErrorReturnOp>(op))
     operandPt = getProgramPointThatDefinedInteriorOrigin(operand);
 
-  // TODO: What about block arguments?
   assert(operandPt && "operand wasn't defined by a program point?");
 
   // If the defining operation dominates the operand, then it is valid.
