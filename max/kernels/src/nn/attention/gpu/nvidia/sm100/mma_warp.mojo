@@ -442,6 +442,10 @@ def fa4_mma[
     # V pages the producer never loaded (`0 * stale-NaN = NaN`). For causal
     # `start_column == 0`, so `v_eff_keys == num_keys` and every `vkm` site
     # below is bit-identical to before.
+    #
+    # 1Q split-K narrows the frame again: the `vkm` sites count tiles from
+    # the partition's own window, so `v_eff_keys` is rebased by the window
+    # start where split-K slices it below.
     var v_start_col: UInt32 = mask.start_column[BM_mask, BN, page_size](
         seq_id, score_row
     )
@@ -557,6 +561,8 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+            # Rebase into this partition's tile window (see the `vkm` note).
+            v_eff_keys -= _w[0] * UInt32(BN)
         # All-masked row (valid_length 0): total_iters == 0, so the
         # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
         # pipeline. Split-K is guarded above; guard the non-split path here.
@@ -1187,6 +1193,8 @@ def fa4_mma[
             # kernel terminal `cluster_sync()` still runs after this return.
             if total_iters_runtime == 0:
                 return
+            # Rebase into this partition's tile window (see the `vkm` note).
+            v_eff_keys -= _w[0] * UInt32(BN)
         # All-masked row (valid_length 0): total_iters == 0, so the
         # `- (3 - num_q)` below underflows and the MMA warp spins, hanging the
         # pipeline. Split-K is guarded above; guard the non-split path here.
