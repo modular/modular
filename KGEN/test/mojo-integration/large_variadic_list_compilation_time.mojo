@@ -13,10 +13,11 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-# Folding `contains` over a variadic trait pack re-derives every prefix at each
-# step, so without failure memoization in the evaluator the work grows as 2^N.
-# This test guards that by wall clock: it compiles in about a second with
-# memoization and exceeds the test timeout without it.
+# Folding a `contains` / `all_satisfies` chain over a variadic trait pack
+# reaches the same conformance query once per prefix at each step. Re-deriving
+# those repeats instead of resolving each once makes the work grow as 2^N.
+# This test guards that by wall clock: 32 elements compiles in about a second
+# and otherwise exceeds the test timeout.
 
 comptime T = Copyable & Deinitable
 
