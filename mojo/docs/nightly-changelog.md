@@ -100,6 +100,12 @@ Each entry names its replacement.
 
 ## Fixed
 
+- Parametric `raises` now accepts any primary expression as the thrown type in
+  a function signature, matching the syntax positions where types otherwise
+  appear. This most notably fixes `raises Self.SomeAssocType` on trait and
+  struct methods, which would previously fail with an error. The parenthesized
+  workaround (`raises (Self.DriveErrorType)`) is no longer required.
+
 - An integer `range()` with a step of zero is now always empty. It previously
   used to be an infinite loop - iterating forever at runtime, and hanging the
   compiler at comptime.
