@@ -250,18 +250,10 @@ class PipelineConfig(ConfigFileModel):
             )
         return main
 
-    @model.setter
-    def model(self, value: MAXModelConfig) -> None:
-        self.models = self.models.with_override("main", config=value)
-
     @property
     def draft_model(self) -> MAXModelConfig | None:
         """The draft model configuration. Alias for ``models.get("draft")``."""
         return self.models.get("draft")
-
-    @draft_model.setter
-    def draft_model(self, value: MAXModelConfig) -> None:
-        self.models = self.models.with_override("draft", config=value)
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
