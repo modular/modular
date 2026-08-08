@@ -3904,6 +3904,35 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             _DeviceContextPtr[mut=True],
         ](self._handle)
 
+    def __eq__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` refer to the same underlying
+        runtime context (same internal handle), not merely the same device ID.
+
+        Two separately constructed contexts on the same device are considered
+        different, while copies of the same context compare equal. The
+        `_owning` flag is not part of identity: a non-owning wrapper around the
+        same native context compares equal to the owning one.
+
+        Args:
+            other: The other `DeviceContext` to compare.
+
+        Returns:
+            `True` if `self` and `other` wrap the same native context.
+        """
+        return self._handle == other._handle
+
+    def __ne__(self, other: Self) -> Bool:
+        """Returns `True` if `self` and `other` refer to different runtime
+        contexts.
+
+        Args:
+            other: The other `DeviceContext` to compare.
+
+        Returns:
+            `True` if `self` and `other` wrap different native contexts.
+        """
+        return not self == other
+
     def __enter__(var self) -> Self:
         """Enables the use of DeviceContext in a 'with' statement context manager.
 
