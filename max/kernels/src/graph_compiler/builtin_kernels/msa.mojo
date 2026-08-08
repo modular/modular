@@ -127,6 +127,59 @@ comptime MAX_SPEC_DRAFT = 8
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
+def _require_score_scratch[
+    num_index_heads: Int
+](
+    score_scratch: MutableInputTensor[dtype=DType.float32, rank=3, ...],
+    rows: Int,
+    max_num_blocks: Int,
+) raises:
+    """Raise unless the scratch covers this single-token decode step.
+
+    The multi-token routes test the same bounds in their route predicates and
+    fall through to prefill, which allocates its own buffer. Single-token decode
+    has no such fallback -- it IS the decode route -- so it raises instead.
+    Nothing downstream would catch it: the kernels' own bound checks are
+    `debug_assert`, so a release build would take the scorer's out-of-bounds
+    write.
+
+    Parameters:
+        num_index_heads: Number of index (query) heads, for the message.
+
+    Args:
+        score_scratch: The caller's persistent scratch.
+        rows: Score rows this step needs -- `batch` on single-token decode.
+        max_num_blocks: This step's per-row block bound. Dim-2 is the row
+            stride, so it only has to be at least this, not equal to it.
+    """
+    if (
+        Int(score_scratch.dim_size[1]()) >= rows
+        and Int(score_scratch.dim_size[2]()) >= max_num_blocks
+    ):
+        return
+    raise Error(
+        String(
+            (
+                "mo.msa.indexer.ragged.paged: score_scratch is too small for"
+                " this decode step. Need at least ["
+            ),
+            num_index_heads,
+            ", ",
+            rows,
+            ", ",
+            max_num_blocks,
+            "], got [",
+            Int(score_scratch.dim_size[0]()),
+            ", ",
+            Int(score_scratch.dim_size[1]()),
+            ", ",
+            Int(score_scratch.dim_size[2]()),
+            "].",
+        )
+    )
+
+
 @extensibility.register("mo.msa.indexer.ragged.paged")
 struct Struct_msa_indexer_ragged_paged:
     """Registers the `mo.msa.indexer.ragged.paged` graph op with the graph compiler.
@@ -195,10 +248,11 @@ struct Struct_msa_indexer_ragged_paged:
                 `[num_index_heads, max_rows, MAX_NUM_BLOCKS]`. `max_rows` must
                 cover `total_q` for every step served: `max_batch` for
                 single-token decode, and `max_batch * max_new_tokens_per_step`
-                for the multi-token (MTP / speculative) route below, which
-                writes at the ragged row `input_row_offsets[b] + t`. The route
-                predicate checks this and falls back to prefill when the scratch
-                is too narrow, so an old caller degrades rather than corrupts.
+                for the multi-token (MTP / speculative) routes below, which
+                write at the ragged row `input_row_offsets[b] + t`. Those route
+                predicates check this and fall back to prefill when the scratch
+                is too narrow, so an old caller degrades rather than corrupts;
+                single-token decode has no such fallback and raises instead.
             scale: QK scale.
             ctx: Device context.
         """
@@ -275,6 +329,11 @@ struct Struct_msa_indexer_ragged_paged:
         if max_q_len == 1:
             var batch = total_q  # 1 token/seq on decode
             # Use persistent score scratch. This is required for graph capture.
+            # One row per sequence here; the MTP route below needs one per
+            # token.
+            _require_score_scratch[num_index_heads](
+                score_scratch, batch, max_num_blocks
+            )
             var score = score_scratch.to_tile_tensor[DType.int64]()
 
             # `prefix_lens` is the index-K `cache_lengths` BEFORE this step's
@@ -370,15 +429,6 @@ struct Struct_msa_indexer_ragged_paged:
         else:
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
 
-            # Caller-owned score scratch [num_index_heads, total_q, max_num_blocks].
-            var score_size = num_index_heads * total_q * max_num_blocks
-            var score_buf = ctx.enqueue_create_buffer[DType.float32](score_size)
-            score_buf.enqueue_fill(Float32(0))
-            var score = TileTensor(
-                score_buf,
-                tt_row_major(num_index_heads, total_q, max_num_blocks),
-            )
-
             # AMD speculative widths use the decode-style scorer and top-k;
             # width one retains the established decode route.  The scorer loads
             # each K vector once and reuses it across the compile-time query
@@ -393,44 +443,78 @@ struct Struct_msa_indexer_ragged_paged:
             )
             comptime if USE_AMD_MTP_SCORER:
                 var max_q_len = Int(k_collection.max_seq_length)
-                comptime for query_width in range(2, MAX_SPEC_DRAFT + 1):
-                    if max_q_len == query_width:
-                        sparse_indexer_decode_score_mtp[
-                            DType.bfloat16,
-                            type_of(k_operand),
-                            query_width,
-                            num_index_heads,
-                            idx_head_dim,
-                            block_size,
-                        ](
-                            q.to_tile_tensor[DType.int64](),
-                            k_operand,
-                            prefix_lens.to_tile_tensor[DType.int64](),
-                            input_row_offsets.to_tile_tensor[DType.int64](),
-                            score,
-                            batch,
-                            total_q,
-                            max_num_blocks,
-                            init_blocks,
-                            local_blocks,
-                            scale,
-                            ctx,
-                        )
-                        sparse_indexer_decode_topk_mtp[
-                            query_width, num_index_heads, block_size
-                        ](
-                            prefix_lens.to_tile_tensor[DType.int64](),
-                            input_row_offsets.to_tile_tensor[DType.int64](),
-                            score,
-                            out_idxs.to_tile_tensor[DType.int64](),
-                            batch,
-                            total_q,
-                            max_num_blocks,
-                            topk,
-                            ctx,
-                        )
-                        _ = score_buf^
-                        return
+                # MTP indexes the score by GLOBAL QUERY ROW, so the scratch
+                # needs `total_q` rows here, not the `batch` that single-token
+                # decode needs. Testing that in the route predicate rather than
+                # raising mirrors the NVIDIA MTP route above: too narrow a
+                # scratch simply keeps prefill, which allocates its own buffer.
+                #
+                # Dim-2 is the row stride the kernels address with, while
+                # `max_num_blocks` rides along as a separate runtime bound, so a
+                # scratch cut for a longer context still serves a shorter step. A
+                # layout rebuilt over the same memory with `max_num_blocks` as
+                # the stride would misalign every row after the first.
+                if (
+                    2 <= max_q_len <= MAX_SPEC_DRAFT
+                    and Int(score_scratch.dim_size[1]()) >= total_q
+                    and Int(score_scratch.dim_size[2]()) >= max_num_blocks
+                ):
+                    var mtp_score = score_scratch.to_tile_tensor[DType.int64]()
+
+                    comptime for query_width in range(2, MAX_SPEC_DRAFT + 1):
+                        if max_q_len == query_width:
+                            sparse_indexer_decode_score_mtp[
+                                DType.bfloat16,
+                                type_of(k_operand),
+                                query_width,
+                                num_index_heads,
+                                idx_head_dim,
+                                block_size,
+                            ](
+                                q.to_tile_tensor[DType.int64](),
+                                k_operand,
+                                prefix_lens.to_tile_tensor[DType.int64](),
+                                input_row_offsets.to_tile_tensor[DType.int64](),
+                                mtp_score,
+                                batch,
+                                total_q,
+                                max_num_blocks,
+                                init_blocks,
+                                local_blocks,
+                                scale,
+                                ctx,
+                            )
+                            sparse_indexer_decode_topk_mtp[
+                                query_width, num_index_heads, block_size
+                            ](
+                                prefix_lens.to_tile_tensor[DType.int64](),
+                                input_row_offsets.to_tile_tensor[DType.int64](),
+                                mtp_score,
+                                out_idxs.to_tile_tensor[DType.int64](),
+                                batch,
+                                total_q,
+                                max_num_blocks,
+                                topk,
+                                ctx,
+                            )
+                            return
+
+            # Per-call score scratch, one row per TOKEN
+            # `[num_index_heads, total_q, max_num_blocks]`. Prefill cannot use
+            # the caller's `score_scratch`: `total_q` is a whole context window,
+            # unbounded by any fixed allocation, and prefill is not
+            # capture-sensitive.
+            #
+            # Deliberately left uninitialized. The scorer writes every block in
+            # `[0, num_blocks)` of each row, and nothing reads the ragged tail
+            # past that bound -- the top-k kernels recompute each row's block
+            # count and clamp to it.
+            var score_size = num_index_heads * total_q * max_num_blocks
+            var score_buf = ctx.enqueue_create_buffer[DType.float32](score_size)
+            var score = TileTensor(
+                score_buf,
+                tt_row_major(num_index_heads, total_q, max_num_blocks),
+            )
 
             sparse_indexer_prefill[
                 DType.bfloat16,
