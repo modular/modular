@@ -14,7 +14,6 @@ force-exclude = '''
 (
   /(
       third-party/llvm-project
-    | third-party/vllm-benchmarks
     | \.derived
     | venv
     | KGEN/test/mojo-parser
