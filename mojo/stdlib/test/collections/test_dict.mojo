@@ -718,6 +718,28 @@ def test_owned_kwargs_dict() raises:
     _test_taking_owned_kwargs_dict(**owned_kwargs^)
 
 
+def test_string_dict_write_to() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("a", 1)
+    kwargs._insert("b", 2)
+    check_write_to(kwargs, expected="{a: 1, b: 2}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
+        is_repr=True,
+    )
+
+
+def test_string_dict_write_to_empty() raises:
+    var kwargs = StringDict[Int]()
+    check_write_to(kwargs, expected="{}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({})",
+        is_repr=True,
+    )
+
+
 def test_find_get() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1

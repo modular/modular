@@ -1945,6 +1945,7 @@ struct StringDict[V: Movable](
     Iterable,
     Movable,
     Sized,
+    Writable where conforms_to(V, Writable),
 ):
     """Container used to pass owned variadic keyword arguments to functions.
 
@@ -2066,6 +2067,38 @@ struct StringDict[V: Movable](
             The number of elements currently stored in the keyword dictionary.
         """
         return len(self._dict)
+
+    @no_inline
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write this `StringDict` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        self._dict.write_to(writer)
+
+    @no_inline
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write this `StringDict`'s representation to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+
+        @parameter
+        def write_fields(mut w: Some[Writer]):
+            self._dict._write_dict_body[
+                f_key=fmt.write_repr_to[Self.key_type],
+                f_val=fmt.write_repr_to[Self.V],
+            ](w)
+
+        fmt.FormatStruct(writer, "StringDict").params(
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
