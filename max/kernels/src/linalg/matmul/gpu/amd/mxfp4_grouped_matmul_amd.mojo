@@ -65,6 +65,7 @@ struct PreShuffledBGroupedGEMM[
     cu_count: Int,
     wg_per_cu: Int = 2,
     lane_bytes: Int = 16,
+    xcd_stripe: Int = 8,
 ]:
     """Grouped GEMM for MXFP4 on AMD CDNA4 with pre-shuffled weights.
 
@@ -81,6 +82,11 @@ struct PreShuffledBGroupedGEMM[
         lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
             (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS` costs
             twice the registers and LDS at MXFP8.
+        xcd_stripe: Size of the contiguous per-XCD run in `to_swizzled_idx`'s
+            logical-index space (default 8). `0` is the escape hatch: it
+            resolves to `wg_per_xcd`, recovering the fully-contiguous
+            pre-fix mapping. See `to_swizzled_idx` for why this bounds the
+            persistent grid's remainder-tile imbalance across XCDs.
     """
 
     comptime elems_per_byte = 32 // Self.lane_bytes
@@ -88,10 +94,17 @@ struct PreShuffledBGroupedGEMM[
     comptime num_xcd = 8
     comptime total_wg = Self.cu_count * Self.wg_per_cu
     comptime wg_per_xcd = Self.total_wg // Self.num_xcd
+    comptime effective_xcd_stripe = (
+        Self.wg_per_xcd if Self.xcd_stripe == 0 else Self.xcd_stripe
+    )
 
     @always_inline
     @staticmethod
     def to_swizzled_idx(linear_idx: Int) -> Int:
+        comptime assert (
+            Self.wg_per_xcd % Self.effective_xcd_stripe == 0
+        ), "wg_per_xcd must be a multiple of xcd_stripe"
+
         # If we have 10 blocks and 8 xcd's the block scheduler assigns
         # a block to the xcd in this round robin fashion
 
@@ -109,9 +122,29 @@ struct PreShuffledBGroupedGEMM[
         # block_idx.x: 0 2 4 5 6 7 8 9
         # continued:   1 3
 
+        # The persistent grid-stride loop hands the *low* logical-index band
+        # `[0, total_tiles % total_wg)` one extra tile (each WG claims
+        # `logical_wg, logical_wg + total_wg, ...`). A fully contiguous
+        # per-XCD chunk (`xcd_linear_idx` ordered last, i.e. `xcd_stripe ==
+        # wg_per_xcd`) can put that entire remainder band inside a handful of
+        # XCDs' chunks, doubling half the chip's traffic while the other half
+        # idles (see PreShuffledBGroupedGEMM callers' attribution). Striping
+        # XCD assignment in blocks of `xcd_stripe` instead bounds that
+        # imbalance to `xcd_stripe` tiles regardless of `wg_per_xcd`, at a
+        # measured locality cost that grows as `xcd_stripe` shrinks (small
+        # but real from `wg_per_xcd` down to `xcd_stripe=2`; much larger at
+        # `xcd_stripe=1`). Which one wins net depends on the remainder as a
+        # *fraction* of the tile count for the shape actually launched, not
+        # on `xcd_stripe` alone — see the dispatcher callers' per-band notes.
         var xcd_idx = linear_idx % Self.num_xcd
         var xcd_linear_idx = linear_idx // Self.num_xcd
-        return xcd_idx * Self.wg_per_xcd + xcd_linear_idx
+        var superblock_id = xcd_linear_idx // Self.effective_xcd_stripe
+        var within_block = xcd_linear_idx % Self.effective_xcd_stripe
+        return (
+            superblock_id * (Self.num_xcd * Self.effective_xcd_stripe)
+            + xcd_idx * Self.effective_xcd_stripe
+            + within_block
+        )
 
     @staticmethod
     @__llvm_metadata(
