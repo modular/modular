@@ -329,9 +329,9 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     # a single partition (29), a BN=128 straddle (208), an aligned length
     # (1024), and split-K-heavy (5000).
     comptime if _mha_decode_fold_ok[dtype, depth, 16, 1, 4]():
-        # Single KV head: rows are contiguous heads, BM = num_heads*S = 32/48/64
-        # stacked over warp M-tiles. S=5 is excluded by `num_heads*S <= 4*WM`.
-        for seq_len in [2, 3, 4]:
+        # Single KV head: rows are contiguous heads, BM = num_heads*S = 32 to
+        # 128, stacked over 2 to 8 warp M-tiles. S=8 is the 1+7 verify step.
+        for seq_len in [2, 3, 4, 5, 6, 7, 8]:
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 29, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 208, ctx)
             test[dtype, depth=depth, num_heads=16, group=16](seq_len, 1024, ctx)
@@ -339,8 +339,9 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
         # One query head per KV head: rows are the S tokens and the Q/O row
         # stride becomes the BSHD token stride, which only num_heads > 1
         # exercises; the KV-head base term in the split-K stat write needs
-        # num_keys past one partition (1024/5000).
-        for seq_len in [2, 3, 4, 5]:
+        # num_keys past one partition (1024/5000). S=9 is an EAGLE3 step-0
+        # width at K=7.
+        for seq_len in [2, 3, 4, 5, 6, 7, 8, 9]:
             test[dtype, depth=depth, num_heads=16, group=1](seq_len, 29, ctx)
             test[dtype, depth=depth, num_heads=16, group=1](seq_len, 208, ctx)
             test[dtype, depth=depth, num_heads=16, group=1](seq_len, 1024, ctx)
@@ -376,14 +377,18 @@ def test_fold_eligibility() raises:
     assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 1, 5](), available)
     assert_equal(_mha_decode_fold_ok[bf16, 128, 4, 1, 5](), available)
     assert_equal(_mha_decode_fold_ok[bf16, 64, 16, 1, 4](), available)
+    # The EAGLE3 step-0 width at K=7, the reason the cap is 9.
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 1, 9](), available)
     # num_heads == 1 satisfies both arms' group predicate; the stacked one
     # rejects it (`1*S % 16 != 0`) so this is the narrow arm, where the token
     # and head row strides coincide (`_q_stride0` collapses to `q_depth`).
     assert_equal(_mha_decode_fold_ok[bf16, 128, 1, 1, 4](), available)
-    # Single KV head: rows are contiguous heads, so num_heads*S must tile 2 to 4
-    # 16-row warp M-tiles.
+    # Single KV head: rows are contiguous heads, so num_heads*S must tile 2 to 8
+    # 16-row warp M-tiles — 128 rows at the 1+7 verify step, 64 at half the heads.
     assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 2](), available)
     assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 4](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 16, 16, 8](), available)
+    assert_equal(_mha_decode_fold_ok[bf16, 128, 8, 8, 8](), available)
     # Ragged exempts the padded-batch exclusion.
     assert_equal(
         _mha_decode_fold_ok[
@@ -399,11 +404,13 @@ def test_fold_eligibility() raises:
     # S=1 is plain decode, not a fold arm.
     assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 1]())
     # Past `_MHA_DECODE_FOLD_MAX_S`.
-    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 6]())
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 1, 10]())
     # 1 < group < num_heads would need a token stride and a head stride at once.
     assert_false(_mha_decode_fold_ok[bf16, 128, 32, 4, 4]())
-    # Single KV head at S=5: num_heads*S = 80 exceeds 4 warp M-tiles.
-    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 16, 5]())
+    # Single KV head at S=9: num_heads*S = 144 exceeds 8 warp M-tiles.
+    assert_false(_mha_decode_fold_ok[bf16, 128, 16, 16, 9]())
+    # And 32 query heads exceed it from S=5 (160 rows).
+    assert_false(_mha_decode_fold_ok[bf16, 128, 32, 32, 5]())
     # depth > 128 is rejected for both arms by one shared conjunct, though the
     # reason is the single-KV-head arm's WN == BN register pressure.
     assert_false(_mha_decode_fold_ok[bf16, 256, 16, 16, 4]())

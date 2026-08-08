@@ -296,10 +296,8 @@ def flash_attention[
 # not a hardware limit. It must clear the largest query length a caller
 # DECLARES: for a 1+K speculative cycle that is K+2, not K+1 — the target
 # verifies K+1 tokens and an EAGLE3 draft's step-0 catch-up declares that width
-# plus one, so K=3 needs 5. Only `group == 1` has an arm at S=5, since
-# `group == num_heads` needs `num_heads*S <= 4*WM`, which no multiple-of-16 head
-# count satisfies there.
-comptime _MHA_DECODE_FOLD_MAX_S = 5
+# plus one, so K <= 7 needs 9.
+comptime _MHA_DECODE_FOLD_MAX_S = 9
 # One 16-row MFMA M-tile per warp.
 comptime _MHA_DECODE_FOLD_WM = 16
 
@@ -338,6 +336,11 @@ def _mha_decode_fold_ok[
     Returns:
         `True` when the token fold applies to this shape.
     """
+
+    # Warp M-tiles the single-KV-head arm may stack, one warp each. 8 fits a
+    # 16-query-head 1+7 verify (128 rows, 512 threads); its 96 KiB of LDS drops
+    # the CU to one CTA, but at twice the warps, so waves per CU hold.
+    comptime max_m_tiles = 8
 
     return (
         has_amd_gpu_accelerator()
@@ -383,12 +386,11 @@ def _mha_decode_fold_ok[
                 # M-tiles, so they must tile evenly and need two — at
                 # num_warps_m == 1 P stops being warp-local
                 # (`Attention._warp_local_p`) and falls back to the
-                # register-resident P chain never exercised there. The 4-tile
-                # ceiling is the single-token decode block size (256 threads).
+                # register-resident P chain never exercised there.
                 group == num_heads
                 and (num_heads * S) % _MHA_DECODE_FOLD_WM == 0
                 and num_heads * S >= 2 * _MHA_DECODE_FOLD_WM
-                and num_heads * S <= 4 * _MHA_DECODE_FOLD_WM
+                and num_heads * S <= max_m_tiles * _MHA_DECODE_FOLD_WM
             )
             or (
                 # One query head per KV head: a CTA owns just its S token rows,

@@ -449,8 +449,9 @@ def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
     """
     var max_seq_len_cache = 1024
 
-    # Uniform S, one kernel instantiation per S on the fold path.
-    for s in [2, 3, 4]:
+    # Uniform S, one kernel instantiation per S on the fold path. S=8 is the
+    # 1+7 verify step: 16 query heads over one KV head is BM = 128.
+    for s in [2, 3, 4, 5, 6, 7, 8]:
         var seq_lens = List[Int]()
         var cache_lens = List[Int]()
         for _ in range(4):
@@ -469,6 +470,14 @@ def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
         fold_num_q_heads, DType.bfloat16, kv_params_single_kv
     ](mixed_seq_lens, max_seq_len_cache, mixed_cache_lens, 2, 0, ctx)
 
+    # Same at the widest arm (S=8), where a short sequence's pad rows span
+    # warps rather than lanes.
+    var wide_mixed_seq_lens: List[Int] = [8, 1, 6, 3, 7]
+    var wide_mixed_cache_lens: List[Int] = [900, 512, 700, 1000, 613]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_single_kv
+    ](wide_mixed_seq_lens, max_seq_len_cache, wide_mixed_cache_lens, 2, 0, ctx)
+
     # Single sequence, and a cache length far short of the BN=128 key tile.
     var one_seq: List[Int] = [4]
     var one_cache: List[Int] = [29]
@@ -477,8 +486,8 @@ def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
     ](one_seq, max_seq_len_cache, one_cache, 2, 0, ctx)
 
     # `group == 1`: a folded CTA's rows are the S tokens, stepping by the BSHD
-    # token stride rather than by depth. S=5 is an EAGLE3 step-0 width at K=3.
-    for s in [2, 3, 4, 5]:
+    # token stride rather than by depth. S=5 and S=9 are EAGLE3 step-0 widths.
+    for s in [2, 3, 4, 5, 6, 7, 8, 9]:
         var one_q_seq_lens = List[Int]()
         var one_q_cache_lens = List[Int]()
         for _ in range(4):
@@ -489,15 +498,25 @@ def test_speculative_decode_query_lengths(ctx: DeviceContext) raises:
         ](one_q_seq_lens, max_seq_len_cache, one_q_cache_lens, 2, 0, ctx)
 
     # Non-uniform S at `group == 1` — the production case, since a step-0
-    # declares K+2 but feeds K+1 rows. Dispatching at S = max = 5 with four of
-    # the five sequences shorter exercises pad-row clamping on the token-strided
-    # path, where the dead rows sit `num_heads*depth` apart instead of adjacent.
-    var one_q_mixed_seq_lens: List[Int] = [5, 1, 4, 2, 3]
+    # declares K+2 but feeds K+1 rows. Exercises pad-row clamping where dead
+    # rows sit `num_heads*depth` apart instead of adjacent.
     var one_q_mixed_cache_lens: List[Int] = [900, 512, 700, 1000, 613]
+    var one_q_mixed_seq_lens: List[Int] = [5, 1, 4, 2, 3]
     execute_ragged_flash_attention[
         fold_num_q_heads, DType.bfloat16, kv_params_one_q_per_kv
     ](
         one_q_mixed_seq_lens,
+        max_seq_len_cache,
+        one_q_mixed_cache_lens,
+        2,
+        0,
+        ctx,
+    )
+    var one_q_wide_mixed_seq_lens: List[Int] = [9, 1, 8, 2, 6]
+    execute_ragged_flash_attention[
+        fold_num_q_heads, DType.bfloat16, kv_params_one_q_per_kv
+    ](
+        one_q_wide_mixed_seq_lens,
         max_seq_len_cache,
         one_q_mixed_cache_lens,
         2,
