@@ -1,0 +1,13 @@
+diff --git a/utils/bazel/llvm-project-overlay/libc/BUILD.bazel b/utils/bazel/llvm-project-overlay/libc/BUILD.bazel
+index 50b9a278144e..adda62b89fa4 100644
+--- a/utils/bazel/llvm-project-overlay/libc/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/libc/BUILD.bazel
+@@ -2724,7 +2724,7 @@ libc_support_library(
+         ],
+         "@platforms//os:macos": [
+             "src/__support/OSUtil/darwin/syscall.h",
+-            "src/__support/OSUtil/darwin/arm/syscall.h",
++            "src/__support/OSUtil/darwin/aarch64/syscall.h",
+         ],
+         "@platforms//os:windows": [],
+     }),

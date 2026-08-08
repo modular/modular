@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "21b0fc84c2f5fac1d3f763cfa581762684ad2a89"
+LLVM_COMMIT = "d280d7945f6986c53c3def59d31477857b5e18a7"
 
-LLVM_SHA = "c4d55430a963e1b939df42703d8328a2092d73c08ceffc897b3e65059bb4a047"
+LLVM_SHA = "180badf61522c92999dde633fac8a0bba58c89e81b1a661f33fa83a81df69580"
 # END_GENERATED
 
 PATCHES = [
@@ -31,6 +31,36 @@ PATCHES = [
     # unconditional glibc/macOS defines, which are correct for our builds
     # (we do not target musl).
     "//bazel/public-patches:llvm-config-musl-select.patch",
+    # OrcTargetProcess's OrcRTBootstrap.cpp now includes
+    # RTBridge/SPS/Calls.h (llvm/llvm-project#213265), which pulls in Core.h
+    # and, transitively, most of the top-level Orc/*.h headers plus
+    # JITLink/JITLinkDylib.h. TargetProcess depends on :OrcShared, not
+    # :OrcJIT/:JITLink (the targets that already glob those headers) --
+    # and can't depend on either without a dependency cycle, since both
+    # :OrcJIT and :JITLink already depend on :OrcTargetProcess (:JITLink
+    # also depends on :OrcShared directly). Mirror their header globs onto
+    # :OrcShared's hdrs (a plain file list, not a link dependency) so the
+    # headers are visible where they're actually included from; this is
+    # header-only exposure, the .cpp only uses header-defined type aliases,
+    # not anything requiring OrcJIT's/JITLink's .cpp-defined symbols.
+    "//bazel/public-patches:llvm-orcshared-sps-rtbridge-headers.patch",
+    # ARM TableGen Update (llvm/llvm-project#208380) replaced
+    # BuiltinsARM.def with BuiltinsARM.td/BuiltinsARMBase.td, generating
+    # BuiltinsARM.inc via clang-tblgen (mirroring BuiltinsAArch64's existing
+    # gentbl_cc_library). The CMake build picked up the new tablegen rule
+    # (clang/include/clang/Basic/CMakeLists.txt) but the Bazel overlay
+    # wasn't updated, so BuiltinsARM.inc was never generated. Add the
+    # missing td_library + gentbl_cc_library and wire it into the `basic`
+    # cc_library's deps, mirroring the AArch64 pattern exactly.
+    "//bazel/public-patches:llvm-clang-builtins-arm-tablegen.patch",
+    # The libc Bazel overlay's __support_osutil_syscall target lists
+    # "src/__support/OSUtil/darwin/arm/syscall.h" for macOS, but the actual
+    # directory (and the #include in darwin/syscall.h itself) is
+    # darwin/aarch64/, not darwin/arm/ -- this mismatch predates our update
+    # range but was previously unreached on macOS; something in this range
+    # newly pulls this target into the macOS build graph, surfacing a
+    # "missing input file" error. Fix the path to match the real directory.
+    "//bazel/public-patches:llvm-libc-darwin-aarch64-syscall.patch",
 ]
 
 def _llvm_source_impl(module_ctx):
