@@ -1633,13 +1633,13 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 # RoPE Ragged
 #
 # Expected kernel name format:
-# mo.rope.ragged
+# mo.composite.rope.ragged
 # ===-----------------------------------------------------------------------===#
 
 
-@extensibility.register("mo.rope.ragged")
+@extensibility.register("mo.composite.rope.ragged")
 struct Struct_rope_ragged_paged[interleaved: Bool]:
-    """Registers the `mo.rope.ragged` graph op with the graph compiler.
+    """Registers the `mo.composite.rope.ragged` graph op with the graph compiler.
 
     Parameters:
         interleaved: Whether RoPE pairs adjacent real and imaginary

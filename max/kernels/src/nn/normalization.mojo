@@ -76,7 +76,9 @@ from max.gpu.primitives.grid_controls import PDLLevel
 # Free-form row-wise scaffolder (Row) + monoids.
 from algorithm import rowwise
 from algorithm.reduce_op import ReduceMax, ReduceSum, Welford
+from ._ragged_utils import get_batch_from_row_offsets
 from .reshape import reshape
+from .rope import _rope
 from .shapes import _get_start_indices_of_nth_subvolume_static
 
 comptime _APPLE_STATIC_SHMEM_MAX_BYTES = 32 * 1024
@@ -3328,6 +3330,239 @@ def layer_norm[
         # `write` crosses into `elementwise` as a value arg; `mean`/`inv`/
         # `gamma`/`beta`/`output_fn` ride the value via its capture list.
         row.elementwise(write, load)
+
+    rowwise.launch[
+        axis=reduce_dim,
+        simd_width=simd_width,
+        target=target,
+        num_phases=2,
+        computationally_expensive=True,
+    ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# Row-based layer_norm_rope_ragged: mean + variance via Welford (layer_norm),
+# then a map scaled by gamma/beta that additionally applies ragged-position
+# RoPE (the same absolute-position lookup as rope_ragged, via the interleaved
+# complex multiply from rope.mojo's `_rope`) to the row's leading `rope_dim`
+# columns; the remaining columns pass through unrotated. `rope_dim` comes
+# from `freqs_cis`'s own width, matching rope_ragged's own convention.
+# ===----------------------------------------------------------------------=== #
+
+
+def layer_norm_rope_ragged[
+    input_dtype: DType,
+    output_dtype: DType,
+    freq_dtype: DType,
+    rank: Int,
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int, coord_rank: Int
+        ](IndexList[coord_rank]) -> SIMD[input_dtype, width]
+    ),
+    OutputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: SIMDLength, rank: Int, alignment: Int
+        ](IndexList[rank], SIMD[output_dtype, width]) -> None
+    ),
+    AxisSizeT: CoordLike,
+    /,
+    target: StaticString,
+    interleaved: Bool,
+    reduce_dim: Int = rank - 1,
+](
+    input_fn: InputFn,
+    output_fn: OutputFn,
+    shape: Coord,
+    axis_size: AxisSizeT,
+    gamma: TileTensor[mut=False, input_dtype, ...],
+    beta: TileTensor[mut=False, input_dtype, ...],
+    epsilon: Scalar[input_dtype],
+    input_row_offsets: TileTensor[DType.uint32, ...],
+    start_pos: TileTensor[DType.uint32, ...],
+    freqs_cis: TileTensor[freq_dtype, ...],
+    context: Optional[DeviceContext] = None,
+) raises:
+    # TODO(feras): non-interleaved RoPE needs the far-partner row-cache
+    # lookup rms_norm_rope uses for its rotate-half, not yet implemented here.
+    comptime assert (
+        interleaved
+    ), "layer_norm_rope_ragged: non-interleaved RoPE is not implemented"
+    comptime accum = get_accum_type[input_dtype]()
+    comptime assert accum.is_floating_point(), "layer_norm requires fp accum"
+    comptime assert freqs_cis.LayoutType._shape_types[
+        1
+    ].is_static_value, "Need static rope_dim for freqs_cis"
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
+    comptime simd_width_cand = rowwise.pick_simd_width[
+        Welford[accum, 1], target, 96, input_dtype, accum
+    ]()
+    # A SIMD tile must sit wholly within the roped region or wholly within
+    # the passthrough region -- never straddle the boundary -- so `rope_dim`
+    # must be simd-width-divisible; otherwise fall back to scalar.
+    comptime simd_width = simd_width_cand if (
+        rope_dim % simd_width_cand == 0
+    ) else 1
+
+    @always_inline
+    def body[
+        params: rowwise.ContextParams
+    ](row_coords: Coord, mut ctx_p: rowwise.Context[params]) {
+        var axis_size,
+        var gamma,
+        var beta,
+        var epsilon,
+        var input_fn,
+        var output_fn,
+        var input_row_offsets,
+        var start_pos,
+        var freqs_cis,
+    }:
+        comptime row_rank = row_coords.rank
+
+        @always_inline
+        def load[
+            width: Int, alignment: Int, coord_rank: Int
+        ](idx: IndexList[coord_rank]) {var input_fn} -> SIMD[
+            input_dtype, width
+        ]:
+            return input_fn[width, alignment, row_rank](
+                rebind[IndexList[row_rank]](idx)
+            )
+
+        var row = rowwise.Row[
+            params, accum, input_dtype, reduce_dim, row_rank, is_cached=True
+        ](row_coords, axis_size, ctx_p, load)
+
+        @always_inline
+        def cast_to_accum[
+            width: Int
+        ](tile: SIMD[input_dtype, width], idx: IndexList[row_rank]) {} -> SIMD[
+            accum, width
+        ]:
+            return tile.cast[accum]()
+
+        var stats = row.reduce[Welford[accum, params.simd_width]](
+            cast_to_accum, load
+        )
+        var mean = stats.mean
+        var inv = rsqrt(stats.M2 / stats.count + epsilon.cast[accum]())
+
+        comptime g_stride = 1 if reduce_dim == rank - 1 else 0
+
+        # Ragged absolute position, resolved once per row (shared by every
+        # column) -- same lookup rope_ragged's own kernel does per element.
+        var row_idx = coord_to_index_list(row_coords)
+        var global_token_idx = row_idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = Int(
+            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        )
+        var position_idx = Int(start_pos[batch_idx]) + token_idx
+
+        # Cache: normalize and scale/shift by gamma/beta, staged into shared
+        # memory so `write` can be a pure per-tile map (no partner lookups
+        # needed -- interleaved RoPE pairs adjacent lanes within one tile).
+        @always_inline
+        def normalize[
+            width: Int
+        ](tile: SIMD[input_dtype, width], idx: IndexList[row_rank]) {
+            var gamma,
+            var beta,
+            var mean,
+            var inv,
+        } -> SIMD[output_dtype, width]:
+            comptime alignment = align_of[SIMD[input_dtype, width]]()
+            var col = idx[reduce_dim]
+            var gamma_val = strided_load[width, g_stride, alignment=alignment](
+                gamma.ptr_at_offset(Coord(IndexList[1](col)))
+            ).cast[accum]()
+            var beta_val = strided_load[width, g_stride, alignment=alignment](
+                beta.ptr_at_offset(Coord(IndexList[1](col)))
+            ).cast[accum]()
+            var out = (tile.cast[accum]() - mean.slice[width]()) * inv.slice[
+                width
+            ]() * gamma_val + beta_val
+            return out.cast[output_dtype]()
+
+        var normed = row.cache[output_dtype, shared=True](normalize)
+
+        # Emit: passthrough for columns >= rope_dim; interleaved complex-
+        # multiply RoPE (rope.mojo's `_rope`) for columns < rope_dim. The
+        # block/warp-tier reduce can still dispatch a scalar (width=1) tail
+        # tile even when `simd_width` divides `rope_dim`, since the tail is
+        # governed by the row's total length, not `rope_dim` alone -- that
+        # tile holds one column, not a full (re, im) pair, so `_rope`'s
+        # in-register deinterleave doesn't apply. Read the missing partner
+        # straight from the staged row cache instead (mirrors
+        # row_rms_norm_rope's rotate-half partner load).
+        @always_inline
+        def write[
+            width: Int
+        ](nc: SIMD[output_dtype, width], idx: IndexList[row_rank]) {
+            var normed,
+            var load,
+            var normalize,
+            var freqs_cis,
+            var position_idx,
+            var output_fn,
+            var ctx_p,
+        }:
+            comptime alignment = ctx_p.element_alignment[output_dtype, width]()
+            var col = idx[reduce_dim]
+            var result: SIMD[output_dtype, width]
+            if col < rope_dim:
+                comptime if width == 1:
+                    var pair_base = (col // 2) * 2
+                    var im_c = pair_base + 1
+                    var is_re = col == pair_base
+                    var partner_idx = idx
+                    partner_idx[reduce_dim] = im_c if is_re else pair_base
+                    var partner = normed.load[1](
+                        rebind[IndexList[row_rank]](partner_idx),
+                        load,
+                        normalize,
+                    ).cast[freq_dtype]()
+                    var self_val = nc.cast[freq_dtype]()
+                    var x_re = self_val if is_re else partner
+                    var x_im = partner if is_re else self_val
+                    var f_re = freqs_cis.load[width=1, alignment=1](
+                        (
+                            Scalar[freqs_cis.linear_idx_type](position_idx),
+                            Scalar[freqs_cis.linear_idx_type](pair_base),
+                        )
+                    )
+                    var f_im = freqs_cis.load[width=1, alignment=1](
+                        (
+                            Scalar[freqs_cis.linear_idx_type](position_idx),
+                            Scalar[freqs_cis.linear_idx_type](im_c),
+                        )
+                    )
+                    var result_re = x_re * f_re - x_im * f_im
+                    var result_im = x_re * f_im + x_im * f_re
+                    var out_val = result_re if is_re else result_im
+                    result = out_val.cast[output_dtype]()
+                else:
+                    var freq_val = freqs_cis.load[width=width, alignment=1](
+                        (
+                            Scalar[freqs_cis.linear_idx_type](position_idx),
+                            Scalar[freqs_cis.linear_idx_type](col),
+                        )
+                    )
+                    result = _rope(nc, freq_val)
+            else:
+                result = nc
+            output_fn[width, rank, alignment](
+                rebind[IndexList[rank]](idx), result
+            )
+
+        row.elementwise(normed, write, load, normalize)
 
     rowwise.launch[
         axis=reduce_dim,
