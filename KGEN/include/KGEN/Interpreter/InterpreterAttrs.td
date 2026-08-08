@@ -226,11 +226,24 @@ def MemoryModelAttr : InterpreterAttr<"MemoryModel", "model"> {
     representation. The entries in the memory space can reference
     the symbol table and the symbols in the symbol table can reference
     the blobs of a memory space.
+
+    `selfBlobIndex`, when set, is the blob holding the interpreter storage the
+    value carrying this model was read out of. Pointers into that blob are
+    references to the value's own storage: materializing the value has to point
+    them at wherever the value lands, not rebuild the blob as a second object.
   }];
-  let parameters = (ins "MemorySpaceAttr":$memory, "SymbolArrayAttr":$symbols);
+  let parameters = (ins "MemorySpaceAttr":$memory, "SymbolArrayAttr":$symbols,
+                        OptionalParameter<"std::optional<int64_t>">:$selfBlobIndex);
   let assemblyFormat = [{
-      `{` $memory `,` $symbols `}`
+      `{` $memory `,` $symbols (`,` `self` `=` $selfBlobIndex^)? `}`
   }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "MemorySpaceAttr":$memory,
+                                        "SymbolArrayAttr":$symbols), [{
+      return $_get(memory.getContext(), memory, symbols, std::nullopt);
+    }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//

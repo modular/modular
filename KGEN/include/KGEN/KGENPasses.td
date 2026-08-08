@@ -357,6 +357,32 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
 }
 
 //===----------------------------------------------------------------------===//
+// UpdateMaterialization
+//===----------------------------------------------------------------------===//
+
+def UpdateMaterialization : Pass<"update-materialization"> {
+  let summary = "Adjust materialized comptime values for their runtime home.";
+  let description = [{
+    Elaboration emits comptime values as `kgen.param.materialize`. A value can
+    describe itself in terms that hold only inside the interpreter, and needs
+    adjusting once it has a runtime home. This pass collects those adjustments.
+
+    Resolve self-referential materialize: a value holding a pointer into the
+    interpreter storage it was built in -- a struct with a small buffer plus a
+    pointer to that buffer, for instance -- records that pointer as a reference
+    to the storage. Where the value is stored to a known destination, the
+    reference is dropped and the pointer written relative to that destination,
+    so it refers to the materialized object.
+
+    This runs before `SROA`/`Mem2Reg`: until the pointers refer to the
+    destination, the destination's address does not appear to escape and the
+    object can be scalarized out from under them.
+  }];
+
+  let dependentDialects = ["POP::POPDialect", "mlir::index::IndexDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // SetFastMathFlags
 //===----------------------------------------------------------------------===//
 

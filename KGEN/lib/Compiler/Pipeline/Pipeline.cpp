@@ -168,6 +168,12 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   // pipeline.
   pm.addPass(createKGENVerifierPass(
       KGENVerifierPassOptions{/*useMLIRVerifierOnly=*/true}));
+
+  // Point materialized comptime values at their own storage before SROA and
+  // Mem2Reg run: while their pointers still refer to interpreter storage, the
+  // destination's address does not appear to escape and can be scalarized away.
+  pm.addPass(createUpdateMaterialization());
+
   buildFirstOptPipeline(pm, options);
   buildLateOptPipeline(pm, options);
 }

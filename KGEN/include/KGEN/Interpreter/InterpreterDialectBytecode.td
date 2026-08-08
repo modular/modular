@@ -64,9 +64,15 @@ def SymbolArrayAttr : DialectAttribute<(attr
   TypedAttrArray:$value
 )>;
 
+def OptionalIndex :
+  WithParser<"succeeded(readOptionalIndex($_reader, $_var))",
+  WithPrinter<"writeOptionalIndex($_writer, $_getter)",
+  WithType<"std::optional<int64_t>">>>;
+
 def MemoryModelAttr : DialectAttribute<(attr
   MemorySpaceAttr:$memory,
-  SymbolArrayAttr:$symbols
+  SymbolArrayAttr:$symbols,
+  OptionalIndex:$selfBlobIndex
 )>;
 
 def CoordinateAttr : DialectAttribute<(attr
