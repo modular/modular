@@ -1567,12 +1567,21 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       }
 
       // Parse a thrown type if specified.  Signatures can exist in function
-      // declarations but also in function types "def () raises X" etc, which
-      // means we have to be a bit careful about parsing the thing after
-      // 'raises' as a thrown type when it isn't.
+      // declarations but also in function types like "def () raises X", so
+      // we have to be careful about parsing the thing after 'raises' as a
+      // thrown type when it isn't.  The thrown type is any primary
+      // expression (a dotted name, `Self.AssocType`, a parenthesized union,
+      // etc.), so the guard should mirror the set of tokens that
+      // `parsePrimaryExpr` itself accepts.  Two exceptions:
+      //   - Another effect keyword (`capturing`, `where`, ...) means there
+      //     is no thrown type — the outer loop handles the next effect.
+      //   - `{` starts a `raises {captures}` capture list, parsed later by
+      //     `parseCaptureList`; it must not be consumed here as a set
+      //     literal thrown type.
+      Token::Kind nextKind = p.getToken().getKind();
       if (!isEffectKeywordOrWhere(p.getTokenSpelling()) &&
-          !p.getToken().isStartOfLine() &&
-          (p.getToken().isIdentifier() || p.getToken().is(Token::l_paren))) {
+          !p.getToken().isStartOfLine() && nextKind != Token::l_brace &&
+          ParserBase::isPrimaryExprStart(nextKind)) {
         (void)p.parseExpression(thrownTypeExpr, /*stmtIndent=*/std::nullopt,
                                 ParserBase::Precedence::kPrimary);
       }

@@ -277,6 +277,12 @@ public:
     kHighest = kPrimary
   };
 
+  /// Return true if `tokKind` can start a primary expression (i.e. the set of
+  /// tokens `parsePrimaryExpr` accepts as its leading token).  This lets
+  /// callers decide whether the upcoming token begins an expression without
+  /// committing to actually parsing one.
+  static bool isPrimaryExprStart(Token::Kind tokKind);
+
   /// Expression parsing.  Each of these take a `stmtIndent` specifier that
   /// indicates the indentation level of the start of the statement that
   /// contains this expression if the expression can exist at the end of the
