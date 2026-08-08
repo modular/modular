@@ -18,6 +18,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
@@ -318,8 +319,10 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
   // having to create a bunch of IR.
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
+    llvm::DataLayout dataLayout(state.getTarget().getDataLayout().toString());
     result = ConstantFoldIntrinsic(
-        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy);
+        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy,
+        dataLayout);
   }
 
   if (!result) {
@@ -442,8 +445,10 @@ CallLLVMIntrinsicOp::parametric_interpret(ArrayRef<Attribute> operands,
   // having to create a bunch of IR.
   llvm::Constant *result = nullptr;
   if (loweredOperands.size() == 2) {
+    llvm::DataLayout dataLayout(state.getTarget().getDataLayout().toString());
     result = ConstantFoldIntrinsic(
-        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy);
+        id, {loweredOperandsCst[0], loweredOperandsCst[1]}, resultTy,
+        dataLayout);
   }
 
   if (!result) {
