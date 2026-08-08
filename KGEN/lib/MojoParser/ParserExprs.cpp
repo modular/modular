@@ -382,7 +382,7 @@ ParseResult ExprParser::parseComparisonExpr(ExprNode *&result, ExprNode *rhs,
 
 /// Return true if the specified token kind is the start of a primary
 /// expression.
-static bool isPrimaryExprToken(Token::Kind tokKind) {
+bool ParserBase::isPrimaryExprStart(Token::Kind tokKind) {
   switch (tokKind) {
   case Token::plus:
   case Token::minus:
@@ -664,9 +664,9 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     return failure();
   }
 
-  // Check isPrimaryExprToken agrees with the cases above.
-  assert(isPrimaryExprToken(startTok.getKind()) &&
-         "isPrimaryExprToken out of sync with grammar above");
+  // Check isPrimaryExprStart agrees with the cases above.
+  assert(ParserBase::isPrimaryExprStart(startTok.getKind()) &&
+         "isPrimaryExprStart out of sync with grammar above");
 
   // Parse postfix productions so long as they aren't the start of the next
   // statement.
@@ -701,7 +701,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
       auto loc = consumeToken(Token::caret).getLoc();
 
       // We know this is a binary ^ if there is a primary expression after it.
-      if (isPrimaryExprToken(getToken().getKind()) &&
+      if (ParserBase::isPrimaryExprStart(getToken().getKind()) &&
           isTokenInCurrentStatement()) {
         cursor.restore(lexer);
         break;

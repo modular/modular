@@ -712,6 +712,15 @@ def call_parametric_raise_example[GenTy: AnyType](func_ptr: def () thin raises G
     parametric_raise_example(doesnt_raise)
 
 
+# A parametric-raises trait method may name its thrown type via
+# `Self.<AssociatedType>`.
+trait HasAssociatedErrorType:
+    comptime E: AnyType
+
+    def do_it(self) raises Self.E:
+        ...
+
+
 struct CutDownDict[V: Copyable](Movable where False):
     # Throws an error that converts to Error. We don't care what it is, so long
     # as it isn't Error specifically.
