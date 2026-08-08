@@ -193,3 +193,12 @@ modular_py_test(
         ":collect_scores",
     ],
 )
+
+modular_py_test(
+    name = "test_eval_common",
+    size = "small",
+    srcs = ["test_eval_common.py"],
+    deps = [
+        ":eval_common",
+    ],
+)
