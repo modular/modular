@@ -488,6 +488,10 @@ _FILECHECK_TESTS = [
             # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
             # declared explicitly below.
             "attention/test_mha_sm100_materialized_mask.mojo",
+            # Non-WS short-trailing-tile V page fill: uses
+            # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
+            # declared explicitly below.
+            "attention/test_mha_sm100_nonws_partial_v_pages.mojo",
             # Apple-only decode-attention correctness gate (needs the
             # //max:kv_cache dep and an Apple-GPU-only constraint; declared
             # explicitly below).
@@ -517,6 +521,29 @@ mojo_test(
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     exec_properties = {
         "test.resources:gpu-memory": "3",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "attention/test_mha_sm100_nonws_partial_v_pages.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_nonws_partial_v_pages.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
