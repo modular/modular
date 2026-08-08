@@ -2755,12 +2755,12 @@ def msa_sparse_indexer(
             ``[num_index_heads, max_rows, MAX_NUM_BLOCKS]``. ``max_rows`` must
             cover ``total_q`` for every decode step served: ``max_batch`` for
             single-token decode, and ``max_batch * (num_draft_tokens + 1)`` for
-            the multi-token (MTP / speculative) route, which writes at the
+            the multi-token (MTP / speculative) routes, which write at the
             ragged row ``input_row_offsets[b] + t``. It is persistent because
             decode runs inside the graph-capture region, so the kernel cannot
             allocate a correctly sized buffer per step; a scratch too narrow for
-            the multi-token route makes that step fall back to the prefill
-            indexer instead.
+            a multi-token route makes that step fall back to the prefill
+            indexer, while single-token decode raises.
         num_index_heads: Number of index (query) heads.
         idx_head_dim: Index head dimension.
         block_size: KV block size in tokens (== page size).
