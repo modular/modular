@@ -64,13 +64,15 @@ ErrorTreeOr<TypedAttr> ParametricInterpreterState::executeRegionWithResultSlot(
     return addStackTrace(result.takeError());
   }
 
-  ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
-      cast<PointerAttr>(resultSlotAttr).getAddr(), cast<Type>(resultValue));
+  int64_t resultSlotAddr = cast<PointerAttr>(resultSlotAttr).getAddr();
+  ErrorOr<TypedAttr> resultOr =
+      readAttributeFromMemory(resultSlotAddr, cast<Type>(resultValue));
   if (resultOr.isError())
     return ErrorTree(loc, resultOr.takeError());
   TypedAttr value = resultOr.takeValue();
 
-  if (ErrorOrSuccess err = externalizeMemory(value); err.isError())
+  if (ErrorOrSuccess err = externalizeMemory(value, resultSlotAddr);
+      err.isError())
     return ErrorTree(region.getLoc(), err.takeError());
   return value;
 }

@@ -84,5 +84,6 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();
   KGEN::registerResolveCompilerPromises();
+  KGEN::registerUpdateMaterialization();
   KGEN::registerInferFunctionAttrs();
 }

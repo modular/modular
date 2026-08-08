@@ -62,6 +62,23 @@ static void writeAlignedBlob(DialectBytecodeWriter &writer, AlignedBlob blob) {
   writer.writeOwnedBool(blob.isString);
 }
 
+static LogicalResult readOptionalIndex(DialectBytecodeReader &reader,
+                                       std::optional<int64_t> &index) {
+  int64_t value;
+  if (failed(reader.readSignedVarInt(value)))
+    return failure();
+  // -1 encodes an absent index; anything below it is malformed.
+  if (value < -1)
+    return failure();
+  index = value < 0 ? std::nullopt : std::optional<int64_t>(value);
+  return success();
+}
+
+static void writeOptionalIndex(DialectBytecodeWriter &writer,
+                               std::optional<int64_t> index) {
+  writer.writeSignedVarInt(index.value_or(-1));
+}
+
 static LogicalResult
 readPointerRegions(DialectBytecodeReader &reader,
                    SmallVectorImpl<PointerRegion> &regions) {

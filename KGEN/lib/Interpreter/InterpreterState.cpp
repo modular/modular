@@ -545,7 +545,8 @@ handleMarkedRegions(function_ref<void(int)> indexHandler,
 }
 
 ErrorOrSuccess
-InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
+InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results,
+                                    std::optional<int64_t> selfStorageAddr) {
   // Lazily materialize interpreter memory.
   MemorySpaceAttr interpreterMemorySpace;
   DenseMap<const MemoryBlob *, int64_t> blobIndices;
@@ -624,6 +625,26 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
   for (unsigned index = 0, e = symbols.size(); index < e; ++index)
     symbols[index] = ::cast<TypedAttr>(symbolReplacer.replace(symbols[index]));
 
+  // The blob holding the storage the results were read out of, if known.
+  auto getSelfBlobIndex = [&]() -> std::optional<int64_t> {
+    if (!selfStorageAddr)
+      return std::nullopt;
+    ErrorOr<std::pair<MemoryBlob &, int64_t>> mem =
+        getMemory(*selfStorageAddr, 0);
+    if (mem.isError())
+      return std::nullopt;
+    auto [blob, offset] = mem.takeValue();
+    // Self references are recorded as offsets into the blob but get written
+    // relative to wherever the value is materialized, so the two only agree
+    // when the value starts at the blob. Record nothing otherwise.
+    if (offset != 0)
+      return std::nullopt;
+    auto it = blobIndices.find(&blob);
+    if (it == blobIndices.end())
+      return std::nullopt;
+    return it->second;
+  };
+
   // Replace raw pointers in the results except for null pointers. Error if a
   // reference to invalid memory is returned from the function.
   mlir::AttrTypeReplacer replacer;
@@ -635,11 +656,18 @@ InterpreterState::externalizeMemory(MutableArrayRef<Attribute> results) {
       return ptr;
     auto [blob, offset] = mem.takeValue();
     MemorySpaceAttr space = getOrMaterializeMemory();
+    // Only mark a reference that points into the storage the value itself was
+    // read out of; every other reference is to unrelated memory.
+    int64_t blobIndex = blobIndices.at(&blob);
+    std::optional<int64_t> selfBlobIndex = getSelfBlobIndex();
+    if (selfBlobIndex != blobIndex)
+      selfBlobIndex = std::nullopt;
     return MemRefAttr::get(
         ptr.getContext(),
         MemoryModelAttr::get(ptr.getContext(), space,
-                             SymbolArrayAttr::get(ptr.getContext(), symbols)),
-        blobIndices.at(&blob), offset, ptr.getType());
+                             SymbolArrayAttr::get(ptr.getContext(), symbols),
+                             selfBlobIndex),
+        blobIndex, offset, ptr.getType());
   });
 
   for (Attribute &result : results) {
@@ -875,13 +903,13 @@ ErrorOr<TypedAttr> InterpreterState::loadAttributeFromMemRef(MemRefAttr memref,
   Attribute attr = memref;
   if (ErrorOrSuccess err = internalizeMemory(attr))
     return err.takeError();
-  ErrorOr<TypedAttr> attrOr =
-      readAttributeFromMemory(cast<PointerAttr>(attr).getAddr(), type);
+  int64_t sourceAddr = cast<PointerAttr>(attr).getAddr();
+  ErrorOr<TypedAttr> attrOr = readAttributeFromMemory(sourceAddr, type);
   if (attrOr.isError())
     return attrOr.takeError();
   SmallVector<Attribute> results;
   results.push_back(attrOr.takeValue());
-  if (ErrorOrSuccess errorMaybe = externalizeMemory(results))
+  if (ErrorOrSuccess errorMaybe = externalizeMemory(results, sourceAddr))
     return errorMaybe.takeError();
   Attribute result = results.front();
   return ::cast<TypedAttr>(result);
@@ -968,13 +996,15 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   if (result)
     return addStackTrace(result.takeError());
 
-  ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
-      cast<PointerAttr>(resultSlotAttr).getAddr(), cast<Type>(resultValue));
+  int64_t resultSlotAddr = cast<PointerAttr>(resultSlotAttr).getAddr();
+  ErrorOr<TypedAttr> resultOr =
+      readAttributeFromMemory(resultSlotAddr, cast<Type>(resultValue));
   if (resultOr.isError())
     return ErrorTree(loc, resultOr.takeError());
   TypedAttr value = resultOr.takeValue();
 
-  if (ErrorOrSuccess err = externalizeMemory(value); err.isError())
+  if (ErrorOrSuccess err = externalizeMemory(value, resultSlotAddr);
+      err.isError())
     return ErrorTree(region.getLoc(), err.takeError());
   return value;
 }

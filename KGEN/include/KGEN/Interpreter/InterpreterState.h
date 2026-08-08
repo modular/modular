@@ -230,7 +230,14 @@ public:
 
   /// Exchange raw pointers to interpreter memory to dialect resource references
   /// upon exit from the interpreter.
-  ErrorOrSuccess externalizeMemory(MutableArrayRef<Attribute> results);
+  ///
+  /// `selfStorageAddr`, when given, is the address the results were read out
+  /// of. Pointers into that storage are references to the value's own memory,
+  /// and are recorded on the memory model so materialization can point them at
+  /// the value's runtime home instead of rebuilding the storage.
+  ErrorOrSuccess
+  externalizeMemory(MutableArrayRef<Attribute> results,
+                    std::optional<int64_t> selfStorageAddr = std::nullopt);
 
   /// Load a single attribute from memory from a memref.
   virtual ErrorOr<TypedAttr> loadAttributeFromMemRef(MemRefAttr memref,
