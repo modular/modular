@@ -795,6 +795,78 @@ class CompositeGroupedMatmulSwigluNvfp4Op(max._core.Operation):
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
+class CompositeLayerNormRopeRaggedOp(max._core.Operation):
+    """
+    Fused operation computing LayerNorm followed by ragged RoPE applied to a
+    leading slice of the normalized output, with the remaining columns passed
+    through unrotated:
+
+      normed = layer_norm(input, gamma, beta, epsilon)
+      roped, passthrough = split(normed, axis=-1)
+      roped = rope.ragged(roped, input_row_offsets, start_pos, freqs_cis)
+      result = concat(roped, passthrough, axis=-1)
+
+    The RoPE width is taken from `freqsCis`'s last dimension.
+
+    Example:
+
+    ```mlir
+      %result = mo.composite.layer_norm_rope_ragged(%input, %gamma, %beta,
+                                                     %epsilon, %row_offsets,
+                                                     %start_pos, %freqs_cis)
+        {interleaved = false} :
+        (!mo.tensor<[8, 128], bf16, gpu:0>, !mo.tensor<[128], f32, gpu:0>,
+         !mo.tensor<[128], f32, gpu:0>, !mo.tensor<[], f32>,
+         !mo.tensor<[batch_plus_one], ui32, gpu:0>, !mo.tensor<[batch], ui32, gpu:0>,
+         !mo.tensor<[1024, 64], f32, gpu:0>)
+        -> !mo.tensor<[8, 128], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        beta: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        input_row_offsets: max._core.Value[TensorType],
+        start_pos: max._core.Value[TensorType],
+        freqs_cis: max._core.Value[TensorType],
+        interleaved: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def beta(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_row_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def start_pos(self) -> max._core.Value[TensorType]: ...
+    @property
+    def freqs_cis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def interleaved(self) -> bool: ...
+    @interleaved.setter
+    def interleaved(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class CompositeMaskedFlashAttentionCpuOp(max._core.Operation):
     """
     Fused scaled-dot-product attention (`softmax(Q @ K^T * scale + mask) @ V`)
@@ -1225,6 +1297,62 @@ class CompositeRmsNormRopeOp(max._core.Operation):
     def multiply_before_cast(self) -> bool: ...
     @multiply_before_cast.setter
     def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
+class CompositeRopeRaggedOp(max._core.Operation):
+    """
+    Applies Rotary Position Embedding (RoPE) to `input`, a ragged batch of
+    tokens. Per-token absolute positions are derived from `inputRowOffsets`
+    (the ragged batch boundaries) and `startPos` (each sequence's current
+    cache length) and used to index `freqsCis`. When `freqsCis`'s last
+    dimension is smaller than `input`'s, RoPE is applied only to the
+    trailing `freqsCis` columns of each head and the leading columns pass
+    through unrotated.
+
+    Example:
+
+    ```mlir
+      %result = mo.composite.rope.ragged(%input, %row_offsets, %start_pos,
+                                          %freqs_cis) {interleaved = false} :
+        (!mo.tensor<[8, 1, 64], bf16, gpu:0>, !mo.tensor<[batch_plus_one], ui32, gpu:0>,
+         !mo.tensor<[batch], ui32, gpu:0>, !mo.tensor<[1024, 64], f32, gpu:0>)
+        -> !mo.tensor<[8, 1, 64], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        input_row_offsets: max._core.Value[TensorType],
+        start_pos: max._core.Value[TensorType],
+        freqs_cis: max._core.Value[TensorType],
+        interleaved: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def input_row_offsets(self) -> max._core.Value[TensorType]: ...
+    @property
+    def start_pos(self) -> max._core.Value[TensorType]: ...
+    @property
+    def freqs_cis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def interleaved(self) -> bool: ...
+    @interleaved.setter
+    def interleaved(
         self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
     @property

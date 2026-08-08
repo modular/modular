@@ -2294,27 +2294,19 @@ def rope_ragged(
     if freqs_cis.device != input.device:
         freqs_cis = freqs_cis.to(input.device)
 
-    parameters: dict[str, bool | int | str | DType] = {
-        "interleaved": interleaved,
-    }
-
-    return ops.custom(
-        "mo.rope.ragged",
-        device=input.device,
-        values=[
-            input,
-            input_row_offsets,
-            start_pos,
-            freqs_cis,
-        ],
-        out_types=[
-            TensorType(
-                dtype=output_dtype if output_dtype is not None else input.dtype,
-                shape=input.shape,
-                device=input.device,
-            )
-        ],
-        parameters=parameters,
+    return Graph.current._add_op_generated(
+        mo.CompositeRopeRaggedOp,
+        result=TensorType(
+            dtype=output_dtype if output_dtype is not None else input.dtype,
+            shape=input.shape,
+            device=input.device,
+        ),
+        input=input,
+        input_row_offsets=input_row_offsets,
+        start_pos=start_pos,
+        freqs_cis=freqs_cis,
+        interleaved=builtin.BoolAttr(interleaved),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 

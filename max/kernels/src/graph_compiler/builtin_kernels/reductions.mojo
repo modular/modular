@@ -44,6 +44,7 @@ from nn.normalization import (
     apply_qk_rms_norm,
     group_norm,
     layer_norm,
+    layer_norm_rope_ragged,
     rms_norm_fused_residual_add,
     rms_norm_rope,
     rms_norm,
@@ -1260,6 +1261,147 @@ def composite_rms_norm_rope_shape[
             `input` rank.
         sin_vals: Sine table used by the RoPE rotation, matching `input`
             rank.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
+    return input.shape()
+
+
+@extensibility.register("mo.composite.layer_norm_rope_ragged")
+struct LayerNormRopeRagged:
+    """Registers the `mo.composite.layer_norm_rope_ragged` graph op with the graph compiler.
+
+    Fuses LayerNorm with ragged RoPE applied to the leading `freqs_cis`-width
+    columns of the normalized output; the remaining columns pass through
+    unrotated.
+    """
+
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        freq_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        interleaved: Bool,
+    ](
+        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        beta: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Float32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Gamma size does not match dimension of reduction.")
+        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Beta size does not match dimension of reduction.")
+
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            input_dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
+            var output
+        }:
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if ln_cols != UNKNOWN_VALUE:
+            layer_norm_rope_ragged[
+                input_dtype,
+                output_dtype,
+                freq_dtype,
+                rank,
+                target=target,
+                interleaved=interleaved,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[ln_cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                start_pos.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            layer_norm_rope_ragged[
+                input_dtype,
+                output_dtype,
+                freq_dtype,
+                rank,
+                target=target,
+                interleaved=interleaved,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                start_pos.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+
+
+@extensibility.register_shape_function("mo.composite.layer_norm_rope_ragged")
+def composite_layer_norm_rope_ragged_shape[
+    dtype: DType,
+    freq_dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    beta: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Float32,
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+    freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+) -> IndexList[rank]:
+    """Computes the output shape for the `mo.composite.layer_norm_rope_ragged` graph op.
+
+    Parameters:
+        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
+        freq_dtype: Element type of the `freqs_cis` RoPE table.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Activation tensor normalized by LayerNorm then partially
+            rotated by ragged RoPE.
+        gamma: Per-column scale weights applied after normalization.
+        beta: Per-column shift weights applied after scaling.
+        epsilon: Small constant added inside the normalization variance for
+            numerical stability.
+        input_row_offsets: Ragged batch boundaries.
+        start_pos: Per-sequence cache length used for the RoPE position
+            lookup.
+        freqs_cis: RoPE frequency table; its width sets the rotated prefix.
 
     Returns:
         The output shape, which matches the `input` shape.
