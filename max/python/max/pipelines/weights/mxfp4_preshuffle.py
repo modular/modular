@@ -20,12 +20,11 @@ DRAM->VGPR loads. Model weight adapters call
 lockstep and flip ``QuantConfig.mxfp4_preshuffled_b`` so ``MoEQuantized``
 dispatches to the preb path.
 
-Matches expert weights named ``...layers.N.mlp.experts.IDX.{gate,up,down}_proj``;
-weights whose dtype/dims aren't MX-packed and tile-aligned are skipped. NOTE
-the caller flips ``mxfp4_preshuffled_b`` for the whole config regardless, so a
-PARTIALLY shuffled expert group would be read as if fully permuted; the helpers
-below raise on that case rather than skip silently. Used by the Kimi K2.5 and
-MiniMax-M3 adapters.
+Matches expert weights named ``...layers.N.mlp.experts.IDX.{gate,up,down}_proj``.
+NOTE the caller flips ``mxfp4_preshuffled_b`` for the whole config regardless,
+so any weight skipped from a matched group would be read as if it had been
+permuted; the helpers below raise on that case rather than skip silently. Used
+by the Kimi K2.5 and MiniMax-M3 adapters.
 """
 
 from __future__ import annotations
@@ -86,19 +85,17 @@ def _as_shuffleable_mxfp4_b(wd: WeightData) -> np.ndarray | None:
     reshape. The 5D layout is a pure byte permutation and identical for both
     formats, so FP8 bytes are reinterpreted as uint8 here; the caller restores
     the dtype. Returns ``None`` when the weight isn't shuffleable.
+
+    The uint8 reinterpret happens on the MAX Buffer, *before* numpy ever sees
+    the bytes: numpy has no float8 dtypes, and the exception ``np.from_dlpack``
+    raises for them is numpy-version-dependent (``RuntimeError`` < 2.5.0,
+    ``BufferError`` >= 2.5.0, numpy gh-30937). Dispatching on that exception
+    type is what silently skipped every MXFP8 expert under numpy 2.5 and served
+    unshuffled weights to the preb kernel (KERN-3393).
     """
     if wd.dtype not in (DType.uint8, DType.float8_e4m3fn):
         return None
-    try:
-        arr = np.from_dlpack(wd.data)
-    except (TypeError, BufferError):
-        return None
-    except RuntimeError:
-        arr = np.from_dlpack(
-            wd.to_buffer().view(DType.uint8, wd.shape.static_dims)
-        )
-    if arr.dtype != np.uint8:
-        arr = arr.view(np.uint8)
+    arr = np.from_dlpack(wd.to_buffer().view(DType.uint8, wd.shape.static_dims))
     if arr.ndim != 2 or arr.shape[0] % 16 != 0 or arr.shape[1] % 64 != 0:
         return None
     return arr
@@ -116,16 +113,7 @@ def _as_shuffleable_mxfp4_b_scale(wd: WeightData) -> np.ndarray | None:
     """
     if wd.dtype != DType.float8_e8m0fnu:
         return None
-    try:
-        arr = np.from_dlpack(wd.data)
-    except (TypeError, BufferError):
-        return None
-    except RuntimeError:
-        arr = np.from_dlpack(
-            wd.to_buffer().view(DType.uint8, wd.shape.static_dims)
-        )
-    if arr.dtype != np.uint8:
-        arr = arr.view(np.uint8)
+    arr = np.from_dlpack(wd.to_buffer().view(DType.uint8, wd.shape.static_dims))
     if arr.ndim != 2 or arr.shape[0] % 32 != 0 or arr.shape[1] % 8 != 0:
         return None
     return arr
@@ -179,9 +167,11 @@ def preshuffle_mxfp4_b_experts(
     Walks ``state_dict``, groups expert weights by ``(prefix, proj)``,
     rewrites each group's WeightData entries with the bytes laid out in
     ``b_5d_grouped_layout`` so the AMD ``mxfp4_grouped_matmul_amd_preb``
-    kernel reads them with coalesced DRAM->VGPR loads. Experts whose
-    dtype/shape isn't MXFP4-packed uint8 with tile-aligned dims are
-    silently skipped (they fall through to the row-major kernel).
+    kernel reads them with coalesced DRAM->VGPR loads. Raises when a
+    matched group holds any weight that isn't MX-packed (uint8 or
+    float8_e4m3fn) with tile-aligned dims: the caller flips
+    ``mxfp4_preshuffled_b`` for the whole config, so a skipped weight
+    would be read as if it had been permuted.
 
     One numpy buffer per ``(prefix, proj)`` group keeps allocation count
     at ~180. Per-expert allocations would mean ~70k mmap chunks, blowing
@@ -211,19 +201,19 @@ def preshuffle_mxfp4_b_experts(
                 if (arr := _as_shuffleable_mxfp4_b(state_dict[name]))
                 is not None
             ]
-            if not shuffleable:
-                continue
             if len(shuffleable) != len(names):
-                # All-or-nothing is a legitimate "this model doesn't use the
-                # preb path". A MIXED group is always a bug: the caller flips
-                # `mxfp4_preshuffled_b` for the whole config, so the skipped
-                # weights would be read as if they had been permuted.
+                # Any skipped weight in a matched group is a bug, zero and
+                # partial alike: the caller flips `mxfp4_preshuffled_b` for
+                # the whole config, so a skipped weight would be read as if
+                # it had been permuted (KERN-3393 served exactly that).
                 skipped = sorted(set(names) - {n for n, _ in shuffleable})
                 raise ValueError(
-                    "partial MX expert-weight preshuffle: "
-                    f"{len(shuffleable)}/{len(names)} shuffled, skipped "
-                    f"{skipped}. Every weight in a group must share a "
-                    "shuffleable dtype and tile-aligned dims."
+                    "MX expert-weight preshuffle skipped "
+                    f"{len(skipped)}/{len(names)} weights in a matched "
+                    f"group, e.g. {skipped[0]!r} with dtype "
+                    f"{state_dict[skipped[0]].dtype}. Every weight in a "
+                    "group must have a shuffleable dtype (uint8 or "
+                    "float8_e4m3fn) and tile-aligned dims."
                 )
 
             kept_names, srcs = zip(*shuffleable, strict=True)
@@ -258,8 +248,9 @@ def preshuffle_mxfp4_b_scales(
     rewrites each group's WeightData entries with bytes laid out in
     ``scale_4d_grouped_layout`` so the AMD preb grouped-matmul kernel
     can issue direct-VGPR i32 scale loads (one 2x2 cell per lane).
-    Scales whose dtype isn't E8M0 or whose dims aren't cell-aligned
-    (``N % 32 == 0`` and ``K_SCALES % 8 == 0``) are silently skipped.
+    Raises when a matched group holds any scale that isn't E8M0 with
+    cell-aligned dims (``N % 32 == 0`` and ``K_SCALES % 8 == 0``), for
+    the same reason as :func:`preshuffle_mxfp4_b_experts`.
 
     Companion to :func:`preshuffle_mxfp4_b_experts`; should be called
     immediately after it so weight and scale layouts stay in sync.
@@ -288,8 +279,18 @@ def preshuffle_mxfp4_b_scales(
                 if (arr := _as_shuffleable_mxfp4_b_scale(state_dict[name]))
                 is not None
             ]
-            if not shuffleable:
-                continue
+            if len(shuffleable) != len(names):
+                # Same invariant as the weight preshuffle above: the caller
+                # flips `mxfp4_preshuffled_b` for the whole config, so a
+                # skipped scale would be read as if it had been permuted.
+                skipped = sorted(set(names) - {n for n, _ in shuffleable})
+                raise ValueError(
+                    "MX expert B-scale preshuffle skipped "
+                    f"{len(skipped)}/{len(names)} scales in a matched "
+                    f"group, e.g. {skipped[0]!r} with dtype "
+                    f"{state_dict[skipped[0]].dtype}. Every scale in a "
+                    "group must be E8M0 with cell-aligned dims."
+                )
 
             kept_names, srcs = zip(*shuffleable, strict=True)
             MN, K_SCALES = srcs[0].shape
