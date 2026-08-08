@@ -868,9 +868,7 @@ comptime _all_yield_same_ref_condition[
     T0: Movable, origin: Origin, T: Iterable
 ] = T.IteratorType[origin].Element == T0
 
-comptime _all_yield_same_ref[
-    origin: Origin, *Ts: Iterable
-]: Bool = Ts.all_satisfies[
+comptime _all_yield_same_ref[origin: Origin, *Ts: Iterable]: Bool = Ts.all[
     _all_yield_same_ref_condition[Ts[0].IteratorType[origin].Element, origin, _]
 ]()
 
@@ -878,7 +876,7 @@ comptime _all_yield_same_owned_condition[
     T0: Movable, T: IterableOwned
 ] = T.IteratorOwnedType.Element == T0
 
-comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
+comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all[
     _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]
 ]()
 

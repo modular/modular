@@ -136,7 +136,7 @@ def _do_broadcast[
         # use_multimem=False: the multicast-store path needs an SM90+ build
         # target, i.e. per-arch .so variants of the shared library.
         broadcast[ngpus, use_multimem=False](
-            in_tile, out_tile, rank_sigs, dev_ctxs[index], root_v
+            in_tile, out_tile, rank_sigs, dev_ctxs[index], root_v, rank=index
         )
 
     # Release the GIL during the blocking tg.wait() so other Python threads

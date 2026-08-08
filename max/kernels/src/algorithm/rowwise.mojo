@@ -93,7 +93,7 @@ from algorithm.rowwise_types import (
     tile_alignment,
 )
 from algorithm.reduce_op import ReduceOp, Reducer
-from std.collections import InlineArray, Optional
+from std.collections import Optional
 from std.gpu import (
     WARP_SIZE,
     lane_id,
@@ -799,7 +799,7 @@ struct RowCache[
         shared: Whether the row is also published to shared memory.
     """
 
-    var _owned: InlineArray[SIMD[Self.T, Self.W], Self.NCH]
+    var _owned: Array[SIMD[Self.T, Self.W], Self.NCH]
     """This participant's cached tiles (valid when `fuse`)."""
 
     var _shmem_addr: Int
@@ -813,7 +813,7 @@ struct RowCache[
 
     @always_inline
     def __init__(out self, *, copy: Self):
-        """Explicit copy constructor: `InlineArray` lost `ImplicitlyCopyable`
+        """Explicit copy constructor: `Array` lost `ImplicitlyCopyable`
         conformance, so `_owned` can't be auto-derived and needs `.copy()`.
 
         Args:
@@ -831,7 +831,7 @@ struct RowCache[
             row_il: The row's coords.
         """
         self.row_il = row_il
-        self._owned = InlineArray[SIMD[Self.T, Self.W], Self.NCH](
+        self._owned = Array[SIMD[Self.T, Self.W], Self.NCH](
             fill=SIMD[Self.T, Self.W](0)
         )
         # Seed from a runtime value (never a literal): on `shared=False`
@@ -1055,7 +1055,7 @@ struct Row[
     var row_il: IndexList[Self.rank]
     var axis_size: Self.AxisSize
     var ctx: Context[Self.params]
-    var _row_regs: InlineArray[SIMD[Self.dtype, Self._W], Self._NCH]
+    var _row_regs: Array[SIMD[Self.dtype, Self._W], Self._NCH]
     # 0-based order index of the next `reduce` call, incremented per call.
     # Only read on the pointwise-split-K tier (to pick combine / partial /
     # no-op against `ctx._phase`); unused and DCE'd on every other tier.
@@ -1098,7 +1098,7 @@ struct Row[
         )
         self.axis_size = axis_size
         self.ctx = ctx
-        self._row_regs = InlineArray[SIMD[Self.dtype, Self._W], Self._NCH](
+        self._row_regs = Array[SIMD[Self.dtype, Self._W], Self._NCH](
             fill=SIMD[Self.dtype, Self._W](0)
         )
         self._reduce_index = 0
@@ -1106,7 +1106,7 @@ struct Row[
         comptime if Self._fuse:
             var participant = Self._participant()
             var base = self.row_il
-            comptime al = ctx.alignment[Self.dtype, Self._W]()
+            comptime al = ctx.element_alignment[Self.dtype, Self._W]()
 
             comptime for chunk in range(Self._NCH):
                 var pos = participant * Self._W + chunk * Self._PSTRIDE
@@ -1211,7 +1211,7 @@ struct Row[
             ](mut state: M, coords: IndexList[_r]) {
                 var input_fn, var contribute, var ctx
             }:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 var pos = Int(coords[Self.axis])
                 state.accumulate[Self.accum, ws](
@@ -1254,7 +1254,7 @@ struct Row[
             ](mut state: M, coords: IndexList[_r]) {
                 var input_fn, var contribute, var ctx
             }:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 var pos = Int(coords[Self.axis])
                 state.accumulate[Self.accum, ws](
@@ -1331,7 +1331,7 @@ struct Row[
                 def splitk_emit_tile[
                     ws: Int, _r: Int
                 ](coords: IndexList[_r]) {var input_fn, var g, var ctx}:
-                    comptime al = ctx.alignment[Self.dtype, ws]()
+                    comptime al = ctx.element_alignment[Self.dtype, ws]()
                     var idx = rebind[IndexList[Self.rank]](coords)
                     g[ws](input_fn[ws, al, Self.rank](idx), idx)
 
@@ -1362,7 +1362,7 @@ struct Row[
             def emit_tile[
                 ws: Int, _r: Int
             ](coords: IndexList[_r]) {var input_fn, var g, var ctx}:
-                comptime al = ctx.alignment[Self.dtype, ws]()
+                comptime al = ctx.element_alignment[Self.dtype, ws]()
                 var idx = rebind[IndexList[Self.rank]](coords)
                 g[ws](input_fn[ws, al, Self.rank](idx), idx)
 

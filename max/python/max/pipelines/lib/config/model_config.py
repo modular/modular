@@ -232,8 +232,8 @@ def _infer_quantization_encoding(
     # stable regardless of whether weight_path defaults have been discovered
     # yet — the filename/repo branches above otherwise disagree with the
     # supported-encodings branch on which encoding to pick. Scoped to the CPU
-    # target only: a CPU-only encoding on a GPU target is handled downstream by
-    # the device-downcast in _validate_quantization_encoding_device_compatibility,
+    # target only: a CPU-only encoding on a GPU target is handled downstream
+    # by the CPU override in validate_device_specs (arch_config),
     # and an explicit user encoding is validated separately.
     if (
         config.quantization_encoding is None
@@ -511,25 +511,46 @@ def _select_dtype_cast(
     return cast_from, cast_to
 
 
-def _downcast_device_specs_for_encoding(
+def _device_specs_for_encoding(
     device_specs: list[DeviceSpec],
     quantization_encoding: SupportedEncoding,
+    warn: bool = False,
 ) -> list[DeviceSpec]:
-    """Returns ``device_specs`` downcast to CPU for a CPU-only encoding.
+    """Returns the device specs an encoding can actually run on.
 
-    When *quantization_encoding* is only supported on CPU and every device in
-    *device_specs* is a GPU, returns ``[DeviceSpec.cpu()]``; otherwise returns
-    *device_specs* unchanged. Going the other way (CPU -> GPU) is not a downcast
-    and is rejected by the compatibility check at the call site. Read-only.
+    An encoding that cannot run on GPU (GGUF q4) overrides all-GPU
+    *device_specs* and runs on CPU: returns ``[DeviceSpec.cpu()]``. Any
+    other combination is returned unchanged (an invalid one, e.g. a
+    GPU-only encoding on CPU, is rejected by the caller's compatibility
+    check). Read-only.
+
+    Set *warn* only at the validation choke point so the CPU override is
+    reported once per startup, not once per recomputation.
     """
     if supported_encoding_supported_devices(quantization_encoding) == (
         "cpu",
     ) and all(d.device_type == "gpu" for d in device_specs):
-        logger.warning(
-            f"Encoding '{quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
-        )
+        if warn:
+            logger.warning(
+                f"Encoding '{quantization_encoding}' is only supported on CPU. Switching device_specs to CPU."
+            )
         return [DeviceSpec.cpu()]
     return device_specs
+
+
+def _effective_device_specs(
+    config: MAXModelConfig,
+    default_encoding: SupportedEncoding,
+) -> list[DeviceSpec]:
+    """Returns the device specs the model effectively runs on.
+
+    Read-only; differs from ``config.device_specs`` only when a CPU-only
+    encoding (GGUF q4) overrides GPU devices.
+    """
+    return _device_specs_for_encoding(
+        config.device_specs,
+        _select_quantization_encoding(config, default_encoding),
+    )
 
 
 def _discover_default_weight_paths(
@@ -1284,57 +1305,27 @@ class MAXModelConfig(MAXModelConfigBase):
         self,
         resolved_encoding: SupportedEncoding,
         applied_dtype_cast_from: SupportedEncoding | None,
-        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         """Validates model path and weight path against resolved quantization encoding.
+
+        Device/encoding compatibility is validated separately, by
+        :func:`~max.pipelines.lib.interfaces.arch_config.validate_device_specs`
+        at arch-config construction.
 
         Args:
             resolved_encoding: The encoding the model will actually run with, as
                 resolved by :func:`_select_quantization_encoding`.
             applied_dtype_cast_from: The encoding weights are cast from at load
                 time, or ``None`` when no cast applies.
-            supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
             default_weights_format: The default weights format to use if no weights format is provided.
         """
-        self._validate_quantization_encoding_device_compatibility(
-            quantization_encoding=resolved_encoding,
-            supported_encodings_list=list(supported_encodings),
-        )
         self._resolve_weight_path(
             quantization_encoding=resolved_encoding,
             applied_dtype_cast_from=applied_dtype_cast_from,
             default_weights_format=default_weights_format,
         )
         self._validate_final_architecture_model_path_weight_path()
-
-    def _validate_quantization_encoding_device_compatibility(
-        self,
-        quantization_encoding: SupportedEncoding,
-        supported_encodings_list: list[SupportedEncoding],
-    ) -> None:
-        """Validates that the quantization encoding is supported on the specified devices.
-
-        Should only be called after the quantization encoding has been set.
-        """
-        # Downcast GPU devices to CPU for a CPU-only encoding (see the free
-        # function); the incompatible CPU->GPU direction is rejected below.
-        self.device_specs = _downcast_device_specs_for_encoding(
-            self.device_specs, quantization_encoding
-        )
-        # Check that the quantization encoding is supported on the specified
-        # devices.
-        for device_spec in self.device_specs:
-            if not supported_encoding_supported_on(
-                quantization_encoding, device_spec
-            ):
-                raise ValueError(
-                    f"The encoding '{quantization_encoding}' is not compatible with the selected device type '{device_spec.device_type}'.\n\n"
-                    f"You have two options to resolve this:\n"
-                    f"1. Use a different device\n"
-                    f"2. Use a different encoding (encodings available for this model: {', '.join(str(enc) for enc in supported_encodings_list)})\n\n"
-                    f"Please use the --help flag for more information."
-                )
 
     def _resolve_weight_path(
         self,

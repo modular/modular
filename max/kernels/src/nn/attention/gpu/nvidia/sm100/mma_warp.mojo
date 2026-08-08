@@ -14,7 +14,6 @@
 
 from std.math import align_up, ceildiv
 from std.sys import size_of, get_defined_bool
-from std.gpu.primitives.id import cluster_dim
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
@@ -36,6 +35,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarType,
     splitk_window,
     splitk_partition_idx,
+    splitk_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
 from linalg.arch.sm100.mma import smem_descriptor
@@ -49,6 +49,10 @@ def fa4_mma[
     config: FA4Config,
     *,
     page_size: Int,
+    # Workspace (traditional/unfused) split-K: window the KV by a RUNTIME
+    # partition count even at `config.splitk_partitions == 1`. Defaulted so
+    # every non-workspace caller is byte-identical.
+    workspace_split: Bool = False,
     # Effective cross-stage-P switch, computed once at the kernel level where
     # config, MaskType and the store shape are all visible. Defaults True so
     # the config-level gate alone decides for callers that do not thread it;
@@ -61,6 +65,7 @@ def fa4_mma[
     score_row: UInt32,
     num_keys: UInt32,
     mask: MaskType,
+    ws_num_partitions: UInt32 = 1,
 ):
     """Executes the FA4 MMA warp loop for SM100 Flash Attention.
 
@@ -78,6 +83,8 @@ def fa4_mma[
         score_row: Row offset of the query tile within the sequence.
         num_keys: Number of valid key columns to attend to.
         mask: Attention mask controlling tile iteration and masking bounds.
+        ws_num_partitions: Runtime split-K partition count that windows the
+            KV range when `workspace_split` is `True`; `1` disables windowing.
     """
     comptime accum_type = DType.float32
     comptime BM = config.BM
@@ -262,6 +269,11 @@ def fa4_mma[
     # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
     # headline config); split-KV is rejected at compile time.
     comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
+    # first-S-alias-O + sfree-deletion gate. ON by default for CrossP configs
+    # whose geometry holds (`s_cols <= padded_ov_depth`); see
+    # `FA4Config.first_s_alias_o()`. When ON the peel S0(0)/S1(0) MMAs target
+    # the O0/O1 TMEM region and the sfree0/sfree1 waits are absent.
+    comptime FirstSAliasO = config.first_s_alias_o()
     # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
     # the support matrix. The ON-by-default path resolves `crossp_on()` to
     # False on those configs instead, so it never reaches here.
@@ -528,12 +540,10 @@ def fa4_mma[
         # `total_iters == last_masked_set_end` for check_mask==False masks
         # (mha_mask.mojo:510-513/641-644/...), so all four warps derive the
         # same window.
-        comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32
-            comptime if config.dynamic_cluster_dim:
-                _np = UInt32(cluster_dim.x)
-            else:
-                _np = UInt32(config.splitk_partitions)
+        comptime if config.num_q == 1 and (
+            config.splitk_partitions > 1 or workspace_split
+        ):
+            var _np = splitk_num_partitions[config](ws_num_partitions)
             var _w = splitk_window(
                 total_iters_runtime,
                 _np,
@@ -596,11 +606,20 @@ def fa4_mma[
                 kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             )
             kv_pipeline.state.step()
-            UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+            # first-S-alias-O: peel S0(0)/S1(0) land in the O0/O1 TMEM region
+            # (idle during the peel) instead of the live S0/S1 slots, removing
+            # the peel-S RAW hazard so the sfree0/sfree1 waits can be deleted.
+            comptime if FirstSAliasO:
+                UMMA0Type.mma[stage_idx=0](q0, kc, o0_tmem, elect=e, c_scale=0)
+            else:
+                UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
             _commit(pipeline_s0.producer_mbar())
             var q1m = mbars.q1_wait_mbar()
             q1m[0].wait()
-            UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+            comptime if FirstSAliasO:
+                UMMA0Type.mma[stage_idx=0](q1, kc, o1_tmem, elect=e, c_scale=0)
+            else:
+                UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
             _commit(pipeline_s1.producer_mbar())
             # release K0 (pos0)
             _commit(kv_pipeline.consumer_mbar(rel_slot))
@@ -620,8 +639,9 @@ def fa4_mma[
                 kc = kv_desc_k + UInt32(kv_stage_bytes) * kn_idx
 
                 # QK0(n): acquire sfree0 (softmax read S0(n-1)); q0*K_n -> S0.
-                sfree0.wait()
-                sfree0.step()
+                comptime if not FirstSAliasO:
+                    sfree0.wait()
+                    sfree0.step()
                 UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
                 _commit(pipeline_s0.producer_mbar())
 
@@ -636,8 +656,9 @@ def fa4_mma[
                 _commit(pipeline_o0.producer_mbar())
 
                 # QK1(n): acquire sfree1; q1*K_n -> S1.
-                sfree1.wait()
-                sfree1.step()
+                comptime if not FirstSAliasO:
+                    sfree1.wait()
+                    sfree1.step()
                 UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
                 _commit(pipeline_s1.producer_mbar())
 
@@ -1149,12 +1170,10 @@ def fa4_mma[
         # `total_iters == last_masked_set_end` for check_mask==False masks
         # (mha_mask.mojo:510-513/641-644/...), so all four warps derive the
         # same window.
-        comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32
-            comptime if config.dynamic_cluster_dim:
-                _np = UInt32(cluster_dim.x)
-            else:
-                _np = UInt32(config.splitk_partitions)
+        comptime if config.num_q == 1 and (
+            config.splitk_partitions > 1 or workspace_split
+        ):
+            var _np = splitk_num_partitions[config](ws_num_partitions)
             var _w = splitk_window(
                 total_iters_runtime,
                 _np,

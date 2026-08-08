@@ -68,7 +68,6 @@ class DummyMAXModelConfig(MAXModelConfig):
         self,
         resolved_encoding: SupportedEncoding,
         applied_dtype_cast_from: SupportedEncoding | None,
-        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         pass
@@ -411,7 +410,11 @@ def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
             ),
             patch(
                 "max.pipelines.lib.registry._run_memory_planning",
-                return_value=_MemoryPlan(max_batch_size=1, footprint=0),
+                side_effect=lambda config, *a, **kw: _MemoryPlan(
+                    max_batch_size=1,
+                    footprint=0,
+                    device_specs=tuple(config.model.device_specs),
+                ),
             ),
             patched_hf_construction(),
         ):

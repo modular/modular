@@ -31,6 +31,11 @@ from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
+from nn.normalization import (
+    rms_norm_fused_quantize_dynamic_scaled_fp8,
+)
+from std.utils.coord import ComptimeInt
+from std.utils.index import IndexList
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
@@ -49,7 +54,6 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 from nn.bicubic import resize_bicubic
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
-from nn.normalization import rms_norm_fused_fp8
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -121,32 +125,70 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        @parameter
+        var out_t = output.to_tile_tensor[DType.int64]()
+        var scale_t = scales.to_tile_tensor[DType.int64]()
+
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            input_dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        rms_norm_fused_fp8[
-            input_dtype,
-            output_dtype,
-            scale_dtype,
-            rank,
-            input_fn,
-            target=target,
-        ](
-            input.shape(),
-            output.to_tile_tensor[DType.int64](),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-            scale_ub,
-            scales.to_tile_tensor[DType.int64](),
-        )
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {var out_t}:
+            out_t.store_linear[width=width, alignment=alignment](
+                rebind[IndexList[out_t.rank]](coords), val
+            )
+
+        @always_inline
+        def scale_fn[
+            coord_rank: Int
+        ](coords: IndexList[coord_rank], val: Scalar[scale_dtype]) {
+            var scale_t
+        }:
+            scale_t.store_linear[width=1, alignment=1](
+                rebind[IndexList[scale_t.rank]](coords), val
+            )
+
+        # Static row width (when known) enables the register-cached row path.
+        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if cols != UNKNOWN_VALUE:
+            rms_norm_fused_quantize_dynamic_scaled_fp8[
+                input_dtype, output_dtype, scale_dtype, rank, target=target
+            ](
+                input_fn,
+                output_fn,
+                scale_fn,
+                input.shape_coord(),
+                ComptimeInt[cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                weight_offset,
+                scale_ub,
+                ctx,
+            )
+        else:
+            rms_norm_fused_quantize_dynamic_scaled_fp8[
+                input_dtype, output_dtype, scale_dtype, rank, target=target
+            ](
+                input_fn,
+                output_fn,
+                scale_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                weight_offset,
+                scale_ub,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function(

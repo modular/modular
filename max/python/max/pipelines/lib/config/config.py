@@ -20,7 +20,7 @@ import os
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
-from max.driver import accelerator_api, load_devices
+from max.driver import accelerator_api
 from max.engine import InferenceSession
 from max.nn.comm import Signals
 from max.nn.kv_cache.cache_params import KVConnectorType
@@ -52,6 +52,7 @@ from typing_extensions import Self
 
 from .model_config import (
     MAXModelConfig,
+    _effective_device_specs,
     _parse_component_overrides,
     _select_dtype_cast,
     _select_quantization_encoding,
@@ -859,10 +860,24 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self.model.device_specs[0].device_type == "cpu":
+            if self._effective_device_type(arch) == "cpu":
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
+
+    def _effective_device_type(self, arch: Any) -> str:
+        """Returns the device type the main model actually runs on.
+
+        Uses the resolved device specs (the raw ``device_specs`` field may
+        differ when a CPU-only encoding downcasts defaulted GPU devices).
+        Falls back to the raw field when no arch is available to resolve the
+        encoding against.
+        """
+        if arch is None:
+            return self.model.device_specs[0].device_type
+        return _effective_device_specs(self.model, arch.default_encoding)[
+            0
+        ].device_type
 
     def _is_eligible_for_overlap_serve_optimizations(self, arch: Any) -> bool:
         # Overlap scheduling and device graph capture are only supported for
@@ -873,7 +888,7 @@ class PipelineConfig(ConfigFileModel):
             arch.task == PipelineTask.TEXT_GENERATION
             and not self.sampling.enable_variable_logits
             and not self.lora
-            and self.model.device_specs[0].device_type != "cpu"
+            and self._effective_device_type(arch) != "cpu"
         )
 
     def _validate_and_resolve_device_graph_capture(self) -> None:
@@ -931,8 +946,6 @@ class PipelineConfig(ConfigFileModel):
                 "Please set `execute_empty_batches` to False."
             )
 
-        devices = load_devices(model_config.device_specs)
-
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self.lora and self.lora.enable_lora:
             # Check if the architecture is Llama3 (LlamaForCausalLM)
@@ -943,7 +956,12 @@ class PipelineConfig(ConfigFileModel):
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
                 )
             # Currently, LoRA supported on only 1 device.
-            if len(devices) > 1:
+            if (
+                len(
+                    _effective_device_specs(model_config, arch.default_encoding)
+                )
+                > 1
+            ):
                 raise ValueError(
                     "LoRA is currently not supported with the number of devices > 1."
                 )
@@ -963,7 +981,6 @@ class PipelineConfig(ConfigFileModel):
         model_config.validate_and_resolve_with_resolved_quantization_encoding(
             resolved_encoding=resolved_encoding,
             applied_dtype_cast_from=cast_from,
-            supported_encodings=arch.supported_encodings,
             default_weights_format=arch.default_weights_format,
         )
 

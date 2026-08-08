@@ -802,6 +802,7 @@ def _load_standalone_quant_config(
                 downloaded_path = huggingface_hub.hf_hub_download(
                     repo_id=model_path,
                     filename=quant_config_filename,
+                    revision=getattr(huggingface_config, "_commit_hash", None),
                     local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
                 )
                 with open(downloaded_path) as f:

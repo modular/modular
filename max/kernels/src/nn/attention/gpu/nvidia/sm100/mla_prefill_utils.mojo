@@ -915,6 +915,9 @@ struct SM100MLA[
         # False (rope_depth() > 0), which is what keeps MLA's mbar accounting
         # byte-identical to cross-P-off.
         crossp=Self.config.fa4_config.crossp_on(),
+        # Same type-identity reason: MLA resolves False (crossp_on() is False),
+        # so the sfree pair is never deleted for MLA.
+        first_s_alias_o=Self.config.fa4_config.first_s_alias_o(),
     ]
 
     @staticmethod

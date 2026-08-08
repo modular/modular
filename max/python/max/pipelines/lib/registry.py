@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import importlib
 import json
@@ -64,6 +65,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
+from .interfaces.arch_config import validate_device_specs
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -558,14 +560,23 @@ def _run_memory_planning(
 
     model_config = pipeline_config.model
 
-    # Non-PipelineModel architectures skip KV-cache memory estimation.
     if not issubclass(arch.pipeline_model, PipelineModel):
         return _MemoryPlan(
             max_batch_size=pipeline_config.runtime.max_batch_size or 1,
             footprint=0,
+            device_specs=validate_device_specs(
+                model_config, arch.default_encoding, arch.supported_encodings
+            ),
         )
 
-    devices = load_devices(model_config.device_specs)
+    effective_specs = validate_device_specs(
+        model_config, arch.default_encoding, arch.supported_encodings
+    )
+    logger.info(
+        "devices: %s",
+        ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
+    )
+    devices = load_devices(effective_specs)
     arch_config = arch.config.initialize(
         pipeline_config, model_config=model_config
     )
@@ -625,6 +636,11 @@ def _run_memory_planning(
     # For speculative decoding, clamp max_length to the draft model's limit
     # (the draft shares the target model's KV cache).
     if draft_arch is not None and pipeline_config.draft_model is not None:
+        validate_device_specs(
+            pipeline_config.draft_model,
+            draft_arch.default_encoding,
+            draft_arch.supported_encodings,
+        )
         draft_arch_config = draft_arch.config.initialize(
             pipeline_config, model_config=pipeline_config.draft_model
         )
@@ -665,7 +681,9 @@ def _run_memory_planning(
             to_human_readable_bytes(plan.available_cache_memory),
         )
 
-    return plan
+    # Specs rather than Device objects: the plan is pickled into the
+    # model-worker process.
+    return dataclasses.replace(plan, device_specs=tuple(effective_specs))
 
 
 def _retrieve_chat_template(chat_template: Path | None) -> str | None:

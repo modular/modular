@@ -175,6 +175,38 @@ struct DType(
     - exponent_bias: 1
     """
 
+    comptime float6_e2m3fn = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f6e2m3fn> : !kgen.dtype`
+    )
+    """Represents a 6-bit `e2m3` floating point format.
+
+    This type is encoded as `s.ee.mmm` and defined by the
+    [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+    - (s)ign: 1 bit
+    - (e)xponent: 2 bits
+    - (m)antissa: 3 bits
+    - exponent_bias: 1
+    - fn: finite (no inf or nan encodings; every bit pattern is a number)
+    - max: 7.5, min normal: 1.0, min subnormal: 0.125
+    """
+
+    comptime float6_e3m2fn = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f6e3m2fn> : !kgen.dtype`
+    )
+    """Represents a 6-bit `e3m2` floating point format.
+
+    This type is encoded as `s.eee.mm` and defined by the
+    [Open Compute MX Format Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf):
+
+    - (s)ign: 1 bit
+    - (e)xponent: 3 bits
+    - (m)antissa: 2 bits
+    - exponent_bias: 3
+    - fn: finite (no inf or nan encodings; every bit pattern is a number)
+    - max: 28.0, min normal: 0.25, min subnormal: 0.0625
+    """
+
     comptime float8_e8m0fnu = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<f8e8m0fnu> : !kgen.dtype`
     )
@@ -353,6 +385,10 @@ struct DType(
 
         elif str == "float4_e2m1fn":
             return DType.float4_e2m1fn
+        elif str == "float6_e2m3fn":
+            return DType.float6_e2m3fn
+        elif str == "float6_e3m2fn":
+            return DType.float6_e3m2fn
 
         elif str == "float8_e3m4":
             return DType.float8_e3m4
@@ -431,6 +467,10 @@ struct DType(
 
         elif self == DType.float4_e2m1fn:
             return writer.write_string("float4_e2m1fn")
+        elif self == DType.float6_e2m3fn:
+            return writer.write_string("float6_e2m3fn")
+        elif self == DType.float6_e3m2fn:
+            return writer.write_string("float6_e3m2fn")
 
         elif self == DType.float8_e3m4:
             return writer.write_string("float8_e3m4")
@@ -653,7 +693,12 @@ struct DType(
         """
         return self.is_integral() or (
             self.is_floating_point()
-            and (self != DType.float4_e2m1fn and self != DType.float8_e8m0fnu)
+            and (
+                self != DType.float4_e2m1fn
+                and self != DType.float6_e2m3fn
+                and self != DType.float6_e3m2fn
+                and self != DType.float8_e8m0fnu
+            )
         )
 
     # ===-------------------------------------------------------------------===#
@@ -676,6 +721,10 @@ struct DType(
         ), "dtype must be floating point"
         comptime if dtype == DType.float4_e2m1fn:
             return 1
+        elif dtype == DType.float6_e2m3fn:
+            return 3
+        elif dtype == DType.float6_e3m2fn:
+            return 2
         else:
             return bit_width_of[dtype]() - DType.exponent_width[dtype]() - 1
 
@@ -698,6 +747,10 @@ struct DType(
 
         comptime if dtype == DType.float4_e2m1fn:
             return 2
+        elif dtype == DType.float6_e2m3fn:
+            return 2
+        elif dtype == DType.float6_e3m2fn:
+            return 4
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
@@ -726,6 +779,10 @@ struct DType(
 
         comptime if dtype == DType.float4_e2m1fn:
             return 2
+        elif dtype == DType.float6_e2m3fn:
+            return 2
+        elif dtype == DType.float6_e3m2fn:
+            return 3
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
         elif dtype in (DType.float8_e5m2, DType.float8_e5m2fnuz, DType.float16):
@@ -799,6 +856,10 @@ struct DType(
 
         if self == DType.float4_e2m1fn:
             return __mlir_attr.f4E2M1FN
+        if self == DType.float6_e2m3fn:
+            return __mlir_attr.f6E2M3FN
+        if self == DType.float6_e3m2fn:
+            return __mlir_attr.f6E3M2FN
 
         if self == DType.float8_e8m0fnu:
             return __mlir_attr.f8E8M0FNU

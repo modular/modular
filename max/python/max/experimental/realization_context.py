@@ -60,7 +60,7 @@ from max._mlir_context import in_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental.executor import (
-    CompositeExecutor,
+    CompilingExecutor,
     Executor,
     InterpreterExecutor,
     default_executor,
@@ -230,14 +230,9 @@ class EagerRealizationContext(RealizationContext):
         elif use_interpreter is None:
             self._executor = default_executor()
         elif use_interpreter:
-            self._executor = CompositeExecutor(
-                interpreter=InterpreterExecutor(max_ops=None),
-                fallback_on_error=False,
-            )
+            self._executor = InterpreterExecutor(max_ops=None)
         else:
-            self._executor = CompositeExecutor(
-                interpreter=None, fallback_on_error=True
-            )
+            self._executor = CompilingExecutor()
         self.sources = {}
         self.source_values = {}
         self.unrealized = []

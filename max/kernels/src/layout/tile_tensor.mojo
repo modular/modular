@@ -4087,7 +4087,7 @@ comptime _IsRowMajor[
 ]: Bool = ParameterList.tabulate[
     stride_types.length,
     _IsRowMajorTabulator[_RowMajor[*shape_types], stride_types, _],
-]().all_satisfies[
+]().all[
     _ReturnBool
 ]()
 """Check if stride_types match row-major strides for shape_types.

@@ -20,7 +20,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import realization_context as rc
-from max.experimental.executor import CompositeExecutor
+from max.experimental.executor import CompilingExecutor
 from max.experimental.support import _session
 from max.experimental.tensor import (
     Tensor,
@@ -238,10 +238,9 @@ def test_set_default_realization_context_scoped() -> None:
         # No explicit context: realization goes through ensure_context.
         t = Tensor.zeros([2]) + 1.0
         assert created, "factory was not used for the implicit context"
-        # use_interpreter=False routes through a compile-only CompositeExecutor.
+        # use_interpreter=False routes through the compile-only executor.
         for ctx in created:
-            assert isinstance(ctx._executor, CompositeExecutor)
-            assert ctx._executor._interpreter is None
+            assert isinstance(ctx._executor, CompilingExecutor)
         assert t.real
     # Exiting the scope restores the previous factory.
     assert rc._DEFAULT_REALIZATION_CONTEXT is rc.EagerRealizationContext

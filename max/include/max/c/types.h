@@ -126,6 +126,8 @@ typedef enum M_Dtype {
 
   /// Bits 0 through 3 indicate the kind of FP value.
   M_FLOAT4_E2M1FN = 0 | mIsFloat,
+  M_FLOAT6_E2M3FN = 1 | mIsFloat,
+  M_FLOAT6_E3M2FN = 2 | mIsFloat,
   /// Some slots are left blank here to enable us to support more lower
   /// precision types in the future.
   M_FLOAT8_E8M0FNU = 9 | mIsFloat,

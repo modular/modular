@@ -21,6 +21,7 @@ No network access required.
 import dataclasses
 import json
 import os
+import pickle
 import struct
 import tempfile
 from collections.abc import Iterator
@@ -37,11 +38,21 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.config.model_config import (
+    _device_specs_for_encoding,
+    _effective_device_specs,
+    _select_quantization_encoding,
+)
+from max.pipelines.lib.interfaces.arch_config import (
+    validate_device_specs,
+)
 from max.pipelines.lib.memory_estimation import _MemoryPlan
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
-from max.pipelines.lib.registry import SupportedArchitecture
+from max.pipelines.lib.registry import (
+    SupportedArchitecture,
+    _run_memory_planning,
+)
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from test_common.pipeline_model_dummy import (
@@ -192,10 +203,6 @@ def _pipeline_resolve_mocks(
             return_value=weight_path_return,
         ),
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
-        patch(
-            "max.pipelines.lib.config.config.load_devices",
-            return_value=mock_devices,
-        ),
         patch(
             "max.pipelines.lib.registry.load_devices",
             return_value=mock_devices,
@@ -980,3 +987,211 @@ class TestChatTemplateWiring:
         assert DummyTextTokenizer.init_kwargs["chat_template"] == (
             "{{ messages }}"
         )
+
+
+class TestCpuOnlyEncodingDeviceHandling:
+    """CPU-only encodings (GGUF q4_k/q4_0/q6_k) on GPU devices downcast to CPU."""
+
+    @prepare_registry
+    def test_gguf_q4_on_defaulted_gpu_downcasts(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
+            with patch(
+                "max.pipelines.lib.device_specs.scan_available_devices",
+                return_value=[GPU_DEVICE_SPEC],
+            ):
+                config = PipelineConfig(
+                    models=ModelManifest(
+                        {
+                            "main": MAXModelConfig(
+                                model_path=tmpdir, max_length=512
+                            )
+                        }
+                    ),
+                    runtime=PipelineRuntimeConfig(max_batch_size=1),
+                )
+            model = _model(config)
+            assert model.device_specs == [GPU_DEVICE_SPEC]
+
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+
+            assert _model(config).quantization_encoding == "q4_0"
+            # Freeze semantics: resolution never mutates device_specs -- the
+            # field keeps the user's (defaulted) input, while the resolved
+            # devices the model actually runs on are the CPU downcast.
+            assert _model(config).device_specs == [GPU_DEVICE_SPEC]
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                architecture_name=config.models.main_architecture_name,
+                prefer_module_v3=config.runtime.prefer_module_v3,
+                task=PipelineTask.TEXT_GENERATION,
+            )
+            assert arch is not None
+            assert _effective_device_specs(
+                _model(config), arch.default_encoding
+            ) == [DeviceSpec.cpu()]
+
+    @prepare_registry
+    def test_gguf_q4_on_explicit_gpu_downcasts(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
+            config = _make_pipeline_config(
+                tmpdir, device_specs=[GPU_DEVICE_SPEC]
+            )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+            # Freeze semantics: the field keeps the user's input; the
+            # resolved devices are the CPU downcast.
+            assert _model(config).device_specs == [GPU_DEVICE_SPEC]
+            assert _effective_device_specs(_model(config), "bfloat16") == [
+                DeviceSpec.cpu()
+            ]
+
+
+def test_downcast_free_function() -> None:
+    gpu = [GPU_DEVICE_SPEC]
+    assert _device_specs_for_encoding(gpu, "q4_k") == [DeviceSpec.cpu()]
+    # GPU-capable encodings are never downcast.
+    assert _device_specs_for_encoding(gpu, "bfloat16") == [GPU_DEVICE_SPEC]
+    # CPU devices are already valid for CPU-only encodings.
+    assert _device_specs_for_encoding([CPU_DEVICE_SPEC], "q4_k") == [
+        CPU_DEVICE_SPEC
+    ]
+
+
+def test_effective_device_specs_applies_downcast() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _make_local_repo(tmpdir, gguf_files=["model-Q4_K.gguf"])
+        config = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="q4_k",
+            device_specs=[GPU_DEVICE_SPEC],
+        )
+        assert _effective_device_specs(config, "bfloat16") == [DeviceSpec.cpu()]
+
+
+class TestMemoryPlanDevices:
+    """The memory plan carries the resolved devices it was computed against."""
+
+    def _retrieve_arch(self, config: PipelineConfig) -> Any:
+        arch = PIPELINE_REGISTRY.retrieve_architecture(
+            architecture_name=config.models.main_architecture_name,
+            prefer_module_v3=config.runtime.prefer_module_v3,
+            task=PipelineTask.TEXT_GENERATION,
+        )
+        assert arch is not None
+        return arch
+
+    @prepare_registry
+    def test_memory_plan_carries_resolved_devices(self) -> None:
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(tmpdir)
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+                plan = _run_memory_planning(config, self._retrieve_arch(config))
+            assert plan.device_specs == (GPU_DEVICE_SPEC,)
+            # The plan crosses the model-worker process boundary inside the
+            # pipeline factory; it must stay picklable.
+            pickle.dumps(plan)
+
+    @prepare_registry
+    def test_memory_plan_devices_reflect_cpu_downcast(self) -> None:
+        """For a q4 GGUF model the plan's devices are the downcast CPU set."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(tmpdir, gguf_files=["model-Q4_0.gguf"])
+            with patch(
+                "max.pipelines.lib.device_specs.scan_available_devices",
+                return_value=[GPU_DEVICE_SPEC],
+            ):
+                config = PipelineConfig(
+                    models=ModelManifest(
+                        {
+                            "main": MAXModelConfig(
+                                model_path=tmpdir, max_length=512
+                            )
+                        }
+                    ),
+                    runtime=PipelineRuntimeConfig(max_batch_size=1),
+                )
+            with _pipeline_resolve_mocks():
+                _resolve_config(config)
+                plan = _run_memory_planning(config, self._retrieve_arch(config))
+            assert plan.device_specs == (DeviceSpec.cpu(),)
+
+    @prepare_registry
+    def test_memory_planning_rejects_incompatible_devices(self) -> None:
+        """The encoding/device error fires at arch-config resolution in
+        memory planning, not during config resolve."""
+        PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _make_local_repo(
+                tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+            )
+            config = _make_pipeline_config(
+                tmpdir,
+                device_specs=[CPU_DEVICE_SPEC],
+                quantization_encoding="bfloat16",
+            )
+            with _pipeline_resolve_mocks():
+                arch = self._retrieve_arch(config)
+                # resolve() passes: the device/encoding check no longer
+                # lives on the config.
+                config.resolve(arch)
+                with pytest.raises(
+                    ValueError,
+                    match="not compatible with the selected device type 'cpu'",
+                ):
+                    _run_memory_planning(config, arch)
+
+
+def test_validate_device_specs() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _make_local_repo(tmpdir, gguf_files=["model-Q4_K.gguf"])
+        gguf_config = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="q4_k",
+            device_specs=[GPU_DEVICE_SPEC],
+        )
+        assert validate_device_specs(
+            gguf_config, "bfloat16", {"q4_k", "bfloat16"}
+        ) == (DeviceSpec.cpu(),)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _make_local_repo(
+            tmpdir, safetensors_files={"model.safetensors": {"w": "BF16"}}
+        )
+        bf16_on_gpu = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="bfloat16",
+            device_specs=[GPU_DEVICE_SPEC],
+        )
+        assert validate_device_specs(bf16_on_gpu, "bfloat16", {"bfloat16"}) == (
+            GPU_DEVICE_SPEC,
+        )
+
+        bf16_on_cpu = MAXModelConfig(
+            model_path=tmpdir,
+            quantization_encoding="bfloat16",
+            device_specs=[CPU_DEVICE_SPEC],
+        )
+        with pytest.raises(
+            ValueError,
+            match="not compatible with the selected device type 'cpu'",
+        ):
+            validate_device_specs(bf16_on_cpu, "bfloat16", {"bfloat16"})
+
+
+def test_effective_device_type_without_arch_falls_back_to_raw() -> None:
+    config = PipelineConfig(
+        models=ModelManifest(
+            {"main": MAXModelConfig(device_specs=[CPU_DEVICE_SPEC])}
+        )
+    )
+    assert config._effective_device_type(None) == "cpu"

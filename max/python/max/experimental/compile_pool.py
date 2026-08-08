@@ -29,11 +29,18 @@ from __future__ import annotations
 
 import atexit
 import ctypes
-import multiprocessing
+import functools
+import io
+import multiprocessing as mp
+import multiprocessing.forkserver
+import multiprocessing.popen_forkserver
+import multiprocessing.spawn
+import multiprocessing.util
 import os
 import signal
 import sys
 import tempfile
+import threading
 import traceback
 import uuid
 from collections.abc import Callable, Sequence
@@ -71,12 +78,71 @@ def _map_future(future: Future[_T], f: Callable[[_T], _R]) -> Future[_R]:
     return result
 
 
+def _close_fds(*fds: int) -> None:
+    """Stands in for ``multiprocessing.util.close_fds``, which typeshed omits."""
+    for fd in fds:
+        os.close(fd)
+
+
+# _NoMainForkServerContext
+# - ``forkserver`` workers re-import ``__main__``, making them
+#   poor targets for using in libraries.
+# - Strategy inherited from [loky](https://github.com/joblib/loky).
+#   Subclass ForkServerContext and change worker behavior to
+#   not exec `__main__`.
+
+
+class _NoMainPopen(mp.popen_forkserver.Popen):
+    # Set by Popen.__init__; typeshed doesn't carry it.
+    _fds: list[int]
+
+    def _launch(self, process_obj: mp.process.BaseProcess) -> None:
+        prep_data = mp.spawn.get_preparation_data(process_obj.name)
+        prep_data.pop("init_main_from_name", None)
+        prep_data.pop("init_main_from_path", None)
+
+        # Remainder copied from CPython's popen_forkserver.Popen._launch".
+        # Can't call super()._launch(), which regenerates prep_data().
+
+        buf = io.BytesIO()
+        mp.context.set_spawning_popen(self)
+        try:
+            mp.reduction.dump(prep_data, buf)
+            mp.reduction.dump(process_obj, buf)
+        finally:
+            mp.context.set_spawning_popen(None)
+
+        self.sentinel, w = mp.forkserver.connect_to_new_process(self._fds)
+        # Keep a duplicate of the data pipe's write end as a sentinel of
+        # the parent process used by the child process.
+        parent_w = os.dup(w)
+        self.finalizer = mp.util.Finalize(
+            self, _close_fds, (parent_w, self.sentinel)
+        )
+        with open(w, "wb", closefd=True) as f:
+            f.write(buf.getbuffer())
+        self.pid = mp.forkserver.read_signed(self.sentinel)
+
+
+class _NoMainProcess(mp.context.ForkServerProcess):
+    _Popen = _NoMainPopen
+
+
+class _NoMainForkServerContext(mp.context.ForkServerContext):
+    Process = _NoMainProcess
+
+
 class RemoteCompileError(RuntimeError):
     """A compile failed in the worker; the message embeds its traceback."""
 
 
 def _pin_to_parent_death() -> None:
-    """Asks Linux to SIGKILL this process when its parent dies uncleanly."""
+    """Asks Linux to SIGKILL this process when its parent dies uncleanly.
+
+    The parent process is the forkserver. This mechanism covers the narrow
+    case where the forkserver dies without the original parent process
+    dying, and only works on Linux.
+    """
     if sys.platform != "linux":
         return
     PR_SET_PDEATHSIG = 1
@@ -91,10 +157,24 @@ _WORKER_SESSIONS: dict[
 ] = {}
 
 
+def _start_parent_heartbeat_check() -> None:
+    """Exits this worker once the process that built the pool is gone."""
+
+    def wait_and_exit(parent: mp.process.BaseProcess) -> None:
+        parent.join()
+        os._exit(1)
+
+    if (parent := mp.parent_process()) is not None:
+        threading.Thread(
+            target=wait_and_exit, args=(parent,), daemon=True
+        ).start()
+
+
 def _init_worker(device_specs: Sequence[driver.DeviceSpec]) -> None:
     """Pins the worker's lifetime and records its default session devices."""
     global _WORKER_DEVICE_SPECS
     _pin_to_parent_death()
+    _start_parent_heartbeat_check()
     _WORKER_DEVICE_SPECS = tuple(device_specs)
 
 
@@ -144,6 +224,9 @@ def _compile_to_mef(
 class ProcessCompilePool:
     """Compiles graphs in background worker processes.
 
+    In-progress compilations are terminated on shutdown. Users should
+    wait on returned futures if they want to guarantee a compile completes.
+
     Forking thread pools such as exist in Mojo and the graph compiler is not
     typically safe. ProcessCompilePool works around this using ``forkserver``.
     An initial process is created which imports `max.engine` to share import
@@ -180,11 +263,11 @@ class ProcessCompilePool:
             device_specs = specs
 
         # max import is O(seconds), do this pre-fork for each worker
-        context = multiprocessing.get_context("forkserver")
-        context.set_forkserver_preload(["max.engine"])
+        mp_context = _NoMainForkServerContext()
+        mp_context.set_forkserver_preload(["max.engine"])
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
-            mp_context=context,
+            mp_context=mp_context,
             initializer=_init_worker,
             initargs=(tuple(device_specs),),
         )
@@ -192,8 +275,15 @@ class ProcessCompilePool:
         self._mef_dir = tempfile.TemporaryDirectory(prefix="max-compile-pool-")
         self._closed = False
 
-        # Cancel workers on parent exit
-        atexit.register(self.close)
+        # Terminate the pool on exit without waiting on in-progress compiles.
+        # - MEF cache is safely atomic and can't get partial writes
+        # - atexit.register() runs after ProcessPoolExecutor has already
+        #   been joined.
+        # - Follow `concurrent.futures` and use `threading._register_atexit()`
+        #   which runs before ProcessPoolExecutor.join()
+        # - Despite other dependencies in the stdlib it's not a documented
+        #   entrypoint, so needs type: ignore to satisfy mypy.
+        threading._register_atexit(self.close)  # type: ignore
 
     def compile(self, graph: Graph) -> Future[engine.CompiledModel]:
         """Schedules ``graph`` for compilation.
@@ -313,3 +403,9 @@ class ProcessCompilePool:
         """Waits for outstanding queue items and then closes the pool."""
         self._executor.__exit__(exc_type, exc_val, exc_tb)
         self.close()
+
+
+@functools.lru_cache
+def pool() -> ProcessCompilePool:
+    """Global singleton pool for compiling graphs in background processes."""
+    return ProcessCompilePool()

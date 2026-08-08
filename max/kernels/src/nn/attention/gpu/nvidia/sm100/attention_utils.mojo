@@ -29,6 +29,7 @@ from std.sys.intrinsics import llvm_intrinsic
 from std.bit import prev_power_of_two, pop_count
 from std.gpu import block_idx
 from std.gpu.globals import WARP_SIZE
+from std.gpu.primitives.id import cluster_dim
 from std.gpu.primitives.warp import broadcast
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
@@ -3795,6 +3796,66 @@ def clusters_per_wave[cluster_size: Int, sm_count: Int]() -> Int:
 
 
 @always_inline
+def splitk_p_ladder[sm_count: Int]() -> List[Int]:
+    """The rung ladder of split-K partition counts `P`, shared by the producer
+    and the consumer of a workspace split-K launch.
+
+    Single source of truth for two consumers that MUST agree:
+
+    * `dispatch.mojo`'s `_bucket_ws` snaps a desired count UP to a rung (then
+      caps it), so every `P` the production auto-route picks is a rung of this
+      list or the cap.
+    * `fa4_splitk_combine`'s launcher compiles one comptime-unrolled combine
+      specialization per rung, and falls back to a generic runtime-`P` kernel
+      for anything off it.
+
+    Keeping them as two hand-copied lists silently costs the specialization
+    whenever one side gains a rung the other does not (which is exactly what
+    happened to the sub-12 rungs).
+
+    `sm_count` is the top rung: `_bucket_ws` reaches it exactly when
+    `raw_grid == 1`.
+    """
+    return [2, 4, 6, 8, 10, 12, 16, 18, 20, 24, 32, 48, 64, 96, sm_count]
+
+
+@always_inline
+def splitk_num_partitions[
+    config: FA4Config
+](ws_num_partitions: UInt32) -> UInt32:
+    """The split-K partition count `P` this CTA must divide its KV range by.
+
+    Single source of truth for the two split-K mechanisms. All four FA4 warps
+    (`load`, `mma`, `softmax`, `correction`) feed this to `splitk_window` and
+    MUST derive the same window: a disagreement makes the producer over- or
+    under-fill relative to its consumers, which HANGS rather than producing a
+    wrong number.
+
+    * Cluster/DSMEM split-K bakes `P` into the launch cluster, so it is the
+      comptime `config.splitk_partitions` (or `cluster_dim.x` once the cluster
+      dimension becomes dynamic).
+    * Workspace (traditional/unfused) split-K keeps `config.splitk_partitions
+      == 1` -- no launch cluster -- and carries `P` at runtime by over-launching
+      `grid.x`; `ws_num_partitions` is that count.
+
+    Parameters:
+        config: The FA4 config, supplying the comptime cluster partition count.
+
+    Args:
+        ws_num_partitions: Runtime partition count for the workspace scheme.
+            Ignored when `config.splitk_partitions > 1`. Its `1` default makes
+            this a no-op for a caller with no split-K at all.
+    """
+    comptime if config.splitk_partitions > 1:
+        comptime if config.dynamic_cluster_dim:
+            return UInt32(cluster_dim.x)
+        else:
+            return UInt32(config.splitk_partitions)
+    else:
+        return ws_num_partitions
+
+
+@always_inline
 def splitk_partition_idx(splitk_partitions: UInt32) -> UInt32:
     """This CTA's split-K partition index `[0, splitk_partitions)`.
 
@@ -3837,9 +3898,11 @@ def splitk_window(
     weights them to zero. M6 routes idle CTAs (`partition_idx >=
     num_partitions`) through that same neutral path.
 
-    `T` is a tile count (small) and `num_partitions <= 16`, so the products
-    cannot overflow `UInt32`. `num_partitions` is comptime at every call
-    site, so the `//`/`%` lower to multiply-shift, not real divides.
+    `T` is a tile count (small) and `num_partitions <= sm_count`, so the
+    products cannot overflow `UInt32`. On the cluster split-K path
+    `num_partitions` is comptime and the `//`/`%` lower to multiply-shift; the
+    workspace (unfused) path passes a runtime `P`, so it pays one real `divmod`
+    -- once per warp per kernel, outside every key-tile loop.
 
     Args:
         T: Total number of K-tiles to divide across partitions.
@@ -4121,6 +4184,7 @@ struct FA4MiscMBars[
     BM: Int = 128,
     use_ws: Bool = False,
     crossp: Bool = False,
+    first_s_alias_o: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -4165,6 +4229,13 @@ struct FA4MiscMBars[
             defaults ON and this type cannot see the config fields that scope
             it to the MHA 2Q shape. False (default) keeps the mbar layout
             byte-identical to cross-P-off.
+        first_s_alias_o: Whether the first-S-alias-O + sfree-deletion gate
+            holds for this config, i.e. `FA4Config.first_s_alias_o()`. When
+            True the `sfree0/sfree1` mbar pair is deleted (`SfreeCount == 0`)
+            because the alias removes the peel-S RAW hazard it protected.
+            Threaded from the same predicate as `FA4Config.smem_used` so the
+            two cannot drift. False (default) keeps the sfree pair and the
+            mbar layout byte-identical to alias-off.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
@@ -4234,8 +4305,18 @@ struct FA4MiscMBars[
     )
     comptime CrossP_offset = Self.Publish_offset + Self.Publish_count
     comptime InplaceDepth: Int = 4
+    # `first_s_alias_o` deletes the sfree0/sfree1 pair when ON (the alias
+    # relocates the peel S into the O TMEM region, removing the peel-S RAW
+    # hazard sfree protected). Threaded from `FA4Config.first_s_alias_o()`,
+    # which gates on `crossp_on()` + the geometry guard, so this count and
+    # `FA4Config.smem_used` always agree. The accessors below are never
+    # called when `SfreeCount == 0` (the mma/softmax branches that use them
+    # are gated on `not FirstSAliasO`), so the zero-count case is dead path.
+    comptime SfreeCount: Int = (
+        2 if (Self.CrossP_enabled and not Self.first_s_alias_o) else 0
+    )
     comptime CrossP_count: Int = (
-        2 + 2 * Self.InplaceDepth
+        Self.SfreeCount + 2 * Self.InplaceDepth
     ) if Self.CrossP_enabled else 0
 
     # Total size includes all barriers
@@ -4423,7 +4504,10 @@ struct FA4MiscMBars[
 
     # sfree{wg}: softmax commits "S{wg} scores consumed" (producer-only, 1
     # mbar, consumer_mbar aliased/unused -- natural throttle); MMA QK{wg}
-    # acquires it (consumer .wait/.step) before overwriting S{wg}.
+    # acquires it (consumer .wait/.step) before overwriting S{wg}. Deleted
+    # (SfreeCount == 0) when `first_s_alias_o` is ON; the returned barrier is
+    # never waited/committed in that case (mma/softmax gate on `not
+    # FirstSAliasO`), so the pointer arithmetic is harmless.
     @always_inline
     def sfree_producer(self, wg: UInt32) -> Self.CrossPProducer:
         var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
@@ -4442,7 +4526,7 @@ struct FA4MiscMBars[
     def inplace_producer(self, k: UInt32) -> Self.InplaceProducer:
         var base = (
             self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
+            + UInt32(Self.CrossP_offset + Self.SfreeCount)
             + k * UInt32(Self.InplaceDepth)
         )
         return {base, base}
@@ -4451,7 +4535,7 @@ struct FA4MiscMBars[
     def inplace_consumer(self, k: UInt32) -> Self.InplaceConsumer:
         var base = (
             self.mbar_base
-            + UInt32(Self.CrossP_offset + 2)
+            + UInt32(Self.CrossP_offset + Self.SfreeCount)
             + k * UInt32(Self.InplaceDepth)
         )
         return {base, base}

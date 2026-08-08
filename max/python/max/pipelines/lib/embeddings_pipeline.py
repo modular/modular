@@ -68,14 +68,13 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         tokenizer: PipelineTokenizer[
             BaseContextType, npt.NDArray[np.integer[Any]], TextGenerationRequest
         ],
-        memory_plan: _MemoryPlan = _MemoryPlan(max_batch_size=1, footprint=0),
+        memory_plan: _MemoryPlan,
     ) -> None:
         del tokenizer  # Unused.
         self._pipeline_config = pipeline_config
         self._max_batch_size = memory_plan.max_batch_size
         self._weight_adapters = weight_adapters
-        # Initialize Session.
-        devices = load_devices(self._pipeline_config.model.device_specs)
+        devices = load_devices(list(memory_plan.require_device_specs()))
         session = InferenceSession(devices=[*devices])
         self._pipeline_config.configure_session(session)
 

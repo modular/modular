@@ -24,6 +24,10 @@ This version is still a work in progress.
 
 ### Python API
 
+- Eager mode tensors will use the JIT by default. This unlocks fusion and
+  shape specialization optimizations even for eager code, beating PyTorch
+  performance in eager in the common case.
+
 ### C API
 
 ## MAX kernels

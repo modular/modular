@@ -68,6 +68,8 @@ dtypes = st.sampled_from(
         if d
         not in (
             DType.float4_e2m1fn,
+            DType.float6_e2m3fn,
+            DType.float6_e3m2fn,
             DType.float8_e8m0fnu,
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,

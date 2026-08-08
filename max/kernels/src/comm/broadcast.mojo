@@ -485,6 +485,8 @@ def broadcast[
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
+    *,
+    rank: Int,
 ) raises:
     """Broadcast data from root GPU to all participating GPUs.
 
@@ -499,14 +501,16 @@ def broadcast[
     Args:
         input_tensor: Input tensor from root GPU as a TileTensor.
         output_tensor: Output tensor for THIS GPU as a TileTensor.
-        rank_sigs: Per-GPU Signal pointers.
+        rank_sigs: Per-GPU Signal pointers, indexed by group rank.
         ctx: Device context for THIS GPU.
-        root: Root GPU rank (source of broadcast data).
+        root: Group rank of the source GPU.
         _max_num_blocks: Optional grid limit.
+        rank: This GPU's group rank, not its device id: a group placed on
+            devices 4..7 still packs `rank_sigs` at 0..ngpus-1.
     """
     comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
 
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
@@ -566,6 +570,7 @@ def broadcast[
                 ctx,
                 root,
                 _max_num_blocks,
+                rank=my_rank,
             )
         else:
             comptime bcast_kernel = broadcast_pull_1stage_kernel[
@@ -601,6 +606,8 @@ def broadcast_2stage[
     ctx: DeviceContext,
     root: Int,
     _max_num_blocks: Optional[Int] = None,
+    *,
+    rank: Int,
 ) raises:
     """Two-stage broadcast: scatter from root, then allgather among all GPUs.
 
@@ -634,8 +641,9 @@ def broadcast_2stage[
         ctx: Device context for THIS GPU.
         root: Root GPU rank (source of broadcast data).
         _max_num_blocks: Optional maximum number of thread blocks.
+        rank: This GPU's group rank; see `broadcast`.
     """
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = rank
 
     var num_elements = output_tensor.num_elements()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()

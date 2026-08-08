@@ -40,7 +40,7 @@ struct UnsafeMaybeUninit[T: AnyType](
 
     - **The destructor is a no-op**: `UnsafeMaybeUninit` never calls the
       destructor of `T`. If the memory was initialized, you **must**
-      call `unsafe_assume_init_destroy()` before the memory is deallocated to
+      call `unsafe_deinit()` before the memory is deallocated to
       properly clean up the value.
 
     - **Moving/copying behavior**: When you move or copy an
@@ -54,12 +54,12 @@ struct UnsafeMaybeUninit[T: AnyType](
     - **Manual state tracking**: Every method in this struct is unsafe. You must
       track whether the memory is initialized or uninitialized at all times.
       Calling a method that assumes the memory is initialized (like
-      `unsafe_assume_init_ref()`) when it is not will result in undefined
+      `unsafe_assume_init()`) when it is not will result in undefined
       behavior.
 
     - **Validity requirements**: `UnsafeMaybeUninit[T]` has no validity
       requirements, any bit pattern is valid. However, once you call
-      `unsafe_assume_init_ref()`, the contained value must satisfy `T`'s
+      `unsafe_assume_init()`, the contained value must satisfy `T`'s
       validity requirements.
 
     Parameters:
@@ -80,19 +80,16 @@ struct UnsafeMaybeUninit[T: AnyType](
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
-    def __init__[
-        MovableType: Movable
-    ](out self: UnsafeMaybeUninit[MovableType], var value: MovableType):
+    def __init__(
+        out self, var value: Self.T, /
+    ) where conforms_to(Self.T, Movable):
         """Create an `UnsafeMaybeUninit` in an initialized state.
-
-        Parameters:
-            MovableType: The type of the element to store.
 
         Args:
             value: The value to initialize the memory with.
         """
-        self = UnsafeMaybeUninit[MovableType]()
-        self.init_from(value^)
+        self = Self()
+        self.unsafe_write(value^)
 
     @staticmethod
     @always_inline
@@ -138,59 +135,102 @@ struct UnsafeMaybeUninit[T: AnyType](
         comptime assert is_trivially_movable[Self.T]()
         self._array = move._array
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def init_from[
-        MovableType: Movable
-    ](mut self: UnsafeMaybeUninit[MovableType], var value: MovableType):
+    def unsafe_write(
+        mut self, var value: Self.T, /
+    ) where conforms_to(Self.T, Movable):
         """Initialize this memory with the given `value`.
 
         This overwrite any previous value without destroying it.
         This means, if an previous `T` existed in the memory, that old instance
         will not be destroyed potentially leading to memory leaks.
 
-        Parameters:
-            MovableType: The type object to move.
-
         Args:
             value: The value to store in memory.
+
+        Safety:
+
+        - If the memory is already initialized, calling this leaks the
+          previous value: its destructor never runs. Call `unsafe_deinit()`
+          first if the previous value needs to be destroyed.
         """
         self.unsafe_ptr().unsafe_write(value^)
 
     @always_inline
-    def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:
+    def unsafe_assume_init(
+        deinit self,
+    ) -> Self.T where conforms_to(Self.T, Movable):
+        """Takes ownership of the contained value.
+
+        Calling this method assumes that the memory is initialized. The
+        value is moved out of the `UnsafeMaybeUninit` and returned to the
+        caller. After this call, the memory is considered uninitialized.
+
+        Returns:
+            The initialized value that was stored in this container.
+
+        Safety:
+
+        - The memory must be initialized with a live `T` value. Calling this
+          on uninitialized memory reads an invalid bit pattern as `T`, which
+          is undefined behavior.
+        """
+        return self.unsafe_ptr().unsafe_take_pointee()
+
+    @always_inline
+    def unsafe_assume_init(ref self) -> ref[self] Self.T:
         """Returns a reference to the internal value.
 
         Calling this method assumes that the memory is initialized.
 
         Returns:
             A reference to the internal value.
+
+        Safety:
+
+        - The memory must be initialized with a live `T` value. Calling this
+          on uninitialized memory produces a reference to an invalid bit
+          pattern, which is undefined behavior if the reference is read.
         """
         return self.unsafe_ptr()[]
 
-    @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_assume_init_take[
-        U: Movable, //
-    ](mut self: UnsafeMaybeUninit[U]) -> U:
-        """Takes ownership of the internal value.
+    def unsafe_deinit(deinit self) where conforms_to(Self.T, Deinitable):
+        """Destroys the contained value.
 
-        Calling this method assumes that the memory is initialized. The value
-        is moved out of the `UnsafeMaybeUninit` and returned to the caller.
-        After this call, the memory is considered uninitialized.
+        Calling this method assumes that the memory is initialized. It runs
+        `T`'s destructor on the contained value. After this call, the memory
+        is considered uninitialized.
 
-        Parameters:
-            U: The element type, which must be Movable.
+        Safety:
 
-        Returns:
-            The initialized value that was stored in this container.
+        - The memory must be initialized with a live `T` value. Calling this
+          on uninitialized memory runs `T`'s destructor on an invalid bit
+          pattern, which is undefined behavior.
         """
-        return self.unsafe_ptr().unsafe_take_pointee()
+        self.unsafe_ptr().unsafe_deinit_pointee()
+
+    @always_inline
+    def unsafe_forget(deinit self):
+        """Discards this `UnsafeMaybeUninit` without destroying its contents.
+
+        Unlike `unsafe_deinit()`, this does not run `T`'s destructor. Use
+        this when the memory is uninitialized, or when the contained value
+        has already been disposed of some other way.
+
+        Safety:
+
+        - If the memory is initialized with a value that owns a resource
+          (for example, an allocation), calling this leaks that resource:
+          its destructor never runs. Call `unsafe_deinit()` instead if the
+          value needs to be destroyed.
+        """
+        pass
 
     @always_inline
     def unsafe_ptr(
         ref self,
-    ) -> Pointer[Self.T, origin_of(self._array)]:
+    ) -> Pointer[Self.T, origin_of(self)]:
         """Get a pointer to the underlying element.
 
         Note that this method does not assumes that the memory is initialized
@@ -198,23 +238,17 @@ struct UnsafeMaybeUninit[T: AnyType](
 
         Returns:
             A pointer to the underlying element.
+
+        Safety:
+
+        - The returned pointer may point to uninitialized memory. Reading
+          through it before the memory is initialized is undefined behavior.
         """
-        return Pointer(to=self._array).unsafe_bitcast[Self.T]()
-
-    @__allow_legacy_custom_self_type
-    @always_inline
-    def unsafe_assume_init_destroy[
-        D: Deinitable
-    ](mut self: UnsafeMaybeUninit[D]):
-        """Runs the destructor of the internal value.
-
-        Calling this method assumes that the memory is initialized.
-
-        Parameters:
-            D: An element type that conforms to `Deinitable`.
-
-        """
-        self.unsafe_ptr().unsafe_deinit_pointee()
+        return (
+            Pointer(to=self._array)
+            .unsafe_bitcast[Self.T]()
+            .unsafe_origin_cast[origin_of(self)]()
+        )
 
 
 @always_inline

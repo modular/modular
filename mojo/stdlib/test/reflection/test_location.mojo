@@ -265,7 +265,7 @@ def test_source_location_niche() raises:
     SourceLocation.write_niche(Pointer(to=storage))
     assert_true(SourceLocation.isa_niche(Pointer(to=storage)))
 
-    storage.init_from(SourceLocation(50, 60, "/path/to/some_file.mojo"))
+    storage.unsafe_write(SourceLocation(50, 60, "/path/to/some_file.mojo"))
     assert_false(SourceLocation.isa_niche(Pointer(to=storage)))
 
 

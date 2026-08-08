@@ -209,7 +209,7 @@ struct _NichedOptionalStorage[
         Self._check[U]()
         comptime if U == Self.T:
             self._memory = {}
-            self._memory.as_uninit[U]()[].init_from(value^)
+            self._memory.as_uninit[U]()[].unsafe_write(value^)
         else:
             # This is the empty "none" type. `U` is refined to
             # `TrivialRegisterPassable` above, so an explicit `^` transfer of
@@ -251,7 +251,9 @@ struct _NichedOptionalStorage[
     def __deinit__(deinit self):
         comptime assert conforms_to(Self.T, Deinitable)
         if self.isa[Self.T]():
-            self._memory.as_uninit[Self.T]()[].unsafe_assume_init_destroy()
+            self._memory.as_uninit[
+                Self.T
+            ]()[].unsafe_ptr().unsafe_deinit_pointee()
 
     @always_inline
     def isa[U: AnyType](self) -> Bool:

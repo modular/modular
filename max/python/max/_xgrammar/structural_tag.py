@@ -59,12 +59,13 @@ class JSONSchemaFormat(BaseModel):
     """Allow object properties to appear in any order."""
     string_value_delimiter_token: Optional[Union[str, int]] = None
     """Delimiter token (string or id) wrapping string *values*. None = default JSON double-quote byte."""
-    string_value_exclude_tokens: List[Union[str, int]] = []
+    string_value_forbidden_tokens: List[Union[str, int]] = []
     """Token strings/ids a string value's body must never contain. Requires
     ``string_value_delimiter_token`` (token-level exclusion applies only to token-delimited
     string values); rejected if set without it."""
-    bare_key_terminal: str = ""
-    """Raw EBNF terminal for declared/additional bare keys. Empty = quoted keys."""
+    additional_bare_key_terminal: str = ""
+    """Raw EBNF terminal for generated additional bare keys; declared and
+    pattern-constrained keys are unaffected. Left empty for quoted keys."""
     bare_key_literal_forbidden: str = ""
     """EBNF char-class body a bare literal key must avoid. Empty = quoted keys / no constraint."""
     bare_key_pattern_forbidden: str = ""

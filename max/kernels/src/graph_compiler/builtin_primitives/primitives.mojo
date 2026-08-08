@@ -744,7 +744,7 @@ def mgp_buffer_bulk_slice[
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
     for i in range(N):
-        result[i].init_from(
+        result[i].unsafe_write(
             mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
         )
 
@@ -2130,6 +2130,42 @@ def foreach_fusion[
         target=target,
         _trace_description=_trace_name,
     ](adapter, Coord(tensor.shape()), ctx)
+
+
+@register_internal("mogg._call.foreach")
+def _foreach[
+    Lambda: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int = 1](Coord) -> None,
+    //,
+    *,
+    simd_width: Int,
+    target: StaticString = "cpu",
+    _trace_name: StaticString = "mogg.foreach",
+](shape: Coord, lambda_: Lambda, ctx: DeviceContext,) raises:
+    """Call `lambda_` once per index in `shape`; `lambda_` does its own store.
+
+    Unlike `foreach_fusion`, this forwards straight to `elementwise[...]`
+    with no intermediate adapter: the closure already captures its own
+    tensors and does its own load-compute-store round trip.
+
+    Parameters:
+        Lambda: The per-index closure's concrete type.
+        simd_width: The SIMD width to use.
+        target: Indicates the type of the target device (e.g. "cpu", "gpu").
+        _trace_name: Name of the executed operation displayed in the trace.
+
+    Args:
+        shape: The iteration domain; `lambda_` is called once per index.
+        lambda_: The per-index closure, capturing its own input/output
+            tensors.
+        ctx: The call context (forward this from the custom operation).
+    """
+    elementwise[
+        simd_width=simd_width,
+        target=target,
+        _trace_description=_trace_name,
+    ](lambda_, shape, ctx)
 
 
 @fieldwise_init

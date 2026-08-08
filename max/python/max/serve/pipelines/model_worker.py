@@ -265,7 +265,9 @@ class ModelWorker:
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
-            # Use any model's device_specs — all components share the same device.
+            # Use any model's device_specs — all components share the same
+            # device. Reads the raw field, which may name a GPU the model was
+            # downcast off of; priming an unused GPU is harmless.
             prime_start_s = time.monotonic()
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])

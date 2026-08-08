@@ -60,6 +60,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
+from std.sys.info import has_apple_gpu_accelerator
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -1496,7 +1497,22 @@ def launch[
     # Gated on `supports_splitk` — multi-pass bodies need every block to
     # see the joined state, which split-K can't provide (normalize-shaped
     # bodies set it `False`).
-    comptime if supports_splitk and effective_simd <= _SPLITK_MAX_SIMD:
+    #
+    # Also off on Metal. The finish relies on the counter's release/acquire
+    # pair publishing each block's partial to the last arriver, which needs the
+    # partials buffer marked `coherent(device)` and a device-scoped
+    # `atomic_thread_fence`. Metal has both; the backend does not emit them
+    # yet, so nothing orders the partial stores and the join folds whatever
+    # happens to be in the (un-memset) scratch — the row reduces to a
+    # nondeterministic fraction of its true value. Falling through to the block
+    # tier is correct, just single-block on an under-saturated shape.
+    # TODO(KERN-3391): re-enable when backend supports coherent(device)
+    # buffer plus atomic_thread_fence with thread_scope_device
+    comptime if (
+        supports_splitk
+        and effective_simd <= _SPLITK_MAX_SIMD
+        and not has_apple_gpu_accelerator()
+    ):
         if num_rows < sm_count and row_size >= _SPLITK_MIN_ROW:
             # Cap `blocks_per_row` at `_SPLITK_BLOCK_SIZE`: the
             # last-arriving block's cross-block join loads one partial

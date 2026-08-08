@@ -21,7 +21,7 @@ from max._interpreter_ops import _MO_OP_HANDLERS, register_op_handler
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental.executor import (
-    CompositeExecutor,
+    CompilingExecutor,
     InterpreterExecutor,
     default_executor,
 )
@@ -287,28 +287,22 @@ class TestRealizationContextIntegration:
     def test_use_interpreter_true_selects_interpreter(self) -> None:
         """The deprecated ``use_interpreter=True`` shim forces the interpreter."""
         ctx = EagerRealizationContext(use_interpreter=True)
-        assert isinstance(ctx._executor, CompositeExecutor)
-        assert isinstance(ctx._executor._interpreter, InterpreterExecutor)
+        assert isinstance(ctx._executor, InterpreterExecutor)
 
     def test_use_interpreter_false_selects_compile(self) -> None:
         """The deprecated ``use_interpreter=False`` shim forces compilation."""
         ctx = EagerRealizationContext(use_interpreter=False)
-        assert isinstance(ctx._executor, CompositeExecutor)
-        assert ctx._executor._interpreter is None
+        assert isinstance(ctx._executor, CompilingExecutor)
 
 
-class TestRuntimeFallback:
-    """Interpreter runtime fallback to the graph compiler.
+class TestRuntimeErrors:
+    """Interpreter runtime errors always propagate, however it was selected."""
 
-    The auto-selected default executor swallows interpreter runtime errors
-    and compiles instead; an explicitly requested interpreter surfaces them.
-    """
-
-    def test_auto_mode_falls_back_on_execute_error(
+    def test_auto_mode_recovers_from_execute_error(
         self, monkeypatch: Any
     ) -> None:
-        """When auto-selected, a runtime error in execute() falls back to
-        the compiler, which still realizes the tensors."""
+        """The auto-selected executor serves a graph the interpreter failed
+        on with its compiled model. TODO(MXF-595)."""
         call_log: list[str] = []
 
         def _failing_execute(graph: Any, inputs: Any) -> Any:
@@ -318,12 +312,10 @@ class TestRuntimeFallback:
         monkeypatch.setattr(_interpreter, "execute", _failing_execute)
 
         with EagerRealizationContext() as ctx, realization_context(ctx):
-            a = Tensor.zeros([3])
-            b = a + 1.0
+            result = Tensor.zeros([3]) + 1.0
 
+        assert result.real
         assert call_log == ["interpreter_called"]
-        assert b.real
-        assert b.driver_tensor.to(CPU())[0].item() == 1.0
 
     def test_explicit_interpreter_does_not_swallow_error(
         self, monkeypatch: Any

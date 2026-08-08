@@ -543,29 +543,29 @@ def test_typelist_reduce() raises:
     assert_equal(count, 3)
 
 
-def test_typelist_any_all_satisfies() raises:
+def test_typelist_any_all() raises:
     comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
     comptime IsInt[T: AnyType] = T == Int
     comptime IsNumber[T: AnyType] = T == Int or T == Float64
 
-    comptime assert TL.any_satisfies[IsInt]()
-    comptime assert TL.any_satisfies[IsNumber]()
+    comptime assert TL.any[IsInt]()
+    comptime assert TL.any[IsNumber]()
 
     comptime IsBool[T: AnyType] = T == Bool
-    comptime assert not TL.any_satisfies[IsBool]()
+    comptime assert not TL.any[IsBool]()
 
     comptime AlwaysTrue[T: AnyType] = True
-    comptime assert TL.all_satisfies[AlwaysTrue]()
+    comptime assert TL.all[AlwaysTrue]()
 
     comptime IsIntOrString[T: AnyType] = T == Int or T == String
-    comptime assert not TL.all_satisfies[IsIntOrString]()
+    comptime assert not TL.all[IsIntOrString]()
 
 
-def test_typelist_all_satisfies_empty() raises:
+def test_typelist_all_empty() raises:
     comptime TL = TypeList.of[Trait=AnyType]()
     comptime AlwaysFalse[T: AnyType] = False
-    comptime assert TL.all_satisfies[AlwaysFalse]()
+    comptime assert TL.all[AlwaysFalse]()
 
 
 def test_typelist_slice() raises:

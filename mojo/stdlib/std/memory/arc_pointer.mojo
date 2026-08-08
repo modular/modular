@@ -129,11 +129,11 @@ struct _ArcPointerInner[T: Movable & Deinitable]:
     def destroy_payload(mut self):
         """Run the destructor of the held value. Caller must ensure this
         runs exactly once, on the last strong drop."""
-        self.payload.unsafe_assume_init_destroy()
+        self.payload.unsafe_ptr().unsafe_deinit_pointee()
 
-    def payload_ref(ref self) -> ref[self.payload._array] Self.T:
+    def payload_ref(ref self) -> ref[self.payload] Self.T:
         """Return a reference to the (assumed-initialized) payload."""
-        return self.payload.unsafe_assume_init_ref()
+        return self.payload.unsafe_assume_init()
 
 
 struct ArcPointer[T: Movable & Deinitable](

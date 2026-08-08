@@ -1558,7 +1558,7 @@ class OverlapTextGenerationPipeline(
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        self._devices = load_devices(model_config.device_specs)
+        self._devices = load_devices(list(memory_plan.require_device_specs()))
         if self._devices[0].is_host:
             raise ValueError(
                 "OverlapTextGenerationPipeline does not support CPU models."

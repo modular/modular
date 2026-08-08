@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Softmax warp group logic for FA4 (SM100 Flash Attention)."""
 
-from std.math import exp2, recip, align_up
+from std.math import exp2, log2, recip, align_up
 from std.math.constants import log2e
 from std.memory import bitcast
 from std.utils.numerics import min_or_neg_inf
@@ -29,7 +29,6 @@ from max.gpu.sync import (
     umma_arrive_leader_cta,
 )
 from max.gpu.primitives.cluster import block_rank_in_cluster
-from std.gpu.primitives.id import cluster_dim
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -70,6 +69,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulator,
     splitk_partition_idx,
     splitk_window,
+    splitk_num_partitions,
     st_shared_v4_b32,
     sub_ftz,
     TMemTile,
@@ -462,7 +462,7 @@ def fa4_ws_intracta_combine[
     stage_smem: SharedMemPointer[Scalar[DType.float32]],
     maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
     o_smem: SharedMemPointer[Scalar[output_type]],
-):
+) -> Tuple[Float32, Float32]:
     """Intra-CTA `m_pack`-way LSE combine for the `.ws` MMA_M=32 datapath.
 
     The `m_pack` packed-TMEM datapath quarters are `m_pack` independent
@@ -687,6 +687,11 @@ def fa4_ws_intracta_combine[
                     )
         st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
 
+    # Per-row fully-reduced (M_cta, L_cta) (raw max, base-2 denominator),
+    # identical across the `m_pack` warps. Ignored by the non-workspace caller;
+    # the workspace (unfused split-K) egress feeds it to `_ws_write_lse`.
+    return (m, l_acc)
+
 
 @always_inline
 def fa4_ws_level1_combine[
@@ -882,7 +887,7 @@ def fa4_ws_level2_reduce_scatter_write[
     l2_stage_smem: SharedMemPointer[Scalar[DType.float32]],
     l2_maxsum_smem: SharedMemPointer[Scalar[DType.float32]],
     o_smem: SharedMemPointer[Scalar[output_type]],
-):
+) -> Tuple[Float32, Float32]:
     """Level 2 of the two-level WS combine: intra-CTA cross-warpgroup
     reduce-scatter of the two per-WG Level-1 partials into the normalized
     output. WG0-writes-all (§5c step 3 / §9.8).
@@ -962,6 +967,11 @@ def fa4_ws_level2_reduce_scatter_write[
     named_barrier[Int32(2 * WARPGROUP_SIZE)](Int32(3))
 
     # ---- (3) WG0: gather WG1's band, 2-way combine, normalize, pack -> o_smem
+    # Per-CTA (M_cta, L_cta) for the workspace (unfused split-K) egress: WG0
+    # computes the true (gmax, l_acc); WG1 returns its own placeholder (unused --
+    # `_ws_write_lse` is WG0-only). Mirrors `fa4_ws_level2_combine_partial`.
+    var ret_m = own_max
+    var ret_l = own_sum
     if warp_group_idx == UInt32(0):
         var m0 = own_max
         var l0 = own_sum
@@ -977,6 +987,8 @@ def fa4_ws_level2_reduce_scatter_write[
         var s1 = exp2(d1)
         var l_acc = s1.fma(l1, mul_ftz(s0, l0))
         var inv_l = recip(l_acc)
+        ret_m = gmax
+        ret_l = l_acc
 
         var col0 = g * own_cols
         comptime for ob in range(own_oblocks):
@@ -1009,6 +1021,8 @@ def fa4_ws_level2_reduce_scatter_write[
                             acc.cast[output_type]()
                         )
             st_shared_v4_b32(o_smem, oblk * rows * o_sw_K + r * o_sw_K, packed)
+
+    return (ret_m, ret_l)
 
 
 @always_inline
@@ -2125,6 +2139,7 @@ def fa4_splitk_reduce_scatter_write[
 def fa4_softmax[
     QScaleType: OptionalPointer,
     KScaleType: OptionalPointer,
+    WSLSEType: OptionalPointer,
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
@@ -2189,6 +2204,17 @@ def fa4_softmax[
     sink_weights: SinkType,
     q_scale: QScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
     k_scale: KScaleType = NullPointer[DType.float32, AddressSpace.SHARED](),
+    # Workspace (traditional/unfused) split-K egress. A non-null `ws_lse_ptr` is
+    # what turns the egress on: the KV is windowed by `ws_num_partitions`, the O
+    # store is redirected into this partition's slice of the workspace
+    # (`out_row_idx += p*ws_num_rows_q`, descriptor built over `o_partial`), and
+    # the fused per-row LSE is `st.global`ed into `ws_lse_ptr`, whose layout is
+    # `[P, num_rows_q, num_q_heads]`. `ws_num_rows_q` is the partition stride.
+    # Defaulting the pointer to null keeps every non-workspace caller (2Q, MLA)
+    # byte-identical without them naming any of these.
+    ws_num_partitions: UInt32 = 1,
+    ws_lse_ptr: WSLSEType = NullPointer[DType.float32](),
+    ws_num_rows_q: UInt32 = 0,
 ):
     # Local aliases matching SM100MHA2Q comptime members
     comptime qkv_type = KVLUTType.dtype
@@ -2203,6 +2229,12 @@ def fa4_softmax[
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
     comptime cta_group = config.cta_group()
+    # The workspace split-K egress is on exactly when a buffer was handed in, so
+    # the flag cannot disagree with the pointer.
+    comptime workspace_split = not WSLSEType.is_null
+    comptime assert (
+        WSLSEType.is_null or WSLSEType.dtype == DType.float32
+    ), "the workspace split-K LSE buffer is f32"
     # Warp-specialized packed-TMEM (1x4 / Layout-G) per-quarter score geometry.
     # `score_cols` is the physical S/P column extent one warp reads/writes;
     # `score_rows` is its query-row extent. Non-WS (m_pack == 1): score_cols ==
@@ -2309,6 +2341,11 @@ def fa4_softmax[
     # longer overwrites the S it just read -- letting S release right after
     # LDTM, before exp2. Default OFF => p_tmem == s_tmem, byte-identical.
     comptime CrossP = crossp_effective and MiscMBarsType.CrossP_enabled
+    # first-S-alias-O + sfree-deletion gate (see `FA4Config.first_s_alias_o()`).
+    # When ON the peel S0(0)/S1(0) were written to the O0/O1 TMEM region by the
+    # MMA, so the peel loads here read them back from O0/O1 (swapped below) and
+    # the sfree producer commit is absent.
+    comptime FirstSAliasO = config.first_s_alias_o()
     var p_tmem: UInt32
     comptime if CrossP:
         p_tmem = tmem_addr + (
@@ -2463,6 +2500,72 @@ def fa4_softmax[
     var gmem_row = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
     )
+
+    # ---- Workspace (traditional/unfused) split-K egress bookkeeping ----
+    # `ws_part_idx` is this CTA's partition index p (= block_idx.x % P). The O
+    # store (already producing locally-normalized O_i/l_i) is redirected into
+    # this partition's slice of `o_partial` by shifting the ragged row by
+    # `ws_o_row_off = p * ws_num_rows_q` (the descriptor, built over `o_partial`
+    # with a P-extended row axis, then lands at [p, token, q_head, :]). Both fold
+    # to 0 for every non-workspace config, so the O store is byte-identical.
+    var ws_part_idx: UInt32 = 0
+    var ws_o_row_off: UInt32 = 0
+    comptime if workspace_split:
+        ws_part_idx = splitk_partition_idx(ws_num_partitions)
+        ws_o_row_off = ws_part_idx * ws_num_rows_q
+
+    @parameter
+    @always_inline
+    def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]):
+        # Store this thread's fused per-row LSE (log2 domain) into
+        # `ws_lse_ptr[p, token_row, q_head]` (layout [P, num_rows_q,
+        # num_q_heads]) for the separate combine kernel. WG0 only (LSE is
+        # per-row, not per-depth-column); one thread per owned (seq, q-head).
+        # Base-2, matching the FA4 softmax: under `use_fma` the running max is
+        # carried in RAW score units, so scale it by `scale_log2e` here; the sum
+        # is already Sum exp2(...). An empty partition window (T < P) is handled
+        # by the caller below, which reaches this same helper with
+        # `(-inf, 0) -> lse = -inf`; between that exit and the non-empty ones,
+        # every row this CTA owns gets an LSE. `dispatch.mojo`'s no-init contract
+        # for `lse_partial` rests on that being exhaustive.
+        comptime if workspace_split:
+            if warp_group_idx == UInt32(0):
+                # The query row is `thread_tile_row` (`tid % BM`). For the WS
+                # BM=32 datapath the `m_pack` warps share the same query rows, so
+                # `row = tid % 128` folds in the key-partition quarter and is NOT
+                # the query row here; `thread_tile_row` is (matching the mask's
+                # `score_row` at the `mask_row` closure). `thread_tile_row == row`
+                # for the non-WS BM=128 config, so this is identical there.
+                var _seq_off: UInt32 = (
+                    thread_tile_row // UInt32(group)
+                ) if fuse_gqa else thread_tile_row
+                if Int32(_seq_off) < num_output_rows:
+                    var _qh: UInt32 = (
+                        UInt32(group) * head_idx
+                        + thread_tile_row % UInt32(group)
+                    ) if fuse_gqa else head_idx
+                    var _token: UInt32 = gmem_row + cta_q_offset + _seq_off
+                    var _lse: Scalar[accum_dtype]
+                    comptime if use_fma:
+                        _lse = log2(sm) + mx * scale_log2e
+                    else:
+                        _lse = log2(sm) + mx
+                    var _off: UInt32 = (
+                        ws_part_idx * ws_num_rows_q * UInt32(config.num_q_heads)
+                        + _token * UInt32(config.num_q_heads)
+                        + _qh
+                    )
+                    # `OptionalPointer.value()` is immutable — its other users
+                    # are all read-only inputs. This is the one egress, and the
+                    # enclosing `comptime if workspace_split` already proves the
+                    # pointer is the non-null conformer. `rebind` reconciles
+                    # `WSLSEType.dtype` with `accum_dtype`, which the assert at
+                    # the top of the function pins to the same f32.
+                    var _ws_lse = rebind[
+                        UnsafePointer[Scalar[accum_dtype], MutAnyOrigin]
+                    ](ws_lse_ptr.value().unsafe_mut_cast[True]())
+                    _ws_lse[Int(_off)] = _lse
+
     # Per-row score scratch: one warp's own quarter is `score_cols` wide
     # (== config.BN for the non-WS m_pack==1 layout).
     var s = Array[Scalar[accum_dtype], score_cols](uninitialized=True)
@@ -2493,7 +2596,7 @@ def fa4_softmax[
     def apply_k_scale[
         N: Int, //, offset: Int
     ](mut s0: Array[Float32, N], k_scale_off: UInt32):
-        comptime if not QScaleType.is_null:
+        comptime if not KScaleType.is_null:
             comptime for n in range(0, N, 2):
                 var k_sc: f32x2 = (
                     k_scale.value()
@@ -2590,8 +2693,9 @@ def fa4_softmax[
             # order this ahead of the mbar arrives so the MMA can't race the read.
             tcgen05_load_wait()
             tcgen05_fence_before()
-            var sfree_p = mbars.sfree_producer(warp_group_idx)
-            sfree_p.commit()
+            comptime if not FirstSAliasO:
+                var sfree_p = mbars.sfree_producer(warp_group_idx)
+                sfree_p.commit()
             inplace_prod.commit()
         return vrow_max
 
@@ -3028,8 +3132,10 @@ def fa4_softmax[
         # total_iters for check_mask==False masks (mha_mask.mojo:651-658).
         var part_cb: UInt32 = 0
         var part_ce: UInt32 = mask_ends[num_sets - 1]
-        comptime if config.num_q == 1 and config.splitk_partitions > 1:
-            var _np: UInt32 = UInt32(config.splitk_partitions)
+        comptime if config.num_q == 1 and (
+            config.splitk_partitions > 1 or workspace_split
+        ):
+            var _np = splitk_num_partitions[config](ws_num_partitions)
             var _w = splitk_window(
                 mask_ends[num_sets - 1],
                 _np,
@@ -3245,6 +3351,42 @@ def fa4_softmax[
                 named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
                 return
 
+        # Workspace (traditional/unfused) split-K empty partition. The workspace
+        # path keeps `splitk_partitions == 1`, so the cluster block above does not
+        # fire; an empty partition (its balanced KV window holds zero active tiles
+        # -- reachable once windowed / chunked masks leave trailing partitions
+        # empty) must be handled here, or WG0 hangs on `pipeline_s.wait()` below
+        # (no scores were ever produced). Write `lse_p = -inf` (skip the O store;
+        # the separate `fa4_splitk_combine` folds `exp2(lse_p - m*) = 0`), then
+        # rendezvous with WG1 (parked on the 2*WG barrier at its early return for
+        # `total_iters_combined <= 1`) exactly as the T==1 non-empty exit does.
+        # `_ws_write_lse(-inf, 0)` -> `log2(0) + (-inf)*scale_log2e = -inf`.
+        #
+        # This is the ONLY egress that writes LSE without an O store, which is
+        # exactly what `dispatch.mojo`'s no-init contract for `o_partial` is
+        # stated against: leaving O unwritten is safe only while the paired LSE is
+        # `-inf`, so the combine's `scale != 0` select sees weight 0. Do not add an
+        # O-less exit at a finite LSE, and do not drop the `-inf` write here.
+        comptime if workspace_split:
+            if total_iters_combined == UInt32(0):
+                _ws_write_lse(
+                    min_or_neg_inf[accum_dtype](), Scalar[accum_dtype](0)
+                )
+                comptime if not single_softmax_wg:
+                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                # Free the TMEM this CTA allocated in the prologue. The non-empty
+                # workspace exit deallocs at the end of its store path (which this
+                # early return skips), and the MMA warp likewise returns for
+                # `total_iters == 0` WITHOUT issuing any MMA (`mma_warp.mojo`'s
+                # empty-partition guard), so no TMEM op is in flight -- warp 0
+                # frees it here, mirroring the non-empty exit. Omitting it leaks
+                # the CTA's TMEM (CUDA_ERROR_TENSOR_MEMORY_LEAK).
+                if warp_idx == 0:
+                    tcgen05_release_allocation_lock[Int32(cta_group)]()
+                    tcgen05_dealloc[Int32(cta_group)](
+                        tmem_addr, UInt32(config.sm100_tmem_cols)
+                    )
+                return
     # All-masked row (valid_length 0): no scores produced, so `pipeline_s.wait()`
     # below would hang. Write a deterministic zero output row (the O accumulator
     # was never produced, so `zero_fill` skips the TMEM read), then take WG0's
@@ -3285,10 +3427,26 @@ def fa4_softmax[
             warp_group_idx * UInt32(wg_row_offset) + row
         ].cast[accum_dtype]()
 
+    # first-S-alias-O: the peel S0(0)/S1(0) were written to the O0/O1 TMEM
+    # region by the MMA, so read them back from there for the peel loads, then
+    # restore `s_tmem` to the S0/S1 region for the main loop.
+    comptime if FirstSAliasO:
+        s_tmem = tmem_addr + (
+            UInt32(config.TMEM_O0) if warp_group_idx
+            == UInt32(0) else UInt32(config.TMEM_O1)
+        )
+
     var row_max: Float32 = peel_mask[
         rebind[StaticTuple[MaskStrategy, num_sets]](mask_strategies),
         init_load_mask_max,
     ](mask_iters, kv_row)
+
+    comptime if FirstSAliasO:
+        s_tmem = (
+            tmem_addr
+            + UInt32(config.TMEM_S0)
+            + UInt32(config.TMEM_S1 - config.TMEM_S0) * warp_group_idx
+        )
     var sink_weight: Scalar[accum_dtype]
 
     # Split-K: the sink mass must land in the *cluster-global* sum exactly
@@ -3305,6 +3463,18 @@ def fa4_softmax[
         fold_sink = splitk_partition_idx(
             UInt32(config.splitk_partitions)
         ) == UInt32(0)
+
+    # Workspace (unfused) split-K keeps `splitk_partitions == 1`, so the cluster
+    # gate above is a no-op and `fold_sink` would stay True for ALL `P` runtime
+    # partitions -- the separate `fa4_splitk_combine` would then fold the sink
+    # mass `P` times. Gate on the RUNTIME partition index `ws_part_idx`
+    # (= block_idx.x % P) so the sink mass lands in partition 0's `lse_partial`
+    # exactly once; the combine rescales it into `exp2((sink - Gmax)*c)` via its
+    # `exp2(lse_p - m*)` weighting. Mirrors the cluster partition-0 discipline
+    # above and the WG0-only intra-CTA sink rule. Folds to `True` (no-op) for
+    # every non-workspace config.
+    comptime if workspace_split:
+        fold_sink = ws_part_idx == UInt32(0)
 
     # WS key split: WG0's warps cover the SAME query rows but disjoint key
     # partitions (quarters for Layout-G, halves for Layout-E). The intra-CTA
@@ -3741,17 +3911,12 @@ def fa4_softmax[
             comptime SPLITK_WRITER = get_defined_int[
                 "FA4_1Q_SPLITK_WRITER", 0
             ]()
-            # Partition count must match the mma/load/correction warps'
-            # `_np` (they slice the same window): dynamic (cluster) launches
-            # carry it in `cluster_dim.x`; static ones in `config.splitk_partitions`.
-            var _np_writer: UInt32
-            comptime if config.dynamic_cluster_dim:
-                _np_writer = UInt32(cluster_dim.x)
-            else:
-                _np_writer = UInt32(config.splitk_partitions)
-            is_writer = splitk_partition_idx(_np_writer) == UInt32(
-                SPLITK_WRITER
-            )
+            # Same `splitk_num_partitions` the mma/load/correction warps use --
+            # they slice the same window, so the count must match by
+            # construction, not by two sites agreeing.
+            is_writer = splitk_partition_idx(
+                splitk_num_partitions[config](ws_num_partitions)
+            ) == UInt32(SPLITK_WRITER)
         # === Warp-specialized (BM=32, m_pack=4) epilogue: two-level combine. ===
         # (Md) The WS packed-TMEM combine is handled HERE and RETURNS before the
         # non-WS 1Q epilogue below. That non-WS code is comptime-elaborated even
@@ -3863,7 +4028,12 @@ def fa4_softmax[
                         gmem_row + cta_q_offset,
                     )
                 else:
-                    fa4_ws_intracta_combine[
+                    # Plain single-CTA WS combine (also the workspace / unfused
+                    # split-K egress: `ws_o_row_off` redirects the O TMA into
+                    # this partition's `o_partial` slice and `_ws_write_lse`
+                    # writes the per-row LSE; both fold to the non-split store
+                    # when `workspace_split` is off).
+                    var m_cta_t1_ws, l_cta_t1_ws = fa4_ws_intracta_combine[
                         config.m_pack,
                         config.BM,
                         config.ov_depth,
@@ -3888,8 +4058,9 @@ def fa4_softmax[
                             ragged_tma_store,
                             num_output_rows,
                             head_idx,
-                            gmem_row + cta_q_offset,
+                            gmem_row + cta_q_offset + ws_o_row_off,
                         )
+                    _ws_write_lse(m_cta_t1_ws, l_cta_t1_ws)
                 # WG1 already hit `named_barrier[256](2)` and returned; WG0 hits
                 # it here so the pair-WG sync resolves before TMEM dealloc.
                 named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
@@ -3996,7 +4167,14 @@ def fa4_softmax[
                         gmem_row + cta_q_offset,
                     )
                 else:
-                    fa4_ws_level2_reduce_scatter_write[
+                    # Plain single-CTA two-level WS combine (also the workspace /
+                    # unfused split-K egress: `ws_o_row_off` redirects the O TMA
+                    # into this partition's `o_partial` slice and `_ws_write_lse`
+                    # writes the per-row LSE; both fold to the non-split store
+                    # when `workspace_split` is off). Level 2 returns the
+                    # per-CTA (M_cta, L_cta) on WG0 (WG1's value is unused --
+                    # `_ws_write_lse` is WG0-only).
+                    var m_cta_ws, l_cta_ws = fa4_ws_level2_reduce_scatter_write[
                         config.m_pack,
                         config.BM,
                         config.ov_depth,
@@ -4021,8 +4199,9 @@ def fa4_softmax[
                             ragged_tma_store,
                             num_output_rows,
                             head_idx,
-                            gmem_row + cta_q_offset,
+                            gmem_row + cta_q_offset + ws_o_row_off,
                         )
+                    _ws_write_lse(m_cta_ws, l_cta_ws)
                 named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
             comptime if not config.pair_cta and config.splitk_partitions == 1:
                 if warp_idx == 0:
@@ -4112,8 +4291,11 @@ def fa4_softmax[
                         ragged_tma_store,
                         num_output_rows,
                         head_idx,
-                        gmem_row + cta_q_offset,
+                        gmem_row + cta_q_offset + ws_o_row_off,
                     )
+                # Workspace split-K: emit the fused per-row LSE alongside the
+                # per-partition O (T==1: WG0 owns the full row_max/row_sum).
+                _ws_write_lse(row_max, row_sum_total)
             # WG1 already participated in `named_barrier[2*WG](2)` and
             # returned; WG0 must hit it here so the pair-WG sync resolves
             # before TMEM dealloc. Mirrors the unconditional sync below.
@@ -4263,8 +4445,13 @@ def fa4_softmax[
         comptime iters_per_wg0 = (iters_total + 1) // 2
         comptime iters_per_wg1 = iters_total // 2
         # In 1Q both WGs write the same Q rows; no per-WG gmem-row
-        # offset (the depth column j drives the gmem position).
-        var out_row_idx = gmem_row + cta_q_offset
+        # offset (the depth column j drives the gmem position). Workspace
+        # split-K shifts the ragged row into this partition's `o_partial` slice
+        # (`ws_o_row_off` folds to 0 otherwise).
+        var out_row_idx = gmem_row + cta_q_offset + ws_o_row_off
+        # Workspace split-K: emit the fused per-row LSE (WG0 only; global_max /
+        # global_sum are the per-partition stats after the cross-WG exchange).
+        _ws_write_lse(global_max, global_sum)
         comptime if splitk_combine_active:
             # Reduce-scatter: every partition stages its FULL normalized O_cta
             # (f32) + per-row (max,sum) into the dead Q+KV span and publishes via

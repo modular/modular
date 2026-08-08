@@ -250,6 +250,7 @@ struct SM100AttentionSMem[
         BM=Self.config.BM,
         use_ws=Self.config.use_ws,
         crossp=Self.config.crossp_on(),
+        first_s_alias_o=Self.config.first_s_alias_o(),
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[

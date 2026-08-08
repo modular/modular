@@ -6731,7 +6731,7 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         var dev_idx = 0
         for i in range(Self.length):
             if self[i].api() != "cpu":
-                staging[dev_idx].init_from(DeviceContext(copy=self[i]))
+                staging[dev_idx].unsafe_write(DeviceContext(copy=self[i]))
                 dev_idx += 1
         return Array[DeviceContext, num_gpu_devices](
             unsafe_assume_initialized=staging^
