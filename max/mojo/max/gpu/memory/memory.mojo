@@ -419,6 +419,29 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
 
         return "unknown reduce operation"
 
+    @always_inline
+    def _nvvm_reduction_code(self) -> Int:
+        """Returns the llvm.nvvm TMA reduction-op immediate for this operation.
+
+        Encodes `llvm::TMAReductionOp` from LLVM's NVVMIntrinsicUtils.h:
+        ADD=0, MIN=1, MAX=2, INC=3, DEC=4, AND=5, OR=6, XOR=7. `ReduceOp` has
+        no INC/DEC equivalent, so those codes are unused here.
+        """
+        if self == Self.ADD:
+            return 0
+        if self == Self.MIN:
+            return 1
+        if self == Self.MAX:
+            return 2
+        if self == Self.AND:
+            return 5
+        if self == Self.OR:
+            return 6
+        if self == Self.XOR:
+            return 7
+
+        return -1
+
 
 # ===-----------------------------------------------------------------------===#
 # cp.async
@@ -2570,12 +2593,11 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
         3,
     ), "Expecting rank-1, rank-2, or rank-3 tensors"
     comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+    comptime red_op = Int32(reduction_kind._nvvm_reduction_code())
 
     comptime if rank == 3:
         llvm_intrinsic[
-            "llvm.nvvm.cp.async.bulk.tensor.reduce."
-            + reduction_kind.mnemonic()
-            + ".tile.3d",
+            "llvm.nvvm.cp.async.bulk.tensor.reduce.tile.3d",
             NoneType,
         ](
             src_mem,
@@ -2584,13 +2606,12 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
             Int32(coords[1]),
             Int32(coords[2]),
             UInt64(eviction_policy._value),
+            red_op,
             cache_hint,
         )
     elif rank == 2:
         llvm_intrinsic[
-            "llvm.nvvm.cp.async.bulk.tensor.reduce."
-            + reduction_kind.mnemonic()
-            + ".tile.2d",
+            "llvm.nvvm.cp.async.bulk.tensor.reduce.tile.2d",
             NoneType,
         ](
             src_mem,
@@ -2598,19 +2619,19 @@ def cp_async_bulk_tensor_reduce_global_shared_cta[
             Int32(coords[0]),
             Int32(coords[1]),
             UInt64(eviction_policy._value),
+            red_op,
             cache_hint,
         )
     else:
         llvm_intrinsic[
-            "llvm.nvvm.cp.async.bulk.tensor.reduce."
-            + reduction_kind.mnemonic()
-            + ".tile.1d",
+            "llvm.nvvm.cp.async.bulk.tensor.reduce.tile.1d",
             NoneType,
         ](
             src_mem,
             tma_descriptor,
             Int32(coords[0]),
             UInt64(eviction_policy._value),
+            red_op,
             cache_hint,
         )
 
