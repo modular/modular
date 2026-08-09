@@ -269,11 +269,6 @@ def fa4_mma[
     # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
     # headline config); split-KV is rejected at compile time.
     comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
-    # first-S-alias-O + sfree-deletion gate. ON by default for CrossP configs
-    # whose geometry holds (`s_cols <= padded_ov_depth`); see
-    # `FA4Config.first_s_alias_o()`. When ON the peel S0(0)/S1(0) MMAs target
-    # the O0/O1 TMEM region and the sfree0/sfree1 waits are absent.
-    comptime FirstSAliasO = config.first_s_alias_o()
     # Fires only for an explicit `-D FA4_TMEM_CROSS_P=true` on a config outside
     # the support matrix. The ON-by-default path resolves `crossp_on()` to
     # False on those configs instead, so it never reaches here.
@@ -612,20 +607,11 @@ def fa4_mma[
                 kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             )
             kv_pipeline.state.step()
-            # first-S-alias-O: peel S0(0)/S1(0) land in the O0/O1 TMEM region
-            # (idle during the peel) instead of the live S0/S1 slots, removing
-            # the peel-S RAW hazard so the sfree0/sfree1 waits can be deleted.
-            comptime if FirstSAliasO:
-                UMMA0Type.mma[stage_idx=0](q0, kc, o0_tmem, elect=e, c_scale=0)
-            else:
-                UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
+            UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
             _commit(pipeline_s0.producer_mbar())
             var q1m = mbars.q1_wait_mbar()
             q1m[0].wait()
-            comptime if FirstSAliasO:
-                UMMA0Type.mma[stage_idx=0](q1, kc, o1_tmem, elect=e, c_scale=0)
-            else:
-                UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
+            UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
             _commit(pipeline_s1.producer_mbar())
             # release K0 (pos0)
             _commit(kv_pipeline.consumer_mbar(rel_slot))
@@ -645,9 +631,8 @@ def fa4_mma[
                 kc = kv_desc_k + UInt32(kv_stage_bytes) * kn_idx
 
                 # QK0(n): acquire sfree0 (softmax read S0(n-1)); q0*K_n -> S0.
-                comptime if not FirstSAliasO:
-                    sfree0.wait()
-                    sfree0.step()
+                sfree0.wait()
+                sfree0.step()
                 UMMA0Type.mma[stage_idx=0](q0, kc, s0_tmem, elect=e, c_scale=0)
                 _commit(pipeline_s0.producer_mbar())
 
@@ -662,9 +647,8 @@ def fa4_mma[
                 _commit(pipeline_o0.producer_mbar())
 
                 # QK1(n): acquire sfree1; q1*K_n -> S1.
-                comptime if not FirstSAliasO:
-                    sfree1.wait()
-                    sfree1.step()
+                sfree1.wait()
+                sfree1.step()
                 UMMA0Type.mma[stage_idx=0](q1, kc, s1_tmem, elect=e, c_scale=0)
                 _commit(pipeline_s1.producer_mbar())
 
