@@ -68,6 +68,8 @@ This version is still a work in progress.
   another floating-point type is unsupported on every target, so values cannot
   be printed either.
 
+- `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
+
 - Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
   `is_trivially_deletable()` in `std.memory` in favor of
   `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and

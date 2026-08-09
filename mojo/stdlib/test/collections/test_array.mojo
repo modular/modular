@@ -167,6 +167,16 @@ def test_array_String() raises:
     assert_equal(arr3[0], "hi")
 
 
+def test_array_default_init() raises:
+    var arr = Array[Int, 5]()
+    for i in range(5):
+        assert_equal(arr[i], Int())
+
+    var arr2 = Array[String, 3]()
+    for i in range(3):
+        assert_equal(arr2[i], String())
+
+
 def test_array_int_pointer() raises:
     var arr: Array[Int, 3] = [0, 10, 20]
 
@@ -475,6 +485,19 @@ struct LinearNonMovable(Deinitable where False, Movable where False):
     var value: Int
 
 
+struct NonDefaultable:
+    pass
+
+
+struct DefaultableNonMovable(Defaultable, Movable where False):
+    """A `Defaultable` type that is not `Movable`."""
+
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
 def test_inline_array_eq() raises:
     var a: Array[Int, 3] = [1, 2, 3]
     var b: Array[Int, 3] = [1, 2, 3]
@@ -551,6 +574,10 @@ def test_inline_array_conditional_conformances() raises:
     # yields an array that is likewise neither.
     assert_false(conforms_to(Array[LinearNonMovable, 3], Movable))
     assert_false(conforms_to(Array[LinearNonMovable, 3], Deinitable))
+
+    assert_true(conforms_to(Array[Int, 3], Defaultable))
+    assert_true(conforms_to(Array[DefaultableNonMovable, 3], Defaultable))
+    assert_false(conforms_to(Array[NonDefaultable, 3], Defaultable))
 
 
 def test_inline_array_iter_bounds() raises:

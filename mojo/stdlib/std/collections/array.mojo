@@ -214,6 +214,7 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Copyable where conforms_to(T, Copyable),
+    Defaultable where conforms_to(T, Defaultable),
     Deinitable where conforms_to(T, Deinitable),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
@@ -251,6 +252,9 @@ struct Array[T: AnyType, length: Int](
 
     # Create array filled with value
     var filled = Array[Int, 5](fill=42)
+
+    # Create array of defaulted elements
+    var defaulted = Array[Int, 5]()  # [0, 0, 0, 0, 0]
 
     # Access elements
     print(arr[0])  # Prints 1
@@ -396,6 +400,26 @@ struct Array[T: AnyType, length: Int](
             self.unsafe_ptr().unsafe_offset(i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
+
+    @always_inline
+    def __init__(
+        out self,
+    ) where conforms_to(Self.T, Defaultable):
+        """Constructs an array with each element set to its default value.
+
+        Examples:
+
+        ```mojo
+        var arr = Array[Int, 5]()  # [0, 0, 0, 0, 0]
+        ```
+        """
+        _array_construction_checks[Self.length]()
+        self = Self(uninitialized=True)
+        var ptr = self.unsafe_ptr()
+        for i in range(Self.length):
+            __get_address_as_uninit_lvalue(
+                ptr.unsafe_offset(i)._mlir_value
+            ) = Self.T()
 
     @always_inline
     def __init__[
