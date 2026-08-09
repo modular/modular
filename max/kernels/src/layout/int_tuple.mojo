@@ -2969,8 +2969,10 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
         comptime T = element_types[i]
 
         comptime if T.is_tuple:
-            # Recursively convert nested tuples
-            result.append(coord_to_int_tuple[element_types[i]]())
+            # Splat the nested `Coord`'s own element types. Passing `T` itself
+            # as the whole pack would re-enter with an identical pack, so the
+            # recursion would never shrink.
+            result.append(coord_to_int_tuple[*T.ParamListType]())
         else:
             comptime if T.is_static_value:
                 result.append(IntTuple(T.static_value))
