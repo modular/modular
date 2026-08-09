@@ -4184,7 +4184,6 @@ struct FA4MiscMBars[
     BM: Int = 128,
     use_ws: Bool = False,
     crossp: Bool = False,
-    first_s_alias_o: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -4229,13 +4228,6 @@ struct FA4MiscMBars[
             defaults ON and this type cannot see the config fields that scope
             it to the MHA 2Q shape. False (default) keeps the mbar layout
             byte-identical to cross-P-off.
-        first_s_alias_o: Whether the first-S-alias-O + sfree-deletion gate
-            holds for this config, i.e. `FA4Config.first_s_alias_o()`. When
-            True the `sfree0/sfree1` mbar pair is deleted (`SfreeCount == 0`)
-            because the alias removes the peel-S RAW hazard it protected.
-            Threaded from the same predicate as `FA4Config.smem_used` so the
-            two cannot drift. False (default) keeps the sfree pair and the
-            mbar layout byte-identical to alias-off.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync**] [K] [V] [O_prod]
@@ -4305,18 +4297,8 @@ struct FA4MiscMBars[
     )
     comptime CrossP_offset = Self.Publish_offset + Self.Publish_count
     comptime InplaceDepth: Int = 4
-    # `first_s_alias_o` deletes the sfree0/sfree1 pair when ON (the alias
-    # relocates the peel S into the O TMEM region, removing the peel-S RAW
-    # hazard sfree protected). Threaded from `FA4Config.first_s_alias_o()`,
-    # which gates on `crossp_on()` + the geometry guard, so this count and
-    # `FA4Config.smem_used` always agree. The accessors below are never
-    # called when `SfreeCount == 0` (the mma/softmax branches that use them
-    # are gated on `not FirstSAliasO`), so the zero-count case is dead path.
-    comptime SfreeCount: Int = (
-        2 if (Self.CrossP_enabled and not Self.first_s_alias_o) else 0
-    )
     comptime CrossP_count: Int = (
-        Self.SfreeCount + 2 * Self.InplaceDepth
+        2 + 2 * Self.InplaceDepth
     ) if Self.CrossP_enabled else 0
 
     # Total size includes all barriers
@@ -4504,10 +4486,7 @@ struct FA4MiscMBars[
 
     # sfree{wg}: softmax commits "S{wg} scores consumed" (producer-only, 1
     # mbar, consumer_mbar aliased/unused -- natural throttle); MMA QK{wg}
-    # acquires it (consumer .wait/.step) before overwriting S{wg}. Deleted
-    # (SfreeCount == 0) when `first_s_alias_o` is ON; the returned barrier is
-    # never waited/committed in that case (mma/softmax gate on `not
-    # FirstSAliasO`), so the pointer arithmetic is harmless.
+    # acquires it (consumer .wait/.step) before overwriting S{wg}.
     @always_inline
     def sfree_producer(self, wg: UInt32) -> Self.CrossPProducer:
         var m = self.mbar_base + UInt32(Self.CrossP_offset) + wg
@@ -4526,7 +4505,7 @@ struct FA4MiscMBars[
     def inplace_producer(self, k: UInt32) -> Self.InplaceProducer:
         var base = (
             self.mbar_base
-            + UInt32(Self.CrossP_offset + Self.SfreeCount)
+            + UInt32(Self.CrossP_offset + 2)
             + k * UInt32(Self.InplaceDepth)
         )
         return {base, base}
@@ -4535,7 +4514,7 @@ struct FA4MiscMBars[
     def inplace_consumer(self, k: UInt32) -> Self.InplaceConsumer:
         var base = (
             self.mbar_base
-            + UInt32(Self.CrossP_offset + Self.SfreeCount)
+            + UInt32(Self.CrossP_offset + 2)
             + k * UInt32(Self.InplaceDepth)
         )
         return {base, base}
