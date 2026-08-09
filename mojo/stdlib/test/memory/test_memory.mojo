@@ -568,6 +568,77 @@ def test_memcmp_simd_zero_bytes() raises:
     ptr2.unsafe_free()
 
 
+@fieldwise_init
+struct TwelveByteStruct(TrivialRegisterPassable):
+    var a: UInt32
+    var b: UInt32
+    var c: UInt32
+
+
+@fieldwise_init
+struct SixteenByteStruct(TrivialRegisterPassable):
+    var a: UInt64
+    var b: UInt64
+
+
+def test_memcmp_high_bit_and_multiples_of_4() raises:
+    var a4 = alloc[UInt32]({count = 1}).unsafe_leak()
+    var b4 = alloc[UInt32]({count = 1}).unsafe_leak()
+    a4.unsafe_write(0x8000_0001)
+    b4.unsafe_write(0x0000_0001)
+    var res4_chunked = unsafe_memcmp(a4, b4, 1)
+    var res4_bytewise = unsafe_memcmp(
+        a4.unsafe_bitcast[Byte](), b4.unsafe_bitcast[Byte](), 4
+    )
+    assert_equal(res4_chunked, 1)
+    assert_equal(res4_chunked, res4_bytewise)
+    assert_equal(unsafe_memcmp(b4, a4, 1), -1)
+    a4.unsafe_free()
+    b4.unsafe_free()
+
+    var a8 = alloc[UInt64]({count = 1}).unsafe_leak()
+    var b8 = alloc[UInt64]({count = 1}).unsafe_leak()
+    a8.unsafe_write(0x8000_0000_0000_0001)
+    b8.unsafe_write(0x0000_0000_0000_0001)
+    var res8_chunked = unsafe_memcmp(a8, b8, 1)
+    var res8_bytewise = unsafe_memcmp(
+        a8.unsafe_bitcast[Byte](), b8.unsafe_bitcast[Byte](), 8
+    )
+    assert_equal(res8_chunked, 1)
+    assert_equal(res8_chunked, res8_bytewise)
+    assert_equal(unsafe_memcmp(b8, a8, 1), -1)
+    a8.unsafe_free()
+    b8.unsafe_free()
+
+    var a12 = alloc[TwelveByteStruct]({count = 1}).unsafe_leak()
+    var b12 = alloc[TwelveByteStruct]({count = 1}).unsafe_leak()
+    a12.unsafe_write(TwelveByteStruct(0, 0x8000_0000, 0))
+    b12.unsafe_write(TwelveByteStruct(0, 0x0000_0000, 0))
+    var res12_chunked = unsafe_memcmp(a12, b12, 1)
+    var res12_bytewise = unsafe_memcmp(
+        a12.unsafe_bitcast[Byte](), b12.unsafe_bitcast[Byte](), 12
+    )
+    assert_equal(res12_chunked, 1)
+    assert_equal(res12_chunked, res12_bytewise)
+    assert_equal(unsafe_memcmp(b12, a12, 1), -1)
+    a12.unsafe_free()
+    b12.unsafe_free()
+
+    var a16 = alloc[SixteenByteStruct]({count = 1}).unsafe_leak()
+    var b16 = alloc[SixteenByteStruct]({count = 1}).unsafe_leak()
+    a16.unsafe_write(SixteenByteStruct(0x8000_0000_0000_0000, 0))
+    b16.unsafe_write(SixteenByteStruct(0x0000_0000_0000_0000, 0))
+    var res16_chunked = unsafe_memcmp(a16, b16, 1)
+    var res16_bytewise = unsafe_memcmp(
+        a16.unsafe_bitcast[Byte](), b16.unsafe_bitcast[Byte](), 16
+    )
+    assert_equal(res16_chunked, 1)
+    assert_equal(res16_chunked, res16_bytewise)
+    assert_equal(unsafe_memcmp(b16, a16, 1), -1)
+    a16.unsafe_free()
+    b16.unsafe_free()
+
+
 def test_memset() raises:
     var pair = Pair(1, 2)
 
