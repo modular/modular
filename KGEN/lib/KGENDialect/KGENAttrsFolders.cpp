@@ -300,26 +300,23 @@ getFieldTypesFromStruct(StructInstanceType structType) {
 }
 
 /// Extract and rebind field types from a struct declaration using an evaluator.
-/// Returns std::nullopt on rebinding failure, or an empty vector for empty
-/// structs. If emitError is provided, it will be called with a diagnostic
-/// message when rebinding fails.
+/// Returns an empty vector for empty structs.
+///
+/// Returns std::nullopt when a field type is not ready yet. A null result from
+/// `getReboundAttribute` is the async retry signal, so callers must forward it
+/// as a null success rather than collapsing it into failure().
 static std::optional<SmallVector<Type>>
-rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator,
-                 llvm::function_ref<void(const Twine &)> emitError = nullptr) {
+rebindFieldTypes(StructDeclInterface decl, ParameterEvaluator &evaluator) {
   SmallVector<TypedAttr> fieldTypeAttrs;
   // MetaType does not really matter here, they will be striped later by
   // `ParamType::get(rebound)` anyway.
   decl.getFieldTypes(fieldTypeAttrs, TypeType::get(decl.getContext()));
 
   SmallVector<Type> fieldTypes;
-  for (auto [idx, typeAttr] : llvm::enumerate(fieldTypeAttrs)) {
+  for (TypedAttr typeAttr : fieldTypeAttrs) {
     TypedAttr rebound = evaluator.getReboundAttribute(typeAttr);
-    if (!rebound) {
-      if (emitError)
-        emitError("failed to rebind type for field at index " +
-                  std::to_string(idx) + " during offset calculation");
+    if (!rebound)
       return std::nullopt;
-    }
     fieldTypes.push_back(ParamType::get(rebound));
   }
   return fieldTypes;
@@ -375,8 +372,14 @@ FailureOr<TypedAttr> StructFieldTypesAttr::evaluateWithContext(
       resolved.decl.getInputParams(), resolved.paramValues,
       [&](ParameterEvaluator &evaluator) {
         SmallVector<TypedAttr> resultAttrs;
-        for (TypedAttr fieldType : fieldTypes)
-          resultAttrs.push_back(evaluator.getReboundAttribute(fieldType));
+        for (TypedAttr fieldType : fieldTypes) {
+          TypedAttr rebound = evaluator.getReboundAttribute(fieldType);
+          if (!rebound) {
+            result = TypedAttr();
+            return;
+          }
+          resultAttrs.push_back(rebound);
+        }
         result = cast<TypedAttr>(ParamListAttr::get(resultAttrs, getType()));
       });
   return result;
@@ -635,9 +638,11 @@ FailureOr<TypedAttr> StructFieldOffsetByIndexAttr::evaluateWithContext(
       resolved.decl.getInputParams(), resolved.paramValues,
       [&](ParameterEvaluator &evaluator) {
         std::optional<SmallVector<Type>> fieldTypesOpt =
-            rebindFieldTypes(resolved.decl, evaluator, emitError);
-        if (!fieldTypesOpt)
+            rebindFieldTypes(resolved.decl, evaluator);
+        if (!fieldTypesOpt) {
+          result = TypedAttr();
           return;
+        }
 
         FailureOr<int64_t> offsetOr = computeStructFieldOffset(
             *fieldTypesOpt, fieldIndex, target, emitError);
@@ -735,9 +740,11 @@ FailureOr<TypedAttr> StructFieldOffsetByNameAttr::evaluateWithContext(
       resolved.decl.getInputParams(), resolved.paramValues,
       [&](ParameterEvaluator &evaluator) {
         std::optional<SmallVector<Type>> fieldTypesOpt =
-            rebindFieldTypes(resolved.decl, evaluator, emitError);
-        if (!fieldTypesOpt)
+            rebindFieldTypes(resolved.decl, evaluator);
+        if (!fieldTypesOpt) {
+          result = TypedAttr();
           return;
+        }
 
         FailureOr<int64_t> offsetOr = computeStructFieldOffset(
             *fieldTypesOpt, fieldIndex, target, emitError);
