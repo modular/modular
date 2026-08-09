@@ -17,9 +17,9 @@ from std.compile import compile_info
 from std.hashlib import hash
 from std.memory import UnsafeMaybeUninit
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from test_utils import (
     CopyCounter,
@@ -383,13 +383,13 @@ def test_write_repr_to() raises:
 
 
 def test_inline_array_triviality() raises:
-    assert_true(TriviallyDeinitable[Array[Int, 1]])
-    assert_true(TriviallyCopyable[Array[Int, 1]])
-    assert_true(TriviallyMovable[Array[Int, 1]])
+    assert_true(IsTriviallyDeinitable[Array[Int, 1]])
+    assert_true(IsTriviallyCopyable[Array[Int, 1]])
+    assert_true(IsTriviallyMovable[Array[Int, 1]])
 
-    assert_false(TriviallyDeinitable[Array[String, 1]])
-    assert_false(TriviallyCopyable[Array[String, 1]])
-    assert_true(TriviallyMovable[Array[String, 1]])
+    assert_false(IsTriviallyDeinitable[Array[String, 1]])
+    assert_false(IsTriviallyCopyable[Array[String, 1]])
+    assert_true(IsTriviallyMovable[Array[String, 1]])
 
 
 def _return_array[copy: Bool = False]() -> Array[Int32, 4]:

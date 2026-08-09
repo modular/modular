@@ -31,7 +31,7 @@ from std.collections import check_bounds, check_slice_bounds
 from std.builtin.rebind import downcast
 from std.sys import align_of
 from std.sys.info import simd_width_of
-from std.traits import TriviallyCopyable, TriviallyDeinitable
+from std.traits import IsTriviallyCopyable, IsTriviallyDeinitable
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
@@ -704,7 +704,9 @@ struct Span[
         # needed). For non-trivial types, we keep the single-pass assignment
         # loop rather than unsafe_destroy_n + unsafe_uninit_copy_n, which would
         # be two passes over memory with worse cache locality.
-        comptime if TriviallyCopyable[Self.T] and TriviallyDeinitable[Self.T]:
+        comptime if IsTriviallyCopyable[Self.T] and IsTriviallyDeinitable[
+            Self.T
+        ]:
             unsafe_uninit_copy_n[overlapping=False](
                 # TODO(MOCO-4220) once fixed remove the unsafe_mut_cast
                 dest=self.unsafe_ptr().unsafe_mut_cast[True](),

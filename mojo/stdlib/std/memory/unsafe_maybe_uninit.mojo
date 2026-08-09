@@ -15,7 +15,7 @@
 from std.builtin.rebind import downcast
 from std.os import abort
 from std.memory import unsafe_memset_zero
-from std.traits import TriviallyCopyable, TriviallyMovable
+from std.traits import IsTriviallyCopyable, IsTriviallyMovable
 
 
 struct UnsafeMaybeUninit[T: AnyType](
@@ -64,8 +64,8 @@ struct UnsafeMaybeUninit[T: AnyType](
     """
 
     comptime __del__is_trivial = True
-    comptime __move_ctor_is_trivial = TriviallyMovable[Self.T]
-    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial = IsTriviallyMovable[Self.T]
+    comptime __copy_ctor_is_trivial = IsTriviallyCopyable[Self.T]
 
     comptime _mlir_type = __mlir_type[`!pop.array<1, `, Self.T, `>`]
 
@@ -115,7 +115,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             copy: The instance to copy from.
         """
         comptime assert conforms_to(Self.T, Copyable)
-        comptime assert TriviallyCopyable[Self.T]
+        comptime assert IsTriviallyCopyable[Self.T]
         self._array = copy._array
 
     def __init__(out self, *, deinit move: Self):
@@ -129,7 +129,7 @@ struct UnsafeMaybeUninit[T: AnyType](
             move: The value to move from.
         """
         comptime assert conforms_to(Self.T, Movable)
-        comptime assert TriviallyMovable[Self.T]
+        comptime assert IsTriviallyMovable[Self.T]
         self._array = move._array
 
     @always_inline

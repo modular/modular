@@ -21,9 +21,9 @@ from std.memory import UnsafeMaybeUninit
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from ._nicheable import (
     UnsafeNicheable,
@@ -186,9 +186,9 @@ struct _NichedOptionalStorage[
     pattern) is repurposed to encode the "empty" state, eliminating the extra
     byte of overhead that `_DefaultVariantStorage` would require."""
 
-    comptime __del__is_trivial = TriviallyDeinitable[Self.T]
-    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self.T]
-    comptime __move_ctor_is_trivial = TriviallyMovable[Self.T]
+    comptime __del__is_trivial = IsTriviallyDeinitable[Self.T]
+    comptime __copy_ctor_is_trivial = IsTriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial = IsTriviallyMovable[Self.T]
 
     var _memory: _NicheStorageFor[Self.T]
 
@@ -289,9 +289,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
     tracks the active type via an integer discriminant. Used whenever the
     variant types do not qualify for the niche-optimized path."""
 
-    comptime __del__is_trivial = Self.Ts.all[TriviallyDeinitable]()
-    comptime __copy_ctor_is_trivial = Self.Ts.all[TriviallyCopyable]()
-    comptime __move_ctor_is_trivial = Self.Ts.all[TriviallyMovable]()
+    comptime __del__is_trivial = Self.Ts.all[IsTriviallyDeinitable]()
+    comptime __copy_ctor_is_trivial = Self.Ts.all[IsTriviallyCopyable]()
+    comptime __move_ctor_is_trivial = Self.Ts.all[IsTriviallyMovable]()
 
     comptime _mlir_type = __mlir_type[
         `!kgen.variant<[rebind(:`,
@@ -544,9 +544,9 @@ struct Variant[*Ts: AnyType](
 
     comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
-    comptime __del__is_trivial = TriviallyDeinitable[Self._Storage]
-    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self._Storage]
-    comptime __move_ctor_is_trivial = TriviallyMovable[Self._Storage]
+    comptime __del__is_trivial = IsTriviallyDeinitable[Self._Storage]
+    comptime __copy_ctor_is_trivial = IsTriviallyCopyable[Self._Storage]
+    comptime __move_ctor_is_trivial = IsTriviallyMovable[Self._Storage]
 
     # Fields
     var _storage: Self._Storage

@@ -28,9 +28,9 @@ type-checked sum types.
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import align_of, size_of
 
@@ -67,13 +67,13 @@ def _check_union_types[*Ts: AnyType]():
         *Ts
     ](), "UnsafeUnion requires all types to be unique"
     comptime assert Ts.all[
-        TriviallyDeinitable
+        IsTriviallyDeinitable
     ](), "UnsafeUnion requires all types to have trivial destructors"
     comptime assert Ts.all[
-        TriviallyCopyable
+        IsTriviallyCopyable
     ](), "UnsafeUnion requires all types to have trivial copy constructors"
     comptime assert Ts.all[
-        TriviallyMovable
+        IsTriviallyMovable
     ](), "UnsafeUnion requires all types to have trivial move constructors"
 
 

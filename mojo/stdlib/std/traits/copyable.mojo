@@ -90,9 +90,9 @@ trait Copyable(Movable):
 
 
 # TODO(MOCO-4525): Remove `downcast`
-comptime TriviallyCopyable[T: AnyType]: Bool = conforms_to(
-    T, Copyable
-) and downcast[T, Copyable].__copy_ctor_is_trivial
+comptime IsTriviallyCopyable[T: AnyType]: Bool = conforms_to(
+    T, TrivialRegisterPassable
+) or (conforms_to(T, Copyable) and downcast[T, Copyable].__copy_ctor_is_trivial)
 """Indicates whether `T` is `Copyable` with a trivial copy initializer.
 
 A copy initializer is trivial when the compiler generates it and all of
