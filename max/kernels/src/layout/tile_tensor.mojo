@@ -2526,7 +2526,7 @@ struct TileTensor[
         ],
     ):
         """Return a LayoutTensor with the same shape, stride, and address space
-        of this tensor. Currently it expects flat layouts.
+        of this tensor.
 
         This is a utility to help with porting LayoutTensor methods to this type.
 
@@ -2546,10 +2546,13 @@ struct TileTensor[
                 ]
             ](self._storage),
             type_of(result.runtime_layout)(
-                coord_to_index_list(self.layout.shape_coord()).cast[
+                # A `RuntimeTuple` stores one entry per leaf, so a nested mode
+                # has to be flattened to supply them in the order it expects.
+                # `flatten()` is the identity on a flat `Coord`.
+                coord_to_index_list(self.layout.shape_coord().flatten()).cast[
                     result.layout_int_type
                 ](),
-                coord_to_index_list(self.layout.stride_coord()).cast[
+                coord_to_index_list(self.layout.stride_coord().flatten()).cast[
                     result.linear_idx_type
                 ](),
             ),
@@ -3177,7 +3180,7 @@ struct NullableTileTensor[
         ],
     ):
         """Return a LayoutTensor with the same shape, stride, and address space
-        of this tensor. Currently it expects flat layouts.
+        of this tensor.
 
         This is a utility to help with porting LayoutTensor methods to this type.
 
@@ -3192,10 +3195,13 @@ struct NullableTileTensor[
             # nullable pointers since TileTensor is the preferred alternative now.
             UnsafePointer(to=self.ptr).bitcast[type_of(result.ptr)]()[],
             type_of(result.runtime_layout)(
-                coord_to_index_list(self.layout.shape_coord()).cast[
+                # A `RuntimeTuple` stores one entry per leaf, so a nested mode
+                # has to be flattened to supply them in the order it expects.
+                # `flatten()` is the identity on a flat `Coord`.
+                coord_to_index_list(self.layout.shape_coord().flatten()).cast[
                     result.layout_int_type
                 ](),
-                coord_to_index_list(self.layout.stride_coord()).cast[
+                coord_to_index_list(self.layout.stride_coord().flatten()).cast[
                     result.linear_idx_type
                 ](),
             ),
