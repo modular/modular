@@ -282,3 +282,10 @@ def test_nested_fn4():
     # FIXME: This should be an error; we should make sure we have the same
     # version of the reference as when the closure was created.
     inner()
+
+def test_loop_iteration(var list: List[Int]):
+    # The mutate method should invalidate the active iterator.
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    for _ in list:
+        # expected-note @+1 {{origin was invalidated here}}
+        list.append(4)
