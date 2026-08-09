@@ -219,9 +219,6 @@ class Indexer(Module):
         )
         k = ops.concat([k_pe, k_nope], axis=-1)
 
-        q = self.hadamard_transform(q)
-        k = self.hadamard_transform(k)
-
         q_fp8, q_scale = act_quant(q, self.quant_config)
         k_fp8, k_scale = act_quant(k, self.quant_config)
 
