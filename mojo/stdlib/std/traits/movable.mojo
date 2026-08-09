@@ -72,9 +72,9 @@ trait Movable:
 
 
 # TODO(MOCO-4525): Remove `downcast`
-comptime TriviallyMovable[T: AnyType]: Bool = conforms_to(
-    T, Movable
-) and downcast[T, Movable].__move_ctor_is_trivial
+comptime IsTriviallyMovable[T: AnyType]: Bool = conforms_to(
+    T, TrivialRegisterPassable
+) or (conforms_to(T, Movable) and downcast[T, Movable].__move_ctor_is_trivial)
 """Indicates whether `T` is `Movable` with a trivial move initializer.
 
 A move initializer is trivial when the compiler generates it and all of

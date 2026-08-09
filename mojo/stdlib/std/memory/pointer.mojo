@@ -45,7 +45,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
-from std.traits import TriviallyMovable
+from std.traits import IsTriviallyMovable
 from std.memory.address_space import AddressSpace
 from std.memory import unsafe_memcpy
 from std.memory.memory import _free
@@ -1317,7 +1317,7 @@ struct Pointer[
               of `T`.
         """
 
-        comptime if TriviallyMovable[U]:
+        comptime if IsTriviallyMovable[U]:
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.

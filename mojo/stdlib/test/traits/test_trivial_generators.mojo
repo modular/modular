@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for `TriviallyMovable` / `TriviallyCopyable` / `TriviallyDeinitable`."""
+"""Tests for `IsTriviallyMovable` / `IsTriviallyCopyable` / `IsTriviallyDeinitable`."""
 
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
-from std.testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from test_utils import ConfigureTrivial
 
 
@@ -60,52 +60,52 @@ struct NonDeinitable(Deinitable where False, Movable):
 
 
 def test_builtin_scalar_types() raises:
-    assert_true(TriviallyMovable[Int])
-    assert_true(TriviallyCopyable[Int])
-    assert_true(TriviallyDeinitable[Int])
+    assert_true(IsTriviallyMovable[Int])
+    assert_true(IsTriviallyCopyable[Int])
+    assert_true(IsTriviallyDeinitable[Int])
 
-    assert_true(TriviallyMovable[Bool])
-    assert_true(TriviallyCopyable[Bool])
-    assert_true(TriviallyDeinitable[Bool])
+    assert_true(IsTriviallyMovable[Bool])
+    assert_true(IsTriviallyCopyable[Bool])
+    assert_true(IsTriviallyDeinitable[Bool])
 
-    assert_true(TriviallyMovable[Float64])
-    assert_true(TriviallyCopyable[Float64])
-    assert_true(TriviallyDeinitable[Float64])
+    assert_true(IsTriviallyMovable[Float64])
+    assert_true(IsTriviallyCopyable[Float64])
+    assert_true(IsTriviallyDeinitable[Float64])
 
 
 def test_string_is_non_trivial_copy_and_del() raises:
     # `String` owns a heap buffer, so copy and destruction are not trivial.
-    assert_false(TriviallyCopyable[String])
-    assert_false(TriviallyDeinitable[String])
+    assert_false(IsTriviallyCopyable[String])
+    assert_false(IsTriviallyDeinitable[String])
     # Moves remain a bit-copy though.
-    assert_true(TriviallyMovable[String])
+    assert_true(IsTriviallyMovable[String])
 
 
 def test_struct_with_only_trivial_fields() raises:
-    assert_true(TriviallyMovable[AllTrivial])
-    assert_true(TriviallyCopyable[AllTrivial])
-    assert_true(TriviallyDeinitable[AllTrivial])
+    assert_true(IsTriviallyMovable[AllTrivial])
+    assert_true(IsTriviallyCopyable[AllTrivial])
+    assert_true(IsTriviallyDeinitable[AllTrivial])
 
 
 def test_struct_with_user_defined_lifecycle() raises:
-    assert_false(TriviallyMovable[NoneTrivial])
-    assert_false(TriviallyCopyable[NoneTrivial])
-    assert_false(TriviallyDeinitable[NoneTrivial])
+    assert_false(IsTriviallyMovable[NoneTrivial])
+    assert_false(IsTriviallyCopyable[NoneTrivial])
+    assert_false(IsTriviallyDeinitable[NoneTrivial])
 
 
 def test_non_movable_type_is_never_trivial() raises:
-    assert_false(TriviallyMovable[NonMovable])
-    assert_false(TriviallyCopyable[NonMovable])
+    assert_false(IsTriviallyMovable[NonMovable])
+    assert_false(IsTriviallyCopyable[NonMovable])
 
 
 def test_non_copyable_type_is_trivially_movable_but_not_copyable() raises:
-    assert_true(TriviallyMovable[NonCopyable])
-    assert_false(TriviallyCopyable[NonCopyable])
+    assert_true(IsTriviallyMovable[NonCopyable])
+    assert_false(IsTriviallyCopyable[NonCopyable])
 
 
 def test_non_deinitable_type_is_never_trivially_deletable() raises:
-    assert_false(TriviallyDeinitable[NonDeinitable])
-    assert_true(TriviallyMovable[NonDeinitable])
+    assert_false(IsTriviallyDeinitable[NonDeinitable])
+    assert_true(IsTriviallyMovable[NonDeinitable])
 
 
 def test_configure_trivial_flags() raises:
@@ -115,50 +115,64 @@ def test_configure_trivial_flags() raises:
         copyinit_is_trivial=True,
         moveinit_is_trivial=True,
     ]
-    assert_true(TriviallyMovable[AllOn])
-    assert_true(TriviallyCopyable[AllOn])
-    assert_true(TriviallyDeinitable[AllOn])
+    assert_true(IsTriviallyMovable[AllOn])
+    assert_true(IsTriviallyCopyable[AllOn])
+    assert_true(IsTriviallyDeinitable[AllOn])
 
     comptime OnlyMove = ConfigureTrivial[
         del_is_trivial=False,
         copyinit_is_trivial=False,
         moveinit_is_trivial=True,
     ]
-    assert_true(TriviallyMovable[OnlyMove])
-    assert_false(TriviallyCopyable[OnlyMove])
-    assert_false(TriviallyDeinitable[OnlyMove])
+    assert_true(IsTriviallyMovable[OnlyMove])
+    assert_false(IsTriviallyCopyable[OnlyMove])
+    assert_false(IsTriviallyDeinitable[OnlyMove])
 
     comptime OnlyCopy = ConfigureTrivial[
         del_is_trivial=False,
         copyinit_is_trivial=True,
         moveinit_is_trivial=False,
     ]
-    assert_false(TriviallyMovable[OnlyCopy])
-    assert_true(TriviallyCopyable[OnlyCopy])
-    assert_false(TriviallyDeinitable[OnlyCopy])
+    assert_false(IsTriviallyMovable[OnlyCopy])
+    assert_true(IsTriviallyCopyable[OnlyCopy])
+    assert_false(IsTriviallyDeinitable[OnlyCopy])
 
     comptime OnlyDel = ConfigureTrivial[
         del_is_trivial=True,
         copyinit_is_trivial=False,
         moveinit_is_trivial=False,
     ]
-    assert_false(TriviallyMovable[OnlyDel])
-    assert_false(TriviallyCopyable[OnlyDel])
-    assert_true(TriviallyDeinitable[OnlyDel])
+    assert_false(IsTriviallyMovable[OnlyDel])
+    assert_false(IsTriviallyCopyable[OnlyDel])
+    assert_true(IsTriviallyDeinitable[OnlyDel])
 
 
 def test_helpers_match_underlying_flags() raises:
     # The helpers must agree with the raw trait fields they wrap.
-    assert_equal_bool(TriviallyMovable[Int], Int.__move_ctor_is_trivial)
-    assert_equal_bool(TriviallyCopyable[Int], Int.__copy_ctor_is_trivial)
-    assert_equal_bool(TriviallyDeinitable[Int], Int.__del__is_trivial)
-    assert_equal_bool(TriviallyMovable[String], String.__move_ctor_is_trivial)
-    assert_equal_bool(TriviallyCopyable[String], String.__copy_ctor_is_trivial)
-    assert_equal_bool(TriviallyDeinitable[String], String.__del__is_trivial)
+    assert_equal(IsTriviallyMovable[Int], Int.__move_ctor_is_trivial)
+    assert_equal(IsTriviallyCopyable[Int], Int.__copy_ctor_is_trivial)
+    assert_equal(IsTriviallyDeinitable[Int], Int.__del__is_trivial)
+    assert_equal(IsTriviallyMovable[String], String.__move_ctor_is_trivial)
+    assert_equal(IsTriviallyCopyable[String], String.__copy_ctor_is_trivial)
+    assert_equal(IsTriviallyDeinitable[String], String.__del__is_trivial)
 
 
-def assert_equal_bool(a: Bool, b: Bool) raises:
-    assert_true(a == b)
+struct TRP(TrivialRegisterPassable):
+    pass
+
+
+def _test_TRP[
+    T: TrivialRegisterPassable
+]() where (
+    IsTriviallyDeinitable[T]
+    and IsTriviallyCopyable[T]
+    and IsTriviallyMovable[T]
+):
+    pass
+
+
+def test_trivial_register_passable_type() raises:
+    _test_TRP[TRP]()
 
 
 def main() raises:

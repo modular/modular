@@ -22,9 +22,9 @@ from std.memory import memcmp
 from std.math import iota
 from std.memory.unsafe_pointer import unsafe_cast
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import _libc as libc
 from std.ffi import external_call
@@ -600,7 +600,7 @@ def _free(ptr: OptionalPointer[mut=True, ...]):
 
 
 @always_inline("nodebug")
-@deprecated(use=TriviallyMovable)
+@deprecated(use=IsTriviallyMovable)
 def is_trivially_movable[T: Movable]() -> Bool:
     """Returns whether `T` has a trivial move constructor.
 
@@ -619,7 +619,7 @@ def is_trivially_movable[T: Movable]() -> Bool:
 
 
 @always_inline("nodebug")
-@deprecated(use=TriviallyCopyable)
+@deprecated(use=IsTriviallyCopyable)
 def is_trivially_copyable[T: Copyable]() -> Bool:
     """Returns whether `T` has a trivial copy constructor.
 
@@ -638,7 +638,7 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
-@deprecated(use=TriviallyDeinitable)
+@deprecated(use=IsTriviallyDeinitable)
 def is_trivially_deletable[T: AnyType]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
@@ -712,7 +712,7 @@ def unsafe_uninit_move_n[
         behavior.
     """
 
-    comptime if TriviallyMovable[T]:
+    comptime if IsTriviallyMovable[T]:
         comptime if overlapping:
             unsafe_memmove(dest=dest, src=src, count=count)
         else:
@@ -824,7 +824,7 @@ def unsafe_uninit_copy_n[
         behavior.
     """
 
-    comptime if TriviallyCopyable[T]:
+    comptime if IsTriviallyCopyable[T]:
         comptime if overlapping:
             unsafe_memmove(dest=dest, src=src, count=count)
         else:
@@ -914,7 +914,7 @@ def unsafe_destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if TriviallyDeinitable[T]:
+    comptime if IsTriviallyDeinitable[T]:
         # Trivial destructors don't need to be called!
         pass
     else:

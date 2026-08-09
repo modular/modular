@@ -16,9 +16,9 @@ from std.memory import (
     unsafe_memcmp,
 )
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import size_of
 from test_utils import (
@@ -111,14 +111,14 @@ def test_triviality() raises:
         ]
     ]
 
-    assert_true(TriviallyCopyable[Trivial])
-    assert_true(TriviallyMovable[Trivial])
-    assert_true(TriviallyDeinitable[Trivial])
+    assert_true(IsTriviallyCopyable[Trivial])
+    assert_true(IsTriviallyMovable[Trivial])
+    assert_true(IsTriviallyDeinitable[Trivial])
 
-    assert_false(TriviallyCopyable[NotTrivial])
-    assert_false(TriviallyMovable[NotTrivial])
+    assert_false(IsTriviallyCopyable[NotTrivial])
+    assert_false(IsTriviallyMovable[NotTrivial])
     # UnsafeMaybeUninit always has a trivial destructor
-    assert_true(TriviallyDeinitable[NotTrivial])
+    assert_true(IsTriviallyDeinitable[NotTrivial])
 
 
 def test_conditional_register_passable() raises:

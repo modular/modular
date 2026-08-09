@@ -33,7 +33,7 @@ from std.memory import (
     pack_bits,
 )
 from std.memory.alloc import Layout
-from std.traits import TriviallyDeinitable
+from std.traits import IsTriviallyDeinitable
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
@@ -504,7 +504,7 @@ struct SwissTable[
             Both `K` and `V` must be `Deinitable`, since entries are
             destroyed in place.
         """
-        comptime if not TriviallyDeinitable[
+        comptime if not IsTriviallyDeinitable[
             SwissTableEntry[Self.K, Self.V, Self.H]
         ]:
             for i in range(self._capacity):

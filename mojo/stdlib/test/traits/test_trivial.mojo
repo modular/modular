@@ -13,9 +13,9 @@
 
 
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -45,7 +45,7 @@ struct ConditionalTriviality[
         self.add_event(EVENT_INIT)
 
     def __deinit__(deinit self):
-        comptime if TriviallyDeinitable[Self.T]:
+        comptime if IsTriviallyDeinitable[Self.T]:
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_DEL)
@@ -53,7 +53,7 @@ struct ConditionalTriviality[
     def __init__(out self, *, copy: Self):
         self.events = copy.events
 
-        comptime if TriviallyCopyable[Self.T]:
+        comptime if IsTriviallyCopyable[Self.T]:
             self.add_event(EVENT_COPY | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_COPY)
@@ -61,16 +61,16 @@ struct ConditionalTriviality[
     def __init__(out self, *, deinit move: Self):
         self.events = move.events
 
-        comptime if TriviallyMovable[Self.T]:
+        comptime if IsTriviallyMovable[Self.T]:
             self.add_event(EVENT_MOVE | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_MOVE)
 
 
 struct StructInheritTriviality[T: Copyable & Deinitable](Copyable):
-    comptime __move_ctor_is_trivial = TriviallyMovable[Self.T]
-    comptime __copy_ctor_is_trivial = TriviallyCopyable[Self.T]
-    comptime __del__is_trivial = TriviallyDeinitable[Self.T]
+    comptime __move_ctor_is_trivial = IsTriviallyMovable[Self.T]
+    comptime __copy_ctor_is_trivial = IsTriviallyCopyable[Self.T]
+    comptime __del__is_trivial = IsTriviallyDeinitable[Self.T]
 
 
 # ===-----------------------------------------------------------------------===#

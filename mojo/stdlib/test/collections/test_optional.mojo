@@ -14,9 +14,9 @@
 from std.builtin.device_passable import DevicePassable
 from std.collections import OptionalReg
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import size_of
 
@@ -201,14 +201,14 @@ struct _NonTrivial(Copyable):
 
 def test_optional_triviality() raises:
     comptime trivial = Optional[Int]
-    assert_true(TriviallyCopyable[trivial])
-    assert_true(TriviallyMovable[trivial])
-    assert_true(TriviallyDeinitable[trivial])
+    assert_true(IsTriviallyCopyable[trivial])
+    assert_true(IsTriviallyMovable[trivial])
+    assert_true(IsTriviallyDeinitable[trivial])
 
     comptime not_trivial = Optional[_NonTrivial]
-    assert_false(TriviallyCopyable[not_trivial])
-    assert_false(TriviallyMovable[not_trivial])
-    assert_false(TriviallyDeinitable[not_trivial])
+    assert_false(IsTriviallyCopyable[not_trivial])
+    assert_false(IsTriviallyMovable[not_trivial])
+    assert_false(IsTriviallyDeinitable[not_trivial])
 
 
 def test_optional_write_to() raises:

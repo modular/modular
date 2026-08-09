@@ -48,9 +48,9 @@ from std.memory import (
     unsafe_uninit_move_n,
 )
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -261,9 +261,9 @@ struct Array[T: AnyType, length: Int](
     comptime size = Self.length
     """The number of elements in the array. Deprecated alias for `length`."""
 
-    comptime __del__is_trivial: Bool = TriviallyDeinitable[Self.T]
-    comptime __copy_ctor_is_trivial: Bool = TriviallyCopyable[Self.T]
-    comptime __move_ctor_is_trivial: Bool = TriviallyMovable[Self.T]
+    comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
+    comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
+    comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]
 
     # Fields
     comptime type = __mlir_type[
@@ -531,7 +531,7 @@ struct Array[T: AnyType, length: Int](
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
-        comptime if TriviallyCopyable[Self.T]:
+        comptime if IsTriviallyCopyable[Self.T]:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -552,7 +552,7 @@ struct Array[T: AnyType, length: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if TriviallyMovable[Self.T]:
+        comptime if IsTriviallyMovable[Self.T]:
             self._array = move._array
         else:
             self = Self(uninitialized=True)

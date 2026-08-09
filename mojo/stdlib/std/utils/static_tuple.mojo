@@ -23,9 +23,9 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
 from std.reflection import reflect
 from std.traits import (
-    TriviallyCopyable,
-    TriviallyDeinitable,
-    TriviallyMovable,
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 
 # ===-----------------------------------------------------------------------===#
@@ -46,7 +46,9 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
       size: The number of elements.
     """
     comptime assert (
-        TriviallyMovable[T] and TriviallyCopyable[T] and TriviallyDeinitable[T]
+        IsTriviallyMovable[T]
+        and IsTriviallyCopyable[T]
+        and IsTriviallyDeinitable[T]
     ), String(
         (
             "`StaticTuple` element type must have a trivial move/copy"
