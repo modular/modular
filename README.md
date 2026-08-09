@@ -120,8 +120,8 @@ Highlights include:
 
 ## Contribute
 
-We accept contributions to the [Mojo standard library](./mojo), [MAX AI
-kernels](./max/kernels), [MAX model
+We accept contributions to the [Mojo standard library](./mojo), [MAX
+accelerator library](./max/kernels), [MAX model
 architectures](/max/python/max/pipelines/architectures), code examples, Mojo
 docs, and more.
 

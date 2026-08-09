@@ -4,11 +4,11 @@
   [About Mojo] | [Get started] | [API docs] | [Contributing] | [Changelog]
 </div>
 
-[About Mojo]: https://www.modular.com/mojo/
-[Get started]: https://docs.modular.com/mojo/manual/get-started/
-[API docs]: https://docs.modular.com/mojo/lib
+[About Mojo]: https://mojolang.org/
+[Get started]: https://mojolang.org/docs/manual/get-started/
+[API docs]: https://mojolang.org/docs/std/
 [Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://www.mojolang.org/releases
+[Changelog]: https://mojolang.org/releases/
 
 # Mojo language 🔥
 
