@@ -1542,7 +1542,17 @@ struct TrackedAndInteriorLiveness {
                                       other.interior.size());
   }
 
-  size_t countNumValuesLive() const { return tracked.count(); }
+  /// Return the # of directly tracked bits and the # of interior origins that
+  /// are live at this point. This is used for loop convergence checking.
+  std::pair<size_t, size_t> countNumLive() const {
+    size_t numInteriorLive = 0;
+    for (size_t i = 0, e = interior.size(); i != e; ++i) {
+      if (interior[i].getInt())
+        numInteriorLive++;
+    }
+    return {tracked.count(), numInteriorLive};
+  }
+
   bool isReachable() const { return tracked[0]; }
   void markReachable(bool value) { tracked[0] = value; }
 
@@ -2196,6 +2206,8 @@ private:
     os << "  continue: ";
     continueSet->print(valueSet, os) << "\n";
   }
+  interiorOriginTracker.dump();
+
   os.flush();
 }
 
@@ -3221,9 +3233,9 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
   // Iteratively scan the loop body until the live-in set converges.  This is
   // a trivial lattice with each bit converging to "not live in", so we know
   // this will terminate.
-  size_t numLiveIn;
+  std::pair<size_t, size_t> numLiveIn;
   do {
-    numLiveIn = continueSet.countNumValuesLive();
+    numLiveIn = continueSet.countNumLive();
     // Scan the body: any breaks will intersect their live-out set with
     // 'breakSet', and any continues will intersect their live-out set with
     // 'continueSet'.
@@ -3231,7 +3243,7 @@ void UninitializedValueScan::checkLoopOp(Operation &loopOp) {
     bodySets.scanBlock(loopOp.getRegion(0).front());
 
     // If any bits got cleared from the continueSet then we need to iterate.
-  } while (continueSet.countNumValuesLive() != numLiveIn);
+  } while (continueSet.countNumLive() != numLiveIn);
   // Any code after the loop continues on with the breaks valid.
 
   // If the loop has an 'else' region, scan it and then intersect with the loop

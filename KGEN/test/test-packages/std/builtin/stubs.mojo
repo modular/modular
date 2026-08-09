@@ -738,7 +738,9 @@ struct List[T: Copyable](Copyable, Iterable):
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _ListIter[Self.T, iterable_origin, True]
+    ]: Iterator = _ListIter[
+        Self.T, iterable_origin._get_owned_interior["element"], True
+    ]
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         abort()
