@@ -32,11 +32,11 @@ struct MemExample(ImplicitlyCopyable):
   def mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"borrow{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, imm *"lt._mlir_origin`">
-def borrow[lt: ImmOrigin](a: Pointer[MemExample, lt]._mlir_type):
+def borrow[lt: ImmOrigin](a: Pointer[MemExample, lt]._mlir_lit_ref):
   pass
 
 # CHECK-LABEL: lit.fn @"mutate{{.*}}"<{{.*}}>(%a: !lit.ref<!MemExample, mut *"lt._mlir_origin`">
-def mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_type):
+def mutate[lt: MutOrigin](a: Pointer[MemExample, lt]._mlir_lit_ref):
   pass
 
 # CHECK-LABEL: lit.fn @"implicit_borrow
@@ -55,8 +55,8 @@ def implicit_owned(var a: MemExample):
 # CHECK-LABEL: lit.fn @"parametricMut
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">) ->
 # CHECK-SAME: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool *"o.mut`", "_mlir_value">, *"o._mlir_origin`1">
-def parametricMut[o: Origin](a: Pointer[MemExample, o]._mlir_type)
-   -> Pointer[MemExample, o]._mlir_type:
+def parametricMut[o: Origin](a: Pointer[MemExample, o]._mlir_lit_ref)
+   -> Pointer[MemExample, o]._mlir_lit_ref:
   return a
 
 # CHECK-LABEL: lit.fn @"testParametricMut
@@ -239,10 +239,10 @@ def testLifetimeOf1(a: MemExample) -> Pointer[MemExample, origin_of(a)]:
 # CHECK-LABEL: lit.fn @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
-def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_type:
+def testLifetimeOf2(a: MemExample) -> Pointer[MemExample, origin_of(a)]._mlir_lit_ref:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
-  return Pointer(to=a)._value
+  return __get_mvalue_as_litref(a)
 
 # CHECK-LABEL: lit.fn @"callByRefResultLifetime
 def callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
@@ -295,16 +295,16 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
        while True: pass
 
 # Test that you can implicitly convert an "any" mutable reference (as is returned
-# by UnsafePointer for example) to mortal reference with specified origin.
+# by Pointer for example) to mortal reference with specified origin.
 # CHECK: lit.fn @"test_immortal_to_mortal
 def test_immortal_to_mortal(arg: Pointer[Int, _])
     -> Pointer[Int, arg.origin]:
   # CHECK-NEXT: [[ARGREF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}(%arg)
-  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[ARGREF]])
-  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__getitem__{{.*}}([[PTRVAL]])
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}Pointer::@"__init__{{.*}}([[ARGREF]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[PTRVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}@Pointer::@"__init__{{.*}}([[REF]])
   # CHECK-NEXT: kgen.return [[RES]]
-  return Pointer[Int, arg.origin](to=UnsafePointer(to=arg[])[])
+  return Pointer[Int, arg.origin](to=Pointer(to=arg[])[])
 
 
 # CHECK-LABEL: lit.fn @"ref_copyability

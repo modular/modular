@@ -1060,7 +1060,7 @@ struct ShapeContainer(Movable where False):
 
 # MSTDL-2267: Structs with "AnyOrigin" fields stop keeping things alive when passed to a function
 struct SwallowAnyOrigin(Movable where False):
-    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'UnsafePointer[Int, MutAnyOrigin]'}}
+    # expected-error @below {{struct fields cannot expose AnyOrigin in their type; foo has type 'Pointer[Int, MutAnyOrigin]'}}
     # expected-note @below {{consider parameterizing enclosing struct with an Origin}}
     # expected-note @below {{alternatively, use UntrackedOrigin if lifetime is managed explicitly}}
     var foo: UnsafePointer[Int, MutAnyOrigin]

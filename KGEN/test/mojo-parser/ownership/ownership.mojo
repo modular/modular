@@ -1200,7 +1200,7 @@ def use_int(a: Int): pass
 def handleAnyLifetime5():
     # lit.ref.load needs to extend the lifetime of A.
     var a = A[AnyOrigin[mut=True]]()
-    # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
+    # CHECK: [[INT_REF:%.*]] = {{.*}}Pointer::@"__getitem__
     # CHECK-NOT: lit.call {{.*}}__deinit__
     # CHECK: lit.ref.load [[INT_REF]]
     # CHECK: lit.call {{.*}}__deinit__{{.*}}(%a)
@@ -1389,7 +1389,7 @@ def use_parameterized_field():
   var s = MyParameterizedField[Dim](Dim(8), Dim(3))
   var litref = __get_mvalue_as_litref(s.b)
   var rebind = __mlir_op.`kgen.rebind`
-    [_type=Pointer[Int, origin_of(s.b)]._mlir_type](litref)
+    [_type=Pointer[Int, origin_of(s.b)]._mlir_lit_ref](litref)
   # expected-warning @+1 {{assignment to 'mvalue' was never used}}
   var mvalue = __get_litref_as_mvalue(rebind)
 

@@ -910,7 +910,7 @@ def test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
   var x : Pointer[T, b.origin] = a[]
 
   # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutUnsafeAnyOrigin]'}}
-  var y : Pointer[T, AnyOrigin[mut=True], a.address_space] = a[]
+  var y : Pointer[T, AnyOrigin[mut=True], address_space=a.address_space] = a[]
 
 def test_subscript_conflict(a: Int):
   # expected-error @below {{keyword parameter 'idx' was already used; remove the duplicate}}
@@ -1150,7 +1150,7 @@ def test_comptime_materialize():
   # Swimmingly fine.
   var rt_byte = byte
 
-  # expected-error @below {{cannot materialize compile-time value of type 'UnsafePointer[UInt8, ComptimeOrigin]' to a runtime value}}
+  # expected-error @below {{cannot materialize compile-time value of type 'Pointer[UInt8, ComptimeOrigin]' to a runtime value}}
   # expected-note @below {{the type contains an origin referring to a compile-time value}}
   var use_bad = bad
 

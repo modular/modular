@@ -48,6 +48,7 @@ comptime UntrackedOrigin[*, mut: Bool] = Origin[
     ],
 ]()
 comptime ImmUntrackedOrigin = UntrackedOrigin[mut=False]
+comptime MutUntrackedOrigin = UntrackedOrigin[mut=True]
 comptime ImmStaticOrigin = Origin[
     _mlir_origin=__mlir_attr[
         `#lit.origin.field<`,
@@ -437,17 +438,17 @@ struct Span[
     origin: Origin[mut=mut],
 ](TrivialRegisterPassable):
     # Field
-    var _data: UnsafePointer[Self.T, Self.origin]
+    var _data: Pointer[Self.T, Self.origin]
     var _len: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, Self.origin].unsafe_dangling()
+        self._data = Pointer[Self.T, Self.origin].unsafe_dangling()
         self._len = 0
 
     def __init__(
         out self,
         *,
-        unsafe_ptr: UnsafePointer[Self.T, Self.origin],
+        unsafe_ptr: Pointer[Self.T, Self.origin],
         length: Int,
     ):
         self._data = unsafe_ptr
@@ -468,7 +469,7 @@ struct Span[
 
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Self.T, Self.origin]:
+    ) -> Pointer[Self.T, Self.origin]:
         return self._data
 
     @always_inline
@@ -537,7 +538,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
     @always_inline
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, origin]:
+    ) -> Pointer[Byte, origin]:
         return self._slice.unsafe_ptr()
 
     @always_inline
@@ -610,7 +611,7 @@ struct String(ErrorConversionTrait, ImplicitlyCopyable, KeyElement):
 
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[UInt8, origin_of(self)]:
+    ) -> Pointer[UInt8, origin_of(self)]:
         return {}
 
 
@@ -1137,19 +1138,19 @@ struct VariadicList[
     ](
         out self,
         value: Pointer[
-            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_lit_ref],
             container_origin,
-        ]._mlir_type,
+        ]._mlir_lit_ref,
     ):
-        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # Convert the !lit.ref to a Pointer, then cast to a pointer to
         # the first element.
-        var array_up = UnsafePointer(to=Pointer(value)[])
-        var elt_ptr = UnsafePointer[_, ImmUntrackedOrigin](
+        var array_up = Pointer(to=Pointer(value)[])
+        var elt_ptr = Pointer[_, ImmUntrackedOrigin](
             __mlir_op.`pop.array.gep`(
                 array_up._get_kgen_pointer(),
                 Int(0).__mlir_index__(),
             )
-        ).bitcast[Self._EltPointerType]()
+        ).unsafe_bitcast[Self._EltPointerType]()
         var size_tmp = size  # FIXME: Weird MLIR syntax error?
         self.value = Span(unsafe_ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
@@ -1242,13 +1243,16 @@ struct AddressSpace(TrivialRegisterPassable):
 struct Pointer[
     mut: Bool,
     //,
-    type: AnyType,
+    T: AnyType,
     origin: Origin[mut=mut],
+    *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[
+](Defaultable, TrivialRegisterPassable):
+    comptime type = Self.T
+
+    comptime _mlir_lit_ref = __mlir_type[
         `!lit.ref<`,
-        Self.type,
+        Self.T,
         `, `,
         Self.origin._mlir_origin,
         `, `,
@@ -1256,62 +1260,172 @@ struct Pointer[
         `>`,
     ]
 
-    var _value: Self._mlir_type
+    comptime _mlir_type = __mlir_type[
+        `!kgen.pointer<`,
+        Self.T,
+        `,`,
+        Self.address_space._value.__mlir_index__(),
+        `>`,
+    ]
+    var _mlir_value: Self._mlir_type
+
+    def _get_kgen_pointer(self) -> Self._mlir_type:
+        return self._mlir_value
+
+    def __init__(out self):
+        self._mlir_value = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
+
+    @implicit
+    @always_inline("builtin")
+    def __init__(out self, value: Self._mlir_type):
+        self._mlir_value = value
 
     @always_inline("nodebug")
     @implicit
-    def __init__(out self, _mlir_value: Self._mlir_type):
-        self._value = _mlir_value
+    def __init__(out self, _mlir_value: Self._mlir_lit_ref):
+        self = Self(__mlir_op.`lit.ref.to_pointer`(_mlir_value))
 
     @always_inline("nodebug")
     def __init__(
         out self,
         *,
-        ref[
-            Self.origin, Self.address_space._value.__mlir_index__()
-        ] to: Self.type,
+        ref[Self.origin, Self.address_space._value.__mlir_index__()] to: Self.T,
     ):
         """Constructs a Pointer from a reference to a value.
 
         Args:
             to: The value to construct a pointer to.
         """
-        self = Self(_mlir_value=__get_mvalue_as_litref(to))
+        self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
 
     @implicit
     @always_inline("nodebug")
     def __init__(
         out self, other: Pointer
     ) where Self.origin.contains[other.origin]:
-        self._value = rebind[Self._mlir_type](other._value)
+        self._mlir_value = rebind[Self._mlir_type](other._mlir_value)
 
     @staticmethod
-    @always_inline("nodebug")
-    def address_of(
-        ref[Self.origin, Self.address_space] value: Self.type
-    ) -> Self:
-        return Pointer(_mlir_value=__get_mvalue_as_litref(value))
+    def address_of(ref[Self.address_space] arg: Self.T) -> Self:
+        return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
-    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
-        return __get_litref_as_mvalue(self._value)
+    @staticmethod
+    def unsafe_dangling() -> Self:
+        return Self()
+
+    @__unsafe_nested_origins_read_only
+    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.T:
+        while True:
+            pass
+
+    @__unsafe_nested_origins_read_only
+    def __getitem__(
+        self, offset: Int
+    ) -> ref[Self.origin, Self.address_space] Self.T:
+        while True:
+            pass
+
+    def store(self, offset: Int, value: Self.T):
+        pass
+
+    # Returns a reference to the pointee but with the origin rebased to be a
+    # interior origin derived from the specified base origin. This is used by
+    # collections that need to vend owned interior references.
+    @always_inline
+    def _get_ref_with_unsafe_interior_origin[
+        name: StringLiteral,
+    ](self, ref base: Some[AnyType]) -> ref[
+        origin_of(base)._get_owned_interior[name], Self.address_space
+    ] Self.T:
+        comptime res_origin = origin_of(base)._get_owned_interior[name]
+        comptime ptr_type = Pointer[
+            Self.T, res_origin, address_space=Self.address_space
+        ]
+        # Do this delicately since we're manufacturing an interior origin here.
+        return __get_litref_as_mvalue(
+            __mlir_op.`lit.ref.from_pointer`[_type=ptr_type._mlir_lit_ref](
+                self._mlir_value
+            )
+        )
+
+    @always_inline
+    def unsafe_take_pointee[
+        U: Movable, //
+    ](self: Pointer[U, _]) -> U where type_of(self).mut:
+        return __get_address_as_owned_value(self._mlir_value)
+
+    @always_inline("builtin")
+    def unsafe_bitcast[
+        U: AnyType
+    ](self) -> Pointer[U, Self.origin, address_space=Self.address_space]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Pointer[
+                U,
+                Self.origin,
+                address_space=Self.address_space,
+            ]._mlir_type,
+        ](self._mlir_value)
+
+    comptime _OriginCastType[
+        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
+    ] = Pointer[
+        Self.T,
+        target_origin,
+        address_space=Self.address_space,
+    ]
+
+    @always_inline("builtin")
+    def unsafe_mut_cast[
+        target_mut: Bool
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[
+                Self.origin.unsafe_mut_cast[target_mut]()
+            ]._mlir_type,
+        ](self._mlir_value)
+
+    @always_inline("builtin")
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[target_origin]:
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type=Self._OriginCastType[target_origin]._mlir_type,
+        ](self._mlir_value)
+
+    def as_imm(
+        self,
+    ) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[False]()]:
+        return self.unsafe_mut_cast[False]()
 
     @__unsafe_nested_origins_read_only
     @always_inline("nodebug")
     def __eq__(
-        self, rhs: Pointer[Self.type, _, Self.address_space, ...]
+        self, rhs: Pointer[Self.T, _, address_space=Self.address_space]
     ) -> Bool:
         return True
 
     @always_inline("nodebug")
     def __merge_with__[
-        other_type: type_of(Pointer[Self.type, _, Self.address_space]),
+        other_type: type_of(
+            Pointer[Self.T, _, address_space=Self.address_space]
+        ),
     ](self) -> Pointer[
         mut=Self.mut & other_type.origin.mut,
-        type=Self.type,
+        T=Self.T,
         origin=origin_of(Self.origin, other_type.origin),
         address_space=Self.address_space,
     ]:
-        return {self._value}  # allow lit.ref to convert.
+        return {self._mlir_value}  # allow kgen.pointer to convert.
+
+
+comptime UnsafePointer[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut],
+    *,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+] = Pointer[T, origin, address_space=address_space]
 
 
 struct Tuple[*element_types: Movable](ImplicitlyCopyable):
@@ -1341,145 +1455,11 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
             pass
 
 
-struct UnsafePointer[
-    mut: Bool,
-    //,
-    type: AnyType,
-    origin: Origin[mut=mut],
-    *,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-](Defaultable, TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[
-        `!kgen.pointer<`,
-        Self.type,
-        `,`,
-        Self.address_space._value.__mlir_index__(),
-        `>`,
-    ]
-    var _mlir_value: Self._mlir_type
-
-    def _get_kgen_pointer(self) -> Self._mlir_type:
-        return self._mlir_value
-
-    def __init__(out self):
-        self._mlir_value = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
-
-    @implicit
-    @always_inline("builtin")
-    def __init__(out self, value: Self._mlir_type):
-        self._mlir_value = value
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        ref[
-            Self.origin, Self.address_space._value.__mlir_index__()
-        ] to: Self.type,
-    ):
-        """Constructs a Pointer from a reference to a value.
-
-        Args:
-            to: The value to construct a pointer to.
-        """
-        self = Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(to)))
-
-    @staticmethod
-    def address_of(ref[Self.address_space] arg: Self.type) -> Self:
-        return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
-
-    @staticmethod
-    def unsafe_dangling() -> Self:
-        return Self()
-
-    @__unsafe_nested_origins_read_only
-    def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.type:
-        while True:
-            pass
-
-    @__unsafe_nested_origins_read_only
-    def __getitem__(
-        self, offset: Int
-    ) -> ref[Self.origin, Self.address_space] Self.type:
-        while True:
-            pass
-
-    def store(self, offset: Int, value: Self.type):
-        pass
-
-    # Returns a reference to the pointee but with the origin rebased to be a
-    # interior origin derived from the specified base origin. This is used by
-    # collections that need to vend owned interior references.
-    @always_inline
-    def _get_ref_with_unsafe_interior_origin[
-        name: StringLiteral,
-    ](self, ref base: Some[AnyType]) -> ref[
-        origin_of(base)._get_owned_interior[name], Self.address_space
-    ] Self.type:
-        comptime res_origin = origin_of(base)._get_owned_interior[name]
-        comptime ptr_type = Pointer[Self.type, res_origin, Self.address_space]
-        # Do this delicately since we're manufacturing an interior origin here.
-        return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ptr_type._mlir_type](
-                self._mlir_value
-            )
-        )
-
-    @always_inline
-    def take_pointee[
-        T: Movable, //
-    ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
-        return __get_address_as_owned_value(self._mlir_value)
-
-    @always_inline("builtin")
-    def bitcast[
-        T: AnyType
-    ](self) -> UnsafePointer[T, Self.origin, address_space=Self.address_space]:
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=UnsafePointer[
-                T,
-                Self.origin,
-                address_space=Self.address_space,
-            ]._mlir_type,
-        ](self._mlir_value)
-
-    comptime _OriginCastType[
-        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = UnsafePointer[
-        Self.type,
-        target_origin,
-        address_space=Self.address_space,
-    ]
-
-    @always_inline("builtin")
-    def unsafe_mut_cast[
-        target_mut: Bool
-    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=Self._OriginCastType[
-                Self.origin.unsafe_mut_cast[target_mut]()
-            ]._mlir_type,
-        ](self._mlir_value)
-
-    @always_inline("builtin")
-    def unsafe_origin_cast[
-        target_origin: Origin[mut=Self.mut]
-    ](self) -> Self._OriginCastType[target_origin]:
-        return __mlir_op.`pop.pointer.bitcast`[
-            _type=Self._OriginCastType[target_origin]._mlir_type,
-        ](self._mlir_value)
-
-    def as_imm(
-        self,
-    ) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[False]()]:
-        return self.unsafe_mut_cast[False]()
-
-
 comptime MutOpaquePointer[
     origin: Origin[mut=True],
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-] = UnsafePointer[NoneType, origin, address_space=address_space]
+] = Pointer[NoneType, origin, address_space=address_space]
 
 
 struct _StridedRangeIterator(Iterator, TrivialRegisterPassable):
@@ -1617,7 +1597,7 @@ def rebind[
     dest_type: AnyType,
 ](ref src: src_type) -> ref[src] dest_type:
     var lit = __get_mvalue_as_litref(src)
-    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_type](lit)
+    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
     return __get_litref_as_mvalue(rebound)
 
 
@@ -1627,7 +1607,7 @@ def rebind_var[
     dest_type: Movable,
 ](var src: src_type, out dest: dest_type):
     ref dest_ref = rebind[dest_type](src)
-    dest = UnsafePointer(to=dest_ref).take_pointee()
+    dest = Pointer(to=dest_ref).unsafe_take_pointee()
     __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
 
 
