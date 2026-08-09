@@ -1251,7 +1251,7 @@ def infer_address_space[
     mut: __mlir_type.i1,
     //,
     origin: Origin[mut=mut]
-](a: Pointer[Int, origin, AddressSpace(4)]._mlir_type):
+](a: Pointer[Int, origin, address_space=AddressSpace(4)]._mlir_lit_ref):
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.
 

@@ -970,7 +970,7 @@ struct FormVariadicPackWithCastedElementVariadic[
 # to Movable correctly.
 def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
-# CHECK-SAME: %ptr: !lit.struct<#UnsafePointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
+# CHECK-SAME: %ptr: !lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
 def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
                                   (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):

@@ -181,7 +181,7 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 def s4_make_closure(x: Int, mem: String) -> Int:
     def mutate[
         lt: Origin[mut=True]
-    ](a: Pointer[String, lt]._mlir_type, b: String) {var}:
+    ](a: Pointer[String, lt]._mlir_lit_ref, b: String) {var}:
         _ = mem
 
     return x
