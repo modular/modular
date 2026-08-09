@@ -67,7 +67,9 @@ tryConcretizeDeferredType(Type type,
       if (auto evalAttr = dyn_cast<ContextuallyEvaluatedAttrInterface>(val)) {
         FailureOr<TypedAttr> evaluated =
             evaluationContext->evaluateExpression(evalAttr);
-        if (succeeded(evaluated)) {
+        // A null success means the operand is not ready yet; print it
+        // unevaluated so the parse fails and the type stays deferred.
+        if (succeeded(evaluated) && *evaluated) {
           val = *evaluated;
           evaluatedToString = isa<StringAttr>(val);
         }
