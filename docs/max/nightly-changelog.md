@@ -898,6 +898,10 @@ This version is still a work in progress.
 - Fixed precision loss in `rms_norm`, `layer_norm`, `group_norm` (and
   fused variants) where a small `epsilon` such as `1e-6` was silently
   rounded in `bfloat16`; `epsilon` is now carried as `float32`.
+- Fixed `ops.group_norm()` raising `NotImplementedError` in eager mode on
+  CPU. `group_norm` previously had a GPU-only kernel; it now has a CPU
+  compute path too, so eager `group_norm` runs on CPU the same way
+  `layer_norm`/`rms_norm` already do.
 - Fixed MAX crashing the model worker on the first host KV-cache
   offload/reload with `--kv-connector dkv`.
 - Fixed memory-planning and OOM issues:

@@ -5274,6 +5274,103 @@ def group_norm_gpu[
         )
 
 
+def group_norm_cpu[
+    dtype: DType,
+    rank: Int,
+    //,
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        dtype, width
+    ],
+    gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+    beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
+](
+    shape: IndexList[rank, ...],
+    epsilon: Float32,
+    output: TileTensor[mut=True, dtype, ...],
+    num_groups: Int,
+    ctx: Optional[DeviceContext] = None,
+) raises:
+    """Computes group normalization on CPU.
+
+    Reduces a single-pass Welford mean/variance over each `(batch, group)`
+    block of `channels_per_group * spatial` elements, then applies the
+    per-channel `gamma`/`beta` affine transform. Parallelizes across
+    `N * num_groups` blocks.
+
+    Parameters:
+        dtype: Element type of the input and output tensors.
+        rank: Tensor rank of the input and output tensors (3 or 4).
+        input_fn: Function called to generate an input value.
+        gamma_fn: Function called to generate a gamma value.
+        beta_fn: Function called to generate a beta value.
+
+    Args:
+        shape: The shape of the input/output tensor.
+        epsilon: Small constant for numerical stability.
+        output: Output tensor receiving the normalized result.
+        num_groups: Number of groups the channel dimension is split into.
+        ctx: Optional device context used to size the CPU thread pool.
+    """
+    comptime assert output.rank == rank, "output.rank must be the same as rank"
+    comptime accum_type = get_accum_type[dtype]()
+
+    var N = shape[0]
+    var C = shape[1]
+    var spatial = shape.flattened_length() // (N * C)
+    var channels_per_group = C // num_groups
+    var group_size = channels_per_group * spatial
+    var num_rows = N * num_groups
+
+    if num_rows == 0 or group_size == 0:
+        return
+
+    var num_workers = min(parallelism_level(ctx), num_rows)
+    var chunk_size = ceildiv(num_rows, num_workers)
+
+    @__copy_capture(shape, num_groups, channels_per_group, spatial, epsilon)
+    @parameter
+    def task_func(thread_id: Int) raises:
+        var row_start = thread_id * chunk_size
+        var row_end = min(row_start + chunk_size, num_rows)
+
+        for row in range(row_start, row_end):
+            var n, g = divmod(row, num_groups)
+            var c_base = g * channels_per_group
+
+            @__copy_capture(shape, n, c_base, spatial)
+            @parameter
+            @always_inline
+            def indices_for(col: Int) -> IndexList[rank]:
+                var c_offset, s = divmod(col, spatial)
+                comptime if rank == 4:
+                    var h, w = divmod(s, shape[3])
+                    return IndexList[rank](n, c_base + c_offset, h, w)
+                else:
+                    return IndexList[rank](n, c_base + c_offset, s)
+
+            # Single-pass Welford mean/variance over the group.
+            var mean = Scalar[accum_type]()
+            var m2 = Scalar[accum_type]()
+            var count = Scalar[accum_type]()
+            for col in range(group_size):
+                var val = input_fn[1, rank](indices_for(col))[0].cast[
+                    accum_type
+                ]()
+                welford_update(val, mean, m2, count)
+
+            var norm_factor = rsqrt(m2 / count + epsilon.cast[accum_type]())
+
+            for col in range(group_size):
+                var idx = indices_for(col)
+                var val = input_fn[1, rank](idx)[0].cast[accum_type]()
+                var gamma_val = gamma_fn[1](Index(idx[1]))[0].cast[accum_type]()
+                var beta_val = beta_fn[1](Index(idx[1]))[0].cast[accum_type]()
+                var norm_val = (val - mean) * norm_factor * gamma_val + beta_val
+                output.store(Coord(idx), norm_val.cast[dtype]())
+
+    sync_parallelize[task_func](num_workers, ctx)
+
+
 @always_inline
 def group_norm[
     dtype: DType,
@@ -5284,7 +5381,7 @@ def group_norm[
     gamma_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     beta_fn: def[width: Int](IndexList[1]) capturing -> SIMD[dtype, width],
     /,
-    target: StaticString = "gpu",
+    target: StaticString = "cpu",
 ](
     shape: IndexList[rank],
     epsilon: Float32,
@@ -5296,9 +5393,6 @@ def group_norm[
     comptime assert (
         rank > 2 and rank < 5
     ), "group_norm requires input rank of 3 or 4"
-    comptime assert is_gpu[
-        target
-    ](), "group_norm only supports GPU targets at this point"
 
     if shape.canonicalize() != rebind[IndexList[rank]](
         coord_to_index_list(output.layout.shape_coord())
@@ -5327,16 +5421,33 @@ def group_norm[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        group_norm_gpu[
-            dtype=dtype,
-            rank=rank,
-            input_fn=input_fn,
-            gamma_fn=gamma_fn,
-            beta_fn=beta_fn,
-        ](
-            shape,
-            epsilon,
-            output,
-            num_groups,
-            ctx=ctx,
-        )
+        comptime if is_cpu[target]():
+            group_norm_cpu[
+                dtype=dtype,
+                rank=rank,
+                input_fn=input_fn,
+                gamma_fn=gamma_fn,
+                beta_fn=beta_fn,
+            ](
+                shape,
+                epsilon,
+                output,
+                num_groups,
+                Optional[DeviceContext](ctx),
+            )
+        elif is_gpu[target]():
+            group_norm_gpu[
+                dtype=dtype,
+                rank=rank,
+                input_fn=input_fn,
+                gamma_fn=gamma_fn,
+                beta_fn=beta_fn,
+            ](
+                shape,
+                epsilon,
+                output,
+                num_groups,
+                ctx=ctx,
+            )
+        else:
+            comptime assert False, "unsupported target " + target
