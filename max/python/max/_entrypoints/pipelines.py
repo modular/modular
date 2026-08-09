@@ -39,7 +39,11 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 # Subcommands that should not configure/emit telemetry.
-_TELEMETRY_OPT_OUT_COMMANDS = {"benchmark", "list"}
+_TELEMETRY_OPT_OUT_COMMANDS = {
+    "benchmark",
+    "list",
+    "warm-interpreter-cache",
+}
 
 
 def check_model_flag_conflict(args: list[str]) -> None:
