@@ -638,6 +638,20 @@ def test_memcmp_high_bit_and_multiples_of_4() raises:
     a16.unsafe_free()
     b16.unsafe_free()
 
+    var c4 = alloc[UInt32]({count = 1}).unsafe_leak()
+    var d4 = alloc[UInt32]({count = 1}).unsafe_leak()
+    c4.unsafe_write(0x0000_0002)
+    d4.unsafe_write(0x8000_0001)
+    var resc_chunked = unsafe_memcmp(c4, d4, 1)
+    var resc_bytewise = unsafe_memcmp(
+        c4.unsafe_bitcast[Byte](), d4.unsafe_bitcast[Byte](), 4
+    )
+    assert_equal(resc_chunked, 1)
+    assert_equal(resc_chunked, resc_bytewise)
+    assert_equal(unsafe_memcmp(d4, c4, 1), -1)
+    c4.unsafe_free()
+    d4.unsafe_free()
+
 
 def test_memset() raises:
     var pair = Pair(1, 2)

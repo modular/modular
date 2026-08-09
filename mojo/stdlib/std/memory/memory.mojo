@@ -28,11 +28,13 @@ from std.traits import (
 )
 from std.sys import _libc as libc
 from std.ffi import external_call
+from std.bit import byte_swap
 from std.sys import (
     align_of,
     codegen_unreachable,
     get_defined_string,
     is_gpu,
+    is_little_endian,
     llvm_intrinsic,
     simd_bit_width,
     simd_width_of,
@@ -58,6 +60,9 @@ def _memcmp_impl_unconstrained[
         var s1i = s1[unsafe_offset=i]
         var s2i = s2[unsafe_offset=i]
         if s1i != s2i:
+            comptime if is_little_endian() and size_of[dtype]() > 1:
+                s1i = byte_swap(s1i)
+                s2i = byte_swap(s2i)
             return 1 if s1i > s2i else -1
     return 0
 
@@ -76,6 +81,9 @@ def _memcmp_opt_impl_unconstrained[
             var s1i = s1[unsafe_offset=i]
             var s2i = s2[unsafe_offset=i]
             if s1i != s2i:
+                comptime if is_little_endian() and size_of[dtype]() > 1:
+                    s1i = byte_swap(s1i)
+                    s2i = byte_swap(s2i)
                 return 1 if s1i > s2i else -1
         return 0
 
@@ -92,7 +100,12 @@ def _memcmp_opt_impl_unconstrained[
                     SIMD[DType.uint8, simd_width](255),
                 ).reduce_min()
             )
-            return -1 if s1i[index] < s2i[index] else 1
+            var v1 = s1i[index]
+            var v2 = s2i[index]
+            comptime if is_little_endian() and size_of[dtype]() > 1:
+                v1 = byte_swap(v1)
+                v2 = byte_swap(v2)
+            return -1 if v1 < v2 else 1
 
     var s1i = s1.unsafe_load[width=simd_width](last)
     var s2i = s2.unsafe_load[width=simd_width](last)
@@ -104,7 +117,12 @@ def _memcmp_opt_impl_unconstrained[
                 SIMD[DType.uint8, simd_width](255),
             ).reduce_min()
         )
-        return -1 if s1i[index] < s2i[index] else 1
+        var v1 = s1i[index]
+        var v2 = s2i[index]
+        comptime if is_little_endian() and size_of[dtype]() > 1:
+            v1 = byte_swap(v1)
+            v2 = byte_swap(v2)
+        return -1 if v1 < v2 else 1
     return 0
 
 
