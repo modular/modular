@@ -933,12 +933,16 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
-    ](self: Span[mut=True, Scalar[dtype], _]):
+    ](
+        self: Span[mut=True, Scalar[dtype], _],
+        func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
+    ):
         """Apply the function to the `Span` inplace.
 
         Parameters:
             dtype: The DType.
+
+        Args:
             func: The function to evaluate.
         """
 
@@ -965,17 +969,19 @@ struct Span[
     def apply[
         dtype: DType,
         //,
-        func: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
+    ](
+        self: Span[mut=True, Scalar[dtype], _],
+        func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
-        cond: def[w: SIMDLength](SIMD[dtype, w]) capturing -> SIMD[
-            DType.bool, w
-        ],
-    ](self: Span[mut=True, Scalar[dtype], _]):
+        cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],
+    ):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
 
         Parameters:
             dtype: The DType.
+
+        Args:
             func: The function to evaluate.
             cond: The condition to apply the function.
         """
