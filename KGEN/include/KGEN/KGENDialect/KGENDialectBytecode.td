@@ -208,6 +208,10 @@ def UnknownAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def SingletonAttr : DialectAttribute<(attr
+  Type:$type
+)>;
+
 def UnboundAttr : DialectAttribute<(attr
   Type:$type
 )> {
@@ -644,7 +648,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     PogMetadataAttr,
     PogListAttr,
     FuncPtrBitcastAttr,
-    ParamIdenticalAttr
+    ParamIdenticalAttr,
+    SingletonAttr
   ];
 }
 

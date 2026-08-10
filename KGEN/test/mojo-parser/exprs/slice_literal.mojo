@@ -24,7 +24,7 @@ struct Variant[*Ts: Movable](Movable where False):
 
 # The variadic parameter resolves to `[::SIMD[::DType(int), ::SIMDLength(1)], ::ContiguousSlice]`, proving the
 # integer literal and the slice literal each select the matching `Variant` arm.
-# CHECK: lit.fn @"foo[KGENParamList[slice_literal::Variant[::SIMD[::DType(int), ::SIMDLength(1)], ::ContiguousSlice, *?]]
+# CHECK: lit.fn @"foo[KGENParamList[slice_literal::Variant[::SIMD[::DType(int), ::SIMDLength(1)], ::ContiguousSlice, *()]]
 # CHECK-SAME: sourceName = "foo"
 def foo[*elts: Variant[Int, ContiguousSlice]]() -> NoneType:
     pass

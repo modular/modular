@@ -309,6 +309,26 @@ def KGEN_UnknownAttr : KGEN_ExprAttr<"Unknown", "unknown"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SingletonAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_SingletonAttr : KGEN_ExprAttr<"Singleton", "singleton"> {
+  let summary = "The unique value of a type with a single inhabitant.";
+  let description = [{
+    The `#kgen.singleton` attribute is the value of a type that has exactly one
+    inhabitant, so there is nothing left to represent once the type is known.
+    This covers structs with no stored fields such as literal types.
+  }];
+
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    return get(type.getContext(), type);
+  }]>];
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundAttr
 //===----------------------------------------------------------------------===//
 

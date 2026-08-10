@@ -221,7 +221,7 @@ void OriginPrinter::print(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (isa<UnknownAttr, UnboundAttr>(param)) {
+  if (isa<UnknownAttr, UnboundAttr, SingletonAttr>(param)) {
     os << "_";
     return;
   }

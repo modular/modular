@@ -732,7 +732,7 @@ TypedAttr FnOp::getFuncLiteralGenerator(
   // a FnLiteralTypeGeneratorType.
   for (auto [idx, type] : enumerate(fullSig.getInputParamTypes()))
     paramValues.push_back(ParamIndexRefAttr::get(idx, type));
-  auto fnLiteral = UnknownAttr::get(FuncLiteralType::get(
+  auto fnLiteral = SingletonAttr::get(FuncLiteralType::get(
       FuncSymbolAttr::get(symbol, fullSig.getBody(), paramValues)));
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,

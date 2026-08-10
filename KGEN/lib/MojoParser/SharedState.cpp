@@ -3892,7 +3892,13 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     ASTDecl *decl = ASTType(eltType).getDecl(shared);
     if (decl &&
         ASTType(eltType).isTrivialRegisterType(decl->getLoc(), shared)) {
-      varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+      // A struct with no fields never get initialized, so it has to start as a
+      // singleton value.
+      auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
+      if (structOp && structOp.getFieldDecls().empty())
+        varDeclSoFar[varDecl] = SingletonAttr::get(eltType);
+      else
+        varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
       return TypedAttr();
     }
   }
