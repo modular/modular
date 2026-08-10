@@ -100,6 +100,22 @@ void populateArgumentInfos(LIT::SharedState &shared,
 // Constraint merging
 //===----------------------------------------------------------------------===//
 
+/// Render a constraint proposition as Mojo source-level syntax, e.g.
+/// `conforms_to(T, Writable)`. `evaluator`, when non-null, rebinds the
+/// proposition first, substituting any positional parameter reference for the
+/// named one registered by `populateParameterInfos`. Propositions emitted with
+/// the parameters already in scope carry named references throughout, so the
+/// rebind is a no-op for them; pass the evaluator anyway rather than rely on
+/// that holding for a given caller.
+///
+/// Propositions are stored de-short-circuited, which leaves an `and`/`or`
+/// spelled as `b if a else a`; the source operator is recovered before
+/// printing. A conjunction of `conforms_to` predicates over one parameter is
+/// then composed into a single `conforms_to(T, A & B)`.
+std::string renderConstraintProposition(TypedAttr proposition,
+                                        ParameterEvaluator *evaluator,
+                                        LIT::SharedState &shared);
+
 /// Walk `constraints` and merge any single-param `conforms_to` ones into the
 /// trait bounds of the matching parameter's type string. Constraints that
 /// can't be merged are returned as a " where ..." suffix. `evaluator`, when

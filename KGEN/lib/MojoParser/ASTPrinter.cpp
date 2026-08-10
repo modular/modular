@@ -989,6 +989,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
       // Finally, also print any operands.
       return printApplyOperands(operandsToPrint, fullSig, calleeIsMethod);
     }
+    // TODO(MOTO-1632): Operands are never parenthesized, so a nested operand
+    // of lower precedence reparses as something else: `(a or b) and c` prints
+    // as `a or b and c`, which reads as `a or (b and c)`. Parenthesize an
+    // operand whose opcode binds less tightly than its parent's.
     case POC::And:
       llvm::interleave(
           operands, [&](TypedAttr op) { printParam(os, op, ctx); },

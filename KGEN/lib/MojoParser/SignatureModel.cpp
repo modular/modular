@@ -151,6 +151,146 @@ void populateArgumentInfos(SharedState &shared, FnTypeGeneratorType signature,
 // Constraint merging
 //===----------------------------------------------------------------------===//
 
+/// Match a proposition that `deShortCircuitCond` rewrote from `a and b` into
+/// `cond(a, b, a)`, or from `a or b` into `cond(a, a, b)`, and hand back the
+/// operator with the *sugared* operands so their source spelling survives.
+///
+/// `ASTType::printParam` matches the same lowering structurally, by comparing
+/// the condition against the repeated branch. That comparison holds for a
+/// `where` clause written in source but not for a conformance condition, whose
+/// branches reach here canonicalized and so are no longer equal to the
+/// condition. The sugar's expanded form names the operator either way, so match
+/// on that instead.
+///
+/// TODO(MOTO-1632): only the outermost operator is recovered. The recursion
+/// relies on each operand carrying the sugar `deShortCircuitCond` attaches,
+/// which the inner `and` of a chain like `a and b and c` does not, so it stays
+/// in its lowered `b if a else a` spelling.
+static bool matchDeShortCircuitedLogical(TypedAttr proposition, POC &opcode,
+                                         TypedAttr &lhs, TypedAttr &rhs) {
+  auto sugar = dyn_cast<SugarAttr>(proposition);
+  if (!sugar)
+    return false;
+  auto expanded = dyn_cast<ParamOperatorAttr>(sugar.getExpanded());
+  if (!expanded)
+    return false;
+  opcode = expanded.getOpcode();
+  if (opcode != POC::And && opcode != POC::Or)
+    return false;
+
+  // Peel this level's sugar only, so the operands keep their own, then the
+  // `Bool` field access wrapping the lowered `cond`.
+  TypedAttr inner = SugarAttr::strip(sugar.getSugared());
+  auto extract = dyn_cast_or_null<LIT::StructExtractAttr>(inner);
+  if (extract)
+    inner = extract.getStructValue();
+
+  auto cond = dyn_cast_or_null<ParamOperatorAttr>(inner);
+  if (!cond || cond.getOpcode() != POC::Cond || cond.getOperands().size() != 3)
+    return false;
+
+  // The `cond` operand is already a scalar bool; only the branches carry the
+  // `Bool` wrapper, so only they get the field access re-applied.
+  lhs = cond.getOperands()[0];
+  rhs = cond.getOperands()[opcode == POC::And ? 1 : 2];
+  if (extract)
+    rhs =
+        LIT::StructExtractAttr::get(rhs, extract.getField(), extract.getType());
+  return true;
+}
+
+/// Print `proposition`, spelling a de-short-circuited `and`/`or` as written.
+///
+/// Recovering the operator here rather than rebuilding a `ParamOperatorAttr`
+/// keeps the operands in source order: reconstructing the operator would run
+/// them through the attribute's commutative canonicalization and swap them.
+static void printProposition(raw_ostream &os, TypedAttr proposition,
+                             SharedState &shared) {
+  POC opcode;
+  TypedAttr lhs, rhs;
+  if (matchDeShortCircuitedLogical(proposition, opcode, lhs, rhs)) {
+    printProposition(os, lhs, shared);
+    os << (opcode == POC::And ? " and " : " or ");
+    printProposition(os, rhs, shared);
+    return;
+  }
+  ASTType::printParam(os, proposition, {&shared});
+}
+
+/// Split `printed` at each ` and ` that is not nested inside parentheses.
+/// Returns false when there is no top-level `and`, leaving `conjuncts` empty.
+static bool splitTopLevelConjuncts(StringRef printed,
+                                   SmallVectorImpl<StringRef> &conjuncts) {
+  StringRef separator = " and ";
+  unsigned depth = 0;
+  size_t start = 0;
+  for (size_t i = 0, e = printed.size(); i < e; ++i) {
+    if (printed[i] == '(') {
+      ++depth;
+    } else if (printed[i] == ')') {
+      if (depth)
+        --depth;
+    } else if (depth == 0 && printed.substr(i).starts_with(separator)) {
+      conjuncts.push_back(printed.slice(start, i));
+      i += separator.size() - 1;
+      start = i + 1;
+    }
+  }
+  if (conjuncts.empty())
+    return false;
+  conjuncts.push_back(printed.substr(start));
+  return true;
+}
+
+/// Rewrite a conjunction of `conforms_to` predicates over a single parameter as
+/// one predicate over composed traits, so `conforms_to(T, A) and
+/// conforms_to(T, B)` reads as `conforms_to(T, A & B)`. That is how the bound
+/// would be written by hand, and it lets `mergeConformsToConstraints` fold the
+/// result into the parameter's rendered bounds, which it already does for a
+/// lone `conforms_to`.
+///
+/// Returns `printed` unchanged unless every top-level conjunct is a
+/// `conforms_to` naming the same parameter.
+static std::string mergeConformsToConjuncts(std::string printed) {
+  SmallVector<StringRef> conjuncts;
+  if (!splitTopLevelConjuncts(printed, conjuncts))
+    return printed;
+
+  StringRef param;
+  SmallVector<StringRef> traits;
+  for (StringRef conjunct : conjuncts) {
+    StringRef conjunctParam, traitStr;
+    if (!parseConformsToString(conjunct.trim(), conjunctParam, traitStr))
+      return printed;
+    if (traits.empty())
+      param = conjunctParam;
+    else if (param != conjunctParam)
+      return printed;
+    // A trait repeated across conjuncts composes to itself.
+    if (!llvm::is_contained(traits, traitStr))
+      traits.push_back(traitStr);
+  }
+
+  std::string merged;
+  llvm::raw_string_ostream os(merged);
+  os << "conforms_to(" << param << ", ";
+  llvm::interleave(traits, os, " & ");
+  os << ")";
+  return merged;
+}
+
+std::string renderConstraintProposition(TypedAttr proposition,
+                                        ParameterEvaluator *evaluator,
+                                        SharedState &shared) {
+  if (evaluator)
+    proposition = evaluator->getReboundAttribute(proposition);
+
+  std::string printed;
+  llvm::raw_string_ostream os(printed);
+  printProposition(os, proposition, shared);
+  return mergeConformsToConjuncts(std::move(printed));
+}
+
 std::string mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
                                        ParameterEvaluator *evaluator,
                                        SharedState &shared,
@@ -161,15 +301,8 @@ std::string mergeConformsToConstraints(ArrayRef<ConstraintAttr> constraints,
   llvm::raw_string_ostream os(remaining);
 
   for (const ConstraintAttr &c : constraints) {
-    TypedAttr proposition = c.getProposition();
-    if (evaluator)
-      proposition = evaluator->getReboundAttribute(proposition);
-
-    std::string printed;
-    {
-      llvm::raw_string_ostream pos(printed);
-      ASTType::printParam(pos, proposition, {&shared});
-    }
+    std::string printed =
+        renderConstraintProposition(c.getProposition(), evaluator, shared);
 
     StringRef paramName, traitStr;
     if (parseConformsToString(printed, paramName, traitStr)) {

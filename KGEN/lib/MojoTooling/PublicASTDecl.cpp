@@ -14,6 +14,7 @@
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
@@ -1204,12 +1205,59 @@ FunctionDeclOverloadSet::toJSON(MojoParserContext &ctx) const {
 // PublicTraitDecl
 //===----------------------------------------------------------------------===//
 
+/// Render the `where` condition of every conditional conformance in
+/// `canonicalTrait` into `conditions`.
+///
+/// The canonical trait stores conditions in an array parallel to its symbols,
+/// left empty when every conformance is unconditional. Slots whose condition
+/// is trivially true are unconditional and contribute no entry; slots whose
+/// condition is trivially false are already dropped from the symbol list by
+/// `TraitType`'s canonicalization, so a `where False` conformance is absent
+/// from the docs entirely.
+///
+/// Conformance conditions are stored de-short-circuited, which inverts the
+/// sugar for `and`/`or`; `renderConstraintProposition` undoes that.
+static void collectConformanceConditions(TraitType canonicalTrait,
+                                         ParameterEvaluator &evaluator,
+                                         SharedState &shared,
+                                         ConformanceConditionMap &conditions) {
+  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
+  if (constraints.empty())
+    return;
+
+  for (auto [symbol, constraint] : llvm::zip_equal(symbols, constraints)) {
+    if (isTriviallyTrueConstraint(constraint))
+      continue;
+
+    conditions.try_emplace(
+        symbol, renderConstraintProposition(constraint.getProposition(),
+                                            &evaluator, shared));
+  }
+}
+
+/// Look up the rendered `where` condition guarding conformance to `symbol`,
+/// or an empty string when the conformance is unconditional. `conditions` is
+/// null for decls that cannot conform conditionally (traits, extensions).
+static StringRef
+lookupConformanceCondition(const ConformanceConditionMap *conditions,
+                           SymbolRefAttr symbol) {
+  if (!conditions)
+    return {};
+  auto it = conditions->find(symbol);
+  return it == conditions->end() ? StringRef() : StringRef(it->second);
+}
+
 /// Collect the names of the various parent decls of a decl given its set of
-/// canonical traits.
+/// canonical traits. Conditionally-conformed traits are rendered with their
+/// `where` clause, e.g. `Writable (where conforms_to(T, Writable))`. Callers
+/// join the entries with commas, so the clause is parenthesized to keep it
+/// from reading as a continuation of the list.
 /// TODO: Whenever we support inherited classes/structs, collect those as well.
 static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
-                                SmallVectorImpl<StringRef> &parentTraits,
-                                TraitType canonicalTrait) {
+                                SmallVectorImpl<std::string> &parentTraits,
+                                TraitType canonicalTrait,
+                                const ConformanceConditionMap *conditions) {
   DenseSet<SymbolRefAttr> seenDecls;
   for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
     if (!seenDecls.insert(symbol).second)
@@ -1220,8 +1268,13 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
     std::optional<StringRef> name = decl.getName();
     if (!name)
       continue;
-    if (isa_and_nonnull<TraitDeclOp>(decl.getIfOperation()))
-      parentTraits.push_back(*name);
+    if (!isa_and_nonnull<TraitDeclOp>(decl.getIfOperation()))
+      continue;
+    std::string entry = name->str();
+    if (StringRef condition = lookupConformanceCondition(conditions, symbol);
+        !condition.empty())
+      entry += (" (where " + condition + ")").str();
+    parentTraits.push_back(std::move(entry));
   };
   llvm::sort(parentTraits);
 }
@@ -1230,15 +1283,23 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
 /// self-references
 static llvm::json::Array
 collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
-                                TraitType canonicalTrait) {
+                                TraitType canonicalTrait,
+                                const ConformanceConditionMap *conditions) {
   llvm::json::Array result;
   DenseSet<SymbolRefAttr> seenDecls;
 
-  SmallVector<std::pair<StringRef, TypeMetadata>> traitData;
+  struct TraitEntry {
+    StringRef name;
+    TypeMetadata metadata;
+    StringRef condition;
+  };
+  SmallVector<TraitEntry> traitData;
 
   for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
     if (!seenDecls.insert(symbol).second)
       continue;
+
+    StringRef condition = lookupConformanceCondition(conditions, symbol);
 
     // Try to resolve the trait through AST
     MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
@@ -1247,7 +1308,7 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
       if (name && isa_and_nonnull<TraitDeclOp>(decl.getIfOperation())) {
         TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
             *name, &self, &ctx.getSharedState());
-        traitData.emplace_back(*name, metadata);
+        traitData.push_back({*name, metadata, condition});
         continue;
       }
     }
@@ -1268,21 +1329,25 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
 
       TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
           traitName, &self, &ctx.getSharedState());
-      traitData.emplace_back(traitName, metadata);
+      traitData.push_back({traitName, metadata, condition});
     }
   }
 
   // Sort by trait name for consistency
   llvm::sort(traitData,
-             [](const auto &a, const auto &b) { return a.first < b.first; });
+             [](const auto &a, const auto &b) { return a.name < b.name; });
 
   // Create JSON objects with flattened metadata structure
-  for (const auto &[name, metadata] : traitData) {
+  for (const TraitEntry &entry : traitData) {
     llvm::json::Object traitObj;
-    traitObj["name"] = name.str();
+    traitObj["name"] = entry.name.str();
 
-    if (!metadata.getRelativeDocPath().empty()) {
-      traitObj["path"] = metadata.getRelativeDocPath().str();
+    if (!entry.metadata.getRelativeDocPath().empty()) {
+      traitObj["path"] = entry.metadata.getRelativeDocPath().str();
+    }
+
+    if (!entry.condition.empty()) {
+      traitObj["condition"] = entry.condition.str();
     }
 
     result.push_back(std::move(traitObj));
@@ -1314,9 +1379,11 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
       extractChildDecls<PublicFunctionDecl, FnOp>(*decl, shouldHideFn));
 
-  // Collect parent traits with type metadata
+  // Collect parent traits with type metadata. A trait's own conformance list
+  // cannot carry a `where` clause, so there are no conditions to report.
   llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
-      ctx, decl, cast<TraitDeclOp>(decl.getIfOperation()).getCanonicalTrait());
+      ctx, decl, cast<TraitDeclOp>(decl.getIfOperation()).getCanonicalTrait(),
+      /*conditions=*/nullptr);
 
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
@@ -1399,10 +1466,11 @@ std::string PublicStructDecl::getDeclarationSnippet(
   printStructSignatureFromInfos(getName(), paramInfos, structConstraints,
                                 ctx.getSharedState(), os, so);
 
-  SmallVector<StringRef> parentTraits;
+  SmallVector<std::string> parentTraits;
   collectParentTraits(
       ctx, decl, parentTraits,
-      cast<StructDeclOp>(decl.getIfOperation()).getCanonicalTrait());
+      cast<StructDeclOp>(decl.getIfOperation()).getCanonicalTrait(),
+      &conformanceConditions);
   if (!parentTraits.empty()) {
     os << "\n# Traits: ";
     llvm::interleaveComma(parentTraits, os,
@@ -1463,8 +1531,8 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
 
   // Collect parent traits with type metadata
   llvm::json::Array parentTraitsWithMetadata = collectParentTraitsWithMetadata(
-      ctx, decl,
-      cast<StructDeclOp>(decl->getIfOperation()).getCanonicalTrait());
+      ctx, decl, cast<StructDeclOp>(decl->getIfOperation()).getCanonicalTrait(),
+      &conformanceConditions);
 
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
@@ -1502,6 +1570,9 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
       shared, signature.getInputParamTypes(), paramListAttr, parameters,
       /*selfType=*/std::nullopt, paramListAttr.getBodyConstraints(),
       &structConstraints, &declRef);
+
+  collectConformanceConditions(structOp.getCanonicalTrait(), evaluator, shared,
+                               conformanceConditions);
 
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();

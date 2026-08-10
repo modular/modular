@@ -760,4 +760,81 @@ def baz():
     assertExtras.contains(hover!.contents.value, "f.t[0]");
     assertExtras.doesNotContain(hover!.contents.value, "__getitem__");
   });
+
+  it("should show conditional conformance conditions", async function () {
+    const doc = new Document(
+      server,
+      "test:///test.mojo",
+      `
+trait Serializable:
+    def serialize(self) -> Int:
+        ...
+
+
+@fieldwise_init
+struct CondCopyable[T: Movable & Deinitable](
+    Copyable where conforms_to(T, Copyable)
+):
+    var value: Self.T
+
+
+@fieldwise_init
+struct CondAnd[N: Int, T: Movable & Deinitable](
+    Serializable where conforms_to(T, Serializable) and N > 4
+):
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+@fieldwise_init
+struct CondWhereClause[N: Int](Serializable where N > 4) where N < 10:
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+`
+    );
+    await doc.open();
+
+    // The compiler-injected AnyType/Deinitable/Movable conformances stay
+    // unconditional, so only the declared one carries a condition.
+    assert.deepStrictEqual(
+      (await doc.hover(doc.findFirstPosition("CondCopyable")))!.contents,
+      {
+        kind: "markdown",
+        value: `\`\`\`mojo
+struct CondCopyable[T: Deinitable & Movable]
+# Traits: AnyType, Copyable (where conforms_to(T, Copyable)), Deinitable, Movable
+\`\`\``,
+      }
+    );
+
+    const condAnd = await doc.hover(doc.findFirstPosition("CondAnd"));
+    assert.deepStrictEqual(condAnd!.contents, {
+      kind: "markdown",
+      value: `\`\`\`mojo
+struct CondAnd[N: Int, T: Deinitable & Movable]
+# Traits: AnyType, Deinitable, Movable, Serializable (where conforms_to(T, Serializable) and (N > Int(4)))
+\`\`\``,
+    });
+    // The compiler lowers `a and b` to the ternary `b if a else a`. Recovering
+    // the operator is what keeps that spelling out of the hover.
+    assert.ok(MarkupContent.is(condAnd!.contents));
+    assertExtras.doesNotContain(condAnd!.contents.value, " if ");
+
+    // A conformance condition and the struct's own trailing `where` clause are
+    // separate constraints, and each renders in its own place.
+    assert.deepStrictEqual(
+      (await doc.hover(doc.findFirstPosition("CondWhereClause")))!.contents,
+      {
+        kind: "markdown",
+        value: `\`\`\`mojo
+struct CondWhereClause[N: Int] where (N < Int(10))
+# Traits: AnyType, Deinitable, Movable, Serializable (where (N > Int(4)))
+\`\`\``,
+      }
+    );
+  });
 });
