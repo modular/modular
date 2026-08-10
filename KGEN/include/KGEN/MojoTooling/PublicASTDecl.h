@@ -18,8 +18,10 @@
 #include "KGEN/MojoParser/SignatureModel.h"
 #include "KGEN/MojoTooling/TypeMetadata.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/JSON.h"
@@ -63,6 +65,13 @@ static constexpr size_t kTypicalArgumentCount = 2;
 class PublicDecl;
 class MojoASTTypeRef;
 enum class PublicDeclKind;
+
+/// Rendered `where` conditions of a decl's conditional trait conformances,
+/// keyed by the conformed trait's symbol. Unconditional conformances are
+/// absent. The key is the symbol rather than the trait's short name because
+/// distinct symbols can share one name.
+using ConformanceConditionMap =
+    llvm::DenseMap<mlir::SymbolRefAttr, std::string>;
 
 //===----------------------------------------------------------------------===//
 // MojoASTDeclRef
@@ -831,7 +840,7 @@ public:
   ///   "name": string,
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSet[],
-  ///   "parentTraits": string[],
+  ///   "parentTraits": { "name": string, "path"?: string }[],
   ///   "summary": string
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
@@ -897,7 +906,13 @@ public:
   ///   "description": string,
   ///   "functions": FunctionDeclOverloadSet[],
   ///   "parameters": PublicParameterDecl[],
-  ///   "parentTraits": string[],
+  ///   "parentTraits": {
+  ///     "name": string,
+  ///     "path"?: string,
+  ///     // The `where` condition, present only for a conditional conformance
+  ///     // such as `Writable where conforms_to(T, Writable)`.
+  ///     "condition"?: string
+  ///   }[],
   ///   "fields": PublicStructFieldDecl[],
   ///   "signature": string,
   ///   "summary": string
@@ -928,6 +943,8 @@ private:
 
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
   std::string structConstraints;
+
+  ConformanceConditionMap conformanceConditions;
 
   KGEN::LIT::TypeConvention convention;
 

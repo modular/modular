@@ -485,6 +485,186 @@ struct StructWithTrailingTraitConformance[T: Serializable] where conforms_to(
 
 
 ##===----------------------------------------------------------------------===##
+# Conditional trait conformance
+# A `where` clause attached to an entry of the conformance list guards that one
+# conformance. It surfaces as a "condition" field on the matching "parentTraits"
+# entry. Keys within each entry are alphabetical, so "condition" precedes
+# "name"; entries themselves are sorted by trait name.
+##===----------------------------------------------------------------------===##
+
+
+# The compiler-injected AnyType/Deinitable/Movable conformances stay
+# unconditional, so only Copyable carries a condition.
+# CHECK: "name": "StructWithConditionalConformance",
+# CHECK: "parentTraits": [
+# CHECK-NEXT: {
+# CHECK-NEXT:   "name": "AnyType",
+# CHECK: "condition": "conforms_to(T, Copyable)",
+# CHECK-NEXT: "name": "Copyable",
+@fieldwise_init
+struct StructWithConditionalConformance[T: Movable & Deinitable](
+    Copyable where conforms_to(T, Copyable)
+):
+    """A struct that is Copyable only when its element type is."""
+
+    var value: Self.T
+
+
+# An unconditional conformance declared alongside a conditional one gets no
+# condition of its own.
+# CHECK: "name": "StructWithMixedConformance",
+# CHECK: "condition": "conforms_to(T, Copyable)",
+# CHECK-NEXT: "name": "Copyable",
+# CHECK: "name": "Serializable",
+# CHECK-NEXT: "path":
+# CHECK: "signature": "struct StructWithMixedConformance[T: Deinitable & Movable]"
+@fieldwise_init
+struct StructWithMixedConformance[T: Movable & Deinitable](
+    Copyable where conforms_to(T, Copyable), Serializable
+):
+    """A struct mixing an unconditional and a conditional conformance."""
+
+    var value: Self.T
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# A compound condition renders with its logical operator, operands in source
+# order. Conjoined `conforms_to`s over one parameter compose into a single
+# predicate, which is how the bound would be written by hand.
+# CHECK: "name": "StructWithCompoundCondition",
+# CHECK: "condition": "conforms_to(T, Serializable & Printable)",
+# CHECK-NEXT: "name": "Serializable",
+@fieldwise_init
+struct StructWithCompoundCondition[T: Movable & Deinitable](
+    Serializable where conforms_to(T, Serializable) and conforms_to(
+        T, Printable
+    )
+):
+    """A struct whose conformance condition combines two predicates."""
+
+    var value: Self.T
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# A condition need not be a `conforms_to`. Only `and`/`or` propositions are
+# expanded past their sugar; anything else keeps its source spelling, so a
+# comparison renders as one rather than as the opcodes it lowers to.
+# CHECK: "name": "StructWithNonConformanceCondition",
+# CHECK: "condition": "(N > Int(4))",
+# CHECK-NEXT: "name": "Serializable",
+@fieldwise_init
+struct StructWithNonConformanceCondition[N: Int](Serializable where N > 4):
+    """A struct whose conformance condition is not a `conforms_to`."""
+
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# Recovering the `and`/`or` must not cost the operands their own spelling: a
+# comparison combined with a `conforms_to` still renders as a comparison.
+# CHECK: "name": "StructWithMixedOperandKinds",
+# CHECK: "condition": "conforms_to(T, Serializable) and (N > Int(4))",
+# CHECK-NEXT: "name": "Serializable",
+@fieldwise_init
+struct StructWithMixedOperandKinds[N: Int, T: Movable & Deinitable](
+    Serializable where conforms_to(T, Serializable) and N > 4
+):
+    """A struct whose condition mixes a comparison and a `conforms_to`."""
+
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# Same for `or`.
+# CHECK: "name": "StructWithOrCondition",
+# CHECK: "condition": "conforms_to(T, Serializable) or (N > Int(4))",
+# CHECK-NEXT: "name": "Serializable",
+@fieldwise_init
+struct StructWithOrCondition[N: Int, T: Movable & Deinitable](
+    Serializable where conforms_to(T, Serializable) or N > 4
+):
+    """A struct whose condition is a disjunction."""
+
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# KNOWN LIMITATION: only the outermost `and`/`or` carries the sugar that names
+# the operator, so in a three-term chain the inner one is left in its lowered
+# `b if a else a` spelling. The operands still render correctly. Recovering the
+# inner operator needs the lowered `cond` to be matched structurally rather
+# than read off the sugar.
+# CHECK: "name": "StructWithChainedCondition",
+# CHECK: "condition": "(N > Int(4)) if conforms_to(T, Serializable) else conforms_to(T, Serializable) and (N < Int(100))",
+# CHECK-NEXT: "name": "Serializable",
+@fieldwise_init
+struct StructWithChainedCondition[N: Int, T: Movable & Deinitable](
+    Serializable where conforms_to(T, Serializable) and N > 4 and N < 100
+):
+    """A struct whose condition chains three predicates."""
+
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+# The user-facing message of a `where (condition, "message")` conformance is
+# reserved for diagnostics; only the condition itself reaches the docs. A
+# "message" key would sort between "condition" and "name", so the CHECK-NEXT
+# pairing below is what rules it out.
+# CHECK: "name": "StructWithConditionMessage",
+# CHECK: "condition": "conforms_to(T, Copyable)",
+# CHECK-NEXT: "name": "Copyable",
+@fieldwise_init
+struct StructWithConditionMessage[T: Movable & Deinitable](
+    Copyable where (conforms_to(T, Copyable), "T must be copyable")
+):
+    """A struct whose conformance condition carries a diagnostic message."""
+
+    var value: Self.T
+
+
+# `where False` is the opt-out idiom: the conformance can never hold, so the
+# trait is dropped from the conformance list rather than reported with a
+# condition. Movable is otherwise injected into every struct.
+# CHECK: "name": "StructOptingOutOfMovable",
+# CHECK: "parentTraits": [
+# CHECK-NOT: "Movable"
+# CHECK: "signature": "struct StructOptingOutOfMovable"
+@fieldwise_init
+struct StructOptingOutOfMovable(Movable where False):
+    """A struct that opts out of the implicit Movable conformance."""
+
+    var value: Int
+
+
+# A struct with no conditional conformance emits no "condition" anywhere.
+# CHECK: "name": "StructWithoutConditionalConformance",
+# CHECK: "parentTraits": [
+# CHECK-NOT: "condition"
+# CHECK: "signature": "struct StructWithoutConditionalConformance"
+@fieldwise_init
+struct StructWithoutConditionalConformance(Serializable):
+    """A struct whose conformances are all unconditional."""
+
+    var value: Int
+
+    def serialize(self) -> Int:
+        return 0
+
+
+##===----------------------------------------------------------------------===##
 # Struct with method-level constraints
 # Note: In JSON output, struct fields are alphabetical, so 'functions' comes
 # before 'name' and 'signature'.
@@ -506,6 +686,30 @@ struct MethodConstraints:
         Parameters:
             M: A positive integer parameter.
         """
+        pass
+
+
+# A method constraining the enclosing struct's parameter through `Self` is the
+# shape the standard library uses. Naming the parameter as `Self.T` rather than
+# `T` leaves the lowered `cond`'s branches unequal to its condition, so the
+# printer's structural match for a de-short-circuited `and` does not fire and
+# the clause used to reach the docs as `b if a else a`.
+#
+# CHECK: "name": "method_constraining_self_param",
+# CHECK: "signature": "def method_constraining_self_param(self) where conforms_to(T, Printable & Serializable)"
+# CHECK: "name": "SelfParamMethodConstraints"
+@fieldwise_init
+struct SelfParamMethodConstraints[T: Movable & Deinitable]:
+    """A struct whose method constrains the struct's own parameter."""
+
+    var value: Self.T
+
+    def method_constraining_self_param(
+        self,
+    ) where conforms_to(Self.T, Printable) and conforms_to(
+        Self.T, Serializable
+    ):
+        """Method constraining the enclosing struct's parameter."""
         pass
 
 
