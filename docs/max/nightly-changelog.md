@@ -36,6 +36,11 @@ This version is still a work in progress.
 
 - `max warm-interpreter-cache` now shows a live progress row per op family.
 
+- Fixed `max warm-interpreter-cache` failing with a `ValueError` on a
+  machine where an op family supports none of the available devices (for
+  example, a GPU-only op family on a CPU-only machine). Such a family now
+  warms as a no-op instead of aborting the whole command.
+
 - Fixed LoRA and denoising-cache CLI flags replacing, rather than
   overriding, the matching `--config-file` section; `--enable-lora=false`
   now also disables LoRA that a recipe enabled, instead of being ignored.

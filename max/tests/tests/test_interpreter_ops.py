@@ -39,6 +39,7 @@ from max._interpreter_ops import (
     select_gc,
     shape_rearrange_gc,
     unary_elementwise_gc,
+    warm,
 )
 from max._interpreter_ops.handlers import (
     _handle_buffer_create,
@@ -9385,6 +9386,50 @@ class TestLazyGCModelCompilation:
         family.ensure_swept()
         assert calls == ["sweep"]
         assert family.swept
+
+    def test_warm_families_skips_family_with_no_sweep_devices(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A family that builds for none of this machine's devices (e.g. a
+        GPU-only family on a CPU-only host) warms as zero ops instead of
+        crashing the whole warm."""
+
+        # MXF-599: GPU-only group_norm crashed the warm on CPU-only machines.
+        class _GpuOnlyFamily(gc_compile.GCFamilySpec):
+            name = "test_gpu_only"
+
+            def build_module(self) -> Module:
+                return Module()
+
+            def build_module_for_device(
+                self, device: Device, module: Module | None = None
+            ) -> Module:
+                return module if module is not None else Module()
+
+            def sweep_devices(self) -> list[Device]:
+                return []
+
+        family = gc_compile.GCOpFamily(_GpuOnlyFamily())
+        monkeypatch.setattr(gc_compile, "registered_families", lambda: [family])
+        monkeypatch.setattr(gc_compile, "read_manifest", lambda: None)
+
+        assert list(warm.warm_families(jobs=2)) == [("test_gpu_only", 0)]
+        assert list(warm.warm_families(jobs=1)) == [("test_gpu_only", 0)]
+        assert family.cache == {}
+
+        # The manifest-adoption path must also no-op without ever building a
+        # session (InferenceSession(devices=[]) silently defaults to CPU).
+        monkeypatch.setattr(gc_compile, "read_manifest", lambda: {"x": 1})
+        monkeypatch.setattr(gc_compile, "manifest_adoptable", lambda m: True)
+
+        def _no_session(*args: object, **kwargs: object) -> None:
+            raise AssertionError("InferenceSession must not be constructed")
+
+        monkeypatch.setattr(gc_compile.engine, "InferenceSession", _no_session)
+        family.swept = False
+        family.ensure_swept()
+        assert family.swept
+        assert family.cache == {}
 
     def test_cache_dir_from_derived_path(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

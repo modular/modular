@@ -101,7 +101,8 @@ class _SweepableSpec:
         raise AssertionError("not used by compile_sweep")
 
     def sweep_devices(self) -> list[Device]:
-        return []
+        # Non-empty, or compile_sweep no-ops before reaching build_module.
+        return [CPU()]
 
 
 class _FakeSession:
