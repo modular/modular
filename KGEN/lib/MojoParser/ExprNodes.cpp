@@ -3665,9 +3665,12 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
           emitter.emitTypeValueUpCastToTrait({lhsPV, lhs.expr}, anyTypeTrait);
       FailureOr<PValue> rhsOr =
           emitter.emitTypeValueUpCastToTrait({rhsPV, rhs.expr}, anyTypeTrait);
+      // A null result means the upcast diagnosed an error (e.g. a non-concrete
+      // type value), and `failure()` means it does not apply at all.
+      assert(succeeded(lhsOr) && succeeded(rhsOr));
+      if (lhsOr->isNull() || rhsOr->isNull())
+        return {};
 
-      assert(succeeded(lhsOr) && succeeded(rhsOr) &&
-             "failed to upcast type values");
       PValue res = ParamOperatorAttr::get(POC::EQ, {*lhsOr, *rhsOr});
       if (kind == ExprNode::Kind::kCmpNE)
         res = ParamOperatorAttr::getNot(res);
