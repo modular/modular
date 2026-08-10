@@ -51,6 +51,7 @@ from max._xgrammar.structural_tag import (
 )
 from max.pipelines.context import GrammarMatcher
 from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib.tool_parsing import get_parser_cls
 from max.pipelines.sampling import DEFAULT_STRUCTURED_OUTPUT_BACKEND
 from transformers import PreTrainedTokenizerBase, PreTrainedTokenizerFast
 
@@ -376,9 +377,9 @@ class XgrammarMatcher:
         return XgrammarMatcher(self._matcher.fork())
 
 
-def _content_stripped_special_token_ids(
+def content_stripped_special_token_ids(
     tokenizer: PreTrainedTokenizerBase,
-) -> list[int]:
+) -> set[int]:
     """Return the ids of special/added tokens that carry no string content.
 
     A control/special token that decodes to the empty string with
@@ -395,11 +396,58 @@ def _content_stripped_special_token_ids(
         candidates.add(int(tid))
     for tid in getattr(tokenizer, "added_tokens_decoder", None) or {}:
         candidates.add(int(tid))
-    return sorted(
+    return {
         tid
         for tid in candidates
         if tokenizer.decode([tid], skip_special_tokens=True) == ""
+    }
+
+
+def special_token_ids_for_markers(
+    markers: Collection[str],
+    tokenizer_delegate: PreTrainedTokenizerBase,
+) -> set[int]:
+    """Resolve structural marker strings to their single vocabulary token ids.
+
+    A marker the tokenizer encodes as one token is registered special so its
+    bytes are masked out of byte-level string content; a marker with no
+    single-token form is skipped (the grammar keeps its byte-literal form).
+    """
+    unk_id = getattr(tokenizer_delegate, "unk_token_id", None)
+    ids: set[int] = set()
+    for marker in markers:
+        token_id = tokenizer_delegate.convert_tokens_to_ids(marker)
+        if token_id is None or token_id == unk_id:
+            continue
+        ids.add(int(token_id))
+    return ids
+
+
+# Structural tool-call markers a model's grammar references by token id (rather
+# than by byte literal), keyed by the parser's ``XGRAMMAR_FORMAT`` model key.
+# They must be masked out of byte-level string content so a bare string value's
+# length bound cannot be satisfied by the marker's own bytes, while the marker
+# stays emittable where the grammar references it by id.
+STRUCTURAL_MARKERS_BY_MODEL: dict[str, tuple[str, ...]] = {
+    "glm_4_7": ("<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"),
+}
+
+
+def special_token_ids_for(
+    tool_parser_name: str | None,
+    tokenizer_delegate: PreTrainedTokenizerBase,
+) -> set[int]:
+    """Return every special token id the grammar backend must mask."""
+    parser_cls = get_parser_cls(tool_parser_name)
+    model = (
+        getattr(parser_cls, "XGRAMMAR_FORMAT", None)
+        if isinstance(parser_cls, type)
+        else None
     )
+    markers = STRUCTURAL_MARKERS_BY_MODEL.get(model, ()) if model else ()
+    return content_stripped_special_token_ids(
+        tokenizer_delegate
+    ) | special_token_ids_for_markers(markers, tokenizer_delegate)
 
 
 # xgrammar's compiled-grammar cache is unbounded by default; a long-running
@@ -443,6 +491,7 @@ class XgrammarBackend(GrammarBackend[Any]):
         # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
         reject_unsupported: bool = False,
         stop_token_ids: Collection[int] | None = None,
+        special_token_ids: Collection[int] = (),
     ) -> XgrammarBackend:
         """Build the xgrammar tokenizer info and compiler from a delegate."""
         stop_token_ids = (
@@ -453,9 +502,7 @@ class XgrammarBackend(GrammarBackend[Any]):
                 tokenizer_delegate,
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
-                special_token_ids=_content_stripped_special_token_ids(
-                    tokenizer_delegate
-                ),
+                special_token_ids=sorted(set(special_token_ids)),
             )
         else:
             adapter = _TikTokenAdapter(tokenizer_delegate)
@@ -580,8 +627,9 @@ def build_xgrammar_tool_grammar(
             json_schema=response_format_schema,
             any_whitespace=False,
             separators=(",", ":"),
-            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
-            reject_unsupported=(model_format == "gemma_4"),
+            # TODO(CENG-813): drop this per-model scoping once
+            # require_object_root/reject_unsupported default on for all models.
+            reject_unsupported=model_format in ("gemma_4", "glm_4_7"),
         )
         tag = StructuralTag(format=OrFormat(elements=[tag.format, json_branch]))
     return tag.model_dump_json()
@@ -591,8 +639,8 @@ def make_grammar_backend(
     name: str,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
-    # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
-    reject_unsupported: bool = False,
+    *,
+    tool_parser_name: str | None = None,
     stop_token_ids: Collection[int] | None = None,
 ) -> GrammarBackend[Any]:
     """Construct the structured-output backend selected by ``name``.
@@ -601,8 +649,8 @@ def make_grammar_backend(
         name: Backend identifier (``"llguidance"`` or ``"xgrammar"``).
         tokenizer_delegate: HuggingFace/TikToken tokenizer to build vocab info.
         vocab_size: Vocabulary size from the tokenizer.
-        reject_unsupported: Whether the xgrammar backend rejects unenforceable
-            schema keywords instead of falling back to unconstrained decoding.
+        tool_parser_name: Active tool parser, used to derive the special-token
+            mask and the fail-closed compile policy (xgrammar only).
         stop_token_ids: The full set of stop token IDs.
 
     Returns:
@@ -619,8 +667,13 @@ def make_grammar_backend(
         return XgrammarBackend.from_tokenizer_delegate(
             tokenizer_delegate,
             vocab_size,
-            reject_unsupported=reject_unsupported,
+            # TODO(CENG-813): drop this per-model scoping once
+            # require_object_root/reject_unsupported default on for all models.
+            reject_unsupported=tool_parser_name in ("gemma4", "glm45"),
             stop_token_ids=stop_token_ids,
+            special_token_ids=special_token_ids_for(
+                tool_parser_name, tokenizer_delegate
+            ),
         )
     raise ValueError(
         f"unknown structured output backend: {name!r} "
@@ -632,8 +685,8 @@ def make_grammar_validator(
     backend_name: str | None,
     tokenizer_delegate: PreTrainedTokenizerBase,
     vocab_size: int,
-    # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
-    reject_unsupported: bool = False,
+    *,
+    tool_parser_name: str | None = None,
 ) -> GrammarValidator:
     """Build the admission-time :class:`GrammarValidator` for a backend.
 
@@ -658,5 +711,5 @@ def make_grammar_validator(
         backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
         tokenizer_delegate,
         vocab_size,
-        reject_unsupported=reject_unsupported,
+        tool_parser_name=tool_parser_name,
     )

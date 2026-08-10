@@ -672,7 +672,9 @@ class TestGrammarValidation:
             name: Any,
             delegate: Any,
             vocab_size: Any,
-            reject_unsupported: bool = False,
+            *,
+            tool_parser_name: str | None = None,
+            stop_token_ids: Any = None,
         ) -> GrammarBackend[Any]:
             captured["name"] = name
             return _NoopBackend()
@@ -680,6 +682,26 @@ class TestGrammarValidation:
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         _sob.make_grammar_validator(None, object(), 128)
         assert captured["name"] == DEFAULT_STRUCTURED_OUTPUT_BACKEND
+
+
+class TestSpecialTokenIdsForMarkers:
+    """special_token_ids_for_markers resolves single-token markers to ids and
+    skips markers with no single-token vocabulary form."""
+
+    def test_resolves_single_token_markers_and_skips_unknown(self) -> None:
+        class _FakeTokenizer:
+            unk_token_id = 0
+
+            def convert_tokens_to_ids(self, token: str) -> int:
+                return {"<arg_value>": 7, "</arg_value>": 8}.get(
+                    token, self.unk_token_id
+                )
+
+        ids = _sob.special_token_ids_for_markers(
+            ("<arg_value>", "</arg_value>", "<no_single_token_form>"),
+            _FakeTokenizer(),
+        )
+        assert ids == {7, 8}
 
 
 class TestXgrammarCacheBound:
@@ -746,34 +768,39 @@ class TestXgrammarBackendRejectUnsupported:
 
 
 class TestMakeValidatorRejectUnsupported:
-    """make_grammar_validator threads reject_unsupported through to the backend
-    so admission matches the worker (which sets it True for Gemma). Without it,
-    an unenforceable response_format slips admission and crashes the worker."""
+    """make_grammar_validator forwards tool_parser_name to make_grammar_backend,
+    which derives reject_unsupported so admission matches the worker (which sets
+    it True for Gemma/GLM). Without it, an unenforceable response_format slips
+    admission and crashes the worker."""
 
     def _validator_over_real_xgrammar(
-        self, monkeypatch: pytest.MonkeyPatch, reject_unsupported: bool
+        self, monkeypatch: pytest.MonkeyPatch, tool_parser_name: str | None
     ) -> GrammarValidator:
         def fake_make(
             name: Any,
             delegate: Any,
             vocab_size: Any,
-            reject_unsupported: bool = False,
+            *,
+            tool_parser_name: str | None = None,
+            stop_token_ids: Any = None,
         ) -> GrammarBackend[Any]:
-            return _xgrammar_backend(reject_unsupported=reject_unsupported)
+            return _xgrammar_backend(
+                reject_unsupported=tool_parser_name in ("gemma4", "glm45")
+            )
 
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         return _sob.make_grammar_validator(
             "xgrammar",
             object(),
             len([chr(c) for c in range(32, 127)]) + 1,
-            reject_unsupported=reject_unsupported,
+            tool_parser_name=tool_parser_name,
         )
 
-    def test_reject_unsupported_true_rejects_unenforceable_schema(
+    def test_fail_closed_parser_rejects_unenforceable_schema(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         validator = self._validator_over_real_xgrammar(
-            monkeypatch, reject_unsupported=True
+            monkeypatch, tool_parser_name="glm45"
         )
         with pytest.raises(InputError):
             validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
@@ -782,11 +809,11 @@ class TestMakeValidatorRejectUnsupported:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         validator = self._validator_over_real_xgrammar(
-            monkeypatch, reject_unsupported=False
+            monkeypatch, tool_parser_name=None
         )
         validator.check_json_schema(json.dumps(_UNSUPPORTED_SCHEMA))
 
-    def test_forwards_reject_unsupported_to_backend(
+    def test_forwards_tool_parser_name_to_backend(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, Any] = {}
@@ -795,18 +822,20 @@ class TestMakeValidatorRejectUnsupported:
             name: Any,
             delegate: Any,
             vocab_size: Any,
-            reject_unsupported: bool = False,
+            *,
+            tool_parser_name: str | None = None,
+            stop_token_ids: Any = None,
         ) -> GrammarBackend[Any]:
-            captured["reject_unsupported"] = reject_unsupported
+            captured["tool_parser_name"] = tool_parser_name
             return _NoopBackend()
 
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         _sob.make_grammar_validator(
-            "xgrammar", object(), 128, reject_unsupported=True
+            "xgrammar", object(), 128, tool_parser_name="glm45"
         )
-        assert captured["reject_unsupported"] is True
+        assert captured["tool_parser_name"] == "glm45"
 
-    def test_default_forwards_false_to_backend(
+    def test_default_forwards_none_to_backend(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, Any] = {}
@@ -815,14 +844,16 @@ class TestMakeValidatorRejectUnsupported:
             name: Any,
             delegate: Any,
             vocab_size: Any,
-            reject_unsupported: bool = False,
+            *,
+            tool_parser_name: str | None = None,
+            stop_token_ids: Any = None,
         ) -> GrammarBackend[Any]:
-            captured["reject_unsupported"] = reject_unsupported
+            captured["tool_parser_name"] = tool_parser_name
             return _NoopBackend()
 
         monkeypatch.setattr(_sob, "make_grammar_backend", fake_make)
         _sob.make_grammar_validator("xgrammar", object(), 128)
-        assert captured["reject_unsupported"] is False
+        assert captured["tool_parser_name"] is None
 
 
 class _FillRecordingBackend(_NoopBackend):

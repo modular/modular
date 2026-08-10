@@ -463,8 +463,7 @@ class StructuredOutputHelper:
             backend_name or DEFAULT_STRUCTURED_OUTPUT_BACKEND,
             tokenizer_delegate,
             vocab_size,
-            # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
-            reject_unsupported=(tool_parser_name == "gemma4"),
+            tool_parser_name=tool_parser_name,
             stop_token_ids=tokenizer.eos_token_ids,
         )
 
