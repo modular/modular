@@ -10,16 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Python wrappers for the Nemotron-H Mamba-2 state-space kernels.
+"""Python wrappers for the Mamba-2 SSD chunked-scan kernels.
 
-Two graph-level wrappers over Mojo ops registered in the ``state_space``
-package. NOTE: unlike the Qwen3.5 gated-delta ops, ``mamba2_ssd_chunk_scan_varlen_fwd``
-and ``causal_conv1d_varlen_fwd`` are NOT yet registered in
-``graph_compiler/builtin_kernels/kernels.mojo`` (only ``gated_delta_conv1d_fwd`` /
-``gated_delta_recurrence_fwd`` are). They are reachable only via the
-``state_space`` kernel package, so the model's ``session.load`` must pass
-``custom_extensions=_get_state_space_paths()`` (see ``model.py`` /
-the Mamba arch's ``functional_ops._get_state_space_paths``).
+Graph-level wrappers over Mojo ops registered in the ``state_space``
+package.
 
   :func:`mamba2_ssd_chunk_scan_varlen_fwd`
     The Mamba-2 SSD chunked-scan, used for BOTH prefill and decode. Decode is
@@ -30,10 +24,9 @@ the Mamba arch's ``functional_ops._get_state_space_paths``).
     dstate in {4,8,16}; Nemotron-H uses dstate=128, hence the SSD kernel is
     used for decode too.
 
-  :func:`causal_conv1d_varlen_fwd`
-    Slot-indexed depthwise causal conv1d over a ragged batch. Reads/writes a
-    per-layer conv-state pool in place at slot ``cache_indices[batch_item]``;
-    handles prefill and decode in one op.
+  :func:`mamba2_ssd_chunk_scan_varlen_fwd_inplace`
+    The same scan, but writing final states directly into a slot-indexed SSM
+    state pool in place instead of returning them as a graph output.
 """
 
 from __future__ import annotations
@@ -41,7 +34,7 @@ from __future__ import annotations
 from typing import cast
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorType, TensorValue, ops
+from max.graph import BufferValue, TensorType, TensorValue, ops
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd(
@@ -182,111 +175,5 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         ],
         [y_type],
         parameters={"dt_softplus": True},
-    )
-    return cast(TensorValue, results[0])
-
-
-def causal_conv1d_varlen_fwd(
-    x: TensorValue,
-    weight: TensorValue,
-    bias: TensorValue,
-    conv_states: BufferValue,
-    query_start_loc: TensorValue,
-    cache_indices: TensorValue,
-    has_initial_state: TensorValue,
-    activation: str = "silu",
-    channels_last: bool = False,
-) -> TensorValue:
-    """Slot-indexed varlen causal depthwise conv1d (prefill and decode).
-
-    Mutates the conv-state pool ``conv_states`` in place at slot
-    ``cache_indices[batch_item]`` — the Qwen3.5 GatedDeltaNet conv pattern. The
-    builtin registers ``conv_states`` as a ``MutableInputTensor`` at operand
-    position 4 (after ``output, x, weight, bias``).
-
-    Args:
-        x: ``[dim, total_seqlen]`` input (channels-first, model dtype), or
-            ``[total_seqlen, dim]`` when ``channels_last`` is true.
-        weight: ``[dim, width]`` depthwise conv weights.
-        bias: ``[dim]`` per-channel bias (empty to disable).
-        conv_states: ``[max_slots, dim, width - 1]`` mutable conv-state pool.
-        query_start_loc: ``[batch + 1]`` int32 cumulative sequence lengths.
-        cache_indices: ``[batch]`` int32 slot indices into ``conv_states``.
-        has_initial_state: ``[batch]`` bool, whether to use the stored state.
-        activation: ``"silu"`` or ``"none"``.
-        channels_last: If true, ``x`` and the output are tokens-major
-            ``[total_seqlen, dim]``. The kernel indexes through runtime
-            strides, so this only relabels the axes — it avoids the
-            materialized transposes the ``[dim, total_seqlen]`` contract
-            forces on a tokens-major caller.
-
-    Returns:
-        Conv output with the same shape/layout as ``x``. ``conv_states`` is
-        mutated in place.
-    """
-    device = x.device
-
-    out_type = TensorType(x.dtype, x.shape, device)
-
-    # Operand order matches the builtin registration
-    # ``CausalConv1DVarlenFwd.execute``: after the ``output`` operand,
-    # ``x, weight, bias, conv_states (MutableInput), query_start_loc,
-    # cache_indices, has_initial_state``.
-    results = ops.inplace_custom(
-        "causal_conv1d_varlen_fwd",
-        device,
-        [
-            x,
-            weight,
-            bias,
-            conv_states,
-            query_start_loc,
-            cache_indices,
-            has_initial_state,
-        ],
-        [out_type],
-        parameters={"activation": activation, "channels_last": channels_last},
-    )
-    return cast(TensorValue, results[0])
-
-
-def gated_group_rmsnorm(
-    y: TensorValue,
-    gate: TensorValue,
-    norm_weight: TensorValue,
-    eps: float,
-    group_size: int,
-) -> TensorValue:
-    """Fused gated group-RMSNorm (HF ``Zamba2RMSNormGated``, ``norm_before_gate=False``).
-
-    Collapses ``cast(y->f32) -> silu(gate)*y -> group rms_norm -> *norm_weight ->
-    cast`` into one dispatch. ``y`` and ``gate`` are ``[N, intermediate]``;
-    ``norm_weight`` is fp32 ``[intermediate]``. Each contiguous ``group_size``
-    slice of the intermediate axis is normalized independently. Returns the model
-    dtype (``y.dtype``), so the downstream ``out_proj`` cast is a no-op.
-
-    Args:
-        y: ``[N, intermediate]`` SSD scan output (model dtype).
-        gate: ``[N, intermediate]`` gate projection (any float dtype; may be a
-            strided split view of the fused in-proj).
-        norm_weight: ``[intermediate]`` fp32 RMSNorm weight.
-        eps: Epsilon inside ``rsqrt(mean_sq + eps)``.
-        group_size: Width of each normalized group (``intermediate // n_groups``).
-
-    Returns:
-        ``[N, intermediate]`` in ``y.dtype``.
-    """
-    device = y.device
-    out_type = TensorType(y.dtype, [y.shape[0], y.shape[1]], device)
-    # eps is a rank-0 fp32 CPU constant; the framework marshals it into the
-    # kernel's ``Float32`` execute arg (the ``ops.rms_norm`` / fused-qk-rmsnorm
-    # idiom).
-    eps_c = ops.constant(eps, DType.float32, device=DeviceRef.CPU())
-    results = ops.custom(
-        "gated_group_rmsnorm",
-        device,
-        [y, gate, norm_weight, eps_c],
-        [out_type],
-        parameters={"group_size": group_size},
     )
     return cast(TensorValue, results[0])

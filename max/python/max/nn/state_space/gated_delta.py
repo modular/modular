@@ -37,7 +37,7 @@ Usage
 -----
 ::
 
-    from .functional_ops import (
+    from max.nn.state_space import (
         gated_delta_conv1d_fwd,
         gated_delta_recurrence_fwd,
     )
