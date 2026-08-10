@@ -118,3 +118,8 @@ Each entry names its replacement.
 - An integer `range()` with a step of zero is now always empty. It previously
   used to be an infinite loop - iterating forever at runtime, and hanging the
   compiler at comptime.
+
+- Fixed `ceildiv()` returning `0` for unsigned operands near the type's
+  maximum value. The unsigned code path computed `numerator + denominator -
+  1`, which overflows and wraps for large operands; it now derives the
+  ceiling from the floor division and remainder instead.

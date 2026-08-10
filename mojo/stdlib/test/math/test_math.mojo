@@ -713,6 +713,36 @@ def test_ceildiv() raises:
     assert_equal(ceildiv(UInt32(5), UInt32(2)), ceildiv(5, 2))
 
 
+def test_ceildiv_unsigned_overflow() raises:
+    # Regression test for https://github.com/modular/modular/issues/6836:
+    # `self + denominator - 1` overflows near the unsigned type's max, which
+    # used to wrap the result to a small value instead of the true ceiling.
+    assert_equal(ceildiv(UInt.MAX, UInt(2)), UInt(9223372036854775808))
+    assert_equal(ceildiv(UInt.MAX, UInt(3)), UInt(6148914691236517205))
+    assert_equal(ceildiv(UInt.MAX, UInt(1)), UInt.MAX)
+
+    # Exact multiples must not round up.
+    assert_equal(ceildiv(UInt(8), UInt(4)), UInt(2))
+    assert_equal(ceildiv(UInt(0), UInt(4)), UInt(0))
+
+    # Small values, unaffected by the overflow, stay correct.
+    assert_equal(ceildiv(UInt(7), UInt(2)), UInt(4))
+    assert_equal(ceildiv(UInt(1), UInt(7)), UInt(1))
+
+    # Signed types never hit the overflowing branch; confirm no regression.
+    assert_equal(ceildiv(Int(-55), Int(8)), -6)
+    assert_equal(ceildiv(Int(548), Int(-7)), -78)
+
+    # SIMD vector width > 1, near the type max in every lane.
+    comptime max8 = UInt8.MAX
+    var lanes = SIMD[DType.uint8, 4](max8, max8 - 1, 8, 7)
+    var divisors = SIMD[DType.uint8, 4](2, 2, 4, 2)
+    assert_equal(
+        ceildiv(lanes, divisors),
+        SIMD[DType.uint8, 4](128, 127, 2, 4),
+    )
+
+
 def test_align_down() raises:
     assert_equal(align_down(1, 7), 0)
     assert_equal(align_down(548, -7), 553)
