@@ -37,6 +37,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",

@@ -39,6 +39,7 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
+    DeviceRef,
     TensorType,
     TensorValue,
     Value,
@@ -71,6 +72,35 @@ from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
 from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
 from ..gemma4.gemma4 import Gemma4TextModel
 from .model_config import UnifiedDSparkGemma4_31BConfig
+
+
+def _block_dispatch_metadata(meta: TensorValue | None, k: int) -> TensorValue:
+    """Rebuilds the MHA dispatch metadata at the draft block's query width.
+
+    The 4-int CPU buffer is ``[batch_size, q_max_seq_len, num_partitions,
+    max_cache_valid_length]``. ``q_max_seq_len`` becomes the block width
+    ``k`` and ``num_partitions`` is zeroed so the decode kernel recomputes
+    the split-K count for the draft's own head geometry instead of reusing
+    the target's.
+
+    Args:
+        meta: The leaf's verify-width dispatch metadata buffer.
+        k: The draft block width (anchor slot plus drafted tokens).
+
+    Returns:
+        The rebuilt dispatch metadata buffer.
+    """
+    assert meta is not None
+    cpu = DeviceRef.CPU()
+    return ops.concat(
+        [
+            meta[0:1],
+            ops.constant(k, DType.int64, device=cpu).reshape((1,)),
+            ops.constant(0, DType.int64, device=cpu).reshape((1,)),
+            meta[3:4],
+        ],
+        axis=0,
+    )
 
 
 @dataclass
@@ -405,14 +435,26 @@ class UnifiedDSparkGemma4_31B(Module):
         )
 
         # DSpark runs the draft as a full block (the accepted token plus the
-        # mask-token tail), not as EAGLE-style single-token draft steps. The
-        # KV manager's draft metadata is sized with ``q_max_seq_len=1`` for
-        # EAGLE, so keep the target metadata, which is sized for the merged
-        # verify block and is safe for this block forward.
+        # mask-token tail): K query rows per sequence on every batch type.
+        # Neither manager-provided metadata fits that geometry: the leaf's
+        # attention_dispatch_metadata is the TARGET/verify key, whose
+        # q_max_seq_len is the batch's max prompt length — equal to the block
+        # width only on decode batches, and e.g. 129 on a prefill batch,
+        # where the oversized query bound drives the block's layer-0 flash
+        # attention to produce NaN. The manager's
+        # draft_attention_dispatch_metadata is resolved one row narrow
+        # (num_draft_tokens_per_step = K - 1) with the target's partition
+        # count. Rebuild the dispatch buffer at the block's true width.
         bumped_cache_lengths = pre_cache_lengths + commit_lengths
         block_kv_collection = replace(
             draft_kv_collection,
             cache_lengths=bumped_cache_lengths,
+            attention_dispatch_metadata=_block_dispatch_metadata(
+                draft_kv_collection.attention_dispatch_metadata, K
+            ),
+            max_prompt_length=ops.constant(
+                K, DType.uint32, device=DeviceRef.CPU()
+            ).broadcast_to([1]),
         )
 
         next_tokens_2d = ops.unsqueeze(next_tokens, axis=1)

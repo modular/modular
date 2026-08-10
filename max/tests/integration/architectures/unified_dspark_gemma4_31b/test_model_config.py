@@ -33,17 +33,20 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from max.driver import (
+    CPU,
     Buffer,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
+from max.engine import InferenceSession
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    PagedCacheValues,
 )
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -67,6 +70,7 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
 )
 from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4_31b import (
     UnifiedDSparkGemma4_31B,
+    _block_dispatch_metadata,
 )
 from max.pipelines.kv_cache import KVCacheConfig, cache_dtype_for_encoding
 from max.pipelines.lib._hf_config import load_huggingface_config
@@ -913,3 +917,101 @@ def test_relaxed_acceptance_threads_into_sampler(virtual_gpu: None) -> None:
     relaxed = UnifiedDSparkGemma4_31B(config)
     assert relaxed.acceptance_sampler._relaxed_topk == 5
     assert relaxed.acceptance_sampler._relaxed_delta == 0.1
+
+
+def _tiny_draft() -> DSparkSpeculatorsDraftConfig:
+    """Draft config at dims consistent with ``_make_real_target`` (hidden 64,
+    vocab 256, 2 target layers), so the unified graph can actually STAGE —
+    the real RedHat draft (hidden 5376) only supports metadata-level tests."""
+    return DSparkSpeculatorsDraftConfig(
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=32,
+        rms_norm_eps=1e-6,
+        vocab_size=256,
+        draft_vocab_size=128,
+        hidden_activation="silu",
+        rope_theta=10000.0,
+        max_seq_len=512,
+        sliding_window=64,
+        causal=True,
+        block_size=8,
+        sample_from_anchor=False,
+        mask_token_id=4,
+        aux_hidden_state_layer_ids=(1, 2),
+        markov_rank=16,
+        markov_head_type="vanilla",
+    )
+
+
+def test_block_forward_rebuilds_attention_dispatch_metadata(
+    virtual_gpu: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The draft block forward must not inherit the leaf's verify-width
+    ``attention_dispatch_metadata``.
+
+    The leaf carries the TARGET key, whose ``q_max_seq_len`` is the batch's
+    max prompt length — equal to the block width only on decode batches. On
+    prefill (CE) batches the inherited oversized query bound drives the
+    block's layer-0 flash attention to produce NaN, so the block forward has
+    to run on metadata rebuilt in-graph at the block width (content pinned
+    by ``test_block_dispatch_metadata_rebuild_content`` below).
+    """
+    nn_model = UnifiedDSparkGemma4_31B(_make_unified_real(_tiny_draft()))
+    for name, weight in nn_model.raw_state_dict().items():
+        weight.name = name
+
+    captured: list[PagedCacheValues] = []
+    real_forward_block = nn_model.draft.forward_block
+
+    def spy_forward_block(*args: Any, **kwargs: Any) -> Any:
+        captured.append(kwargs["kv_collection"])
+        return real_forward_block(*args, **kwargs)
+
+    monkeypatch.setattr(nn_model.draft, "forward_block", spy_forward_block)
+
+    with Graph(
+        "unified_dspark_gemma4_31b_block_meta_test",
+        input_types=nn_model.input_types(),
+    ) as graph:
+        values = nn_model._unflatten_graph_inputs(graph.inputs)
+        graph.output(*nn_model(values))
+
+    assert len(captured) == 1
+    block_kv = captured[0]
+    block_meta = block_kv.attention_dispatch_metadata
+    leaf_meta = values.draft_kv_collection.attention_dispatch_metadata
+    assert block_meta is not None
+    assert leaf_meta is not None
+    assert block_meta._mlir_value != leaf_meta._mlir_value
+    # Rebuilt in-graph, not any leaf's metadata input passed through.
+    assert all(block_meta._mlir_value != v._mlir_value for v in graph.inputs)
+    # The paired query-width bound must be block-width too.
+    assert (
+        block_kv.max_prompt_length._mlir_value
+        != values.draft_kv_collection.max_prompt_length._mlir_value
+    )
+
+
+def test_block_dispatch_metadata_rebuild_content() -> None:
+    """The rebuilt 4-int buffer keeps batch and cache bound, sets
+    ``q_max_seq_len`` to the block width, and zeroes ``num_partitions`` so
+    the decode kernel recomputes the split-K count for the draft's own head
+    geometry."""
+    with Graph(
+        "block_dispatch_metadata",
+        input_types=(TensorType(DType.int64, [4], DeviceRef.CPU()),),
+    ) as graph:
+        (meta,) = graph.inputs
+        graph.output(_block_dispatch_metadata(meta.tensor, 8))
+
+    session = InferenceSession(devices=[CPU()])
+    compiled = session.load(graph)
+    (out,) = compiled.execute(
+        Buffer.from_numpy(np.array([3, 129, 5, 4321], dtype=np.int64))
+    )
+    assert isinstance(out, Buffer)
+    np.testing.assert_array_equal(out.to_numpy(), [3, 8, 0, 4321])
