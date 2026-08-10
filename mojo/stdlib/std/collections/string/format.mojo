@@ -583,11 +583,10 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
                 manual_indexing_count += 1
             except e:
 
-                @parameter
-                def check_string() -> Bool:
+                def check_string() {e} -> Bool:
                     return "not convertible to integer" in String(e)
 
-                debug_assert[check_string]("Not the expected error from atol")
+                debug_assert(check_string, "Not the expected error from atol")
                 # field is a keyword for **kwargs:
                 # TODO: add support for "My name is {person.name}".format(person=Person(name="Fred"))
                 # TODO: add support for "My name is {person[name]}".format(person={"name": "Fred"})

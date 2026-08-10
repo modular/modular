@@ -2007,11 +2007,11 @@ struct CPython(Defaultable, Movable):
             `Error` object describing the CPython error.
         """
 
-        @parameter
-        def err_occurred() -> Bool:
+        def err_occurred() {self} -> Bool:
             return self.PyErr_Occurred()
 
-        debug_assert[err_occurred](
+        debug_assert(
+            err_occurred,
             "invalid unchecked conversion of Python error to Mojo error",
         )
 

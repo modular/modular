@@ -860,11 +860,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             The result.
         """
 
-        @parameter
-        def _check_symbol() -> Bool:
+        def _check_symbol() {self} -> Bool:
             return self.check_symbol(String(name))
 
-        debug_assert[_check_symbol]("symbol not found: ", name)
+        debug_assert(_check_symbol, "symbol not found: ", name)
         # The callee type is spelled over the argument pack so that codegen
         # applies the C calling convention per argument, as in
         # `_DLCallable.__call__`. The call is synchronous, so the handle stays
