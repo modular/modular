@@ -191,7 +191,7 @@ mojo_toolchain(
     lld = "@llvm-project//lld:lld",
     mojo = select({
         # nonsense just so it resolves. this should never actually run.
-        "//:use_prebuilt_mojo_toolchain_disabled": "//KGEN/tools/mojo:mojo-compiler-only",
+        "//:use_prebuilt_mojo_toolchain_disabled": "//KGEN/tools/mojo",
         "//conditions:default": ":fake_mojo_binary",
     }),
     tags = [TOP_LEVEL_TAG],  # Used in oss.MODULE.bazel
