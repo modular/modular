@@ -37,6 +37,7 @@ from max.driver import (
     Buffer,
     Device,
     DevicePinnedBuffer,
+    batch_inplace_copy,
     copy_pinned_to_destinations,
 )
 from max.dtype import DType
@@ -251,11 +252,13 @@ class _VisionBlockPool:
             "vision encoder output does not match the memory planner's "
             "get_vision_cache_row_spec"
         )
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
         for pool, s in zip(self._pools, src, strict=True):
             for base, chunk, row in self._spans(block_ids, 0, num_tokens):
-                pool[base : base + chunk, :].inplace_copy_from(
-                    s[start + row : start + row + chunk, :]
-                )
+                dsts.append(pool[base : base + chunk, :])
+                srcs.append(s[start + row : start + row + chunk, :])
+        batch_inplace_copy(dsts, srcs)
 
     def copy_out(
         self,
@@ -266,11 +269,13 @@ class _VisionBlockPool:
         row_hi: int,
     ) -> None:
         """Copy entry rows ``[row_lo, row_hi)`` to ``out[d]`` at ``out_row``."""
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
         for pool, o in zip(self._pools, out, strict=True):
             for base, chunk, row in self._spans(block_ids, row_lo, row_hi):
-                o[out_row + row : out_row + row + chunk, :].inplace_copy_from(
-                    pool[base : base + chunk, :]
-                )
+                dsts.append(o[out_row + row : out_row + row + chunk, :])
+                srcs.append(pool[base : base + chunk, :])
+        batch_inplace_copy(dsts, srcs)
 
     def rows_view(
         self, device_idx: int, block_id: int, row_lo: int, row_hi: int
