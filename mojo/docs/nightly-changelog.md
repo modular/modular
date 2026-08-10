@@ -97,6 +97,11 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- `mojo doc` now reports the condition of a conditional trait conformance, and
+  the generated API docs show it alongside the trait. Previously the condition
+  was dropped, making a conditional conformance indistinguishable from an
+  unconditional one. Also fixed rendering of some `where` clauses.
+
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
