@@ -2092,7 +2092,8 @@ index da8b516..16c7568 100644
 -        auto key_pattern = CreateRule(spec.property_names, rule_name + "_name");
 +        auto key_pattern = CreatePropertyNameKeyRule(spec.property_names, rule_name + "_name");
          property_rule_body +=
-             beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + GetBasicAnyRuleName() + ")";
+-            beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + GetBasicAnyRuleName() + ")";
++            beg_seq + " " + key_pattern + " " + colon_pattern_ + " " + (additional_property ? CreateRule(additional_property, rule_name + "_" + additional_suffix) : GetBasicAnyRuleName()) + ")";
        }
 @@ -2225,8 +3356,12 @@ std::string JSONSchemaConverter::GenerateObject(
      if (spec.max_properties != 0) {

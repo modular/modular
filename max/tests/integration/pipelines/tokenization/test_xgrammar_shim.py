@@ -3044,3 +3044,37 @@ def test_refactor_gemma_const_enum_object_accept_reject() -> None:
     assert _accept_ids(
         _gemma_matcher_params(enum_params), _gemma_encode(good_enum)
     )
+
+
+def test_gemma_4_nested_property_names_additional_properties_value_enforced() -> (
+    None
+):
+    # propertyNames constrains the KEY; the schema-valued additionalProperties
+    # constrains the VALUE. A key that matches propertyNames but carries a
+    # wrong-typed value must be rejected -- the value schema must be enforced.
+    params = {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "queryParams": {
+                "type": "object",
+                "propertyNames": {"pattern": "^[a-z]+$"},
+                "additionalProperties": {"type": "integer"},
+            },
+        },
+        "required": ["queryParams"],
+    }
+    assert isinstance(_gemma_compile(params), xgr.CompiledGrammar)
+
+    ok = _gemma_matcher_params(params)
+    assert _accept_ids(
+        ok,
+        _gemma_encode("<|tool_call>call:f{queryParams:{page:1}}<tool_call|>"),
+    )
+    assert ok.is_completed()
+
+    # Integer-typed value: a string value must be rejected.
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(
+        bad, _gemma_encode('<|tool_call>call:f{queryParams:{page:<|"|>')
+    )
