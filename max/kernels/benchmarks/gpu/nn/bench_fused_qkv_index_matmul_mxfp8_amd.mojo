@@ -20,7 +20,7 @@ kernel). Compares, at the raw-kernel level:
               over the stacked weight [Wq|Wk|Wv|Wiq|Wik] (N_total=2560), whose
               CDNA4 path scatters K/V/IndexK from the GEMM's own epilogue.
   * UNFUSED : the path MXFP8-on-AMD bring-up left behind — FIVE separate
-              `mxfp4_block_scaled_matmul_amd` calls, one per output band
+              `block_scaled_matmul_amd` calls, one per output band
               (N = 2048, 128, 128, 128, 128).
 
 Both do the same 2*M*N_total*K FLOPs against the same cold weight bytes, so the
@@ -67,7 +67,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 from nn.kv_cache_ragged import (
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
     kv_cache_store_ragged,
@@ -449,7 +449,7 @@ def bench_shape(
                     Layout.row_major(UNKNOWN_VALUE, band_n)
                 ].row_major(IndexList[2](total_seq, band_n)),
             )
-            mxfp4_block_scaled_matmul_amd[lane_bytes=32](
+            block_scaled_matmul_amd[lane_bytes=32](
                 lt_to_tt(c),
                 hs_tt,
                 lt_to_tt(w).bitcast[DType.uint8](),

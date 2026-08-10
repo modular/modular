@@ -5303,7 +5303,7 @@ def grouped_matmul_ragged(
     return output
 
 
-def grouped_dynamic_scaled_mxfp4_matmul(
+def grouped_dynamic_block_scaled_matmul_amd(
     hidden_states: TensorValue,
     weight: TensorValue,
     a_scales: TensorValue,
@@ -5466,7 +5466,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     # into the slot layout, so we skip the standalone preshuffle entirely.
     # Preshuffle must run exactly once: non-EP + up-proj keep `a_scales_preshuffled=False`.
     if preshuffled_b and not a_scales_preshuffled:
-        a_scales = mxfp4_preshuffle_grouped_scale_4d(
+        a_scales = block_scaled_preshuffle_grouped_scale_4d(
             a_scales,
             expert_start_indices,
             expert_usage_stats_host[0].cast(DType.uint32),
@@ -5506,7 +5506,7 @@ def grouped_dynamic_scaled_mxfp4_matmul(
     )
 
     output = ops.custom(
-        "mo.grouped.matmul.block.scaled.mxfp4",
+        "mo.grouped.matmul.block.scaled.amd",
         device=hidden_states.device,
         values=[
             hidden_states,
@@ -6990,7 +6990,7 @@ def _apple_int8_w8a8_matmul(
     return result
 
 
-def dynamic_block_scaled_matmul_mxfp4(
+def dynamic_block_scaled_matmul_amd(
     a: TensorValue,
     b: TensorValue,
     a_scales: TensorValue,
@@ -7057,7 +7057,7 @@ def dynamic_block_scaled_matmul_mxfp4(
         )
 
     result = ops.custom(
-        "mo.matmul.dynamic.block.scaled.mxfp4",
+        "mo.matmul.dynamic.block.scaled.amd",
         device=a.device,
         values=[
             a,
@@ -7534,7 +7534,7 @@ def block_scales_interleave(
     return result
 
 
-def mxfp4_preshuffle_grouped_scale_4d(
+def block_scaled_preshuffle_grouped_scale_4d(
     a_scales: TensorValue,
     expert_start_indices: TensorValue,
     max_num_tokens_per_expert: TensorValue,
@@ -7549,7 +7549,7 @@ def mxfp4_preshuffle_grouped_scale_4d(
     expert slot ``e``'s scales; the preb matmul reads from
     ``e * max_padded_M`` directly.
 
-    Intended to be inserted before ``mxfp4_grouped_matmul_amd_preb`` when
+    Intended to be inserted before ``block_scaled_grouped_matmul_amd_preb`` when
     ``preshuffled_b=True`` so the matmul sees the cell layout it expects.
 
     Args:
@@ -7587,7 +7587,7 @@ def mxfp4_preshuffle_grouped_scale_4d(
     out_rows = num_experts * a_scales.shape[0]
 
     return ops.custom(
-        "mo.mxfp4.preshuffle.scale.4d_per_expert",
+        "mo.block.scaled.preshuffle.scale.4d_per_expert",
         device=a_scales.device,
         values=[
             a_scales,
@@ -7605,12 +7605,12 @@ def mxfp4_preshuffle_grouped_scale_4d(
     )[0].tensor
 
 
-def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
+def block_scaled_preshuffle_b_5d(b: TensorValue) -> TensorValue:
     """Applies the AMD CDNA4 MXFP4 B 5D preshuffle to a rank-3 weight.
 
     Reorders the packed-FP4 bytes from ``[E, N, K_BYTES]`` row-major into the
     5D ``(E, N0, K0, KLane=4, NLane=16, KPack=16)`` byte layout expected by
-    the ``mxfp4_grouped_matmul_amd_preb`` reader. Output is byte-identical to
+    the ``block_scaled_grouped_matmul_amd_preb`` reader. Output is byte-identical to
     ``Shuffler[E].preshuffle_b_5d`` running on the same input.
 
     Intended for eager invocation from weight adapters (one-shot graph), not
@@ -7631,7 +7631,7 @@ def mxfp4_preshuffle_b_5d(b: TensorValue) -> TensorValue:
         raise ValueError(f"b must be uint8 (packed MXFP4), got {b.dtype}")
 
     return ops.custom(
-        "mo.mxfp4.preshuffle.b.5d",
+        "mo.block.scaled.preshuffle.b.5d",
         device=b.device,
         values=[b],
         out_types=[

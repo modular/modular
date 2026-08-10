@@ -15,8 +15,9 @@
 The MXFP4 down-projection grouped matmul consumes the activation E8M0 scale in
 the per-expert fixed-stride `scale_4d` slot layout (`Shuffler.scale_4d_byte_off`).
 Today that layout is produced by a standalone kernel
-(`preshuffle_grouped_scale_4d_gpu`, traced `mxfp4_preshuffle_grouped_scale_4d_kernel_KS64`)
-that runs *serially* after `fused_silu_mx` writes the scale row-major. The
+(`preshuffle_grouped_scale_4d_gpu`, traced
+`block_scaled_preshuffle_grouped_scale_4d_kernel_KS64`) that runs *serially*
+after `fused_silu_mx` writes the scale row-major. The
 fusion (KS64/down-proj) has `fused_silu` write the scale DIRECTLY in
 the slot layout behind a `comptime fuse_a_scale_preshuffle` flag, deleting the
 separate kernel from the critical path.

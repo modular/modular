@@ -20,7 +20,7 @@ from layout import (
     lt_to_tt,
 )
 from layout._fillers import random
-from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
+from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4fp8
 from std.testing import assert_almost_equal
 from std.math import ceildiv, recip
 from linalg.fp4_utils import (

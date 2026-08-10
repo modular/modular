@@ -25,7 +25,7 @@ from std.math import align_up, ceildiv
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.fp4_quantization import naive_block_scaled_matmul
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.random import rand

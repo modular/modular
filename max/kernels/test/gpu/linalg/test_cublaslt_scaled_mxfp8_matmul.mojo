@@ -27,7 +27,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     set_scale_factor,
 )
-from linalg.fp4_quantization import naive_block_scaled_matmul
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 

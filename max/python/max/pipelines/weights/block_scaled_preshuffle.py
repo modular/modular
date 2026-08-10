@@ -14,14 +14,14 @@
 
 CPU byte-permutation of per-expert MXFP4 or MXFP8 ``B`` weights (and their E8M0
 ``B``-scales) into the 5D / 4D-cell layouts the AMD
-``mxfp4_grouped_matmul_amd_preb`` kernel reads, so it can issue coalesced
+``block_scaled_grouped_matmul_amd_preb`` kernel reads, so it can issue coalesced
 DRAM->VGPR loads. Model weight adapters call
-:func:`preshuffle_mxfp4_b_experts` + :func:`preshuffle_mxfp4_b_scales` in
-lockstep and flip ``QuantConfig.mxfp4_preshuffled_b`` so ``MoEQuantized``
+:func:`preshuffle_block_scaled_b_experts` + :func:`preshuffle_block_scaled_b_scales` in
+lockstep and flip ``QuantConfig.block_scaled_preshuffled_b`` so ``MoEQuantized``
 dispatches to the preb path.
 
 Matches expert weights named ``...layers.N.mlp.experts.IDX.{gate,up,down}_proj``.
-NOTE the caller flips ``mxfp4_preshuffled_b`` for the whole config regardless,
+NOTE the caller flips ``block_scaled_preshuffled_b`` for the whole config regardless,
 so any weight skipped from a matched group would be read as if it had been
 permuted; the helpers below raise on that case rather than skip silently. Used
 by the Kimi K2.5 and MiniMax-M3 adapters.
@@ -48,7 +48,7 @@ logger = logging.getLogger("max.pipelines")
 # `decoder_layer` is the MiniMax-M3 MTP draft block, a single unindexed block
 # that `minimax_m3_mtp/weight_adapters.py` attaches under that prefix. Without
 # it the draft's experts match nothing, the helpers no-op silently, and a
-# caller that flips `mxfp4_preshuffled_b` anyway gets row-major weights read as
+# caller that flips `block_scaled_preshuffled_b` anyway gets row-major weights read as
 # preshuffled.
 _LAYER = r"(?:layers\.\d+|decoder_layer)"
 
@@ -125,7 +125,7 @@ def _shuffle_b_5d(src: np.ndarray, dst: np.ndarray) -> None:
     Reshape ``[N, K_BYTES]`` row-major into the 5D tile structure
     ``(N0, NLane=16, K0, KLane=4, KPack=16)`` and transpose into
     ``(N0, K0, KLane, NLane, KPack)`` so C-order strides match
-    ``b_5d_grouped_layout`` in ``mxfp4_preshuffle_layouts.mojo``. ``dst``
+    ``b_5d_grouped_layout`` in ``block_scaled_preshuffle_layouts.mojo``. ``dst``
     is a contiguous ``(N, K_BYTES)`` slot the caller owns.
     """
     N, K_BYTES = src.shape
@@ -157,7 +157,7 @@ def _shuffle_scale_4d(src: np.ndarray, dst: np.ndarray) -> None:
     np.copyto(dst_v, src_v)
 
 
-def preshuffle_mxfp4_b_experts(
+def preshuffle_block_scaled_b_experts(
     state_dict: dict[str, WeightData],
     *,
     include_shared_weights: bool = False,
@@ -166,11 +166,11 @@ def preshuffle_mxfp4_b_experts(
 
     Walks ``state_dict``, groups expert weights by ``(prefix, proj)``,
     rewrites each group's WeightData entries with the bytes laid out in
-    ``b_5d_grouped_layout`` so the AMD ``mxfp4_grouped_matmul_amd_preb``
+    ``b_5d_grouped_layout`` so the AMD ``block_scaled_grouped_matmul_amd_preb``
     kernel reads them with coalesced DRAM->VGPR loads. Raises when a
     matched group holds any weight that isn't MX-packed (uint8 or
     float8_e4m3fn) with tile-aligned dims: the caller flips
-    ``mxfp4_preshuffled_b`` for the whole config, so a skipped weight
+    ``block_scaled_preshuffled_b`` for the whole config, so a skipped weight
     would be read as if it had been permuted.
 
     One numpy buffer per ``(prefix, proj)`` group keeps allocation count
@@ -203,7 +203,7 @@ def preshuffle_mxfp4_b_experts(
             ]
             if len(shuffleable) != len(names):
                 # Any skipped weight in a matched group is a bug, zero and
-                # partial alike: the caller flips `mxfp4_preshuffled_b` for
+                # partial alike: the caller flips `block_scaled_preshuffled_b` for
                 # the whole config, so a skipped weight would be read as if
                 # it had been permuted (KERN-3393 served exactly that).
                 skipped = sorted(set(names) - {n for n, _ in shuffleable})
@@ -237,7 +237,7 @@ def preshuffle_mxfp4_b_experts(
     )
 
 
-def preshuffle_mxfp4_b_scales(
+def preshuffle_block_scaled_b_scales(
     state_dict: dict[str, WeightData],
     *,
     include_shared_weights: bool = False,
@@ -250,9 +250,9 @@ def preshuffle_mxfp4_b_scales(
     can issue direct-VGPR i32 scale loads (one 2x2 cell per lane).
     Raises when a matched group holds any scale that isn't E8M0 with
     cell-aligned dims (``N % 32 == 0`` and ``K_SCALES % 8 == 0``), for
-    the same reason as :func:`preshuffle_mxfp4_b_experts`.
+    the same reason as :func:`preshuffle_block_scaled_b_experts`.
 
-    Companion to :func:`preshuffle_mxfp4_b_experts`; should be called
+    Companion to :func:`preshuffle_block_scaled_b_experts`; should be called
     immediately after it so weight and scale layouts stay in sync.
     """
     groups: defaultdict[tuple[str, str], list[str]] = defaultdict(list)
@@ -281,7 +281,7 @@ def preshuffle_mxfp4_b_scales(
             ]
             if len(shuffleable) != len(names):
                 # Same invariant as the weight preshuffle above: the caller
-                # flips `mxfp4_preshuffled_b` for the whole config, so a
+                # flips `block_scaled_preshuffled_b` for the whole config, so a
                 # skipped scale would be read as if it had been permuted.
                 skipped = sorted(set(names) - {n for n, _ in shuffleable})
                 raise ValueError(
@@ -299,7 +299,7 @@ def preshuffle_mxfp4_b_scales(
             for name, slot in zip(kept_names, buf, strict=True):
                 # from_numpy infers uint8 from the slab dtype; restore the
                 # E8M0 metadata so downstream graph-compiler dtype checks
-                # (e.g. grouped_dynamic_scaled_mxfp4_matmul) still pass.
+                # (e.g. grouped_dynamic_block_scaled_matmul_amd) still pass.
                 state_dict[name] = dataclasses.replace(
                     WeightData.from_numpy(slot, name=state_dict[name].name),
                     dtype=DType.float8_e8m0fnu,

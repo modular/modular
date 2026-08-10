@@ -56,8 +56,8 @@ from layout import (
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
-from linalg.fp4_quantization import block_scaled_matmul
-from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+from linalg.block_scaled_quantization import block_scaled_matmul
+from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.attention.cpu.mha import (
@@ -2530,7 +2530,7 @@ def _matmul_blockwise_scaled_fp4_common[
         comptime assert (
             scales_dtype == DType.float8_e8m0fnu
         ), "CDNA4 block-scaled fused QKV+index requires E8M0 scales"
-        return mxfp4_block_scaled_matmul_amd[
+        return block_scaled_matmul_amd[
             lane_bytes=32, elementwise_lambda_fn=elementwise_lambda_fn
         ](
             c_tt,

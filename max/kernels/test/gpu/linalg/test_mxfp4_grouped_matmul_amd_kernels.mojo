@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Exhaustive kernel-level tests for the preshuffled-B grouped MXFP4 kernels.
 
-Bypasses the public `mxfp4_grouped_matmul_amd_preb` dispatcher and exercises
+Bypasses the public `block_scaled_grouped_matmul_amd_preb` dispatcher and exercises
 each preb kernel directly against a per-expert ungrouped GPU reference
-(`mxfp4_block_scaled_matmul_amd`):
+(`block_scaled_matmul_amd`):
 
   - `PreShuffledBGroupedGEMM.launch[persistent=True]`   — persistent 1D grid
                                                           + XCD swizzle
@@ -51,7 +51,7 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
     PreShuffledBGroupedGEMM,
     Shuffler,
-    mxfp4_block_scaled_matmul_amd,
+    block_scaled_matmul_amd,
 )
 
 
@@ -87,7 +87,7 @@ def _build_routing(
 
 
 # ===----------------------------------------------------------------------=== #
-# GPU reference — per-expert ungrouped `mxfp4_block_scaled_matmul_amd`.
+# GPU reference — per-expert ungrouped `block_scaled_matmul_amd`.
 # Shares the AMD MFMA code path, so a bug common to all MFMA paths would not
 # be caught; but it's fast enough to support large shapes.
 # ===----------------------------------------------------------------------=== #
@@ -139,7 +139,7 @@ def _gpu_per_expert_reference[
             row_major(Coord(num_tokens, Idx[N])),
         )
 
-        mxfp4_block_scaled_matmul_amd(
+        block_scaled_matmul_amd(
             c_expert, a_expert, b_expert, sfa_expert, sfb_expert, ctx
         )
 
@@ -973,7 +973,7 @@ def main() raises:
     # ----------------------------------------------------------------- #
     # Production dispatch-band coverage — real kimi N/K with the EXACT
     # (BM, BN, BK_ELEMS, WN, persistent, b_cache_policy) each band in
-    # mxfp4_grouped_matmul_amd.mojo launches. One representative token
+    # block_scaled_grouped_matmul_amd.mojo launches. One representative token
     # distribution per band (a few active experts + an inactive slot
     # where useful). STREAMING vs ALWAYS is result-identical (cache hint);
     # these cases assert the exact instantiation compiles, runs, and is
@@ -1340,7 +1340,7 @@ def main() raises:
     ]("down skewed hot expert", [200, 1, 1, 1], [0, 1, 2, 3], ctx)
 
     # MiniMax-M3 dispatcher band configs (N=6144; up K=6144, down K=3072).
-    # Exactly the tiles mxfp4_grouped_matmul_amd_preb selects for M3 (defaults
+    # Exactly the tiles block_scaled_grouped_matmul_amd_preb selects for M3 (defaults
     # for the scheduler knobs, matching run_kernel). Certifies each M3 band
     # instantiation against the per-expert reference.
     print("---- MiniMax-M3 dispatcher band configs ----")

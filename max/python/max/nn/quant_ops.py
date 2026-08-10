@@ -28,7 +28,7 @@ from .kernels import (
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul,
-    dynamic_block_scaled_matmul_mxfp4,
+    dynamic_block_scaled_matmul_amd,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
@@ -182,7 +182,7 @@ def _matmul_float4_mxfp4(
 
     weight_scale = weight_scale.to(x.device)
 
-    res = dynamic_block_scaled_matmul_mxfp4(
+    res = dynamic_block_scaled_matmul_amd(
         x,
         weight,
         x_scales,
@@ -227,7 +227,7 @@ def _matmul_float8_mxfp8(
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
-        return dynamic_block_scaled_matmul_mxfp4(
+        return dynamic_block_scaled_matmul_amd(
             x_fp8,
             weight,
             x_scales,

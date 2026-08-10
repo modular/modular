@@ -17,11 +17,11 @@
 # the same MX block-scaled format (one E8M0 scale per 32-element K block):
 # MXFP4 packs 2 E2M1 elements per uint8 along K; MXFP8 stores one E4M3
 # element per byte. Output is BF16.
-#   * MAX path  -> `dynamic_block_scaled_matmul_mxfp4` (same Python entry
+#   * MAX path  -> `dynamic_block_scaled_matmul_amd` (same Python entry
 #                  point for both formats; it picks the packing from the
 #                  input dtype) -> custom op
-#                  `mo.matmul.dynamic.block.scaled.mxfp4` -> the CDNA4
-#                  kernel `mxfp4_block_scaled_matmul_amd`.
+#                  `mo.matmul.dynamic.block.scaled.amd` -> the CDNA4
+#                  kernel `block_scaled_matmul_amd`.
 #   * aiter path -> `aiter.ops.triton.gemm.basic.gemm_afp4wfp4` (the Triton
 #                  `_gemm_afp4wfp4_kernel`), MXFP4 only. aiter has no native
 #                  MX-format FP8 kernel in this version, so MXFP8 runs
@@ -64,7 +64,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import dynamic_block_scaled_matmul_mxfp4
+from max.nn.kernels import dynamic_block_scaled_matmul_amd
 
 # aiter MXFP4 Triton GEMM (`_gemm_afp4wfp4_kernel`). JIT/compile on first use.
 _aiter_gemm: Callable[..., torch.Tensor] | None
@@ -244,7 +244,7 @@ def bench_matmul_max(
     ncopies: int | None = None,
     dtype: str = "mxfp4",
 ) -> tuple[float, int] | None:
-    """MAX dynamic_block_scaled_matmul_mxfp4 (dense MX block-scaled GEMM;
+    """MAX dynamic_block_scaled_matmul_amd (dense MX block-scaled GEMM;
     the same entry point serves both MXFP4 and MXFP8, keyed off input dtype).
 
     Builds ONE device-graph chaining `ncopies` GEMM ops, op i reading a
@@ -317,7 +317,7 @@ def bench_matmul_max(
         a, a_scales, b_scales = ins[0], ins[1], ins[2]
         b_in = ins[3 : 3 + ncopies]
         results = [
-            dynamic_block_scaled_matmul_mxfp4(
+            dynamic_block_scaled_matmul_amd(
                 a.tensor,
                 b.tensor,
                 a_scales.tensor,
