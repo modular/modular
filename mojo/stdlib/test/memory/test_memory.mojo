@@ -66,7 +66,6 @@ def test_memcpy() raises:
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
 
-    @parameter
     def _test_memcpy_buf[size: Int]() raises:
         var buf = alloc[UInt8]({count = size * 2}).unsafe_leak()
         unsafe_memset_zero(buf.unsafe_offset(size), size)
@@ -664,16 +663,14 @@ def test_dtypepointer_gather() raises:
     var ptr = alloc[Float32]({count = 4}).unsafe_leak()
     ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
-    @parameter
     def _test_gather[
         width: SIMDLength
-    ](offset: SIMD[_, width], desired: SIMD[ptr.T.dtype, width]) raises:
+    ](offset: SIMD[_, width], desired: SIMD[ptr.T.dtype, width]) raises {imm}:
         var actual = ptr.unsafe_gather(offset)
         assert_almost_equal(
             actual, desired, msg="_test_gather", atol=0.0, rtol=0.0
         )
 
-    @parameter
     def _test_masked_gather[
         width: SIMDLength
     ](
@@ -681,7 +678,7 @@ def test_dtypepointer_gather() raises:
         mask: SIMD[DType.bool, width],
         default: SIMD[ptr.T.dtype, width],
         desired: SIMD[ptr.T.dtype, width],
-    ) raises:
+    ) raises {imm}:
         var actual = ptr.unsafe_gather(offset, mask, default)
         assert_almost_equal(
             actual, desired, msg="_test_masked_gather", atol=0.0, rtol=0.0
@@ -709,21 +706,19 @@ def test_dtypepointer_scatter() raises:
     var ptr = alloc[Float32]({count = 4}).unsafe_leak()
     ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0))
 
-    @parameter
     def _test_scatter[
         width: SIMDLength
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.T.dtype, width],
         desired: SIMD[ptr.T.dtype, 4],
-    ) raises:
+    ) raises {imm}:
         ptr.unsafe_scatter(offset, val)
         var actual = ptr.unsafe_load[width=4](0)
         assert_almost_equal(
             actual, desired, msg="_test_scatter", atol=0.0, rtol=0.0
         )
 
-    @parameter
     def _test_masked_scatter[
         width: SIMDLength
     ](
@@ -731,7 +726,7 @@ def test_dtypepointer_scatter() raises:
         val: SIMD[ptr.T.dtype, width],
         mask: SIMD[DType.bool, width],
         desired: SIMD[ptr.T.dtype, 4],
-    ) raises:
+    ) raises {imm}:
         ptr.unsafe_scatter(offset, val, mask)
         var actual = ptr.unsafe_load[width=4](0)
         assert_almost_equal(

@@ -537,8 +537,7 @@ struct Person(Comparable, ImplicitlyCopyable):
 def test_sort_comparamble_elements_list() raises:
     var list = List[Person]()
 
-    @parameter
-    def gen_list(count: Int):
+    def gen_list(count: Int) {mut list}:
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
         var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]

@@ -269,7 +269,6 @@ def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-@parameter
 @always_inline
 def _is_utf8_continuation_byte[
     w: SIMDLength
