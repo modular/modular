@@ -127,3 +127,6 @@ Each entry names its replacement.
   maximum value. The unsigned code path computed `numerator + denominator -
   1`, which overflows and wraps for large operands; it now derives the
   ceiling from the floor division and remainder instead.
+
+- `Counter.most_common(n)` now returns all elements when `n` exceeds the
+  number of unique elements, matching Python, instead of aborting.
