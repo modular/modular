@@ -22,10 +22,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
     KVCacheParams,
     KVConnectorType,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MultiKVCacheParams,
 )
 from max.pipelines.context import (
     GenerationStatus,
@@ -84,7 +86,17 @@ def create_kv_cache(
     num_speculative_tokens: int = 0,
     is_mla: bool = False,
     tp_per_replica: int = 1,
+    multi_kv: bool = False,
 ) -> PagedKVCacheManager:
+    """Builds a ``PagedKVCacheManager`` for scheduler tests.
+
+    Args:
+        multi_kv: Build a ``MultiKVCacheParams`` tree with ``target`` and
+            ``draft`` children instead of a flat leaf, mirroring production
+            speculative decoding. The children are deliberately
+            different-shaped so the per-child NIXL grouping in
+            ``KVTransferEngine.from_paged_kv_cache`` is exercised.
+    """
     dtype = DType.float32
 
     if tp_per_replica > 1:
@@ -106,12 +118,31 @@ def create_kv_cache(
         device_refs = [DeviceRef.from_device(device) for _ in range(dp)]
         session_devices = [device]
 
-    kv_params: KVCacheParams
-    if is_mla:
-        kv_params = MLAKVCacheParams(
+    def make_leaf_params(num_layers: int, head_dim: int) -> KVCacheParams:
+        if is_mla:
+            return MLAKVCacheParams(
+                dtype=dtype,
+                num_layers=num_layers,
+                head_dim=head_dim,
+                page_size=page_size,
+                enable_prefix_caching=enable_prefix_caching,
+                kv_connector=kv_connector,
+                host_kvcache_swap_space_gb=999,
+                data_parallel_degree=dp,
+                devices=device_refs,
+                speculative_method="eagle"
+                if num_speculative_tokens > 0
+                else None,
+                num_draft_tokens=num_speculative_tokens,
+                # num_q_heads must be divisible by the per-replica device count
+                # (TP shards) when MLA is enabled.
+                num_q_heads=tp_per_replica,
+            )
+        return MHAKVCacheParams(
             dtype=dtype,
-            num_layers=1,
-            head_dim=1,
+            num_layers=num_layers,
+            n_kv_heads=1,
+            head_dim=head_dim,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
             kv_connector=kv_connector,
@@ -120,25 +151,22 @@ def create_kv_cache(
             devices=device_refs,
             speculative_method="eagle" if num_speculative_tokens > 0 else None,
             num_draft_tokens=num_speculative_tokens,
-            # num_q_heads must be divisible by the per-replica device count
-            # (TP shards) when MLA is enabled.
-            num_q_heads=tp_per_replica,
+        )
+
+    kv_params: KVCacheParamInterface
+    if multi_kv:
+        # Production spec decode pairs a deep target cache with a shallow
+        # (typically 1-layer Eagle) draft. Differing num_layers/head_dim keeps
+        # the two NIXL groups shape-heterogeneous, which is the property the
+        # transfer engine's per-child grouping has to get right.
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": make_leaf_params(num_layers=2, head_dim=2),
+                "draft": make_leaf_params(num_layers=1, head_dim=1),
+            }
         )
     else:
-        kv_params = MHAKVCacheParams(
-            dtype=dtype,
-            num_layers=1,
-            n_kv_heads=1,
-            head_dim=1,
-            page_size=page_size,
-            enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
-            host_kvcache_swap_space_gb=999,
-            data_parallel_degree=dp,
-            devices=device_refs,
-            speculative_method="eagle" if num_speculative_tokens > 0 else None,
-            num_draft_tokens=num_speculative_tokens,
-        )
+        kv_params = make_leaf_params(num_layers=1, head_dim=1)
 
     session = InferenceSession(devices=session_devices)
 
