@@ -38,3 +38,37 @@ def test_suppressed_dyn_binding_error[
 ](pval: Parametric[x], func: def[y: Int](p: Parametric[y]) thin -> None):
     def nested():
         func(pval)
+
+
+# ===----------------------------------------------------------------------=== #
+# Closure type error message tests (MOCO-4052)
+# Verify that closure types print with readable signatures, not mangled names.
+# A capture is required throughout: an uncaptured nested `def` is a thin
+# function, not a closure.
+# ===----------------------------------------------------------------------=== #
+
+
+def test_closure_to_int_error():
+    """Closure assigned to Int shows a readable function signature."""
+    var x = 0
+
+    def my_closure(arg: Int) {x} -> Int:
+        return arg
+
+    # expected-error @+1 {{cannot implicitly convert 'def(arg: Int) -> Int' value to 'Int'}}
+    var a: Int = my_closure
+
+
+def test_different_signature_closures():
+    """Closures with different signatures show distinct types in error."""
+    var x = 0
+
+    def closure_int(arg: Int) {x} -> Int:
+        return arg
+
+    def closure_float(arg: Float64) {x} -> Float64:
+        return arg
+
+    var c = closure_int
+    # expected-error @+1 {{cannot implicitly convert 'def(arg: Float64) -> Float64' value to 'def(arg: Int) -> Int'}}
+    c = closure_float

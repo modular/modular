@@ -1662,6 +1662,30 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
+/// If `decl` is a closure wrapper (struct or trait), print its readable source
+/// name and return true. A closure may have no source name (it is only set when
+/// the signature is available; see ClosureEmitter::createStructWrapper), in
+/// which case this returns false and the caller prints the mangled form.
+static bool tryPrintClosureSourceName(raw_ostream &os, ASTDecl *decl) {
+  if (!decl)
+    return false;
+  Operation *op = decl->getIfOperation();
+  if (auto structOp = dyn_cast_or_null<StructDeclOp>(op)) {
+    if (structOp.getDefinesClosure())
+      if (auto sourceName = structOp.getSourceName()) {
+        os << sourceName->getName().getValue();
+        return true;
+      }
+  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(op)) {
+    if (traitOp.getDefinesClosure())
+      if (auto sourceName = traitOp.getSourceName()) {
+        os << sourceName->getName().getValue();
+        return true;
+      }
+  }
+  return false;
+}
+
 void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
   SharedState *diagShared = ctx.shared;
   if (!mlirType) {
@@ -1778,19 +1802,15 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(type).getDecl(*diagShared);
+    if (tryPrintClosureSourceName(os, decl))
+      return;
     printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
   } else if (auto anyStruct = dyn_cast<StructMetaType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
-    // Closure wrapper structs have a readable source name; prefer it.
-    if (auto *op = decl ? decl->getIfOperation() : nullptr)
-      if (auto structOp = dyn_cast<StructDeclOp>(op))
-        if (structOp.getDefinesClosure())
-          if (auto sourceName = structOp.getSourceName()) {
-            os << sourceName->getName().getValue();
-            return;
-          }
+    if (tryPrintClosureSourceName(os, decl))
+      return;
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
@@ -1803,17 +1823,13 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     llvm::interleave(
         reduced, os,
         [&](SymbolRefAttr symbol) {
-          // Closure traits have a readable source name; prefer it.
-          if (diagShared)
-            if (auto *decl =
-                    diagShared->declResolver->getDeclForTypeSymbolIfExists(
-                        symbol))
-              if (auto traitOp = dyn_cast<TraitDeclOp>(decl->getIfOperation()))
-                if (traitOp.getDefinesClosure())
-                  if (auto sourceName = traitOp.getSourceName()) {
-                    os << sourceName->getName().getValue();
-                    return;
-                  }
+          ASTDecl *decl =
+              diagShared
+                  ? diagShared->declResolver->getDeclForTypeSymbolIfExists(
+                        symbol)
+                  : nullptr;
+          if (tryPrintClosureSourceName(os, decl))
+            return;
           printSymbol(os, symbol, diagShared);
         },
         " & ");
