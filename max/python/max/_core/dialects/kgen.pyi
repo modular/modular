@@ -1889,6 +1889,20 @@ class SIMDSplatAttr(max._core.Attribute):
     @property
     def type(self) -> SIMDType: ...
 
+class SingletonAttr(max._core.Attribute):
+    """
+    The `#kgen.singleton` attribute is the value of a type that has exactly one
+    inhabitant, so there is nothing left to represent once the type is known.
+    This covers structs with no stored fields such as literal types.
+    """
+
+    @overload
+    def __init__(self, type: max._core.Type) -> None: ...
+    @overload
+    def __init__(self, type: max._core.Type) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class StructAttr(max._core.Attribute):
     """
     The `#kgen.struct` attribute contains a heterogenous list of elements of
