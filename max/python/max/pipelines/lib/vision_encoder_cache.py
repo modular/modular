@@ -46,7 +46,10 @@ from max.pipelines.context import (
     TextContext,
     VLMContextType,
 )
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.lib.vlm_utils import (
+    compute_multimodal_merge_indices,
+    compute_windowed_merge_indices,
+)
 from max.pipelines.request import RequestID
 from max.profiler import traced
 
@@ -222,14 +225,19 @@ class _VisionBlockPool:
         self._free.extend(block_ids)
 
     def _spans(
-        self, block_ids: Sequence[int], num_tokens: int
+        self, block_ids: Sequence[int], row_lo: int, row_hi: int
     ) -> Iterator[tuple[int, int, int]]:
-        """Yield ``(pool_row, chunk_rows, entry_row)`` per block of an entry."""
-        row = 0
-        for bid in block_ids:
-            chunk = min(self._block_tokens, num_tokens - row)
-            yield bid * self._block_tokens, chunk, row
-            row += chunk
+        """Yield ``(pool_row, chunk_rows, slice_row)`` per overlapping block.
+
+        ``slice_row`` is relative to ``row_lo``.
+        """
+        bt = self._block_tokens
+        slice_row = 0
+        for i in range(row_lo // bt, -(-row_hi // bt)):
+            lo = max(row_lo, i * bt)
+            hi = min(row_hi, (i + 1) * bt)
+            yield block_ids[i] * bt + (lo - i * bt), hi - lo, slice_row
+            slice_row += hi - lo
 
     def write_rows(
         self,
@@ -244,7 +252,7 @@ class _VisionBlockPool:
             "get_vision_cache_row_spec"
         )
         for pool, s in zip(self._pools, src, strict=True):
-            for base, chunk, row in self._spans(block_ids, num_tokens):
+            for base, chunk, row in self._spans(block_ids, 0, num_tokens):
                 pool[base : base + chunk, :].inplace_copy_from(
                     s[start + row : start + row + chunk, :]
                 )
@@ -254,21 +262,22 @@ class _VisionBlockPool:
         out: Sequence[Buffer],
         out_row: int,
         block_ids: Sequence[int],
-        num_tokens: int,
+        row_lo: int,
+        row_hi: int,
     ) -> None:
-        """Copy an entry's blocks into ``out[d][out_row:out_row + num_tokens]``."""
+        """Copy entry rows ``[row_lo, row_hi)`` to ``out[d]`` at ``out_row``."""
         for pool, o in zip(self._pools, out, strict=True):
-            for base, chunk, row in self._spans(block_ids, num_tokens):
+            for base, chunk, row in self._spans(block_ids, row_lo, row_hi):
                 o[out_row + row : out_row + row + chunk, :].inplace_copy_from(
                     pool[base : base + chunk, :]
                 )
 
-    def block_view(
-        self, device_idx: int, block_id: int, num_tokens: int
+    def rows_view(
+        self, device_idx: int, block_id: int, row_lo: int, row_hi: int
     ) -> Buffer:
-        """Contiguous zero-copy view of one block's first ``num_tokens`` rows."""
+        """Block-relative zero-copy view of rows ``[row_lo, row_hi)``."""
         base = block_id * self._block_tokens
-        return self._pools[device_idx][base : base + num_tokens, :]
+        return self._pools[device_idx][base + row_lo : base + row_hi, :]
 
 
 @dataclass
@@ -974,7 +983,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
             embeddings = self._assemble_embeddings(
                 context_batch, n_devices, empty_embeddings
             )
-            indices = compute_multimodal_merge_indices(context_batch)
+            indices = compute_windowed_merge_indices(context_batch)
             return embeddings, indices
 
         # Record an event and synchronize so the vision encoder output
@@ -1000,21 +1009,31 @@ class VisionEncoderCache(Generic[VLMContextType]):
             vision_embeds, per_image_token_counts, hashes, req_ids
         )
 
-        # every vision context was a miss and every image
-        # was uncached, so the encoder output is already in order.
+        # A straddling image is encoded in full but indexed only in-window,
+        # so it must take the assembly path.
         n_vision = sum(
             1
             for ctx in context_batch
             if getattr(ctx, "needs_vision_encoding", False)
         )
-        if len(uncached_contexts) == n_vision and all_uncached:
+        fully_in_window = all(
+            ctx.tokens.processed_length <= img.start_idx
+            and img.end_idx <= ctx.tokens.current_position
+            for ctx in uncached_contexts
+            for img in ctx.images
+        )
+        if (
+            len(uncached_contexts) == n_vision
+            and all_uncached
+            and fully_in_window
+        ):
             embeddings = vision_embeds
         else:
             embeddings = self._assemble_embeddings(
                 context_batch, n_devices, empty_embeddings
             )
 
-        indices = compute_multimodal_merge_indices(context_batch)
+        indices = compute_windowed_merge_indices(context_batch)
         return embeddings, indices
 
     @traced
@@ -1024,55 +1043,65 @@ class VisionEncoderCache(Generic[VLMContextType]):
         n_devices: int,
         empty_embeddings: list[Buffer],
     ) -> list[Buffer]:
-        """Build final image_embeddings tensor from cache.
+        """Build the active-window image_embeddings tensor from cache.
 
-        Must be called after _cache_and_split() so all images are cached.
-        Concatenates in the same order as image_token_indices:
-        all images from ctx[0], then ctx[1], etc.
+        Emits the rows whose placeholder positions fall inside each
+        context's window ``[processed_length, current_position)``, ordered
+        to match
+        :func:`~max.pipelines.lib.vlm_utils.compute_windowed_merge_indices`.
+        Call after ``_cache_and_split()`` so in-window images are resident.
 
         Returns:
-            Per-device buffers, each [total_image_tokens, hidden_size].
+            Per-device buffers, each ``[window_image_tokens, hidden_size]``.
         """
-        # One (entry, row count) span per image; a None entry marks an evicted
-        # image whose tokens were already processed (zero-filled below — the
-        # scatter indices skip its rows).
-        spans: list[tuple[VisionEncoderCacheEntry | None, int]] = []
+        spans: list[tuple[VisionEncoderCacheEntry, int, int]] = []
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
+            win_lo = ctx.tokens.processed_length
+            win_hi = ctx.tokens.current_position
+            positions = np.asarray(ctx.image_token_indices)
             for img in ctx.images:
+                if img.end_idx <= win_lo or img.start_idx >= win_hi:
+                    continue
+                img_lo = int(np.searchsorted(positions, img.start_idx))
+                img_positions = positions[img_lo : img_lo + img.embedding_rows]
+                row_lo = int(np.searchsorted(img_positions, win_lo))
+                row_hi = int(np.searchsorted(img_positions, win_hi))
+                if row_lo == row_hi:
+                    continue
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
-                if entry is None:
-                    assert (
-                        img.end_idx <= ctx.tokens.processed_length
-                        or img.start_idx >= ctx.tokens.current_position
-                    ), f"Active in-window image {img.image_hash} not in cache"
-                    spans.append((None, img.embedding_rows))
-                else:
-                    spans.append((entry, entry.num_tokens))
+                assert entry is not None, (
+                    f"Active in-window image {img.image_hash} not in cache"
+                )
+                spans.append((entry, row_lo, row_hi))
 
         if not spans:
             return empty_embeddings
 
-        # Single image: return its storage directly when that is zero-copy.
+        # The entry's ref count keeps these rows resident while the
+        # forward reads them.
         if len(spans) == 1:
-            entry, count = spans[0]
-            if entry is not None:
-                if entry.embeddings is not None:
+            entry, row_lo, row_hi = spans[0]
+            if entry.embeddings is not None:
+                if row_lo == 0 and row_hi == entry.num_tokens:
                     return entry.embeddings
-                assert entry.block_ids is not None
-                if len(entry.block_ids) == 1:
-                    assert self._pool is not None
-                    # A contiguous view into the pool. The entry's ref count
-                    # (held until request release) keeps the block from being
-                    # evicted and rewritten while the forward reads it.
-                    return [
-                        self._pool.block_view(d, entry.block_ids[0], count)
-                        for d in range(n_devices)
-                    ]
+                return [e[row_lo:row_hi, :] for e in entry.embeddings]
+            assert entry.block_ids is not None
+            assert self._pool is not None
+            bt = self._pool.block_tokens
+            if row_lo // bt == (row_hi - 1) // bt:
+                block_id = entry.block_ids[row_lo // bt]
+                lo = row_lo % bt
+                return [
+                    self._pool.rows_view(
+                        d, block_id, lo, lo + (row_hi - row_lo)
+                    )
+                    for d in range(n_devices)
+                ]
 
-        total_rows = sum(count for _, count in spans)
+        total_rows = sum(hi - lo for _, lo, hi in spans)
         out = [
             Buffer(
                 shape=[total_rows, int(base.shape[1])],
@@ -1082,25 +1111,17 @@ class VisionEncoderCache(Generic[VLMContextType]):
             for base in empty_embeddings
         ]
         row = 0
-        for entry, count in spans:
-            if entry is None:
-                for d, base in enumerate(empty_embeddings):
-                    out[d][row : row + count, :].inplace_copy_from(
-                        Buffer.zeros(
-                            shape=[count, int(base.shape[1])],
-                            dtype=base.dtype,
-                            device=base.device,
-                        )
-                    )
-            elif entry.embeddings is not None:
+        for entry, row_lo, row_hi in spans:
+            count = row_hi - row_lo
+            if entry.embeddings is not None:
                 for d in range(n_devices):
                     out[d][row : row + count, :].inplace_copy_from(
-                        entry.embeddings[d]
+                        entry.embeddings[d][row_lo:row_hi, :]
                     )
             else:
                 assert entry.block_ids is not None
                 assert self._pool is not None
-                self._pool.copy_out(out, row, entry.block_ids, count)
+                self._pool.copy_out(out, row, entry.block_ids, row_lo, row_hi)
             row += count
         return out
 
