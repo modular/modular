@@ -18,7 +18,6 @@ from std.compile import compile_info
 
 
 def test_compile_llvm() raises:
-    @parameter
     def my_add_function[
         dtype: DType, size: Int
     ](x: SIMD[dtype, size], y: SIMD[dtype, size]) -> SIMD[dtype, size]:

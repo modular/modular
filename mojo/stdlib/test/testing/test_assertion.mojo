@@ -105,7 +105,6 @@ def test_assert_almost_equal() raises:
     comptime _inf = inf[float_type]()
     comptime _nan = nan[float_type]()
 
-    @parameter
     def _should_succeed[
         dtype: DType, size: SIMDLength
     ](
@@ -140,7 +139,6 @@ def test_assert_almost_equal() raises:
         rtol=0.10,
     )
 
-    @parameter
     def _should_fail[
         dtype: DType, size: SIMDLength
     ](

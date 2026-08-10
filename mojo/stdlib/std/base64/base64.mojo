@@ -230,7 +230,6 @@ def b16decode(str: StringSlice[mut=False, _]) raises -> List[Byte]:
     comptime `9` = Byte(ord("9"))
 
     # TODO: Measure perf against lookup table approach
-    @parameter
     @always_inline
     def decode(c: Byte) raises -> Byte:
         if `0` <= c <= `9`:

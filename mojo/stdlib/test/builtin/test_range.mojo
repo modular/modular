@@ -268,7 +268,6 @@ def test_range_reversed() raises:
     )
 
     # Test a reversed range's sum and length compared to the original
-    @parameter
     def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
         var iforward = forward.__iter__()

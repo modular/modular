@@ -333,7 +333,6 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
-            @parameter
             def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 6
@@ -389,7 +388,6 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
-            @parameter
             def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 0

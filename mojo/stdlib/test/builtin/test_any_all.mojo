@@ -97,7 +97,6 @@ def test_set_all() raises:
 
 
 def test_simd_any() raises:
-    @parameter
     def _test_dtype[dtype: DType]() raises:
         assert_true(any(Scalar[dtype](1)))
         assert_false(any(Scalar[dtype](0)))
@@ -123,7 +122,6 @@ def test_simd_any() raises:
 
 
 def test_simd_all() raises:
-    @parameter
     def _test_dtype[dtype: DType]() raises:
         assert_true(all(Scalar[dtype](1)))
         assert_false(all(Scalar[dtype](0)))

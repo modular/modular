@@ -94,20 +94,18 @@ def test_array_int() raises:
     var arr3: Array[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
-    @parameter
     def test_init_fill[
         size: Int, batch_size: Int, dt: DType
-    ](arg: Scalar[dt]) raises:
+    ](arg: Scalar[dt]) raises {imm}:
         var arr = Array[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )
         for i in range(size):
             assert_equal(arr[i], arg)
 
-    @parameter
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
-    ]() raises:
+    ]() raises {imm}:
         comptime for current_batch_size in range(len(batch_sizes)):
             comptime for current_size in range(len(sizes)):
                 comptime for current_type in range(dts.size):

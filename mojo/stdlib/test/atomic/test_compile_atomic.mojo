@@ -31,7 +31,6 @@ def _assert_ordered(text: String, first: String, second: String) raises:
 
 
 def test_compile_atomic() raises:
-    @parameter
     def my_add_function[
         dtype: DType
     ](mut x: Atomic[Scalar[dtype], scope="agent"]) -> Scalar[dtype]:
@@ -48,7 +47,6 @@ def test_compile_atomic() raises:
 
 
 def test_compile_fence() raises:
-    @parameter
     def my_fence_function():
         fence[scope="agent"]()
 

@@ -2156,8 +2156,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         var prev_b0 = Byte(0)
 
         @always_inline
-        @parameter
-        def _splitlines[keep: Bool]():
+        def _splitlines[keep: Bool]() {mut}:
             while line_start < length:
                 var line_end = line_start
                 var is_new_line = False
