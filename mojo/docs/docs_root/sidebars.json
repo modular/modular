@@ -76,7 +76,7 @@
         "docs/manual/generics",
         "docs/manual/metaprogramming/constraints",
         "docs/manual/metaprogramming/materialization",
-        "docs/manual/metaprogramming/reflection",
+        "docs/manual/metaprogramming/reflection"
       ]
     },
     {
