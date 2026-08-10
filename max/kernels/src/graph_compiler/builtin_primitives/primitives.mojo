@@ -89,7 +89,7 @@ comptime logger = Logger()
 
 
 def pack_string_res(
-    str_ptr: UnsafePointer[mut=False, Byte, _], str_len: Int
+    str_ptr: Pointer[mut=False, Byte, _], str_len: Int
 ) raises -> String:
     var span = Span(unsafe_ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
@@ -167,7 +167,7 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         self.view = copy.view
         self.storage = copy.storage
 
-    def unsafe_ptr(self) -> UnsafePointer[Scalar[DType.int8], MutAnyOrigin]:
+    def unsafe_ptr(self) -> Pointer[Scalar[DType.int8], MutAnyOrigin]:
         """Returns the view's raw device data pointer.
 
         Returns:
@@ -282,7 +282,7 @@ struct OwnedTensor[dtype: DType, rank: Int](
         self.tensor = copy.tensor
         self.storage = copy.storage
 
-    def unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+    def unsafe_ptr(self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
         """Returns the view's raw device data pointer.
 
         Returns:
@@ -339,7 +339,7 @@ struct OwnedTensor[dtype: DType, rank: Int](
             ptr.unsafe_bitcast[NoneType](),
             n,
             Self.rank,
-            UnsafePointer(to=shape.data),
+            Pointer(to=shape.data),
             self.dtype,
         )
         return AnyAsyncValueRef(handle)
@@ -386,7 +386,7 @@ def create_tensor_spec_async[
 
 
 @export
-def empty_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
+def empty_destructor(ptr: Pointer[UInt8, MutUntrackedOrigin]) abi("Mojo"):
     pass
 
 
@@ -422,7 +422,7 @@ def unpack_buffer_ref(
     var data_ptr = external_call[
         "MGP_RT_GetDataFromBuffer",
         OpaquePointer[MutAnyOrigin],
-    ](async_ptr, UnsafePointer(to=size))
+    ](async_ptr, Pointer(to=size))
     var shape = IndexList[1](Int(size))
     var view = MutByteBuffer(data_ptr.unsafe_bitcast[Int8](), shape)
     # Retain the backing storage of the source async value so this composite
@@ -450,7 +450,7 @@ def unpack_tensor[
         "MGP_RT_GetShapeAndDataFromTensor",
         OpaquePointer[MutAnyOrigin],
     ](
-        UnsafePointer(to=shapes.data),
+        Pointer(to=shapes.data),
         tensor_async_ptr,
     )
 
@@ -487,7 +487,7 @@ def unpack_tensor_spec[
 @always_inline
 def get_buffer_data(
     buffer: MutByteBuffer,
-) -> UnsafePointer[Int8, MutAnyOrigin]:
+) -> Pointer[Int8, MutAnyOrigin]:
     return buffer.unsafe_ptr()
 
 
@@ -1180,14 +1180,14 @@ def mgp_debug_tensor_print[
 ](
     buffer: OwnedByteBuffer,
     shape: IndexList[spec_rank],
-    label_ptr: UnsafePointer[mut=False, Byte, _],
+    label_ptr: Pointer[mut=False, Byte, _],
     label_len: Int,
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
         label_ptr,
         c_size_t(label_len),
         dtype,
-        UnsafePointer(to=shape.data),
+        Pointer(to=shape.data),
         spec_rank,
         buffer.unsafe_ptr(),
         buffer.size(),
@@ -1219,8 +1219,8 @@ def get_simd_width_for_dtypes[
 def to_managed_tensor_slice[
     dtype: DType, rank: Int, mut: Bool, input: IO
 ](
-    data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    shape: UnsafePointer[Int, ImmutAnyOrigin],
+    data: Pointer[Scalar[dtype], MutAnyOrigin],
+    shape: Pointer[Int, ImmutAnyOrigin],
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
     static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
@@ -1506,7 +1506,7 @@ def mogg_as_scalar(tensor: ManagedTensorSlice) -> Scalar[tensor.dtype]:
 @register_internal("mogg.async.__del__")
 @no_inline
 def mogg_async_del(
-    async_ptr: UnsafePointer[AnyAsyncValueRefPtr, MutAnyOrigin], size: Int
+    async_ptr: Pointer[AnyAsyncValueRefPtr, MutAnyOrigin], size: Int
 ):
     """
     Decrement the AnyAsyncValueRef. Typically called at the end of a kernel for
@@ -1620,12 +1620,12 @@ struct MoggAsyncPackHelper:
 
         # MGP_RT_CreateOwnedAsyncMojoValue expects a type erased destructor
         @always_inline("nodebug")
-        def erased_destructor(ptr: UnsafePointer[UInt8, MutUntrackedOrigin]):
+        def erased_destructor(ptr: Pointer[UInt8, MutUntrackedOrigin]):
             ptr.unsafe_bitcast[Type]().unsafe_deinit_pointee()
 
         var dst_ptr = external_call[
             "MGP_RT_MojoValueAllocateBuffer",
-            UnsafePointer[UInt8, MutUntrackedOrigin],
+            Pointer[UInt8, MutUntrackedOrigin],
         ](size_of[Type](), align_of[Type]())
 
         dst_ptr.unsafe_bitcast[Type]().unsafe_write(data^)
@@ -1674,7 +1674,7 @@ def mogg_async_pack_owned_tensor[
         ptr.unsafe_bitcast[NoneType](),
         n,
         spec_rank,
-        UnsafePointer(to=shape.data),
+        Pointer(to=shape.data),
         data.dtype,
         async_ptr,
     )
@@ -1705,7 +1705,7 @@ def mogg_tensor_init[
     input: IO,
     alignment: Int,
 ](
-    ptr: UnsafePointer[mut=True, NoneType, _],
+    ptr: Pointer[mut=True, NoneType, _],
     layout: LayoutType,
 ) -> ManagedTensorSlice[
     io_spec=IOSpec[mut, input](),
@@ -1858,7 +1858,7 @@ def mgp_buffer_get_cached(
 @register_internal("mgp.assert")
 @no_inline
 def mgp_assert(
-    cond: Bool, msg_ptr: UnsafePointer[mut=False, Byte, _], msg_len: Int
+    cond: Bool, msg_ptr: Pointer[mut=False, Byte, _], msg_len: Int
 ) raises:
     """
     Raises an error when the input condition is not true.
