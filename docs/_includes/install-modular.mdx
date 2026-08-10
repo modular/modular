@@ -118,8 +118,7 @@ export default function InstallMAX({ folder = "example-project", extraLibraries 
               <li>
                 Install <code>max</code> with all dependencies ({tooltipStable}){extraLibsDescription}:
                 <CodeBlock language="sh">
-                  {`uv add "max[all]"${extraLibsString} \\
-    --prerelease allow`}
+                  {`uv add "max[all]"${extraLibsString}`}
                 </CodeBlock>
               </li>
             </ConditionalVersionDocs>
