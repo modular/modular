@@ -83,7 +83,7 @@ This version is still a work in progress.
   and so on) still only support `Scalar` types.
 
 - The following APIs have been migrated to unified closures: `sort`,
-  `debug_assert`.
+  `debug_assert`, `Span.apply`.
 
 ## GPU programming
 
