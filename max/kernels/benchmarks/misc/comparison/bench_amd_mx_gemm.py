@@ -94,7 +94,10 @@ _SCALE_BLOCK = 32
 def _auto_ncopies(weight_bytes_per_copy: int) -> int:
     """Rotating-copy count so the working set exceeds the L2 (=> cold HBM
     reads), capped at 16. For large weights one or two copies already exceed
-    L2; for small weights the cap of 16 is used."""
+    L2; for small weights the cap of 16 is used and may not reach the 256 MB
+    L2 -- exceeding it there needs 500+ copies, and chaining that many MAX
+    device-graph ops takes minutes to compile, not viable for a routine
+    sweep."""
     return max(
         2,
         min(
@@ -365,10 +368,17 @@ def bench_matmul_max(
     torch.cuda.synchronize()
     per_op_s = start.elapsed_time(end) / 1e3 / nrun / ncopies
 
-    w_mb = (n * k_bytes) / (1024.0 * 1024.0)
+    weight_bytes_per_copy = n * k_bytes
+    working_set_bytes = weight_bytes_per_copy * ncopies
+    w_mb = weight_bytes_per_copy / (1024.0 * 1024.0)
+    cold_state = (
+        "cold"
+        if working_set_bytes > _L2_CACHE_SIZE_BYTES
+        else f"WARM: working set < {_L2_CACHE_SIZE_BYTES / 1e6:.0f}MB L2"
+    )
     print(
         f"[MAX chained device-graph] chain={ncopies} "
-        f"weight_per_copy~{w_mb:.1f}MB working_set~{w_mb * ncopies:.1f}MB (cold)"
+        f"weight_per_copy~{w_mb:.1f}MB working_set~{w_mb * ncopies:.1f}MB ({cold_state})"
         f" | per-op {per_op_s * 1e6:.2f}us"
     )
     keepalive.clear()
@@ -456,10 +466,17 @@ def bench_matmul_aiter(
     torch.cuda.synchronize()
     per_op_s = start.elapsed_time(end) / 1e3 / nrun / ncopies
 
-    w_mb = (n * (k // 2)) / (1024.0 * 1024.0)
+    weight_bytes_per_copy = n * (k // 2)
+    working_set_bytes = weight_bytes_per_copy * ncopies
+    w_mb = weight_bytes_per_copy / (1024.0 * 1024.0)
+    cold_state = (
+        "cold"
+        if working_set_bytes > _L2_CACHE_SIZE_BYTES
+        else f"WARM: working set < {_L2_CACHE_SIZE_BYTES / 1e6:.0f}MB L2"
+    )
     print(
         f"[aiter chained CUDA-graph] chain={ncopies} "
-        f"weight_per_copy~{w_mb:.1f}MB working_set~{w_mb * ncopies:.1f}MB (cold)"
+        f"weight_per_copy~{w_mb:.1f}MB working_set~{w_mb * ncopies:.1f}MB ({cold_state})"
         f" | per-op {per_op_s * 1e6:.2f}us"
     )
     return per_op_s, _compute_flops(m, n, k)
