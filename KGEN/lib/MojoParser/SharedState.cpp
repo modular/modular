@@ -32,6 +32,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -3879,7 +3880,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     auto eltType = evaluator.getReboundType(varDecl.getType().getElementType());
     // Permit vardecls of certain types we know about.
     if (eltType.isIntOrIndexOrFloat() || isa<SIMDType, DTypeType>(eltType)) {
-      varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+      varDeclSoFar[varDecl] = UninitMemAttr::get(eltType);
       return TypedAttr();
     }
     // The primary pattern we're trying to handle here is:
@@ -3898,7 +3899,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
       if (structOp && structOp.getFieldDecls().empty())
         varDeclSoFar[varDecl] = SingletonAttr::get(eltType);
       else
-        varDeclSoFar[varDecl] = UnknownAttr::get(eltType);
+        varDeclSoFar[varDecl] = UninitMemAttr::get(eltType);
       return TypedAttr();
     }
   }

@@ -85,10 +85,10 @@ kgen.func @address_dtype(%arg0 : !kgen.simd<1, address>, %arg1 : !kgen.simd<4, a
   kgen.return
 }
 
-// CHECK-LABEL: @unknown
-kgen.func @unknown() -> index {
+// CHECK-LABEL: @uninitmem
+kgen.func @uninitmem() -> index {
   // CHECK-NEXT: llvm.mlir.undef : i64
-  %0 = kgen.param.constant = <*?>
+  %0 = kgen.param.constant = <#interp.uninitmem : index>
   kgen.return %0 : index
 }
 

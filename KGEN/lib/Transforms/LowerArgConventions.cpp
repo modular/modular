@@ -25,6 +25,7 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -56,8 +57,10 @@ static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
                                  TypedAttr value = {}) {
   if (v.use_empty())
     return;
-  if (!value) // Default to UnknownAttr.
-    value = b.getAttr<UnknownAttr>(v.getType());
+  // A dropped value's stand-in is genuinely uninitialized memory: it is never
+  // meant to be read, and it has to survive to codegen as an undef.
+  if (!value)
+    value = UninitMemAttr::get(v.getType());
   auto dummy = ParamConstantOp::create(b, value);
   v.replaceAllUsesWith(dummy);
 }
