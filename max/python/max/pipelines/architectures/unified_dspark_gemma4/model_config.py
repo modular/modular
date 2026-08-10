@@ -36,9 +36,50 @@ from max.pipelines.modeling.config_enums import SupportedEncoding
 from typing_extensions import Self
 
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
-from .dspark_gemma4 import DSparkGemma4DraftConfig
+from .dspark_gemma4 import DSparkGemma4DraftConfig, _get
 
 logger = logging.getLogger("max.pipelines")
+
+
+def resolve_dspark_num_speculative_tokens(
+    pipeline_config: PipelineConfig,
+    *,
+    warn: bool = True,
+) -> int:
+    """Returns the resolved DSpark draft width.
+
+    DSpark drafts at every block position, so the width is the drafter's
+    trained ``block_size`` itself (no ``- 1``); a mismatching explicit
+    ``num_speculative_tokens`` is overridden with a warning. When the draft
+    config declares no ``block_size``, an explicit
+    ``--num-speculative-tokens`` is required and returned as-is. Pure: the
+    caller's config is never mutated or copied.
+    """
+    speculative = pipeline_config.speculative
+    assert speculative is not None
+    assert pipeline_config.draft_model is not None
+    raw_block_size = _get(
+        pipeline_config.draft_model.huggingface_config, "block_size", None
+    )
+    block_size = int(raw_block_size) if raw_block_size is not None else 0
+    if block_size <= 0:
+        if speculative.num_speculative_tokens is None:
+            raise ValueError(
+                "The DSpark draft config declares no block_size; set"
+                " --num-speculative-tokens explicitly."
+            )
+        return speculative.num_speculative_tokens
+    actual_spec = speculative.num_speculative_tokens
+    if warn and actual_spec is not None and actual_spec != block_size:
+        logger.warning(
+            "DSpark draft was trained at block_size=%d and drafts at"
+            " every block position, so num_speculative_tokens is"
+            " being overridden from %d to %d.",
+            block_size,
+            actual_spec,
+            block_size,
+        )
+    return block_size
 
 
 def construct_draft_kv_params(
@@ -158,7 +199,11 @@ class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
         if self.block_size > 0:
             expected_spec = self.block_size
             actual_spec = self.speculative_config.num_speculative_tokens
-            if actual_spec != expected_spec:
+            if actual_spec is not None and actual_spec != expected_spec:
+                # Check only, never written back: the trained width is
+                # resolved as a plain int by
+                # :func:`resolve_dspark_num_speculative_tokens` and
+                # threaded by the model.
                 logger.warning(
                     "DSpark draft was trained at block_size=%d and drafts at"
                     " every block position, so num_speculative_tokens is"
@@ -167,14 +212,19 @@ class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
                     actual_spec,
                     expected_spec,
                 )
-                self.speculative_config.num_speculative_tokens = expected_spec
 
     def resolve_block_size(self, *, default: int | None = None) -> int:
         if self.block_size > 0:
             return self.block_size
         if default is not None:
             return default
-        return self.speculative_config.num_speculative_tokens
+        num_spec = self.speculative_config.num_speculative_tokens
+        if num_spec is None:
+            raise ValueError(
+                "The DSpark draft config declares no block_size; set"
+                " --num-speculative-tokens explicitly."
+            )
+        return num_spec
 
     @property
     def devices(self) -> list[DeviceRef]:
@@ -211,7 +261,8 @@ class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
             draft_hf_config
         )
         # Keep the whole {target, draft} tree on one num_draft_tokens at
-        # initialize time (the target leaves carry the CLI value);
+        # initialize time (the target leaves carry the CLI value, 0 while
+        # it is still unset);
         # ``UnifiedDSparkGemma4Model._create_model_config`` re-derives all
         # leaves from the draft's trained block_size before the KV manager
         # is built.
@@ -220,7 +271,7 @@ class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
             draft_config,
             list(target_config.devices),
             num_draft_tokens=(
-                pipeline_config.speculative.num_speculative_tokens
+                pipeline_config.speculative.num_speculative_tokens or 0
             ),
         )
 

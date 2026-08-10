@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
@@ -23,7 +23,11 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
@@ -51,6 +55,7 @@ from .batch_processor import UnifiedDSparkGemma4BatchProcessor
 from .model_config import (
     UnifiedDSparkGemma4Config,
     construct_draft_kv_params,
+    resolve_dspark_num_speculative_tokens,
 )
 from .unified_dspark_gemma4 import (
     UnifiedDSparkGemma4 as UnifiedDSparkGemma4Module,
@@ -121,6 +126,11 @@ class UnifiedDSparkGemma4Model(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
+        # The drafter's trained width, resolved from the draft checkpoint;
+        # exposed for the overlap pipeline's spec-decode buffers.
+        self.resolved_num_speculative_tokens = (
+            resolve_dspark_num_speculative_tokens(pipeline_config)
+        )
         super().__init__(
             pipeline_config,
             session,
@@ -143,13 +153,25 @@ class UnifiedDSparkGemma4Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        return Gemma4ForConditionalGenerationConfig.construct_kv_params(
+        # This arch re-derives every KV leaf at load
+        # (``_create_model_config``), but the initial bake reads the raw
+        # speculative section and would silently carry num_draft_tokens=0;
+        # rebake every leaf at the drafter's trained width.
+        params = Gemma4ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
         )
+        resolved_spec = resolve_dspark_num_speculative_tokens(
+            pipeline_config, warn=False
+        )
+        children: dict[str, KVCacheParamInterface] = {}
+        for name, leaf in params.children.items():
+            assert isinstance(leaf, KVCacheParams)
+            children[name] = replace(leaf, num_draft_tokens=resolved_spec)
+        return MultiKVCacheParams.from_params(children)
 
     def _load_state_dict(self) -> dict[str, Any]:
         target_state_dict = parse_state_dict_from_weights(

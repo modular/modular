@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -31,15 +31,19 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, Module, Value
+from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputsInterface, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsInterface,
+    KVCacheParams,
+    spec_decode_cache_slack,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.kimik2_5.context import (
     KimiK2_5TextAndVisionContext,
 )
-from max.pipelines.lib import CompilationTimer
+from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces import (
     UnifiedSpecDecodeInputs,
 )
@@ -47,16 +51,19 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from transformers import AutoConfig
 from typing_extensions import override
 
 from ..dflash_kimi_k25 import DFlashKimiK25DraftConfig
 from ..kimik2_5.model import KimiK2_5Model, KimiK2_5ModelInputs
+from ..kimik2_5.model_config import KimiK2_5TextConfig
 from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from .batch_processor import UnifiedDflashKimiK25BatchProcessor
 from .model_config import (
     MultiKVCacheParams,
     UnifiedDflashKimiK25Config,
     parse_dflash_draft_hf_config,
+    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_kimi_k25 import UnifiedDflashKimiK25
 
@@ -119,10 +126,65 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
 
     batch_processor_cls = UnifiedDflashKimiK25BatchProcessor
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, pipeline_config: PipelineConfig, *args: Any, **kwargs: Any
+    ) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.SELECTED_LAYERS
-        super().__init__(*args, **kwargs)
+        # The drafter's trained width, resolved from the draft checkpoint;
+        # exposed for the overlap pipeline's spec-decode buffers.
+        self.resolved_num_speculative_tokens = (
+            resolve_dflash_num_speculative_tokens(pipeline_config)
+        )
+        super().__init__(pipeline_config, *args, **kwargs)
+
+    @override
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        # The parent reads the raw speculative section, where the unset
+        # width would bake num_draft_tokens=0; rebake at the trained width.
+        params = super().get_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+        )
+        assert isinstance(params, KVCacheParams)
+        return replace(
+            params,
+            num_draft_tokens=resolve_dflash_num_speculative_tokens(
+                pipeline_config, warn=False
+            ),
+        )
+
+    @override
+    def _create_model_config(
+        self, state_dict: dict[str, WeightData]
+    ) -> KimiK2_5TextConfig:
+        model_config = super()._create_model_config(state_dict)
+        # ``KimiK2_5TextConfig.initialize`` derives its KV params, and the
+        # rope table's spec-decode slack, from the raw speculative section,
+        # where the unset width reads as 0; re-derive both at the drafter's
+        # trained width.
+        resolved_spec = self.resolved_num_speculative_tokens
+        assert resolved_spec is not None
+        assert isinstance(model_config.kv_params, KVCacheParams)
+        stale_slack = spec_decode_cache_slack(model_config.kv_params)
+        model_config.kv_params = replace(
+            model_config.kv_params, num_draft_tokens=resolved_spec
+        )
+        model_config.max_position_embeddings += (
+            spec_decode_cache_slack(model_config.kv_params) - stale_slack
+        )
+        return model_config
 
     @override
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
@@ -218,9 +280,13 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         assert self.pipeline_config.speculative is not None
         dflash_block_size = int(dflash_hf.block_size or 0)
         if dflash_block_size <= 0:
-            dflash_block_size = (
-                self.pipeline_config.speculative.num_speculative_tokens + 1
-            )
+            num_spec = self.pipeline_config.speculative.num_speculative_tokens
+            if num_spec is None:
+                raise ValueError(
+                    "The DFlash draft checkpoint declares no block_size; set"
+                    " --num-speculative-tokens explicitly."
+                )
+            dflash_block_size = num_spec + 1
 
         target_kv.num_draft_tokens = dflash_block_size
         logger.info(

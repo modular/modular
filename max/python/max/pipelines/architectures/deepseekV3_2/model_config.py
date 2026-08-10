@@ -116,7 +116,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         if pipeline_config.speculative:
             speculative_method = pipeline_config.speculative.speculative_method
             num_draft_tokens = (
-                pipeline_config.speculative.num_speculative_tokens
+                pipeline_config.speculative.num_speculative_tokens or 0
             )
 
         indexer_kv_params = kv_cache_config.to_params(

@@ -189,6 +189,51 @@ def test_explicit_devices_inherited_by_draft_devices(
     assert result.output.strip() == "device_specs|draft_device_specs"
 
 
+def test_unset_num_speculative_tokens_reaches_config_as_none() -> None:
+    """A ``--num-speculative-tokens`` the user never passed reaches the
+    constructed config as ``None``, so each speculative method resolves its
+    own default (eagle/mtp use 2; DSpark/DFlash drafters derive the trained
+    width from the draft checkpoint), while an explicit value is honored."""
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs: Any) -> None:
+        config = PipelineConfig.from_args(
+            PipelineArgs.from_flat_kwargs(**kwargs)
+        )
+        assert config.speculative is not None
+        click.echo(f"{config.speculative.num_speculative_tokens}")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--model-path", "fake/model", "--speculative-method", "dflash"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "None"
+
+    result = runner.invoke(
+        cli,
+        [
+            "--model-path",
+            "fake/model",
+            "--speculative-method",
+            "dflash",
+            "--num-speculative-tokens",
+            "5",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "5"
+
+    result = runner.invoke(
+        cli,
+        ["--model-path", "fake/model", "--speculative-method", "eagle"],
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "2"
+
+
 def test_resolve_config_file_passthrough_for_plain_paths() -> None:
     """Non-prefixed paths are returned unchanged."""
     assert _resolve_config_file("/tmp/my_config.yaml") == "/tmp/my_config.yaml"

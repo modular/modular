@@ -150,7 +150,9 @@ class TokenGenerationSchedulerConfig:
             dp_ce_balance_timeout_ms=pipeline_config.runtime.dp_ce_balance_timeout_ms,
             dp_ce_balance_threshold=pipeline_config.runtime.dp_ce_balance_threshold,
             dp_ce_balance_enable_dynamic_chunk_size=pipeline_config.runtime.dp_ce_balance_enable_dynamic_chunk_size,
-            num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            num_speculative_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative is not None
             else 0,
         )

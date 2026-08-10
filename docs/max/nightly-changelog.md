@@ -12,6 +12,50 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- `--num-speculative-tokens` is now unset by default, and each speculative
+  method resolves its own default: `eagle` and `mtp` keep drafting 2 tokens
+  per step, while `dflash`-style block drafters (DFlash, DSpark) derive the
+  draft checkpoint's trained block width. Explicit values are honored as
+  before. Previously the flag defaulted to 2 for every method and block
+  drafters overrode it at load time with a warning; a bare DFlash run now
+  also sizes its KV cache draft headroom at the trained width instead of the
+  old default.
+- The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
+  into a single `rms_norm_rope` GPU kernel even when the RMSNorm upcasts to
+  `float32`; numerics match the unfused graph.
+- Added a `poison-all` mode to `MODULAR_DEBUG_DEVICE_ALLOCATOR` that fills
+  every memory-manager allocation with a configurable NaN-pattern byte
+  (`MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_POISON_PATTERN`), so uninitialized
+  device-memory reads trip differential tests without kernel instrumentation.
+  Manual debugging aid, not a default.
+- Added conda packages `max-benchmark`, `max-serve`, and `max-all`, plus a
+  `max[all]` wheel extra, for parity with the existing wheel extras.
+- Multimodal pipelines now compile their vision and language models in
+  parallel via a shared `Module` container and `session.load_all()`, cutting
+  compile/load time by up to 1.86x (Qwen3-VL-4B: 614s -> 428s).
+- Made the compiled-model (MEF) cache key relocatable across install paths:
+  absolute-path-valued pipeline options no longer enter the key, so a cache
+  warmed under one install path hits under another.
+- ModuleV3 weights are now sharded and transferred to devices inside the
+  compiled graph rather than via eager ops, reducing per-GPU memory use
+  (about 10 GiB for a DP-EP NVFP4 DeepSeek-V3).
+- The VMM defragmenting allocator is now the default memory manager on NVIDIA
+  GPUs, fixing external-fragmentation OOMs ("plenty free but no contiguous
+  block"); override with `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=0`. Also
+  fixed the earlier opt-in being a silent no-op.
+- Added a HIP-based VMM defragmenting allocator for AMD GPUs (opt-in via
+  `MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=1`) on MI300-series hardware.
+- Coalesced consecutive Metal kernel launches into a single shared command
+  buffer with a tunable op cap, reducing per-launch overhead on Apple GPUs;
+  also restored Metal GPU execution aborted by an unimplemented
+  driver-context stub.
+- Improved expert-parallel MoE execution by running the shared expert on a
+  side stream via `ops.side_stream`, overlapping it with the routed-expert
+  computation.
+- Allowed `float16`/`bfloat16` graphs to load `float32` checkpoint weights,
+  with the weight adapter casting at load time.
+- Improved multi-device startup latency by batching replay preface copies
+  into a single submission.
 - The vision encoder cache can store embeddings in fixed-size blocks,
   enabled by setting the `MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION`
   environment variable to a fraction in (0, 0.5] of the KV cache pool
