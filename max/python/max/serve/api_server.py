@@ -227,11 +227,7 @@ async def lifespan(
                 serving_settings.pipeline_config.sampling.structured_output_backend,
                 delegate,
                 len(delegate),
-                # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
-                reject_unsupported=(
-                    serving_settings.pipeline_config.runtime.tool_parser
-                    == "gemma4"
-                ),
+                tool_parser_name=serving_settings.pipeline_config.runtime.tool_parser,
             )
 
         # Also store as handler for OpenResponses API route compatibility

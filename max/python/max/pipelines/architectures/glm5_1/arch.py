@@ -54,7 +54,5 @@ glm5_1_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    # The "glm45" tool parser only emits Lark tool-call grammars, which the
-    # xgrammar backend cannot compile. Pin to llguidance (matches gemma4).
-    default_structured_output_backend="llguidance",
+    default_structured_output_backend="xgrammar",
 )

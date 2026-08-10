@@ -71,7 +71,11 @@ def test_structured_output_sampling(
     )
     vocab_size = config.vocab_size
 
-    backend = make_grammar_backend(backend_name, hf_tokenizer, vocab_size)
+    backend = make_grammar_backend(
+        backend_name,
+        hf_tokenizer,
+        vocab_size,
+    )
     compiled = backend.compile_json_schema(json.dumps(_PERSON_SCHEMA))
     matcher = backend.create_matcher(compiled)
 
