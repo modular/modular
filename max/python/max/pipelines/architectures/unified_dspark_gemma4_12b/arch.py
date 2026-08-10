@@ -17,22 +17,22 @@ from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
-from .batch_processor import UnifiedDSparkGemma4BatchProcessor
-from .model import UnifiedDSparkGemma4Model
+from .batch_processor import UnifiedDSparkGemma4_12BBatchProcessor
+from .model import UnifiedDSparkGemma4_12BModel
 from .model_config import (
     Gemma4DSparkDraftArchConfig,
-    UnifiedDSparkGemma4Config,
+    UnifiedDSparkGemma4_12BConfig,
 )
 from .weight_adapters import convert_safetensor_state_dict
 
-unified_dspark_gemma4_arch = SupportedArchitecture(
-    name="UnifiedDSparkGemma4ForCausalLM",
+unified_dspark_gemma4_12b_arch = SupportedArchitecture(
+    name="UnifiedDSparkGemma4_12BForCausalLM",
     example_repo_ids=[
         "google/gemma-4-12B-it",
     ],
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
-    pipeline_model=UnifiedDSparkGemma4Model,
+    pipeline_model=UnifiedDSparkGemma4_12BModel,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,
@@ -41,10 +41,10 @@ unified_dspark_gemma4_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_safetensor_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=UnifiedDSparkGemma4Config,
+    config=UnifiedDSparkGemma4_12BConfig,
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=True,
-    batching=UnifiedDSparkGemma4BatchProcessor,
+    batching=UnifiedDSparkGemma4_12BBatchProcessor,
 )
 
 # The DSpark draft checkpoint declares architectures ["Gemma4DSparkModel"].
@@ -60,7 +60,7 @@ gemma4_dspark_draft_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={"bfloat16"},
-    pipeline_model=UnifiedDSparkGemma4Model,
+    pipeline_model=UnifiedDSparkGemma4_12BModel,
     context_type=TextContext,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.safetensors,

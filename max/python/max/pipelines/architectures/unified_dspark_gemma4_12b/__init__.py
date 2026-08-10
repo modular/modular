@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Unified DSpark speculative decoding for Gemma4."""
 
-from .arch import gemma4_dspark_draft_arch, unified_dspark_gemma4_arch
+from .arch import gemma4_dspark_draft_arch, unified_dspark_gemma4_12b_arch
 from .dspark_gemma4 import (
     DSparkGemma4,
     DSparkGemma4Attention,
@@ -20,9 +20,9 @@ from .dspark_gemma4 import (
     DSparkGemma4DraftConfig,
     DSparkMarkovHead,
 )
-from .model import UnifiedDSparkGemma4Inputs, UnifiedDSparkGemma4Model
-from .model_config import UnifiedDSparkGemma4Config
-from .unified_dspark_gemma4 import UnifiedDSparkGemma4
+from .model import UnifiedDSparkGemma4_12BInputs, UnifiedDSparkGemma4_12BModel
+from .model_config import UnifiedDSparkGemma4_12BConfig
+from .unified_dspark_gemma4_12b import UnifiedDSparkGemma4_12B
 
 __all__ = [
     "DSparkGemma4",
@@ -30,10 +30,10 @@ __all__ = [
     "DSparkGemma4DecoderLayer",
     "DSparkGemma4DraftConfig",
     "DSparkMarkovHead",
-    "UnifiedDSparkGemma4",
-    "UnifiedDSparkGemma4Config",
-    "UnifiedDSparkGemma4Inputs",
-    "UnifiedDSparkGemma4Model",
+    "UnifiedDSparkGemma4_12B",
+    "UnifiedDSparkGemma4_12BConfig",
+    "UnifiedDSparkGemma4_12BInputs",
+    "UnifiedDSparkGemma4_12BModel",
     "gemma4_dspark_draft_arch",
-    "unified_dspark_gemma4_arch",
+    "unified_dspark_gemma4_12b_arch",
 ]

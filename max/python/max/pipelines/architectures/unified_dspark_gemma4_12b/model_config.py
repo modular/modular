@@ -109,7 +109,7 @@ class Gemma4DSparkDraftArchConfig:
 
     A DSpark checkpoint is only ever served as ``--draft-model`` next to a
     Gemma4 target (the registry rewrites the pair to
-    ``UnifiedDSparkGemma4ForCausalLM``), so the registry needs just the
+    ``UnifiedDSparkGemma4_12BForCausalLM``), so the registry needs just the
     draft-side max-sequence-length clamp from this config.
     """
 
@@ -138,7 +138,7 @@ class Gemma4DSparkDraftArchConfig:
 
 
 @dataclass(kw_only=True)
-class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
+class UnifiedDSparkGemma4_12BConfig(ArchConfigWithKVCache):
     # Mirrors the `SupportedArchitecture` registration; generic consumers
     # (`PipelineModel._resolved_encoding`, `ArchConfig.initialize`) resolve a
     # config with no explicit `quantization_encoding` through these.
@@ -263,7 +263,7 @@ class UnifiedDSparkGemma4Config(ArchConfigWithKVCache):
         # Keep the whole {target, draft} tree on one num_draft_tokens at
         # initialize time (the target leaves carry the CLI value, 0 while
         # it is still unset);
-        # ``UnifiedDSparkGemma4Model._create_model_config`` re-derives all
+        # ``UnifiedDSparkGemma4_12BModel._create_model_config`` re-derives all
         # leaves from the draft's trained block_size before the KV manager
         # is built.
         draft_kv_params = construct_draft_kv_params(

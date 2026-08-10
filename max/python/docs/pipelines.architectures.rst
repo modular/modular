@@ -25,6 +25,7 @@ family.
    pipelines.architectures.deepseekV3_nextn
    pipelines.architectures.dflash_llama3
    pipelines.architectures.diffusion_gemma
+   pipelines.architectures.dspark_draft
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.flux2
@@ -66,7 +67,8 @@ family.
    pipelines.architectures.step3p5
    pipelines.architectures.unified_dflash_kimi_k25
    pipelines.architectures.unified_dflash_llama3
-   pipelines.architectures.unified_dspark_gemma4
+   pipelines.architectures.unified_dspark_gemma4_12b
+   pipelines.architectures.unified_dspark_gemma4_31b
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
@@ -85,6 +87,7 @@ Text generation
    ~max.pipelines.architectures.deepseekV3_nextn
    ~max.pipelines.architectures.dflash_llama3
    ~max.pipelines.architectures.diffusion_gemma
+   ~max.pipelines.architectures.dspark_draft
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.gemma3
@@ -120,7 +123,8 @@ Text generation
    ~max.pipelines.architectures.step3p5
    ~max.pipelines.architectures.unified_dflash_kimi_k25
    ~max.pipelines.architectures.unified_dflash_llama3
-   ~max.pipelines.architectures.unified_dspark_gemma4
+   ~max.pipelines.architectures.unified_dspark_gemma4_12b
+   ~max.pipelines.architectures.unified_dspark_gemma4_31b
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4

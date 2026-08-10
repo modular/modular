@@ -36,10 +36,10 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
     Gemma4TextConfig,
 )
-from max.pipelines.architectures.unified_dspark_gemma4 import (
+from max.pipelines.architectures.unified_dspark_gemma4_12b import (
     DSparkGemma4DraftConfig,
-    UnifiedDSparkGemma4,
-    UnifiedDSparkGemma4Config,
+    UnifiedDSparkGemma4_12B,
+    UnifiedDSparkGemma4_12BConfig,
 )
 from max.pipelines.lib.config import SpeculativeConfig
 
@@ -188,7 +188,7 @@ def test_unified_dspark_graph_compiles(
         devices=devices,
         page_size=128,
     )
-    config = UnifiedDSparkGemma4Config(
+    config = UnifiedDSparkGemma4_12BConfig(
         target=target_config,
         draft=draft_config,
         draft_kv_params=draft_kv_params,
@@ -202,7 +202,7 @@ def test_unified_dspark_graph_compiles(
     )
     config.validate_dspark_fields()
 
-    nn_model = UnifiedDSparkGemma4(config)
+    nn_model = UnifiedDSparkGemma4_12B(config)
     assert nn_model.num_speculative_tokens == BLOCK_SIZE
 
     # Alias the shared modules exactly as the pipeline model does.
@@ -230,7 +230,7 @@ def test_unified_dspark_graph_compiles(
     nn_model.load_state_dict(state_dict, weight_alignment=1, strict=False)
 
     with Graph(
-        "unified_dspark_gemma4_test",
+        "unified_dspark_gemma4_12b_test",
         input_types=nn_model.input_types(),
     ) as graph:
         values = nn_model._unflatten_graph_inputs(graph.inputs)

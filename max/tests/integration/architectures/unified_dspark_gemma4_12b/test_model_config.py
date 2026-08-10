@@ -32,11 +32,11 @@ from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
-from max.pipelines.architectures.unified_dspark_gemma4.dspark_gemma4 import (
+from max.pipelines.architectures.unified_dspark_gemma4_12b.dspark_gemma4 import (
     DSparkGemma4DraftConfig,
 )
-from max.pipelines.architectures.unified_dspark_gemma4.model_config import (
-    UnifiedDSparkGemma4Config,
+from max.pipelines.architectures.unified_dspark_gemma4_12b.model_config import (
+    UnifiedDSparkGemma4_12BConfig,
     resolve_dspark_num_speculative_tokens,
 )
 from max.pipelines.lib import (
@@ -140,8 +140,8 @@ class _FakeDraftConfig:
 
 def _make_arch_config(
     speculative_config: SpeculativeConfig,
-) -> UnifiedDSparkGemma4Config:
-    return UnifiedDSparkGemma4Config(
+) -> UnifiedDSparkGemma4_12BConfig:
+    return UnifiedDSparkGemma4_12BConfig(
         target=cast(
             Gemma4ForConditionalGenerationConfig,
             _FakeTargetConfig(_FakeTextConfig(), [DeviceRef.GPU()]),
