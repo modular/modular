@@ -456,12 +456,12 @@ def join(var path: String, *paths: String) -> String:
     print(join("a", "/b", "c")) # "/b/c" (absolute resets)
     ```
     """
-    var joined_path = path
+    var joined_path = path^
 
     for cur_path in paths:
         if cur_path.startswith(sep):
             joined_path = cur_path
-        elif not joined_path or path.endswith(sep):
+        elif not joined_path or joined_path.endswith(sep):
             joined_path += cur_path
         else:
             joined_path += sep + cur_path
