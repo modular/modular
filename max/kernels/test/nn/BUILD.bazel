@@ -38,6 +38,7 @@ _FILECHECK_TESTS = [
     "test_scatter_elements.mojo",
     "test_softmax.mojo",
     "test_static_conv.mojo",
+    "test_static_conv_large_width_padding.mojo",
     "test_static_conv_small_shapes.mojo",
     "test_tile.mojo",
     "test_top_k.mojo",
