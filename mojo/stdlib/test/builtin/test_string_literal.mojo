@@ -300,6 +300,14 @@ def test_strip() raises:
     )
 
 
+def test_strip_mutable_chars() raises:
+    # `chars` is read-only, so a mutable argument must not be borrowed mutably.
+    var chars = String("_wrap_")
+    assert_equal("_wrap_hello world_wrap_".lstrip(chars), "hello world_wrap_")
+    assert_equal("_wrap_hello world_wrap_".rstrip(chars), "_wrap_hello world")
+    assert_equal("_wrap_hello world_wrap_".strip(chars), "hello world")
+
+
 def test_count() raises:
     var str = "Hello world"
 

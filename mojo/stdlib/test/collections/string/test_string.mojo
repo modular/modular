@@ -1017,6 +1017,20 @@ def test_strip() raises:
     assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
+def test_strip_mutable_chars() raises:
+    # `chars` is read-only, so a mutable argument must not be borrowed mutably;
+    # otherwise it can't alias `self`, which is an interior slice of the string.
+    var chars = String("hi")
+    assert_equal(String("himojohi").lstrip(chars), "mojohi")
+    assert_equal(String("himojohi").rstrip(chars), "himojo")
+    assert_equal(String("himojohi").strip(chars), "mojo")
+
+    var self_aliasing = String("aabbaa")
+    assert_equal(self_aliasing.lstrip(self_aliasing), "")
+    assert_equal(self_aliasing.rstrip(self_aliasing), "")
+    assert_equal(self_aliasing.strip(self_aliasing), "")
+
+
 def test_hash() raises:
     def assert_hash_equals_literal_hash[s: StaticString]() raises:
         assert_equal(hash(s), hash(String(s)))
