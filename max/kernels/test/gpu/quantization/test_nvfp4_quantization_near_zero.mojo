@@ -44,7 +44,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     cast_uint_to_fp4e2m1,
 )
-from linalg.fp4_quantization import quantize_dynamic_scaled_fp4_async
+from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4_async
 
 
 def test_nvfp4_quant_near_zero[

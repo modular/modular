@@ -40,7 +40,7 @@ from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_block_scaled,
     grouped_quantize_dynamic_scaled_fp4_async,
     block_scales_interleave,
@@ -48,7 +48,7 @@ from linalg.fp4_quantization import (
 )
 from linalg.matmul.gpu.amd import (
     Shuffler,
-    mxfp4_grouped_matmul_amd,
+    block_scaled_grouped_matmul_amd,
 )
 from linalg.mxfp4_dequant import dequant_mxfp4
 from nn.bicubic import resize_bicubic
@@ -972,12 +972,12 @@ struct Struct_interleave_block_scales:
         )
 
 
-@extensibility.register("mo.mxfp4.preshuffle.b.5d")
-struct Struct_mxfp4_preshuffle_b_5d:
+@extensibility.register("mo.block.scaled.preshuffle.b.5d")
+struct Struct_block_scaled_preshuffle_b_5d:
     """Run the AMD CDNA4 MXFP4 B 5D preshuffle as a custom op.
 
     Used to pre-bake weights into `Shuffler[E].b_5d_grouped_layout` (the
-    layout the `mxfp4_grouped_matmul_amd_preb` reader expects) without
+    layout the `block_scaled_grouped_matmul_amd_preb` reader expects) without
     paying the >1 h CPU-side numpy shuffle on every model load.
     """
 
@@ -992,7 +992,7 @@ struct Struct_mxfp4_preshuffle_b_5d:
     ) raises:
         comptime assert is_gpu[
             target
-        ](), "mo.mxfp4.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
+        ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
 
         var raw_tt = input.to_tile_tensor[DType.int64]()
         var dst_tt = output.to_tile_tensor[DType.int64]()
@@ -1004,14 +1004,14 @@ struct Struct_mxfp4_preshuffle_b_5d:
         )
 
 
-@extensibility.register("mo.mxfp4.preshuffle.scale.4d_per_expert")
-struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
+@extensibility.register("mo.block.scaled.preshuffle.scale.4d_per_expert")
+struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     """Per-step A-scale preshuffle for the AMD CDNA4 preb grouped matmul.
 
     Takes row-major E8M0 A-scales `[total_tokens, K_SCALES]` and writes
     cell-packed scales into per-expert fixed-stride slots of size
     `max_padded_M = align_up(max_num_tokens_per_expert, 32)`. The
-    `mxfp4_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
+    `block_scaled_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
     for expert slot `e`. Inactive slots and pad rows are left untouched
     by this kernel; the matmul's per-expert tight V# bound guards
     out-of-range reads.
@@ -1031,7 +1031,7 @@ struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
     ) raises:
         comptime assert is_gpu[
             target
-        ](), "mo.mxfp4.preshuffle.scale.4d_per_expert is GPU-only"
+        ](), "mo.block.scaled.preshuffle.scale.4d_per_expert is GPU-only"
 
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
         # byte-level). Bitcast the input/output tile pointers so dtype

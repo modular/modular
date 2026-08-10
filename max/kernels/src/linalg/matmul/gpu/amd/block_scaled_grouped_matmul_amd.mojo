@@ -14,8 +14,8 @@
 """Grouped MXFP4 matmul kernels for AMD CDNA4 GPUs.
 
 Provides MoE expert-dispatched grouped matmul in two variants: the native
-path (`mxfp4_grouped_matmul_amd`) with on-the-fly B layout handling, and the
-pre-shuffled-B path (`mxfp4_grouped_matmul_amd_preb` /
+path (`block_scaled_grouped_matmul_amd`) with on-the-fly B layout handling, and the
+pre-shuffled-B path (`block_scaled_grouped_matmul_amd_preb` /
 `PreShuffledBGroupedGEMM`) where weights are pre-arranged into a layout that
 enables coalesced shared-memory reads and direct MFMA consumption.
 """
@@ -34,8 +34,8 @@ from layout.tile_layout import row_major
 
 from std.utils import StaticTuple
 
-from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
-from .mxfp4_matmul_amd_preb import MXFP4MatmulAMD_PreB as _MXFP4MatmulAMD_PreB
+from .block_scaled_matmul_amd import BlockScaledMatmulAMD
+from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
 
 
 @always_inline
@@ -150,7 +150,7 @@ struct PreShuffledBGroupedGEMM[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(
-                _MXFP4MatmulAMD_PreB[
+                BlockScaledMatmulAMD_PreB[
                     BM=BM,
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
@@ -209,7 +209,7 @@ struct PreShuffledBGroupedGEMM[
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-        comptime Kernel = _MXFP4MatmulAMD_PreB[
+        comptime Kernel = BlockScaledMatmulAMD_PreB[
             BM=BM,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
@@ -362,7 +362,7 @@ struct PreShuffledBGroupedGEMM[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(
-                _MXFP4MatmulAMD_PreB[
+                BlockScaledMatmulAMD_PreB[
                     BM=BM,
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
@@ -420,7 +420,7 @@ struct PreShuffledBGroupedGEMM[
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-        comptime Kernel = _MXFP4MatmulAMD_PreB[
+        comptime Kernel = BlockScaledMatmulAMD_PreB[
             BM=BM,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
@@ -529,7 +529,7 @@ struct PreShuffledBGroupedGEMM[
         ctx: DeviceContext,
         grid_m_cap: Int = -1,
     ) raises:
-        comptime MatmulDeviceFunctionType = _MXFP4MatmulAMD_PreB[
+        comptime MatmulDeviceFunctionType = BlockScaledMatmulAMD_PreB[
             BM=BM,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
@@ -676,14 +676,14 @@ struct PreShuffledBGroupedGEMM[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
-            _MXFP4MatmulAMD[
+            BlockScaledMatmulAMD[
                 BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
             ].num_threads
         )
     )
 )
 @__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
-def mxfp4_grouped_matmul_amd_kernel[
+def block_scaled_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,
     BK_ELEMS: Int,
@@ -756,7 +756,7 @@ def mxfp4_grouped_matmul_amd_kernel[
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    comptime Kernel = _MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
     ]
     comptime N = c_tensor.static_shape[1]
@@ -804,7 +804,7 @@ def mxfp4_grouped_matmul_amd_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
-def mxfp4_grouped_matmul_amd(
+def block_scaled_grouped_matmul_amd(
     c: TileTensor[mut=True, ...],
     a: TileTensor[DType.uint8, ...],
     b: TileTensor[DType.uint8, ...],
@@ -823,7 +823,7 @@ def mxfp4_grouped_matmul_amd(
     """Launch native MXFP4 grouped matmul on AMD CDNA4.
 
     Grouped matmul for MoE: dispatches one expert per block_idx.z,
-    using MXFP4MatmulAMD.run per expert slice.
+    using BlockScaledMatmulAMD.run per expert slice.
 
     Args:
         c: Output [total_tokens, N].
@@ -847,7 +847,9 @@ def mxfp4_grouped_matmul_amd(
 
     if max_num_tokens_per_expert <= 64:
         comptime if can_use_bk_512:
-            _launch_mxfp4_grouped[BM=64, BN=128, BK_ELEMS=512, WM=64, WN=64](
+            _launch_block_scaled_grouped[
+                BM=64, BN=128, BK_ELEMS=512, WM=64, WN=64
+            ](
                 c,
                 a,
                 b,
@@ -861,7 +863,7 @@ def mxfp4_grouped_matmul_amd(
             )
             return
 
-    _launch_mxfp4_grouped[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+    _launch_block_scaled_grouped[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
         c,
         a,
         b,
@@ -875,7 +877,7 @@ def mxfp4_grouped_matmul_amd(
     )
 
 
-def _launch_mxfp4_grouped[
+def _launch_block_scaled_grouped[
     BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int
 ](
     c: TileTensor[mut=True, ...],
@@ -894,7 +896,7 @@ def _launch_mxfp4_grouped[
     ctx: DeviceContext,
 ) raises:
     """Instantiates and launches the grouped MXFP4 kernel."""
-    comptime Kernel = _MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
     ]
     comptime num_experts = b.static_shape[0]
@@ -934,7 +936,7 @@ def _launch_mxfp4_grouped[
         return
 
     comptime out_dtype = type_of(c).dtype
-    comptime kernel = mxfp4_grouped_matmul_amd_kernel[
+    comptime kernel = block_scaled_grouped_matmul_amd_kernel[
         BM,
         BN,
         BK_ELEMS,
@@ -968,7 +970,7 @@ def _launch_mxfp4_grouped[
     )
 
 
-def mxfp4_grouped_matmul_amd_preb[
+def block_scaled_grouped_matmul_amd_preb[
     lane_bytes: Int = 0
 ](
     c: TileTensor[mut=True, ...],
@@ -995,7 +997,7 @@ def mxfp4_grouped_matmul_amd_preb[
     tuned tile configurations, choosing between persistent and direct kernel
     launch based on the estimated total token count. Currently restricted to
     MI355X and requires packed K (K // 2) to be at least 256 and divisible by
-    256; smaller K should use `mxfp4_grouped_matmul_amd` instead.
+    256; smaller K should use `block_scaled_grouped_matmul_amd` instead.
 
     Parameters:
         lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
@@ -1068,9 +1070,9 @@ def mxfp4_grouped_matmul_amd_preb[
     # Preshuffled-scales requires num_k_mmas % 2 == 0, which
     # forces BK_ELEMS >= 256 (i.e. packed_K >= 256 and packed_K % 256 == 0).
     comptime assert packed_K >= 256 and packed_K % 256 == 0, (
-        "mxfp4_grouped_matmul_amd_preb requires A's K byte extent >= 256 and"
-        " divisible by 256; smaller K should use the non-preb path"
-        " (mxfp4_grouped_matmul_amd) instead."
+        "block_scaled_grouped_matmul_amd_preb requires A's K byte extent >= 256"
+        " and divisible by 256; smaller K should use the non-preb path"
+        " (block_scaled_grouped_matmul_amd) instead."
     )
 
     # One launch per band; only the comptime config differs, so capture the

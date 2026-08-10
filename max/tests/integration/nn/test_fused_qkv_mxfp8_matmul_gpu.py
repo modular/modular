@@ -43,7 +43,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import (
     _fused_qkv_index_ragged_matmul_scaled_mxfp8,
     _fused_qkv_ragged_matmul_scaled_mxfp8,
-    dynamic_block_scaled_matmul_mxfp4,
+    dynamic_block_scaled_matmul_amd,
     fused_qkv_ragged_matmul,
     quantize_dynamic_block_scaled,
     store_k_cache_ragged,
@@ -712,7 +712,7 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 for width in (q_dim, kv_dim, kv_dim, iq_dim, ik_dim):
                     stop = start + width
                     projections.append(
-                        dynamic_block_scaled_matmul_mxfp4(
+                        dynamic_block_scaled_matmul_amd(
                             a_q,
                             w_q[start:stop],
                             a_scales,

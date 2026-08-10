@@ -66,9 +66,9 @@ from max.pipelines.lib.eplb_stats import (
 )
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.modeling.config_enums import is_float4_encoding
-from max.pipelines.weights.mxfp4_preshuffle import (
-    preshuffle_mxfp4_b_experts,
-    preshuffle_mxfp4_b_scales,
+from max.pipelines.weights.block_scaled_preshuffle import (
+    preshuffle_block_scaled_b_experts,
+    preshuffle_block_scaled_b_scales,
 )
 from max.pipelines.weights.quant import parse_quant_config
 from max.profiler import traced
@@ -292,16 +292,18 @@ class KimiK2_5Model(
         quant_config = parse_quant_config(config, state_dict, dtype)
 
         # Kimi K2.5 expects expert B weights in the 5D layout that the AMD
-        # `mxfp4_grouped_matmul_amd_preb` kernel reads, and the per-expert
+        # `block_scaled_grouped_matmul_amd_preb` kernel reads, and the per-expert
         # B-scales in the 4D-cell layout the same kernel addresses via
         # `Shuffler.scale_4d_byte_off`. The OG weight adapter only renames
         # keys, so do both CPU preshuffles here and flip the QuantConfig
         # flag so `MoEQuantized` dispatches to the preb path. Must stay in
         # lockstep with the weight adapter.
         if quant_config is not None and quant_config.is_mxfp4:
-            preshuffle_mxfp4_b_experts(state_dict)
-            preshuffle_mxfp4_b_scales(state_dict)
-            quant_config = replace(quant_config, mxfp4_preshuffled_b=True)
+            preshuffle_block_scaled_b_experts(state_dict)
+            preshuffle_block_scaled_b_scales(state_dict)
+            quant_config = replace(
+                quant_config, block_scaled_preshuffled_b=True
+            )
         shared_experts_weight_dtype, dense_mlp_layers_without_quant = (
             infer_kimi_nvfp4_weight_flags(
                 state_dict,

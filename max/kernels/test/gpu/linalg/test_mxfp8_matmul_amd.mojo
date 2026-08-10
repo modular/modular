@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Correctness tests for the DENSE row-major `MXFP4MatmulAMD` at MXFP8.
+"""Correctness tests for the DENSE row-major `BlockScaledMatmulAMD` at MXFP8.
 
 MXFP8 sibling of `test_mxfp4_matmul_amd.mojo` (`lane_bytes=32`), and the
 row-major counterpart to `test_mxfp8_matmul_amd_preb.mojo`. One byte per
@@ -35,10 +35,10 @@ from std.testing import assert_almost_equal
 from layout import TileTensor
 from layout.tile_layout import row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import (
-    MXFP4MatmulAMD,
-    _launch_mxfp4_split_k,
-    mxfp4_block_scaled_matmul_amd,
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    BlockScaledMatmulAMD,
+    _launch_block_scaled_split_k,
+    block_scaled_matmul_amd,
 )
 
 comptime FP8_LANE_BYTES = 32
@@ -164,7 +164,7 @@ def _test_case[
         row_major[N_static, K_SCALES](),
     )
 
-    comptime Kernel = MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -240,7 +240,7 @@ def test_mxfp8_matmul_split_k[
 ](ctx: DeviceContext) raises:
     """MXFP8 sibling of `test_mxfp4_matmul_split_k`.
 
-    Launches `_launch_mxfp4_split_k[lane_bytes=32]` (workspace + reduce
+    Launches `_launch_block_scaled_split_k[lane_bytes=32]` (workspace + reduce
     path) for the given `num_splits` and verifies against the same
     per-element reference used by `_test_case`.
     """
@@ -308,7 +308,7 @@ def test_mxfp8_matmul_split_k[
         row_major[N_static, K_SCALES](),
     )
 
-    _launch_mxfp4_split_k[
+    _launch_block_scaled_split_k[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -360,10 +360,10 @@ def _test_dispatch[
 ](name: String, ctx: DeviceContext) raises:
     """Drives the public dispatcher rather than a hand-picked tile shape.
 
-    `mxfp4_block_scaled_matmul_amd` picks BM/BN/BK from M and K, so this is the
+    `block_scaled_matmul_amd` picks BM/BN/BK from M and K, so this is the
     only way to cover its BK-bucket gates. A gate that admits a BK the kernel
-    cannot tile fails the comptime assert in `MXFP4MatmulAMD.run` -- i.e. this
-    case fails to BUILD rather than producing a wrong answer.
+    cannot tile fails the comptime assert in `BlockScaledMatmulAMD.run` --
+    i.e. this case fails to BUILD rather than producing a wrong answer.
     """
     comptime assert (
         K_static % MXFP8_SF_VECTOR_SIZE == 0
@@ -411,7 +411,7 @@ def _test_dispatch[
         row_major[N_static, K_SCALES](),
     )
 
-    mxfp4_block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
+    block_scaled_matmul_amd[lane_bytes=FP8_LANE_BYTES](
         c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx
     )
 

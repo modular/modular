@@ -28,8 +28,8 @@ from ..comm.ep.ep_kernels import (
 from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
+    BlockScaledStrategy,
     Fp8Strategy,
-    Mxfp4Strategy,
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
@@ -64,10 +64,10 @@ class MoEQuantized(MoE):
             # element packing from the tensors, and the E8M0 scale layout is
             # format-independent. Without this, MXFP8 would fall through to
             # `Fp8Strategy` (legacy per-tensor scales).
-            return Mxfp4Strategy(
+            return BlockScaledStrategy(
                 self.quant_config,
                 self.dtype,
-                preshuffled_b=self.quant_config.mxfp4_preshuffled_b,
+                preshuffled_b=self.quant_config.block_scaled_preshuffled_b,
             )
         return Fp8Strategy(self.quant_config, self.dtype)
 
@@ -92,7 +92,7 @@ class MoEQuantized(MoE):
             dispatch_supports_fold
             and self.quant_config is not None
             and self.quant_config.is_mxfp4
-            and self.quant_config.mxfp4_preshuffled_b
+            and self.quant_config.block_scaled_preshuffled_b
         )
 
     @property
@@ -247,7 +247,7 @@ class MoEQuantized(MoE):
         # MXFP8 takes the NVIDIA layout only on cuda, agreeing with
         # `_uses_block_scaled_nv_ep_layout` in `ep_kernels`, which is what
         # produces the offsets. Ungated, AMD MXFP8 read the dispatch's 5 outputs
-        # as the NVIDIA 6-tuple and never reached `Mxfp4Strategy`.
+        # as the NVIDIA 6-tuple and never reached `BlockScaledStrategy`.
         return self.quant_config.is_mxfp8 and accelerator_api() == "cuda"
 
     def _can_fuse_swiglu_nvfp4(self) -> bool:
@@ -336,7 +336,7 @@ class MoEQuantized(MoE):
         # The up-proj reads its A-scale from the dispatched tokens, which
         # `ep_wait` wrote in slot layout when the fusion is on.
         up_a_scales_preshuffled = (
-            isinstance(strategy, Mxfp4Strategy) and mxfp4_ep_scale_fusion
+            isinstance(strategy, BlockScaledStrategy) and mxfp4_ep_scale_fusion
         )
         # Local SwiGLU down-proj A-scale fold: fold the down scale into the matmul
         # slot layout, dropping the standalone preshuffle. Independent of the
@@ -346,9 +346,9 @@ class MoEQuantized(MoE):
             if (
                 self._ep_batch_manager
                 and self.use_swigluoai
-                and isinstance(strategy, Mxfp4Strategy)
+                and isinstance(strategy, BlockScaledStrategy)
                 and self.quant_config is not None
-                and self.quant_config.mxfp4_preshuffled_b
+                and self.quant_config.block_scaled_preshuffled_b
             )
             else 0
         )
@@ -367,7 +367,7 @@ class MoEQuantized(MoE):
                 swiglu_limit=self.swiglu_limit,
             )
         else:
-            if isinstance(strategy, Mxfp4Strategy):
+            if isinstance(strategy, BlockScaledStrategy):
                 # MXFP4 EP down path: fuse activation (SiLU or clamped SwiGLU) +
                 # MXFP4 quantize in one kernel. Up-proj A-scale folds into the
                 # slot layout when the dispatch fold is on (KS224, ep_wait); the
@@ -430,7 +430,7 @@ class MoEQuantized(MoE):
                     )
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
-        if isinstance(strategy, Mxfp4Strategy):
+        if isinstance(strategy, BlockScaledStrategy):
             # Whichever producer wrote the down A-scale in slot layout (up-fold or
             # local SwiGLU down-fold; the other is 0), the reader stride MUST match
             # that constant, not the runtime per-expert max, or it reads wrong scales.

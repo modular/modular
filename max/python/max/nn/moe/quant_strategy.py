@@ -23,8 +23,8 @@ from max.graph import DeviceRef, TensorValue, ops
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     block_scales_interleave,
+    grouped_dynamic_block_scaled_matmul_amd,
     grouped_dynamic_scaled_fp8_matmul,
-    grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
@@ -464,11 +464,11 @@ class NvMxf4f8Strategy:
         )
 
 
-class Mxfp4Strategy:
+class BlockScaledStrategy:
     """MXFP4 quantization for MoE.
 
     When `preshuffled_b=True`, the MOGG MXFP4 grouped-matmul op dispatches
-    to the preshuffled-B kernel variant (`mxfp4_grouped_matmul_amd_preb`),
+    to the preshuffled-B kernel variant (`block_scaled_grouped_matmul_amd_preb`),
     which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
     caller is responsible for applying that preshuffle at weight load
     time (e.g. Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
@@ -539,7 +539,7 @@ class Mxfp4Strategy:
             usage_stats,
         ) = expert_inputs
 
-        return grouped_dynamic_scaled_mxfp4_matmul(
+        return grouped_dynamic_block_scaled_matmul_amd(
             hidden,
             weight,
             hidden_scales,

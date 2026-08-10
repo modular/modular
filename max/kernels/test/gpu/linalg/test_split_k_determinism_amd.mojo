@@ -19,7 +19,7 @@ and all GPUs launch before the first sync, so the node runs under the
 concurrent-kernel, high-occupancy load where the split-K epilogue race surfaces.
 
 Covers amd_4wave_split_k_matmul (the kernel the race lives in; fails without the
-num_splits > 1 epilogue drain) and _launch_mxfp4_split_k (a regression guard for
+num_splits > 1 epilogue drain) and _launch_block_scaled_split_k (a regression guard for
 that path).
 """
 
@@ -34,7 +34,9 @@ from linalg.matmul.gpu.amd.amd_4wave_split_k_matmul import (
     amd_4wave_split_k_matmul,
     SplitKWorkspace,
 )
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _launch_mxfp4_split_k
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    _launch_block_scaled_split_k,
+)
 
 
 def _report_divergence[
@@ -187,7 +189,7 @@ def test_mxfp4_split_k_determinism[
             var device_c = ctx.enqueue_create_buffer[out_dtype](M * N)
             ctx.enqueue_memset(device_c, 0)
             var c_tt = TileTensor[mut=True](device_c, row_major[M, N]())
-            _launch_mxfp4_split_k[
+            _launch_block_scaled_split_k[
                 BM=64, BN=128, BK_ELEMS=256, WM=64, WN=32, num_splits=num_splits
             ](c_tt, a_tt, b_tt, as_tt, bs_tt, M, ctx)
             outputs.append(device_c)

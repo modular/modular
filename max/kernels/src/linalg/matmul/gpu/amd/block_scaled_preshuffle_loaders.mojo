@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Per-lane DRAM->VGPR loaders for the preshuffled MXFP4 MoE matmul.
+"""Per-lane DRAM->VGPR loaders for the preshuffled block-scaled MoE matmul.
 
-Both loaders consume buffers produced by `mxfp4_preshuffle_layouts` and emit
+Both loaders consume buffers produced by `block_scaled_preshuffle_layouts` and emit
 one `buffer_load_*` per call, no LDS round-trip. Each lane reads exactly the
 fragment / scale word the MFMA needs at its `(lane_nlane, lane_klane)` slot.
 
@@ -33,7 +33,7 @@ from std.memory.unsafe import bitcast
 from layout import Coord, Idx, TileTensor
 from layout._utils import make_amd_buffer_resource
 
-from .mxfp4_preshuffle_layouts import Shuffler
+from .block_scaled_preshuffle_layouts import Shuffler
 
 
 struct PreshuffledBLoader[
@@ -65,7 +65,7 @@ struct PreshuffledBLoader[
         Args:
             b_gmem_tile: Preshuffled per-expert B byte buffer holding the
                 `[N, K_BYTES]` logical tile, as produced by
-                `mxfp4_preshuffle_layouts`.
+                `block_scaled_preshuffle_layouts`.
         """
         self.bc = make_amd_buffer_resource(b_gmem_tile)
 
@@ -114,7 +114,7 @@ struct PreshuffledScaleLoader[MN_padded: Int, K_SCALES: Int](
         Args:
             scale_gmem_tile: Preshuffled per-expert scale byte buffer holding
                 the `[MN_padded, K_SCALES]` logical grid of E8M0 bytes, as
-                produced by `mxfp4_preshuffle_layouts`.
+                produced by `block_scaled_preshuffle_layouts`.
         """
         self.bc = make_amd_buffer_resource(scale_gmem_tile)
 

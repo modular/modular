@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MXFP4 block-scaled matmul on AMD CDNA4 with preshuffled B + scales + direct VGPR loads.
+"""Block-scaled CDNA4 matmul with preshuffled B + scales + direct VGPR loads.
 
-Variant of `MXFP4MatmulAMD` that skips LDS staging for both B and the
+Variant of `BlockScaledMatmulAMD` that skips LDS staging for both B and the
 A/B scales. B is preshuffled host-side via `Shuffler.preshuffle_b_5d`
 so each lane's 16-byte fragment lives at a known DRAM offset and is
 read with a single `buffer_load_dwordx4`. Scales are addressed by
@@ -66,8 +66,11 @@ from structured_kernels.amd_tile_io import (
     TileLoaderLDS,
 )
 
-from .mxfp4_matmul_amd import MX_BLOCK_SIZE
-from .mxfp4_preshuffle_loaders import PreshuffledBLoader, PreshuffledScaleLoader
+from .block_scaled_matmul_amd import MX_BLOCK_SIZE
+from .block_scaled_preshuffle_loaders import (
+    PreshuffledBLoader,
+    PreshuffledScaleLoader,
+)
 
 
 # `swizzle_xor16`: XOR-16 LDS swizzle on a row-major [BM, BK_BYTES]
@@ -103,7 +106,7 @@ def a_lds_swizzle[BK_BYTES: Int]() -> Swizzle:
 # BlockScaledMmaOp_PreB — preb-specific MFMA op with preshuffled-scale loads.
 # ===----------------------------------------------------------------------=== #
 #
-# Sibling of `BlockScaledMmaOp` (the SMEM-scale variant in mxfp4_matmul_amd.mojo).
+# Sibling of `BlockScaledMmaOp` (the SMEM-scale variant in block_scaled_matmul_amd.mojo).
 # Same A/B/C register storage and fragment loaders; differs only in:
 #   * Scale storage shape: `[ceildiv(num_*_mmas, 2), num_k_mmas / 2]` — one
 #     Int32 cell per (mn_pair, k_pair), covering up to 4 sub-MMAs at OPSEL
@@ -552,7 +555,7 @@ struct BlockScaledMmaOp_PreB[
                 c_reg_v[m, n] = c_frag
 
 
-struct MXFP4MatmulAMD_PreB[
+struct BlockScaledMatmulAMD_PreB[
     BM: Int = 64,
     BN: Int = 128,
     BK_ELEMS: Int = 512,
@@ -566,7 +569,7 @@ struct MXFP4MatmulAMD_PreB[
     pipeline_depth: Int = 2,
     lane_bytes: Int = 16,
 ]:
-    """Preshuffled-B variant of `MXFP4MatmulAMD`.
+    """Preshuffled-B variant of `BlockScaledMatmulAMD`.
 
     The preb path requires `num_warps_m == 1` (no LDS staging for B = no
     cross-warp M-direction B reuse), so `WM` is structurally fixed to `BM`.
@@ -735,7 +738,7 @@ struct MXFP4MatmulAMD_PreB[
         comptime mma_k_pair_per_tile = Self.num_k_mmas // 2
         # MN_padded is only used by the layout for shape bookkeeping —
         # the byte-offset math is shape-agnostic (only K_SCALES enters).
-        # See address-math notes in mxfp4_preshuffle_layouts.mojo.
+        # See address-math notes in block_scaled_preshuffle_layouts.mojo.
         comptime MN_PADDED_PLACEHOLDER = 32
 
         var M = Int(a.dim[0]())

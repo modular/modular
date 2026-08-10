@@ -50,11 +50,11 @@ from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
-from linalg.fp4_quantization import block_scaled_matmul
+from linalg.block_scaled_quantization import block_scaled_matmul
 from linalg.matmul.gpu.amd import (
-    mxfp4_block_scaled_matmul_amd,
-    mxfp4_grouped_matmul_amd,
-    mxfp4_grouped_matmul_amd_preb,
+    block_scaled_matmul_amd,
+    block_scaled_grouped_matmul_amd,
+    block_scaled_grouped_matmul_amd_preb,
 )
 from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
@@ -792,8 +792,8 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         )
 
 
-@extensibility.register("mo.grouped.matmul.block.scaled.mxfp4")
-struct Struct_grouped_matmul_block_scaled_mxfp4[
+@extensibility.register("mo.grouped.matmul.block.scaled.amd")
+struct Struct_grouped_matmul_block_scaled_amd[
     preshuffled_b: Bool = False, lane_bytes: Int = 16
 ]:
     """MOGG wrapper for grouped block-scaled matrix multiplication.
@@ -802,11 +802,11 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
     operations used in Mixture of Experts (MoE) layers on AMD GPUs.
 
     Parameters:
-        preshuffled_b: When True, dispatches to `mxfp4_grouped_matmul_amd_preb`
+        preshuffled_b: When True, dispatches to `block_scaled_grouped_matmul_amd_preb`
             which expects B in the 5D preshuffled layout from
             `Shuffler.preshuffle_b_5d` (typically produced by the model's
             weight adapter at load time, e.g. Kimi K2.5). When False
-            (default), dispatches to the dense `mxfp4_grouped_matmul_amd`
+            (default), dispatches to the dense `block_scaled_grouped_matmul_amd`
             kernel that reads B row-major. The caller is responsible for
             preparing B in the matching layout.
         lane_bytes: Element packing of A and B — 16 for MXFP4 (default) or 32
@@ -880,12 +880,12 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
         if num_active_experts == 0:
             return
         comptime if Self.preshuffled_b:
-            # Preshuffled-B kernel path (mxfp4_grouped_matmul_amd_preb).
+            # Preshuffled-B kernel path (block_scaled_grouped_matmul_amd_preb).
             # Requires B in the 5D layout from `Shuffler.preshuffle_b_5d`,
             # typically produced by the model's weight adapter at load
             # time (e.g. kimik2_5/weight_adapters.py). Correctness
             # requires EP-MoE sharding (axis-0); TP-MoE is unsupported.
-            mxfp4_grouped_matmul_amd_preb[lane_bytes=Self.lane_bytes](
+            block_scaled_grouped_matmul_amd_preb[lane_bytes=Self.lane_bytes](
                 c.to_tile_tensor[DType.int64](),
                 a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
                 b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
@@ -909,7 +909,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4[
                 "lane_bytes=32 (MXFP8) requires preshuffled_b=True; the dense"
                 " row-major B path is MXFP4-only"
             )
-            mxfp4_grouped_matmul_amd(
+            block_scaled_grouped_matmul_amd(
                 c.to_tile_tensor[DType.int64](),
                 a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
                 b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
@@ -1063,9 +1063,9 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
-@extensibility.register("mo.matmul.dynamic.block.scaled.mxfp4")
-struct Struct_matmul_dynamic_block_scaled_mxfp4[lane_bytes: Int = 16]:
-    """Registers the `mo.matmul.dynamic.block.scaled.mxfp4` graph op with the graph compiler.
+@extensibility.register("mo.matmul.dynamic.block.scaled.amd")
+struct Struct_matmul_dynamic_block_scaled_amd[lane_bytes: Int = 16]:
+    """Registers the `mo.matmul.dynamic.block.scaled.amd` graph op with the graph compiler.
 
     Parameters:
         lane_bytes: Operand bytes per lane per MFMA — 16 for MXFP4 (default) or
@@ -1100,7 +1100,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4[lane_bytes: Int = 16]:
             " (uint8 for MXFP4, float8_e4m3fn for MXFP8)"
         )
 
-        mxfp4_block_scaled_matmul_amd[lane_bytes=Self.lane_bytes](
+        block_scaled_matmul_amd[lane_bytes=Self.lane_bytes](
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),
             b.to_tile_tensor[DType.int64]().bitcast[DType.uint8](),

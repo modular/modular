@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Direct kernel-level tests for `MXFP4MatmulAMD_PreB`.
+"""Direct kernel-level tests for `BlockScaledMatmulAMD_PreB`.
 
 Bypasses the grouped dispatcher (which still passes row-major scales until
 the Phase-2 wiring lands) and exercises the kernel against a per-element
-GPU reference (`mxfp4_block_scaled_matmul_amd`). Scales are preshuffled
+GPU reference (`block_scaled_matmul_amd`). Scales are preshuffled
 host-side via `_preshuffle_scales_host`, mirroring `PreshuffledScaleLoader`'s
 address math.
 
@@ -35,7 +35,7 @@ from std.utils import StaticTuple
 from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd import MXFP4MatmulAMD_PreB, Shuffler
+from linalg.matmul.gpu.amd import BlockScaledMatmulAMD_PreB, Shuffler
 
 
 # ===----------------------------------------------------------------------=== #
@@ -105,7 +105,7 @@ def block_scaled_matmul_ref(
 
 
 # ===----------------------------------------------------------------------=== #
-# Grid wrapper kernel: drives MXFP4MatmulAMD_PreB.run with a 2D grid where
+# Grid wrapper kernel: drives BlockScaledMatmulAMD_PreB.run with a 2D grid where
 # block_idx.x = n_tile and block_idx.y = m_tile (mirrors the dispatcher's
 # direct-mode launch).
 # ===----------------------------------------------------------------------=== #
@@ -114,7 +114,7 @@ def block_scaled_matmul_ref(
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
-            MXFP4MatmulAMD_PreB[
+            BlockScaledMatmulAMD_PreB[
                 BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
             ].num_threads
         )
@@ -146,7 +146,7 @@ def _preb_grid_kernel[
     sfa: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
     sfb: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
 ):
-    MXFP4MatmulAMD_PreB[
+    BlockScaledMatmulAMD_PreB[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -362,7 +362,7 @@ def _test_case[
         sfa_tt,
         sfb_tt,
         grid_dim=(N_static // BN, ceildiv(M_static, BM)),
-        block_dim=MXFP4MatmulAMD_PreB[
+        block_dim=BlockScaledMatmulAMD_PreB[
             BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WN=WN, b_prefetch=b_prefetch
         ].num_threads,
     )
@@ -409,7 +409,7 @@ def main() raises:
         ctx.default_device_info == MI355X
     ), "test_mxfp4_matmul_amd_preb requires MI355X"
 
-    print("===> MXFP4MatmulAMD_PreB — direct kernel correctness")
+    print("===> BlockScaledMatmulAMD_PreB — direct kernel correctness")
 
     # flydsl stage1 champion config: tile_m=32/n=128/k=256, 4 waves (WN=32),
     # b_nt=2 (STREAMING), 2-stage pipeline, K=7168 (28 K-steps). Set

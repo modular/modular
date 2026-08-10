@@ -43,7 +43,7 @@ from std.memory import bitcast
 from std.testing import assert_true
 
 from layout import Coord, Idx, TileTensor, row_major
-from linalg.fp4_quantization import quantize_mx_amd
+from linalg.block_scaled_quantization import quantize_mx_amd
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from shmem.ep_comm import fused_silu_mx_kernel
 

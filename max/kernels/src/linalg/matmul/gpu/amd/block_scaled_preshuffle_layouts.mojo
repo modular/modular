@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Host-side MXFP4 preshuffle layouts for AMD CDNA4 grouped MoE matmul.
+"""Host-side block-scaled preshuffle layouts for AMD CDNA4 grouped MoE matmul.
 
-`Shuffler` bundles two layout transforms required by the FP4 MoE matmul
-kernel. Both run once on the host at weight-load time (per the load-time-
-prep convention).
+`Shuffler` bundles two layout transforms required by the block-scaled
+(MXFP4/MXFP8) MoE matmul kernels. Both run once on the host at weight-load
+time (per the load-time-prep convention).
 
 `Shuffler.preshuffle_b_5d`:
     [E, N, K_BYTES] (row-major, packed FP4) -> flat byte buffer indexed as
@@ -29,10 +29,10 @@ prep convention).
     (k_pack, mn_pack) order, feeding 4 sub-MMAs via the MFMA opsel byte
     selectors.
 
-`mxfp4_preshuffle_b_5d_gpu`:
-    GPU equivalent of `Shuffler.preshuffle_b_5d`. LDS-staged so both HBM
+`mo.block.scaled.preshuffle.b.5d` (graph op over `Shuffler.preshuffle_b_5d`):
+    LDS-staged so both HBM
     reads and writes are wave-coalesced. Constant-folded by the graph
-    compiler when called via `mo.mxfp4.preshuffle.b.5d` on a `Constant`
+    compiler when called via `mo.block.scaled.preshuffle.b.5d` on a `Constant`
     weight, so the shuffle runs once at session.load instead of every
     forward pass.
 
@@ -311,7 +311,7 @@ struct Shuffler[E: Int]:
             Int32(Self.NUM_THREADS)
         )
     )
-    @__name("mxfp4_preshuffle_b_5d_kernel")
+    @__name("block_scaled_preshuffle_b_5d_kernel")
     def _preshuffle_b_5d_kernel[
         N: Int,
         K_BYTES: Int,
@@ -518,7 +518,7 @@ struct Shuffler[E: Int]:
             Int32(Self.NUM_THREADS)
         )
     )
-    @__name(t"mxfp4_preshuffle_grouped_scale_4d_kernel_KS{K_SCALES}")
+    @__name(t"block_scaled_preshuffle_grouped_scale_4d_kernel_KS{K_SCALES}")
     def _preshuffle_grouped_scale_4d_kernel[
         K_SCALES: Int,
         SrcLayout: TensorLayout,

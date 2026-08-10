@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Direct kernel-level tests for `MXFP4MatmulAMD_PreB` at `lane_bytes=32` (MXFP8).
+"""Direct kernel-level tests for `BlockScaledMatmulAMD_PreB` at `lane_bytes=32` (MXFP8).
 
 MXFP8 sibling of `test_mxfp4_matmul_amd_preb.mojo`: same 16x16x128 f8f6f4 MFMA and
 the same preshuffled layouts, but one byte per element (so `K_BYTES == K`) and the
@@ -36,9 +36,9 @@ from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
-    MXFP4MatmulAMD_PreB,
+    BlockScaledMatmulAMD_PreB,
     Shuffler,
-    mxfp4_grouped_matmul_amd_preb,
+    block_scaled_grouped_matmul_amd_preb,
 )
 
 comptime FP8_LANE_BYTES = 32
@@ -108,7 +108,7 @@ def block_scaled_matmul_fp8_ref(
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
-            MXFP4MatmulAMD_PreB[
+            BlockScaledMatmulAMD_PreB[
                 BM=BM,
                 BN=BN,
                 BK_ELEMS=BK_ELEMS,
@@ -140,7 +140,7 @@ def _preb_fp8_grid_kernel[
     sfa: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
     sfb: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
 ):
-    MXFP4MatmulAMD_PreB[
+    BlockScaledMatmulAMD_PreB[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -346,7 +346,7 @@ def _test_case[
         sfa_tt,
         sfb_tt,
         grid_dim=(N_static // BN, ceildiv(M_static, BM)),
-        block_dim=MXFP4MatmulAMD_PreB[
+        block_dim=BlockScaledMatmulAMD_PreB[
             BM=BM,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
@@ -568,7 +568,7 @@ def _test_grouped_case[
     )
     var eid_tt = TileTensor[mut=False](eid_d, row_major(Coord(num_active)))
 
-    mxfp4_grouped_matmul_amd_preb[lane_bytes=32](
+    block_scaled_grouped_matmul_amd_preb[lane_bytes=32](
         c_tt,
         a_tt,
         b_pre_flat,
@@ -620,7 +620,9 @@ def main() raises:
         ctx.default_device_info == MI355X
     ), "test_mxfp8_matmul_amd_preb requires MI355X"
 
-    print("===> MXFP4MatmulAMD_PreB at lane_bytes=32 (MXFP8) — correctness")
+    print(
+        "===> BlockScaledMatmulAMD_PreB at lane_bytes=32 (MXFP8) — correctness"
+    )
 
     _test_case[M_static=64, N_static=128, K_static=512]("base", ctx)
     _test_case[M_static=128, N_static=256, K_static=512]("multi-tile", ctx)

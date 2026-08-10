@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the native MXFP4 block-scaled matmul kernel on AMD CDNA4.
 
-Validates MXFP4MatmulAMD against a per-element GPU reference
+Validates BlockScaledMatmulAMD against a per-element GPU reference
 that uses the llvm.amdgcn.cvt.scalef32.pk.f32.fp4 intrinsic for FP4→FP32
 dequantization and scalar accumulation.
 
@@ -30,9 +30,9 @@ from std.sys.intrinsics import llvm_intrinsic
 from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import (
-    MXFP4MatmulAMD,
-    _launch_mxfp4_split_k,
+from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
+    BlockScaledMatmulAMD,
+    _launch_block_scaled_split_k,
 )
 
 
@@ -123,9 +123,9 @@ def test_mxfp4_matmul[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
 ](ctx: DeviceContext) raises:
-    """Test MXFP4MatmulAMD against a GPU reference kernel.
+    """Test BlockScaledMatmulAMD against a GPU reference kernel.
 
-    Launches MXFP4MatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN
+    Launches BlockScaledMatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN
     and MMA shape. Defaults match the current production tile config and
     the 16x16x128 MFMA shape.
 
@@ -235,7 +235,7 @@ def test_mxfp4_matmul[
     var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
 
     # --- Direct launch with explicit tile params ---
-    comptime Kernel = MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -306,7 +306,7 @@ def test_mxfp4_matmul_split_k[
 ](ctx: DeviceContext) raises:
     """Test the inter-block split-K launcher against the GPU reference.
 
-    Launches `_launch_mxfp4_split_k` (workspace + reduce path) for the
+    Launches `_launch_block_scaled_split_k` (workspace + reduce path) for the
     given `num_splits` and verifies bit-exactness against the same scalar
     dequant reference used by `test_mxfp4_matmul`. Covers both the K-band
     accumulation and the reduce-kernel sum/cast.
@@ -388,7 +388,7 @@ def test_mxfp4_matmul_split_k[
     var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
 
     # --- Split-K launch (workspace + reduce path) ---
-    _launch_mxfp4_split_k[
+    _launch_block_scaled_split_k[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,

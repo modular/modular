@@ -562,7 +562,7 @@ def test_ep_moe_nvfp4(
 def _shuffle_b_5d(src: torch.Tensor) -> torch.Tensor:
     """Lay a row-major MXFP4 B weight ``[N, K_bytes]`` out in the AMD CDNA4
     ``preb`` 5D layout. Byte-identical to the Mojo ``b_5d_grouped_layout`` in
-    ``max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo``.
+    ``max/kernels/src/linalg/matmul/gpu/amd/block_scaled_preshuffle_layouts.mojo``.
     """
     N, K_BYTES = src.shape
     src_v = src.reshape(N // 16, 16, K_BYTES // 64, 4, 16).permute(
@@ -633,11 +633,11 @@ def test_ep_moe_mxfp4(
             wrapped_moe_weights_fp4[key] = value
 
     # Lay the loaded routed-expert B weights + E8M0 B-scales out in
-    # the AMD CDNA4 `preb` layout (mxfp4_preshuffled_b=True below routes the
+    # the AMD CDNA4 `preb` layout (block_scaled_preshuffled_b=True below routes the
     # grouped matmul to the preb kernel). Applied only to the CPU copy fed to
     # load_state_dict; the GPU copy the torch reference dequantizes is left
     # untouched. The permutations are byte-exact to the Mojo source of truth
-    # max/kernels/src/linalg/matmul/gpu/amd/mxfp4_preshuffle_layouts.mojo.
+    # max/kernels/src/linalg/matmul/gpu/amd/block_scaled_preshuffle_layouts.mojo.
     for _k in list(wrapped_moe_weights_fp4):
         _v = wrapped_moe_weights_fp4[_k]
         # With separate shared-expert execution, its weights remain row-major.
@@ -679,7 +679,7 @@ def test_ep_moe_mxfp4(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=QuantFormat.MXFP4,
-        mxfp4_preshuffled_b=True,
+        block_scaled_preshuffled_b=True,
     )
 
     # Create EP configuration

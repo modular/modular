@@ -48,7 +48,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,
     quantize_dynamic_scaled_fp4_async,
 )

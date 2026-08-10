@@ -49,7 +49,7 @@ MFMA scale model (16x16x128):
   The scale byte is placed in byte 0 of an Int32 word passed to
   the MFMA intrinsic (byte_index=0 / OPSEL=0).
 
-Entry point: mxfp4_block_scaled_matmul_amd()
+Entry point: block_scaled_matmul_amd()
 """
 
 from std.math import ceildiv
@@ -96,7 +96,7 @@ from .amd_matmul_schedule import (
 )
 from pipeline.pipeline_dsl import ScheduleEntry
 
-from .mxfp4_preshuffle_loaders import PreshuffledBLoader
+from .block_scaled_preshuffle_loaders import PreshuffledBLoader
 from .amd_4wave_split_k_matmul import (
     SplitKWorkspace,
     _split_k_reduce_kernel,
@@ -646,11 +646,11 @@ struct BlockScaledMmaOp[
 
 
 # ===----------------------------------------------------------------------=== #
-# MXFP4MatmulAMD — kernel struct
+# BlockScaledMatmulAMD — kernel struct
 # ===----------------------------------------------------------------------=== #
 
 
-struct MXFP4MatmulAMD[
+struct BlockScaledMatmulAMD[
     BM: Int = 128,
     BN: Int = 128,
     BK_ELEMS: Int = 128,
@@ -721,7 +721,7 @@ struct MXFP4MatmulAMD[
         )
     )
     @__name(
-        t"mxfp4_dense_BM{Self.BM}_BN{Self.BN}_WM{Self.WM}_WN{Self.WN}_BK{Self.BK_ELEMS}_N{b_layout.static_shape[0]}_KB{a_layout.static_shape[1]}_SK{num_splits}"
+        t"mx_dense_lb{Self.lane_bytes}_BM{Self.BM}_BN{Self.BN}_WM{Self.WM}_WN{Self.WN}_BK{Self.BK_ELEMS}_N{b_layout.static_shape[0]}_KB{a_layout.static_shape[1]}_SK{num_splits}"
     )
     @staticmethod
     def run[
@@ -1216,7 +1216,7 @@ struct MXFP4MatmulAMD[
 # ===----------------------------------------------------------------------=== #
 
 
-def _launch_mxfp4[
+def _launch_block_scaled[
     BM: Int,
     BN: Int,
     BK_ELEMS: Int,
@@ -1236,8 +1236,8 @@ def _launch_mxfp4[
     M: Int,
     ctx: DeviceContext,
 ) raises:
-    """Instantiate MXFP4MatmulAMD with the given tile shape and launch."""
-    comptime Kernel = MXFP4MatmulAMD[
+    """Instantiate BlockScaledMatmulAMD with the given tile shape and launch."""
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
         BK_ELEMS=BK_ELEMS,
@@ -1273,7 +1273,7 @@ def _launch_mxfp4[
     )
 
 
-def _launch_mxfp4_split_k[
+def _launch_block_scaled_split_k[
     BM: Int,
     BN: Int,
     BK_ELEMS: Int,
@@ -1290,7 +1290,7 @@ def _launch_mxfp4_split_k[
     M: Int,
     ctx: DeviceContext,
 ) raises:
-    """Inter-block split-K launch of MXFP4MatmulAMD + reduce.
+    """Inter-block split-K launch of BlockScaledMatmulAMD + reduce.
 
     Mirrors `amd_4wave_split_k_matmul`: allocate a `(num_splits * M, N)`
     float32 workspace, launch the matmul over a `grid_dim.z = num_splits`
@@ -1302,7 +1302,7 @@ def _launch_mxfp4_split_k[
     comptime assert (
         lane_bytes == 16 or lane_bytes == 32
     ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8)"
-    comptime Kernel = MXFP4MatmulAMD[
+    comptime Kernel = BlockScaledMatmulAMD[
         BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN, lane_bytes=lane_bytes
     ]
     comptime N = type_of(c).static_shape[1]
@@ -1368,7 +1368,7 @@ def _pick_num_splits[
 
     Picks the largest `num_splits` such that the split is legal AND the
     resulting CTA count `ceildiv(N, BN) * num_splits` stays under
-    `cta_cap`. Legality (mirrors `MXFP4MatmulAMD.run`'s split-K asserts):
+    `cta_cap`. Legality (mirrors `BlockScaledMatmulAMD.run`'s split-K asserts):
       * `K_BYTES % num_splits == 0`, and
       * `(K_BYTES // num_splits) % BK_BYTES == 0`
     i.e. `num_splits` divides `K_BYTES // BK_BYTES`. Additionally each
@@ -1398,7 +1398,7 @@ def _pick_num_splits[
     return best
 
 
-def mxfp4_block_scaled_matmul_amd[
+def block_scaled_matmul_amd[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
@@ -1451,7 +1451,7 @@ def mxfp4_block_scaled_matmul_amd[
     )
 
     # Aggressive BK values require K_BYTES to be divisible by BK_BYTES,
-    # else MXFP4MatmulAMD's comptime assert fires. Gate each bucket so
+    # else BlockScaledMatmulAMD's comptime assert fires. Gate each bucket so
     # a small-K caller (e.g. tests with K=128) falls back to the safe
     # default instead of hitting a build error.
     comptime K_BYTES = type_of(a).static_shape[1]
@@ -1487,8 +1487,8 @@ def mxfp4_block_scaled_matmul_amd[
     # want enough to fill every CU plus a second wave for latency hiding,
     # so cap = sm_count * 2 (≈2 waves). On MI355X (sm_count=256) this is
     # 512, which is the value the split factors were tuned at. The idiom
-    # `ctx.default_device_info.sm_count` mirrors fp4_quantization.mojo and
-    # grouped_matmul.mojo; `default_device_info` is a comptime alias keyed
+    # `ctx.default_device_info.sm_count` mirrors block_scaled_quantization.mojo
+    # and grouped_matmul.mojo; `default_device_info` is a comptime alias keyed
     # on the build's accelerator arch, so the cap is a compile-time const.
     comptime _gpu = ctx.default_device_info
     comptime SK_CTA_WAVES = 2
@@ -1561,7 +1561,7 @@ def mxfp4_block_scaled_matmul_amd[
         comptime if _wide_n_short_k_decode:
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
             # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
-            _launch_mxfp4[
+            _launch_block_scaled[
                 BM=16,
                 BN=32,
                 BK_ELEMS=512,
@@ -1575,7 +1575,7 @@ def mxfp4_block_scaled_matmul_amd[
             and _sk_splits > 1
             and not Bool(elementwise_lambda_fn)
         ):
-            _launch_mxfp4_split_k[
+            _launch_block_scaled_split_k[
                 BM=SK16_BM,
                 BN=SK16_BN,
                 BK_ELEMS=SK_BK_ELEMS,
@@ -1585,7 +1585,7 @@ def mxfp4_block_scaled_matmul_amd[
                 lane_bytes=lane_bytes,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
-            _launch_mxfp4[
+            _launch_block_scaled[
                 BM=64,
                 BN=32,
                 BK_ELEMS=512,
@@ -1598,7 +1598,7 @@ def mxfp4_block_scaled_matmul_amd[
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
-            _launch_mxfp4[
+            _launch_block_scaled[
                 BM=128,
                 BN=128,
                 BK_ELEMS=128,
@@ -1616,7 +1616,7 @@ def mxfp4_block_scaled_matmul_amd[
             and _sk_splits > 1
             and not Bool(elementwise_lambda_fn)
         ):
-            _launch_mxfp4_split_k[
+            _launch_block_scaled_split_k[
                 BM=SK_BM,
                 BN=SK_BN,
                 BK_ELEMS=SK_BK_ELEMS,
@@ -1645,7 +1645,7 @@ def mxfp4_block_scaled_matmul_amd[
             # no factor, this small decode-tuned tile is a worse choice than
             # the general BM=128 kernel below, not a substitute for it.
             if M <= 64:
-                _launch_mxfp4[
+                _launch_block_scaled[
                     BM=64,
                     BN=32,
                     BK_ELEMS=512,
@@ -1658,7 +1658,7 @@ def mxfp4_block_scaled_matmul_amd[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
             else:
-                _launch_mxfp4[
+                _launch_block_scaled[
                     BM=128,
                     BN=128,
                     BK_ELEMS=128,
@@ -1671,7 +1671,7 @@ def mxfp4_block_scaled_matmul_amd[
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
         else:
-            _launch_mxfp4[
+            _launch_block_scaled[
                 BM=128,
                 BN=128,
                 BK_ELEMS=128,

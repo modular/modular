@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Provides FP4 quantization kernels for dynamic block-scaled and MXFP4 formats."""
+"""Provides block-scaled quantization kernels for NVFP4, MXFP4, and MXFP8."""
 
 from std.math import align_up, ceildiv
 from std.math.uutils import uceildiv, udivmod, ufloordiv
@@ -2926,8 +2926,8 @@ def _mxfp4_dotprod_block_size(static_N: Int) -> Int:
     return target_block_size if (static_N % target_block_size) == 0 else 1
 
 
-@__name("matmul_dynamic_block_scaled_mxfp4_kernel")
-def matmul_dynamic_block_scaled_mxfp4_kernel[
+@__name("matmul_dynamic_block_scaled_amd_kernel")
+def matmul_dynamic_block_scaled_amd_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
@@ -2961,7 +2961,7 @@ def matmul_dynamic_block_scaled_mxfp4_kernel[
 
 
 @always_inline
-def matmul_dynamic_block_scaled_mxfp4[
+def matmul_dynamic_block_scaled_amd[
     out_dtype: DType
 ](
     c: TileTensor[mut=True, out_dtype, ...],
@@ -2975,7 +2975,7 @@ def matmul_dynamic_block_scaled_mxfp4[
 
     Selects a `BLOCK_N` of 16 when the N dimension is divisible by 16,
     otherwise falls back to 1, and enqueues
-    `matmul_dynamic_block_scaled_mxfp4_kernel` over a 2D grid.
+    `matmul_dynamic_block_scaled_amd_kernel` over a 2D grid.
 
     Parameters:
         out_dtype: Element type of the output matrix `c`.
@@ -2992,7 +2992,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         ctx: Device context used to enqueue the kernel.
     """
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
-        "matmul_dynamic_block_scaled_mxfp4",
+        "matmul_dynamic_block_scaled_amd",
         task_id=get_safe_task_id(ctx),
     ):
         comptime BLOCK_DIM = 16
@@ -3005,7 +3005,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         if M == 0 or N == 0:
             return
 
-        comptime kernel = matmul_dynamic_block_scaled_mxfp4_kernel[
+        comptime kernel = matmul_dynamic_block_scaled_amd_kernel[
             out_dtype, BLOCK_N
         ]
 
@@ -3023,8 +3023,8 @@ def matmul_dynamic_block_scaled_mxfp4[
         )
 
 
-@__name("grouped_matmul_block_scaled_mxfp4_kernel")
-def grouped_matmul_block_scaled_mxfp4_kernel[
+@__name("grouped_matmul_block_scaled_amd_kernel")
+def grouped_matmul_block_scaled_amd_kernel[
     out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
@@ -3072,7 +3072,7 @@ def grouped_matmul_block_scaled_mxfp4_kernel[
 
 
 @always_inline
-def grouped_matmul_block_scaled_mxfp4[
+def grouped_matmul_block_scaled_amd[
     out_dtype: DType,
 ](
     c: TileTensor[mut=True, out_dtype, ...],
@@ -3087,7 +3087,7 @@ def grouped_matmul_block_scaled_mxfp4[
 ) raises:
     """Launches the grouped per-expert MXFP4 block-scaled matmul kernel on AMD CDNA4.
 
-    Enqueues `grouped_matmul_block_scaled_mxfp4_kernel` over a 2D grid
+    Enqueues `grouped_matmul_block_scaled_amd_kernel` over a 2D grid
     sized by the output M and N dimensions, emitting a trace event for
     profiling.
 
@@ -3112,7 +3112,7 @@ def grouped_matmul_block_scaled_mxfp4[
         ctx: Device context used to enqueue the kernel.
     """
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
-        "grouped_matmul_block_scaled_mxfp4",
+        "grouped_matmul_block_scaled_amd",
         task_id=get_safe_task_id(ctx),
     ):
         comptime BLOCK_DIM = 16
@@ -3125,7 +3125,7 @@ def grouped_matmul_block_scaled_mxfp4[
         if M == 0 or N == 0:
             return
 
-        comptime kernel = grouped_matmul_block_scaled_mxfp4_kernel[
+        comptime kernel = grouped_matmul_block_scaled_amd_kernel[
             out_dtype, BLOCK_N
         ]
 

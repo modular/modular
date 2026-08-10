@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for native MXFP4 grouped matmul on AMD CDNA4.
 
-Validates mxfp4_grouped_matmul_amd against a per-element GPU reference
-that runs one ungrouped mxfp4_block_scaled_matmul_amd per expert and
+Validates block_scaled_grouped_matmul_amd against a per-element GPU reference
+that runs one ungrouped block_scaled_matmul_amd per expert and
 compares the concatenated output.
 
 Usage:
@@ -31,8 +31,8 @@ from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.amd import (
-    mxfp4_block_scaled_matmul_amd,
-    mxfp4_grouped_matmul_amd,
+    block_scaled_matmul_amd,
+    block_scaled_grouped_matmul_amd,
 )
 
 
@@ -49,9 +49,9 @@ def test_mxfp4_grouped_matmul[
     expert_ids_list: List[Int],
     ctx: DeviceContext,
 ) raises:
-    """Test mxfp4_grouped_matmul_amd against per-expert ungrouped matmul.
+    """Test block_scaled_grouped_matmul_amd against per-expert ungrouped matmul.
 
-    Runs mxfp4_block_scaled_matmul_amd independently for each expert
+    Runs block_scaled_matmul_amd independently for each expert
     slice, then compares with the grouped kernel's output.
 
     Parameters:
@@ -188,7 +188,7 @@ def test_mxfp4_grouped_matmul[
             row_major(Coord(num_tokens, Idx[N])),
         )
 
-        mxfp4_block_scaled_matmul_amd(
+        block_scaled_matmul_amd(
             c_expert_tt,
             a_expert_tt,
             b_expert_tt,
@@ -222,7 +222,7 @@ def test_mxfp4_grouped_matmul[
         c_dev, row_major(Coord(total_tokens, Idx[N]))
     )
 
-    mxfp4_grouped_matmul_amd(
+    block_scaled_grouped_matmul_amd(
         c_tt,
         a_tt,
         b_tt,

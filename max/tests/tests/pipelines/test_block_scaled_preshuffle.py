@@ -18,7 +18,7 @@ state dict. numpy's ``from_dlpack`` error type for those changed from
 ``RuntimeError`` to ``BufferError`` in numpy 2.5.0 (numpy gh-30937); the
 helpers used to dispatch on that type and, under numpy >= 2.5, silently
 skipped every MXFP8 expert while the caller still flipped
-``mxfp4_preshuffled_b`` — serving row-major weights to the preb kernel.
+``block_scaled_preshuffled_b`` — serving row-major weights to the preb kernel.
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData
-from max.pipelines.weights.mxfp4_preshuffle import (
-    preshuffle_mxfp4_b_experts,
-    preshuffle_mxfp4_b_scales,
+from max.pipelines.weights.block_scaled_preshuffle import (
+    preshuffle_block_scaled_b_experts,
+    preshuffle_block_scaled_b_scales,
 )
 
 _N, _K_BYTES = 16, 64
@@ -89,7 +89,7 @@ def test_preshuffle_b_experts_float8_buffer_backed() -> None:
         for n, raw in raws.items()
     }
 
-    preshuffle_mxfp4_b_experts(state_dict)
+    preshuffle_block_scaled_b_experts(state_dict)
 
     for n, raw in raws.items():
         assert state_dict[n].dtype == DType.float8_e4m3fn
@@ -104,7 +104,7 @@ def test_preshuffle_b_experts_uint8() -> None:
     raw = _weight_bytes(7, (_N, _K_BYTES))
     state_dict = {name: WeightData.from_numpy(raw.copy(), name)}
 
-    preshuffle_mxfp4_b_experts(state_dict)
+    preshuffle_block_scaled_b_experts(state_dict)
 
     assert state_dict[name].dtype == DType.uint8
     np.testing.assert_array_equal(
@@ -118,7 +118,7 @@ def test_preshuffle_b_scales_e8m0_buffer_backed() -> None:
     raw = _weight_bytes(11, (_MN, _K_SCALES))
     state_dict = {name: _f8_weight_data(name, raw, DType.float8_e8m0fnu)}
 
-    preshuffle_mxfp4_b_scales(state_dict)
+    preshuffle_block_scaled_b_scales(state_dict)
 
     assert state_dict[name].dtype == DType.float8_e8m0fnu
     np.testing.assert_array_equal(
@@ -133,7 +133,7 @@ def test_preshuffle_b_experts_rejects_unshuffleable_group() -> None:
     state_dict = {name: WeightData.from_numpy(raw, name)}
 
     with pytest.raises(ValueError, match="preshuffle skipped"):
-        preshuffle_mxfp4_b_experts(state_dict)
+        preshuffle_block_scaled_b_experts(state_dict)
 
 
 def test_preshuffle_b_experts_rejects_partial_group() -> None:
@@ -148,7 +148,7 @@ def test_preshuffle_b_experts_rejects_partial_group() -> None:
     }
 
     with pytest.raises(ValueError, match="preshuffle skipped"):
-        preshuffle_mxfp4_b_experts(state_dict)
+        preshuffle_block_scaled_b_experts(state_dict)
 
 
 def test_preshuffle_b_scales_rejects_unshuffleable_group() -> None:
@@ -158,4 +158,4 @@ def test_preshuffle_b_scales_rejects_unshuffleable_group() -> None:
     state_dict = {name: WeightData.from_numpy(raw, name)}
 
     with pytest.raises(ValueError, match="preshuffle skipped"):
-        preshuffle_mxfp4_b_scales(state_dict)
+        preshuffle_block_scaled_b_scales(state_dict)

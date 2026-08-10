@@ -24,7 +24,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     cast_uint_to_fp4e2m1,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_scaled_fp4fp8,
     grouped_quantize_dynamic_scaled_fp4_async,
 )

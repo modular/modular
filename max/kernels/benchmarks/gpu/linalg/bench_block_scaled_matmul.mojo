@@ -35,7 +35,7 @@ from internal_utils import (
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from linalg.fp4_quantization import block_scaled_matmul
+from linalg.block_scaled_quantization import block_scaled_matmul
 
 from layout import (
     CoordLike,
@@ -676,10 +676,10 @@ def bench_mxfp4_amd[
 ) raises:
     """Benchmark native MXFP4 block-scaled matmul on AMD CDNA4.
 
-    Uses mxfp4_block_scaled_matmul_amd with simple 2D scale tensors
+    Uses block_scaled_matmul_amd with simple 2D scale tensors
     [rows, K//32] in float8_e8m0fnu. Output is float32.
     """
-    from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+    from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 
     comptime K_ELEMS = KType.static_value
     comptime K_PACKED = K_ELEMS // 2
@@ -780,7 +780,7 @@ def bench_mxfp4_amd[
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, c_tt, a_tt, b_tt, sfa_tt, sfb_tt)
         else:
-            mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+            block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
     @parameter
     @always_inline
@@ -823,9 +823,7 @@ def bench_mxfp4_amd[
             var c_tt0 = TileTensor[mut=True](cb_c.offset_ptr(0), c_shape)
 
             # Fresh FP4 kernel run into iter-0 output slot.
-            mxfp4_block_scaled_matmul_amd(
-                c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx
-            )
+            block_scaled_matmul_amd(c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx)
 
             # hipBLASLt reference into a separate buffer.
             var c_ref_buf = ctx.enqueue_create_buffer[DType.float32](c_size)
