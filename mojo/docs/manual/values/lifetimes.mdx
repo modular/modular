@@ -82,7 +82,7 @@ struct ImmutRef[origin: ImmOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin/)
+Or you can use the [`Origin`](/docs/std/origin/Origin/)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -235,7 +235,7 @@ The untracked origins, `MutUntrackedOrigin` and `ImmUntrackedOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
-[`alloc()`](/docs/std/memory/unsafe_pointer/alloc/) function returns an
+[`alloc()`](/docs/std/memory/alloc/unsafe_alloc/) function returns an
 `UnsafePointer` to a new dynamically-allocated block of memory, with the origin
 `MutUntrackedOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
@@ -306,7 +306,7 @@ specifier can be either:
   ref[self]
   ```
 
-- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace/) value.
+- An [`AddressSpace`](/docs/std/memory/address_space/AddressSpace/) value.
 
 - An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
