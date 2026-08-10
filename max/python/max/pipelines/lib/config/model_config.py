@@ -1289,18 +1289,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"Multiple GPU inference is currently not supported for {self.model_path}."
             )
 
-    def validate_lora_compatibility(self) -> None:
-        """Validates that LoRA configuration is compatible with model settings.
-
-        Raises:
-            ValueError: If LoRA is enabled but incompatible with current model configuration.
-        """
-        if self.kv_cache.enable_prefix_caching:
-            raise ValueError(
-                "LoRA is not compatible with prefix caching. "
-                "Please disable prefix caching by using the --no-enable-prefix-caching flag."
-            )
-
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
         resolved_encoding: SupportedEncoding,

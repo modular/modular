@@ -127,6 +127,7 @@ class TestPipelineConfigUtilityMethods:
                 enable_lora=True,
                 lora_paths=["/path/to/lora1", "/path/to/lora2"],
                 max_lora_rank=32,
+                enable_prefix_caching=False,
             )
         )
 
@@ -212,6 +213,8 @@ class TestPipelineConfigUtilityMethods:
             # Model config with KV cache
             "quantization_encoding": "bfloat16",
             "kv_cache_page_size": 512,
+            # LoRA rejects prefix caching at construction.
+            "enable_prefix_caching": False,
         }
 
         config = PipelineConfig.from_args(
