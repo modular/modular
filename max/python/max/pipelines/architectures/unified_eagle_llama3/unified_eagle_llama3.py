@@ -98,7 +98,11 @@ class UnifiedEagleLlama3(Module):
         super().__init__()
 
         self.config = config
-        self.num_draft_steps = config.speculative_config.num_speculative_tokens
+        num_draft_steps = config.speculative_config.num_speculative_tokens
+        # Unset resolves to the eagle default at SpeculativeConfig
+        # construction.
+        assert num_draft_steps is not None
+        self.num_draft_steps = num_draft_steps
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=config.speculative_config.synthetic_acceptance_rate,
             num_draft_steps=self.num_draft_steps,

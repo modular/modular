@@ -518,7 +518,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 raise ValueError(f"Unknown attention type: {attention_type}")
 
         num_spec_tokens = (
-            pipeline_config.speculative.num_speculative_tokens
+            (pipeline_config.speculative.num_speculative_tokens or 0)
             if pipeline_config.speculative
             else 0
         )

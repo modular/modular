@@ -22,7 +22,8 @@ from __future__ import annotations
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
+from typing_extensions import Self
 
 __all__ = [
     "MAGIC_DRAFT_TOKEN_ID",
@@ -96,16 +97,35 @@ class SpeculativeConfig(ConfigFileModel):
     speculative decoding is disabled.
     """
 
-    num_speculative_tokens: int = Field(
-        default=2, description="The number of speculative tokens."
+    num_speculative_tokens: int | None = Field(
+        default=None,
+        description=(
+            "The number of speculative tokens. Unset selects a per-method "
+            "default: 2 for ``eagle``/``mtp``, and the draft checkpoint's "
+            "trained width for ``dflash``."
+        ),
     )
     """The number of tokens the draft proposes per verification pass.
 
-    Defaults to ``2``. Larger values can raise the average draft
-    acceptance length and peak speedup, but they may hurt acceptance
-    rates at later positions and increase kernel latencies from the
-    additional tokens.
+    ``None`` means unset: ``eagle`` and ``mtp`` resolve it to ``2`` at
+    construction, while ``dflash``-style block drafts leave it for the
+    architecture to resolve from the draft checkpoint's trained width.
+    Larger values can raise the average draft acceptance length and peak
+    speedup, but they may hurt acceptance rates at later positions and
+    increase kernel latencies from the additional tokens.
     """
+
+    @model_validator(mode="after")
+    def _resolve_autoregressive_draft_width(self) -> Self:
+        # Eagle/MTP draft one token per autoregressive step and keep their
+        # longstanding default of 2. DFlash-style block drafts derive the
+        # width from the draft checkpoint's trained block size, so unset
+        # stays None until the architecture resolves it.
+        if self.num_speculative_tokens is None and (
+            self.is_eagle() or self.is_mtp()
+        ):
+            self.num_speculative_tokens = 2
+        return self
 
     rejection_sampling_strategy: RejectionSamplingStrategy | None = Field(
         default=None,

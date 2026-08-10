@@ -85,7 +85,8 @@ class UnifiedMTPGlm5_2(Module):
         self.enable_structured_output = enable_structured_output
         self.num_draft_steps = (
             speculative_config.num_speculative_tokens
-            if speculative_config
+            if speculative_config is not None
+            and speculative_config.num_speculative_tokens is not None
             else 1
         )
         relaxed_topk: int | None = None

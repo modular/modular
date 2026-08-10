@@ -29,8 +29,21 @@ def test_is_eagle() -> None:
 
 
 def test_num_speculative_tokens() -> None:
-    """Verify num_speculative_tokens uses default and accepts custom values."""
-    assert SpeculativeConfig().num_speculative_tokens == 2
+    """Verify per-method defaults and that custom values are accepted."""
+    # Unset stays None so each method resolves its own default: eagle/mtp
+    # use 2, dflash-style block drafts derive the draft's trained width.
+    assert SpeculativeConfig().num_speculative_tokens is None
+    assert (
+        SpeculativeConfig(speculative_method="dflash").num_speculative_tokens
+        is None
+    )
+    assert (
+        SpeculativeConfig(speculative_method="eagle").num_speculative_tokens
+        == 2
+    )
+    assert (
+        SpeculativeConfig(speculative_method="mtp").num_speculative_tokens == 2
+    )
     assert (
         SpeculativeConfig(num_speculative_tokens=10).num_speculative_tokens
         == 10
