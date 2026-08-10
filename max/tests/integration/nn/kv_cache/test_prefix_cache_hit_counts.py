@@ -274,13 +274,14 @@ def test_device_hit_increments_device_blocks_served() -> None:
 
     num_prompt_tokens = 2 * BLOCK_SIZE + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
+    bm.claim(ctx)
     bm.compute_hashes_for_request(ctx)
     hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
 
     _seed_device_prefix_cache(bm, hashes)
 
-    skip_amount, event = bm.reuse_blocks_from_prefix_cache(ctx, replica_idx=0)
+    skip_amount, event = bm.reuse_blocks_from_prefix_cache(ctx)
 
     assert skip_amount == 2 * BLOCK_SIZE
     assert event.is_complete()

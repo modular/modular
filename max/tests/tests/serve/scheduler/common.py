@@ -284,16 +284,12 @@ class FakeTokenGeneratorPipeline(
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
             for context in batch:
-                if not self.kv_manager.contains(
-                    context.request_id, replica_idx=replica_idx
-                ):
-                    self.kv_manager.claim(
-                        context.request_id, replica_idx=replica_idx
-                    )
+                if not self.kv_manager.contains(context):
+                    self.kv_manager.claim(context, replica_idx=replica_idx)
 
-        for replica_idx, batch in enumerate(inputs.batches):
+        for batch in inputs.batches:
             for ctx in batch:
-                self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+                self.kv_manager.alloc(ctx)
         self.kv_manager.runtime_inputs(inputs.batches)
 
         # Generate the responses
@@ -430,15 +426,11 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
         if inputs:
             for replica_idx, batch in enumerate(inputs.batches):
                 for context in batch:
-                    if not self.kv_manager.contains(
-                        context.request_id, replica_idx=replica_idx
-                    ):
-                        self.kv_manager.claim(
-                            context.request_id, replica_idx=replica_idx
-                        )
-            for replica_idx, batch in enumerate(inputs.batches):
+                    if not self.kv_manager.contains(context):
+                        self.kv_manager.claim(context, replica_idx=replica_idx)
+            for batch in inputs.batches:
                 for ctx in batch:
-                    self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+                    self.kv_manager.alloc(ctx)
             self.kv_manager.runtime_inputs(inputs.batches)
 
             # Generate real tokens now but defer their release to the next call.

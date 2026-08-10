@@ -293,7 +293,7 @@ class BlockDiffusionTextGenerationPipeline(TextGenerationPipeline[TextContext]):
             for i, ctx in enumerate(canvas_batch)
         ]
         for view in views:
-            self._kv_manager.alloc(cast(TextContext, view), replica_idx=0)
+            self._kv_manager.alloc(cast(TextContext, view))
 
         row_offsets = Buffer.from_numpy(
             np.arange(0, n_tokens + 1, canvas_len, dtype=np.uint32)

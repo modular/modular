@@ -577,10 +577,10 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         assert np.all(np.isfinite(out_np))
 
     context = create_text_context(np.empty(cache_len))
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
     batch = [context]
 
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.alloc(context)
     kv_ri_pref = kv_manager.runtime_inputs([batch])
     assert isinstance(kv_ri_pref, MultiKVCacheInputs)
     mla_pref = kv_ri_pref.children["mla"]
@@ -613,7 +613,7 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
         context.update(42)
     kv_manager.step([batch])
 
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.alloc(context)
     kv_ri_dec = kv_manager.runtime_inputs([batch])
     assert isinstance(kv_ri_dec, MultiKVCacheInputs)
     mla_dec = kv_ri_dec.children["mla"]

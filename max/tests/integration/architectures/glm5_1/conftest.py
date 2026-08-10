@@ -447,7 +447,7 @@ def _generate_mla_max_outputs(
     batch = []
     for _ in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[0]))
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
         batch.append(context)
     input_row_offsets = Buffer(DType.uint32, [batch_size + 1])
     running_sum = 0
@@ -460,7 +460,7 @@ def _generate_mla_max_outputs(
         all_outputs = []
         for tok_idx in range(total_tokens):
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0)
+                kv_manager.alloc(ctx)
             kv_inputs = kv_manager.runtime_inputs([batch])
             input_tensor_device = (
                 Buffer.from_numpy(
@@ -482,7 +482,7 @@ def _generate_mla_max_outputs(
         return torch.concat(all_outputs, dim=1)
 
     for ctx in batch:
-        kv_manager.alloc(ctx, replica_idx=0)
+        kv_manager.alloc(ctx)
     kv_inputs = kv_manager.runtime_inputs([batch])
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())

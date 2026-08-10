@@ -177,9 +177,15 @@ def _make_block_manager() -> tuple[BlockManager, _AsyncConnector]:
     return bm, connector
 
 
-def _make_ctx(request_id: RequestID) -> TextContext:
-    """Minimal ctx stub: the host-onload path reads only ``ctx.request_id``."""
-    return cast(TextContext, SimpleNamespace(request_id=request_id))
+def _make_ctx(bm: BlockManager, request_id: RequestID) -> TextContext:
+    """Minimal claimed ctx stub.
+
+    The host-onload path reads only ``ctx.request_id``, but the claim is what
+    pins which replica's pool the request resolves against.
+    """
+    ctx = cast(TextContext, SimpleNamespace(request_id=request_id))
+    bm.claim(ctx)
+    return ctx
 
 
 def _commit_device_block(pool: BlockPool, block_hash: int) -> KVCacheBlock:
@@ -212,7 +218,7 @@ def test_async_onload_defers_commit_and_pins_blocks() -> None:
     rid = RequestID("req-onload")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 2
     assert not event.is_complete()
@@ -235,7 +241,7 @@ def test_poll_transfers_is_noop_while_onload_incomplete() -> None:
     rid = RequestID("req-poll-incomplete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    _, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    _, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
     assert not event.is_complete()
 
     bm.poll_transfers()
@@ -253,7 +259,7 @@ def test_poll_transfers_commits_and_unpins_on_completion() -> None:
     rid = RequestID("req-poll-complete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     # Complete the transfer, then drain.
     event.synchronize()
@@ -282,7 +288,7 @@ def test_partial_onload_frees_surplus_blocks() -> None:
     rid = RequestID("req-partial")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 1
     assert len(event.g0_blocks) == 1

@@ -404,10 +404,10 @@ def _max_layer_output_captures(
     tokens_np = np.concatenate(prompt_ids).astype(np.int64)
     contexts = [create_text_context(ids, max_length=4096) for ids in prompt_ids]
     for context in contexts:
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
     try:
         for context in contexts:
-            kv_manager.alloc(context, replica_idx=0)
+            kv_manager.alloc(context)
         kv_inputs = kv_manager.runtime_inputs(
             [contexts], max_cache_length=max(lens)
         )
@@ -422,7 +422,7 @@ def _max_layer_output_captures(
         )
     finally:
         for context in contexts:
-            kv_manager.release(context.request_id, replica_idx=0)
+            kv_manager.release(context)
 
     # outputs = (last_logits, *captures) with LAST_TOKEN logits; captures
     # come back one per layer id, ascending (single device).

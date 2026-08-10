@@ -136,8 +136,8 @@ async def _test_kv_cache_gpu() -> None:
         max_batch_size=128,
     )
     context = create_text_context(np.empty(1))
-    kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.claim(context)
+    kv_manager.alloc(context)
     batch = [context]
     kv_inputs = kv_manager.runtime_inputs([batch])
     assert isinstance(kv_inputs, KVCacheInputs)

@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnectorTransfer,
@@ -45,7 +46,7 @@ class DummyKVCache(PagedKVCacheManager):
             devices=[DeviceRef.CPU()],
         )
 
-    def claim(self, request_id: RequestID, replica_idx: int) -> None:
+    def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """No-op."""
         pass
 
@@ -57,11 +58,11 @@ class DummyKVCache(PagedKVCacheManager):
         """No-op."""
         pass
 
-    def contains(self, request_id: RequestID, replica_idx: int) -> bool:
+    def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
         return True
 
-    def release(self, request_id: RequestID, replica_idx: int) -> None:
+    def release(self, ctx: TextContext) -> None:
         """No-op."""
         pass
 

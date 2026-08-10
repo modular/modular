@@ -129,6 +129,7 @@ def test_commit_never_commits_placeholder_block() -> None:
     """
     bm = _make_block_manager()
     ctx = _make_context(list(range(7)), "req-commit")  # 7 prompt tokens
+    bm.claim(ctx)
     bm.req_to_blocks[ctx.request_id] = [
         bm.allocate_device_block() for _ in range(3)
     ]
@@ -173,6 +174,7 @@ def test_commit_never_commits_placeholder_block() -> None:
             pending_future_count=0,
         ),
     )
+    bm.claim(ctx_b)
     bm.compute_hashes_for_request(ctx_b)
     assert (
         bm.req_to_hashes[RequestID("req-reuser")][:2]

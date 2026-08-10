@@ -415,22 +415,32 @@ class BlockManager:
         """The replica-0 device block pool (single-replica convenience)."""
         return self.device_block_pools[0]
 
-    def _register_replica(
-        self, request_id: RequestID, replica_idx: int
-    ) -> None:
-        """Records the replica a request is assigned to (idempotent)."""
+    @traced
+    def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
+        """Pins a request to one replica, which owns it until it is released."""
+        request_id = ctx.request_id
         existing = self.req_to_replica.get(request_id)
-        if existing is not None and existing != replica_idx:
+        if existing is not None:
             raise ValueError(
-                f"Request {request_id} is already assigned to replica "
-                f"{existing}, cannot reassign to {replica_idx}"
+                f"Request is already claimed, on replica {existing}: "
+                f"{request_id}"
             )
         self.req_to_replica[request_id] = replica_idx
 
+    def _replica_of(self, ctx: TextContext) -> int:
+        """Returns the replica the request was claimed on."""
+        replica_idx = self.req_to_replica.get(ctx.request_id)
+        if replica_idx is None:
+            raise ValueError(
+                f"Request is not claimed, so it holds no pages to work with: "
+                f"{ctx.request_id}"
+            )
+        return replica_idx
+
     @traced
-    def step(self, ctx: TextContext, replica_idx: int = 0) -> None:
+    def step(self, ctx: TextContext) -> None:
         """Step the block manager by committing blocks into prefix cache."""
-        self.assert_runtime_invariants(ctx, replica_idx)
+        self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching:
             return
@@ -440,9 +450,9 @@ class BlockManager:
 
         # Now that we generated new tokens, we can possibly commit additional
         # blocks into prefix cache.
-        self.commit_to_prefix_cache(ctx, replica_idx)
+        self.commit_to_prefix_cache(ctx)
 
-        self.assert_runtime_invariants(ctx, replica_idx)
+        self.assert_runtime_invariants(ctx)
 
     @traced
     def compute_hashes_for_request(
@@ -464,7 +474,6 @@ class BlockManager:
     def reuse_blocks_from_prefix_cache(
         self,
         ctx: TextContext,
-        replica_idx: int = 0,
     ) -> tuple[int, KVConnectorTransfer]:
         """Reuses blocks from prefix cache.
 
@@ -473,7 +482,6 @@ class BlockManager:
 
         Args:
             ctx: The request context.
-            replica_idx: Index of the replica the request is assigned to.
 
         Returns:
             ``(skip_amount, event)`` where ``skip_amount`` is the number of
@@ -483,8 +491,10 @@ class BlockManager:
             was onloaded asynchronously (the common case: device hits and
             synchronous connectors), so callers can just poll ``is_complete()``.
         """
-        self._register_replica(ctx.request_id, replica_idx)
-        self.assert_runtime_invariants(ctx, replica_idx)
+        # Reject an unclaimed request here rather than deeper in: the early
+        # returns below skip every other call that would resolve its replica.
+        self._replica_of(ctx)
+        self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
             return 0, CompletedTransfer(TransferDirection.LOAD)
@@ -500,7 +510,7 @@ class BlockManager:
 
         # Query prefix cache for full blocks.
         prefix_cache_blocks, load_event = (
-            self.get_full_blocks_from_prefix_cache(ctx, replica_idx)
+            self.get_full_blocks_from_prefix_cache(ctx)
         )
 
         if len(prefix_cache_blocks) > 0:
@@ -510,7 +520,7 @@ class BlockManager:
             )
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(ctx, replica_idx)
+            self.release_uncommitted_blocks(ctx)
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
@@ -850,7 +860,7 @@ class BlockManager:
 
     @traced
     def get_full_blocks_from_prefix_cache(
-        self, ctx: TextContext, replica_idx: int = 0
+        self, ctx: TextContext
     ) -> tuple[list[KVCacheBlock], KVConnectorTransfer]:
         """Gets the computed (cached) blocks for the request.
 
@@ -864,6 +874,7 @@ class BlockManager:
         """
         assert self.enable_prefix_caching
 
+        replica_idx = self._replica_of(ctx)
         req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
@@ -928,7 +939,6 @@ class BlockManager:
     def commit_to_prefix_cache(
         self,
         ctx: TextContext,
-        replica_idx: int = 0,
     ) -> None:
         """Commits all blocks whose hashes are known for prefix caching.
 
@@ -936,8 +946,8 @@ class BlockManager:
 
         Args:
             ctx: TextContext.
-            replica_idx: Index of the replica the request is assigned to.
         """
+        replica_idx = self._replica_of(ctx)
         pool = self.device_block_pools[replica_idx]
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
@@ -1076,9 +1086,16 @@ class BlockManager:
         """Returns whether any async transfer is in flight on the replica."""
         return bool(self._pending_transfers[replica_idx])
 
-    def release(self, request_id: RequestID, replica_idx: int = 0) -> None:
-        """Release the blocks for the request."""
-        pool = self.device_block_pools[replica_idx]
+    def release(self, ctx: TextContext) -> None:
+        """Release the blocks for the request.
+
+        Raises:
+            ValueError: If the request is not claimed, which includes a second
+                release: the claim is what names the pool the pages return to,
+                so there is no such thing as releasing without one.
+        """
+        request_id = ctx.request_id
+        pool = self.device_block_pools[self._replica_of(ctx)]
         blocks = self.req_to_blocks[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
@@ -1104,7 +1121,6 @@ class BlockManager:
         ctx: TextContext,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 1,
-        replica_idx: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -1124,13 +1140,12 @@ class BlockManager:
                 ``_compute_seq_len`` to size the cache for block drafts,
                 whose ``forward_block`` writes one extra position past the
                 bonus token.
-            replica_idx: Index of the replica the request is assigned to.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-        self._register_replica(ctx.request_id, replica_idx)
+        replica_idx = self._replica_of(ctx)
         pool = self.device_block_pools[replica_idx]
 
         # It is impossible to schedule this request, even if it was the only req
@@ -1232,10 +1247,9 @@ class BlockManager:
     def release_uncommitted_blocks(
         self,
         ctx: TextContext,
-        replica_idx: int = 0,
     ) -> None:
         """Release the uncommitted blocks for the request."""
-        pool = self.device_block_pools[replica_idx]
+        pool = self.device_block_pools[self._replica_of(ctx)]
         req_blocks = self.req_to_blocks[ctx.request_id]
         num_committed_blocks = (
             self.req_to_committed_idx[ctx.request_id] // self.block_size
@@ -1254,22 +1268,19 @@ class BlockManager:
         elif delta < 0:
             ctx.tokens.skip_processing(-delta)
 
-    def register_dummy_request(
-        self, request_id: RequestID, replica_idx: int = 0
-    ) -> None:
+    def register_dummy_request(self, ctx: TextContext) -> None:
         """Maps a dummy request to the replica pool's reserved null block."""
+        request_id = ctx.request_id
         assert self.req_to_blocks[request_id] == []
-        self._register_replica(request_id, replica_idx)
         self.req_to_blocks[request_id] = [
-            self.device_block_pools[replica_idx].null_block
+            self.device_block_pools[self._replica_of(ctx)].null_block
         ]
 
     @traced
-    def get_req_blocks(
-        self, request_id: RequestID, replica_idx: int = 0
-    ) -> list[int]:
+    def get_req_blocks(self, ctx: TextContext) -> list[int]:
         """Get the block ids for a request."""
-        return [block.bid for block in self.req_to_blocks[request_id]]
+        self._replica_of(ctx)
+        return [block.bid for block in self.req_to_blocks[ctx.request_id]]
 
     @traced
     def reset_prefix_cache(self) -> None:
@@ -1291,9 +1302,7 @@ class BlockManager:
         self.connector.reset_metrics()
 
     @traced
-    def assert_runtime_invariants(
-        self, ctx: TextContext, replica_idx: int = 0
-    ) -> None:
+    def assert_runtime_invariants(self, ctx: TextContext) -> None:
         """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
