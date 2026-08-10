@@ -29,12 +29,6 @@ _LIT_TESTS = [
     )
 ]
 
-filegroup(
-    name = "test-sources",
-    srcs = glob(["**/*.mojo"]),
-    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
-)
-
 lit_tests(
     name = "lit_tests",
     srcs = _LIT_TESTS,

@@ -81,9 +81,3 @@ _GPU_MEMORY = {
         exclude = _FILECHECK_TESTS,
     )
 ]
-
-filegroup(
-    name = "test-sources",
-    srcs = glob(["**/*.mojo"]),
-    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
-)

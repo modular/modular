@@ -3,9 +3,6 @@ load(
     "//bazel:api.bzl",
     "mojo_binary",
     "mojo_test",
-    "pkg_filegroup",
-    "pkg_files",
-    "strip_prefix",
 )
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
@@ -574,27 +571,9 @@ _FA4_WS_DEPS = [
     ]
 ]
 
-pkg_files(
-    name = "kernel_benchmark_input_files",
-    srcs = glob(
-        [
-            "**/*.mojo",
-            "**/*.yaml",
-        ],
-        exclude = [
-            "demos/**",
-            "misc/**",
-            "packages/**",
-        ],
-    ),
-    prefix = "kernel-benchmark",
-    strip_prefix = strip_prefix.from_pkg(""),
-)
-
-pkg_filegroup(
-    name = "kernel_benchmark_files",
-    srcs = [
-        ":kernel_benchmark_input_files",
-        "//max/kernels/benchmarks/autotune:autotune_files",
-    ],
+# Just for mentioning unreferenced files
+filegroup(
+    name = "yaml_files",
+    srcs = glob(["gpu/**/*.yaml"]),
+    tags = ["maybe-unused"],
 )
