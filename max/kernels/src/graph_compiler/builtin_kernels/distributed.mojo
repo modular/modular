@@ -42,6 +42,7 @@ from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
 from extensibility import (
@@ -1038,7 +1039,13 @@ struct DistributedReduceScatterRMSNorm:
                     dev_ctxs[index],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch, domain_id=domain_id](
+            # The unfused `reducescatter` this fusion replaced already used PDL,
+            # so leaving it off here would regress the path.
+            _dispatch_rs_norm[
+                two_launch=two_launch,
+                domain_id=domain_id,
+                pdl_level=PDLLevel.ON,
+            ](
                 in_tensors,
                 normed_buf,
                 sum_buf,

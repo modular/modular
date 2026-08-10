@@ -48,6 +48,7 @@ from comm.reducescatter_rmsnorm import (
     reducescatter_rmsnorm,
 )
 from comm.reducescatter import reducescatter, ReduceScatterConfig
+from max.gpu.primitives.grid_controls import PDLLevel
 from nn.normalization import rms_norm_gpu
 from comm.sync import (
     circular_add,
@@ -62,6 +63,7 @@ def _run_case[
     ngpus: Int,
     num_cols: Int,
     use_dispatch: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     num_rows: Int,
     list_of_ctx: List[DeviceContext],
@@ -224,7 +226,7 @@ def _run_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch](
+            _dispatch_rs_norm[two_launch=two_launch, pdl_level=pdl_level](
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -236,7 +238,7 @@ def _run_case[
                 threshold=dispatch_threshold,
             )
         else:
-            reducescatter_rmsnorm(
+            reducescatter_rmsnorm[pdl_level=pdl_level](
                 in_bufs,
                 normed_view,
                 sum_view,
@@ -517,6 +519,7 @@ def _run_prod_oracle_case[
     num_cols: Int,
     use_dispatch: Bool = False,
     group_size: Int = ngpus,
+    pdl_level: PDLLevel = PDLLevel(),
 ](num_rows: Int, list_of_ctx: List[DeviceContext]) raises -> Int:
     """Compare the fused `normed_out` to the ACTUAL M3 production norm; return the
     fused-vs-production exact-mismatch count.
@@ -687,7 +690,11 @@ def _run_prod_oracle_case[
                     list_of_ctx[i],
                 )
 
-            _dispatch_rs_norm[two_launch=two_launch, domain_id=domain_id](
+            _dispatch_rs_norm[
+                two_launch=two_launch,
+                domain_id=domain_id,
+                pdl_level=pdl_level,
+            ](
                 bufs,
                 normed_view,
                 sum_view,
@@ -699,7 +706,7 @@ def _run_prod_oracle_case[
                 local_rank=local,
             )
         else:
-            reducescatter_rmsnorm[domain_id=domain_id](
+            reducescatter_rmsnorm[domain_id=domain_id, pdl_level=pdl_level](
                 bufs,
                 normed_view,
                 sum_view,
@@ -1459,6 +1466,30 @@ def _run_suite[
     _run_case[in_dtype, ngpus, num_cols, use_dispatch=True](
         ngpus + ngpus // 2, list_of_ctx, dispatch_threshold=18432
     )
+
+    # PDL changes only launch overlap, never the math, so every gate above must
+    # still hold with it enabled -- this is what `distributed.mojo` launches. A
+    # trigger misplaced before the end barrier would show up here as a `sum_out`
+    # mismatch.
+    print("\nPDL-on (attribute set) vs production, fused + dispatched:")
+    # M=1 and the ragged edge use `_run_case`'s oracles because the production
+    # oracle sweep starts at M=8, and M=1 leaves ranks 1..n-1 with 0-row shards.
+    for num_rows in [1, 8, ngpus + ngpus // 2]:
+        _run_case[in_dtype, ngpus, num_cols, pdl_level=PDLLevel.ON](
+            num_rows, list_of_ctx
+        )
+    for num_rows in [8, 512]:
+        _ = _run_prod_oracle_case[
+            in_dtype, ngpus, num_cols, pdl_level=PDLLevel.ON
+        ](num_rows, list_of_ctx)
+    for num_rows in [8, 1024]:
+        _ = _run_prod_oracle_case[
+            in_dtype,
+            ngpus,
+            num_cols,
+            use_dispatch=True,
+            pdl_level=PDLLevel.ON,
+        ](num_rows, list_of_ctx)
 
     print("TP", ngpus, "suite passed.")
     _ = list_of_ctx^

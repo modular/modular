@@ -43,6 +43,12 @@ from std.gpu import (
 )
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -84,6 +90,7 @@ def _reducescatter_rmsnorm_kernel[
     simd_width: Int,
     threads_per_block: Int,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
@@ -133,7 +140,8 @@ def _reducescatter_rmsnorm_kernel[
     comptime for i in range(ngpus):
         ptrs[i] = src_ptrs[(my_rank + i) % ngpus]
 
-    # Preload gamma in f32 before the barrier (local data, latency-hidden).
+    # Gamma is a model weight, not predecessor output, so it can be loaded ahead
+    # of the wait below (local data, latency-hidden).
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
@@ -142,6 +150,11 @@ def _reducescatter_rmsnorm_kernel[
             ]()
             + weight_offset.cast[accum_type]()
         )
+
+    # We P2P-read buffers the previous kernel writes, so its stores must land
+    # before the reduction below.
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     # Start barrier: we P2P-read peers' inputs, so all ranks must be ready.
     _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
@@ -202,6 +215,12 @@ def _reducescatter_rmsnorm_kernel[
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
+    # Must stay after the end barrier: released earlier, the next kernel could
+    # reuse `src_ptrs` memory while peers are still reading it. The graph
+    # compiler sees this op as the last reader and cannot know about the peers.
+    comptime if pdl_level > PDLLevel.OFF:
+        launch_dependent_grids()
+
 
 # --- Launcher ---
 
@@ -212,6 +231,7 @@ def _reducescatter_rmsnorm_launch[
     ngpus: Int,
     threads_per_block: Int,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -259,6 +279,7 @@ def _reducescatter_rmsnorm_launch[
         simd_width=simd_width,
         threads_per_block=threads_per_block,
         domain_id=domain_id,
+        pdl_level=pdl_level,
     ]
     ctx.enqueue_function[kernel](
         src_ptrs,
@@ -273,6 +294,7 @@ def _reducescatter_rmsnorm_launch[
         Int32(my_rank),
         grid_dim=grid_size,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -286,6 +308,7 @@ def reducescatter_rmsnorm[
     in_origin: Origin,
     //,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -317,6 +340,8 @@ def reducescatter_rmsnorm[
             sequence -- see `NUM_BARRIER_DOMAINS` in `sync.mojo` for the full
             invariant. Enforced here by the `rows == 0` guard and
             `_dispatch_rs_norm`'s group-invariant fuse gate.
+        pdl_level: Enables PDL, so this kernel can start before the previous one
+            retires and the next one is released once the end barrier clears.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors (peer access
@@ -447,7 +472,12 @@ def reducescatter_rmsnorm[
         )
 
     _reducescatter_rmsnorm_launch[
-        simd_width, in_dtype, ngpus, threads_per_block, domain_id=domain_id
+        simd_width,
+        in_dtype,
+        ngpus,
+        threads_per_block,
+        domain_id=domain_id,
+        pdl_level=pdl_level,
     ](
         rows,
         cols,
@@ -474,6 +504,7 @@ def _dispatch_rs_norm[
     //,
     two_launch: def() raises capturing -> None,
     domain_id: Int = 0,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
@@ -502,6 +533,8 @@ def _dispatch_rs_norm[
             nonzero for grouped collectives, which deliberately share a bank per
             width). See `reducescatter_rmsnorm` for the invariant a shared bank
             requires, and `_multi_gpu_barrier`.
+        pdl_level: PDL setting for the fused kernel; see `reducescatter_rmsnorm`.
+            Comptime, so it cannot make the fuse gate below group-variant.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -539,7 +572,7 @@ def _dispatch_rs_norm[
     var use_fused = per_rank_bytes <= threshold
 
     if use_fused:
-        reducescatter_rmsnorm[domain_id=domain_id](
+        reducescatter_rmsnorm[domain_id=domain_id, pdl_level=pdl_level](
             input_buffers,
             normed_out,
             sum_out,
