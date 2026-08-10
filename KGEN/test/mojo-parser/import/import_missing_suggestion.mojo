@@ -22,7 +22,7 @@
 # reference a symbol directly — no need to pre-import anything.
 
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: mojo-compiler-only precompile -o %t/std.mojoc %S/inputs/import_suggestion_std/std
+# RUN: mojo precompile -o %t/std.mojoc %S/inputs/import_suggestion_std/std
 # RUN: kgen-translate -import-mojo -mojo-enable-prebuilt-packages \
 # RUN:   -mojo-search-paths=%t -split-input-file -verify-diagnostics %s
 

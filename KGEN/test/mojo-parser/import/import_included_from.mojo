@@ -33,8 +33,8 @@
 # RUN: cp -r %S/inputs/test_package %t/src
 # RUN: cp -r %S/inputs/star_reexport_package %t/src
 
-# RUN: mojo-compiler-only precompile -I%S/../../test-packages -o %t/test_package.mojoc %t/src/test_package
-# RUN: mojo-compiler-only precompile -I%S/../../test-packages -o %t/star_reexport_package.mojoc %t/src/star_reexport_package
+# RUN: mojo precompile -I%S/../../test-packages -o %t/test_package.mojoc %t/src/test_package
+# RUN: mojo precompile -I%S/../../test-packages -o %t/star_reexport_package.mojoc %t/src/star_reexport_package
 # RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=true -I=%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MLIRDIAG
 # RUN: not %parse-mojo-isolated -split-input-file --use-mlir-diagnostics=false -I=%t %s 2>&1 | FileCheck %s --check-prefixes CHECK,MOJODIAG
 
