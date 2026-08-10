@@ -724,6 +724,33 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_reasoning_parser(arch=arch)
         self._resolve_default_tool_parser(arch=arch)
         self._resolve_default_structured_output_backend(arch=arch)
+        self._validate_synthetic_acceptance_with_constrained_decoding()
+
+    def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
+        """Rejects synthetic acceptance when constrained decoding can fire.
+
+        The synthetic acceptance path ignores token bitmasks, so structured
+        output and tool-call grammars would silently stop being enforced
+        while the serve layer believes they are. Checked here — after tool
+        parser resolution — because both inputs to the decision
+        (``needs_bitmask_constraints`` and the speculative section) are only
+        final at this point, and checking per-model would leave every spec
+        arch to re-implement it.
+        """
+        if self.speculative is None:
+            return
+        if self.speculative.synthetic_acceptance_rate is None:
+            return
+        if not self.needs_bitmask_constraints:
+            return
+        raise ValueError(
+            "synthetic_acceptance_rate is incompatible with constrained"
+            " decoding: the synthetic acceptance path ignores token"
+            " bitmasks, so structured output and tool-call grammars would"
+            " silently stop being enforced. For synthetic-acceptance"
+            " benchmarking pass --tool-parser none and leave"
+            " --enable-structured-output off."
+        )
 
     def _resolve_default_reasoning_parser(self, arch: Any = None) -> None:
         """Apply the architecture's default reasoning parser when unset.

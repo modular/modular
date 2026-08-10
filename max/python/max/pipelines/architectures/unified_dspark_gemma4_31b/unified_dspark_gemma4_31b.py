@@ -66,6 +66,7 @@ from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
     build_spec_decode_input_types,
 )
+from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
 
 from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
 from ..gemma4.gemma4 import Gemma4TextModel
@@ -88,14 +89,23 @@ class UnifiedDSparkGemma4_31BValues:
     max_k: TensorValue
     top_p: TensorValue
     min_top_p: TensorValue
+    in_thinking_phase: TensorValue
+    pinned_bitmask: TensorValue | None = None
+    wait_payload: BufferValue | None = None
+    device_bitmask_scratch: BufferValue | None = None
 
 
 class UnifiedDSparkGemma4_31B(Module):
     """Fused module: merge → target → reject → materialize → draft block."""
 
-    def __init__(self, config: UnifiedDSparkGemma4_31BConfig) -> None:
+    def __init__(
+        self,
+        config: UnifiedDSparkGemma4_31BConfig,
+        enable_structured_output: bool = False,
+    ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         # The effective block width (anchor slot + resolved drafts): the
         # draft is causal, so a block narrower than the trained one is
         # prefix-stable and stays trained-equivalent; a wider one runs the
@@ -107,12 +117,19 @@ class UnifiedDSparkGemma4_31B(Module):
         self.num_speculative_tokens = self.block_size - 1
         self.target_layer_ids = list(config.target_layer_ids)
         self.mask_token_id = int(config.mask_token_id)
+        relaxed_topk: int | None = None
+        relaxed_delta: float | None = None
+        if config.speculative_config.use_relaxed_acceptance_for_thinking:
+            relaxed_topk = config.speculative_config.relaxed_topk
+            relaxed_delta = config.speculative_config.relaxed_delta
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=(
                 config.speculative_config.synthetic_acceptance_rate
             ),
             num_draft_steps=self.num_speculative_tokens,
             use_stochastic=True,
+            relaxed_topk=relaxed_topk,
+            relaxed_delta=relaxed_delta,
         )
 
         self.target = Gemma4TextModel(config.target)
@@ -188,6 +205,22 @@ class UnifiedDSparkGemma4_31B(Module):
         max_k = next(it)
         top_p = next(it)
         min_top_p = next(it)
+        in_thinking_phase = next(it)
+        pinned_bitmask: TensorValue | None = None
+        wait_payload: BufferValue | None = None
+        device_bitmask_scratch: BufferValue | None = None
+        if self.enable_structured_output:
+            pinned_bitmask = next(it).tensor
+            wait_payload = next(it).buffer
+            device_bitmask_scratch = next(it).buffer
+        # Every declared input must be consumed: a declared-but-unconsumed
+        # trailing input keeps the arity valid at execute while the feature
+        # it carries is silently dead.
+        sentinel = object()
+        assert next(it, sentinel) is sentinel, (
+            "input_types() and _unflatten_graph_inputs disagree: unconsumed"
+            " graph inputs remain"
+        )
 
         return UnifiedDSparkGemma4_31BValues(
             tokens=tokens.tensor,
@@ -204,6 +237,10 @@ class UnifiedDSparkGemma4_31B(Module):
             max_k=max_k.tensor,
             top_p=top_p.tensor,
             min_top_p=min_top_p.tensor,
+            in_thinking_phase=in_thinking_phase.tensor,
+            pinned_bitmask=pinned_bitmask,
+            wait_payload=wait_payload,
+            device_bitmask_scratch=device_bitmask_scratch,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
@@ -214,7 +251,10 @@ class UnifiedDSparkGemma4_31B(Module):
         """
         return build_spec_decode_input_types(
             SpecDecodeInputTypeSpec(
-                distributed=False, include_signal_buffers=True
+                distributed=False,
+                include_signal_buffers=True,
+                include_in_thinking_phase=True,
+                enable_structured_output=self.enable_structured_output,
             ),
             devices=self.config.target.devices,
             kv_params=self._unified_kv_params(),
@@ -273,6 +313,17 @@ class UnifiedDSparkGemma4_31B(Module):
         )[0]
 
         seed_scalar = inputs.seed[0]
+        # Grammar constraining is target/verify-side only: every K+1 verify
+        # row is masked before acceptance, so a grammar-violating draft is
+        # deterministically rejected and its replacement sampled from the
+        # masked residual. The draft chain itself stays unconstrained.
+        effective_bitmasks = apply_overlap_bitmask(
+            inputs.pinned_bitmask,
+            inputs.wait_payload,
+            inputs.device_bitmask_scratch,
+            num_steps=inputs.draft_tokens.shape[1],
+            device=device,
+        )
         num_accepted, recovered, bonus = self.acceptance_sampler(
             inputs.draft_tokens,
             target_logits,
@@ -282,6 +333,8 @@ class UnifiedDSparkGemma4_31B(Module):
             max_k=inputs.max_k,
             top_p=inputs.top_p,
             min_top_p=inputs.min_top_p,
+            in_thinking_phase=inputs.in_thinking_phase,
+            token_bitmasks=effective_bitmasks,
         )
 
         num_steps_u32 = _shape_to_scalar(

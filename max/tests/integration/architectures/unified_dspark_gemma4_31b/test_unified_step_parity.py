@@ -435,6 +435,7 @@ class _StepHarness:
             Buffer.from_numpy(np.array(1, dtype=np.int64)),
             Buffer.from_numpy(np.array([1.0], dtype=np.float32)).to(device),
             Buffer.from_numpy(np.array(1.0, dtype=np.float32)),
+            Buffer.from_numpy(np.zeros(1, dtype=np.bool_)).to(device),
         )
         names = (
             "num_accepted",

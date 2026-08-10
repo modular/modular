@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -667,3 +668,33 @@ def test_config_file_with_builtin_recipe_prefix() -> None:
     with open(resolved) as f:
         data = yaml.safe_load(f)
     assert data["model"]["model_path"] == "meta-llama/Llama-3.2-1B-Instruct"
+
+
+def test_synthetic_acceptance_rejected_with_constrained_decoding() -> None:
+    """Synthetic acceptance ignores token bitmasks, so a config where
+    constrained decoding can fire must be rejected at resolution instead of
+    silently serving unenforced grammars.
+
+    Invoked unbound on a stand-in exposing only what the validator reads
+    (the pattern used for the arch-rewrite tests): ``needs_bitmask_constraints``
+    is a property on the real config, a plain attribute here.
+    """
+    validate = (
+        PipelineConfig._validate_synthetic_acceptance_with_constrained_decoding
+    )
+
+    def _cfg(
+        synthetic_rate: float | None, needs_bitmask: bool
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            speculative=SimpleNamespace(
+                synthetic_acceptance_rate=synthetic_rate
+            ),
+            needs_bitmask_constraints=needs_bitmask,
+        )
+
+    validate(_cfg(None, True))  # type: ignore[arg-type]
+    validate(_cfg(0.8, False))  # type: ignore[arg-type]
+    validate(SimpleNamespace(speculative=None))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="synthetic_acceptance_rate"):
+        validate(_cfg(0.8, True))  # type: ignore[arg-type]

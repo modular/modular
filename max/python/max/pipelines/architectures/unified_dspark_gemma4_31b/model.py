@@ -70,7 +70,9 @@ class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
     ``return_n_logits`` / ``signal_buffers`` plus the KV cache tree form this
     single-device graph's prefix. Signal buffers are bound because Gemma4's
     embedding and lm_head layers use collectives even on one device. The
-    DSpark graph does not bind ``in_thinking_phase``.
+    tail binds ``in_thinking_phase`` unconditionally and the structured-output
+    bitmask triple when ``structured_output`` is set — the flags here must
+    match the module's ``SpecDecodeInputTypeSpec``.
     """
 
     tokens: Buffer
@@ -88,7 +90,7 @@ class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
             *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False, supports_structured_output=False
+            include_in_thinking_phase=True
         )
 
 
@@ -247,7 +249,12 @@ class UnifiedDSparkGemma4_31BModel(
         del session
         assert isinstance(model_config, UnifiedDSparkGemma4_31BConfig)
 
-        nn_model = UnifiedDSparkGemma4_31BModule(model_config)
+        nn_model = UnifiedDSparkGemma4_31BModule(
+            model_config,
+            enable_structured_output=(
+                self.pipeline_config.needs_bitmask_constraints
+            ),
+        )
 
         validate_draft_checkpoint_weights(
             self._draft_state_dict, model_config.draft

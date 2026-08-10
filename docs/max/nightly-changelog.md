@@ -61,6 +61,12 @@ This version is still a work in progress.
     honored: values below the trained 7 truncate the causal draft block
     prefix-stably, values above run as extrapolation with a warning and
     degrading acceptance; unset defaults to the trained 7.
+  - Gemma 4 31B DSpark now supports structured output (JSON schemas and
+    tool-call grammars, enforced on the target verify pass; a
+    grammar-violating draft is rejected at its position) and Gemma 4
+    thinking: reasoning content is split out of responses, and relaxed
+    acceptance during the thinking phase can be enabled with
+    `use_relaxed_acceptance_for_thinking`.
   - Renamed the Gemma 4 12B DSpark architecture to
     `UnifiedDSparkGemma4_12BForCausalLM` (module
     `max.pipelines.architectures.unified_dspark_gemma4_12b`), so the two
