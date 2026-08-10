@@ -277,6 +277,26 @@ class PipelineConfig(ConfigFileModel):
             "sampling": sampling.model_copy(update={"enable_penalties": False}),
         }
 
+    @model_validator(mode="after")
+    def _validate_lora_prefix_caching(self) -> Self:
+        """Reject LoRA combined with prefix caching.
+
+        Both settings are user input, so the check runs at construction
+        rather than ``resolve()``.
+        """
+        if (
+            self.lora
+            and self.lora.enable_lora
+            and "main" in self.models
+            and self.models["main"].kv_cache.enable_prefix_caching
+        ):
+            raise ValueError(
+                "LoRA is not compatible with prefix caching. "
+                "Please disable prefix caching by using the "
+                "--no-enable-prefix-caching flag."
+            )
+        return self
+
     @property
     def model(self) -> MAXModelConfig:
         """The main model config. Alias for ``models["main"]``."""
@@ -671,10 +691,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "enable_structured_output is not currently supported on CPU."
             )
-
-        # Validate LoRA compatibility with model configuration
-        if self.lora and self.lora.enable_lora:
-            self.model.validate_lora_compatibility()
 
         # NOTE: the unified spec-decode target-architecture override
         # (``_resolve_speculative_target_architecture``) is applied by the
