@@ -27,9 +27,10 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     name="UnifiedDSparkGemma4_31BForCausalLM",
     example_repo_ids=[
         "google/gemma-4-31B-it",
+        "nvidia/Gemma-4-31B-IT-NVFP4",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=UnifiedDSparkGemma4_31BConfig.DEFAULT_ENCODING,
+    supported_encodings=UnifiedDSparkGemma4_31BConfig.SUPPORTED_ENCODINGS,
     pipeline_model=UnifiedDSparkGemma4_31BModel,
     context_type=TextContext,
     tokenizer=Gemma4Tokenizer,
