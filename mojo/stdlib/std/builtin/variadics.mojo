@@ -1025,13 +1025,14 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_elements[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_elements[is_repr=True](w)
 
         FormatStruct(writer, "ParameterList").params(
             TypeNames[Self.type](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # We can only support iteration when the elements are Copyable, because
     # iterators currently need to return the elements by value.
@@ -1311,13 +1312,14 @@ struct VariadicList[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_elements[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_elements[is_repr=True](w)
 
         FormatStruct(writer, "VariadicList").params(
             TypeNames[Self.element_type](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     def __iter__[
         self_origin: ImmOrigin

@@ -1196,16 +1196,17 @@ struct Dict[
             writer: The value to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_dict_body[
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_dict_body[
                 f_key=fmt.write_repr_to[Self.K],
                 f_val=fmt.write_repr_to[Self.V],
             ](w)
 
         fmt.FormatStruct(writer, "Dict").params(
             fmt.TypeNames[Self.K, Self.V](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -2089,16 +2090,17 @@ struct StringDict[V: Movable](
             writer: The value to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._dict._write_dict_body[
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._dict._write_dict_body[
                 f_key=fmt.write_repr_to[Self.key_type],
                 f_val=fmt.write_repr_to[Self.V],
             ](w)
 
         fmt.FormatStruct(writer, "StringDict").params(
             fmt.TypeNames[Self.V](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods

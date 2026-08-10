@@ -289,17 +289,17 @@ struct Tuple[*Ts: Movable](
             writer: The writer to write to.
         """
 
-        @parameter
-        def elements[i: Int](mut writer: Some[Writer]):
-            comptime if is_repr:
-                self[i].write_repr_to(writer)
-            else:
-                self[i].write_to(writer)
+        var self_ptr = Pointer(to=self)
 
-        write_sequence_to[
-            size=Self.__len__(),
-            ElementFn=elements,
-        ](writer, open="", close="")
+        def elements[i: Int](mut writer: Some[Writer]) {self_ptr}:
+            comptime if is_repr:
+                self_ptr[][i].write_repr_to(writer)
+            else:
+                self_ptr[][i].write_to(writer)
+
+        write_sequence_to[size=Self.__len__()](
+            writer, elements, open="", close=""
+        )
 
         comptime if Self.__len__() == 1:
             writer.write_string(",")
@@ -334,13 +334,14 @@ struct Tuple[*Ts: Movable](
             writer: The writer to write to.
         """
 
-        @parameter
-        def fields(mut w: Some[Writer]):
-            self._write_tuple_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
 
-        FormatStruct(writer, "Tuple").params(TypeNames[*Self.Ts]()).fields[
-            FieldsFn=fields,
-        ]()
+        def fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_tuple_to[is_repr=True](w)
+
+        FormatStruct(writer, "Tuple").params(TypeNames[*Self.Ts]()).fields(
+            fields
+        )
 
     @always_inline
     def _compare(

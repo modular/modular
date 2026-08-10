@@ -69,19 +69,19 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             args[i].write_to(self.writer[])
 
 
-# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 def write_sequence_to[
-    W: Writer, ElementFn: def[T: Writer](mut T) raises StopIteration capturing
+    W: Writer
 ](
     mut writer: W,
+    element_fn: Some[def[T: Writer](mut T) raises StopIteration],
     start: StaticString = "[",
     end: StaticString = "]",
     sep: StaticString = ", ",
 ):
     """Writes a sequence of elements to a writer using a callback function.
 
-    This function writes elements by repeatedly calling the provided `ElementFn`
+    This function writes elements by repeatedly calling the provided `element_fn`
     callback until it raises `StopIteration`. Each element is separated by the
     specified separator, and the sequence is enclosed by opening and closing
     delimiters.
@@ -91,12 +91,12 @@ def write_sequence_to[
 
     Parameters:
         W: The writer type. Must conform to `Writer`.
-        ElementFn: A callback function that writes a single element. It receives
-            a mutable writer and should raise `StopIteration` when the sequence
-            is exhausted.
 
     Args:
         writer: The writer to write to.
+        element_fn: A callback closure that writes a single element. It receives
+            a mutable writer and should raise `StopIteration` when the sequence
+            is exhausted.
         start: The starting delimiter (default: `"["`).
         end: The ending delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
@@ -107,7 +107,7 @@ def write_sequence_to[
 
     while True:
         try:
-            ElementFn(sequence_writer)
+            element_fn(sequence_writer)
             sequence_writer.next_element()
         except:
             break
@@ -143,13 +143,12 @@ def write_sequence_to[
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
-# TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
 @always_inline
 def write_sequence_to[
     size: Int,
-    ElementFn: def[i: Int](mut Some[Writer]) capturing,
 ](
     mut writer: Some[Writer],
+    element_fn: Some[def[i: Int](mut Some[Writer])],
     open: StaticString = "[",
     close: StaticString = "]",
     sep: StaticString = ", ",
@@ -166,11 +165,12 @@ def write_sequence_to[
 
     Parameters:
         size: The number of elements in the sequence (must be known at compile time).
-        ElementFn: A callback function that writes a single element given its index.
-            It receives a mutable writer and the index as a compile-time parameter.
 
     Args:
         writer: The writer to write to.
+        element_fn: A callback closure that writes a single element given its
+            index. It receives a mutable writer and the index as a compile-time
+            parameter.
         open: The opening delimiter (default: `"["`).
         close: The closing delimiter (default: `"]"`).
         sep: The separator between elements (default: `", "`).
@@ -180,7 +180,7 @@ def write_sequence_to[
     comptime for i in range(size):
         comptime if i != 0:
             writer.write_string(sep)
-        ElementFn[i=i](writer)
+        element_fn[i=i](writer)
 
     writer.write_string(close)
 
@@ -191,14 +191,12 @@ struct TypeNames[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
     @always_inline
     def write_to(self, mut writer: Some[Writer]):
-        @parameter
-        def elements[i: Int](mut writer: Some[Writer]):
+        def elements[i: Int](mut writer: Some[Writer]) {}:
             writer.write_string(_unqualified_type_name[Self.Ts[i]]())
 
-        write_sequence_to[
-            size=Self.Ts.length,
-            ElementFn=elements,
-        ](writer, open="", close="")
+        write_sequence_to[size=Self.Ts.length](
+            writer, elements, open="", close=""
+        )
 
 
 @always_inline
@@ -354,9 +352,8 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
-    # TODO (MOCO-2367): Use unified closures once they correctly capture parameters.
     @always_inline
-    def fields[FieldsFn: def[T: Writer](mut T) capturing](self):
+    def fields(self, fields_fn: Some[def[T: Writer](mut T)]):
         """Writes field values in parentheses using a callback function.
 
         This overload is used when field values need to be generated dynamically
@@ -368,12 +365,12 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         fields isn't known at compile time or where you need custom control over
         field formatting.
 
-        Parameters:
-            FieldsFn: A callback function that writes the field content. It
+        Args:
+            fields_fn: A callback closure that writes the field content. It
                 receives a mutable writer.
         """
         self._writer[].write_string("(")
-        FieldsFn(self._writer[])
+        fields_fn(self._writer[])
         self._writer[].write_string(")")
 
 

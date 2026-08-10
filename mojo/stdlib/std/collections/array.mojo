@@ -924,14 +924,17 @@ struct Array[T: AnyType, length: Int](
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var index = 0
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        var self_ptr = Pointer(to=self)
+
+        def iterate(
+            mut w: Some[Writer],
+        ) raises StopIteration {mut index, self_ptr}:
             if index >= Self.length:
                 raise StopIteration()
-            f(self.unsafe_get(index), w)
+            f(self_ptr[].unsafe_get(index), w)
             index += 1
 
-        fmt.write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to(writer, iterate)
         _ = index
 
     def write_to(
@@ -953,14 +956,15 @@ struct Array[T: AnyType, length: Int](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "Array").params(
             fmt.TypeNames[Self.T](),
             Self.length,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # TODO(MOCO-4308): Remove redundant 'Movable' constraint
     def __iter__(

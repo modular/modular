@@ -117,14 +117,15 @@ struct TString[
             Writable
         ]()  # satisfy where clause.
 
-        @parameter
-        def fields(mut writer: Some[Writer]):
-            self._values._write_to[is_repr=True](writer, start="", end="")
+        var self_ptr = Pointer(to=self)
+
+        def fields(mut writer: Some[Writer]) {self_ptr}:
+            self_ptr[]._values._write_to[is_repr=True](writer, start="", end="")
 
         fmt.FormatStruct(writer, "TString").params(
             fmt.Repr(self.format_string),
             fmt.TypeNames[*Self.Ts](),
-        ).fields[FieldsFn=fields]()
+        ).fields(fields)
 
 
 @always_inline
