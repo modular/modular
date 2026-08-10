@@ -42,6 +42,7 @@ def mojo_library(
         docs_title = "",
         docs_hosted_on_mojolang = False,
         show_stability_markers = "none",
+        stability_doc_url = "",
         testonly = False,
         visibility = None,
         additional_compiler_inputs = [],
@@ -63,6 +64,7 @@ def mojo_library(
         docs_title: Forwarded to `mojo_docs`
         docs_hosted_on_mojolang: Forwarded to `mojo_docs`
         show_stability_markers: Forwarded to `mojo_docs`
+        stability_doc_url: Forwarded to `mojo_docs`
         testonly: Forwarded to `mojo_library`
         visibility: Forwarded to all subtargets
         additional_compiler_inputs: Forwarded to `mojo_library`
@@ -108,6 +110,7 @@ def mojo_library(
             docs_title = docs_title,
             docs_hosted_on_mojolang = docs_hosted_on_mojolang,
             show_stability_markers = show_stability_markers,
+            stability_doc_url = stability_doc_url,
             copts = ignore_deprecated_copts,
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,
