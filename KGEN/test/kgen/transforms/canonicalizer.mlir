@@ -201,8 +201,8 @@ kgen.func @not_cmp(%arg0: index, %arg1: index) -> i1 {
 
 // CHECK-LABEL: kgen.func @select_variant_is_0
 kgen.func @select_variant_is_0(%var: !kgen.variant<index, i64>) -> (index, i64) {
-  %0 = kgen.param.constant = <*?>
-  %1 = kgen.param.constant: i64 = <*?>
+  %0 = kgen.param.constant = <#interp.uninitmem : index>
+  %1 = kgen.param.constant: i64 = <#interp.uninitmem : i64>
   %2 = kgen.variant.is %var, 0 : !kgen.variant<index, i64>
   // CHECK-NEXT: [[A:%.*]] = kgen.variant.get %arg0, 0
   // CHECK-NEXT: [[B:%.*]] = kgen.variant.get %arg0, 1
@@ -217,7 +217,7 @@ kgen.func @select_variant_is_0(%var: !kgen.variant<index, i64>) -> (index, i64) 
 // CHECK-LABEL: kgen.func @select_variant_is_1
 kgen.func @select_variant_is_1(%arg0: index, %c: !kgen.scalar<bool>) -> (index, index) {
   // CHECK-NEXT: return %arg0, %arg0
-  %0 = kgen.param.constant = <*?>
+  %0 = kgen.param.constant = <#interp.uninitmem : index>
   %1 = pop.select %c, %0, %arg0 : index
   %2 = pop.select %c, %arg0, %0 : index
   kgen.return %1, %2 : index, index

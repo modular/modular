@@ -1106,7 +1106,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
       return success();
     }
 
-    // Try to parse '*?' as an undef value.
+    // Try to parse '*?' as an unknown value.
     if (succeeded(p.parseOptionalQuestion())) {
       value = UnknownAttr::get(type);
       return success();

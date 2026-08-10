@@ -1889,22 +1889,6 @@ StructType::evaluateWithContext(ParameterEvaluationContext &context) const {
   return failure();
 }
 
-TypedAttr KGEN::createUninitializedValueOf(Type type) {
-  // If the value being allocated is an aggregate, initialize the aggregate
-  // with undef subelements.
-  auto structType = dyn_cast<StructType>(type);
-  if (!structType)
-    return UnknownAttr::get(type);
-  std::optional<SmallVector<Type>> elementTypes = structType.getElementTypes();
-  if (!elementTypes)
-    return UnknownAttr::get(type);
-  SmallVector<TypedAttr> values;
-  values.reserve(elementTypes->size());
-  for (Type type : *elementTypes)
-    values.push_back(createUninitializedValueOf(type));
-  return StructAttr::get(values, structType);
-}
-
 //===----------------------------------------------------------------------===//
 // StructInstanceType
 //===----------------------------------------------------------------------===//

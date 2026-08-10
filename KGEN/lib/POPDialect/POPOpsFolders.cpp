@@ -1189,7 +1189,7 @@ OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   // Treat insert into undef as being an insert into zero.
   if (!vec) {
     if (auto vecCst = adaptor.getVector())
-      if (isa<UninitMemAttr, UnknownAttr>(vecCst))
+      if (isa<UninitMemAttr>(vecCst))
         vec = SIMDAttr::getZeroValue(getType());
   }
 
@@ -1216,7 +1216,7 @@ SIMDInsertElementOp::parametric_interpret(ArrayRef<Attribute> operands,
   // Treat insert into undef as being an insert into zero.
   if (!vec) {
     if (auto vecCst = operands[0])
-      if (isa<UninitMemAttr, UnknownAttr>(vecCst))
+      if (isa<UninitMemAttr>(vecCst))
         vec = SIMDAttr::getZeroValue(type);
   }
 
@@ -1676,9 +1676,9 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   }
 
   // Fold `select x, undef, y -> y` and `select x, y, undef -> y`.
-  if (isa_and_nonnull<UnknownAttr, UninitMemAttr>(adaptor.getTrueValue()))
+  if (isa_and_nonnull<UninitMemAttr>(adaptor.getTrueValue()))
     return getFalseValue();
-  if (isa_and_nonnull<UnknownAttr, UninitMemAttr>(adaptor.getFalseValue()))
+  if (isa_and_nonnull<UninitMemAttr>(adaptor.getFalseValue()))
     return getTrueValue();
 
   // `x ? y : y -> y`.
