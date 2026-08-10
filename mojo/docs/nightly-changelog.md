@@ -130,3 +130,7 @@ Each entry names its replacement.
 
 - `Counter.most_common(n)` now returns all elements when `n` exceeds the
   number of unique elements, matching Python, instead of aborting.
+
+- `os.path.join()` now inserts separators based on the accumulated path rather
+  than the first argument, so `join("/", "a", "b")` returns `/a/b` (previously
+  `/ab`) and `join("a", "b/", "c")` returns `a/b/c` (previously `a/b//c`).
