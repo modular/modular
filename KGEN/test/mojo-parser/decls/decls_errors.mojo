@@ -1392,3 +1392,6 @@ def overload_on_arg_conv(mut x: Int):
 # expected-error @+1 {{redefinition of function 'overload_on_arg_conv', cannot overload on argument conventions}}
 def overload_on_arg_conv(imm x: Int):
     pass
+
+# expected-error @+1 {{'List[_]' is not concrete, use '[]' to bind missing parameters}}
+comptime _list_eq_int = List == Int
