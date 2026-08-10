@@ -1821,7 +1821,7 @@ struct String(
         return StringSlice(self).replace(old, new)
 
     def strip(
-        self, chars: StringSlice
+        self, chars: ImmStringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading and trailing characters
         removed.
@@ -1850,7 +1850,7 @@ struct String(
         return self.lstrip().rstrip()
 
     def rstrip(
-        self, chars: StringSlice
+        self, chars: ImmStringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with trailing characters removed.
 
@@ -1876,7 +1876,7 @@ struct String(
         return self._interior_slice().rstrip()
 
     def lstrip(
-        self, chars: StringSlice
+        self, chars: ImmStringSlice
     ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a view of the string with leading characters removed.
 

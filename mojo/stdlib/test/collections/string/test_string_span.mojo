@@ -869,6 +869,26 @@ def test_strip() raises:
     assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
+def test_strip_mutable_chars() raises:
+    # `chars` is read-only, so a mutable argument must not be borrowed mutably;
+    # otherwise it can't alias `self` and it can't be a mutable local at all
+    # once `self` is an interior slice of it.
+    var chars = String("hi")
+    assert_equal(StringSlice("himojohi").lstrip(chars), "mojohi")
+    assert_equal(StringSlice("himojohi").rstrip(chars), "himojo")
+    assert_equal(StringSlice("himojohi").strip(chars), "mojo")
+
+    var mut_chars = MutStringSpan(chars)
+    assert_equal(StringSlice("himojohi").lstrip(mut_chars), "mojohi")
+    assert_equal(StringSlice("himojohi").rstrip(mut_chars), "himojo")
+    assert_equal(StringSlice("himojohi").strip(mut_chars), "mojo")
+
+    var self_aliasing = StaticString("aabbaa")
+    assert_equal(self_aliasing.lstrip(self_aliasing), "")
+    assert_equal(self_aliasing.rstrip(self_aliasing), "")
+    assert_equal(self_aliasing.strip(self_aliasing), "")
+
+
 def test_startswith() raises:
     var empty = StringSlice("")
     assert_true(empty.startswith(""))

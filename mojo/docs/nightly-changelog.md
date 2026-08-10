@@ -52,6 +52,10 @@ This version is still a work in progress.
   matching the existing behavior of `Dict`. This lets you `print()` a
   `StringDict` or convert it to a `String`.
 
+- The `chars` argument of `strip()`, `lstrip()` and `rstrip()` on `StringSpan`,
+  `String` and `StringLiteral` is now an `ImmStringSpan`, so a mutable string
+  is accepted as `chars`, including the string being stripped (`s.strip(s)`).
+
 - Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
   `Ts`, standardizing the naming convention used across the standard library.
   The old name, `element_types`, remains as a deprecated alias.

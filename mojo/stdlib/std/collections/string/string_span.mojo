@@ -1116,7 +1116,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
             res += codepoint
         return res^
 
-    def _strip[forward: Bool](self, chars: StringSpan) -> Self:
+    def _strip[forward: Bool](self, chars: ImmStringSpan) -> Self:
         var iter = CodepointSliceIter[forward=forward](self)
         while True:
             try:
@@ -1130,7 +1130,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         return iter._slice
 
     @always_inline
-    def strip(self, chars: StringSpan) -> Self:
+    def strip(self, chars: ImmStringSpan) -> Self:
         """Returns a view of the string with leading and trailing characters
         removed. Note character is defined as a single unicode code-point,
         not any kind of displayed character, and strip can break apart
@@ -1169,7 +1169,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         return self.lstrip().rstrip()
 
     @always_inline
-    def rstrip(self, chars: StringSpan) -> Self:
+    def rstrip(self, chars: ImmStringSpan) -> Self:
         """Returns a view of the string with trailing characters removed.
 
         Args:
@@ -1215,7 +1215,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         return Self(unsafe_from_utf8=self.as_bytes()[:r_idx])
 
     @always_inline
-    def lstrip(self, chars: StringSpan) -> Self:
+    def lstrip(self, chars: ImmStringSpan) -> Self:
         """Returns a view of the string with leading characters removed.
 
         Args:
