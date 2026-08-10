@@ -59,6 +59,12 @@ def construct_draft_kv_params(
 ) -> KVCacheParams:
     """Builds the draft KV leaf from the DSpark drafter's own geometry."""
     assert pipeline_config.speculative is not None
+    # The dtype is deliberately pinned rather than derived from
+    # ``kv_cache_format``: the draft block runs generic ``AttentionWithRope``,
+    # which feeds a bfloat16 Q into ``flash_attention_ragged`` (no fp8-Q cast
+    # like the gemma4 target attention's ``q_out_dtype``), and the drafter is
+    # trained against bfloat16. An fp8 target tree pairs with a bfloat16
+    # draft leaf; mixed-dtype trees are valid (dtype is per-leaf).
     return pipeline_config.model.kv_cache.to_params(
         dtype=DType.bfloat16,
         n_kv_heads=draft_config.num_key_value_heads,

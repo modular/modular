@@ -26,6 +26,7 @@ import json
 import logging
 import pathlib
 from collections.abc import Iterator
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -56,6 +57,7 @@ from max.pipelines.architectures.gemma4.model_config import (
 from max.pipelines.architectures.speculators_common import (
     DSparkSpeculatorsDraftArchConfig,
     DSparkSpeculatorsDraftConfig,
+    construct_draft_kv_params,
 )
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
     UnifiedDSparkGemma4_31BInputs,
@@ -66,6 +68,7 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
 from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4_31b import (
     UnifiedDSparkGemma4_31B,
 )
+from max.pipelines.kv_cache import KVCacheConfig, cache_dtype_for_encoding
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.config import (
     MAXModelConfig,
@@ -445,6 +448,97 @@ def test_validate_defaults_num_speculative_tokens_to_trained() -> None:
     config.validate_dspark_fields()
     assert config.speculative_config.num_speculative_tokens == 7
     assert config.effective_block_size == 8
+
+
+def _kv_pipeline_stand_in(kv_cache: KVCacheConfig) -> PipelineConfig:
+    """Stand-in exposing only what the KV-param constructors touch."""
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            model=SimpleNamespace(kv_cache=kv_cache, data_parallel_degree=1),
+            speculative=SpeculativeConfig(
+                speculative_method="dflash", num_speculative_tokens=7
+            ),
+        ),
+    )
+
+
+def _target_hf_geometry() -> SimpleNamespace:
+    """Tiny gemma4-shaped attention geometry (one leaf per attention type)."""
+    return SimpleNamespace(
+        text_config=SimpleNamespace(
+            layer_types=["sliding_attention", "full_attention"],
+            num_key_value_heads=8,
+            num_global_key_value_heads=4,
+            head_dim=128,
+            global_head_dim=128,
+        )
+    )
+
+
+@pytest.mark.parametrize("kv_cache_format", [None, "float8_e4m3fn"])
+def test_kv_cache_format_reaches_target_leaves_draft_stays_bfloat16(
+    kv_cache_format: str | None,
+) -> None:
+    """``kv_cache_format`` governs the target tree; the draft leaf is pinned.
+
+    Mirrors ``gemma4_31b_dspark_nvfp4.yaml``'s ``float8_e4m3fn`` override
+    through the same helpers ``model.py``'s KV re-derivation uses. The draft
+    leaf stays bfloat16 whatever the target's cache format: the draft block
+    runs the generic ``AttentionWithRope`` path, which feeds a bfloat16 Q
+    into ``flash_attention_ragged`` (no fp8-Q accommodation like the gemma4
+    target attention's ``q_out_dtype``), and the drafter was trained against
+    bfloat16. The mixed-dtype ``{target: fp8, draft: bf16}`` tree must pass
+    ``MultiKVCacheParams`` validation — dtype is per-leaf, page geometry
+    must stay uniform.
+    """
+    kv_cache_config = KVCacheConfig(
+        kv_cache_format=kv_cache_format, kv_cache_page_size=128
+    )
+    pipeline_config = _kv_pipeline_stand_in(kv_cache_config)
+    devices = [DeviceRef.CPU()]
+
+    # The recipe's resolution: NVFP4-encoded target, optional format override.
+    cache_dtype = cache_dtype_for_encoding(
+        "float4_e2m1fnx2", kv_cache_config.kv_cache_format
+    )
+    expected_target_dtype = (
+        DType.float8_e4m3fn if kv_cache_format else DType.bfloat16
+    )
+    assert cache_dtype == expected_target_dtype
+
+    target_kv = Gemma4ForConditionalGenerationConfig.construct_kv_params(
+        cast(Any, _target_hf_geometry()),
+        pipeline_config,
+        devices,
+        kv_cache_config,
+        cache_dtype,
+    )
+    draft_kv = construct_draft_kv_params(
+        pipeline_config, _parse(_raw()), devices, num_draft_tokens=8
+    )
+
+    corrected_children: dict[str, KVCacheParams] = {}
+    for leaf_name in ("sliding_attention", "full_attention"):
+        leaf = target_kv.children[leaf_name]
+        assert isinstance(leaf, KVCacheParams)
+        assert leaf.dtype == expected_target_dtype
+        assert leaf.page_size == 128
+        # model.py's re-derivation aligns every leaf on the effective block
+        # width before assembling the tree (the Multi uniformity rule).
+        corrected_children[leaf_name] = replace(leaf, num_draft_tokens=8)
+    assert draft_kv.dtype == DType.bfloat16
+    assert draft_kv.page_size == 128
+
+    tree = MultiKVCacheParams.from_params(
+        {
+            "target": MultiKVCacheParams.from_params(corrected_children),
+            "draft": draft_kv,
+        }
+    )
+    draft_leaf = tree.children["draft"]
+    assert isinstance(draft_leaf, KVCacheParams)
+    assert draft_leaf.dtype == DType.bfloat16
 
 
 def _nvfp4_quant_config(num_hidden_layers: int = 2) -> QuantConfig:

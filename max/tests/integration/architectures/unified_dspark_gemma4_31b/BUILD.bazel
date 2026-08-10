@@ -42,6 +42,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/speculators_common",
         "//max/python/max/pipelines/architectures/unified_dspark_gemma4_31b",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
         requirement("numpy"),

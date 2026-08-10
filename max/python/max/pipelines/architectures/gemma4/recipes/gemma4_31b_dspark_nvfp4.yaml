@@ -15,13 +15,17 @@
 # it is not pinned here; only the MLP linears are quantized, attention and
 # lm_head stay bfloat16 per the checkpoint's ignore list.
 #
-# The KV cache format is left at the encoding default (bfloat16); FP8 KV is
-# a separate follow-up, as is device graph capture.
+# kv_cache_format applies to the target KV tree only (matching the tuned
+# gemma4 MTP recipes); the drafter's own causal-SWA cache stays bfloat16
+# (see speculators_common.construct_draft_kv_params). Device graph capture
+# remains a separate follow-up.
 model:
   model_path: nvidia/Gemma-4-31B-IT-NVFP4
   device_specs: [0]
   max_length: 8192
   kv_cache:
+    kv_cache_format: float8_e4m3fn
+    kv_cache_page_size: 128
     device_memory_utilization: 0.75
 
 # The drafter taps target hidden states and was trained against bfloat16
