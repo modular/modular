@@ -21,6 +21,12 @@ This version is still a work in progress.
   blocks — a video spans many blocks and an image a few — so a
   video-capable model no longer collapses the cache to a handful of
   worst-case-video slots that starve image workloads.
+- Vision embedding assembly during chunked prefill is now bounded by the
+  active window: each step copies only the embedding rows whose
+  placeholder tokens fall inside the chunk, with dense scatter indices,
+  instead of rebuilding every image's rows with out-of-bounds sentinels.
+  Per-chunk copy cost now scales with the chunk size rather than the
+  request's total image tokens.
 
 ### Inference server
 

@@ -227,11 +227,11 @@ def test_select_narrows_to_active_window() -> None:
     assert [img.start_idx for img in miss_images] == [4]
 
 
-def test_prepare_vision_outputs_zero_fills_deferred_image() -> None:
+def test_prepare_vision_outputs_skips_deferred_image() -> None:
     # A window-deferred image (ahead of the active window) is neither cached
-    # nor in-window. Assembly must zero-fill its rows — keeping 1:1 row
-    # alignment with the scatter indices, which OOB-mask its positions —
-    # instead of tripping the not-in-cache assert.
+    # nor in-window. Window-bounded assembly emits no rows for it, and the
+    # dense scatter indices carry no positions for it, so the not-in-cache
+    # assert is never reached.
     ctx = _two_image_windowed_context()
 
     ve_cache: VisionEncoderCache[Gemma4Context] = VisionEncoderCache(
@@ -253,12 +253,8 @@ def test_prepare_vision_outputs_zero_fills_deferred_image() -> None:
     )
 
     arr = embeddings[0].to_numpy()
-    # Rows for both images (4 encoded + 4 zero-filled) so the scatter
-    # indices stay row-aligned.
-    assert arr.shape == (8, _HIDDEN)
-    np.testing.assert_array_equal(arr[:4], 1.0)
-    np.testing.assert_array_equal(arr[4:], 0.0)
-    assert len(indices) == 8
-    oob = np.iinfo(np.int32).min
-    np.testing.assert_array_equal(indices[:4], [4, 5, 6, 7])
-    np.testing.assert_array_equal(indices[4:], [oob] * 4)
+    # Rows for the in-window image only; the deferred image contributes
+    # neither rows nor indices.
+    assert arr.shape == (4, _HIDDEN)
+    np.testing.assert_array_equal(arr, 1.0)
+    np.testing.assert_array_equal(indices, [4, 5, 6, 7])
