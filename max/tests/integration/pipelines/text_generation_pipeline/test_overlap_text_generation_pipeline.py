@@ -357,8 +357,10 @@ def test_effective_max_cache_length_covers_compute_seq_len(
     # Worst-case boundary request: committed tokens fill the context window and
     # carry the FUTURE_TOKEN placeholder, with the previous overlap batch's
     # drafts all counted as accepted.
+    tokens = TokenBuffer(np.zeros(max_seq_len + 1, dtype=np.int64))
+    tokens.skip_processing(max_seq_len)
     boundary_ctx = SimpleNamespace(
-        tokens=[0] * (max_seq_len + 1),
+        tokens=tokens,
         pending_future_count=1,
         spec_decoding_state=SimpleNamespace(
             maybe_accepted_draft_tokens=[0] * num_draft_tokens

@@ -265,7 +265,7 @@ class JengaBlockPool:
         self, block_hash: bytes, block: LittleKVCacheBlock
     ) -> None:
         """Makes a filled block reusable by anyone hashing the same tokens."""
-        assert not block.is_null
+        assert not block.is_null, "Null blocks should not be committed"
         assert block.block_hash is None
         prefix_cache = self.prefix_caches[block.cache_id]
         assert block_hash not in prefix_cache
@@ -304,6 +304,7 @@ class JengaBlockPool:
             The committed block to use instead of ``block``, which has been
             freed, or ``None`` if ``block`` itself now serves the hash.
         """
+        assert not block.is_null, "Null blocks should not be committed"
         prefix_cache = self.prefix_caches[block.cache_id]
         if block_hash in prefix_cache:
             # Check if a block with the same hash is already committed.
@@ -344,3 +345,24 @@ class JengaBlockPool:
         num_huge_blocks = len(self.free_huge_blocks)
         num_little_blocks = len(self.free_little_blocks[cache_id])
         return num_huge_blocks * self.cache_ratios[cache_id] + num_little_blocks
+
+    def reset_prefix_cache(self) -> dict[str, int]:
+        """Drops every commit no request is holding, in every cache.
+
+        A commit a request still references survives, because its block cannot
+        be handed out while it is in use.
+
+        Returns:
+            How many blocks were purged from each cache's prefix cache.
+        """
+        purged: dict[str, int] = {}
+        for cache_id, prefix_cache in self.prefix_caches.items():
+            unreferenced = [
+                block_hash
+                for block_hash, block in prefix_cache.items()
+                if block.ref_cnt == 0
+            ]
+            for block_hash in unreferenced:
+                prefix_cache.pop(block_hash).block_hash = None
+            purged[cache_id] = len(unreferenced)
+        return purged
