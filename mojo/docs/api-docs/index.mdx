@@ -66,7 +66,7 @@ may do with an argument (`mut`, `out`, `deinit`):
 
 | Convention   | What it means                                                                                            | Example                                                    |
 |--------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
-| *(unmarked)* | A reference to an existing value with read-only access.                                                  | `def abs[T: Absable](value: T) -> T`                       |
+| *(unmarked)* | A reference to an existing value with read-only `imm` access.                                            | `def abs[T: Absable](value: T) -> T`                       |
 | `mut`        | A reference to an existing value. The function can modify the value if it is mutable.                    | `def append(mut self, codepoint: Codepoint)`               |
 | `ref`        | A reference to an existing value. The function inherits the value's mutability.                          | `def __getitem__(ref self, idx: Int)`                      |
 | `var`        | The function owns its own value. The caller keeps the original unless ownership is transferred.          | `def insert(mut self, var key: Self.K, var value: Self.V)` |

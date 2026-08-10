@@ -4,187 +4,55 @@ sidebar_position: 3
 description: Introduction to Mojo variables.
 ---
 
-A variable is a name that holds a value or object. All variables in Mojo are
-mutable—their value can be changed. (If you want to define a constant value that
-can't change at runtime, see the
-[`comptime` keyword](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values).)
+A variable is a name that holds a value or object. All variables in Mojo
+are mutable by default. Their value can change. If you want to define a
+constant value that can't change at runtime, see the [`comptime`
+keyword](/docs/manual/metaprogramming/comptime-evaluation/#comptime-values)
+or pass the value as a non-mutable function argument.
 
 When you declare a variable in Mojo, you allocate a logical storage location,
-and bind a name to that storage location.
+and bind a name to that storage.
 
 ```mojo
 var greeting: String = "Hello World"
 ```
 
-The `var` statement above does three things:
+A `var` declaration does three things:
 
-- It declares a logical storage location (in this case, a storage location sized
-  to hold a `String` struct).
+- It declares a logical storage location, which is tied to a particular type.
+  In this case, it holds `String` instances.
 - It binds the name `greeting` to this logical storage location.
 - It *initializes* the storage space with a newly created `String` value,
-  with the text, "Hello World". The new value is *owned by* the variable.
-  No other variable can own this value unless we intentionally transfer it.
+  using "Hello World". The new value is *owned by* the variable.
+  No other variable can own this value unless you transfer its ownership.
 
 ## Variable declarations
 
-Declare a variable with the `var` keyword. You can give it a value, a type
-annotation, or both:
+To declare a variable, use `var` with a name. You can give it a value, a
+type annotation, or both. The more you annotate, the more explicit your
+code is, and the easier it is to read and maintain:
 
 ```mojo
-var a = 5
-var b: Float64 = 3.14
-var c: String
+var a = 5  # Mojo infers that a is type Int
+var b: Float64 = 3.14  # Explicit declaration of Float64 type
+var c: String  # The name is created but uninitialized
 ```
 
-Variables are strongly typed—the type is either set explicitly with a
-[type annotation](#type-annotations) or implicitly when the variable is first
-initialized with a value.
-
-Either way, the variable receives a type when it's created, and the type never
-changes. So you can't assign a variable a value of a different type:
+A variable's type never changes. Its storage is strongly typed upon creation
+and can only hold values of that type:
 
 ```mojo
 var count = 8 # count is type Int
 count = "Nine?" # Error: can't implicitly convert 'StringLiteral' to 'Int'
 ```
 
-There is also a form that omits `var`. It scopes differently and is best
-avoided—see [Implicitly-declared variables](#implicitly-declared-variables).
+A variable is scoped to the block in which it is declared. Its value
+is destroyed at last use. You may transfer a value from a variable so it no
+longer lives in that variable or that scope. The name, that is, the variable
+itself, is destroyed when the scope ends.
 
-## Explicitly-declared variables
-
-Give the variable a value and Mojo infers its type:
-
-```mojo
-var name = "Sam"
-var user_id = 0
-```
-
-The `name` variable is type `String`, and `user_id` is type `Int`. You can't
-assign a string to `user_id` or an integer to `name`.
-
-Or give the variable a [type annotation](#type-annotations), with or without an
-initial value:
-
-```mojo
-var name: String = "Sam"
-var user_id: Int
-```
-
-Here, the `user_id` variable has a type, but is uninitialized.
-
-Since variables are strongly typed, you can't assign a variable a
-value of a different type, unless those types can be
-[implicitly converted](#implicit-type-conversion). For example, this code will
-not compile:
-
-```mojo
-var user_id: Int = "Sam"
-```
-
-Explicitly-declared variables have block-level [scope](#variable-scopes).
-
-## Implicitly-declared variables
-
-Assigning to a name that hasn't been declared yet also declares it, as does a
-type annotation on its own:
-
-<!-- The block below is deliberately NOT mirrored by a compiled example: it
-     shows the spelling this passage advises against, so a compiled twin would
-     be a first-party use of it. -->
-
-```mojo
-name = "Sam"
-user_id: Int
-```
-
-Such a variable is declared just as `var` declares one, and is strongly typed
-the same way. Two things differ, and both are reasons to prefer `var`. Nothing
-on the line says a declaration is happening, so a mistyped name reads as an
-assignment while quietly declaring a second variable. And the variable is
-scoped to the whole function rather than to the block that first assigns to it,
-so the two spellings are not interchangeable: where the first assignment sits
-inside an `if`, `for`, `while`, `with`, or `try` body, the equivalent is a
-`var` declaration in the function body, since a `var` on the assignment would
-scope the variable to that block. For more on the difference, see
-[Variable scopes](#variable-scopes).
-
-## Type annotations
-
-Although Mojo can infer a variable type from the first value assigned to a
-variable, it also supports static type annotations on variables. Type
-annotations provide a more explicit way of specifying the variable's type.
-
-To specify the type for a variable, add a colon followed by the type name:
-
-```mojo
-var name: String = get_name()
-```
-
-This makes it clear that `name` is type `String`, without knowing what the
-`get_name()` function returns.
-
-### Implicit type conversion
-
-While a variable can only hold one type of value, Mojo does
-allow for certain, limited *implicit conversions* between types:
-
-```mojo
-var temperature: Float64 = 99.0
-print(temperature)
-```
-
-```output
-99.0
-```
-
-In this example, the `temperature` variable is explicitly typed as `Float64`.
-The value `99.0` is a float literal value, but Mojo implicitly converts it into
-a `Float64` value before assigning it to `temperature`. Mojo can also implicitly
-convert values being passed into or returned from a function.
-
-Implicit conversion isn't intended as an escape hatch from type safety. It's
-intended to streamline code where the conversion is safe, inexpensive, and
-semantically unambiguous.
-
-For more details on implicit conversion, see
-[Constructors and implicit
-conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
-
-### Late initialization
-
-Using type annotations allows for late initialization. For example, notice here
-that the `z` variable is first declared with just a type, and the value is
-assigned later:
-
-```mojo
-def my_function(x: Int):
-    var z: Float32
-    if x != 0:
-        z = 1.0
-    else:
-        z = foo()
-    print(z)
-
-
-def foo() -> Float32:
-    return 3.14
-```
-
-If you try to pass an uninitialized variable to a function or use
-it on the right-hand side of an assignment statement, compilation fails.
-
-```mojo
-var z: Float32
-var y = z # Error: use of uninitialized value 'z'
-```
-
-:::note
-
-Late initialization works only if the variable is declared with a
-type.
-
-:::
+- Variables are names that hold values.
+- Values are data that live in memory.
 
 ## Variable scopes
 
@@ -193,11 +61,9 @@ determined by where it appears in the source code, not when it executes
 at runtime. The specific scope level depends on how the variable is
 declared.
 
-Nested code can read and modify variables defined in an outer scope.
-An outer scope can't read variables defined in an inner scope.
-
-Variables [explicitly declared](#explicitly-declared-variables) with `var`
-have **block-level** scope.
+Variables have **block-level** scope. Nested code can read and modify
+variables defined in an outer scope. An outer scope can't read variables
+defined in an inner scope.
 
 For example, the `if` code block shown here creates an inner scope where outer
 variables are accessible to read/write, but any new variables do not live
@@ -223,73 +89,71 @@ num: 1
 dig: 2
 ```
 
-Note that the `var` statement inside the `if` creates a **new** variable with
-the same name as the outer variable. This prevents the inner loop from accessing
-the outer `num` variable. (This is called "variable shadowing," where the inner
-scope variable hides or "shadows" a variable from an outer scope.)
+Note that the `var` statement inside the `if` creates a **new** variable
+with the same name as the outer variable. This prevents the inner
+if-statement from accessing the outer `num` variable. This is called
+"variable shadowing," where the inner scope variable hides or "shadows" a
+variable from an outer scope.
 
 The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
 
-An assignment written without `var` scopes differently: the
-[implicitly-declared](#implicitly-declared-variables) variable it creates
-belongs to the whole function rather than to the block that first assigns to it,
-as in Python. You'll meet that in existing code, and it's why `var` isn't a
-mechanical substitution for such an assignment—writing `var` where the first
-assignment sits scopes the variable to that block, so code after the block no
-longer sees it, and either fails to compile or, where an outer variable of the
-same name exists, silently reads that one instead.
-
 ## Copying and moving values
 
-Remember that a variable owns its value, and only one variable can own a given
-value at a time. To take this one step further, you can think of an assignment
-statement as assigning *ownership* of a value to a variable:
+An assignment statement of a newly created value or a literal establishes
+ownership:
 
 ```mojo
 var owning_variable = "Owned value"
 ```
 
-This means the value on the right-hand side of the assignment statement must be
-transferrable to the new variable. Here's an example where that doesn't work:
+An assignment of an existing variable's value transfers ownership of that
+value or a copy of that value to the new variable:
 
 ```mojo
-var first = [1, 2, 3]
-var second = first  # error: 'List[Int]' is not implicitly copyable because it does
-                     # not conform to 'ImplicitlyCopyable'
+var source = String("Hello")
+var copied = source   # A copy
+var moved = source^   # A transfer
 ```
 
-The first assignment is no problem: the expression `[1, 2, 3]` creates a new
-`List` value that doesn't belong to any variable, so its ownership can be
-transferred directly to the `first` variable.
+The right-hand side variables must be `Copyable` or `Movable` to be
+assigned in this way. After the assignment the new variable owns a value,
+whether copied or transferred. A transfer leaves `source` uninitialized, and
+you can't use it again until you assign it a new value.
 
-But the second assignment causes an error. Since the `List` is owned by the
-`first` variable, it can't simply be transferred to the `second` variable
-without an explicit signal from the user. Does the user want to transfer the
-value from `first` to `second`? Or create a copy of the original value?
+The value on the right-hand side of the assignment statement must be
+transferable to the new variable. Here's an example where that doesn't
+work:
 
-These choices depend on some features of the type of the values involved:
-specifically, if the values are movable, copyable, or implicitly copyable.
+```mojo
+var first: List[Int] = [1, 2, 3]
+var second = first  # error: 'List[Int]' is not implicitly copyable because
+                    # it doesn't conform to 'ImplicitlyCopyable'
+```
 
-- A *copyable* type can be copied explicitly, by calling its copy initializer or
-  the `copy()` method.
+The first assignment is no problem: the expression `[1, 2, 3]` creates a
+new `List` value without an owner, so `first` becomes that owner without
+any ambiguity. The second assignment errors because `first` isn't
+implicitly copyable and the value isn't transferred.
+
+Each outcome depends on type features for the values involved in assignment.
+
+- A `Copyable` type can be copied explicitly, by calling its copy
+  initializer or the `copy()` method.
 
   ```mojo
   var second = first.copy()
   ```
 
-  This leaves `first` unchanged and assigns `second` its own, uniquely owned
-  copy of the list.
+  Copying leaves `first` unchanged. `second` is assigned its own, uniquely
+  owned copy of the list.
 
-- An *implicitly copyable* type can be copied without an explicit signal from
-  the user.
+- `ImplicitlyCopyable` types can be copied without an explicit signal:
 
   ```mojo
   var one_value = 15
   var another_value = one_value  # implicit copy
   ```
-
-  Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
 
   Implicitly copyable types are generally simple value types like `Int`,
   `Float64`, and `Bool`, which can be copied trivially.
@@ -304,39 +168,33 @@ specifically, if the values are movable, copyable, or implicitly copyable.
 
   This moves the value to `second`, and leaves `first` uninitialized.
 
-  In many cases, this ownership transfer also involves moving the value from
-  one memory location to another, which requires the value to be either movable
-  or copyable.
-
-You don't have to digest all of these details now: copyability and movability
-are discussed in more detail in the section on
-[making structs copyable and movable](/docs/manual/structs/#making-a-struct-copyable-and-movable)
-and in the section on the [value lifecycle](/docs/manual/lifecycle/life/).
+  This ownership may move the value from one memory location to another.
+  This requires the value to be `Movable`.
 
 ## Reference bindings
 
 Some APIs return
-[references](/docs/manual/values/lifetimes/#working-with-references) to values
-owned elsewhere. References can be useful to avoid copying values. For example,
-when you retrieve a value from a collection, the collection returns a reference,
-instead of a copy.
+[_references_](/docs/manual/values/lifetimes/#working-with-references) to
+values owned elsewhere. References avoid copying values. For example, when
+you retrieve a value from a collection, the collection returns a reference,
+instead of a copy:
 
 ```mojo
 var animals: List[String] = ["Cats", "Dogs", "Zebras"]
 print(animals[2])  # Prints "Zebras", does not copy the value.
 ```
 
-But if you assign a reference to a *variable*, it creates a copy (if the value
-is implicitly copyable) or produces an error (if it isn't).
+If you assign a reference to a *variable*, it creates a copy (if the value
+is implicitly copyable) or produces an error (if it isn't):
 
 ```mojo
-var items = [99, 77, 33, 12]
+var items: List[Int] = [99, 77, 33, 12]
 var item = items[1]  # item is a copy of items[1]
 item += 1  # increments item
 print(items[1])  # prints 77
 ```
 
-To hold on to a reference, use the `ref` keyword to create a reference binding:
+To name a reference, use the `ref` keyword to create a reference binding:
 
 ```mojo
 ref item_ref = items[1]  # item_ref is a reference to item[1]
@@ -344,14 +202,10 @@ item_ref += 1  # increments items[1]
 print(items[1])  # prints 78
 ```
 
-Here, the name `item_ref` is bound to the reference to `items[1]`. All reads and
-writes to `item_ref` go to the referenced item.
+The name `item_ref` is bound to `items[1]`. All reads and writes to
+`item_ref` go to the item it references.
 
-Reference bindings can also be used when iterating through collections with
-[`for` loops](/docs/manual/control-flow/#iterating-using-references).
-
-Once a reference binding is assigned, it can't be re-bound to a different
-location. For example:
+Reference bindings can't be re-assigned:
 
 ```mojo
 ref item_ref = items[2]  # error: invalid redefinition of item_ref

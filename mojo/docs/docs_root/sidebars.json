@@ -92,6 +92,16 @@
       ]
     },
     {
+      "label": "Advanced functions",
+      "type": "category",
+      "className": "sidebar-heading",
+      "collapsed": false,
+      "items": [
+          "docs/manual/functions/closures",
+          "docs/manual/functions/lambda"
+      ]
+    },
+    {
       "type": "category",
       "label": "Python interop",
       "className": "sidebar-heading",
@@ -129,6 +139,7 @@
     "docs/reference/compound-statements",
     "docs/reference/function-declarations",
     "docs/reference/closure-declarations",
+    "docs/reference/lambda-expressions",
     "docs/reference/struct-declarations",
     "docs/reference/trait-declarations",
     "docs/reference/inline-mlir",
