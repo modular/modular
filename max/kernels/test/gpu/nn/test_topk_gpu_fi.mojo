@@ -103,11 +103,10 @@ def compute_topk_mask[
         for i in range(N):
             values_list.append(values.load[width=1]((b, i)))
 
-        @parameter
         def _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
             return lhs > rhs
 
-        sort[_greater_than](values_list)
+        sort(values_list, _greater_than)
 
         # K-th largest value.
         var kth_value = values_list[K - 1]
@@ -215,13 +214,12 @@ def compute_topp_mask[
             prob_idx.append((probs.load[width=1]((b, i)), i))
 
         # Sort descending by probability.
-        @parameter
         def _greater_than(
             lhs: Tuple[Scalar[dtype], Int], rhs: Tuple[Scalar[dtype], Int]
         ) -> Bool:
             return lhs[0] > rhs[0]
 
-        sort[_greater_than](prob_idx)
+        sort(prob_idx, _greater_than)
 
         # Walk sorted list, include tokens until cumulative prob >= p.
         var cumsum = Float32(0.0)

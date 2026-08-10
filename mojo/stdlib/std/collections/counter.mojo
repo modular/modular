@@ -917,11 +917,10 @@ struct Counter[
             var t = CountTuple[Self.V](item.key, item.value)
             items.append(t^)
 
-        @parameter
         def comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
             return a < b
 
-        sort[comparator](items)
+        sort(items, comparator)
         items.shrink(Int(n))
         return items^
 

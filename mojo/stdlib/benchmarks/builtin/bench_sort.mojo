@@ -36,29 +36,26 @@ def randomize_list[
 
 @always_inline
 def insertion_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _insertion_sort[_less_than](list)
+    _insertion_sort(list, _less_than)
 
 
 @always_inline
 def small_sort[size: Int, dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _small_sort[size, Scalar[dtype], _less_than](list)
+    _small_sort[size](list, _less_than)
 
 
 @always_inline
 def heap_sort[dtype: DType](mut list: List[Scalar[dtype]]):
-    @parameter
     def _less_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
         return lhs < rhs
 
-    _heap_sort[_less_than](list)
+    _heap_sort(list, _less_than)
 
 
 # ===-----------------------------------------------------------------------===#
