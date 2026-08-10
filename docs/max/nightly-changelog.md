@@ -210,6 +210,15 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- Fixed the speculative-decoding per-position acceptance-rate histogram
+  (`maxserve_spec_decode_acceptance_rate_per_position`) understating
+  acceptance: decode batches that performed zero verifications published a
+  full row of 0% observations, diluting every position's average. Such
+  batches now contribute nothing, matching the acceptance-length histogram's
+  population. The batch log line also shows the acceptance length including
+  the bonus token next to the accepted-drafts-per-step value, since the two
+  conventions are easy to confuse.
+
 ### `max` CLI
 
 - `max warm-interpreter-cache` now shows a live progress row per op family.

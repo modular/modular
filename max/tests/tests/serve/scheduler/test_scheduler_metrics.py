@@ -148,14 +148,14 @@ def test_metric_to_string() -> None:
     metrics.max_acceptance_length = 3
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks (accepted drafts/step; 3.50 toks/step incl bonus) | All Preemptions: 14 reqs"
     )
 
     # Test with per-position acceptance rates
     metrics.acceptance_rate_per_position = [0.90, 0.75, 0.50]
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks, Per-Pos: [p0=90%, p1=75%, p2=50%] | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks (accepted drafts/step; 3.50 toks/step incl bonus), Per-Pos: [p0=90%, p1=75%, p2=50%] | All Preemptions: 14 reqs"
     )
 
 
@@ -764,6 +764,17 @@ def test_spec_decode_metrics_properties() -> None:
     assert metrics.output_tokens == 20
 
 
+def test_spec_decode_metrics_per_position_empty_when_no_verifications() -> None:
+    # Regression: this returned [0.0] * num_speculative_tokens, injecting an
+    # all-zero row per zero-verification batch into every rate consumer.
+    metrics = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    assert metrics.acceptance_rate_per_position == []
+
+
 # ---------------------------------------------------------------------------
 # BatchMetrics.create spec-decode tests
 # ---------------------------------------------------------------------------
@@ -906,6 +917,57 @@ def test_batch_metrics_create_excludes_padding_contexts() -> None:
     )
     assert metrics.batch_size == 3
     assert metrics.generation_throughput == (6 + 3) / 0.1
+
+
+def test_publish_metrics_zero_verification_batch_skips_per_position_rates() -> (
+    None
+):
+    """A TG batch whose verify step ran zero verifications must contribute
+    nothing to the per-position rate histograms, matching the
+    draft_tokens_generated > 0 gate on the acceptance-length histogram.
+
+    Regression: the zero-verification batch published a full row of 0% rates,
+    diluting every per-position average by the fraction of such batches.
+    """
+    zero = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[0, 0, 0],
+        num_verifications=0,
+    )
+    real = _make_spec_metrics(
+        num_speculative_tokens=3,
+        accepted_per_position=[4, 3, 1],
+        num_verifications=4,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        for spec_metrics in (zero, real):
+            BatchMetrics.create(
+                sch_config=_mock_sch_config(),
+                inputs=_mock_inputs(batch_size=4, batch_type=BatchType.TG),
+                kv_cache=None,
+                batch_creation_time_s=0.001,
+                batch_execution_time_s=0.1,
+                num_pending_reqs=0,
+                num_terminated_reqs=0,
+                total_preemption_count=0,
+                batch_spec_decode_metrics=spec_metrics,
+            ).publish_metrics()
+
+    # Both spec-decode histograms must observe the same batch population:
+    # only the batch that actually verified.
+    acc_len_calls = (
+        mock_metrics.spec_decode_avg_acceptance_length.call_args_list
+    )
+    per_pos_calls = (
+        mock_metrics.spec_decode_acceptance_rate_per_position.call_args_list
+    )
+    assert len(acc_len_calls) == 1
+    assert len(per_pos_calls) == 3
+
+    # With matched populations the identity holds: the per-position rates sum
+    # to the average acceptance length (accepted drafts per verification).
+    rate_sum = sum(c.kwargs["acceptance_rate"] / 100 for c in per_pos_calls)
+    assert rate_sum == acc_len_calls[0].args[0] == 2.0
 
 
 # ---------------------------------------------------------------------------

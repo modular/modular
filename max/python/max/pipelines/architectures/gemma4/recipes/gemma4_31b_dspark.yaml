@@ -31,5 +31,11 @@ speculative:
 
 # model_type gemma4 reserves a vision encoder cache by default; this pair
 # serves text-only.
+#
+# max_batch_size bounds the device-graph-capture ladder (one graph per decode
+# batch size): the memory-planner default resolves to 512 on one B200, whose
+# 128-capped ladder would not fit the ~63 GB left beside the resident model.
 runtime:
   max_vision_cache_entries: 0
+  max_batch_size: 64
+  device_graph_capture: true

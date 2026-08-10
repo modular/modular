@@ -44,7 +44,7 @@ def test_unified_dspark_31b_arch_registered() -> None:
     assert arch is not None
     assert arch.pipeline_model is UnifiedDSparkGemma4_31BModel
     assert arch.config is UnifiedDSparkGemma4_31BConfig
-    assert arch.supports_device_graph_capture is False
+    assert arch.supports_device_graph_capture is True
     assert arch.multi_gpu_supported is False
     assert "bfloat16" in arch.supported_encodings
     # NVFP4 targets (nvidia/Gemma-4-31B-IT-NVFP4) are auto-detected from the

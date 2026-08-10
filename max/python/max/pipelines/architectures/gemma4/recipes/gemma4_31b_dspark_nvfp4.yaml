@@ -17,8 +17,7 @@
 #
 # kv_cache_format applies to the target KV tree only (matching the tuned
 # gemma4 MTP recipes); the drafter's own causal-SWA cache stays bfloat16
-# (see speculators_common.construct_draft_kv_params). Device graph capture
-# remains a separate follow-up.
+# (see speculators_common.construct_draft_kv_params).
 model:
   model_path: nvidia/Gemma-4-31B-IT-NVFP4
   device_specs: [0]
@@ -44,5 +43,11 @@ speculative:
 
 # model_type gemma4 reserves a vision encoder cache by default; this pair
 # serves text-only.
+#
+# max_batch_size bounds the device-graph-capture ladder as in
+# gemma4_31b_dspark.yaml; NVFP4 weights and the fp8 KV pool leave the
+# ladder even more headroom here than in the bfloat16 recipe.
 runtime:
   max_vision_cache_entries: 0
+  max_batch_size: 64
+  device_graph_capture: true
