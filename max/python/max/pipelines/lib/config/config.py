@@ -45,6 +45,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    ValidationError,
     field_validator,
     model_validator,
 )
@@ -238,6 +239,43 @@ class PipelineConfig(ConfigFileModel):
         if isinstance(result, ModelManifest):
             return result
         return ModelManifest(result)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _disable_penalties_with_draft_model(cls, data: Any) -> Any:
+        """Force penalties off when speculative decoding is configured.
+
+        The speculative-decoding pipelines don't support the penalty
+        sampling features. Both facts are user input, so the override
+        edits the raw constructor input; the constructed config is
+        never mutated.
+        """
+        if not isinstance(data, dict):
+            return data
+        models = data.get("models")
+        if not (isinstance(models, dict) and "draft" in models):
+            return data
+        raw_sampling = data.get("sampling")
+        if raw_sampling is None:
+            return data
+        if isinstance(raw_sampling, SamplingConfig):
+            sampling = raw_sampling
+        else:
+            try:
+                sampling = SamplingConfig.model_validate(raw_sampling)
+            except ValidationError:
+                # Malformed input: fall through so field validation
+                # reports the error with proper field locations.
+                return data
+        if not sampling.enable_penalties:
+            return data
+        logger.warning(
+            "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
+        )
+        return {
+            **data,
+            "sampling": sampling.model_copy(update={"enable_penalties": False}),
+        }
 
     @property
     def model(self) -> MAXModelConfig:
@@ -633,12 +671,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "enable_structured_output is not currently supported on CPU."
             )
-
-        if self.sampling.enable_penalties and self.draft_model:
-            logger.warning(
-                "frequency_penalty, presence_penalty and repetition_penalty are not currently supported with speculative decoding."
-            )
-            self.sampling.enable_penalties = False
 
         # Validate LoRA compatibility with model configuration
         if self.lora and self.lora.enable_lora:
