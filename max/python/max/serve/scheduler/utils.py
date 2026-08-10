@@ -503,7 +503,17 @@ class BatchMetrics:
                 per_pos_str = f", Per-Pos: [{pos_rates_str}]"
             else:
                 per_pos_str = ""
-            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks{per_pos_str} | "
+            # "Acceptance Len: <avg> / <max> toks" is parsed by
+            # analyze_batch_logs.py, so only append after "toks". The
+            # parenthetical names both conventions: <avg> counts accepted
+            # drafts per verify step, while "acceptance length" elsewhere
+            # often includes the bonus token (one per verification).
+            spec_decode_str = (
+                f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, "
+                f"Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks "
+                f"(accepted drafts/step; {self.avg_acceptance_length + 1:.2f} toks/step incl bonus)"
+                f"{per_pos_str} | "
+            )
         else:
             spec_decode_str = ""
 
