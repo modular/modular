@@ -48,7 +48,6 @@ from max.pipelines.request.open_responses import (
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 
-from .cache import DenoisingCacheConfig
 from .interface import DiffusionPipeline
 
 if TYPE_CHECKING:
@@ -111,7 +110,6 @@ class PixelGenerationPipeline(
         pipeline_model: type[DiffusionPipeline]
         | type[PipelineExecutor[Any, Any, Any]]
         | type[Module[Any, Any]],
-        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
         from max.pipelines.lib.pipeline_executor import PipelineExecutor
@@ -175,10 +173,6 @@ class PixelGenerationPipeline(
             )
             self._module = module_io
         elif issubclass(pipeline_model, PipelineExecutor):
-            # Merge CLI-supplied cache_config into runtime so the executor
-            # receives TaylorSeer / FBCache settings.
-            if cache_config is not None:
-                pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
             self._executor = pipeline_model(
                 manifest=pipeline_config.models,
@@ -193,8 +187,7 @@ class PixelGenerationPipeline(
                 session=session,
                 devices=self._devices,
                 weight_paths=[],
-                cache_config=cache_config
-                or pipeline_config.runtime.denoising_cache,
+                cache_config=pipeline_config.runtime.denoising_cache,
             )
 
     @property
