@@ -120,11 +120,10 @@ struct Table[type: TuningConfig](Writable):
             if value not in result:
                 result.append(value)
 
-        @parameter
         def _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
             return lsh < rhs
 
-        _quicksort[_cmp](result)
+        _quicksort(result, _cmp)
         return result^
 
     def find[

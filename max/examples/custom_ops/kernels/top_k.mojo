@@ -157,20 +157,22 @@ struct TopK:
                     var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr().unsafe_offset(offset), K)
 
-                    @parameter
-                    def val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
+                    def val_greater_than(
+                        lhs: Int32, rhs: Int32
+                    ) {in_vals, row_idx} -> Bool:
                         return (
                             in_vals[row_idx, Int(lhs)]
                             > in_vals[row_idx, Int(rhs)]
                         )
 
-                    sort[val_greater_than](
+                    sort(
                         Span(
                             unsafe_ptr=out_idxs.unsafe_ptr().unsafe_offset(
                                 offset
                             ),
                             length=K,
-                        )
+                        ),
+                        val_greater_than,
                     )
 
                     for i in range(K):

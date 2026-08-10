@@ -299,35 +299,38 @@ def _top_k_cpu[
             if k_val > shape[axis]:
                 k_val = shape[axis]
 
-            @parameter
-            @always_inline
-            def indices_to_val(idx: Int64) -> Scalar[dtype]:
-                indices[axis] = Int(idx)
-                var input_idx = input.layout(Coord(indices))
-                return input.raw_load(input_idx)
-
             comptime if largest:
 
-                @parameter
                 @always_inline
-                def _val_greater_than(lhs: Int64, rhs: Int64) -> Bool:
-                    return indices_to_val(lhs) > indices_to_val(rhs)
+                def _val_greater_than(
+                    lhs: Int64, rhs: Int64
+                ) {mut indices, input, axis} -> Bool:
+                    indices[axis] = Int(lhs)
+                    var lhs_val = input.raw_load(input.layout(Coord(indices)))
+                    indices[axis] = Int(rhs)
+                    var rhs_val = input.raw_load(input.layout(Coord(indices)))
+                    return lhs_val > rhs_val
 
                 if sorted:
-                    sort[_val_greater_than](idxs)
+                    sort(idxs, _val_greater_than)
                 else:
-                    _ = partition[_val_greater_than](idxs, k_val)
+                    _ = partition(idxs, k_val, _val_greater_than)
             else:
 
-                @parameter
                 @always_inline
-                def _val_less_than(lhs: Int64, rhs: Int64) -> Bool:
-                    return indices_to_val(lhs) < indices_to_val(rhs)
+                def _val_less_than(
+                    lhs: Int64, rhs: Int64
+                ) {mut indices, input, axis} -> Bool:
+                    indices[axis] = Int(lhs)
+                    var lhs_val = input.raw_load(input.layout(Coord(indices)))
+                    indices[axis] = Int(rhs)
+                    var rhs_val = input.raw_load(input.layout(Coord(indices)))
+                    return lhs_val < rhs_val
 
                 if sorted:
-                    sort[_val_less_than](idxs)
+                    sort(idxs, _val_less_than)
                 else:
-                    _ = partition[_val_less_than](idxs, k_val)
+                    _ = partition(idxs, k_val, _val_less_than)
 
             if sorted:
                 # for duplicate vals, the smaller index needs to appear first

@@ -82,6 +82,11 @@ This version is still a work in progress.
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
   and so on) still only support `Scalar` types.
 
+- `sort()` and `partition()` now take the comparison function as a runtime
+  argument (a unified closure) instead of a compile-time parameter. Update
+  call sites from `sort[cmp_fn](span)` to `sort(span, cmp_fn)` and from
+  `partition[cmp_fn](span, k)` to `partition(span, k, cmp_fn)`.
+
 ## GPU programming
 
 ## Tooling changes
