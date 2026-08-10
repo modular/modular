@@ -894,6 +894,11 @@ def rms_norm_gpu[
 
     var rows = shape_il.flattened_length() // cols
 
+    # A rank owns an empty shard when rows < TP group size (bs=1 decode at TP4)
+    # and `enqueue_function` rejects the zero `grid_dim` every launch derives.
+    if rows == 0:
+        return
+
     # The 2D wrappers translate each flattened `(row, col)` back to the original
     # n-D coordinate. The row -> n-D decomposition divides by the outer dims; on
     # the static-shape path those divisors are the `ComptimeInt` dims carried in
