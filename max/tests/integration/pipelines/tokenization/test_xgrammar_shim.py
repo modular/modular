@@ -3078,3 +3078,30 @@ def test_gemma_4_nested_property_names_additional_properties_value_enforced() ->
     assert not _accept_ids(
         bad, _gemma_encode('<|tool_call>call:f{queryParams:{page:<|"|>')
     )
+
+
+def test_gemma_4_property_names_with_additional_properties_false_rejects_key() -> (
+    None
+):
+    # propertyNames + additionalProperties:false with no declared properties:
+    # every key is "additional" and forbidden, so only the empty object is
+    # valid. A key that matches propertyNames is still forbidden by
+    # additionalProperties:false and must be rejected.
+    params = {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "queryParams": {
+                "type": "object",
+                "propertyNames": {"pattern": "^[a-z]+$"},
+                "additionalProperties": False,
+            },
+        },
+        "required": ["queryParams"],
+    }
+    assert isinstance(_gemma_compile(params), xgr.CompiledGrammar)
+
+    bad = _gemma_matcher_params(params)
+    assert not _accept_ids(
+        bad, _gemma_encode("<|tool_call>call:f{queryParams:{abc:")
+    )

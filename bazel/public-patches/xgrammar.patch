@@ -1011,7 +1011,7 @@ index da8b516..16c7568 100644
 +
  Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object& schema) {
    ObjectSpec spec;
-+  bool property_names_forces_empty_object = false;
++  bool must_be_empty_object = false;
 +
 +  if (schema.count("required")) {
 +    if (!schema.at("required").is<picojson::array>()) {
@@ -1183,7 +1183,7 @@ index da8b516..16c7568 100644
 +    if (keys_are_bare() && !config_.reject_unsupported &&
 +        property_names_obj.count("maxLength") && property_names_obj.at("maxLength").is<int64_t>() &&
 +        property_names_obj.at("maxLength").get<int64_t>() < 1) {
-+      property_names_forces_empty_object = true;
++      must_be_empty_object = true;
 +    }
 +    if (keys_are_bare() && config_.reject_unsupported) {
 +      if (property_names_obj.count("pattern") &&
@@ -1290,11 +1290,20 @@ index da8b516..16c7568 100644
    if (schema.count("additionalProperties")) {
      auto add_props = schema.at("additionalProperties");
      if (add_props.is<bool>()) {
-@@ -797,6 +1382,27 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
+@@ -797,6 +1382,36 @@ Result<ObjectSpec, SchemaError> SchemaParser::ParseObject(const picojson::object
      }
    }
  
-+  if (property_names_forces_empty_object) {
++  // An explicit additionalProperties:false with no declared or pattern
++  // properties forbids every key, so the object must be empty.
++  if (spec.properties.empty() && spec.pattern_properties.empty() &&
++      schema.count("additionalProperties") &&
++      schema.at("additionalProperties").is<bool>() &&
++      !schema.at("additionalProperties").get<bool>()) {
++    must_be_empty_object = true;
++  }
++
++  if (must_be_empty_object) {
 +    // The object can hold no properties. A schema that also demands one
 +    // (minProperties >= 1 or a required key) is unsatisfiable; reject here.
 +    if (spec.min_properties > 0 || !spec.required.empty()) {
