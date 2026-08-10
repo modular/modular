@@ -187,7 +187,7 @@ description: {% if decl.summary
 ## Implemented traits
 
 {% for trait in decl.parentTraits %}
-{% if trait.path %}[`{{ trait.name }}`]({{ api_href(trait.path) }}){% else %}`{{ trait.name }}`{% endif %}{{ ", " if not loop.last else "" }}
+{% if trait.path %}[`{{ trait.name }}`]({{ api_href(trait.path) }}){% else %}`{{ trait.name }}`{% endif %}{% if trait.condition %} (`where {{ trait.condition }}`){% endif %}{{ ", " if not loop.last else "" }}
 {% endfor %}
 
 {% endif %}
