@@ -3,7 +3,7 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
-    name = "unified_dspark_gemma4",
+    name = "unified_dspark_gemma4_12b",
     srcs = glob(["**/*.py"]),
     deps = [
         requirement("numpy"),

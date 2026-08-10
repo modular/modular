@@ -10,13 +10,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified DSpark Gemma4 nn.Module: target + KV materialize + draft block.
+"""Unified speculators-DSpark Gemma4 nn.Module: target + KV materialize +
+draft block.
 
-Structurally the unified DFlash graph (merge -> target -> reject ->
-materialize -> block forward), with the DSpark differences: ALL
-``block_size`` positions produce drafts (DFlash drops position 0), the base
-draft logits are soft-capped before correction, and the drafts are sampled
-through the sequential markov-head chain seeded by the anchor token.
+Structurally the unified dense-DSpark graph (merge -> target -> reject ->
+materialize -> block forward), with the speculators-format differences (the
+vLLM ``qwen3_dspark`` runtime semantics):
+
+- ``sample_from_anchor: false`` — the anchor slot never predicts, so the
+  model drafts ``block_size - 1`` tokens per step and the anchor slot's
+  hidden state is dropped before the head (the DFlash position-0 drop).
+- The base draft logits come from the draft's OWN pruned-vocab lm_head with
+  no softcapping, not the target's full-vocab head.
+- The markov chain runs over the pruned draft vocab and applies the ``d2t``
+  offset map in-chain, emitting TARGET-vocab draft ids.
+- Block slots embed RAW ``embed_tokens`` rows — never the target's
+  sqrt(hidden)-scaled embedding path.
 """
 
 from __future__ import annotations
@@ -35,6 +44,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn.embedding import Embedding
 from max.nn.kv_cache import (
     KVCacheInputs,
     MultiKVCacheInputs,
@@ -57,13 +67,13 @@ from max.pipelines.speculative.spec_input_types import (
     build_spec_decode_input_types,
 )
 
+from ..dspark_draft.dspark_speculators_draft import DSparkSpeculatorsDraft
 from ..gemma4.gemma4 import Gemma4TextModel
-from .dspark_gemma4 import DSparkGemma4
-from .model_config import UnifiedDSparkGemma4Config
+from .model_config import UnifiedDSparkGemma4_31BConfig
 
 
 @dataclass
-class UnifiedDSparkGemma4Values:
+class UnifiedDSparkGemma4_31BValues:
     tokens: TensorValue
     input_row_offsets: TensorValue
     draft_tokens: TensorValue
@@ -80,16 +90,21 @@ class UnifiedDSparkGemma4Values:
     min_top_p: TensorValue
 
 
-class UnifiedDSparkGemma4(Module):
+class UnifiedDSparkGemma4_31B(Module):
     """Fused module: merge → target → reject → materialize → draft block."""
 
-    def __init__(self, config: UnifiedDSparkGemma4Config) -> None:
+    def __init__(self, config: UnifiedDSparkGemma4_31BConfig) -> None:
         super().__init__()
         self.config = config
-        self.block_size = config.resolve_block_size()
-        # DSpark drafts at ALL block positions: the anchor position predicts
-        # draft 1 (unlike DFlash, which drops position 0).
-        self.num_speculative_tokens = self.block_size
+        # The effective block width (anchor slot + resolved drafts): the
+        # draft is causal, so a block narrower than the trained one is
+        # prefix-stable and stays trained-equivalent; a wider one runs the
+        # extra slots as extrapolation.
+        self.block_size = config.effective_block_size
+        # sample_from_anchor=false: the anchor slot is the committed/bonus
+        # token and never predicts, so drafts = block_size - 1 (unlike the
+        # dense DSpark drafter, which drafts at every block position).
+        self.num_speculative_tokens = self.block_size - 1
         self.target_layer_ids = list(config.target_layer_ids)
         self.mask_token_id = int(config.mask_token_id)
         self.acceptance_sampler = AcceptanceSampler(
@@ -101,11 +116,39 @@ class UnifiedDSparkGemma4(Module):
         )
 
         self.target = Gemma4TextModel(config.target)
-        self.draft = DSparkGemma4(
-            config.draft,
+        self.draft = DSparkSpeculatorsDraft(
+            hidden_size=config.draft.hidden_size,
+            num_hidden_layers=config.draft.num_hidden_layers,
+            num_attention_heads=config.draft.num_attention_heads,
+            num_key_value_heads=config.draft.num_key_value_heads,
+            head_dim=config.draft.head_dim,
+            intermediate_size=config.draft.intermediate_size,
+            rms_norm_eps=config.draft.rms_norm_eps,
+            rope_theta=config.draft.rope_theta,
+            sliding_window=config.draft.sliding_window,
+            layer_causal=[config.draft.causal] * config.draft.num_hidden_layers,
+            vocab_size=config.draft.vocab_size,
+            draft_vocab_size=config.draft.draft_vocab_size,
+            markov_rank=config.draft.markov_rank,
+            block_size=config.draft.block_size,
+            sample_from_anchor=config.draft.sample_from_anchor,
+            mask_token_id=config.draft.mask_token_id,
+            num_context_features=config.draft.num_context_features,
+            max_seq_len=config.draft.max_seq_len,
             kv_params=config.draft_kv_params,
             devices=list(config.target.devices),
             dtype=config.target.unquantized_dtype,
+        )
+        # The block stream embeds RAW rows (runtime-semantics contract: no
+        # gemma sqrt(hidden) scale on the speculators draft path), so the
+        # draft owns a plain Embedding loaded verbatim from the checkpoint's
+        # frozen full-vocab copy rather than routing through the target's
+        # ScaledWordEmbedding.
+        self.draft.embed_tokens = Embedding(
+            vocab_size=config.draft.vocab_size,
+            hidden_dim=config.draft.hidden_size,
+            dtype=config.target.unquantized_dtype,
+            device=config.target.devices[0],
         )
         self.merger = RaggedTokenMerger(config.target.devices[0])
 
@@ -120,7 +163,7 @@ class UnifiedDSparkGemma4(Module):
     def _unflatten_graph_inputs(
         self,
         inputs: Sequence[Value[Any]],
-    ) -> UnifiedDSparkGemma4Values:
+    ) -> UnifiedDSparkGemma4_31BValues:
         it = iter(inputs)
         tokens = next(it)
         input_row_offsets = next(it)
@@ -146,7 +189,7 @@ class UnifiedDSparkGemma4(Module):
         top_p = next(it)
         min_top_p = next(it)
 
-        return UnifiedDSparkGemma4Values(
+        return UnifiedDSparkGemma4_31BValues(
             tokens=tokens.tensor,
             input_row_offsets=input_row_offsets.tensor,
             draft_tokens=draft_tokens.tensor,
@@ -194,7 +237,7 @@ class UnifiedDSparkGemma4(Module):
 
     def __call__(
         self,
-        inputs: UnifiedDSparkGemma4Values,
+        inputs: UnifiedDSparkGemma4_31BValues,
     ) -> tuple[TensorValue, ...]:
         device = inputs.tokens.device
         K = self.block_size
@@ -327,8 +370,11 @@ class UnifiedDSparkGemma4(Module):
         block_ids = ops.concat([next_tokens_2d, mask_tail], axis=1)
         block_ids_flat = block_ids.reshape((-1,))
 
-        # ScaledWordEmbedding applies the sqrt(hidden) embedding scale.
-        block_embeds = self.target.embed_tokens(block_ids_flat, signal_buffers)
+        # RAW embedding rows: slot 0 = the anchor/bonus token, slots
+        # 1..K-1 = the mask token, at positions p..p+K-1 where p is the
+        # post-commit sequence length (bumped_cache_lengths above).
+        assert self.draft.embed_tokens is not None
+        block_embeds = self.draft.embed_tokens(block_ids_flat)
 
         block_indices = ops.range(
             start=0,
@@ -342,23 +388,23 @@ class UnifiedDSparkGemma4(Module):
         )
 
         block_hs = self.draft.forward_block(
-            input_embeds=block_embeds[0],
+            input_embeds=block_embeds,
             kv_collection=block_kv_collection,
             input_row_offsets=draft_block_offsets,
         )
 
-        # ALL K positions produce drafts (no position-0 drop).
+        # Anchor-slot drop (sample_from_anchor=false): slot 0's output is
+        # untrained; only the K-1 mask slots produce drafts.
         block_hs_2d = block_hs.reshape(
             ("batch_size", K, self.config.draft.hidden_size)
         )
-        base_logits = self.target.lm_head([block_hs_2d], signal_buffers)[0]
-        softcap = self.config.draft.final_logit_softcapping
-        if softcap is not None:
-            base_logits = ops.tanh(base_logits / softcap) * softcap
+        base_logits = self.draft.lm_head(block_hs_2d[:, 1:, :])
 
-        # Sequential markov correction seeded by the anchor token, greedy.
-        assert self.draft.markov_head is not None
-        next_draft_tokens = self.draft.markov_head(base_logits, next_tokens)
+        # Sequential markov correction seeded by the anchor token, greedy,
+        # with the in-chain d2t map; emits TARGET-vocab draft ids.
+        next_draft_tokens = self.draft.sample_draft_tokens(
+            base_logits, next_tokens
+        )
 
         # Force num_accepted=0 in the prefill output even if the sampler
         # happened to "accept" garbage drafts, so downstream metrics don't

@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unified DSpark Gemma4 PipelineModel: target + draft in one graph."""
+"""Unified speculators-DSpark Gemma4 PipelineModel: target + draft in one
+graph."""
 
 from __future__ import annotations
 
@@ -23,12 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
-from max.nn.layer import Module
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.config import cache_dtype_for_encoding
@@ -51,26 +47,23 @@ from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..gemma4.model_config import Gemma4ForConditionalGenerationConfig
-from .batch_processor import UnifiedDSparkGemma4BatchProcessor
-from .model_config import (
-    UnifiedDSparkGemma4Config,
-    construct_draft_kv_params,
-    resolve_dspark_num_speculative_tokens,
+from ..speculators_common.draft_config import construct_draft_kv_params
+from ..speculators_common.weight_adapters import (
+    merge_unified_state_dict,
+    validate_draft_checkpoint_weights,
 )
-from .unified_dspark_gemma4 import (
-    UnifiedDSparkGemma4 as UnifiedDSparkGemma4Module,
-)
-from .weight_adapters import (
-    SHARED_DRAFT_PREFIXES,
-    convert_unified_safetensor_state_dict,
+from .batch_processor import UnifiedDSparkGemma4_31BBatchProcessor
+from .model_config import UnifiedDSparkGemma4_31BConfig
+from .unified_dspark_gemma4_31b import (
+    UnifiedDSparkGemma4_31B as UnifiedDSparkGemma4_31BModule,
 )
 
 logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedDSparkGemma4Inputs(UnifiedSpecDecodeInputs):
-    """Inputs for the unified DSpark Gemma4 graph.
+class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
+    """Inputs for the unified speculators-DSpark Gemma4 graph.
 
     The spec-decode fields and trailing buffer packing come from
     :class:`UnifiedSpecDecodeInputs`; ``tokens`` / ``input_row_offsets`` /
@@ -99,17 +92,18 @@ class UnifiedDSparkGemma4Inputs(UnifiedSpecDecodeInputs):
         )
 
 
-class UnifiedDSparkGemma4Model(
+class UnifiedDSparkGemma4_31BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
     GraphPipelineModelWithKVCache[TextContext],
 ):
-    """Unified DSpark Gemma4: target + draft in one compiled graph."""
+    """Unified speculators-DSpark Gemma4: target + draft in one compiled
+    graph."""
 
-    model_config_cls: ClassVar[type[Any]] = UnifiedDSparkGemma4Config
-    batch_processor_cls: ClassVar[type[UnifiedDSparkGemma4BatchProcessor]] = (
-        UnifiedDSparkGemma4BatchProcessor
-    )
+    model_config_cls: ClassVar[type[Any]] = UnifiedDSparkGemma4_31BConfig
+    batch_processor_cls: ClassVar[
+        type[UnifiedDSparkGemma4_31BBatchProcessor]
+    ] = UnifiedDSparkGemma4_31BBatchProcessor
 
     model: Model
     _draft_state_dict: dict[str, Any]
@@ -126,11 +120,6 @@ class UnifiedDSparkGemma4Model(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
-        # The drafter's trained width, resolved from the draft checkpoint;
-        # exposed for the overlap pipeline's spec-decode buffers.
-        self.resolved_num_speculative_tokens = (
-            resolve_dspark_num_speculative_tokens(pipeline_config)
-        )
         super().__init__(
             pipeline_config,
             session,
@@ -153,25 +142,13 @@ class UnifiedDSparkGemma4Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        # This arch re-derives every KV leaf at load
-        # (``_create_model_config``), but the initial bake reads the raw
-        # speculative section and would silently carry num_draft_tokens=0;
-        # rebake every leaf at the drafter's trained width.
-        params = Gemma4ForConditionalGenerationConfig.construct_kv_params(
+        return Gemma4ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
         )
-        resolved_spec = resolve_dspark_num_speculative_tokens(
-            pipeline_config, warn=False
-        )
-        children: dict[str, KVCacheParamInterface] = {}
-        for name, leaf in params.children.items():
-            assert isinstance(leaf, KVCacheParams)
-            children[name] = replace(leaf, num_draft_tokens=resolved_spec)
-        return MultiKVCacheParams.from_params(children)
 
     def _load_state_dict(self) -> dict[str, Any]:
         target_state_dict = parse_state_dict_from_weights(
@@ -182,8 +159,8 @@ class UnifiedDSparkGemma4Model(
         draft_model_config = self.pipeline_config.draft_model
         draft_weight_paths = draft_model_config.resolved_weight_paths()
         draft_weights = load_weights(draft_weight_paths)
-        # DSpark checkpoint keys carry no ``model.`` prefix and match the
-        # draft module's names 1:1; no conversion beyond materialization.
+        # Speculators checkpoint keys carry no ``model.`` prefix and match
+        # the draft module's names 1:1; no conversion beyond materialization.
         self._draft_state_dict = {
             name: weight.data() for name, weight in draft_weights.items()
         }
@@ -192,8 +169,12 @@ class UnifiedDSparkGemma4Model(
 
     def _create_model_config(
         self, state_dict: dict[str, Any]
-    ) -> UnifiedDSparkGemma4Config:
-        unified_config = UnifiedDSparkGemma4Config.initialize(
+    ) -> UnifiedDSparkGemma4_31BConfig:
+        # ``initialize`` runs ``validate_dspark_fields``, which resolves
+        # num_speculative_tokens (explicit values honored, unset falls back
+        # to the drafter's trained width) before any KV params are derived
+        # from it below.
+        unified_config = UnifiedDSparkGemma4_31BConfig.initialize(
             self.pipeline_config
         )
         target_hf_config = self.huggingface_config
@@ -203,17 +184,12 @@ class UnifiedDSparkGemma4Model(
             state_dict=state_dict,
             return_logits=ReturnLogits.VARIABLE,
         )
-        # Overrides num_speculative_tokens to the drafter's trained
-        # block_size (warning on mismatch) before any KV params are derived
-        # from it below.
-        unified_config.validate_dspark_fields()
-        block_size = unified_config.resolve_block_size()
 
         # ``kv_params.num_draft_tokens`` was baked from the CLI
         # num_speculative_tokens at ``PipelineModelWithKVCache.__init__``,
         # BEFORE the block-size override above. Re-derive every leaf (both
-        # target leaves and the draft leaf) at the trained block size so the
-        # KV manager reserves the true worst-case per-step write.
+        # target leaves and the draft leaf) so the KV manager reserves the
+        # true worst-case per-step write.
         corrected_target_kv = (
             Gemma4ForConditionalGenerationConfig.construct_kv_params(
                 target_hf_config,
@@ -227,17 +203,32 @@ class UnifiedDSparkGemma4Model(
                 cache_dtype_for_encoding(
                     _select_quantization_encoding(
                         self.pipeline_config.model,
-                        UnifiedDSparkGemma4Config.DEFAULT_ENCODING,
+                        UnifiedDSparkGemma4_31BConfig.DEFAULT_ENCODING,
                     ),
                     self.pipeline_config.model.kv_cache.kv_cache_format,
                 ),
             )
         )
+        # The draft leaf writes the block forward's effective_block_size
+        # slots past the post-commit length in addition to the materialized
+        # verify block, so its per-step headroom is num_speculative_tokens
+        # + 1. MultiKVCacheParams requires one num_draft_tokens across the
+        # tree, and the target verify itself writes the same count per
+        # step, so every leaf carries effective_block_size.
+        corrected_target_children: dict[str, KVCacheParams] = {}
+        for name, leaf in corrected_target_kv.children.items():
+            assert isinstance(leaf, KVCacheParams)
+            corrected_target_children[name] = replace(
+                leaf, num_draft_tokens=unified_config.effective_block_size
+            )
+        corrected_target_kv = MultiKVCacheParams.from_params(
+            corrected_target_children
+        )
         draft_kv_params = construct_draft_kv_params(
             self.pipeline_config,
             unified_config.draft,
             list(unified_config.target.devices),
-            num_draft_tokens=block_size,
+            num_draft_tokens=unified_config.effective_block_size,
         )
         unified_config.target.kv_params = corrected_target_kv
         unified_config.draft_kv_params = draft_kv_params
@@ -254,24 +245,25 @@ class UnifiedDSparkGemma4Model(
         model_config: Any,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDSparkGemma4Config)
+        assert isinstance(model_config, UnifiedDSparkGemma4_31BConfig)
 
-        nn_model = UnifiedDSparkGemma4Module(model_config)
+        nn_model = UnifiedDSparkGemma4_31BModule(model_config)
 
-        # The DSpark checkpoint ships frozen copies of the target's
-        # embed_tokens / lm_head; alias the target's modules BEFORE the
-        # state-dict walk and skip the copies.
-        assert isinstance(nn_model.target.lm_head, Module)
-        nn_model.draft.embed_tokens = nn_model.target.embed_tokens
-        nn_model.draft.lm_head = nn_model.target.lm_head
+        validate_draft_checkpoint_weights(
+            self._draft_state_dict, model_config.draft
+        )
 
-        unified_state_dict = convert_unified_safetensor_state_dict(
+        # Unlike the dense-DSpark pipeline there is no module aliasing: the
+        # draft owns its full-vocab embedding (raw, unscaled rows) and its
+        # pruned-vocab lm_head, both loaded verbatim from the checkpoint's
+        # frozen copies.
+        unified_state_dict = merge_unified_state_dict(
             state_dict, self._draft_state_dict
         )
 
-        # strict=False: the aliased draft.embed_tokens / draft.lm_head have
-        # no draft.* checkpoint keys. load_state_dict(strict=False) reports
-        # nothing, so audit name coverage explicitly below.
+        # strict=False: a tied-embedding target has no target.lm_head.*
+        # checkpoint key. load_state_dict(strict=False) reports nothing, so
+        # audit name coverage explicitly below.
         nn_model.load_state_dict(
             unified_state_dict,
             override_quantization_encoding=True,
@@ -286,7 +278,7 @@ class UnifiedDSparkGemma4Model(
         weights_registry = nn_model.state_dict()
 
         with Graph(
-            "unified_dspark_gemma4",
+            "unified_dspark_gemma4_31b",
             input_types=nn_model.input_types(),
         ) as graph:
             inputs = nn_model._unflatten_graph_inputs(graph.inputs)
@@ -297,7 +289,7 @@ class UnifiedDSparkGemma4Model(
 
     def _audit_state_dict_names(
         self,
-        nn_model: UnifiedDSparkGemma4Module,
+        nn_model: UnifiedDSparkGemma4_31BModule,
         unified_state_dict: dict[str, Any],
         *,
         tied_target_lm_head: bool,
@@ -305,16 +297,12 @@ class UnifiedDSparkGemma4Model(
         """Set-difference audit of provided vs expected weight names.
 
         ``load_state_dict(strict=False)`` is silent about mismatches; the
-        only names allowed to differ are the deliberately aliased
-        draft.embed_tokens / draft.lm_head (missing from the checkpoint
-        merge on purpose) and, for tied-embedding targets, the target
-        lm_head that shares the embedding weight.
+        only names allowed to differ are, for tied-embedding targets, the
+        target lm_head that shares the embedding weight.
         """
         expected = set(nn_model.raw_state_dict().keys())
         provided = set(unified_state_dict.keys())
-        allowed_missing_prefixes = tuple(
-            f"draft.{p}" for p in SHARED_DRAFT_PREFIXES
-        )
+        allowed_missing_prefixes: tuple[str, ...] = ()
         if tied_target_lm_head:
             allowed_missing_prefixes += ("target.lm_head.",)
         missing = {
@@ -325,9 +313,11 @@ class UnifiedDSparkGemma4Model(
         extra = provided - expected
         if missing:
             raise ValueError(
-                f"Unified DSpark model has unloaded weights: {sorted(missing)}"
+                "Unified speculators-DSpark model has unloaded weights:"
+                f" {sorted(missing)}"
             )
         if extra:
             raise ValueError(
-                f"Unified DSpark state dict has unused keys: {sorted(extra)}"
+                "Unified speculators-DSpark state dict has unused keys:"
+                f" {sorted(extra)}"
             )

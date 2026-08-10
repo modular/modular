@@ -621,6 +621,11 @@ class PipelineConfig(ConfigFileModel):
             )
             if draft_archs and draft_archs[0] == "Gemma4AssistantForCausalLM":
                 target_archs[0] = "UnifiedMTPGemma4ForCausalLM"
+            elif draft_archs and draft_archs[0] == "DSparkDraftModel":
+                # Speculators-format DSpark drafters (e.g.
+                # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
+                # generic architectures: ["DSparkDraftModel"].
+                target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
         # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
         # block drafter declares architectures: ["Gemma4DSparkModel"].
         if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
@@ -630,7 +635,7 @@ class PipelineConfig(ConfigFileModel):
                 else None
             )
             if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
-                target_archs[0] = "UnifiedDSparkGemma4ForCausalLM"
+                target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
         if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
             draft_archs = (
                 self.draft_model.huggingface_config.architectures

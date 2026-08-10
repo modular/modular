@@ -20,22 +20,22 @@ standalone draft arch the registry requires for ``--draft-model`` lookup.
 from __future__ import annotations
 
 from max.pipelines import PIPELINE_REGISTRY
-from max.pipelines.architectures.unified_dspark_gemma4 import (
-    UnifiedDSparkGemma4Config,
-    UnifiedDSparkGemma4Model,
+from max.pipelines.architectures.unified_dspark_gemma4_12b import (
+    UnifiedDSparkGemma4_12BConfig,
+    UnifiedDSparkGemma4_12BModel,
 )
-from max.pipelines.architectures.unified_dspark_gemma4.model_config import (
+from max.pipelines.architectures.unified_dspark_gemma4_12b.model_config import (
     Gemma4DSparkDraftArchConfig,
 )
 
 
 def test_unified_dspark_arch_registered() -> None:
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        "UnifiedDSparkGemma4ForCausalLM"
+        "UnifiedDSparkGemma4_12BForCausalLM"
     )
     assert arch is not None
-    assert arch.pipeline_model is UnifiedDSparkGemma4Model
-    assert arch.config is UnifiedDSparkGemma4Config
+    assert arch.pipeline_model is UnifiedDSparkGemma4_12BModel
+    assert arch.config is UnifiedDSparkGemma4_12BConfig
     assert arch.supports_device_graph_capture is True
     assert arch.multi_gpu_supported is False
     assert "bfloat16" in arch.supported_encodings
@@ -43,9 +43,11 @@ def test_unified_dspark_arch_registered() -> None:
     # ArchConfig.initialize) resolve a recipe with no explicit
     # quantization_encoding through these class vars, which must mirror the
     # SupportedArchitecture registration.
-    assert UnifiedDSparkGemma4Config.DEFAULT_ENCODING == arch.default_encoding
     assert (
-        UnifiedDSparkGemma4Config.SUPPORTED_ENCODINGS
+        UnifiedDSparkGemma4_12BConfig.DEFAULT_ENCODING == arch.default_encoding
+    )
+    assert (
+        UnifiedDSparkGemma4_12BConfig.SUPPORTED_ENCODINGS
         == arch.supported_encodings
     )
 

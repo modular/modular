@@ -12,7 +12,7 @@ modular_py_test(
     srcs = ["test_arch_registration.py"],
     deps = [
         "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/unified_dspark_gemma4",
+        "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
     ],
 )
 
@@ -24,7 +24,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
-        "//max/python/max/pipelines/architectures/unified_dspark_gemma4",
+        "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -46,7 +46,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/unified_dspark_gemma4",
+        "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -77,7 +77,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
-        "//max/python/max/pipelines/architectures/unified_dspark_gemma4",
+        "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         "//max/python/max/pipelines/lib",
         requirement("torch"),
     ],
@@ -110,7 +110,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures/unified_dspark_gemma4",
+        "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:context_utils",

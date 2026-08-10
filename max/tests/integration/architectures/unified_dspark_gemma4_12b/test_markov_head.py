@@ -27,7 +27,9 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.unified_dspark_gemma4 import DSparkMarkovHead
+from max.pipelines.architectures.unified_dspark_gemma4_12b import (
+    DSparkMarkovHead,
+)
 
 
 def _run_markov(

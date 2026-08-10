@@ -94,6 +94,9 @@ def register_all_models() -> None:
         ),
         _LazyArch("DFlashDraftModel", ".dflash_llama3", "dflash_llama_arch"),
         _LazyArch(
+            "DSparkDraftModel", ".dspark_draft", "dspark_speculators_draft_arch"
+        ),
+        _LazyArch(
             "DiffusionGemmaForBlockDiffusion",
             ".diffusion_gemma",
             "diffusion_gemma_arch",
@@ -148,7 +151,7 @@ def register_all_models() -> None:
         ),
         _LazyArch(
             "Gemma4DSparkModel",
-            ".unified_dspark_gemma4",
+            ".unified_dspark_gemma4_12b",
             "gemma4_dspark_draft_arch",
         ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
@@ -283,9 +286,14 @@ def register_all_models() -> None:
             "unified_dflash_llama3_arch",
         ),
         _LazyArch(
-            "UnifiedDSparkGemma4ForCausalLM",
-            ".unified_dspark_gemma4",
-            "unified_dspark_gemma4_arch",
+            "UnifiedDSparkGemma4_12BForCausalLM",
+            ".unified_dspark_gemma4_12b",
+            "unified_dspark_gemma4_12b_arch",
+        ),
+        _LazyArch(
+            "UnifiedDSparkGemma4_31BForCausalLM",
+            ".unified_dspark_gemma4_31b",
+            "unified_dspark_gemma4_31b_arch",
         ),
         _LazyArch(
             "UnifiedEagleLlama3ForCausalLM",

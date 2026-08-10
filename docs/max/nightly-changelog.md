@@ -10,6 +10,134 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the GLM-5.1
+  sparse-attention architecture with cross-layer index sharing.
+  - Added multi-token prediction (MTP) speculative decoding for GLM-5.2
+    (`UnifiedMTPGlm5_2ForCausalLM`), serving the baked-in NextN layer as a
+    single-layer sparse-MLA draft; enabled automatically for GLM checkpoints
+    that ship a NextN layer with `--speculative-method mtp`.
+  - Added tool-calling, reasoning, and structured-output (`response_format`)
+    support to GLM-5.1 / GLM-5.2, enabled with `--tool-parser glm45
+    --reasoning-parser glm45 --enable-structured-output`.
+  - Fixed a GLM-5.1-FP8 crash caused by a shared-experts dtype mismatch.
+- Added Laguna (`LagunaForCausalLM`) support for
+  `poolside/Laguna-M.1-NVFP4`, including tool calling.
+- Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`) support for
+  `google/diffusiongemma-26B-A4B-it` (bfloat16) and
+  `nvidia/diffusiongemma-26B-A4B-it-NVFP4`; text-only for now.
+- Added Nemotron-H (`NemotronHForCausalLM`) support, NVIDIA's hybrid
+  Mamba-2 + attention decoder, with modelopt per-tensor FP8 and a new
+  Mamba-2 SSD chunked-scan varlen kernel.
+  - Extended Nemotron-H with the Nemotron-3-Nano-30B-A3B hybrid MoE variant
+    and enabled the architecture on Apple silicon GPUs in bfloat16.
+  - Enabled NVIDIA's official FP8 Nemotron-H checkpoints on Apple silicon
+    (previously crashing or producing all-zero logits) and sped up
+    Nemotron-H decode on Apple M5 by ~41-81%.
+  - Added support for serving `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-FP8` on
+    Apple silicon via a tiled simdgroup-MMA grouped-FP8 (W8A16) MoE matmul,
+    decoding faster than bf16 at concurrency with half the weight memory.
+- Fixed the `max_batch_size` handling for Nemotron-H.
+- Added support for the `detail` parameter on image and video content
+  parts in chat requests.
+- Added Ideogram 4 (`Ideogram4Pipeline`) support, a text-to-image
+  flow-matching diffusion transformer; serve via `/v1/responses`.
+  - FP8 checkpoint weights run hot projections on native FP8 GEMMs (~24%
+    faster end-to-end on MI355).
+- Added support for `amd/Kimi-K2.7-Code-MXFP4` on AMD GPUs.
+- Expanded Gemma 4 support:
+  - Added DSpark speculative decoding for Gemma 4 12B
+    (`UnifiedDSparkGemma4ForCausalLM`), DeepSeek's block-drafting method:
+    a small draft transformer drafts a 7-token block per step. Enabled with
+    `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
+    --speculative-method dflash --num-speculative-tokens 7`.
+  - Added DSpark speculative decoding for Gemma 4 31B
+    (`UnifiedDSparkGemma4_31BForCausalLM`), serving `google/gemma-4-31B-it`
+    with the vLLM speculators-format draft
+    `RedHatAI/gemma-4-31B-it-speculator.dspark` (llama-style causal draft
+    block, pruned 32k draft vocabulary mapped through the checkpoint's d2t
+    table). Enabled with the `gemma4_31b_dspark.yaml` recipe or
+    `--draft-model-path RedHatAI/gemma-4-31B-it-speculator.dspark
+    --speculative-method dflash`. An explicit `--num-speculative-tokens` is
+    honored: values below the trained 7 truncate the causal draft block
+    prefix-stably, values above run as extrapolation with a warning and
+    degrading acceptance; unset defaults to the trained 7.
+  - Renamed the Gemma 4 12B DSpark architecture to
+    `UnifiedDSparkGemma4_12BForCausalLM` (module
+    `max.pipelines.architectures.unified_dspark_gemma4_12b`), so the two
+    Gemma 4 DSpark architectures are named by model line.
+  - Sped up Gemma4-12B DSpark decode by up to ~1.3x via a packed wide-N
+    shallow-K GEMV, a single-pass streaming argmax kernel, and device graph
+    capture.
+  - Gemma 4 with MTP speculative decoding (`UnifiedMTPGemma4ForCausalLM`)
+    now supports image and video input; previously the vision encoder output
+    never reached the language model, so image prompts were answered as if
+    the model were blind.
+  - MTP speculative decoding now samples recovered tokens from the residual
+    distribution when stochastic acceptance rejects a draft token,
+    preserving the target distribution for argmax draft proposals.
+  - Added structured-output and tool-calling support via the xgrammar
+    backend, covering Gemma 4's special tool-call format.
+  - Added float16 support, with the logit softcap and vision pooler run in
+    fp32.
+  - Added tensor-parallel support for the MoE variant.
+  - Video inputs now route through the shared `VisionEncoderCache`, so a
+    repeated clip is served from cache with no re-encode.
+  - Video decoding now runs on a worker thread, so concurrent requests
+    overlap video decode.
+  - Improved vision-batch serving latency by concatenating embeddings
+    on-device instead of round-tripping through host numpy.
+  - Fixed the MoE expert-router softmax being computed in `bfloat16`
+    instead of `float32`, which degraded MoE quality.
+  - Fixed image/video position and scatter indexing desyncs under chunked
+    prefill, which could corrupt vision embeddings on multimodal prompts
+    split across chunks.
+  - Fixed crashes in multi-device serving and multi-image batches by making
+    `merge_per_device_buffers` rank-agnostic.
+  - Fixed reasoning being dropped after tool results.
+  - Fixed a vision-batch crash caused by constructing a `Device()` instead
+    of `CPU()` for host tensors.
+- Expanded DeepSeek-V3 ModuleV3 support:
+  - Added NVFP4 (modelopt) weight support, running experts, dense MLPs,
+    and the attention output projection on SM100 block-scaled FP4 matmul
+    kernels.
+  - Added data-parallel + expert-parallel (DP-EP) and multi-GPU
+    tensor-parallel + expert-parallel (TP+EP) serving. Note: `Tensor.to`
+    no longer implicitly calls `F.distributed_broadcast`; call it
+    explicitly where needed.
+  - Fixed the FP8 adapter by casting f32 normalization gammas, resolving a
+    dtype mismatch.
+- Expanded Kimi K2.5 support:
+  - Kimi with DFlash speculative decoding
+    (`UnifiedDflashKimiK25ForCausalLM`) now supports image input;
+    previously the vision encoder was not compiled, so image prompts were
+    answered as if the model were blind.
+  - Added support for combining Kimi tool calling with
+    `response_format=json_schema` on the xgrammar constrained-decoding
+    backend.
+- Expanded FLUX.2 support:
+  - FLUX.2-klein bf16 checkpoints on Apple M5 GPUs now default to int8
+    W8A8 quantization, ~1.45x faster end-to-end than bf16 on
+    FLUX.2-klein-4B at near-lossless quality; set
+    `APPLE_FLUX2_INT8_W8A8=0` to opt out.
+  - NVFP4 checkpoints can now opt into an int8 W8A8 requant at load on
+    Apple M5 with `APPLE_FLUX2_INT8_W8A8=1`, ~2.56x faster end-to-end
+    than the default W4A16 path on FLUX.2-dev.
+  - Diffusion pipelines now support two denoising-cache backends to skip
+    redundant transformer passes: `--taylorseer` (recommended default,
+    with `balanced` and `fast` presets) and `--first-block-caching`; the
+    two are mutually exclusive and both off by default.
+- Expanded Qwen support:
+  - Added tool-calling and reasoning support to Qwen 3.5 / 3.6.
+  - Fixed a `Qwen3EmbeddingModel` crash.
+- Added per-request LoRA adapter support: `LoRALinear` and
+  `StackedLinearLoRA` extend LoRA to standalone and fused-QKV projections,
+  with `LoRAManager.apply` swapping target layers in a model.
+- Improved Eagle3 speculative-decoding performance by removing a redundant
+  concatenate in the draft path.
+- Fixed Step-3.5-Flash accuracy and performance.
+- Fixed the EAGLE3 MHA draft `lm_head` all-gather in pure tensor-parallel
+  mode.
+
 ## MAX framework
 
 - `--num-speculative-tokens` is now unset by default, and each speculative

@@ -454,7 +454,7 @@ class TestSpeculativeArchitectureOverride:
             is_dflash=True,
             draft_arch="Gemma4DSparkModel",
         )
-        assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4ForCausalLM"
+        assert self._resolved_arch(cfg) == "UnifiedDSparkGemma4_12BForCausalLM"
 
     def test_gemma4_unified_without_dspark_draft_is_noop(self) -> None:
         cfg = self._make_config(

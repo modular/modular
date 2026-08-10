@@ -46,7 +46,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.layer import Module
 from max.nn.linear import Linear
-from max.pipelines.architectures.unified_dspark_gemma4 import (
+from max.pipelines.architectures.unified_dspark_gemma4_12b import (
     DSparkGemma4,
     DSparkGemma4DraftConfig,
 )

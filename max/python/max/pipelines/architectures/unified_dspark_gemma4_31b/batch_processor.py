@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for the unified DSpark Gemma4 pipeline model."""
+"""Input batching for the unified speculators-DSpark Gemma4 pipeline model."""
 
 from __future__ import annotations
 
@@ -24,12 +24,12 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 
 if TYPE_CHECKING:
-    from .model import UnifiedDSparkGemma4Inputs
-    from .model_config import UnifiedDSparkGemma4Config
+    from .model import UnifiedDSparkGemma4_31BInputs
+    from .model_config import UnifiedDSparkGemma4_31BConfig
 
 
-class UnifiedDSparkGemma4BatchProcessor(
-    UnifiedSpecDecodeBatchProcessor["UnifiedDSparkGemma4Inputs"]
+class UnifiedDSparkGemma4_31BBatchProcessor(
+    UnifiedSpecDecodeBatchProcessor["UnifiedDSparkGemma4_31BInputs"]
 ):
     """Ragged batching with persistent buffers and seed for DSpark Gemma4.
 
@@ -40,7 +40,7 @@ class UnifiedDSparkGemma4BatchProcessor(
 
     def __init__(
         self,
-        config: UnifiedDSparkGemma4Config,
+        config: UnifiedDSparkGemma4_31BConfig,
         runtime: BatchProcessorRuntime,
     ) -> None:
         super().__init__(config, runtime)
@@ -54,10 +54,10 @@ class UnifiedDSparkGemma4BatchProcessor(
         kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None,
         seed: Buffer,
         structured_output: bool,
-    ) -> UnifiedDSparkGemma4Inputs:
-        from .model import UnifiedDSparkGemma4Inputs
+    ) -> UnifiedDSparkGemma4_31BInputs:
+        from .model import UnifiedDSparkGemma4_31BInputs
 
-        return UnifiedDSparkGemma4Inputs(
+        return UnifiedDSparkGemma4_31BInputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
             return_n_logits=return_n_logits,
