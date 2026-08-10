@@ -32,20 +32,20 @@ from max.runtime.async_value import AnyAsyncValueRef
 
 
 def vec_add(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    in0: UnsafePointer[Float32, ImmutAnyOrigin],
-    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     length_dev: Int32,
 ):
     var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
-    output[tid] = in0[tid] + in1[tid]
+    output[unsafe_offset=tid] = in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
 
 
 def fill_constant(
-    output: UnsafePointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
     val_dev: Int32,
     length_dev: Int32,
 ):
@@ -54,11 +54,11 @@ def fill_constant(
     var tid = global_idx.x
     if tid >= length:
         return
-    output[tid] = Float32(val)
+    output[unsafe_offset=tid] = Float32(val)
 
 
 def add_in_place(
-    buf: UnsafePointer[Float32, MutAnyOrigin],
+    buf: Pointer[Float32, MutAnyOrigin],
     delta_dev: Int32,
     length_dev: Int32,
 ):
@@ -67,7 +67,7 @@ def add_in_place(
     var tid = global_idx.x
     if tid >= length:
         return
-    buf[tid] += Float32(delta)
+    buf[unsafe_offset=tid] += Float32(delta)
 
 
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
@@ -173,16 +173,18 @@ def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
         @parameter
         @__copy_capture(scale)
         def scaled_vec_add(
-            output: UnsafePointer[Float32, MutAnyOrigin],
-            in0: UnsafePointer[Float32, ImmutAnyOrigin],
-            in1: UnsafePointer[Float32, ImmutAnyOrigin],
+            output: Pointer[Float32, MutAnyOrigin],
+            in0: Pointer[Float32, ImmutAnyOrigin],
+            in1: Pointer[Float32, ImmutAnyOrigin],
             length_dev: Int32,
         ):
             var length = Int(length_dev)
             var tid = global_idx.x
             if tid >= length:
                 return
-            output[tid] = (in0[tid] + in1[tid]) * scale
+            output[unsafe_offset=tid] = (
+                in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
+            ) * scale
 
         _ = builder.add_function[scaled_vec_add](
             out_dev,
@@ -225,7 +227,9 @@ def test_closure_node(ctx: DeviceContext) raises:
         var tid = global_idx.x
         if tid >= length:
             return
-        out_ptr[tid] = (in0_ptr[tid] + in1_ptr[tid]) * scale
+        out_ptr[unsafe_offset=tid] = (
+            in0_ptr[unsafe_offset=tid] + in1_ptr[unsafe_offset=tid]
+        ) * scale
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
@@ -560,7 +564,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     #        assert_equal(host_b[i], UInt32(0xBBBBBBBB))
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=host_a1).as_unsafe_any_origin()[]
+    _ = Pointer(to=host_a1).as_unsafe_any_origin()[]
 
 
 def test_region(ctx: DeviceContext) raises:
@@ -835,10 +839,10 @@ def test_create_buffer(ctx: DeviceContext) raises:
 
         # Slightly questionable way to check that this is a host allocation.
         for i in range(length):
-            ptr[i] = UInt8(i % 251)
+            ptr[unsafe_offset=i] = UInt8(i % 251)
 
         for i in range(length):
-            assert_equal(ptr[i], UInt8(i % 251))
+            assert_equal(ptr[unsafe_offset=i], UInt8(i % 251))
 
     var graph = DeviceGraph.create(ctx, build)
     graph.replay()
