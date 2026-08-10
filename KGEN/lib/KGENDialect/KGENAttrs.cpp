@@ -449,6 +449,14 @@ TypedAttr ParamListConcatAttr::getChecked(
 bool UnknownAttr::isConstant() const { return !isParameterizedType(getType()); }
 
 //===----------------------------------------------------------------------===//
+// SingletonAttr
+//===----------------------------------------------------------------------===//
+
+bool SingletonAttr::isConstant() const {
+  return !isParameterizedType(getType());
+}
+
+//===----------------------------------------------------------------------===//
 // UnboundAttr
 //===----------------------------------------------------------------------===//
 
@@ -4979,14 +4987,9 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
   if (isa<IntegerAttr>(attr))
     return SugarKind::AlwaysInlineBuiltin;
 
-  // Anything that resolves into an UnknownAttr is a struct with no state.  All
+  // Anything that resolves into a SingletonAttr is a struct with no state.  All
   // the computation is happening in the type domain, as in the literal types.
-  if (isa<UnknownAttr>(attr))
-    return SugarKind::AlwaysInlineBuiltin;
-
-  // Anything that resolves into an UnknownAttr is a struct with no state.  All
-  // the computation is happening in the type domain, as in the literal types.
-  if (isa<UnknownAttr>(attr))
+  if (isa<SingletonAttr>(attr))
     return SugarKind::AlwaysInlineBuiltin;
 
   // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType

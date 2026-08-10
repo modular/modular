@@ -1090,6 +1090,13 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
   // parameter reference.
   if (succeeded(p.parseOptionalStar())) {
     if (succeeded(p.parseOptionalLParen())) {
+      // Try to parse '*()' as a singleton value, spelled after the unit type
+      // '!kgen.struct<()>' it most often carries.
+      if (succeeded(p.parseOptionalRParen())) {
+        value = SingletonAttr::get(type);
+        return success();
+      }
+
       // Try to parse *(0,0) as an index reference.
       size_t depth, index;
       if (p.parseInteger(depth) || p.parseComma() || p.parseInteger(index) ||
@@ -1507,6 +1514,11 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
 
   if (isa<UnknownAttr>(value)) {
     p << "*?";
+    return;
+  }
+
+  if (isa<SingletonAttr>(value)) {
+    p << "*()";
     return;
   }
 

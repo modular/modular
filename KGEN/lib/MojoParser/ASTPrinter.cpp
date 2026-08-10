@@ -290,7 +290,7 @@ static void printParamList(raw_ostream &os, PogListAttr paramInfo,
             paramsToPrint.push_back({StringAttr(), elt, VariadicKind::None});
           continue;
         }
-        if (sugarIsa<UnknownAttr>(paramValue)) {
+        if (sugarIsa<SingletonAttr>(paramValue)) {
           paramsToPrint.push_back(
               {StringAttr(), info.valueList, VariadicKind::PosVarArg});
           continue;
@@ -703,7 +703,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto genAttr = dyn_cast<UnknownAttr>(param);
+  if (auto genAttr = dyn_cast<SingletonAttr>(param);
       genAttr && isa<FuncLiteralType>(genAttr.getType())) {
     os << "fn_literal";
     return;
@@ -1328,8 +1328,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
   }
 
   // IntLiteral/FloatLiteral/StringLiteral are stateless values that end up as
-  // UnknownAttr.
-  if (isa<UnknownAttr>(param) && diagShared) {
+  // SingletonAttr.
+  if (isa<SingletonAttr>(param) && diagShared) {
     StringRef typeName;
     if (auto structType = dyn_cast<StructType>(param.getType()))
       typeName = structType.getSymbol().getLeafReference().strref();

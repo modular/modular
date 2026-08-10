@@ -913,7 +913,7 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
     }
   }
 
-  // Fold UnknownAttr for convenience.
+  // Fold valueless struct operands for convenience.
   if (::isa<UnknownAttr>(structValue))
     return UnknownAttr::get(resultType);
 

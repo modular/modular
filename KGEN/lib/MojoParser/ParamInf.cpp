@@ -889,7 +889,7 @@ LogicalResult ParamInf::inferFromParamList() {
           return failure();
         // The ParameterList now has a concrete type.
         auto listValue =
-            UnknownAttr::get(evaluator.getReboundType(expectedType));
+            SingletonAttr::get(evaluator.getReboundType(expectedType));
         setInferredValue(idx, listValue);
       }
       continue;
@@ -1109,7 +1109,7 @@ LogicalResult ParamInf::inferFromDefaults() {
 
     if (isInferableVA) {
       // Infer the param_list to an empty list, and the ParameterList itself to
-      // UnknownAttr.
+      // its singleton value.
       auto [varArgsEltType, expectedValueList] =
           ASTType(evaluator.getReboundType(declaredParamTypes[idx]))
               .getParameterListInfo();
@@ -1131,7 +1131,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       // The list itself doesn't have a value, so default it to {} now that it
       // has a concrete type.
       auto listValue =
-          UnknownAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
+          SingletonAttr::get(evaluator.getReboundType(declaredParamTypes[idx]));
       setInitialInferredValue(idx, listValue);
     }
   }
@@ -2176,7 +2176,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = UnknownAttr::get(typeListType);
+      auto typeListValue = SingletonAttr::get(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }
@@ -2344,7 +2344,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // value of the TypeList struct.
       auto typeListType =
           evaluator.getReboundType(expectedInfo.typeListStruct.getType());
-      auto typeListValue = UnknownAttr::get(typeListType);
+      auto typeListValue = SingletonAttr::get(typeListType);
       (void)matcher.matchParams(typeListValue, expectedInfo.typeListStruct);
       continue;
     }

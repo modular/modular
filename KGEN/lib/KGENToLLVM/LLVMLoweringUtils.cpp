@@ -1076,8 +1076,9 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   //===--------------------------------------------------------------------===//
   // builtin
 
-  // Convert unknown values to undef.
-  if (isa<UnknownAttr>(attr) || isa<UninitMemAttr>(attr)) {
+  // Convert valueless attributes to undef. A singleton's type has a single
+  // inhabitant, so it lowers to a zero-sized aggregate and undef is exact.
+  if (isa<UnknownAttr, SingletonAttr, UninitMemAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
       return Error("unknown type lowering uninitialized memory");

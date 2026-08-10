@@ -475,7 +475,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // for the expected function type.
     typeListType = IndexDepthAdjuster(/*adjustDepth=*/-1).replace(typeListType);
     typeListType = state.evaluator.getReboundType(typeListType);
-    PROP(matchParams(UnknownAttr::get(typeListType), typeListParam));
+    PROP(matchParams(SingletonAttr::get(typeListType), typeListParam));
   }
 
   // The function types are convertible.

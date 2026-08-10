@@ -449,6 +449,19 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   f = #kgen.param.expr<eq, #kgen<sugar alias, !kgen.scalar<ui8>, *?, #kgen<simd 5>>, #kgen<simd 5> : !kgen.scalar<ui8>> : !kgen.scalar<bool>
 } : () -> ()
 
+// A singleton is the unique value of its type, so unlike an unknown it may be
+// compared.  !kgen.struct<()> has no fields, so it has a single inhabitant.
+"some.op"() {
+  // CHECK: a = #kgen.singleton : !kgen.struct<()>
+  a = #kgen.singleton : !kgen.struct<()>,
+  // Two singletons of the same type denote the same value.
+  // CHECK: b = #kgen<simd true> : !kgen.scalar<bool>
+  b = #kgen.param.expr<eq, #kgen.singleton : !kgen.struct<()>, #kgen.singleton : !kgen.struct<()>> : !kgen.scalar<bool>,
+  // Whereas two unknowns carry no value, so this stays symbolic.
+  // CHECK: c = #kgen.param.expr<eq, #kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
+  c = #kgen.param.expr<eq, #kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
+} : () -> ()
+
 "some.op"() {
   // CHECK: a0 = #kgen<simd true> : !kgen.scalar<bool>
   a0 = #kgen.param.expr<eq, #kgen<simd "1.0"> : !kgen.scalar<f32>, #kgen<simd "1.0"> : !kgen.scalar<f32>> : !kgen.scalar<bool>,

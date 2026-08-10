@@ -535,7 +535,7 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
     }
   }
 
-  if (isa<UnknownAttr>(attr)) {
+  if (isa<SingletonAttr>(attr)) {
     auto typeName = getTypeName();
     if (typeName == "IntLiteral" || typeName == "FloatLiteral" ||
         typeName == "StringLiteral" || typeName == "Origin")
