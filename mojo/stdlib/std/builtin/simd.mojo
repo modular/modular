@@ -2140,7 +2140,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
 
         comptime if Self.dtype.is_signed():
             return -(self // -denominator)
-        return (self + denominator - 1) // denominator
+        # Biasing the numerator (`self + denominator - 1`) overflows and wraps
+        # when `self` is near the unsigned type's max, so correct the floor
+        # division with the remainder instead.
+        var quotient, remainder = divmod(self, denominator)
+        return quotient + remainder.ne(Self(0)).cast[Self.dtype]()
 
     # ===------------------------------------------------------------------=== #
     # Methods
