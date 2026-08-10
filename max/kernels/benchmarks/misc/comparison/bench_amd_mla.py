@@ -284,6 +284,8 @@ def bench_max_decode(
     is allocated at the KV cache dtype.
     """
     is_fp8 = dtype == torch.float8_e4m3fn
+    kv_bpe = 1 if is_fp8 else 2
+    kv_bytes_per_copy = batch_size * cache_len * config.qk_head_dim * kv_bpe
     max_dtype = torch_dtype_to_max(dtype)
 
     kv_params = MLAKVCacheParams(
@@ -385,7 +387,7 @@ def bench_max_decode(
     # chained into ONE device-graph below (op i reads buffer i).
     ncopies = _NCOPIES if ncopies is None else ncopies
     if ncopies <= 0:
-        ncopies = _auto_ncopies(batch_size * cache_len * config.qk_head_dim)
+        ncopies = _auto_ncopies(kv_bytes_per_copy)
 
     keepalive: list[Any] = []
     blocks_bufs: list[Buffer] = [blocks_max]
@@ -535,10 +537,16 @@ def bench_max_decode(
     # Per-op latency = whole chained-graph time / number of chained ops.
     per_op_s = start.elapsed_time(end) / 1e3 / nrun / ncopies
 
-    kv_mb = (cache_len * config.qk_head_dim) / (1024.0 * 1024.0)
+    working_set_bytes = kv_bytes_per_copy * ncopies
+    kv_mb = kv_bytes_per_copy / (1024.0 * 1024.0)
+    cold_state = (
+        "cold"
+        if working_set_bytes > _L2_CACHE_SIZE_BYTES
+        else f"WARM: working set < {_L2_CACHE_SIZE_BYTES / 1e6:.0f}MB L2"
+    )
     print(
         f"[MAX chained device-graph] chain={ncopies} "
-        f"kv_per_copy~{kv_mb:.1f}MB working_set~{kv_mb * ncopies:.1f}MB (cold) "
+        f"kv_per_copy~{kv_mb:.1f}MB working_set~{kv_mb * ncopies:.1f}MB ({cold_state}) "
         f"| per-op {per_op_s * 1e6:.2f}us"
     )
     keepalive.clear()
@@ -1033,10 +1041,12 @@ def bench_aiter_decode(
     if aiter_mla_mod is None or _aiter is None:
         print("aiter not available, skipping bench_aiter_decode")
         return None
+    is_fp8 = dtype == torch.float8_e4m3fn
+    kv_bpe = 1 if is_fp8 else 2
+    kv_bytes_per_copy = batch_size * cache_len * config.qk_head_dim * kv_bpe
     ncopies = _NCOPIES if ncopies is None else ncopies
     if ncopies <= 0:
-        ncopies = _auto_ncopies(batch_size * cache_len * config.qk_head_dim)
-    is_fp8 = dtype == torch.float8_e4m3fn
+        ncopies = _auto_ncopies(kv_bytes_per_copy)
 
     total_pages = batch_size * cache_len
     kv_indptr = torch.arange(
@@ -1175,11 +1185,17 @@ def bench_aiter_decode(
     torch.cuda.synchronize()
     per_op_s = start.elapsed_time(end) / 1e3 / nrun / ncopies
 
-    kv_mb = (total_pages * config.qk_head_dim) / (1024.0 * 1024.0)
+    working_set_bytes = kv_bytes_per_copy * ncopies
+    kv_mb = kv_bytes_per_copy / (1024.0 * 1024.0)
+    cold_state = (
+        "cold"
+        if working_set_bytes > _L2_CACHE_SIZE_BYTES
+        else f"WARM: working set < {_L2_CACHE_SIZE_BYTES / 1e6:.0f}MB L2"
+    )
     sched = "persistent" if _AITER_PERSISTENT else "non-persistent"
     print(
         f"[aiter chained CUDA-graph/{sched}] chain={ncopies} "
-        f"kv_per_copy~{kv_mb:.1f}MB working_set~{kv_mb * ncopies:.1f}MB (cold) "
+        f"kv_per_copy~{kv_mb:.1f}MB working_set~{kv_mb * ncopies:.1f}MB ({cold_state}) "
         f"| per-op {per_op_s * 1e6:.2f}us"
     )
     return per_op_s, _compute_decode_bytes(config, batch_size, cache_len, dtype)
