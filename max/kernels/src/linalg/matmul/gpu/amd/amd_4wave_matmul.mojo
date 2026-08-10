@@ -986,7 +986,9 @@ struct AMD4WaveMatmul[
         @parameter
         def load_a[stage: Int, which: Int](k: Int):
             a_loader.load_tile(
-                a_load_tiles[stage][which],
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BM,
                 k_offset=k,
             )
@@ -995,7 +997,9 @@ struct AMD4WaveMatmul[
         @parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -1100,11 +1104,19 @@ struct AMD4WaveMatmul[
                         load_b[entry.op.stage, entry.op.subtile](k)
                     elif entry.op.tag == MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
-                            a_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(a_mma_tiles[0][0])](
+                                rebind[type_of(a_mma_tiles[0])](
+                                    a_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
-                            b_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(b_mma_tiles[0][0])](
+                                rebind[type_of(b_mma_tiles[0])](
+                                    b_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
@@ -1598,7 +1610,9 @@ struct AMD4WaveMatmul[
             # callsite only carries the within-block `which*half_BM`
             # offset — same shape as the matmul's load_a / load_b.
             a_loader.load_tile(
-                a_load_tiles[stage][which],
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BM,
                 k_offset=k,
             )
@@ -1607,7 +1621,9 @@ struct AMD4WaveMatmul[
         @parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -1698,11 +1714,19 @@ struct AMD4WaveMatmul[
                         load_b[entry.op.stage, entry.op.subtile](k)
                     elif entry.op.tag == MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
-                            a_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(a_mma_tiles[0][0])](
+                                rebind[type_of(a_mma_tiles[0])](
+                                    a_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
-                            b_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(b_mma_tiles[0][0])](
+                                rebind[type_of(b_mma_tiles[0])](
+                                    b_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()

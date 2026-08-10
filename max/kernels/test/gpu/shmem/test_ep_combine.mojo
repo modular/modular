@@ -436,7 +436,7 @@ def main() raises:
     comptime test_gpu_counts = (8,)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

@@ -199,7 +199,7 @@ def run_broadcast_sweep[]() raises:
         range(len(test_lengths)),
         [True, False],
     ):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
         if DeviceContext.number_of_devices() < num_gpus:
             continue
 
@@ -208,8 +208,8 @@ def run_broadcast_sweep[]() raises:
         for i in range(num_gpus):
             list_of_ctxs.append(DeviceContext(device_id=i))
 
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime length = test_lengths[length_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime length = rebind[Int](test_lengths[length_idx])
 
         # Test with each GPU as root
         for root in range(num_gpus):

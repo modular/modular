@@ -271,7 +271,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
 
     comptime for dtype_idx in range(2):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
         for bs in [1, 16]:
             var ce_cache_sizes = List[Int]()
             var tg_cache_sizes = List[Int]()

@@ -244,7 +244,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
 
     comptime for dtype_idx in range(len(dtypes)):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
         # Replit context encoding [testing even query valid lengths].
         valid_length[0] = 128
         valid_length[1] = 64

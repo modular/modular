@@ -440,12 +440,12 @@ def main() raises:
     )
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
-            comptime old = StaticString(old_chars[j])
-            comptime new = new_chars[j]
+            comptime fname = rebind[StaticString](filenames[j])
+            comptime old = rebind[StaticString](old_chars[j])
+            comptime new = rebind[StaticString](new_chars[j])
             comptime suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId(String("bench_string_count", suffix))

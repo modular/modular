@@ -280,15 +280,15 @@ def run_determinism_sweep() raises -> None:
 
     comptime for d in range(len(dtypes)):
         comptime for g in range(len(gpu_counts)):
-            comptime dtype = dtypes[d]
-            comptime ngpus = gpu_counts[g]
+            comptime dtype = rebind[DType](dtypes[d])
+            comptime ngpus = rebind[Int](gpu_counts[g])
             if DeviceContext.number_of_devices() < ngpus:
                 continue
             var ctx = List[DeviceContext]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
-                comptime length = lengths[li]
+                comptime length = rebind[Int](lengths[li])
                 allreduce_determinism_test[dtype=dtype, ngpus=ngpus](
                     ctx, length
                 )

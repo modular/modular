@@ -873,9 +873,9 @@ def main() raises:
         range(len(test_dtypes)),
         range(len(test_lengths)),
     ):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime length = test_lengths[length_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime length = rebind[Int](test_lengths[length_idx])
 
         if DeviceContext.number_of_devices() < num_gpus:
             continue
@@ -890,7 +890,7 @@ def main() raises:
     # Producer-sanitize edge case: inputs containing -0.0 lanes, one mid-size
     # case per dtype on 2 GPUs (the property is rank-count independent).
     comptime for dtype_idx in range(len(test_dtypes)):
-        comptime dtype = test_dtypes[dtype_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
         comptime length = 8 * 1024
         if DeviceContext.number_of_devices() < 2:
             continue
@@ -906,7 +906,7 @@ def main() raises:
     # expose the per-generation clear-extent bug. 2 GPUs is sufficient (the bug
     # is rank-count independent). Race-dependent -- run under `--runs_per_test`.
     comptime for dtype_idx in range(len(test_dtypes)):
-        comptime dtype = test_dtypes[dtype_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
         if DeviceContext.number_of_devices() < 2:
             continue
         var ctx = List[DeviceContext]()
@@ -919,7 +919,7 @@ def main() raises:
     # the same signal buffer must not corrupt the Lamport results -- proves the
     # embedded Lamport region is disjoint from the trailing 2-stage scratch.
     comptime for dtype_idx in range(len(test_dtypes)):
-        comptime dtype = test_dtypes[dtype_idx]
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
         if DeviceContext.number_of_devices() < 2:
             continue
         var ctx = List[DeviceContext]()
@@ -938,8 +938,8 @@ def main() raises:
     comptime for gpu_idx, dtype_idx in product(
         range(len(test_gpu_counts)), range(len(test_dtypes))
     ):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
-        comptime dtype = test_dtypes[dtype_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
         if DeviceContext.number_of_devices() < num_gpus:
             continue
         var ctx = List[DeviceContext]()

@@ -355,7 +355,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
 
     for bs in [1, 16]:
         comptime for dtype_idx in range(len(dtypes)):
-            comptime dtype = dtypes[dtype_idx]
+            comptime dtype = rebind[DType](dtypes[dtype_idx])
 
             var ce_cache_sizes = List[Int]()
             var ce_seq_lens = List[Int]()

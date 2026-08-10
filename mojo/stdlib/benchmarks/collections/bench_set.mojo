@@ -261,7 +261,7 @@ def main() raises:
     comptime sizes = (10, 100, 1000, 10_000)
 
     comptime for i in range(len(sizes)):
-        comptime size = sizes[i]
+        comptime size = rebind[Int](sizes[i])
 
         # Equality benchmarks
         m.bench_function[bench_set_eq_int[size]](

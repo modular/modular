@@ -146,10 +146,10 @@ def main() raises:
     comptime lengths = (100, 1000, 10_000, 100_000, 1_000_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
+            comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", fname, ",", length, "]")
             m.bench_function[bench_count_codepoints[length, fname]](
                 BenchId(String("bench_count_codepoints", suffix))
