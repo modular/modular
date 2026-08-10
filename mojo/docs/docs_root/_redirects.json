@@ -20,6 +20,11 @@
     "status": 301
   },
   {
+    "source": "/docs/manual/values/closures/",
+    "dest": "/docs/manual/functions/closures/",
+    "status": 301
+  },
+  {
     "source": "/docs/layout",
     "dest": "https://docs.modular.com/api/mojo/layout/",
     "status": 302
@@ -28,6 +33,11 @@
     "source": "/docs/layout/(.*)",
     "dest": "https://docs.modular.com/api/mojo/layout/{0}",
     "status": 302
+  },
+  {
+    "source": "/docs/reference/decorators/extensibility-register/",
+    "dest": "https://docs.modular.com/api/mojo/extensibility/decorators/register/",
+    "status": 301
   },
   {
     "source": "/nightly/releases/(.*)",
