@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from max.driver import CPU, Device
-from max.nn.kv_cache import KVConnectorType
+from max.nn.kv_cache import KVConnectorType, MultiKVCacheParams
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,
@@ -236,6 +236,16 @@ def create_di_scheduler(
 
     effective_prefill_dp = prefill_dp if prefill_dp is not None else dp
     effective_decode_dp = decode_dp if decode_dp is not None else dp
+    # Draft tokens only flow when spec_decode_prefill populates them; this is
+    # the single source of truth for "is this a spec-decode topology", used for
+    # both the scheduler config and the KV cache shape below.
+    effective_num_spec_tokens = (
+        num_speculative_tokens if spec_decode_prefill else 0
+    )
+    # Production pairs spec decode with a target+draft MultiKVCacheParams tree,
+    # so the test fixture does too — otherwise the multi-cache path through
+    # KVTransferEngine.from_paged_kv_cache goes untested.
+    multi_kv = effective_num_spec_tokens > 0
 
     def _create_prefill_kv_cache() -> PagedKVCacheManager:
         return create_kv_cache(
@@ -247,8 +257,10 @@ def create_di_scheduler(
             kv_connector=kv_connector,
             dp=effective_prefill_dp,
             device=device,
+            num_speculative_tokens=effective_num_spec_tokens,
             is_mla=prefill_is_mla,
             tp_per_replica=prefill_tp_per_replica,
+            multi_kv=multi_kv,
         )
 
     def _create_decode_kv_cache() -> PagedKVCacheManager:
@@ -261,10 +273,12 @@ def create_di_scheduler(
             kv_connector=kv_connector,
             dp=effective_decode_dp,
             device=device,
+            num_speculative_tokens=effective_num_spec_tokens,
             # Decode must use the same KV layout as prefill so bytes_per_page
             # matches at connect() time. For heterogeneous MLA DI the model
             # is MLA on both sides; decode's TP=1 naturally so no flatten.
             is_mla=prefill_is_mla,
+            multi_kv=multi_kv,
         )
 
     def _make_scheduler_config(
@@ -277,9 +291,7 @@ def create_di_scheduler(
             enable_chunked_prefill=enable_chunked_prefill,
             enable_in_flight_batching=enable_in_flight_batching,
             data_parallel_degree=dp_value,
-            num_speculative_tokens=num_speculative_tokens
-            if spec_decode_prefill
-            else 0,
+            num_speculative_tokens=effective_num_spec_tokens,
         )
 
     # For heterogeneous-MLA DI (prefill DP=1/TP>1, decode DP=N/TP=1), the
@@ -328,9 +340,7 @@ def create_di_scheduler(
             kv_cache_prefill,
             max_seq_len=max_seq_len,
             start_token_id=99,
-            num_speculative_tokens=(
-                num_speculative_tokens if spec_decode_prefill else 0
-            ),
+            num_speculative_tokens=effective_num_spec_tokens,
             disable_overlap=not overlap_prefill,
         )
     else:
@@ -1650,6 +1660,44 @@ def test_overlap_di_both_sides_minimal_output() -> None:
     # match 42 as decode start_token_id
     assert all_tokens == [99, 42]
     assert FUTURE_TOKEN not in all_tokens
+
+
+def test_spec_decode_fixture_builds_multi_kv_topology() -> None:
+    """Drift guard: the spec-decode fixture must build a real target+draft
+    MultiKVCacheParams tree on both DI sides.
+
+    Every other spec-decode test in this file relies on this to reach the
+    multi-cache path in ``KVTransferEngine.from_paged_kv_cache``. If the
+    fixture silently regresses to a flat single cache, those tests keep
+    passing while covering nothing, so assert the topology directly.
+    """
+    decode, prefill, _server_addr, _q = create_di_scheduler(
+        spec_decode_prefill=True,
+        num_speculative_tokens=3,
+    )
+
+    for scheduler in (prefill, decode):
+        params = scheduler.kv_cache.params
+        assert isinstance(params, MultiKVCacheParams)
+        assert set(params.children) == {"target", "draft"}
+
+    # The engine must split the tree into one NIXL group per child, and the
+    # groups must be shape-heterogeneous — a uniform split would not exercise
+    # the per-child validation that the real Eagle target/draft layout needs.
+    bytes_per_group = prefill.transfer_engine.bytes_per_group
+    assert len(bytes_per_group) == 2
+    assert bytes_per_group[0] != bytes_per_group[1]
+    assert prefill.transfer_engine.bytes_per_page == sum(bytes_per_group)
+
+
+def test_non_spec_decode_fixture_stays_single_kv() -> None:
+    """The multi-KV gate must not leak into the non-spec-decode tests, which
+    still cover the flat single-cache transfer path."""
+    decode, prefill, _server_addr, _q = create_di_scheduler()
+
+    for scheduler in (prefill, decode):
+        assert not isinstance(scheduler.kv_cache.params, MultiKVCacheParams)
+    assert len(prefill.transfer_engine.bytes_per_group) == 1
 
 
 # Spec decode + disable_overlap=True: covers the PrefillScheduler's
