@@ -81,11 +81,14 @@ def _warm_parallel(
     pooled: list[tuple[GCOpFamily, Module, list[DeviceSpec]]] = []
     local: list[GCOpFamily] = []
     for family in families:
+        devices = family.sweep_devices()
+        if not devices:
+            # The pool rejects an empty device_specs (MXF-599).
+            yield family.name, 0
+            continue
         module = family.build_sweep_module()
         if _roundtrips_stably(module.mlir_module.bytecode):
-            specs = [
-                gc_compile.device_spec_of(d) for d in family.sweep_devices()
-            ]
+            specs = [gc_compile.device_spec_of(d) for d in devices]
             pooled.append((family, module, specs))
         else:
             local.append(family)
