@@ -54,7 +54,12 @@ from max.profiler import traced
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
-from .block_manager import BlockManager, PrefixCacheHits, _compute_seq_len
+from .block_manager import (
+    BlockManager,
+    PrefixCacheHits,
+    _compute_seq_len,
+    compute_block_hashes,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -393,8 +398,13 @@ class PagedKVCacheManager:
 
         # The hash chain is identical across replicas (same algo, seed, and
         # block size), so hash once and only vary the lookups.
-        block_hashes = self._replica[0].block_manager.compute_block_hashes(
-            ctx, []
+        block_manager = self._replica[0].block_manager
+        block_hashes = compute_block_hashes(
+            ctx,
+            [],
+            block_manager.block_size,
+            block_manager.kv_hash_algo,
+            block_manager.kv_hash_seed,
         )
         return [
             replica.block_manager.count_cached_prefix_blocks(block_hashes)

@@ -58,6 +58,97 @@ from .block_utils import (
 
 logger = logging.getLogger("max.pipelines")
 
+SALT_DROPPED_WARNED: bool = False
+
+
+def compute_block_hashes(
+    ctx: TextContext,
+    existing_hashes: Sequence[bytes],
+    block_size: int,
+    kv_hash_algo: KVHashAlgo,
+    kv_hash_seed: bytes | None,
+) -> list[bytes]:
+    """Computes block hashes for the request beyond ``existing_hashes``.
+
+    Unlike :meth:`compute_hashes_for_request`, this reads and writes no
+    per-request state, so it is safe to call for requests that are not
+    (and may never be) claimed on this replica — e.g. when computing
+    prefix-cache overlap for data-parallel routing.
+
+    Args:
+        ctx: The request context.
+        existing_hashes: Hashes already computed for the request's leading
+            blocks; new hashes chain onto the last entry. Pass an empty
+            sequence to hash from the start of the prompt.
+        block_size: How many tokens one block holds.
+        kv_hash_algo: Which hash the keys are built with.
+        kv_hash_seed: Seed isolating one deployment's keys from another's, or
+            ``None`` for the unseeded default.
+
+    Returns:
+        Hashes for the newly hashed full blocks; empty if no additional
+        full block is hashable.
+    """
+    num_hashed_tokens = len(existing_hashes) * block_size
+    # We do not compute the hash for the last token because it is ineligible
+    # for prefix caching. This is because 100% prefix cache hit is illegal
+    # and will result in a 0 input tokens for the request. Hence the minus 1.
+    # When the request carries pending future-token placeholders, all of
+    # them are excluded instead: a placeholder value must never be hashed
+    # into a block key, or the committed block's content would desync from
+    # its key. (With one placeholder pending, this coincides with the
+    # classic minus 1.)
+    num_hashable_tokens = len(ctx.tokens) - max(1, ctx.pending_future_count)
+    num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
+    if num_unhashed_tokens < block_size:
+        return []
+
+    parent_hash_value: bytes | None = None
+    if len(existing_hashes) > 0:
+        parent_hash_value = existing_hashes[-1]
+
+    unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
+
+    token_hash_overrides: list[TokenHashOverride] = []
+    if isinstance(ctx, TextAndVisionContext):
+        for img in ctx.images:
+            if img.image_hash is None:
+                raise ValueError(
+                    "hash_request_tokens requires `image_hash` to be present. Found None."
+                )
+            token_hash_overrides.append(
+                TokenHashOverride(
+                    token_idx=img.start_idx,
+                    token_hash=img.image_hash,
+                    source="image",
+                )
+            )
+        token_hash_overrides.extend(ctx.token_hash_overrides)
+
+    cache_salt = ctx.cache_salt
+    if cache_salt is not None and kv_hash_algo == "ahash64":
+        global SALT_DROPPED_WARNED
+        if not SALT_DROPPED_WARNED:
+            logger.warning(
+                "cache_salt was supplied on a request but "
+                "kv_cache_hash_algo=ahash64; salt is being dropped. Set "
+                "kv_cache_hash_algo=sha256 to enable per-request "
+                "prefix-cache isolation."
+            )
+            SALT_DROPPED_WARNED = True
+        cache_salt = None
+
+    return hash_request_tokens(
+        token_ids=unhashed_tokens,
+        block_size=block_size,
+        parent_hash=parent_hash_value,
+        prefix_length=num_hashed_tokens,
+        token_hash_overrides=token_hash_overrides,
+        algo=kv_hash_algo,
+        seed=kv_hash_seed,
+        salt=cache_salt,
+    )
+
 
 @dataclass
 class _PendingTransfer:
@@ -82,6 +173,7 @@ def _compute_seq_len(
     ctx: TextContext,
     num_draft_tokens: int,
     num_draft_tokens_per_step: int = 1,
+    max_num_input_tokens: int | None = None,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
     #
@@ -110,9 +202,14 @@ def _compute_seq_len(
     block_draft_extra = (
         1 if num_draft_tokens_per_step == num_draft_tokens else 0
     )
-    seq_len = (
-        len(ctx.tokens)
-        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+    # Avoid allocating blocks for the entire sequence when chunked prefill is used.
+    # This is critically important for SWA.
+    active_length = ctx.tokens.active_length
+    if max_num_input_tokens is not None:
+        active_length = min(active_length, max_num_input_tokens)
+    seq_len = ctx.tokens.processed_length + active_length
+    seq_len += (
+        len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + 2 * num_draft_tokens
         + 1
         + block_draft_extra
@@ -218,7 +315,6 @@ class BlockManager:
 
         self.kv_hash_algo: KVHashAlgo = kv_hash_algo
         self.kv_hash_seed: bytes | None = kv_hash_seed
-        self._salt_dropped_warned: bool = False
 
         if kv_hash_algo not in connector.supported_hash_algos:
             raise ValueError(
@@ -355,90 +451,14 @@ class BlockManager:
     ) -> None:
         """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
-        new_hashes = self.compute_block_hashes(ctx, hashes)
-        hashes.extend(new_hashes)
-
-    @traced
-    def compute_block_hashes(
-        self,
-        ctx: TextContext,
-        existing_hashes: Sequence[bytes],
-    ) -> list[bytes]:
-        """Computes block hashes for the request beyond ``existing_hashes``.
-
-        Unlike :meth:`compute_hashes_for_request`, this reads and writes no
-        per-request state, so it is safe to call for requests that are not
-        (and may never be) claimed on this replica — e.g. when computing
-        prefix-cache overlap for data-parallel routing.
-
-        Args:
-            ctx: The request context.
-            existing_hashes: Hashes already computed for the request's leading
-                blocks; new hashes chain onto the last entry. Pass an empty
-                sequence to hash from the start of the prompt.
-
-        Returns:
-            Hashes for the newly hashed full blocks; empty if no additional
-            full block is hashable.
-        """
-        num_hashed_tokens = len(existing_hashes) * self.block_size
-        # We do not compute the hash for the last token because it is ineligible
-        # for prefix caching. This is because 100% prefix cache hit is illegal
-        # and will result in a 0 input tokens for the request. Hence the minus 1.
-        # When the request carries pending future-token placeholders, all of
-        # them are excluded instead: a placeholder value must never be hashed
-        # into a block key, or the committed block's content would desync from
-        # its key. (With one placeholder pending, this coincides with the
-        # classic minus 1.)
-        num_hashable_tokens = len(ctx.tokens) - max(1, ctx.pending_future_count)
-        num_unhashed_tokens = num_hashable_tokens - num_hashed_tokens
-        if num_unhashed_tokens < self.block_size:
-            return []
-
-        parent_hash_value: bytes | None = None
-        if len(existing_hashes) > 0:
-            parent_hash_value = existing_hashes[-1]
-
-        unhashed_tokens = ctx.tokens[num_hashed_tokens:num_hashable_tokens]
-
-        token_hash_overrides: list[TokenHashOverride] = []
-        if isinstance(ctx, TextAndVisionContext):
-            for img in ctx.images:
-                if img.image_hash is None:
-                    raise ValueError(
-                        "hash_request_tokens requires `image_hash` to be present. Found None."
-                    )
-                token_hash_overrides.append(
-                    TokenHashOverride(
-                        token_idx=img.start_idx,
-                        token_hash=img.image_hash,
-                        source="image",
-                    )
-                )
-            token_hash_overrides.extend(ctx.token_hash_overrides)
-
-        cache_salt = ctx.cache_salt
-        if cache_salt is not None and self.kv_hash_algo == "ahash64":
-            if not self._salt_dropped_warned:
-                logger.warning(
-                    "cache_salt was supplied on a request but "
-                    "kv_cache_hash_algo=ahash64; salt is being dropped. Set "
-                    "kv_cache_hash_algo=sha256 to enable per-request "
-                    "prefix-cache isolation."
-                )
-                self._salt_dropped_warned = True
-            cache_salt = None
-
-        return hash_request_tokens(
-            token_ids=unhashed_tokens,
-            block_size=self.block_size,
-            parent_hash=parent_hash_value,
-            prefix_length=num_hashed_tokens,
-            token_hash_overrides=token_hash_overrides,
-            algo=self.kv_hash_algo,
-            seed=self.kv_hash_seed,
-            salt=cache_salt,
+        new_hashes = compute_block_hashes(
+            ctx,
+            hashes,
+            self.block_size,
+            self.kv_hash_algo,
+            self.kv_hash_seed,
         )
+        hashes.extend(new_hashes)
 
     @traced
     def reuse_blocks_from_prefix_cache(
