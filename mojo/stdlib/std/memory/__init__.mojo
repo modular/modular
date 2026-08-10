@@ -28,7 +28,6 @@ automatic memory management.
 from .alloc import Allocation, ThinAllocation, alloc, dealloc, Layout
 from .arc_pointer import ArcPointer
 from .memory import (
-    memcmp,
     unsafe_memcmp,
     memcpy,
     unsafe_memcpy,

@@ -89,7 +89,7 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
-    # We use memcmp to check that the number is not too large.
+    # We use unsafe_memcmp to check that the number is not too large.
     comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
         CONTAINER_SIZE, "0"
     )
