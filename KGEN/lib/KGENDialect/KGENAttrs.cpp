@@ -355,13 +355,16 @@ TypedAttr ParamListGetAttr::get(TypedAttr variadic, TypedAttr index) {
     if (idxAttr && size_t(idxAttr.getInt()) < vaAttr.getValues().size())
       return vaAttr.getValues()[size_t(idxAttr.getInt())];
 
-    // Fold if all elements are the same (e.g. if there is only one element!).
-    if (!vaAttr.getValues().empty()) {
-      auto first = vaAttr.getValues()[0];
-      if (llvm::all_of(vaAttr.getValues().drop_front(),
-                       [&](auto elt) { return elt == first; }))
-        return first;
-    }
+    // TODO(MOCO-4505): temporarily disabled for closure migration, re-enable
+    // later.
+    //
+    // // Fold if all elements are the same (e.g. if there is only one element!)
+    // if (!vaAttr.getValues().empty()) {
+    //   auto first = vaAttr.getValues()[0];
+    //   if (llvm::all_of(vaAttr.getValues().drop_front(),
+    //                    [&](auto elt) { return elt == first; }))
+    //     return first;
+    // }
   }
 
   auto resultType = cast<ParamListType>(variadic.getType()).getElementType();
