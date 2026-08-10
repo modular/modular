@@ -314,16 +314,17 @@ struct Counter[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_counter_body[
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_counter_body[
                 f_key=fmt.write_repr_to[Self.V],
                 f_val=fmt.write_repr_to[Int],
             ](w)
 
         fmt.FormatStruct(writer, "Counter").params(
             fmt.TypeNames[Self.V](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators

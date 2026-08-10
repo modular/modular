@@ -414,8 +414,7 @@ struct Set[
     ) and conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration {mut iterator}:
             ref element = iterator.__next__()
 
             comptime if is_repr:
@@ -423,7 +422,7 @@ struct Set[
             else:
                 element.write_to(w)
 
-        write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
+        write_sequence_to(writer, iterate, start="{", end="}")
         _ = iterator^
 
     @no_inline
@@ -447,14 +446,15 @@ struct Set[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[is_repr=True](w)
 
         FormatStruct(writer, "Set").params(
             TypeNames[Self.T](),
             Named("Hasher", TypeNames[Self.H]()),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods

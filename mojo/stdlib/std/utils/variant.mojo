@@ -758,13 +758,14 @@ struct Variant[*Ts: AnyType](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_field(mut w: Some[Writer]):
-            self._write_value_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
 
-        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields[
-            FieldsFn=write_field
-        ]()
+        def write_field(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_value_to[is_repr=True](w)
+
+        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields(
+            write_field
+        )
 
     @always_inline
     def unwrap[T: Movable](deinit self) -> T:

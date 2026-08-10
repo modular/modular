@@ -497,13 +497,14 @@ struct Optional[T: AnyType](
             writer: The object to write to.
         """
 
-        @parameter
-        def fields(mut w: Some[Writer]):
-            self._write_to[is_repr=True](w)
+        var self_ptr = Pointer(to=self)
 
-        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
-            FieldsFn=fields
-        ]()
+        def fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_to[is_repr=True](w)
+
+        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields(
+            fields
+        )
 
     def __hash__[
         H: Hasher

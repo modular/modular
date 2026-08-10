@@ -773,13 +773,14 @@ struct IntervalTree[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._draw(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._draw(w)
 
         fmt.FormatStruct(writer, "IntervalTree").params(
             fmt.TypeNames[Self.T, Self.U](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @no_inline
     def _draw[w: Writer](self, mut writer: w):

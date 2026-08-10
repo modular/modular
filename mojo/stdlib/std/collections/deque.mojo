@@ -549,11 +549,10 @@ struct Deque[ElementType: Movable](
     ):
         var iterator = self.__iter__()
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration {mut iterator}:
             f(iterator.__next__(), w)
 
-        fmt.write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to(writer, iterate)
         _ = iterator^
 
     @no_inline
@@ -577,13 +576,14 @@ struct Deque[ElementType: Movable](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "Deque").params(
             fmt.TypeNames[Self.ElementType](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods
