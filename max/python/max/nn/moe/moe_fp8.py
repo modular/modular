@@ -24,6 +24,7 @@ from ..comm.ep.ep_kernels import (
     ep_mxfp4_down_slot_stride,
     ep_mxfp4_max_padded_m,
     fused_silu,
+    uses_mx_ep_token_format,
 )
 from ..kernels import moe_create_indices
 from .moe import MoE
@@ -72,8 +73,8 @@ class MoEQuantized(MoE):
         return Fp8Strategy(self.quant_config, self.dtype)
 
     def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
-        """Enable the MXFP4 EP A-scale preshuffle fold on the shared EP config
-        so the dispatch ops emit slot-sized scales. Must run BEFORE the dispatch
+        """Enable the MX EP A-scale preshuffle fold on the shared EP config so
+        the dispatch ops emit slot-sized scales. Must run BEFORE the dispatch
         op (the dispatch output shape depends on this flag); the EP forward
         driver calls it once per layer before dispatch.
 
@@ -88,10 +89,18 @@ class MoEQuantized(MoE):
         """
         if self._ep_batch_manager is None:
             return
+        # Every term reads `self.quant_config`, the object the consumer gate at
+        # `up_a_scales_preshuffled` reads. Taking the format from
+        # `ep_config.dispatch_quant_config` instead would silently emit
+        # slot-sized scales while the matmul reads row-major, and the MTP model
+        # already shares one `EPConfig` between target and draft. Only the
+        # accelerator-layout term needs the EP config.
         self.ep_batch_manager.config.mxfp4_a_scales_preshuffled = bool(
             dispatch_supports_fold
             and self.quant_config is not None
-            and self.quant_config.is_mxfp4
+            and uses_mx_ep_token_format(
+                self.ep_batch_manager.config, self.quant_config
+            )
             and self.quant_config.block_scaled_preshuffled_b
         )
 
@@ -298,13 +307,9 @@ class MoEQuantized(MoE):
             self.gate_up_proj_scales, self.down_proj_scales, x.device
         )
 
-        # For the MXFP4 preb EP path, the producers write the
-        # grouped-matmul A-scale directly into the matmul's per-expert slot
-        # layout, so the standalone preshuffle kernels are dropped.  `ep_wait`
-        # does this for the up/gate proj (KS224) and `fused_silu` for the down
-        # proj (KS64). For SiLU both share the SAME graph-build-time
-        # `max_padded_M`; for OAI-clamped SwiGLU the up fold stays off and the
-        # down proj folds locally via the independent `ep_mxfp4_down_slot_stride`.
+        # For the MX preb EP path, `ep_wait` (up/gate proj) and `fused_silu`
+        # (down proj) write the grouped-matmul A-scale straight into the
+        # per-expert slot layout, dropping the standalone preshuffle kernels.
         # Each matmul reader MUST use the constant its own producer wrote with.
         # Read the flag the EP forward driver already resolved via
         # `configure_ep_scale_fusion` (single source of truth) so the matmul

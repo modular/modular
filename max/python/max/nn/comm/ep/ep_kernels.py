@@ -65,15 +65,25 @@ def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
     )
 
 
-def _uses_mx_ep_token_format(config: EPConfig) -> bool:
+def uses_mx_ep_token_format(
+    config: EPConfig, quant_config: QuantConfig | None = None
+) -> bool:
     """Whether dispatch goes through ``MXTokenFormat``, which serves both MX
     formats: it takes its element packing from the dispatch dtype (two FP4
     nibbles per byte, or one E4M3 byte) and the E8M0 scale path is identical.
 
     On cuda, MXFP8 uses the NVIDIA block-scaled layout instead, so that case is
     excluded here rather than left to call-site ordering.
+
+    Args:
+        config: Supplies the accelerator layout term, and the format term when
+            ``quant_config`` is omitted.
+        quant_config: Takes the format term from here instead, so a caller whose
+            consumer gate reads its own :obj:`QuantConfig` cannot disagree with
+            the producer about the format.
     """
-    quant_config = config.dispatch_quant_config
+    if quant_config is None:
+        quant_config = config.dispatch_quant_config
     if quant_config is None:
         return False
     return (
@@ -183,7 +193,7 @@ def _ep_dispatch_output_types(
                 expert_ids_type,
                 src_info_type,
             ]
-        elif _uses_mx_ep_token_format(config):
+        elif uses_mx_ep_token_format(config):
             # When the A-scale preshuffle fold is on, the dispatch-wait kernel
             # writes the activation scale directly into the matmul's per-expert
             # fixed-stride `scale_4d` slots, so the scales output is slot-sized
@@ -300,7 +310,7 @@ def call_ep_init(
                 if config.dispatch_quant_config.is_nvfp4
                 else DType.float8_e8m0fnu
             )
-        elif _uses_mx_ep_token_format(config):
+        elif uses_mx_ep_token_format(config):
             parameters["dispatch_fmt_str"] = "MXFP4"
             parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
         elif _is_legacy_float8_dispatch(config):
@@ -405,7 +415,7 @@ def call_ep_dispatch_async(
                         [1.0], DType.float32, device=input_tokens.device
                     )
                 )
-        elif _uses_mx_ep_token_format(config):
+        elif uses_mx_ep_token_format(config):
             op_name += ".mxfp4"
             # No output tensor for MOGG to deduce the scale dtype from.
             parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
@@ -514,7 +524,7 @@ def call_ep_dispatch_wait(
             parameters["dispatch_scale_granularity"] = str(
                 quant_config.input_scale.granularity
             )
-        elif _uses_mx_ep_token_format(config):
+        elif uses_mx_ep_token_format(config):
             op_name += ".mxfp4"
             _add_mxfp4_scale_fusion_parameters(parameters, config)
         else:
@@ -769,7 +779,7 @@ def call_ep_dispatch(
             parameters["dispatch_scale_granularity"] = str(
                 quant_config.input_scale.granularity
             )
-        elif _uses_mx_ep_token_format(config):
+        elif uses_mx_ep_token_format(config):
             op_name += ".mxfp4"
             _add_mxfp4_scale_fusion_parameters(parameters, config)
         else:
@@ -814,7 +824,7 @@ def call_distributed_ep_dispatch(
         quant_config is not None and _uses_block_scaled_nv_ep_layout(config)
     )
     # Covers MXFP8 too; otherwise it would silently fall through to bf16.
-    is_mx_token_format = _uses_mx_ep_token_format(config)
+    is_mx_token_format = uses_mx_ep_token_format(config)
     is_fp8 = _is_legacy_float8_dispatch(config)
 
     output_types_per_device: list[list[TensorType]] = []
