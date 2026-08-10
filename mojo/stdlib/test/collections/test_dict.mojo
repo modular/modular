@@ -718,6 +718,24 @@ def test_owned_kwargs_dict() raises:
     _test_taking_owned_kwargs_dict(**owned_kwargs^)
 
 
+def test_string_dict_string_span_getitem() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("fruit", 8)
+    kwargs._insert("dessert", 9)
+
+    # Index with a plain `StringSpan`, no `String` allocation required.
+    assert_equal(kwargs[StringSpan("fruit")], 8)
+    assert_equal(kwargs[StringSpan("dessert")], 9)
+
+    # A view into a larger buffer resolves to the same entry as the `String`.
+    var buffer = StringSpan("fruitcake")
+    assert_equal(kwargs[buffer[byte=0:5]], kwargs[String("fruit")])
+
+    # A missing key still raises `DictKeyError`.
+    with assert_raises(contains="KeyError"):
+        _ = kwargs[StringSpan("salad")]
+
+
 def test_string_dict_write_to() raises:
     var kwargs = StringDict[Int]()
     kwargs._insert("a", 1)

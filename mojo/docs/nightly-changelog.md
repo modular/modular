@@ -56,6 +56,10 @@ This version is still a work in progress.
   `String` and `StringLiteral` is now an `ImmStringSpan`, so a mutable string
   is accepted as `chars`, including the string being stripped (`s.strip(s)`).
 
+- `StringDict.__getitem__()` now accepts a `StringSpan`, so you can index a
+  `StringDict` with a borrowed string view without first allocating a
+  `String` just to perform the lookup.
+
 - Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
   `Ts`, standardizing the naming convention used across the standard library.
   The old name, `element_types`, remains as a deprecated alias.

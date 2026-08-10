@@ -1280,6 +1280,42 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
+    @__unsafe_nested_origins_read_only
+    def _find_ref_matching(
+        ref self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
+    ) raises DictKeyError[Self.K] -> ref[
+        origin_of(self)._get_owned_interior["value"]
+    ] Self.V:
+        """Find a value by a key predicate and a precomputed hash.
+
+        Like `_find_ref`, but probes with `key_matches` instead of a concrete
+        `Self.K`, so callers can look up a heterogeneous key (such as a
+        `StringSpan` against a `String` key) without building a `Self.K`.
+
+        Args:
+            hash: The hash of the lookup key, from `Self.H`. Any key that
+                `key_matches` accepts must hash to this value.
+            key_matches: Returns `True` when a stored key equals the lookup key.
+
+        Returns:
+            A reference to the value if the key is present.
+
+        Raises:
+            `DictKeyError` if no matching key is present.
+        """
+        var found, slot_idx = self._table.find_slot_matching(hash, key_matches)
+
+        if found:
+            assert is_occupied(self._table._ctrl[unsafe_offset=slot_idx]), (
+                "find_slot_matching returned found=True but ctrl byte is not"
+                " occupied"
+            )
+            return Pointer(
+                to=(self._table._slots.unsafe_offset(slot_idx))[].value
+            )._get_ref_with_unsafe_interior_origin["value", origin_of(self)]()
+
+        raise DictKeyError[Self.K]()
+
     def get(
         self, key: Self.K
     ) -> Optional[Self.V] where conforms_to(Self.V, Copyable):
@@ -2025,6 +2061,32 @@ struct StringDict[V: Movable](
             `DictKeyError` if the key isn't present.
         """
         return self._dict[key]
+
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __getitem__(
+        ref self, key: ImmStringSpan
+    ) raises DictKeyError[Self.key_type] -> ref[
+        origin_of(self._dict)._get_owned_interior["value"]
+    ] Self.V:
+        """Retrieve a value by string view, without allocating a `String`.
+
+        Args:
+            key: The key to retrieve, as a string view.
+
+        Returns:
+            The value associated with the key, if it's present.
+
+        Raises:
+            `DictKeyError` if the key isn't present.
+        """
+
+        return self._dict._find_ref_matching(
+            hash[default_comp_time_hasher](key),
+            lambda (stored_key: Self.key_type) {imm key} -> Bool: (
+                stored_key == key
+            ),
+        )
 
     @always_inline
     def __setitem__(
