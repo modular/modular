@@ -560,6 +560,33 @@ struct SwissTable[
             matching slot. If not found, slot_index is the first EMPTY slot
             suitable for insertion.
         """
+
+        return self.find_slot_matching(
+            hash,
+            lambda (stored_key: Self.K) {imm key} -> Bool: (stored_key == key),
+        )
+
+    @always_inline
+    def find_slot_matching(
+        self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
+    ) -> Tuple[Bool, Int]:
+        """Find a slot whose stored key satisfies `key_matches`.
+
+        Like `find_slot`, but probes with a predicate instead of a concrete
+        `Self.K`, so callers can look up a heterogeneous key (such as a
+        `StringSpan` against `String` keys) without building a `Self.K`.
+
+        Args:
+            hash: The hash of the lookup key, from `Self.H`. Any key that
+                `key_matches` accepts must hash to this value.
+            key_matches: Returns `True` when the stored key equals the lookup
+                key.
+
+        Returns:
+            A tuple of (found, slot_index). If found, slot_index is the
+            matching slot. If not found, slot_index is the first EMPTY slot
+            suitable for insertion.
+        """
         # Lazy state: no buffers allocated yet. Slot index is meaningless but
         # safe for lookups (callers check `found`). Insert paths must go
         # through `_ensure_capacity` first, which allocates; callers assert
@@ -579,7 +606,7 @@ struct SwissTable[
                 if (
                     self._slots.unsafe_offset(slot_idx)
                 )[]._hash == hash and likely(
-                    (self._slots.unsafe_offset(slot_idx))[].key == key
+                    key_matches((self._slots.unsafe_offset(slot_idx))[].key)
                 ):
                     return (True, slot_idx)
                 match_mask &= match_mask - 1
