@@ -401,7 +401,7 @@ class _StepHarness:
         num_steps = draft_tokens.shape[1]
         return_n_logits = np.array([num_steps + 1], dtype=np.int64)
 
-        self.kv_manager.alloc(context, replica_idx=0)
+        self.kv_manager.alloc(context)
         total_len = context.tokens.processed_length + len(active)
         # The manager derives the dispatch query width from the context's
         # spec-decoding state, which production populates with the pending
@@ -611,7 +611,7 @@ def test_unified_single_step_parity(
     )
 
     context = create_text_context(prompt_ids, max_length=MAX_SEQ_LEN)
-    harness.kv_manager.claim(context.request_id, replica_idx=0)
+    harness.kv_manager.claim(context)
     try:
         # Step 1 — prefill: empty draft tokens, commit the prompt, draft
         # the first block.
@@ -744,4 +744,4 @@ def test_unified_single_step_parity(
         assert decode_cos < COS_DIST_THRESHOLD
         assert decode_compared >= 1, "decode chain ended at slot 0 on a tie"
     finally:
-        harness.kv_manager.release(context.request_id, replica_idx=0)
+        harness.kv_manager.release(context)

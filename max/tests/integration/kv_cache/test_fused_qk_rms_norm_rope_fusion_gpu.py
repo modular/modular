@@ -230,8 +230,8 @@ def _run(
         create_text_context(np.empty(n, dtype=np.int64)) for n in PROMPT_LENS
     ]
     for ctx in batch:
-        kv_manager.claim(ctx.request_id, replica_idx=0)
-        kv_manager.alloc(ctx, replica_idx=0)
+        kv_manager.claim(ctx)
+        kv_manager.alloc(ctx)
     kv_rt = kv_manager.runtime_inputs_for_leaf([batch]).inputs[0]
     assert kv_rt.attention_dispatch_metadata is not None
 

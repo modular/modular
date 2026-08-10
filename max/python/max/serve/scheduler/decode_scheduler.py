@@ -286,7 +286,7 @@ class DecodeScheduler(Scheduler):
             replica_idx = self.batch_constructor.get_next_replica_idx(
                 external_requests_per_replica=self.prefill_reqs_per_replica
             )
-            self.kv_cache.claim(req_id, replica_idx=replica_idx)
+            self.kv_cache.claim(context, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
@@ -294,10 +294,7 @@ class DecodeScheduler(Scheduler):
             # the prefill node generates extra KV entries for draft tokens,
             # so we must allocate matching blocks on the decode side.
             try:
-                load_event = self.kv_cache.alloc(
-                    context,
-                    replica_idx=replica_idx,
-                )
+                load_event = self.kv_cache.alloc(context)
                 # TODO: cordon the request (like the CE batch constructor) so the
                 # onload overlaps GPU execution instead of blocking here.
                 load_event.synchronize()
@@ -305,13 +302,11 @@ class DecodeScheduler(Scheduler):
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.kv_cache.release(req_id, replica_idx=replica_idx)
+                self.kv_cache.release(context)
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.kv_cache.get_req_blocks(
-                req_id, replica_idx=replica_idx
-            )
+            dst_idxs = self.kv_cache.get_req_blocks(context)
             self.prefill_reqs[req_id] = PendingPrefill(
                 context=context,
                 replica_idx=replica_idx,
@@ -338,7 +333,7 @@ class DecodeScheduler(Scheduler):
 
                 # Release the KV cache blocks that were allocated on the
                 # decode GPU before sending this request to prefill
-                self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
+                self.kv_cache.release(data)
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -397,7 +392,7 @@ class DecodeScheduler(Scheduler):
         for req_id in expired_prefill:
             pending = self.prefill_reqs.pop(req_id)
             self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-            self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+            self.kv_cache.release(pending.context)
             self._send_cancel_to_prefill(req_id, pending.context)
             self.response_queue.put_nowait(
                 {req_id: SchedulerResult.cancelled()}
@@ -430,7 +425,7 @@ class DecodeScheduler(Scheduler):
             if req_id in self.prefill_reqs:
                 pending = self.prefill_reqs.pop(req_id)
                 self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-                self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+                self.kv_cache.release(pending.context)
                 self._send_cancel_to_prefill(req_id, pending.context)
             self.response_queue.put_nowait(
                 {req_id: SchedulerResult.cancelled()}

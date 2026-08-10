@@ -90,7 +90,7 @@ def dump_kv_cache_to_torch(
 
     results = []
     for ctx in batch:
-        req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
+        req_blocks = cache.get_req_blocks(ctx)
         seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
@@ -307,8 +307,8 @@ def run_sgmv_qkv_lora_kernel(
     batch = []
     for seq_len in seq_lens:
         context = create_text_context(np.empty(seq_len))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Zero the KV cache

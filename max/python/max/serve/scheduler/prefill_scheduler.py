@@ -170,15 +170,10 @@ class PrefillScheduler(Scheduler):
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
                 blocks_released = len(
-                    self.kv_cache.get_req_blocks(
-                        active.context.request_id,
-                        replica_idx=active.replica_idx,
-                    )
+                    self.kv_cache.get_req_blocks(active.context)
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.kv_cache.release(
-                    active.context.request_id, replica_idx=active.replica_idx
-                )
+                self.kv_cache.release(active.context)
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
                 # For regular pipelines, release() is a no-op
                 self.pipeline.release(active.context.request_id)
@@ -218,9 +213,7 @@ class PrefillScheduler(Scheduler):
 
         # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(
-            req_id, replica_idx=src_replica_idx
-        )
+        src_idxs = self.kv_cache.get_req_blocks(context)
         dst_idxs = transfer_dest.dst_block_ids
         assert len(src_idxs) == len(dst_idxs)
 
@@ -243,8 +236,8 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(rid, replica_idx=at.replica_idx))
-            for rid, at in self.active_transfers.items()
+            len(self.kv_cache.get_req_blocks(at.context))
+            for at in self.active_transfers.values()
         )
         logger.debug(
             "KV transfer started for request %s: blocks pinned on prefill "

@@ -26,7 +26,6 @@ from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import (
     BatchType,
     Pipeline,
-    RequestID,
     TextGenerationInputs,
 )
 
@@ -35,13 +34,12 @@ from max.pipelines.modeling.types import (
 class DPPaddingInfo:
     """Padding metadata produced by `DPBatchPadder.pad_batch()`.
 
-    Holds the list of dummy (request_id, replica_idx) pairs allocated
-    for this batch. The caller is responsible for releasing them via
-    the KV cache manager and pipeline.
+    Holds the dummy contexts allocated for this batch. The caller is
+    responsible for releasing them via the KV cache manager and pipeline.
     """
 
-    dummies: list[tuple[RequestID, int]]
-    """List of (request_id, replica_idx) for each dummy context."""
+    dummies: list[TextContext]
+    """The dummy contexts padding out the short replicas."""
 
 
 class DPBatchPadder:
@@ -120,13 +118,13 @@ class DPBatchPadder:
             return inputs, None
 
         # Allocate fresh dummies and track them for release.
-        all_dummies: list[tuple[RequestID, int]] = []
+        all_dummies: list[TextContext] = []
         padded_batches: list[list[TextGenerationContextType]] = []
         for rank, batch in enumerate(inputs.batches):
             pad_count = max_per_rank - len(batch)
             if pad_count > 0:
                 dummies = self._alloc_dummies(rank, pad_count)
-                all_dummies.extend((ctx.request_id, rank) for ctx in dummies)
+                all_dummies.extend(dummies)
                 padded_batches.append(list(batch) + dummies)
             else:
                 padded_batches.append(list(batch))
@@ -164,8 +162,6 @@ class DPBatchPadder:
                 model_name=self._model_name,
             )
             ctx.update(0)
-            self._kv_manager.alloc_dummy(
-                ctx.request_id, replica_idx=replica_idx
-            )
+            self._kv_manager.alloc_dummy(ctx, replica_idx=replica_idx)
             dummies.append(ctx)
         return dummies

@@ -132,8 +132,8 @@ def _make_cache(
         max_batch_size=8,
     )
     context = create_text_context(np.empty(seq_len))
-    manager.claim(context.request_id, replica_idx=0)
-    manager.alloc(context, replica_idx=0)
+    manager.claim(context)
+    manager.alloc(context)
     return manager.runtime_inputs_for_leaf([[context]]).inputs[0]
 
 
@@ -152,8 +152,8 @@ def _make_cache_batch(
     contexts = []
     for n in prompt_lens:
         context = create_text_context(np.empty(n))
-        manager.claim(context.request_id, replica_idx=0)
-        manager.alloc(context, replica_idx=0)
+        manager.claim(context)
+        manager.alloc(context)
         contexts.append(context)
     return manager.runtime_inputs_for_leaf([contexts]).inputs[0]
 

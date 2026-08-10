@@ -244,7 +244,7 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> None:
         """Frees the pages below the window, nulling their slots."""
         pool = self.pools[replica_idx]
-        first_needed = num_committed_blocks - self._blocks_in_window
+        first_needed = max(0, num_committed_blocks - self._blocks_in_window)
         for leaf_id in self.leaf_ids:
             req_blocks = rows[leaf_id]
             null_block = pool.null_little_blocks[leaf_id]

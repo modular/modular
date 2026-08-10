@@ -121,8 +121,8 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     batch = []
     for i in range(batch_size):
         context = create_text_context(np.empty(prompt_lens[i]))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     input_row_offsets = Buffer(

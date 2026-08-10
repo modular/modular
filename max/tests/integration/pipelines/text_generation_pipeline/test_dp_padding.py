@@ -133,8 +133,8 @@ def _claim_and_alloc(
 ) -> None:
     """Claims and allocates KV cache entries for *contexts* on a replica."""
     for ctx in contexts:
-        kv_manager.claim(ctx.request_id, replica_idx=replica_idx)
-        kv_manager.alloc(ctx, replica_idx=replica_idx)
+        kv_manager.claim(ctx, replica_idx=replica_idx)
+        kv_manager.alloc(ctx)
 
 
 def _simulate_execute(contexts: list[TextContext]) -> None:
@@ -180,10 +180,10 @@ def _release_info(
     pipeline: MagicMock,
 ) -> None:
     """Releases dummy KV entries and pipeline resources for a DPPaddingInfo."""
-    for req_id, replica_idx in info.dummies:
-        if kv_manager.contains(req_id, replica_idx=replica_idx):
-            kv_manager.release(req_id, replica_idx=replica_idx)
-        pipeline.release(req_id)
+    for ctx in info.dummies:
+        if kv_manager.contains(ctx):
+            kv_manager.release(ctx)
+        pipeline.release(ctx.request_id)
 
 
 def _make_batch_constructor(
@@ -288,7 +288,7 @@ def test_pads_short_replica(uneven_tg_batch: UnevenTGBatch) -> None:
     assert padded_inputs.batches[0][1] is ctxs_r0[1]
     assert padded_inputs.batches[1][0] is ctxs_r1[0]
     dummy = padded_inputs.batches[1][1]
-    assert kv_manager.contains(dummy.request_id, replica_idx=1)
+    assert kv_manager.contains(dummy)
 
     _release_info(info, kv_manager, pipeline)
 
@@ -432,13 +432,13 @@ def test_release_frees_dummy_kv_entries(uneven_tg_batch: UnevenTGBatch) -> None:
 
     assert info is not None
     dummy = padded_inputs.batches[1][1]
-    assert kv_manager.contains(dummy.request_id, replica_idx=1)
+    assert kv_manager.contains(dummy)
 
     _release_info(info, kv_manager, pipeline)
 
-    assert not kv_manager.contains(dummy.request_id, replica_idx=1)
-    assert kv_manager.contains(ctxs_r0[0].request_id, replica_idx=0)
-    assert kv_manager.contains(ctxs_r1[0].request_id, replica_idx=1)
+    assert not kv_manager.contains(dummy)
+    assert kv_manager.contains(ctxs_r0[0])
+    assert kv_manager.contains(ctxs_r1[0])
 
 
 def test_release_idempotent(uneven_tg_batch: UnevenTGBatch) -> None:
@@ -477,11 +477,11 @@ def test_multiple_pad_calls_independent() -> None:
     dummy2 = padded2.batches[0][1]
 
     _release_info(info1, kv_manager, pipeline)
-    assert not kv_manager.contains(dummy1.request_id, replica_idx=1)
-    assert kv_manager.contains(dummy2.request_id, replica_idx=0)
+    assert not kv_manager.contains(dummy1)
+    assert kv_manager.contains(dummy2)
 
     _release_info(info2, kv_manager, pipeline)
-    assert not kv_manager.contains(dummy2.request_id, replica_idx=0)
+    assert not kv_manager.contains(dummy2)
 
 
 def test_release_calls_pipeline_release_for_dummies() -> None:
@@ -567,9 +567,9 @@ def test_repeated_pad_and_release_cycles() -> None:
         _release_info(info, kv_manager, pipeline)
 
         for ctx in ctxs_r0:
-            kv_manager.release(ctx.request_id, replica_idx=0)
+            kv_manager.release(ctx)
         for ctx in ctxs_r1:
-            kv_manager.release(ctx.request_id, replica_idx=1)
+            kv_manager.release(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -650,15 +650,16 @@ def test_advance_requests_deferred_release() -> None:
     tg_inputs = bc.construct_batch()
     info1 = bc._current_dp_padding
     assert info1 is not None
-    dummy_ids = _get_dummy_ids(tg_inputs.batches, [ctxs1_r0, ctxs1_r1])
+    dummies = info1.dummies
+    assert dummies
 
     # First advance_requests on TG: no previous padding, shifts current to prev.
     bc.advance_requests(tg_inputs)
     assert bc._prev_dp_padding is info1
     assert bc._current_dp_padding is None
     # Dummies from TG batch should still be alive.
-    for dummy_id in dummy_ids:
-        assert kv_manager.contains(dummy_id, replica_idx=1)
+    for dummy in dummies:
+        assert kv_manager.contains(dummy)
 
     # Construct an empty batch just to have valid inputs for advance.
     inputs2 = _make_inputs([[], []])
@@ -666,8 +667,8 @@ def test_advance_requests_deferred_release() -> None:
     # Second advance_requests: releases the TG batch's dummies.
     bc.advance_requests(inputs2)
 
-    for dummy_id in dummy_ids:
-        assert not kv_manager.contains(dummy_id, replica_idx=1)
+    for dummy in dummies:
+        assert not kv_manager.contains(dummy)
 
     assert bc._prev_dp_padding is None
     assert bc._current_dp_padding is None

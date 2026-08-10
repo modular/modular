@@ -75,8 +75,8 @@ def _drive_one_request(
 ) -> TextContext:
     """Run a minimal claim+alloc+step cycle so req_to_hashes is populated."""
     ctx = create_text_context(np.empty(prompt_len))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
     kv_manager.runtime_inputs([[ctx]])
     ctx.update(42)
     kv_manager.step([[ctx]])

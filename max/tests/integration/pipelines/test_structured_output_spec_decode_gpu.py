@@ -143,7 +143,7 @@ def test_eagle_structured_output_json_schema_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     tokens: list[int] = []
     max_iterations = 60
@@ -152,7 +152,7 @@ def test_eagle_structured_output_json_schema_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         response = pipeline.execute(inputs)
 
         if request_id in response:
@@ -292,8 +292,8 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(structured_ctx.request_id, replica_idx=0)
-    kv_manager.claim(freeform_ctx.request_id, replica_idx=0)
+    kv_manager.claim(structured_ctx)
+    kv_manager.claim(freeform_ctx)
 
     structured_tokens: list[int] = []
     freeform_tokens: list[int] = []
@@ -312,7 +312,7 @@ def test_eagle_structured_output_heterogeneous_batch_gpu(
         # Allocate KV cache for all contexts in the batch.
         # Even done contexts need consistent allocation for spec decode.
         for ctx in contexts:
-            kv_manager.alloc(ctx, replica_idx=0)
+            kv_manager.alloc(ctx)
 
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[contexts]
@@ -449,7 +449,7 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
     assert isinstance(pipeline, OverlapTextGenerationPipeline)
 
     kv_manager = pipeline.kv_manager
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
 
     # Collect per-call wall times. The overlap pipeline is pipelined:
     #   call 0: prefill (drives model forward, no output yet)
@@ -467,7 +467,7 @@ def test_eagle_structured_output_no_first_decode_stall_gpu(
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]]
         )
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
         t0 = time.monotonic()
         response = pipeline.execute(inputs)

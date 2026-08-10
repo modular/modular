@@ -667,9 +667,9 @@ def _execute_max_draft(
     kv_manager = compiled_draft.kv_manager
 
     context = create_text_context(np.zeros(ctx_len + block_len))
-    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.claim(context)
     try:
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         kv_inputs = kv_manager.runtime_inputs(
             [[context]], max_cache_length=ctx_len + block_len
         )
@@ -685,7 +685,7 @@ def _execute_max_draft(
             *kv_inputs.flatten(),
         )
     finally:
-        kv_manager.release(context.request_id, replica_idx=0)
+        kv_manager.release(context)
     ctx_hidden, block_hs, logits = (from_dlpack(out) for out in outputs)
     return ctx_hidden, block_hs, logits
 

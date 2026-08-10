@@ -158,8 +158,8 @@ class RaggedAttentionHarness(
                 max_length=max(total_len, self.static_params.max_seq_len),
                 tokens=TokenBuffer(np.empty(total_len, dtype=np.int64)),
             )
-            self._kv_manager.claim(ctx.request_id, replica_idx=0)
-            self._kv_manager.alloc(ctx, replica_idx=0)
+            self._kv_manager.claim(ctx)
+            self._kv_manager.alloc(ctx)
             if dynamic_params.ctx_len > 0:
                 ctx.tokens.skip_processing(dynamic_params.ctx_len)
             batch.append(ctx)
@@ -197,7 +197,7 @@ class RaggedAttentionHarness(
         context: list[TextContext],
     ) -> None:
         for ctx in context:
-            self._kv_manager.release(ctx.request_id, replica_idx=0)
+            self._kv_manager.release(ctx)
 
     def cuda_graph_eligible(
         self, dynamic_params: AttentionDynamicParams

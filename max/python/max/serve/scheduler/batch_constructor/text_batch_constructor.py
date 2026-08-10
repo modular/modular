@@ -75,6 +75,20 @@ class _PendingCERequest:
 
 
 @dataclass
+class _BoundRequest:
+    """A request bound to a replica, which owns it until it is released.
+
+    ``ctx`` is retained because a request in an active batch has been popped
+    out of every replica queue, yet that is exactly when the scheduler filters
+    responses and drains cancellations -- both of which name the request by id
+    alone and need its context to release it.
+    """
+
+    ctx: TextContext
+    replica_idx: int
+
+
+@dataclass
 class _OnloadingRequest:
     """A CE request cordoned out of the batch while its KV onload is in flight.
 
@@ -454,7 +468,7 @@ class TextBatchConstructor:
         self.replicas: list[ReplicaRequests] = [
             ReplicaRequests() for _ in range(self.num_replicas)
         ]
-        self._request_id_to_replica_idx: dict[RequestID, int] = {}
+        self._bound_requests: dict[RequestID, _BoundRequest] = {}
         self._request_id_to_lora_name: dict[RequestID, str | None] = {}
 
         # CE requests cordoned out of the batch while their KV onload is in
@@ -590,7 +604,7 @@ class TextBatchConstructor:
     def _bind_request(self, ctx: TextContext, replica_idx: int) -> None:
         """Binds a request to a replica and enqueues it in the right queue."""
         replica = self.replicas[replica_idx]
-        self._request_id_to_replica_idx[ctx.request_id] = replica_idx
+        self._bound_requests[ctx.request_id] = _BoundRequest(ctx, replica_idx)
         self._request_id_to_lora_name[ctx.request_id] = (
             ctx.model_name
             if self._lora_manager and is_lora(ctx, self._lora_manager)
@@ -678,17 +692,17 @@ class TextBatchConstructor:
     def _release_data_parallel_padding(self) -> None:
         """Releases dummy KV and pipeline entries from the previous batch's DP padding."""
         if self._prev_dp_padding is not None:
-            for req_id, replica_idx in self._prev_dp_padding.dummies:
-                if self.kv_cache.contains(req_id, replica_idx=replica_idx):
-                    self.kv_cache.release(req_id, replica_idx=replica_idx)
-                self.pipeline.release(req_id)
+            for ctx in self._prev_dp_padding.dummies:
+                if self.kv_cache.contains(ctx):
+                    self.kv_cache.release(ctx)
+                self.pipeline.release(ctx.request_id)
         self._prev_dp_padding = self._current_dp_padding
         self._current_dp_padding = None
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""
         return (
-            request_id in self._request_id_to_replica_idx
+            request_id in self._bound_requests
             or request_id in self._ce_pending
             or request_id in self._onloading_reqs
         )
@@ -722,9 +736,8 @@ class TextBatchConstructor:
         # completes, after which poll_transfers unpins them).
         self._onloading_reqs.pop(request_id, None)
 
-        # Retrieve the replica index for the request
-        replica_idx = self._request_id_to_replica_idx[request_id]
-        replica = self.replicas[replica_idx]
+        bound = self._bound_requests[request_id]
+        replica = self.replicas[bound.replica_idx]
 
         if request_id in replica.ce_reqs:
             del replica.ce_reqs[request_id]
@@ -753,29 +766,27 @@ class TextBatchConstructor:
         # Release from paged cache (scheduler manages primary KV cache lifecycle).
         # Guard with contains() because _return_to_request_queue() may have
         # already released the KV cache (e.g. during preemption) while leaving
-        # the request in _request_id_to_replica_idx so it remains visible to
+        # the request in _bound_requests so it remains visible to
         # contains(). Without this check a subsequent release_request() call
         # (e.g. from a delayed overlap-scheduler response) would attempt a
         # second release and raise "Attempted to release request ID but it is
         # not claimed".
-        if self.kv_cache is not None and self.kv_cache.contains(
-            request_id, replica_idx=replica_idx
-        ):
-            self.kv_cache.release(request_id, replica_idx=replica_idx)
+        if self.kv_cache is not None and self.kv_cache.contains(bound.ctx):
+            self.kv_cache.release(bound.ctx)
 
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
 
-        # _request_id_to_replica_idx is the source of truth for whether a request
+        # _bound_requests is the source of truth for whether a request
         # is managed by the scheduler (checked by contains()).
         # Remove from here, marking the request as fully released.
-        del self._request_id_to_replica_idx[request_id]
+        del self._bound_requests[request_id]
 
     def clear_tg_reqs(self) -> None:
         """Clears all TG requests from all replicas."""
         for replica in self.replicas:
             for request_id in replica.tg_reqs:
-                del self._request_id_to_replica_idx[request_id]
+                del self._bound_requests[request_id]
 
             replica.tg_reqs.clear()
 
@@ -817,8 +828,8 @@ class TextBatchConstructor:
         """Resets a request and returns it to the request queue"""
 
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
-        if self.kv_cache.contains(context.request_id, replica_idx):
-            self.kv_cache.release(context.request_id, replica_idx)
+        if self.kv_cache.contains(context):
+            self.kv_cache.release(context)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op
@@ -933,13 +944,11 @@ class TextBatchConstructor:
             # Check if the request fits in memory
             if self.kv_cache is not None:
                 # Claim the request if needed.
-                if not self.kv_cache.contains(req_id, replica_idx=replica_idx):
-                    self.kv_cache.claim(req_id, replica_idx=replica_idx)
+                if not self.kv_cache.contains(ctx):
+                    self.kv_cache.claim(ctx, replica_idx=replica_idx)
 
                 try:
-                    onload_event = self.kv_cache.alloc(
-                        ctx, replica_idx=replica_idx
-                    )
+                    onload_event = self.kv_cache.alloc(ctx)
                 except InsufficientBlocksError:
                     # Only a genuine OOM (nothing else to run and no in-flight
                     # transfer that will free blocks once it lands) is fatal.
@@ -1028,10 +1037,7 @@ class TextBatchConstructor:
             # At this point, we can assume that the paged cache is active.
             while True:
                 try:
-                    self.kv_cache.alloc(
-                        candidate_context,
-                        replica_idx=replica_idx,
-                    )
+                    self.kv_cache.alloc(candidate_context)
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:

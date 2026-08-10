@@ -205,13 +205,13 @@ request = TextGenerationRequest(
 context = asyncio.run(tokenizer.new_context(request))
 
 # 5. Allocate space in the KV cache for this request
-kv_cache_manager.claim(context.request_id, replica_idx=0)
+kv_cache_manager.claim(context)
 
 # 6. Run the generation loop
 generated_text = ""
 while True:
     # Allocate KV cache for the next token
-    kv_cache_manager.alloc(context, replica_idx=0)
+    kv_cache_manager.alloc(context)
 
     # Execute the pipeline with the current context
     inputs = TextGenerationInputs[TextContext](

@@ -51,10 +51,10 @@ async def test_kv_cache_multi_gpu() -> None:
             max_batch_size=128,
         )
         context = create_text_context(np.empty(1))
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
 
         batch = [context]
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs.inputs[i]
@@ -87,8 +87,8 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
         max_batch_size=128,
     )
     context = create_text_context(np.empty(1))
-    kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.claim(context)
+    kv_manager.alloc(context)
 
     kv_inputs = kv_manager.runtime_inputs_for_leaf([[context]])
 
@@ -193,14 +193,14 @@ async def test_swapping_to_host_multi_gpu(
     cache_hit_rates = []
     for batch_idx, batch in enumerate(batches):
         for context in batch:
-            kv_manager.claim(context.request_id, replica_idx=0)
+            kv_manager.claim(context)
 
         # Run 1 CE batch and 4 TG batches
         for iter in range(5):
             prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 
             for ctx in batch:
-                kv_manager.alloc(ctx, replica_idx=0)
+                kv_manager.alloc(ctx)
             _ = kv_manager.runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
@@ -220,7 +220,7 @@ async def test_swapping_to_host_multi_gpu(
             kv_manager.step([batch])
 
         for context in batch:
-            kv_manager.release(context.request_id, replica_idx=0)
+            kv_manager.release(context)
 
     if kv_connector_type is not None:
         # cache hit rates are high!

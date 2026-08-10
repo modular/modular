@@ -89,7 +89,7 @@ def dump_kv_cache_to_torch(
 
     results = []
     for ctx in batch:
-        req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
+        req_blocks = cache.get_req_blocks(ctx)
         seq_len = ctx.tokens.processed_length
 
         result = torch.empty(
@@ -161,8 +161,8 @@ def run_kv_cache_2m_iadd(
     batch = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)

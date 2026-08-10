@@ -90,19 +90,19 @@ def test_claim() -> None:
         # TokenBuffer requires at least one token, so start from 1
         context = create_text_context(np.empty(max(i, 1)))
         replica_idx = i % data_parallel_degree
-        kv_manager.claim(context.request_id, replica_idx=replica_idx)
+        kv_manager.claim(context, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
     new_context = create_text_context(np.empty(max(i, 1)))
 
     # Release a slot.
     replica_idx, context = batch[0]
-    kv_manager.release(context.request_id, replica_idx=replica_idx)
-    assert not kv_manager.contains(context.request_id, replica_idx=replica_idx)
+    kv_manager.release(context)
+    assert not kv_manager.contains(context)
 
     # Check that the new context can be claimed using the released slot.
-    kv_manager.claim(new_context.request_id, replica_idx=replica_idx)
-    assert kv_manager.contains(new_context.request_id, replica_idx=replica_idx)
+    kv_manager.claim(new_context, replica_idx=replica_idx)
+    assert kv_manager.contains(new_context)
 
 
 def test_step() -> None:
@@ -120,7 +120,7 @@ def test_step() -> None:
     for i, prompt_len in enumerate(prompt_lens):
         context = create_text_context(np.empty(prompt_len))
         replica_idx = i % data_parallel_degree
-        kv_manager.claim(context.request_id, replica_idx=replica_idx)
+        kv_manager.claim(context, replica_idx=replica_idx)
         batch.append(context)
         batches_by_replica[replica_idx].append(context)
 
@@ -130,8 +130,8 @@ def test_step() -> None:
 
     # Update these values a few times
     for j in range(3):
-        for i, ctx in enumerate(batch):
-            kv_manager.alloc(ctx, replica_idx=i % data_parallel_degree)
+        for ctx in batch:
+            kv_manager.alloc(ctx)
         kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
@@ -406,8 +406,8 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     assert len(pool1.prefix_cache) == 0
 
     # Admit the identical prompt on replica 1: triggers the cross-replica copy.
-    manager.claim(ctx.request_id, replica_idx=1)
-    manager.alloc(ctx, replica_idx=1)
+    manager.claim(ctx, replica_idx=1)
+    manager.alloc(ctx)
 
     # Both prefix blocks were served cross-replica.
     metrics = manager.get_metrics_aggregated()
@@ -502,8 +502,8 @@ def test_cross_replica_host_prefix_cache_hit() -> None:
     assert len(pool1.prefix_cache) == 0
 
     # Admit the identical prompt on replica 1: must hit the shared host tier.
-    manager.claim(ctx.request_id, replica_idx=1)
-    manager.alloc(ctx, replica_idx=1)
+    manager.claim(ctx, replica_idx=1)
+    manager.alloc(ctx)
 
     metrics = manager.get_metrics_aggregated()
     assert metrics.cross_replica_blocks_copied == 0  # host hit, not GPU copy
@@ -571,8 +571,8 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     )
 
     context = create_text_context(np.empty(4))
-    manager.claim(context.request_id, replica_idx=0)
-    manager.alloc(context, replica_idx=0)
+    manager.claim(context)
+    manager.alloc(context)
 
     kv_cache_inputs = manager.runtime_inputs([[context]])
     assert isinstance(kv_cache_inputs, MultiKVCacheInputs)

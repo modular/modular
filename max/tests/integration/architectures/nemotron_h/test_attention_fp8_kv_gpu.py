@@ -190,9 +190,9 @@ def _execute(
     kv_manager = compiled_attention.kv_manager
     compiled = compiled_attention.compiled
     batch = [create_text_context(np.empty(SEQ_LEN))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
+    kv_manager.claim(batch[0])
     try:
-        kv_manager.alloc(batch[0], replica_idx=0)
+        kv_manager.alloc(batch[0])
         kv_runtime_inputs = kv_manager.runtime_inputs([batch])
         output = compiled.execute(
             Buffer.from_dlpack(input_tensor).to(device),
@@ -202,7 +202,7 @@ def _execute(
             *kv_runtime_inputs.flatten(),
         )[0]
     finally:
-        kv_manager.release(batch[0].request_id, replica_idx=0)
+        kv_manager.release(batch[0])
     return output
 
 

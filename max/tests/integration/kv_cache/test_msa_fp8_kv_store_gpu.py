@@ -144,8 +144,8 @@ def _run_store(
     batch = []
     for length in _PROMPT_LENS:
         ctx = create_text_context(np.empty(length))
-        kv_manager.claim(ctx.request_id, replica_idx=0)
-        kv_manager.alloc(ctx, replica_idx=0)
+        kv_manager.claim(ctx)
+        kv_manager.alloc(ctx)
         batch.append(ctx)
 
     offsets = np.zeros(len(_PROMPT_LENS) + 1, dtype=np.uint32)
