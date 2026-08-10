@@ -429,7 +429,7 @@ def execute_flash_attention_suite[
 
     for bs in [1, 4, 16]:
         comptime for type_idx in range(len(types)):
-            comptime type = types[type_idx]
+            comptime type = rebind[DType](types[type_idx])
             var ce_cache_sizes = List[Int]()
             var ce_seq_lens = List[Int]()
             var tg_cache_sizes = List[Int]()
@@ -556,7 +556,7 @@ def main() raises:
         # in-page mask boundary since it is well below page_size=256.
         comptime sliding_windows = (32, 1024)
         comptime for ws_idx in range(len(sliding_windows)):
-            comptime window_size = sliding_windows[ws_idx]
+            comptime window_size = rebind[Int](sliding_windows[ws_idx])
             seed(42 + window_size)
             print(
                 "Sliding-window suite [window_size=",

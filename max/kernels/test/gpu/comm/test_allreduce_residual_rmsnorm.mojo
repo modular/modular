@@ -1043,7 +1043,7 @@ def main() raises:
     print("FP8 output dtype:", out_fp8_dtype)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
         if num_devices < num_gpus:
             continue
 

@@ -404,9 +404,9 @@ def run_allreduce_sweep[use_multimem: Bool]() raises:
         range(len(test_lengths)),
         range(2),  # Test both default and custom epilogue
     ):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime length = test_lengths[length_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime length = rebind[Int](test_lengths[length_idx])
         comptime use_custom_epilogue = epilogue_idx == 1
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
         # Multimem needs N % simd_width == 0; non-multimem tests SIMD tail.

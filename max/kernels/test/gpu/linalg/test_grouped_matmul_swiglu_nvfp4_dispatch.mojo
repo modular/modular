@@ -775,8 +775,9 @@ def _test_swiglu_dispatch[
                     (ref_hi_dq, test_hi_dq),
                 )
                 comptime for k in range(2):
-                    var r = nibble_pairs[k][0]
-                    var t = nibble_pairs[k][1]
+                    var pair = rebind[type_of(nibble_pairs[0])](nibble_pairs[k])
+                    var r = pair[0]
+                    var t = pair[1]
                     var ad = abs(r - t)
                     if ad > max_abs_diff:
                         max_abs_diff = ad

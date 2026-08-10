@@ -156,9 +156,9 @@ def main() raises:
         range(len(test_dtypes)),
         range(len(test_lengths)),
     ):
-        comptime ngpus = test_gpu_counts[gpu_idx]
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime length = test_lengths[length_idx]
+        comptime ngpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime length = rebind[Int](test_lengths[length_idx])
 
         # Trailing slice of the visible devices, so device id != group rank.
         var dev_offset = num_devices - ngpus

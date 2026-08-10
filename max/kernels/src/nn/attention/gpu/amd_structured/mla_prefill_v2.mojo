@@ -1117,7 +1117,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 comptime if is_upper:
                     # V producer: 2 halves at _PF_V_AT.
                     comptime for vj in range(len(_PF_V_AT)):
-                        comptime if _PF_V_AT[vj] == i_mfma:
+                        comptime if rebind[Int](_PF_V_AT[vj]) == i_mfma:
                             _sched_barrier_zero()
                             Self._Core._dma_v[v_full_v227=Self._V_FULL_V227,](
                                 v_ring.tile[
@@ -1135,7 +1135,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     # K producer: dma_nope/dma_rope x 2 warp-halves at
                     # _PF_K_AT (sub-call kj: half = kj // 2, rope = kj & 1).
                     comptime for kj in range(len(_PF_K_AT)):
-                        comptime if _PF_K_AT[kj] == i_mfma:
+                        comptime if rebind[Int](_PF_K_AT[kj]) == i_mfma:
                             _sched_barrier_zero()
                             var _kp = _MlaKDmaPair[Self.config](
                                 k_op, batch_idx_u32, kv_head_idx_u32, _pf_t

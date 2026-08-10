@@ -334,7 +334,7 @@ def main() raises:
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
 
         comptime for i in range(len(dtype_configs)):
-            comptime dtype = dtype_configs[i]
+            comptime dtype = rebind[DType](dtype_configs[i])
 
             test_conv_miopen[
                 IndexList[4](1, 8, 8, 16),  # input  (NHWC)
@@ -507,7 +507,7 @@ def main() raises:
         ](ctx)
 
         comptime for i in range(len(dtype_configs)):
-            comptime dtype = dtype_configs[i]
+            comptime dtype = rebind[DType](dtype_configs[i])
 
             test_conv_miopen[
                 IndexList[5](1, 4, 10, 8, 16),  # input  (NHWC)

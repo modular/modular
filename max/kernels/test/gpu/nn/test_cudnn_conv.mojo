@@ -245,7 +245,7 @@ def main() raises:
 
         # Test different data types.
         comptime for i in range(len(dtype_configs)):
-            comptime dtype = dtype_configs[i]
+            comptime dtype = rebind[DType](dtype_configs[i])
 
             test_conv_cudnn[
                 IndexList[4](1, 8, 8, 16),  # input  (NHWC)

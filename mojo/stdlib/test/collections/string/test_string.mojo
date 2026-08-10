@@ -1572,7 +1572,7 @@ def test_copyinit() raises:
     var test_current_size = 1
 
     comptime for sizes_index in range(len(sizes)):
-        comptime current_size = sizes[sizes_index]
+        comptime current_size = rebind[Int](sizes[sizes_index])
         var x = ""
         for i in range(current_size):
             x += String(i)[byte=0]
