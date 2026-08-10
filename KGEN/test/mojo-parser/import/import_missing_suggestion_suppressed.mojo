@@ -20,7 +20,7 @@
 # the reason these use `def foo()` instead of `def main()`.
 
 # RUN: rm -rf %t && mkdir -p %t
-# RUN: mojo-compiler-only precompile -o %t/std.mojoc %S/inputs/import_suggestion_std/std
+# RUN: mojo precompile -o %t/std.mojoc %S/inputs/import_suggestion_std/std
 # RUN: not kgen-translate -import-mojo -mojo-enable-prebuilt-packages \
 # RUN:   -mojo-search-paths=%t -split-input-file %s 2>&1 | FileCheck %s
 

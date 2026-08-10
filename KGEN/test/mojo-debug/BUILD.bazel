@@ -18,6 +18,9 @@ lit_tests(
         "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -X -x -X --source-quietly -X -S -X $(rlocationpath //KGEN/unittests:lit-lldb-init.in)",
     },
     data = glob(["Inputs/*.mojo"]) + [
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
+        "//KGEN:mojo-lldb",
         "//KGEN/unittests:lit-lldb-init.in",
     ],
     mojo_deps = [

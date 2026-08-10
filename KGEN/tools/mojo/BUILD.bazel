@@ -149,20 +149,6 @@ modular_cc_library(
 
 modular_cc_binary(
     name = "mojo",
-    data = [
-        "//KGEN:MojoLLDB",
-        "//KGEN:gdb-server",
-        "//KGEN:mojo-lldb",
-        "//KGEN/tools/mojo-repl-entry-point",
-        "@llvm-project//lldb:lldb-argdumper",
-        "@llvm-project//llvm:llvm-symbolizer",
-    ],
-    linkopts = _MOJO_LINKOPTS,
-    deps = [":mojo_common"],
-)
-
-modular_cc_binary(
-    name = "mojo-compiler-only",
     data = select({
         "//:plugin_enabled": ["@plugin//KGEN:mojo-compiler-plugin"],
         "//conditions:default": [],

@@ -24,6 +24,8 @@ modular_cc_test(
     data = glob([
         "inputs/*.mojo",
     ]) + [
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
         "//KGEN/tools/mojo",
         "//KGEN/unittests:lit-lldb-init.in",
     ],

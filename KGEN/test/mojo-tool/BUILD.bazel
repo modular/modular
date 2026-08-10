@@ -43,6 +43,9 @@ lit_tests(
         "@mojo//:std",
     ],
     tools = [
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
+        "//KGEN:mojo-lldb",
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-opt",
         "//KGEN/tools/mojo",
