@@ -67,13 +67,13 @@ from max.nn.linear import MLP, Linear
 from max.nn.moe import MoE, MoEGate
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits, logits_postprocess
-
-from .functional_ops import (
+from max.nn.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
+from max.nn.transformer import ReturnLogits, logits_postprocess
+
 from .model_config import NemotronHConfig
 
 
