@@ -116,6 +116,9 @@ Each entry names its replacement.
   [`perf_counter_ns()`](/docs/std/time/time/perf_counter_ns/) directly, and use
   a GPU profiler such as Nsight Systems or `rocprof` for device timings.
 
+- Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
+  instead.
+
 ## Fixed
 
 - Parametric `raises` now accepts any primary expression as the thrown type in
