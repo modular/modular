@@ -15,7 +15,7 @@
 
 Each module binds graph op names (such as `mo.matmul`) to the open-source
 kernels in `linalg`, `nn`, `comm`, and related packages using the same
-`@compiler.register` mechanism available to custom ops, so these
+`@extensibility.register` mechanism available to custom ops, so these
 registrations double as worked examples of how kernels connect to MAX
 graphs.
 """
