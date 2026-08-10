@@ -1323,6 +1323,19 @@ struct Slice:
                     * align_of[dtype](),
                 )
 
+            # Stepping along a non-innermost dimension moves the pointer by
+            # `step[i] * strides[i]` elements, so that stride bounds the
+            # alignment.
+            comptime if i != rank - 1:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+
         return alignment
 
     @staticmethod
