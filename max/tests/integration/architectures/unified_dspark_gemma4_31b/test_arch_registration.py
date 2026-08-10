@@ -24,6 +24,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
 from max.pipelines.architectures.speculators_common import (
     DSparkSpeculatorsDraftArchConfig,
 )
@@ -57,6 +58,14 @@ def test_unified_dspark_31b_arch_registered() -> None:
         UnifiedDSparkGemma4_31BConfig.SUPPORTED_ENCODINGS
         == arch.supported_encodings
     )
+    # Thinking-phase tracking needs the reasoning parser plus a tokenizer
+    # exposing the delimiter ids; tool-call grammars need the tool parser and
+    # a backend pinned on THIS arch (resolution runs after the registry
+    # rewrites the arch name, so the base gemma4 declaration never applies).
+    assert arch.tokenizer is Gemma4Tokenizer
+    assert arch.tool_parser == "gemma4"
+    assert arch.reasoning_parser == "gemma4"
+    assert arch.default_structured_output_backend == "xgrammar"
 
 
 def test_dspark_speculators_draft_arch_registered() -> None:

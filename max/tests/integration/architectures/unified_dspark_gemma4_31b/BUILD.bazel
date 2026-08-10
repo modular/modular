@@ -22,6 +22,7 @@ modular_py_test(
     srcs = ["test_arch_registration.py"],
     deps = [
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/speculators_common",
         "//max/python/max/pipelines/architectures/unified_dspark_gemma4_31b",
         "//max/python/max/pipelines/lib",
@@ -34,6 +35,8 @@ modular_py_test(
     srcs = ["test_model_config.py"],
     data = ["//max/tests/integration/architectures/unified_dspark_gemma4_31b/testdata"],
     deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
@@ -41,6 +44,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/unified_dspark_gemma4_31b",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )

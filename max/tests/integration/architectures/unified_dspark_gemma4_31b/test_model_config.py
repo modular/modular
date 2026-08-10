@@ -25,22 +25,45 @@ from __future__ import annotations
 import json
 import logging
 import pathlib
+from collections.abc import Iterator
 from types import SimpleNamespace
 from typing import Any, cast
 
+import numpy as np
 import pytest
-from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.driver import (
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
+from max.dtype import DType
+from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
+    ProportionalScalingParams,
+)
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
+    Gemma4TextConfig,
 )
 from max.pipelines.architectures.speculators_common import (
     DSparkSpeculatorsDraftArchConfig,
     DSparkSpeculatorsDraftConfig,
 )
+from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
+    UnifiedDSparkGemma4_31BInputs,
+)
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
     UnifiedDSparkGemma4_31BConfig,
+)
+from max.pipelines.architectures.unified_dspark_gemma4_31b.unified_dspark_gemma4_31b import (
+    UnifiedDSparkGemma4_31B,
 )
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.config import (
@@ -420,3 +443,250 @@ def test_validate_defaults_num_speculative_tokens_to_trained() -> None:
     config.validate_dspark_fields()
     assert config.speculative_config.num_speculative_tokens == 7
     assert config.effective_block_size == 8
+
+
+def _make_real_target(
+    devices: list[DeviceRef],
+) -> Gemma4ForConditionalGenerationConfig:
+    """Real (non-stand-in) target config at tiny dims.
+
+    The graph-signature tests below construct the actual module, whose ctor
+    builds ``Gemma4TextModel`` — the ``SimpleNamespace`` stand-in used by the
+    config tests is not enough. Weight VALUES never materialize (module
+    construction creates metadata only), so tiny dims keep this a CPU test.
+    """
+    layer_types = ["sliding_attention", "full_attention"]
+    sliding_kv = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=32,
+        num_layers=1,
+        devices=devices,
+        page_size=128,
+    )
+    global_kv = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=32,
+        num_layers=1,
+        devices=devices,
+        page_size=128,
+    )
+    kv_params = MultiKVCacheParams.from_params(
+        {"sliding_attention": sliding_kv, "full_attention": global_kv}
+    )
+    text_kv = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=32,
+        num_layers=2,
+        devices=devices,
+        page_size=128,
+    )
+    text_config = Gemma4TextConfig(
+        vocab_size=256,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=32,
+        hidden_activation="gelu_tanh",
+        max_position_embeddings=512,
+        max_seq_len=256,
+        rms_norm_eps=1e-6,
+        rope_theta=-1,
+        rope_scaling=None,
+        attention_bias=False,
+        sliding_window=64,
+        final_logit_softcapping=30.0,
+        attn_logit_softcapping=None,
+        rope_local_base_freq=10000.0,
+        sliding_window_pattern=-1,
+        dtype=DType.bfloat16,
+        devices=devices,
+        interleaved_rope_weights=False,
+        kv_params=text_kv,
+        num_global_key_value_heads=1,
+        global_head_dim=32,
+        attention_k_eq_v=True,
+        global_rope_scaling=ProportionalScalingParams(
+            partial_rotary_factor=0.25
+        ),
+        global_rope_theta=1_000_000.0,
+        sliding_window_rope_theta=10000.0,
+        layer_types=layer_types,
+    )
+    return Gemma4ForConditionalGenerationConfig(
+        devices=devices,
+        dtype=DType.bfloat16,
+        kv_params=kv_params,
+        text_config=text_config,
+        vision_config=None,
+        image_token_index=200,
+        tie_word_embeddings=True,
+    )
+
+
+def _make_unified_real(
+    draft: DSparkSpeculatorsDraftConfig,
+) -> UnifiedDSparkGemma4_31BConfig:
+    devices = [DeviceRef.GPU()]
+    draft_kv_params = MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=draft.num_key_value_heads,
+        head_dim=draft.head_dim,
+        num_layers=draft.num_hidden_layers,
+        devices=devices,
+        page_size=128,
+    )
+    return UnifiedDSparkGemma4_31BConfig(
+        target=_make_real_target(devices),
+        draft=draft,
+        draft_kv_params=draft_kv_params,
+        speculative_config=SpeculativeConfig(
+            speculative_method="dflash", num_speculative_tokens=7
+        ),
+        target_layer_ids=[0, 1],
+        mask_token_id=draft.mask_token_id,
+        block_size=draft.block_size,
+    )
+
+
+def _signature(
+    types: tuple[TensorType | BufferType, ...],
+) -> list[tuple[str, DType, str]]:
+    return [(type(t).__name__, t.dtype, str(t.shape)) for t in types]
+
+
+@pytest.fixture
+def virtual_gpu() -> Iterator[None]:
+    """Module construction eagerly creates driver ``Accelerator`` handles
+    (``Allreduce`` in ``VocabParallelEmbedding.__init__``), which fails on
+    the CPU-only presubmit workers. Virtual-device mode satisfies device
+    creation without hardware; these tests only read graph metadata.
+    """
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_80")
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
+
+
+def test_graph_signature_binds_thinking_and_structured_output(
+    virtual_gpu: None,
+) -> None:
+    """Structured output off: the tail ends at ``in_thinking_phase``; on:
+    exactly the packed bitmask triple is appended, prefix unchanged.
+
+    Guards the lockstep between the module's ``SpecDecodeInputTypeSpec``
+    flags and ``_spec_decode_tail_buffers`` in ``model.py`` — flipping one
+    side alone is an input-arity failure at execute, or worse a silently
+    dead feature (the historical bug class in this exact area).
+    """
+    base_types = UnifiedDSparkGemma4_31B(
+        _make_unified_real(_parse(_raw()))
+    ).input_types()
+    so_types = UnifiedDSparkGemma4_31B(
+        _make_unified_real(_parse(_raw())), enable_structured_output=True
+    ).input_types()
+
+    thinking = base_types[-1]
+    assert isinstance(thinking, TensorType)
+    assert thinking.dtype == DType.bool
+
+    assert _signature(so_types[: len(base_types)]) == _signature(base_types)
+    assert len(so_types) == len(base_types) + 3
+    pinned, wait, scratch = so_types[-3:]
+    assert isinstance(pinned, TensorType)
+    assert pinned.dtype == DType.int32
+    assert isinstance(wait, BufferType)
+    assert wait.dtype == DType.int64
+    assert isinstance(scratch, BufferType)
+    assert scratch.dtype == DType.int32
+
+
+def _make_placeholder_inputs(
+    *, structured_output: bool
+) -> UnifiedDSparkGemma4_31BInputs:
+    b = Buffer.from_numpy(np.zeros(1, dtype=np.int64))
+    if structured_output:
+        return UnifiedDSparkGemma4_31BInputs(
+            tokens=b,
+            input_row_offsets=b,
+            return_n_logits=b,
+            signal_buffers=[b],
+            kv_cache_inputs=None,
+            draft_tokens=b,
+            seed=b,
+            temperature=b,
+            top_k=b,
+            max_k=b,
+            top_p=b,
+            min_top_p=b,
+            in_thinking_phase=b,
+            structured_output=True,
+            pinned_bitmask=b,
+            wait_payload=b,
+            device_bitmask_scratch=b,
+        )
+    return UnifiedDSparkGemma4_31BInputs(
+        tokens=b,
+        input_row_offsets=b,
+        return_n_logits=b,
+        signal_buffers=[b],
+        kv_cache_inputs=None,
+        draft_tokens=b,
+        seed=b,
+        temperature=b,
+        top_k=b,
+        max_k=b,
+        top_p=b,
+        min_top_p=b,
+        in_thinking_phase=b,
+        structured_output=False,
+    )
+
+
+def test_inputs_buffer_tail_matches_graph_signature(
+    virtual_gpu: None,
+) -> None:
+    """The host-side buffer packing (``model.py`` tail flags) must track the
+    module's graph signature in both structured-output states.
+
+    The graph-signature test above covers only the module side; a one-sided
+    flip of the ``_spec_decode_tail_buffers`` flags would keep it green and
+    fail at execute with an input-arity error. ``kv_cache_inputs=None``
+    drops exactly the KV-tree inputs from the packed tuple, so parity is
+    signature length minus the flattened KV inputs.
+    """
+    for structured_output in (False, True):
+        module = UnifiedDSparkGemma4_31B(
+            _make_unified_real(_parse(_raw())),
+            enable_structured_output=structured_output,
+        )
+        n_kv = len(module._unified_kv_params().flattened_kv_inputs())
+        inputs = _make_placeholder_inputs(structured_output=structured_output)
+        assert len(inputs.buffers) == len(module.input_types()) - n_kv
+
+
+def test_relaxed_acceptance_threads_into_sampler(virtual_gpu: None) -> None:
+    """``use_relaxed_acceptance_for_thinking`` wires the config's relaxed
+    params into the acceptance sampler; off leaves the strict rule."""
+    strict = UnifiedDSparkGemma4_31B(_make_unified_real(_parse(_raw())))
+    assert strict.acceptance_sampler._relaxed_topk is None
+    assert strict.acceptance_sampler._relaxed_delta is None
+
+    config = _make_unified_real(_parse(_raw()))
+    config.speculative_config = SpeculativeConfig(
+        speculative_method="dflash",
+        num_speculative_tokens=7,
+        use_relaxed_acceptance_for_thinking=True,
+        relaxed_topk=5,
+        relaxed_delta=0.1,
+    )
+    relaxed = UnifiedDSparkGemma4_31B(config)
+    assert relaxed.acceptance_sampler._relaxed_topk == 5
+    assert relaxed.acceptance_sampler._relaxed_delta == 0.1

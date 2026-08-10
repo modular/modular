@@ -13,10 +13,11 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from ..gemma4.memory_planner import Gemma4MemoryPlanner
+from ..gemma4.tokenizer import Gemma4Tokenizer
 from .batch_processor import UnifiedDSparkGemma4_31BBatchProcessor
 from .model import UnifiedDSparkGemma4_31BModel
 from .model_config import UnifiedDSparkGemma4_31BConfig
@@ -31,7 +32,7 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     supported_encodings={"bfloat16"},
     pipeline_model=UnifiedDSparkGemma4_31BModel,
     context_type=TextContext,
-    tokenizer=TextTokenizer,
+    tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
     weight_adapters={
@@ -42,6 +43,11 @@ unified_dspark_gemma4_31b_arch = SupportedArchitecture(
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
     batching=UnifiedDSparkGemma4_31BBatchProcessor,
+    tool_parser="gemma4",
+    reasoning_parser="gemma4",
+    # Backend resolution runs after the speculative arch rewrite, so the
+    # base gemma4 arch's declaration never applies here.
+    default_structured_output_backend="xgrammar",
 )
 
 # The generic draft-side registration ("DSparkDraftModel") lives in the

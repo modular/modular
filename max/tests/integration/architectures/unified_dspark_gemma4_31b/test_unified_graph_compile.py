@@ -303,3 +303,33 @@ def test_unified_dspark_31b_graph_stages_at_configured_k(
         assert int(next_draft_tokens.shape[1]) == num_speculative_tokens
         assert next_draft_tokens.dtype == DType.int64
         graph.output(*outputs)
+
+
+def test_unified_dspark_31b_graph_stages_with_structured_output() -> None:
+    """The structured-output signature unflattens the bitmask triple and the
+    masked acceptance path stages end to end.
+
+    Staging-only (no compile, no weights): guards the in-graph
+    ``apply_overlap_bitmask`` insertion (host-wait, H2D scratch copy, and the
+    ``num_steps + 1`` row trim) feeding ``token_bitmasks`` into the
+    acceptance sampler.
+    """
+    config = _make_unified_config(
+        [DeviceRef.GPU()], num_speculative_tokens=NUM_DRAFTS
+    )
+    nn_model = UnifiedDSparkGemma4_31B(config, enable_structured_output=True)
+
+    for name, weight in nn_model.raw_state_dict().items():
+        weight.name = name
+
+    with Graph(
+        "unified_dspark_gemma4_31b_so_test",
+        input_types=nn_model.input_types(),
+    ) as graph:
+        values = nn_model._unflatten_graph_inputs(graph.inputs)
+        assert values.pinned_bitmask is not None
+        assert values.wait_payload is not None
+        assert values.device_bitmask_scratch is not None
+        outputs = nn_model(values)
+        assert len(outputs) == 3
+        graph.output(*outputs)
