@@ -44,6 +44,7 @@ from max.nn.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
+from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
@@ -72,6 +73,7 @@ from max.pipelines.lib.config import (
     SpeculativeConfig,
 )
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.quant import parse_quant_config
 from transformers import PretrainedConfig
 
 _CONFIG_PATH = (
@@ -445,8 +447,68 @@ def test_validate_defaults_num_speculative_tokens_to_trained() -> None:
     assert config.effective_block_size == 8
 
 
+def _nvfp4_quant_config(num_hidden_layers: int = 2) -> QuantConfig:
+    """The parsed modelopt/NVFP4 config of an NVFP4 Gemma4 target.
+
+    Mirrors ``nvidia/Gemma-4-31B-IT-NVFP4``'s ``quantization_config`` (every
+    ``self_attn`` subtree plus ``lm_head`` ignore-listed, ``Linear`` targets
+    otherwise) at two layers, and passes the same name prefixes
+    ``Gemma4ForConditionalGenerationConfig.finalize`` does, so the per-layer
+    classification comes from the production parser rather than a hand-built
+    :class:`QuantConfig`.
+    """
+    hf_config = PretrainedConfig.from_dict(
+        {
+            "quantization_config": {
+                "quant_method": "modelopt",
+                "quant_algo": "NVFP4",
+                "config_groups": {
+                    "group_0": {
+                        "input_activations": {
+                            "dynamic": False,
+                            "num_bits": 4,
+                            "type": "float",
+                            "group_size": 16,
+                        },
+                        "weights": {
+                            "dynamic": False,
+                            "num_bits": 4,
+                            "type": "float",
+                            "group_size": 16,
+                        },
+                        "targets": ["Linear"],
+                    }
+                },
+                "ignore": ["lm_head", "model.embed_vision*"]
+                + [
+                    f"model.language_model.layers.{i}.self_attn*"
+                    for i in range(num_hidden_layers)
+                ],
+            },
+        }
+    )
+    # Gemma 4 nests the language tower's depth under text_config, which is
+    # what the parser reads to enumerate layers.
+    hf_config.text_config = PretrainedConfig.from_dict(
+        {"num_hidden_layers": num_hidden_layers}
+    )
+    quant_config = parse_quant_config(
+        hf_config,
+        {},
+        DType.uint8,
+        state_dict_name_prefix="model.language_model.",
+        ignored_modules_prefix="model.language_model.",
+    )
+    assert quant_config is not None
+    assert quant_config.is_nvfp4
+    assert quant_config.mlp_quantized_layers == set(range(num_hidden_layers))
+    assert quant_config.attn_quantized_layers == set()
+    return quant_config
+
+
 def _make_real_target(
     devices: list[DeviceRef],
+    quant_config: QuantConfig | None = None,
 ) -> Gemma4ForConditionalGenerationConfig:
     """Real (non-stand-in) target config at tiny dims.
 
@@ -516,10 +578,14 @@ def _make_real_target(
         global_rope_theta=1_000_000.0,
         sliding_window_rope_theta=10000.0,
         layer_types=layer_types,
+        quant_config=quant_config,
     )
     return Gemma4ForConditionalGenerationConfig(
         devices=devices,
-        dtype=DType.bfloat16,
+        # An NVFP4 target runs with the packed-uint8 weight dtype and keeps
+        # bfloat16 for everything the checkpoint leaves unquantized (norms,
+        # attention, the drafter's whole tower).
+        dtype=DType.uint8 if quant_config else DType.bfloat16,
         kv_params=kv_params,
         text_config=text_config,
         vision_config=None,
@@ -530,6 +596,7 @@ def _make_real_target(
 
 def _make_unified_real(
     draft: DSparkSpeculatorsDraftConfig,
+    quant_config: QuantConfig | None = None,
 ) -> UnifiedDSparkGemma4_31BConfig:
     devices = [DeviceRef.GPU()]
     draft_kv_params = MHAKVCacheParams(
@@ -541,7 +608,7 @@ def _make_unified_real(
         page_size=128,
     )
     return UnifiedDSparkGemma4_31BConfig(
-        target=_make_real_target(devices),
+        target=_make_real_target(devices, quant_config),
         draft=draft,
         draft_kv_params=draft_kv_params,
         speculative_config=SpeculativeConfig(
@@ -670,6 +737,68 @@ def test_inputs_buffer_tail_matches_graph_signature(
         n_kv = len(module._unified_kv_params().flattened_kv_inputs())
         inputs = _make_placeholder_inputs(structured_output=structured_output)
         assert len(inputs.buffers) == len(module.input_types()) - n_kv
+
+
+def test_nvfp4_target_quantizes_mlp_and_leaves_draft_bfloat16(
+    virtual_gpu: None,
+) -> None:
+    """An NVFP4 target quantizes exactly the checkpoint's non-ignored Linears.
+
+    The weight names and dtypes here are the load-time contract: the pipeline
+    model audits the module's expected names against the merged state dict, so
+    a scale the graph declares but the checkpoint lacks (or vice versa) fails
+    the load. The drafter must stay bfloat16 whatever the target runs as — it
+    is loaded from its own bfloat16 checkpoint and its ``fc`` consumes the
+    target's (unquantized) hidden-state taps.
+    """
+    weights = UnifiedDSparkGemma4_31B(
+        _make_unified_real(_parse(_raw()), _nvfp4_quant_config())
+    ).raw_state_dict()
+
+    for layer in range(2):
+        for proj in ("gate_proj", "up_proj", "down_proj"):
+            prefix = f"target.layers.{layer}.mlp.{proj}"
+            assert weights[f"{prefix}.weight"].dtype == DType.uint8
+            assert (
+                weights[f"{prefix}.weight_scale"].dtype == DType.float8_e4m3fn
+            )
+            assert weights[f"{prefix}.weight_scale_2"].dtype == DType.float32
+            assert weights[f"{prefix}.input_scale"].dtype == DType.float32
+
+    # attention is ignore-listed in the first-party NVFP4 checkpoints: bf16
+    # weights and no scale tensors at all.
+    for name in ("q_proj", "k_proj", "o_proj"):
+        matches = [n for n in weights if n.endswith(f"self_attn.{name}.weight")]
+        assert matches
+        for n in matches:
+            assert weights[n].dtype == DType.bfloat16
+    assert not [n for n in weights if "self_attn" in n and "_scale" in n]
+
+    draft_names = [n for n in weights if n.startswith("draft.")]
+    assert {
+        weights[n].dtype for n in draft_names if weights[n].dtype.is_float()
+    } == {DType.bfloat16}
+    # d2t is an integer draft-to-target vocab offset table, not a tensor any
+    # weight encoding applies to.
+    assert [n for n in draft_names if not weights[n].dtype.is_float()] == [
+        "draft.d2t"
+    ]
+
+
+def test_nvfp4_target_keeps_graph_signature(virtual_gpu: None) -> None:
+    """Quantizing the target must not perturb the spec-decode input contract.
+
+    The graph inputs are activations, KV pages and sampling scalars — none of
+    which the weight encoding touches — so a signature change here would mean
+    the NVFP4 path diverged from the bfloat16 one somewhere it should not.
+    """
+    bf16_types = UnifiedDSparkGemma4_31B(
+        _make_unified_real(_parse(_raw()))
+    ).input_types()
+    nvfp4_types = UnifiedDSparkGemma4_31B(
+        _make_unified_real(_parse(_raw()), _nvfp4_quant_config())
+    ).input_types()
+    assert _signature(nvfp4_types) == _signature(bf16_types)
 
 
 def test_relaxed_acceptance_threads_into_sampler(virtual_gpu: None) -> None:

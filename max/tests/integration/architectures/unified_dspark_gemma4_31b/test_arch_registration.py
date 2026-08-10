@@ -47,6 +47,9 @@ def test_unified_dspark_31b_arch_registered() -> None:
     assert arch.supports_device_graph_capture is False
     assert arch.multi_gpu_supported is False
     assert "bfloat16" in arch.supported_encodings
+    # NVFP4 targets (nvidia/Gemma-4-31B-IT-NVFP4) are auto-detected from the
+    # checkpoint; the drafter stays bfloat16 under its own encoding.
+    assert "float4_e2m1fnx2" in arch.supported_encodings
     # Generic consumers (PipelineModel._resolved_encoding,
     # ArchConfig.initialize) resolve a recipe with no explicit
     # quantization_encoding through these class vars, which must mirror the

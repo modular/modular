@@ -50,9 +50,15 @@ from ..speculators_common.draft_config import (
 class UnifiedDSparkGemma4_31BConfig(ArchConfigWithKVCache):
     # Mirrors the `SupportedArchitecture` registration; generic consumers
     # (`PipelineModel._resolved_encoding`, `ArchConfig.initialize`) resolve a
-    # config with no explicit `quantization_encoding` through these.
+    # config with no explicit `quantization_encoding` through these. The
+    # target may be an NVFP4 checkpoint (auto-detected from the repo's packed
+    # uint8 tensors); the DSpark drafter stays bfloat16 either way, since it
+    # is loaded from its own checkpoint under its own encoding.
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
-    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float4_e2m1fnx2",
+    }
 
     target: Gemma4ForConditionalGenerationConfig
     draft: DSparkSpeculatorsDraftConfig
