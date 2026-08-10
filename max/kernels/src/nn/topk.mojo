@@ -727,11 +727,15 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
         # Fast reject against threshold. When the heap has empty slots
         # the threshold equals dead_val, so the check naturally fails
         # for all real values and we fall through to the empty-slot path.
+        # Phrased as the negation of a strict compare so a NaN candidate is
+        # rejected here too, matching `TopK_2.insert`. Accepting one makes it
+        # the threshold, and `vals[i] == threshold` is false for NaN, so every
+        # later candidate finds no slot to evict and is dropped.
         comptime if Self.largest:
-            if val <= self.threshold:
+            if not (val > self.threshold):
                 return
         else:
-            if val >= self.threshold:
+            if not (val < self.threshold):
                 return
 
         var idx32 = Int32(idx)
