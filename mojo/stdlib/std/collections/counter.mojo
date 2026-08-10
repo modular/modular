@@ -899,7 +899,9 @@ struct Counter[
             n: The number of most common elements to return.
 
         Returns:
-            A list of the `n` most common elements and their counts.
+            A list of the `n` most common elements and their counts. If the
+            counter has fewer than `n` unique elements, all of them are
+            returned; if `n` is negative, the list is empty.
 
         Example:
 
@@ -922,7 +924,7 @@ struct Counter[
             return a < b
 
         sort(items, comparator)
-        items.shrink(Int(n))
+        items.shrink(max(0, min(n, len(items))))
         return items^
 
     def elements(self) -> List[Self.V]:
