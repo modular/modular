@@ -54,7 +54,7 @@ Entry point: block_scaled_matmul_amd()
 
 from std.math import ceildiv
 from std.memory import bitcast
-from std.sys import simd_width_of
+from std.sys import simd_width_of, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -1280,7 +1280,11 @@ def _launch_block_scaled_split_k[
     WM: Int,
     WN: Int,
     num_splits: Int,
+    MMA_M: Int = 16,
+    MMA_N: Int = 16,
+    MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor,
@@ -1296,17 +1300,34 @@ def _launch_block_scaled_split_k[
     float32 workspace, launch the matmul over a `grid_dim.z = num_splits`
     grid (each z-slice accumulates one K-band's partial into its `[M, N]`
     region), then run `_split_k_reduce_kernel` on the same stream to sum
-    the partials and cast to `c`'s dtype. Targets the small-M decode
-    regime where the natural launch geometry leaves the GPU starved.
+    the partials and cast to `c`'s dtype.
+
+    `elementwise_lambda_fn` rides the REDUCE so it fires once on the summed
+    value: per-split firing would be wrong arithmetic and would repeat the
+    fused QKV+index consumer's KV-cache scatter. The reduce then routes every
+    element through the lambda and never stores to `c`.
     """
     comptime assert (
         lane_bytes == 16 or lane_bytes == 32
     ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8)"
+    # The kernel below is instantiated at the default MFMA shape; refuse any
+    # other request rather than silently downgrading it to 16x16x128.
+    comptime assert MMA_M == 16 and MMA_N == 16 and MMA_K == 128, (
+        "split-K only instantiates the 16x16x128 MFMA; route a different MFMA"
+        " shape to the non-split launch instead"
+    )
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN, lane_bytes=lane_bytes
     ]
     comptime N = type_of(c).static_shape[1]
     comptime c_dtype = type_of(c).dtype
+
+    # Without the lambda the matmul stores the f32 workspace through
+    # `RegTileWriter`, which spills an unaligned last column block into the next
+    # row (see `_sk_n_aligned`); this backstops a direct caller.
+    comptime assert (
+        N % BN == 0
+    ), "split-K needs N % BN == 0; `RegTileWriter` spills across rows otherwise"
 
     var elems_per_split = M * N
     var workspace = SplitKWorkspace[num_splits](ctx, elems_per_split)
@@ -1346,7 +1367,9 @@ def _launch_block_scaled_split_k[
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
-    comptime reduce_kernel = _split_k_reduce_kernel[num_splits, c_dtype]
+    comptime reduce_kernel = _split_k_reduce_kernel[
+        num_splits, c_dtype, elementwise_lambda_fn
+    ]
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
@@ -1426,14 +1449,16 @@ def block_scaled_matmul_amd[
     Parameters:
         MMA_M: MFMA tile rows. Default 16. Pass 32 to opt into the
             32x32x64 MFMA shape (must be paired with MMA_N=32, MMA_K=64).
+            Non-split branches only -- split-K and the narrow wide-N tile
+            instantiate 16x16x128, so a 32x32x64 request routes past them.
         MMA_N: MFMA tile cols. Default 16.
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
         lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
             32 (MXFP8), which selects the operand format and byte extents.
         elementwise_lambda_fn: Optional fused epilogue receiving each output
-            fragment with its global `(m, n)`; `c` is left untouched. Forces
-            the non-split-K launch, since the lambda has to fire on the
-            reduced value rather than a per-split partial.
+            fragment with its global `(m, n)`; `c` is left untouched. Split-K
+            carries it too, on the reduce — one scalar per cell rather than a
+            fragment, still exactly once per cell.
 
     Args:
         c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
@@ -1474,22 +1499,12 @@ def block_scaled_matmul_amd[
     if M == 0 or N == 0:
         return
 
-    # Split-K small-M config: 4-warp BM=64,BN=128 tile (WM=64,WN=32 →
-    # num_warps_n=4, num_warps_m=1) with BK_ELEMS=256 (BK_BYTES=128 at
-    # MXFP4, 256 at MXFP8). At small M the whole problem is one M-tile,
-    # so the plain kernel launches only ceildiv(N, BN) CTAs and starves
-    # the GPU. Splitting K into `_sk_splits` disjoint bands (one extra
-    # CTA dim) multiplies the CTA count up toward `_sk_cta_cap`.
-    # `_sk_splits == 1` means no split qualified — fall back to the plain launch.
-    #
-    # `_sk_cta_cap` is derived from the device CU count rather than
-    # hardcoded: total split-K CTAs ≈ ceildiv(N, BN) * num_splits, and we
-    # want enough to fill every CU plus a second wave for latency hiding,
-    # so cap = sm_count * 2 (≈2 waves). On MI355X (sm_count=256) this is
-    # 512, which is the value the split factors were tuned at. The idiom
-    # `ctx.default_device_info.sm_count` mirrors block_scaled_quantization.mojo
-    # and grouped_matmul.mojo; `default_device_info` is a comptime alias keyed
-    # on the build's accelerator arch, so the cap is a compile-time const.
+    # Split-K small-M config. At small M the whole problem is one M-tile, so the
+    # plain kernel launches only ceildiv(N, BN) CTAs and starves the GPU;
+    # splitting K into `_sk_splits` disjoint bands multiplies the CTA count up
+    # toward `_sk_cta_cap`. `_sk_splits == 1` means no split qualified.
+    # The cap is sm_count * 2 — every CU plus a second wave for latency hiding —
+    # i.e. 512 on MI355X, the value the split factors were tuned at.
     comptime _gpu = ctx.default_device_info
     comptime SK_CTA_WAVES = 2
     comptime _sk_cta_cap = _gpu.sm_count * SK_CTA_WAVES
@@ -1504,23 +1519,37 @@ def block_scaled_matmul_amd[
         K_BYTES, N, SK_BN, SK_BK_BYTES, cta_cap=_sk_cta_cap
     ]()
 
-    # Narrow-M split-K tile (M <= 16). The MFMA is 16x16x128, so a tile
-    # with BM=16/WM=16 (num_warps_m=1, num_m_mmas=1) wastes no M rows for a
-    # <=16-row GEMM — BM=64 would load and run MFMA on 48-63 OOB-zero rows.
-    # The DRAM→SMEM loader requires load_thread_rows = num_threads /
-    # (BK_BYTES/simd_width) <= BM (else a_loads_per_tile = BM /
-    # load_thread_rows == 0 and the A tile is never loaded). With
-    # BK_BYTES=128, simd_width=16 the load layout is 8 K-cols wide, so
-    # num_threads must be <= 8*BM = 128 for BM=16. That rules out the
-    # 4-warp (256-thread) BN=128,WN=32 shape — it sets load_thread_rows=32
-    # > BM=16 and breaks coverage. The legal narrow tile is 2 warps
-    # (128 threads): BN=128, WN=64 → num_warps_n=2, num_n_mmas=4. Same
-    # ceildiv(N,BN) and same _pick_num_splits result as the BM=64 tile
-    # (split count depends only on N/BN/BK_BYTES, not BM).
+    # The f32 workspace grows with M while the benefit does not, so a byte
+    # budget on it is an M ceiling (everything but M is comptime). 128 MiB stays
+    # under the 205 MB a `mojo_test` gets from the MAX memory manager and still
+    # admits M <= 1092 on M3's QKV+index GEMM (N=2560, 12 splits).
+    comptime SK_MAX_WORKSPACE_BYTES = 128 * 1024 * 1024
+    comptime _sk_max_m = SK_MAX_WORKSPACE_BYTES // (
+        _sk_splits * N * size_of[DType.float32]()
+    )
+
+    # Narrow-M split-K tile (M <= 16): BM=16 wastes no M rows, where BM=64 would
+    # load and run MFMA on 48-63 OOB-zero rows. The DRAM→SMEM loader requires
+    # load_thread_rows = num_threads / (BK_BYTES/simd_width) <= BM, else
+    # a_loads_per_tile == 0 and the A tile is never loaded — at BK_BYTES=128,
+    # simd_width=16 that caps num_threads at 8*BM = 128, so this has to be the
+    # 2-warp WN=64 shape, not the 4-warp WN=32 one the BM=64 tile uses.
     comptime SK16_BM = 16
     comptime SK16_BN = 128
     comptime SK16_WM = 16
     comptime SK16_WN = 64
+
+    # `RegTileWriter`'s buffer-resource OOB clamp (`amd_tile_io.mojo`) bounds a
+    # store by the destination's total byte extent, not per row: at
+    # `N % BN != 0` the workspace's last column block spills into the next row
+    # instead of being clipped, and the reduce sums the corruption. The
+    # non-split branches use the column-gated `RegTileEpilogue` instead.
+    comptime _sk_n_aligned = N % SK_BN == 0 and N % SK16_BN == 0
+
+    # BM=WM=16 leaves `num_m_mmas = 16//32 = 0` at MMA_M=32, so the split tiles
+    # and the narrow wide-N tile below can only be the default MFMA; route a
+    # 32x32x64 request past them rather than downgrading it silently.
+    comptime _mma_is_default = MMA_M == 16 and MMA_N == 16 and MMA_K == 128
 
     # Wide-N short-K decode gate (e.g. down-proj N=16384, K<=3072). For wide
     # N the plain launch already yields ceildiv(N, BN) CTAs that fill the GPU,
@@ -1552,13 +1581,13 @@ def block_scaled_matmul_amd[
     # Runtime M-bucket dispatch. Tile shapes tuned for Kimi K2.5 on MI355.
     #   M <=  16  → decode → single small-BN kernel for the wide-N short-K
     #               regime, else narrow split-K (BM=16, no wasted M rows)
-    #   M >   16  → BM=64 split-K whenever `_sk_splits` found a legal factor,
-    #               regardless of M. `_sk_splits` is keyed on N/K/cta_cap, not
-    #               M, so a shape that's still CTA-starved at large M keeps
-    #               benefiting from the split there too. The BK512 fallback
-    #               below stays capped at M<=64 — see that branch for why.
+    #   M >   16  → BM=64 split-K when `_sk_splits` found a legal factor and
+    #               the workspace fits (`M <= _sk_max_m`). `_sk_splits` is
+    #               keyed on N/K/cta_cap, not M, so a shape that's still
+    #               CTA-starved at large M keeps benefiting there too. The
+    #               BK512 fallback stays capped at M<=64 — see that branch.
     if M <= 16:
-        comptime if _wide_n_short_k_decode:
+        comptime if _wide_n_short_k_decode and _mma_is_default:
             # Single kernel, no split-K, no reduce. BN=32 → ceildiv(N,32) CTAs
             # fill the GPU; BM=16 wastes no M rows. Mirrors aiter NUM_KSPLIT=1.
             _launch_block_scaled[
@@ -1573,7 +1602,8 @@ def block_scaled_matmul_amd[
         elif (
             can_use_bk_256
             and _sk_splits > 1
-            and not Bool(elementwise_lambda_fn)
+            and _sk_n_aligned
+            and _mma_is_default
         ):
             _launch_block_scaled_split_k[
                 BM=SK16_BM,
@@ -1582,7 +1612,11 @@ def block_scaled_matmul_amd[
                 WM=SK16_WM,
                 WN=SK16_WN,
                 num_splits=_sk_splits,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                MMA_K=MMA_K,
                 lane_bytes=lane_bytes,
+                elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
             _launch_block_scaled[
@@ -1614,17 +1648,38 @@ def block_scaled_matmul_amd[
         comptime if (
             can_use_bk_256
             and _sk_splits > 1
-            and not Bool(elementwise_lambda_fn)
+            and _sk_n_aligned
+            and _mma_is_default
         ):
-            _launch_block_scaled_split_k[
-                BM=SK_BM,
-                BN=SK_BN,
-                BK_ELEMS=SK_BK_ELEMS,
-                WM=SK_WM,
-                WN=SK_WN,
-                num_splits=_sk_splits,
-                lane_bytes=lane_bytes,
-            ](c, a, b, a_scales, b_scales, M, ctx)
+            # Past `_sk_max_m` the scratch outweighs the split, and the plain
+            # BM=128 tile already has the parallelism it was buying.
+            if M <= _sk_max_m:
+                _launch_block_scaled_split_k[
+                    BM=SK_BM,
+                    BN=SK_BN,
+                    BK_ELEMS=SK_BK_ELEMS,
+                    WM=SK_WM,
+                    WN=SK_WN,
+                    num_splits=_sk_splits,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    lane_bytes=lane_bytes,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
+            else:
+                _launch_block_scaled[
+                    BM=128,
+                    BN=128,
+                    BK_ELEMS=128,
+                    WM=64,
+                    WN=64,
+                    MMA_M=MMA_M,
+                    MMA_N=MMA_N,
+                    MMA_K=MMA_K,
+                    lane_bytes=lane_bytes,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
             # Non-split BK_ELEMS=512 fallback, M<=64 only (checked below at
             # runtime — `M` isn't comptime-known here). Reached when
