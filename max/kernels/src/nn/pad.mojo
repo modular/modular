@@ -564,8 +564,7 @@ def _memcpy_regions_fast[
         if cnt == modulo:
             cnt = 0
 
-    @parameter
-    def _common_loop[pre_copy: Bool, singleton: Bool]():
+    def _common_loop[pre_copy: Bool, singleton: Bool]() {var}:
         var curr_rem: Int = 0
         var num_iters = pre_pad if pre_copy else post_pad
         var copy_to: Int = (pre_pad - 1) if pre_copy else (pre_pad + non_pad)
