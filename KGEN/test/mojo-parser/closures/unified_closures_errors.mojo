@@ -341,3 +341,22 @@ def capture_device_passable_by_reference(value: RegPassableDevice) raises:
 
     # expected-error-re @below {{'{{.*}}' does not conform to trait 'DevicePassable'}}
     takeDevicePassableByRef(closure)
+
+
+@fieldwise_init
+struct MemType:
+    pass
+
+
+# expected-note @below {{function declared here}}
+def apply(f: Some[RegisterPassable & def() -> None]):
+    pass
+
+
+def main():
+    var t = MemType()
+
+    def func() {var t^}:
+        pass
+    # expected-error @below {{invalid call to 'apply': value passed to 'f' cannot be converted from 'def() -> None' to 'T', argument type 'def() -> None' does not conform to trait 'def() -> None & RegisterPassable'}}
+    apply(func)

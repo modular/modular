@@ -4001,6 +4001,9 @@ LogicalResult ClosureEmitter::isTraitCompatibleWith(ASTType sourceTraitType,
                                                     ASTDecl *declScope) {
   if (!targetTrait || !targetTrait.getDefinesClosure())
     return failure();
+
+  // FIXME: it does not handle a trait composition with multiple
+  // closure traits correctly.
   std::optional<TraitDeclOp> sourceOp =
       getClosureDecl(shared, sourceTraitType.mlirType);
   if (!sourceOp || !sourceOp->getDefinesClosure())
