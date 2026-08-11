@@ -128,7 +128,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             False otherwise.
         """
         return __mlir_attr[
-            `#kgen.param.expr<eq,`,
+            `#kgen.param.identical<`,
             Self.__arch(),
             `, `,
             _get_kgen_string[name](),
@@ -563,7 +563,7 @@ def is_triple[
         True if the triple matches and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         _triple_attr[target](),
         `, `,
         name.value,
@@ -1066,7 +1066,7 @@ def is_little_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is little endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
@@ -1090,7 +1090,7 @@ def is_big_endian[target: _TargetType = _current_target()]() -> Bool:
         True if the target is big endian and False otherwise.
     """
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         __mlir_attr[
             `#kgen.param.expr<target_get_field,`,
             target,
