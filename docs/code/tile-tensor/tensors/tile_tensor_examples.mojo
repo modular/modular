@@ -22,7 +22,6 @@ from layout.tile_layout import (
     blocked_product,
     row_major_nested,
 )
-from std.memory import Pointer, alloc, memset
 from std.testing import assert_equal
 
 

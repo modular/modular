@@ -232,7 +232,7 @@ struct Allocation[T: AnyType](
 
         `alloc` returns uninitialized storage, so the returned pointer may point
         to uninitialized memory. Initialize an element (for example with
-        `init_pointee_move`) before reading it.
+        `unsafe_write`) before reading it.
         """
         return self._alloc.unsafe_ptr()
 
@@ -419,7 +419,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
 
         `alloc` returns uninitialized storage, so the returned pointer may point
         to uninitialized memory. Initialize an element (for example with
-        `init_pointee_move`) before reading it.
+        `unsafe_write`) before reading it.
         """
         return self._alloc.unsafe_ptr().unsafe_origin_cast[origin_of(self)]()
 

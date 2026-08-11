@@ -1527,18 +1527,6 @@ struct String(
             length=self.byte_length(),
         )
 
-    @deprecated("Use `StringSpan(str)` instead.")
-    @__unsafe_nested_origins_read_only
-    def as_string_slice(
-        ref self,
-    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
-        """Returns a string slice of the data owned by this string.
-
-        Returns:
-            A string slice pointing to the data owned by this string.
-        """
-        return self._interior_slice()
-
     def byte_length(self) -> Int:
         """Get the string length in bytes.
 

@@ -86,10 +86,6 @@ struct TypeList[
     )
     """The number of types in the list."""
 
-    @deprecated("`TypeList.size` is deprecated, use `TypeList.length`.")
-    comptime size = Self.length
-    """The number of types in the list. Deprecated alias for `length`."""
-
     comptime __getitem_param__[idx: SIMDLength] = __mlir_attr[
         `#kgen.param_list.get<:`,
         Self._mlir_type,

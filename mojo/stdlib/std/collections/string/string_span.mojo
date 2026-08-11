@@ -1055,12 +1055,6 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return rebind[Self.Immutable](self)
 
-    @doc_hidden
-    @always_inline
-    @deprecated(use=as_imm)
-    def get_immutable(self) -> Self.Immutable:
-        return self.as_imm()
-
     def replace(self, old: StringSpan, new: StringSpan) -> String:
         """Return a copy of the string with all occurrences of substring `old`
         if replaced by `new`.

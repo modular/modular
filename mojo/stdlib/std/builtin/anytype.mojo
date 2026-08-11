@@ -16,8 +16,7 @@ the traits that used to live in this module.
 This module defines `Some` and `SomeTypeList`, aliases that let a function
 signature express "any type conforming to trait `X`" without introducing an
 explicit type parameter. It also keeps deprecated aliases for `AnyType` and
-`Deinitable` (now defined in `std.traits`), plus the older
-`ImplicitlyDestructible` and `ImplicitlyDeletable` renames of `Deinitable`.
+`Deinitable`, both of which are now defined in `std.traits`.
 """
 
 from std.builtin.variadics import _MLIR
@@ -49,23 +48,6 @@ destructors.
 This trait has moved to `std.traits.deinitable`. It's exported from the
 prelude, so most code doesn't need to change. This alias will be removed in
 a future version of Mojo."""
-
-
-@deprecated(use=Deinitable)
-comptime ImplicitlyDestructible = std.traits.Deinitable
-"""Deprecated: A trait for types that require lifetime management through destructors.
-
-This trait has been renamed to `Deinitable`. This alias will be removed
-in a future version of Mojo."""
-
-
-@doc_hidden
-@deprecated(use=Deinitable)
-comptime ImplicitlyDeletable = std.traits.Deinitable
-"""Deprecated: A trait for types that require lifetime management through destructors.
-
-This trait has been renamed to `Deinitable`. This alias will be removed
-in a future version of Mojo."""
 
 
 comptime __SomeImpl[Trait: type_of(std.traits.AnyType), T: Trait] = T

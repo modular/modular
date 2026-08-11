@@ -217,11 +217,6 @@ Parameters:
 """
 
 
-@doc_hidden
-@deprecated(use=ImmPointer)
-comptime ImmutPointer = ImmPointer
-
-
 # ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#
@@ -401,10 +396,6 @@ struct Pointer[
     # ===-------------------------------------------------------------------===#
     # Aliases
     # ===-------------------------------------------------------------------===#
-
-    @deprecated("`Pointer.type` is deprecated, use `Pointer.T` instead.")
-    comptime type = Self.T
-    """A temporary deprecated type alias while renaming Pointer's parameter `T`."""
 
     comptime _mlir_lit_ref = __mlir_type[
         `!lit.ref<`,
@@ -1370,22 +1361,6 @@ struct Pointer[
             _mlir_value = __mlir_op.`pop.noalias_pointer_cast`(self._mlir_value)
         }
 
-    @doc_hidden
-    @always_inline("nodebug")
-    @deprecated(use=unsafe_as_noalias)
-    def as_noalias_ptr(self) -> Self:
-        """Cast the pointer to a new pointer that is known not to locally alias
-        any other pointer. In other words, the pointer transitively does not
-        comptime any other memory value declared in the local function context.
-
-        This information is relayed to the optimizer. If the pointer does
-        locally alias another memory value, the behaviour is undefined.
-
-        Returns:
-            A noalias pointer.
-        """
-        return self.unsafe_as_noalias()
-
     @__allow_legacy_custom_self_type
     @always_inline("nodebug")
     def unsafe_load[
@@ -2350,14 +2325,6 @@ struct Pointer[
         """
         return self.unsafe_mut_cast[False]()
 
-    @doc_hidden
-    @always_inline("builtin")
-    @deprecated(use=as_imm)
-    def as_immutable(
-        self,
-    ) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
-        return self.as_imm()
-
     @always_inline("builtin")
     def as_unsafe_any_origin(
         self,
@@ -2429,29 +2396,6 @@ struct Pointer[
         address_space=target_address_space,
     ]:
         return self.unsafe_address_space_cast[target_address_space]()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_deinit_pointee)
-    def destroy_pointee[
-        U: Deinitable, //
-    ](self: Pointer[U, _]) where type_of(self).mut:
-        _ = __get_address_as_owned_value(self._mlir_value)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_deinit_pointee_with)
-    def destroy_pointee_with(
-        self: Pointer[
-            Self.T,
-            _,
-            address_space=AddressSpace.GENERIC,
-        ],
-        destroy_func: def(var Self.T) thin,
-    ) where type_of(self).mut:
-        destroy_func(__get_address_as_owned_value(self._mlir_value))
 
     @always_inline
     def unsafe_deinit_pointee(
@@ -2546,16 +2490,6 @@ struct Pointer[
         //,
     ](self: Pointer[U, _]) -> U where type_of(self).mut:
         return self.unsafe_take_pointee()
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write)
-    def init_pointee_move[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _], var value: U) where type_of(self).mut:
-        __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
     @always_inline
     def unsafe_write(
@@ -2671,16 +2605,6 @@ struct Pointer[
         __get_address_as_uninit_lvalue(self._mlir_value) = copy.copy()
 
     @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write)
-    def init_pointee_copy[
-        U: Copyable,
-        //,
-    ](self: Pointer[U, _], value: U) where type_of(self).mut:
-        self.unsafe_write(init_with=lambda () {imm} -> U: value.copy())
-
-    @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_write_move_from[
         U: Movable,
@@ -2747,15 +2671,3 @@ struct Pointer[
         __get_address_as_uninit_lvalue(
             self._mlir_value
         ) = __get_address_as_owned_value(src._mlir_value)
-
-    @__allow_legacy_custom_self_type
-    @doc_hidden
-    @always_inline
-    @deprecated(use=unsafe_write_move_from)
-    def init_pointee_move_from[
-        U: Movable,
-        //,
-    ](self: Pointer[U, _], src: Pointer[U, _]) where (
-        type_of(self).mut and type_of(src).mut
-    ):
-        self.unsafe_write_move_from(src)

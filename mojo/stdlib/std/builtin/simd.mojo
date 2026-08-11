@@ -607,10 +607,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    @deprecated(use=length)
-    comptime size = Self.length
-    """A temporary deprecated alias while renaming SIMD's parameter `size`."""
-
     comptime MAX = Self(_max_or_inf[Self.dtype]())
     """Gets the maximum value for the SIMD value, potentially +inf."""
 

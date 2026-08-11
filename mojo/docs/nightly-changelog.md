@@ -117,7 +117,6 @@ This version is still a work in progress.
 ## Removed
 
 This release completes the removal of APIs deprecated during the v1.0 cycle.
-Each entry names its replacement.
 
 - Removed the temporary `InlineArray` alias for `Array`, including its
   re-exports from `std.collections` and the prelude. Use `Array` directly.
@@ -137,6 +136,64 @@ Each entry names its replacement.
   only turned characters outside the base64 alphabet into silently corrupt
   output bytes. Drop `[validate=True]` from existing calls; calls that relied on
   the default now raise instead of returning garbage.
+
+- Removed the origin aliases left over from the `Immut` to `Imm` and
+  `External` to `Untracked` renames. Use the surviving spelling in each case:
+  `ImmOrigin` for `ImmutOrigin`, `ImmUnsafeAnyOrigin` for
+  `ImmutUnsafeAnyOrigin`, `ImmStaticOrigin` for `StaticConstantOrigin`,
+  `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
+  `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
+  `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
+
+- Removed the pre-unification pointer aliases `MutUnsafePointer`,
+  `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
+  `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
+  `ImmOpaquePointer`, and `OptionalPointer` instead. `UnsafePointer` itself
+  remains available, but is deprecated in favor of `Pointer`.
+
+- Removed the raw memory functions superseded by their `unsafe_`-prefixed
+  spellings: `memcpy`, `memset`, `memset_zero`, `uninit_move_n`,
+  `uninit_copy_n`, and `destroy_n`. Use `unsafe_memcpy`, `unsafe_memset`,
+  `unsafe_memset_zero`, `unsafe_uninit_move_n`, `unsafe_uninit_copy_n`, and
+  `unsafe_destroy_n` instead.
+
+- Removed the `size` aliases left from the `size` to `length` rename:
+  `SIMD.size`, `Array.size`, `TypeList.size`, and the `SIMDSize` alias for
+  `SIMDLength`. Use `length` and `SIMDLength`.
+
+- Removed the `as_immutable()` and `get_immutable()` methods on `Pointer`,
+  `Span`, and `StringSpan`. Use `as_imm()`.
+
+- Removed the `ImmutSpan` alias. Use `ImmSpan`.
+
+- Removed `String.as_string_slice()`. Construct a `StringSpan` from the string
+  instead: `StringSpan(my_string)`.
+
+- Removed the `ImplicitlyDestructible` and `ImplicitlyDeletable` aliases. Use
+  `Deinitable`.
+
+- Removed the deprecated ownership-transfer methods: `List.steal_data()` and
+  `OwnedPointer.steal_data()` are now `unsafe_take_allocation()`,
+  `OwnedPointer.take()` is `into_inner()`, and `Variant.take()` and
+  `Variant.unsafe_take()` are `unwrap()` and `unsafe_unwrap()`.
+
+- Removed the `Pointer` methods superseded by their `unsafe_`-prefixed
+  spellings: `as_noalias_ptr()`, `destroy_pointee()`, `destroy_pointee_with()`,
+  `init_pointee_move()`, `init_pointee_copy()`, and `init_pointee_move_from()`.
+  Use `unsafe_as_noalias()`, `unsafe_deinit_pointee()`,
+  `unsafe_deinit_pointee_with()`, `unsafe_write()`, and
+  `unsafe_write_move_from()`. The `Pointer.type` alias for `Pointer.T` is gone
+  as well.
+
+- Removed the `ConditionalType` type function and the `std.utils.type_functions`
+  module. Use the ternary expression `T if cond else U`.
+
+- Removed `trait_downcast()`. Constrain on the trait instead, with
+  `conforms_to(type_of(src), Trait)` in a `where` clause or a
+  `comptime assert`.
+
+- Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
+  an argument to `run(f)` instead, which accepts a unified closure.
 
 ## Fixed
 

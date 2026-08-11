@@ -731,7 +731,7 @@ def _ss_compare[
     """Compares the GPU output against the host reference within FP8 tol.
 
     Generic over the pointer origins so the caller can pass a LayoutTensor's
-    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutExternalOrigin)
+    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutUntrackedOrigin)
     without an origin mismatch.
 
     When `require_finite` is True (the NaN-safety variant), additionally
