@@ -64,6 +64,25 @@ Device discovery
    load_devices
    scan_available_devices
 
+Launch tracing
+--------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LaunchTraceEntry
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   begin_launch_trace
+   launch_trace
+   take_launch_trace
+
 Virtual devices
 ---------------
 
