@@ -13,12 +13,12 @@
 
 """KVConnector shim over the Rust ``kv_tier_connector`` extension.
 
-The performant, CUDA-only replacement for the deprecated Python
-:class:`~.local_connector.LocalConnector` / :class:`~.tiered_connector.TieredConnector`,
-selected with ``--kv-connector rust_tiered``. All of the host block pool, disk
-tier, and copy engine live in Rust and run on Rust OS threads with the GIL
-released, so the connector never contends for the GIL on the hot path (the
-Python lanes' GIL contention was starving GPU utilization).
+The only host/disk tiered connector: it backs ``--kv-connector rust_tiered``
+as well as the retired ``tiered`` alias, whose Python implementation it
+replaced. All of the host block pool, disk tier, and copy engine live in Rust
+and run on Rust OS threads with the GIL released, so the connector never
+contends for the GIL on the hot path (the Python lanes' GIL contention was
+starving GPU utilization).
 
 How it works:
 
@@ -49,6 +49,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import NamedTuple
 
+import psutil
 from max.driver import Buffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import (
@@ -67,9 +68,23 @@ from ..paged_kv_cache.block_copy_engine import (
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )
-from .disk_tier import _check_disk_capacity
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _check_disk_capacity(
+    cache_dir: Path | str, max_disk_size_bytes: int
+) -> None:
+    """Raises when a disk offload budget exceeds free space at cache_dir."""
+    available_bytes = psutil.disk_usage(str(cache_dir)).free
+    if max_disk_size_bytes > available_bytes:
+        raise RuntimeError(
+            "disk_offload_max_gb requests "
+            f"{max_disk_size_bytes / (1024**3):.1f} GiB at "
+            f"{cache_dir} but only "
+            f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
+            "disk_offload_max_gb or free space on the target filesystem."
+        )
 
 
 # A device KV buffer endpoint the Rust connector copies to/from. These are
@@ -111,6 +126,16 @@ class RustTierConnector:
         max_disk_size_gb: float = 50.0,
         num_disk_workers: int = 32,
     ) -> None:
+        """Initializes the connector over ``replica_kv_memory``'s device buffers.
+
+        Args:
+            replica_kv_memory: Per-DP-replica offload-ready KV memory units.
+            total_num_host_blocks: Size of the shared host block pool.
+            disk_cache_dir: Directory backing the disk last level.
+            kv_hash_algo: Hash algo the caller computes block hashes with.
+            max_disk_size_gb: Disk budget.
+            num_disk_workers: Disk I/O worker threads.
+        """
         # Lazy import: OSS MAX can import this module without the extension.
         from kv_tier_connector import (  # type: ignore[import-not-found]
             TierConnector,

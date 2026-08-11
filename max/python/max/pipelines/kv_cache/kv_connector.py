@@ -43,10 +43,8 @@ class KVConnectorTransfer(Protocol):
 
     Two completion models cross this handle:
 
-    * Synchronous / stream-ordered connectors (the deprecated host
-      :class:`~.connectors.local_connector.LocalConnector` and
-      :class:`~.connectors.tiered_connector.TieredConnector`, and dKV) issue
-      their copies on -- or GPU-ordered ahead of -- the forward stream and return
+    * Synchronous / stream-ordered connectors (dKV) issue their copies on -- or
+      GPU-ordered ahead of -- the forward stream and return
       :class:`CompletedTransfer`. ``is_complete`` is immediately ``True``, so the
       manager commits the reused prefix at once and never holds the request out
       of a batch.
@@ -83,7 +81,7 @@ class KVConnectorTransfer(Protocol):
 class CompletedTransfer:
     """An already-complete :class:`KVConnectorTransfer`.
 
-    Returned by synchronous / stream-ordered connectors (host, tiered, dKV):
+    Returned by synchronous / stream-ordered connectors (dKV):
     their copies ride the forward stream or are GPU-ordered ahead of it, so from
     the manager's perspective the transfer is already done -- no pinning, no
     deferred commit, no cordoning. ``g0_blocks`` still reports the device blocks
@@ -280,8 +278,8 @@ class KVConnector(Protocol):
             Retained only for the dKV connector, which still posts its READs in
             :meth:`load` and orders them here; a no-op for every other connector.
 
-        Called before the forward pass. Connectors whose loads already ride the
-        device stream (host/disk tiers) need no work here. The dKV connector
+        Called before the forward pass. Connectors that report completion
+        through :class:`KVConnectorTransfer` need no work here. The dKV connector
         does one of two things by transport: for a co-located (same-host) load it
         enqueues a cross-stream CUDA event wait so the compute stream is
         GPU-ordered after the H2D copies and returns without a host sync (the

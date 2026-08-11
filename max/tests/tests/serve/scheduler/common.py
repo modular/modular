@@ -36,6 +36,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -81,6 +82,7 @@ def create_kv_cache(
     page_size: int,
     enable_prefix_caching: bool = False,
     kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
     device: Device = CPU(),
     num_speculative_tokens: int = 0,
@@ -127,6 +129,7 @@ def create_kv_cache(
                 page_size=page_size,
                 enable_prefix_caching=enable_prefix_caching,
                 kv_connector=kv_connector,
+                kv_connector_config=kv_connector_config,
                 host_kvcache_swap_space_gb=999,
                 data_parallel_degree=dp,
                 devices=device_refs,
@@ -146,6 +149,7 @@ def create_kv_cache(
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
             kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             host_kvcache_swap_space_gb=999,
             data_parallel_degree=dp,
             devices=device_refs,
@@ -199,6 +203,7 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
@@ -216,6 +221,7 @@ def create_paged_scheduler(
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         kv_connector=kv_connector,
+        kv_connector_config=kv_connector_config,
         dp=dp,
         device=device,
         num_speculative_tokens=num_speculative_tokens,
@@ -594,8 +600,47 @@ def run_until_completion(
     else:
         batch_infos = output_list
 
+    batch_constructor = scheduler.batch_constructor
+    kv_cache = batch_constructor.kv_cache
     for _ in range(max_num_iters):
         batch_info = create_batch_and_execute(scheduler)
+        # An asynchronous KV connector can produce an empty batch for two
+        # distinct reasons, both meaning "not ready yet", not "done":
+        #  - A candidate request is cordoned in the batch constructor's own
+        #    ``_onloading_reqs`` until its onload's ``is_complete()`` flips
+        #    (``construct_batch`` re-admits it automatically once it does).
+        #  - A pending offload (or a completed-but-not-yet-drained transfer)
+        #    keeps a device block pinned in the block manager's
+        #    ``_pending_transfers``, starving a new allocation with
+        #    ``InsufficientBlocksError`` even with no cordoned request in
+        #    sight. Neither condition alone catches both cases, so check
+        #    both.
+        #
+        # Rather than spin-polling a bounded tick count, block on the actual
+        # transfer handles: under real GPU contention (several GPU tests
+        # sharing one device in CI) an H2D/D2H copy can take far longer than
+        # any reasonable poll budget, so a fixed retry count is inherently
+        # flaky (confirmed directly: it landed anywhere from 1 to 49+ retries
+        # across repeated runs on a loaded GPU). Progress here is strictly
+        # serialized -- num_gpu_blocks admits one request at a time -- so
+        # there is nothing else useful this loop could do meanwhile.
+        poll_iters = 0
+        while (
+            batch_info.batch_size == 0
+            and (
+                batch_constructor._onloading_reqs
+                or kv_cache.pending_transfers_exist()
+            )
+            and poll_iters < max_num_iters
+        ):
+            for onloading in list(batch_constructor._onloading_reqs.values()):
+                onloading.event.synchronize()
+            for pending_list in kv_cache._block_manager._pending_transfers:
+                for pending in list(pending_list):
+                    pending.event.synchronize()
+            kv_cache.poll_transfers()
+            batch_info = create_batch_and_execute(scheduler)
+            poll_iters += 1
         batch_infos.append(batch_info)
         if batch_info.batch_size == 0:
             break

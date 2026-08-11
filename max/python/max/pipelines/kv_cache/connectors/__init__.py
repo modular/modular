@@ -14,8 +14,9 @@
 """KV cache connectors for external cache tiers.
 
 - `NullConnector`: No-op connector when external caching is disabled
-- `LocalConnector`: Host memory offloading
-- `TieredConnector`: GPU <-> CPU <-> Disk offloading
+- `RustTierConnector`: GPU <-> CPU <-> Disk offloading, backed by the Rust
+  ``kv_tier_connector`` extension. Also serves the ``tiered`` alias, whose
+  Python implementation it replaced.
 - `create_connector()`: Factory function
 """
 
@@ -36,9 +37,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
-from .local_connector import LocalConnector
 from .null_connector import NullConnector
-from .tiered_connector import TieredConnector
 
 if TYPE_CHECKING:
     from max.pipelines.kv_cache.config import KVConnectorConfig
@@ -118,9 +117,12 @@ def create_connector(
     A single connector serves every DP replica for all connector types:
     ``replica_kv_memory`` holds each replica's device buffers, and load/offload
     select the replica via ``replica_idx`` (SERVOPT-1501). The host/disk tiers
-    (``local``/``tiered``) back this with one shared pinned host buffer / disk
-    cache; the distributed ``dkv`` connector owns one Rust client per replica
-    internally.
+    back this with one shared pinned host buffer / disk cache; the distributed
+    ``dkv`` connector owns one Rust client per replica internally.
+
+    ``tiered`` is a backward-compatible alias for the Rust ``rust_tiered``
+    connector, which replaced its deleted Python implementation, and therefore
+    inherits ``rust_tiered``'s CUDA/HIP requirement.
 
     Args:
         kv_connector: Connector type to instantiate (or None for no-op).
@@ -129,7 +131,7 @@ def create_connector(
         replica_kv_memory: Per-replica offload-ready KV memory units (one inner
             sequence per DP replica).
         total_num_host_blocks: Total number of host blocks for swapping (the
-            full shared pool across replicas for ``local``/``tiered``).
+            full shared pool across replicas for ``tiered``).
         params: KV-cache parameters; the ``dkv`` connector uses them to derive
             its multi-tenant per-GPU handshake identity.
 
@@ -160,49 +162,39 @@ def create_connector(
             params=params,
         )
 
-    if connector == KVConnectorType.tiered:
+    # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after
+    # its Python implementation was deleted.
+    if connector in (KVConnectorType.tiered, KVConnectorType.rust_tiered):
         cfg = kv_connector_config
-        if cfg is None:
-            raise ValueError(
-                "kv_connector_config is required when kv_connector is 'tiered'"
-            )
-        disk_dir = _resolve_disk_offload_dir(cfg)
-        logger.debug(
-            "Creating TieredConnector: "
-            f"host_blocks={total_num_host_blocks}, "
-            f"disk_dir={disk_dir}, "
-            f"disk_max_gb={cfg.disk_offload_max_gb}, "
-            f"num_disk_workers={cfg.num_disk_workers}"
-        )
-
-        return TieredConnector(
-            devices=devices,
-            replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_blocks,
-            disk_cache_dir=disk_dir,
-            max_disk_size_gb=cfg.disk_offload_max_gb,
-            num_disk_workers=cfg.num_disk_workers,
-        )
-
-    if connector == KVConnectorType.rust_tiered:
-        cfg = kv_connector_config
-        if cfg is None:
-            raise ValueError(
-                "kv_connector_config is required when kv_connector is "
-                "'rust_tiered'"
-            )
+        # Check the KV memory's own device before the build's accelerator API,
+        # so a CPU-device pipeline fails the same way on every host rather than
+        # reporting "no CUDA/HIP" only on GPU-less ones.
+        if replica_kv_memory and replica_kv_memory[0][0].buffer.device.is_host:
+            raise ValueError("KVCacheMemory is on the CPU; cannot offload")
         # The Rust connector drives the GPU copy engines directly via its own
         # dlopen'd driver shim, supporting NVIDIA (CUDA) and AMD (HIP) but not
         # Metal/CPU.
         api = accelerator_api()
         if api not in ("cuda", "hip"):
             raise ValueError(
-                f"kv_connector 'rust_tiered' requires a CUDA or HIP GPU, found "
-                f"incompatible accelerator API: '{api}'."
+                f"kv_connector '{connector.value}' requires a CUDA or HIP GPU, "
+                f"found incompatible accelerator API: '{api}'."
+            )
+        if cfg is None:
+            raise ValueError(
+                "kv_connector_config is required when kv_connector is "
+                f"'{connector.value}'"
             )
         from .rust_tier_connector import RustTierConnector
 
         disk_dir = _resolve_disk_offload_dir(cfg)
+        if connector != KVConnectorType.rust_tiered:
+            logger.warning(
+                "kv_connector '%s' is deprecated: its Python implementation "
+                "was removed and it now runs the Rust 'rust_tiered' connector. "
+                "Pass '--kv-connector rust_tiered' instead.",
+                connector.value,
+            )
         logger.debug(
             "Creating RustTierConnector: "
             f"host_blocks={total_num_host_blocks}, "
@@ -219,15 +211,6 @@ def create_connector(
             num_disk_workers=cfg.num_disk_workers,
         )
 
-    if connector == KVConnectorType.local:
-        logger.debug(
-            f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
-        )
-        return LocalConnector(
-            replica_kv_memory=replica_kv_memory,
-            total_num_host_blocks=total_num_host_blocks,
-        )
-
     logger.debug("Creating NullConnector: no KV cache connector configured")
     return NullConnector()
 
@@ -236,8 +219,6 @@ __all__ = [
     "DKVConnector",
     "KVConnector",
     "KVConnectorType",
-    "LocalConnector",
     "NullConnector",
-    "TieredConnector",
     "create_connector",
 ]

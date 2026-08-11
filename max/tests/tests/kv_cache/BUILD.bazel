@@ -8,13 +8,7 @@ package(default_visibility = [
 
 modular_py_test(
     name = "kv_cache",
-    srcs = glob(
-        ["*.py"],
-        exclude = [
-            "test_disk_tier.py",
-            "test_benchmark_disk_tier.py",
-        ],
-    ),
+    srcs = glob(["*.py"]),
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
@@ -23,33 +17,5 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/kv_cache",
         requirement("msgspec"),
-    ],
-)
-
-modular_py_test(
-    name = "test_disk_tier",
-    srcs = [
-        "__init__.py",
-        "test_disk_tier.py",
-    ],
-    deps = [
-        "//max/python/max/pipelines/kv_cache",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "benchmark_disk_tier",
-    srcs = [
-        "__init__.py",
-        "test_benchmark_disk_tier.py",
-    ],
-    tags = [
-        "manual",
-    ],
-    deps = [
-        "//max/python/max/pipelines/kv_cache",
-        requirement("numpy"),
-        requirement("pytest-benchmark"),
     ],
 )

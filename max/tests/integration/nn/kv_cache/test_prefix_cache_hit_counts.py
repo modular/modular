@@ -31,13 +31,11 @@ from typing import cast
 import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
     compute_block_hashes,
 )
-from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
 from max.pipelines.modeling.types import RequestID
 from test_common.context_utils import create_text_context
 
@@ -357,66 +355,6 @@ def test_null_connector_counts_nothing() -> None:
     assert NullConnector().count_cached_prefix([b"\x00" * 8]) == (0, 0)
 
 
-def _make_tiered_connector_stub(
-    host_hashes: Sequence[bytes],
-    disk_hashes: Sequence[bytes],
-    *,
-    only_last_level: bool = False,
-) -> TieredConnector:
-    """Build a TieredConnector without device buffers.
-
-    ``count_cached_prefix`` only touches the host block pool, the disk
-    tier's ``contains``, and the last-level-cache flag, so the test wires
-    exactly those three attributes onto an uninitialized instance.
-    """
-    connector = TieredConnector.__new__(TieredConnector)
-    host_pool = BlockPool(
-        total_num_blocks=8,
-        enable_runtime_checks=False,
-    )
-    for h in host_hashes:
-        block, _ = host_pool.alloc_block()
-        host_pool.commit_into_prefix_cache(h, block)
-    connector._host_block_pool = host_pool
-    disk_set = set(disk_hashes)
-    connector._disk_tier = SimpleNamespace(contains=disk_set.__contains__)  # type: ignore[assignment]
-    connector._only_use_kv_connector_last_level_cache = only_last_level
-    return connector
-
-
-def test_tiered_connector_walks_host_then_disk() -> None:
-    h = [bytes([i]) * 8 for i in range(4)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0]], disk_hashes=[h[1]]
-    )
-
-    # host, disk, miss, (unreached) => (1, 1)
-    assert connector.count_cached_prefix(h) == (1, 1)
-
-
-def test_tiered_connector_prefers_host_over_disk() -> None:
-    h = [bytes([i]) * 8 for i in range(2)]
-    connector = _make_tiered_connector_stub(host_hashes=h, disk_hashes=h)
-
-    assert connector.count_cached_prefix(h) == (2, 0)
-
-
-def test_tiered_connector_stops_at_gap() -> None:
-    h = [bytes([i]) * 8 for i in range(3)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0], h[2]], disk_hashes=[]
-    )
-
-    assert connector.count_cached_prefix(h) == (1, 0)
-
-
-def test_tiered_connector_last_level_only_skips_host() -> None:
-    h = [bytes([i]) * 8 for i in range(2)]
-    connector = _make_tiered_connector_stub(
-        host_hashes=[h[0], h[1]],
-        disk_hashes=[h[0]],
-        only_last_level=True,
-    )
-
-    # Host is ignored: block 0 counts from disk, block 1 is a miss.
-    assert connector.count_cached_prefix(h) == (0, 1)
+# The host/disk tier's own host-then-disk walk lives in Rust now; it is covered
+# by the kv-tier-connector crate's unit tests and
+# ``internal/dkv/test_rust_tiered_connector_gpu.py``.
