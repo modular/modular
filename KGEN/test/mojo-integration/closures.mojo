@@ -15,7 +15,8 @@
 from std.sys import argv
 
 
-from std.runtime.asyncrt import _run
+from std.builtin._coroutine import Coroutine
+from std.runtime._asyncrt import _run
 
 
 @no_inline

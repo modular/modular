@@ -1897,7 +1897,7 @@ ASTType SharedState::getCachedBuiltinType(const ImportPath &path,
 }
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
-  return getCachedBuiltinTypeDecl({"std", "builtin", "coroutine"}, "Coroutine",
+  return getCachedBuiltinTypeDecl({"std", "builtin", "_coroutine"}, "Coroutine",
                                   loc);
 }
 
@@ -1918,7 +1918,7 @@ ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
 }
 
 ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
-  return getCachedBuiltinTypeDecl({"std", "builtin", "coroutine"},
+  return getCachedBuiltinTypeDecl({"std", "builtin", "_coroutine"},
                                   "RaisingCoroutine", loc);
 }
 
