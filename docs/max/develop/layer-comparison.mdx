@@ -27,7 +27,7 @@ inspects the serving loop, which this page doesn't cover.
 
 This page includes generic code snippets you can adapt for your MAX model and
 reference model. For a fully runnable example, see the
-[script](https://github.com/modular/modular/tree/main/docs/code/develop/layer-comparison)
+[script](https://github.com/modular/modular/tree/max/v26.5/docs/code/develop/layer-comparison)
 we used to generate the output in this page.
 
 :::
@@ -35,9 +35,9 @@ we used to generate the output in this page.
 :::note
 
 If you plan to
-[contribute your model to MAX](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md),
+[contribute your model to MAX](https://github.com/modular/modular/blob/max/v26.5/max/docs/contributing-models.md),
 use the in-repo
-[accuracy debugging](http://github.com/modular/modular/blob/main/max/docs/accuracy-debugging.md)
+[accuracy debugging](http://github.com/modular/modular/blob/max/v26.5/max/docs/accuracy-debugging.md)
 tools to achieve the outcomes described in this page.
 
 :::
@@ -284,7 +284,7 @@ model.norm-output                   0.998458     1.465e-01     8.371e-01
 ```
 
 In the
-[model](https://github.com/modular/modular/tree/main/docs/code/develop/layer-comparison)
+[model](https://github.com/modular/modular/tree/max/v26.5/docs/code/develop/layer-comparison)
 used to produce this example output, the layers diverge because the model uses a
 different activation function than the reference at that layer. In the next
 section, learn more about using the layer to identify the root cause of the

@@ -33,7 +33,7 @@ package layout.
 When a built-in layer is close and already lets you change what you need through
 a constructor argument or an overridable method, subclass it and change only
 what differs. That's how MAX implements Gemma 3's norm, `Gemma3RMSNorm` in
-[`gemma3/layers/rms_norm.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/gemma3/layers/rms_norm.py).
+[`gemma3/layers/rms_norm.py`](https://github.com/modular/modular/blob/max/v26.5/max/python/max/pipelines/architectures/gemma3/layers/rms_norm.py).
 The norm is a plain `RMSNorm` that scales by `1 + weight` instead of `weight`,
 so the subclass changes a single constructor argument:
 
@@ -118,7 +118,7 @@ so the same layer runs on CPU or GPU.
 When your component combines several existing layers, build a new `Module` from
 them: declare them in `__init__()`, and define the computation in `__call__()`.
 Real layers do this at scale. For instance, Qwen 3's attention
-([`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen3/layers/attention.py))
+([`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/max/v26.5/max/python/max/pipelines/architectures/qwen3/layers/attention.py))
 wraps its query and key projections in `RMSNorm` before applying rotary
 embeddings, which no built-in attention does.
 
@@ -243,7 +243,7 @@ resolves `"fused_activation"` against a registered Mojo kernel, so the code runs
 only once that kernel exists. For a complete, runnable custom op, including the
 Mojo kernel, see [Intro to custom ops](/develop/custom-ops/), the [Build
 custom ops for GPUs](/develop/build-custom-ops/) tutorial, or the [custom op
-examples](https://github.com/modular/modular/tree/main/max/examples/custom_ops)
+examples](https://github.com/modular/modular/tree/max/v26.5/max/examples/custom_ops)
 on GitHub.
 
 ## Connect the layer to your model

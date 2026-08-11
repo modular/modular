@@ -482,7 +482,7 @@ Use a batch processor when several architectures share the same batching logic,
 or when you want that logic isolated from the model's graph construction. For
 example, one Llama 3 batch processor backs Llama 3, OLMo, Granite, Qwen 2, and
 Phi-3; see the
-[`llama3` architecture](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3)
+[`llama3` architecture](https://github.com/modular/modular/tree/max/v26.5/max/python/max/pipelines/architectures/llama3)
 for a reference implementation. Override `prepare_initial_token_inputs()` on the
 model instead when the batching is specific to one architecture and tightly
 coupled to how it builds inputs.

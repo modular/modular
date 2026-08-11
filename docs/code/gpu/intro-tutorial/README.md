@@ -4,7 +4,7 @@ This directory contains Code examples and tests for the intermediate steps of
 the [Get started with GPU programming](../../../max/gpu/intro-tutorial.mdx)
 section of the MAX documentation. The fully completed reference solution is
 maintained in
-[max/examples/gpu-intro](https://github.com/modular/modular/tree/main/max/examples/gpu-intro)
+[max/examples/gpu-intro](https://github.com/modular/modular/tree/max/v26.5/max/examples/gpu-intro)
 and published to the public GitHub repo.
 
 Contents:
