@@ -17,7 +17,7 @@ struct Foo[X: TrivialRegisterPassable, Y: TrivialRegisterPassable]:
         pass
 
     def getParametrized[T: TrivialRegisterPassable](self, val: T) -> T:
-        @parameter
+        @__parameter
         def nested_function(z: T) -> T:
             return z  # breakpoint
 

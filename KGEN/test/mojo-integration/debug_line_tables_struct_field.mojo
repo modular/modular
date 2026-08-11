@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # Regression test for MOCO-3440: --debug-level=line-tables must not crash when
-# a struct field's type involves a @parameter function that is referenced only
+# a struct field's type involves a @__parameter function that is referenced only
 # in debug info and not in regular code.
 #
 # The mechanism: `c_long_long` in stdlib ffi is `comptime c_long_long =

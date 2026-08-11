@@ -396,7 +396,7 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
 
 
 def capture_exclusivity(var x: MemExample):
-    @parameter
+    @__parameter
     def capture_and_read(y: MemExample):
         _ = x^
 

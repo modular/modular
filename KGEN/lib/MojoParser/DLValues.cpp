@@ -245,7 +245,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // If the value is a type with a statically known length, check that it agrees
   // with the # of lvalues being assigned into.  Maybe we could generalize this
   // to invoke a new static get_static_len method or something?
-  // TODO(generalize): Need @parameter fn's for methods
+  // TODO(generalize): Need @__parameter fn's for methods
   // https://github.com/modularml/modular/issues/14945
   ASTDecl &tupleLiteralDecl = *elementType.getDecl(emitter.shared);
   ASTType srcRValueType = value.ir.getRValueType();

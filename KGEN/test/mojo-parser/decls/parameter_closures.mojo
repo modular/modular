@@ -55,7 +55,7 @@ def makeClosure[p: Int](x: Int) -> Int:
     # CHECK: [[COPY_VAL:%.*]] = lit.ref.load %z : <!Int, mut *"z`">
     # CHECK:  = kgen.param.constant: !Int = <p>
     @__copy_capture(z, p)
-    @parameter
+    @__parameter
     def writer() -> Int:
         # CHECK: [[REBOUND:%.*]] = kgen.rebind [[COPY_VAL]] : !Int to !alias_Int1
         # CHECK: lit.return [[REBOUND]] : !alias_Int1

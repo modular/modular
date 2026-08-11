@@ -37,7 +37,7 @@ def mojo_parallel_sum(n: Int64) abi("C") -> Int64:
     var count = Int(n)
     var results = List[Int64](length=count, fill=0)
 
-    @parameter
+    @__parameter
     def fill(i: Int):
         results[i] = Int64(i)
 

@@ -23,7 +23,7 @@ def bind_fat_to_thin_main():
     var x = 4
 
     @__copy_capture(x)
-    @parameter
+    @__parameter
     def g(y: Int) -> Int:
         return x
 
@@ -36,7 +36,7 @@ def makeClosure(x: Int):
     var z = x + x
 
     @__copy_capture(z)
-    @parameter
+    @__parameter
     def writer() -> Int:
         # expected-error @below {{expression must be mutable in assignment}}
         z = z + z
@@ -71,7 +71,7 @@ def makeClosure(x: MemType):
     # expected-error @below {{value of type 'NoCopyType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
     # expected-note @below {{consider transferring the value with '^'}}
     @__copy_capture(rp)
-    @parameter
+    @__parameter
     def writer() -> Int:
         pass
 
@@ -81,12 +81,12 @@ def bad_capture(x: Int):
 
     # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
     @__copy_capture(not_a_thing)
-    @parameter
+    @__parameter
     async def closure_1():
         pass
 
     # expected-error @below {{cannot capture unknown value 'not_a_thing'}}
     @__move_capture(not_a_thing)
-    @parameter
+    @__parameter
     async def closure_2():
         pass

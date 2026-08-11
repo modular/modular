@@ -2707,7 +2707,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   // outside the function that are referenced directly from within it.  For
   // example:
   //   ptr = ...
-  //   @parameter
+  //   @__parameter
   //   def inner():
   //     use(ptr)
   // This gets represented as a direct use of the operand but we mark the origin

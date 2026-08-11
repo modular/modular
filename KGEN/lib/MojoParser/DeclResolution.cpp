@@ -755,7 +755,15 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
   } else if (spelling == "no_inline") {
     applyArgumentless(spelling, callNode,
                       [&]() { funcOp.setInlineLevel(InlineLevel::Never); });
-  } else if (spelling == "parameter") {
+  } else if (spelling == "__parameter" || spelling == "parameter") {
+    // Temporarily accept the legacy `@parameter` spelling with a deprecation
+    // warning so the rename to `@__parameter` can land without breaking
+    // out-of-tree and late-landing code in the same change.
+    if (spelling == "parameter") {
+      emitWarning(declRef->getLoc(),
+                  "'@parameter' is deprecated; use '@__parameter'")
+          << FixIt::replaceToken(declRef->getLoc(), "__parameter");
+    }
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.argList.effects.setCapturing(); });
   } else if (spelling == "__unsafe_nested_origins_read_only") {
@@ -2074,15 +2082,18 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return llvm::any_of(
         decoratorExprs,
         [](const std::pair<ExprNode *, LexerCursor> &decorator) {
+          auto isParameterSpelling = [](StringRef spelling) {
+            return spelling == "__parameter" || spelling == "parameter";
+          };
           auto *expr = decorator.first->getWithoutParens();
           if (auto *declRef = dyn_cast<DeclRefNode>(expr))
-            return declRef->spelling == "parameter";
+            return isParameterSpelling(declRef->spelling);
           auto *call = dyn_cast<CallNode>(expr);
           if (!call)
             return false;
           auto *callee =
               dyn_cast<DeclRefNode>(call->callee->getWithoutParens());
-          return callee && callee->spelling == "parameter";
+          return callee && isParameterSpelling(callee->spelling);
         });
   };
   if (hasParameterDecorator())
@@ -2288,7 +2299,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   SmallVector<Capture> &captures = bodyCaptures.values;
   SmallVector<ParamDeclRefAttr> &paramCaptures = bodyCaptures.paramRefs;
 
-  // If this is a `@parameter` closure, attach the capture origins.
+  // If this is a `@__parameter` closure, attach the capture origins.
   if (signature.isCapturing()) {
     SmallVector<Type> captureTypes;
     for (const Capture &cap : captures)

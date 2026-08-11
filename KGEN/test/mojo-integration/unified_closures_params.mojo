@@ -79,7 +79,7 @@ def aThing[f: def(Int) capturing -> Int](y: Int):
 
 @no_inline
 def itCaptures[THREE: Int](one: Int, four: Int):
-    @parameter
+    @__parameter
     def aParam(z: Int) -> Int:
         return THREE + four + z
 
@@ -89,7 +89,7 @@ def itCaptures[THREE: Int](one: Int, four: Int):
     comptime if THREE == 3:
 
         @__copy_capture(one, four)
-        @parameter
+        @__parameter
         def aParam2(zz: Int) -> Int:
             def thing(z: Int) {var zz} -> Int:
                 return zz

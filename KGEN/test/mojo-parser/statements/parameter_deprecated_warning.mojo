@@ -13,7 +13,8 @@
 
 # RUN: %parse-mojo-isolated %s 2>&1 | FileCheck %s
 
-# Test that '@parameter if' and '@parameter for' issue deprecation warnings.
+# Test that '@parameter if', '@parameter for', and the '@parameter' function
+# decorator issue deprecation warnings.
 
 
 @fieldwise_init
@@ -45,7 +46,23 @@ def test_parameter_for[a: Int]():
         pass
 
 
-# Test that 'comptime if' and 'comptime for' do NOT issue deprecation warnings.
+def test_parameter_decorator():
+    # CHECK: warning: '@parameter' is deprecated; use '@__parameter'
+    @parameter
+    def nested() -> Int:
+        return 1
+
+    # Preferred spelling must not warn.
+    @__parameter
+    def preferred() -> Int:
+        return 2
+
+    _ = nested()
+    _ = preferred()
+
+
+# Test that 'comptime if' and 'comptime for' do NOT issue deprecation warnings,
+# and that `@__parameter` does not inherit the `@parameter` deprecation warning.
 # CHECK-NOT: '@parameter
 def test_comptime_if[a: __mlir_type.`!kgen.scalar<bool>`]():
     comptime if a:

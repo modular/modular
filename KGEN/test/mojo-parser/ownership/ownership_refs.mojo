@@ -453,7 +453,7 @@ def test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) ra
 # CHECK-LABEL: lit.fn @"test_parameter_closure_captures
 def test_parameter_closure_captures(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
-  @parameter
+  @__parameter
   def capture():
     _ = x^
     _ = y^
@@ -469,7 +469,7 @@ def higher_order_function[lts: __mlir_type.`!lit.origin.set`, //, f: def() captu
 # CHECK-LABEL: lit.fn @"test_higher_order_capture
 def test_higher_order_capture(var x: MemExample, var y: MemExample):
   # CHECK: lit.fn *"capture
-  @parameter
+  @__parameter
   def capture():
     _ = x^
     _ = y^

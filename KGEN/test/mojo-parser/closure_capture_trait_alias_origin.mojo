@@ -42,7 +42,7 @@ def outer[T: Iterable](ref x: T):
     # The closure's capture set must be its actual captures, not an abstract
     # reference lifted out of `IteratorType`.
     # CHECK: lit.fn *"capture_it{{.*}}":{(*"x_is_mut`") *"x_is_origin`1", mut *"it`{{[0-9]+}}"}:
-    @parameter
+    @__parameter
     def capture_it():
         _ = it
 

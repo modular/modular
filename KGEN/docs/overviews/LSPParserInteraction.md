@@ -913,8 +913,9 @@ interaction in the LSP.
 The block text is not parsed as-is. `wrapExpressionText` synthesizes a whole
 Mojo program around it — an import preamble, a `struct __mojo_repl_context__` of
 persistent variables, a wrapper `def`, an `__mojo_repl_expr_impl__` def, and the
-user's body indented inside a nested `@parameter def __mojo_repl_expr_body__` —
-then adds *that* as a new buffer and parses it.
+user's body indented inside a nested
+`@__parameter def __mojo_repl_expr_body__` — then adds *that* as a new buffer
+and parses it.
 
 The new buffer is added to the document's **single, shared `SourceMgr`** — the
 same one the generalized parse uses (the persistent `MojoParserContext` is built
@@ -932,7 +933,7 @@ version's lifetime and are discarded when an edit builds a fresh `MojoDocument`.
   // Splat out the main body code inside of a nested def. This will allow for us
   // to redefine previous variables transparently.
   exprOS << "  var __mojo_repl_expr_failed = True\n"
-            "  @parameter\n"
+            "  @__parameter\n"
             "  def __mojo_repl_expr_body__() raises -> None:\n";
   for (StringRef code : mainBodyCode) {
     exprOS << "    ";

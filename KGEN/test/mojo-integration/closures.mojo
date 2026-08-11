@@ -28,7 +28,7 @@ def makeClosure(x: Int) -> Coroutine[Int, origin_of()._mlir_origin]:
     var z = x * x
 
     @__copy_capture(z)
-    @parameter
+    @__parameter
     async def writer() -> Int:
         return z
 

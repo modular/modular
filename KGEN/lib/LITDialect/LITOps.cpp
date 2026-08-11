@@ -720,7 +720,7 @@ FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
 TypedAttr FnOp::getFuncLiteralGenerator(
     ParameterEvaluationContext &evalContext, ParameterExprArrayAttr bindings,
     const llvm::BitVector &dischargedBodyConstraints) {
-  // legacy @parameter closure is not a function literal.
+  // legacy @__parameter closure is not a function literal.
   if (getParamDeclAttr())
     return getBoundReference(evalContext, bindings);
 

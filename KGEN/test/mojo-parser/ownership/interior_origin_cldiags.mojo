@@ -239,7 +239,7 @@ def test_nested_fn1():
     var p = Pointer(to=base[])
 
     @__copy_capture(p)
-    @parameter
+    @__parameter
     def inner():
         _ = p == p  # Should be fine.
     inner()
@@ -249,7 +249,7 @@ def test_nested_fn2():
     var p = Pointer(to=base[])
 
     @__copy_capture(p)
-    @parameter
+    @__parameter
     def inner():
         _ = p == p  # Should be fine.
         # expected-error @+1 {{incorrect invalidation of interior origin in closure 'base["element"]'}}
@@ -261,7 +261,7 @@ def test_nested_fn3():
     var p = Pointer(to=base[])
 
     @__copy_capture(p)
-    @parameter
+    @__parameter
     def inner():
         _ = p == p  # Should be fine.
 
@@ -273,7 +273,7 @@ def test_nested_fn4():
     var p = Pointer(to=base[])
 
     @__copy_capture(p)
-    @parameter
+    @__parameter
     def inner():
         _ = p == p  # Should be fine.
 

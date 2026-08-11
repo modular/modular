@@ -399,7 +399,7 @@ def test_byref_slot_with_references():
 # CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
 def test_byref_slot_closure_capture(var x: String):
     # CHECK: lit.fn *"capture
-    @parameter
+    @__parameter
     def capture() -> String:
         return x
 
