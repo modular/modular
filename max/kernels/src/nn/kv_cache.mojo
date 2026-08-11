@@ -1236,6 +1236,7 @@ def _fused_qk_rms_norm_rope_process_row[
     offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
+    q_out_dtype: DType,
     freq_dtype: DType,
     //,
     q_input_fn: def[width: Int, alignment: Int](
@@ -1252,7 +1253,7 @@ def _fused_qk_rms_norm_rope_process_row[
     global_token_idx: Int,
     head_idx: Int,
     q_output: TileTensor[
-        dtype, q_out_layout, q_out_origin, Storage=q_out_storage
+        q_out_dtype, q_out_layout, q_out_origin, Storage=q_out_storage
     ],
     k_cache: cache_t,
     q_gamma: TileTensor[
@@ -1274,6 +1275,9 @@ def _fused_qk_rms_norm_rope_process_row[
     """Applies RMSNorm+RoPE to one (token, head) row, reading Q via `q_input_fn`
     (`is_k=False`) or the paged K cache (`is_k=True`) and writing Q to
     `q_output` or K back in place.
+
+    Q rounds to `dtype` before a plain (not saturating) cast to `q_out_dtype`,
+    so a narrower `q_output` is bit-identical to the `mo.cast` it replaces.
 
     Shared by the single-QK launcher and the dual (main + indexer) launcher so
     both paths run byte-identical arithmetic. Allocates its own per-row shared
@@ -1367,7 +1371,8 @@ def _fused_qk_rms_norm_rope_process_row[
             )
         else:
             q_output.store[width=simd_width](
-                Coord(Index(global_token_idx, head_idx, idx)), res
+                Coord(Index(global_token_idx, head_idx, idx)),
+                res.cast[q_out_dtype](),
             )
     else:
         # Non-interleaved (safetensors). With has_nope_prefix the roped region
@@ -1389,7 +1394,7 @@ def _fused_qk_rms_norm_rope_process_row[
                 else:
                     q_output.store[width=simd_width](
                         Coord(Index(global_token_idx, head_idx, idx)),
-                        passthrough,
+                        passthrough.cast[q_out_dtype](),
                     )
                 return
 
@@ -1429,15 +1434,17 @@ def _fused_qk_rms_norm_rope_process_row[
             )
         else:
             q_output.store(
-                Coord(Index(global_token_idx, head_idx, h_re)), output_re
+                Coord(Index(global_token_idx, head_idx, h_re)),
+                output_re.cast[q_out_dtype](),
             )
             q_output.store(
-                Coord(Index(global_token_idx, head_idx, h_im)), output_im
+                Coord(Index(global_token_idx, head_idx, h_im)),
+                output_im.cast[q_out_dtype](),
             )
 
 
 @__name(
-    t"fused_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
+    t"fused_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{q_out_dtype}_{multiply_before_cast}_{interleaved}"
 )
 def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     cache_t: KVCacheT,
@@ -1457,6 +1464,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
+    q_out_dtype: DType,
     freq_dtype: DType,
     //,
     q_input_fn: def[width: Int, alignment: Int](
@@ -1470,7 +1478,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     rope_dim: Int,
 ](
     q_output: TileTensor[
-        dtype, q_out_layout, q_out_origin, Storage=q_out_storage
+        q_out_dtype, q_out_layout, q_out_origin, Storage=q_out_storage
     ],
     k_cache: cache_t,
     q_gamma: TileTensor[
@@ -1541,6 +1549,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
 @always_inline
 def fused_qk_rms_norm_rope_ragged_paged[
     dtype: DType,
+    q_out_dtype: DType,
     freq_dtype: DType,
     params: KVCacheStaticParams,
     page_size: Int,
@@ -1566,7 +1575,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
-    q_output: TileTensor[mut=True, dtype, ...],
+    q_output: TileTensor[mut=True, q_out_dtype, ...],
     context: DeviceContext,
 ) raises:
     """Fuses per-head RMSNorm and RoPE for Q and new K-cache entries.
@@ -1595,10 +1604,12 @@ def fused_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    # The Q compute dtype may differ from the K cache dtype: the
-    # kernel loads K in fp32, applies norm + RoPE, and saturating-casts it back
-    # to `cache_dtype` in the epilogue (Q is written out at `dtype`), so an FP8
-    # K cache pairs with a BF16 Q.
+    # All three dtypes are independent: K loads in fp32 and saturating-casts
+    # back to `cache_dtype`; Q rounds to `dtype` then casts to `q_out_dtype`.
+    comptime assert q_out_dtype.is_floating_point(), (
+        "q_out_dtype must be floating point -- the Q store is a plain cast from"
+        " `dtype`, so an integer type would truncate rather than requantize"
+    )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     # Derived from `q_output` (identical shape to Q) rather than passed in, so
@@ -1700,6 +1711,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             offsets_origin=input_row_offsets.origin,
             offsets_storage=input_row_offsets.Storage,
             dtype=dtype,
+            q_out_dtype=q_out_dtype,
             freq_dtype=freq_dtype,
             q_input_fn,
             simd_width,
@@ -1727,7 +1739,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
 
 
 @__name(
-    t"fused_dual_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{multiply_before_cast}_{interleaved}"
+    t"fused_dual_qk_rms_norm_rope_ragged_paged_gpu_{dtype}_{q_main_out_dtype}_{multiply_before_cast}_{interleaved}"
 )
 def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     main_cache_t: KVCacheT,
@@ -1757,6 +1769,8 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     offsets_origin: ImmOrigin,
     offsets_storage: TensorStorage,
     dtype: DType,
+    q_main_out_dtype: DType,
+    q_index_out_dtype: DType,
     freq_dtype: DType,
     //,
     main_q_input_fn: def[width: Int, alignment: Int](
@@ -1773,10 +1787,13 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     rope_dim: Int,
 ](
     q_main_output: TileTensor[
-        dtype, q_main_out_layout, q_main_out_origin, Storage=q_main_out_storage
+        q_main_out_dtype,
+        q_main_out_layout,
+        q_main_out_origin,
+        Storage=q_main_out_storage,
     ],
     q_index_output: TileTensor[
-        dtype,
+        q_index_out_dtype,
         q_index_out_layout,
         q_index_out_origin,
         Storage=q_index_out_storage,
@@ -1908,6 +1925,8 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
 @always_inline
 def fused_dual_qk_rms_norm_rope_ragged_paged[
     dtype: DType,
+    q_main_out_dtype: DType,
+    q_index_out_dtype: DType,
     freq_dtype: DType,
     main_params: KVCacheStaticParams,
     main_page_size: Int,
@@ -1948,8 +1967,8 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, DType.uint32, ...],
-    q_main_output: TileTensor[mut=True, dtype, ...],
-    q_index_output: TileTensor[mut=True, dtype, ...],
+    q_main_output: TileTensor[mut=True, q_main_out_dtype, ...],
+    q_index_output: TileTensor[mut=True, q_index_out_dtype, ...],
     context: DeviceContext,
 ) raises:
     """Fuses two `fused_qk_rms_norm_rope_ragged_paged` launches into one.
@@ -1988,11 +2007,16 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     comptime assert (
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
-    # The Q compute dtype may differ from either K cache dtype: the kernel
-    # loads each band's K in fp32, applies norm + RoPE, and saturating-casts
-    # it back to that band's own cache dtype in the epilogue (Q and both DPS
-    # Q outputs are written out at `dtype`), so e.g. an FP8 main-K cache can
-    # pair with a BF16 index-K cache and BF16 Q.
+    # Each band carries its own K-cache and Q-output dtype, so e.g. an FP8 main
+    # Q can pair with a BF16 index Q.
+    comptime assert (
+        q_main_out_dtype.is_floating_point()
+        and q_index_out_dtype.is_floating_point()
+    ), (
+        "both Q output dtypes must be floating point -- the Q stores are plain"
+        " casts from `dtype`, so an integer type would truncate rather than"
+        " requantize"
+    )
 
     # Both bands must share the per-head RoPE geometry for a single kernel
     # instantiation (one freqs table, one comptime `rope_dim`) to be valid.
@@ -2129,6 +2153,8 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             offsets_origin=input_row_offsets.origin,
             offsets_storage=input_row_offsets.Storage,
             dtype=dtype,
+            q_main_out_dtype=q_main_out_dtype,
+            q_index_out_dtype=q_index_out_dtype,
             freq_dtype=freq_dtype,
             main_q_input_fn,
             index_q_input_fn,
