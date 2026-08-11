@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.metrics import (
@@ -29,6 +31,8 @@ from max.benchmark.benchmark_shared.metrics import (
 )
 from max.benchmark.benchmark_shared.percentile_metrics import (
     compute_confidence_info,
+    finite_or_none,
+    json_safe,
 )
 from pydantic import ValidationError
 
@@ -1030,3 +1034,21 @@ def test_benchmark_result_to_result_dict_omits_diagnostics_when_none() -> None:
     assert "steady_state_detected" not in d
     assert "steady_state_window_count" not in d
     assert "num_outliers_rejected" not in d
+
+
+def test_finite_or_none() -> None:
+    assert finite_or_none(1.5) == 1.5
+    assert finite_or_none(None) is None
+    assert finite_or_none(float("nan")) is None
+    assert finite_or_none(float("inf")) is None
+
+
+def test_json_safe_tree_round_trips_strict_json() -> None:
+    tree = {
+        "ok": 1.0,
+        "bad": float("nan"),
+        "nested": [float("inf"), (2.0, float("-inf"))],
+    }
+    text = json.dumps(json_safe(tree), allow_nan=False)
+    assert "NaN" not in text and "Infinity" not in text
+    assert json.loads(text)["nested"][1] == [2.0, None]

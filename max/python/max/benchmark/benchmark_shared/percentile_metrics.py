@@ -76,6 +76,35 @@ _T_CRITICAL_95: Mapping[int, float] = {
 _T_DF_KEYS = sorted(_T_CRITICAL_95.keys())
 
 
+def finite_or_none(value: float | None) -> float | None:
+    """NaN/Inf to None, so JSON output stays standard-parseable.
+
+    Benchmark reports legitimately carry NaN exactly where something went
+    wrong (a missing cell, an empty sample); ``json.dumps`` would emit a
+    bare ``NaN`` token, which is not JSON — jq, ``JSON.parse``, and most
+    non-Python consumers reject the whole document.
+    """
+    if value is None or not math.isfinite(value):
+        return None
+    return value
+
+
+def json_safe(obj: object) -> object:
+    """Recursively map NaN/Inf floats to None across a JSON-ready tree.
+
+    Pair with ``json.dumps(..., allow_nan=False)`` so any non-finite value
+    that slips past this scrub fails loudly at dump time instead of
+    producing an unparseable file.
+    """
+    if isinstance(obj, float):
+        return finite_or_none(obj)
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    return obj
+
+
 def t_critical_95(df: int) -> float:
     """Look up the 95% t critical value for given degrees of freedom."""
     if df >= 120:
