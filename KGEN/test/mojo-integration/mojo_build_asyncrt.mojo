@@ -17,7 +17,7 @@
 # Test that we can build executables that rely on AsyncRT and the runtime
 # libraries.
 
-from std.runtime.asyncrt import create_task
+from std.runtime._asyncrt import create_task
 
 
 # CHECK-LABEL: test_runtime_task

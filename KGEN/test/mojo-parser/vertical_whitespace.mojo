@@ -92,17 +92,17 @@ Spaceship:
 
 import std
 # expected-error @+1 {{module path may not appear at the start of the line}}
-.builtin.coroutine
+.builtin._coroutine
 
 # // -----
 
-import std.builtin.coroutine
+import std.builtin._coroutine
 # expected-error @+1 {{'as' keyword may not appear at the start of the line}}
 as Coroutine
 
 # // -----
 
-import std.builtin.coroutine as
+import std.builtin._coroutine as
 # expected-error @+1 {{bound import name may not appear at the start of the line}}
 Coroutine
 
@@ -110,71 +110,71 @@ Coroutine
 
 import std
 # expected-error @+1 {{comma may not appear at the start of the line}}
-, std.builtin.coroutine
+, std.builtin._coroutine
 
 # // -----
 
 import std as mystd
 # expected-error @+1 {{comma may not appear at the start of the line}}
-, std.builtin.coroutine
+, std.builtin._coroutine
 
 # // -----
 
 from
 # expected-error @+1 {{module path may not appear at the start of the line}}
-std.builtin.coroutine import Coroutine
+std.builtin._coroutine import Coroutine
 
 # // -----
 
 from std
 # expected-error @+1 {{module path may not appear at the start of the line}}
-.builtin.coroutine import Coroutine
+.builtin._coroutine import Coroutine
 
 # // -----
 
 from std.
 # expected-error @+1 {{module path may not appear at the start of the line}}
-builtin.coroutine import Coroutine
+builtin._coroutine import Coroutine
 
 # // -----
 
-from std.builtin.coroutine
+from std.builtin._coroutine
 # expected-error @+1 {{'import' statement may not appear at the start of the line}}
 import Coroutine
 
 # // -----
 
-from std.builtin.coroutine import
+from std.builtin._coroutine import
 # expected-error @+1 {{wildcard import may not appear at the start of the line}}
 *
 
 # // -----
 
-from std.builtin.coroutine import
+from std.builtin._coroutine import
 # expected-error @+1 {{construct name to import may not appear at the start of the line}}
 Coroutine
 
 # // -----
 
-from std.builtin.coroutine import
+from std.builtin._coroutine import
 # expected-error @+1 {{beginning of tuple import may not appear at the start of the line}}
 (Coroutine)
 
 # // -----
 
-from std.builtin.coroutine import Coroutine
+from std.builtin._coroutine import Coroutine
 # expected-error @+1 {{'as' keyword may not appear at the start of the line}}
 as C
 
 # // -----
 
-from std.builtin.coroutine import Coroutine as
+from std.builtin._coroutine import Coroutine as
 # expected-error @+1 {{bound import name may not appear at the start of the line}}
 C
 
 # // -----
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
         Coroutine as C
 # expected-error @+1 {{comma may not appear at the start of the line}}
         ,
@@ -182,7 +182,7 @@ from std.builtin.coroutine import (
 
 # // -----
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
         Coroutine as C, # ok
         Coroutine as
 # expected-error @+1 {{bound import name may not appear at the start of the line}}
@@ -193,20 +193,20 @@ from std.builtin.coroutine import (
 # A dangling comma with no following name reports the specific "expected
 # construct name" diagnostic, not the start-of-line one.
 # expected-error @+1 {{expected construct name to import}}
-from std.builtin.coroutine import Coroutine,
+from std.builtin._coroutine import Coroutine,
 
 # // -----
 
 # Positive cases: these must parse without a diagnostic.
 
 # A parenthesized import list may span multiple lines.
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
     Coroutine,
     RaisingCoroutine,
 )
 
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
         Coroutine as C,
         Coroutine as D,
         )
@@ -228,5 +228,5 @@ backslash_decl():
     pass
 
 
-from std.builtin.coroutine import \
+from std.builtin._coroutine import \
     Coroutine

@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | FileCheck %s
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
-from std.builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
+from std.builtin._coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
 @explicit_destroy("Must use consume!")
