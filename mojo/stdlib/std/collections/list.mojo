@@ -1407,15 +1407,6 @@ struct List[T: Movable, /](
         self._capacity = 0
         return ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout)
 
-    @deprecated(use=unsafe_take_allocation)
-    def steal_data(mut self) -> Pointer[Self.T, MutUntrackedOrigin]:
-        """Take ownership of the underlying pointer from the list.
-
-        Returns:
-            The underlying data.
-        """
-        return self.unsafe_take_allocation().unsafe_leak()
-
     def __getitem__(
         self, slice: StridedSlice
     ) -> Self where conforms_to(Self.T, Copyable):

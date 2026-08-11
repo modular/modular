@@ -261,10 +261,6 @@ struct Array[T: AnyType, length: Int](
     ```
     """
 
-    @deprecated("`Array.size` is deprecated, use `Array.length`.")
-    comptime size = Self.length
-    """The number of elements in the array. Deprecated alias for `length`."""
-
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
     comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]

@@ -113,7 +113,7 @@ struct Int8DequantWriter[
 
     Parameters:
         c_origin: Mutable `MutOrigin` of the C output write view (inferred).
-        s_origin: Immutable `ImmutOrigin` shared by the scale and bias read
+        s_origin: Immutable `ImmOrigin` shared by the scale and bias read
             views (inferred).
         c_type: Output element type (`bf16` / `fp16` / `fp32`).
         c_layout: `TensorLayout` of the C output `TileTensor`.

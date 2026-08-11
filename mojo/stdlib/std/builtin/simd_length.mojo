@@ -320,8 +320,3 @@ struct SIMDLength(
             True if the integer is a power of two, False otherwise.
         """
         return (self & (self - 1) == 0) & (self > 0)
-
-
-@deprecated("`SIMDSize` is deprecated, use `SIMDLength`.")
-comptime SIMDSize = SIMDLength
-"""The type of `SIMD`'s `length` parameter. Deprecated: use `SIMDLength`."""

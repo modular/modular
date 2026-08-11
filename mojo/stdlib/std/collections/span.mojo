@@ -73,11 +73,6 @@ Parameters:
 """
 
 
-@doc_hidden
-@deprecated(use=ImmSpan)
-comptime ImmutSpan = ImmSpan
-
-
 @fieldwise_init
 struct _SpanIter[
     mut: Bool,
@@ -632,12 +627,6 @@ struct Span[
             An immutable version of the same `Span`.
         """
         return rebind[Self.Immutable](self)
-
-    @doc_hidden
-    @always_inline
-    @deprecated(use=as_imm)
-    def get_immutable(self) -> Self.Immutable:
-        return self.as_imm()
 
     @always_inline
     def unsafe_get(

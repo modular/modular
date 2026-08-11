@@ -806,32 +806,6 @@ struct Variant[*Ts: AnyType](
         return self._storage^.unwrap[T]()
 
     @always_inline
-    @deprecated(use=unwrap)
-    def take[T: Movable](deinit self) -> T:
-        """Take the current value of the variant with the provided type.
-
-        Parameters:
-            T: The type to take out.
-
-        Returns:
-            The underlying data to be taken out as an owned value.
-        """
-        return self^.unwrap[T]()
-
-    @always_inline
-    @deprecated(use=unsafe_unwrap)
-    def unsafe_take[T: Movable](deinit self) -> T:
-        """Unsafely take the current value of the variant with the provided type.
-
-        Parameters:
-            T: The type to take out.
-
-        Returns:
-            The underlying data to be taken out as an owned value.
-        """
-        return self^.unsafe_unwrap[T]()
-
-    @always_inline
     def replace[
         Tin: Movable & Deinitable,
         Tout: Movable,

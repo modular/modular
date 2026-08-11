@@ -236,20 +236,6 @@ struct OwnedPointer[T: AnyType](
         dealloc(self._inner^.unsafe_with_layout(Layout[_T].single()))
         return r^
 
-    @__allow_legacy_custom_self_type
-    @deprecated(use=into_inner)
-    def take[_T: Movable](deinit self: OwnedPointer[_T]) -> _T:
-        """Move the value within the `OwnedPointer` out of it, consuming the
-        `OwnedPointer` in the process.
-
-        Parameters:
-            _T: The type of the data backing this `OwnedPointer`.
-
-        Returns:
-            The data that is (was) backing the `OwnedPointer`.
-        """
-        return self^.into_inner[_T]()
-
     def unsafe_take_allocation(deinit self) -> Allocation[Self.T]:
         """Take ownership of the heap allocation backing this `OwnedPointer`.
 
@@ -267,25 +253,6 @@ struct OwnedPointer[T: AnyType](
         take the raw pointer with `unsafe_leak()`.
         """
         return self._inner^.unsafe_with_layout(Layout[Self.T].single())
-
-    @deprecated(use=unsafe_take_allocation)
-    def steal_data(deinit self) -> Pointer[Self.T, MutUntrackedOrigin]:
-        """Take ownership over the heap allocated pointer backing this
-        `OwnedPointer`.
-
-        Safety:
-
-        This function is not unsafe to call, as a memory leak is not
-        considered unsafe.
-
-        However, to avoid a memory leak, callers should ensure that the
-        returned pointer is eventually deinitialized and deallocated.
-        Failure to do so will leak memory.
-
-        Returns:
-            The pointer owned by this instance.
-        """
-        return self^.unsafe_take_allocation().unsafe_leak()
 
     def write_to(
         self, mut writer: Some[Writer]

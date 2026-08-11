@@ -458,7 +458,7 @@ The compiler can't infer a concrete type for a struct field:
 ```mojo
 @fieldwise_init
 struct Struct(Writable):
-    var x: Some[Copyable & ImplicitlyDeletable & Writable]
+    var x: Some[Copyable & Deinitable & Writable]
     # Error: a `Some` struct field has no concrete type to infer
 ```
 
@@ -466,7 +466,7 @@ Use an explicit type parameter instead:
 
 ```mojo
 @fieldwise_init
-struct Struct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+struct Struct[T: Copyable & Deinitable & Writable](Writable):
     var x: Self.T
 ```
 
