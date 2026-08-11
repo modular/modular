@@ -58,7 +58,7 @@ preloaded once and reused across all rows in the loop.
 
 from std.collections import Array, Optional
 from std.collections._conditional import _ComptimeConditional
-from std.math import ceildiv, rsqrt
+from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
@@ -854,7 +854,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime if quantize:
         var _scale_scratch_raw = _rows_per_rank * size_of[scales_dtype]()
         # Pad scale section to simd_width bytes (matches scale_pad_elements).
-        _scale_scratch = ceildiv(_scale_scratch_raw, simd_width) * simd_width
+        _scale_scratch = align_up(_scale_scratch_raw, simd_width)
     var _min_buf = size_of[Signal]() + _out_scratch + _scale_scratch
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()

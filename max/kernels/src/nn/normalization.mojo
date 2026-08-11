@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import UnsafePointer
-from std.math import align_down, ceildiv, clamp, rsqrt
+from std.math import align_down, align_up, ceildiv, clamp, rsqrt
 from std.math.uutils import umod, ufloordiv, uceildiv
 from std.sys.info import align_of, simd_width_of, size_of
 
@@ -972,7 +972,7 @@ def rms_norm_gpu[
 
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        align_up(ceildiv(cols, simd_width), WARP_SIZE),
         WARP_SIZE * max_warps_per_block,
     )
 
@@ -986,7 +986,7 @@ def rms_norm_gpu[
     def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
-            ceildiv(threads, WARP_SIZE) * WARP_SIZE,
+            align_up(threads, WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
 
@@ -1698,7 +1698,7 @@ def apply_qk_rms_norm_gpu[
     if q_cols % simd_width == 0 and k_cols % simd_width == 0:
         # Vectorized loads/stores; size threads for the wider operand.
         var block_dim = min(
-            ceildiv(ceildiv(max_cols, simd_width), WARP_SIZE) * WARP_SIZE,
+            align_up(ceildiv(max_cols, simd_width), WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
@@ -1750,7 +1750,7 @@ def apply_qk_rms_norm_gpu[
     else:
         # General N (incl. non-multiple of vector width): scalar loads/stores.
         var block_dim = min(
-            ceildiv(max_cols, WARP_SIZE) * WARP_SIZE,
+            align_up(max_cols, WARP_SIZE),
             WARP_SIZE * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
@@ -2542,7 +2542,7 @@ def group_norm_gpu[
                 var total_simd_elems = group_size // simd_width
                 var chunk_simd_size = ceildiv(total_simd_elems, num_splits)
                 var mb_block_dim = min(
-                    ceildiv(chunk_simd_size, WARP_SIZE) * WARP_SIZE,
+                    align_up(chunk_simd_size, WARP_SIZE),
                     mb_max_block_dim,
                 )
                 var mb_grid_dim = Int(num_rows) * num_splits

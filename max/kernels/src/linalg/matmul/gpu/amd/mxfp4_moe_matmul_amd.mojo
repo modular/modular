@@ -39,7 +39,7 @@ from std.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
@@ -614,7 +614,7 @@ def mxfp4_moe_matmul_amd_routed[
     comptime N = type_of(c).static_shape[1]
     # SFB_pre is preshuffled with MN_padded(N) rows per expert. Pass through
     # the comptime padding factor so the loader's layout matches the host.
-    comptime N_padded_scale = ceildiv(N, 32) * 32
+    comptime N_padded_scale = align_up(N, 32)
 
     comptime kernel = _mxfp4_moe_matmul_routed_kernel[
         out_dtype,

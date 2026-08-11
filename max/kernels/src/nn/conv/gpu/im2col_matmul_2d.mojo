@@ -337,7 +337,7 @@ def dispatch_im2col_matmul_conv2d[
     var m_offset = 0
     while m_offset < full_M:
         var remaining = full_M - m_offset
-        var m_count = m_tile if remaining > m_tile else remaining
+        var m_count = min(m_tile, remaining)
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
         comptime im2col_block = 256

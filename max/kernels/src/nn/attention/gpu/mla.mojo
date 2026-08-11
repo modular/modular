@@ -1375,7 +1375,7 @@ def flare_mla_decoding_dispatch[
                             # warp-local (M/16, 1): one 16-row MFMA M-tile per
                             # warp over align16(M) rows (W = BM//16 warps),
                             # full N=128 KV, warp-local softmax.
-                            comptime _bm = ceildiv(_m, 16) * 16
+                            comptime _bm = align_up(_m, 16)
                             launch_with_BM[_bm, s, WM=16, WN=128]()
                         return
                 raise Error(
@@ -4788,7 +4788,7 @@ def mla_prefill_plan_kernel[
     # If this is the last sequence in the batch
     if seq_idx == batch_size - 1:
         var seq_end_pos = seq_start_pos + curr_seq_len
-        var end_chunk = (seq_end_pos + buffer_size - 1) // buffer_size - 1
+        var end_chunk = ceildiv(seq_end_pos, buffer_size) - 1
 
         # Set buffer lengths for all chunks
         comptime for chunk_idx in range(MAX_CHUNKS):

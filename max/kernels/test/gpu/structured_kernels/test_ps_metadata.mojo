@@ -22,11 +22,12 @@
 # Run: `mojo test_ps_metadata.mojo` (CPU only, no GPU).
 # ===----------------------------------------------------------------------=== #
 
+from std.math import align_up
+
 from nn.attention.gpu.amd_structured.ps_metadata import (
     PsMetadata,
     WORKINFO_DW,
     build_uniform,
-    ceil_div,
 )
 
 
@@ -84,7 +85,7 @@ def check_invariants(md: PsMetadata, batch: Int, seq: Int32) raises:
             while q < seq:
                 var local_end = min(q + 256, seq)
                 var eff = local_end  # causal self-attn: kv_len-qo_len+local_end
-                var nb = ceil_div(eff, 128) * 128
+                var nb = align_up(eff, 128)
                 expected += Int(min(nb, seq))  # clamp to batch KV (S)
                 q += 256
     print(

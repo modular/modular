@@ -1874,9 +1874,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
         var seq_len = Int(readfirstlane(Int32(q.dim[1]())))
         var num_tiles = Int(
-            readfirstlane(
-                Int32((num_keys + Self.KV_BLOCK - 1) // Self.KV_BLOCK)
-            )
+            readfirstlane(Int32(ceildiv(num_keys, Self.KV_BLOCK)))
         )
         comptime assert (
             Self.NUM_HEADS % Self.NUM_KV_HEADS == 0

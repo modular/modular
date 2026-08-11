@@ -5303,7 +5303,7 @@ def fused_silu_mxfp8_interleaved_kernel[
             var output_val: SIMD[accum_dtype, src_width]
             comptime if clamp_activation:
                 var g_c = min(gate_proj, limit)
-                var u_c = max(min(up_proj, limit), -limit)
+                var u_c = up_proj.clamp(-limit, limit)
                 var sigmoid = 1.0 / (1.0 + exp(-(g_c * alpha)))
                 output_val = (u_c + 1.0) * g_c * sigmoid
             else:
