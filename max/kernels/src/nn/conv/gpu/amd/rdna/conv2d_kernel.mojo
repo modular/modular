@@ -91,7 +91,7 @@ def _load_im2col_a_tile[
     """
     comptime VECTOR_WIDTH = min(BLOCK_K, 8)
     comptime total_vectors = BLOCK_M * BLOCK_K // VECTOR_WIDTH
-    comptime vecs_per_thread = (total_vectors + NUM_THREADS - 1) // NUM_THREADS
+    comptime vecs_per_thread = ceildiv(total_vectors, NUM_THREADS)
 
     var HWC_in = H_in * W_in * C_in
     var WC_in = W_in * C_in
@@ -164,7 +164,7 @@ def _load_b_tile_to_smem[
     """
     comptime VECTOR_WIDTH = min(BLOCK_K, 8)
     comptime total_vectors = BLOCK_N * BLOCK_K // VECTOR_WIDTH
-    comptime vecs_per_thread = (total_vectors + NUM_THREADS - 1) // NUM_THREADS
+    comptime vecs_per_thread = ceildiv(total_vectors, NUM_THREADS)
 
     comptime for i in range(vecs_per_thread):
         var vec_idx = i * NUM_THREADS + tid

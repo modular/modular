@@ -2607,7 +2607,7 @@ def quantize_mxfp8_lane_group[
     # `lane_group_max` reduces over `2 ** log2_floor(num_lanes)` lanes, so a
     # non-power-of-two group silently drops the remainder from the block max.
     comptime assert (
-        num_lanes & (num_lanes - 1) == 0 and num_lanes <= WARP_SIZE
+        num_lanes.is_power_of_two() and num_lanes <= WARP_SIZE
     ), "SF_VECTOR_SIZE // width must be a power of two no larger than the warp"
 
     var thread_max = lane_group_max[num_lanes=num_lanes](abs(val).reduce_max())

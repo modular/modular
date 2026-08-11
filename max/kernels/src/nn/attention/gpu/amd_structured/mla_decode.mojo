@@ -39,7 +39,7 @@ re-converged behind a shared helper.
 """
 
 from std.sys import get_defined_bool
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
@@ -118,10 +118,10 @@ __extension Attention:
         # K: full BN × depth SMEM, per-warp DMA cooperation, transpose read.
         # smem_depth is padded to a multiple of `_bk_smem` so every block
         # is exactly `_bk_smem`-wide.  When `_bk_smem == BK` the formula
-        # simplifies to `ceildiv(depth, BK) * BK`; when `_bk_smem < BK`
+        # simplifies to `align_up(depth, BK)`; when `_bk_smem < BK`
         # (MLA decode rope tail) it equals `depth`, since the depth%64==0
         # gate ensures depth is a multiple of `_bk_smem`.
-        comptime _k_smem_depth = ceildiv(Self.depth, _bk_smem) * _bk_smem
+        comptime _k_smem_depth = align_up(Self.depth, _bk_smem)
         comptime KBufT = KVBuffer[
             kv_t=Self.k_t,
             mma_shape=Self.mma_shape,
