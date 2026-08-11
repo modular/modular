@@ -235,3 +235,7 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - `base64.b64decode()` now raises an error when the input length is not
   divisible by 4 instead of reading past the end of the input (or aborting
   when asserts are enabled).
+
+- `PythonObject` no longer leaks a CPython reference per positional argument
+  when calling a Python object, nor when setting an item, attribute, or set
+  literal element.
