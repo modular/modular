@@ -24,9 +24,12 @@ from std.sys import size_of
 from test_utils import (
     AbortOnDel,
     ConfigureTrivial,
-    CopyCounter,
     DelRecorder,
+    ExplicitDelOnly,
+    DelCounter,
     MoveCounter,
+    PinnedExplicitDelOnly,
+    TriviallyCopyableMoveCounter,
 )
 from std.testing import *
 
@@ -39,42 +42,57 @@ def test_maybe_uninitialized() raises:
     var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
     a.unsafe_write(DelRecorder(42, ptr))
 
-    assert_equal(a.unsafe_assume_init().value, 42)
-    assert_equal(len(destructor_recorder), 0)
-
-    assert_equal(a.unsafe_ptr()[].value, 42)
-    assert_equal(len(destructor_recorder), 0)
+    var value = a.unsafe_assume_init().value
+    var dels_after_write = len(destructor_recorder)
+    var ptr_value = a.unsafe_ptr()[].value
 
     a.unsafe_ptr().unsafe_deinit_pointee()
+    var dels_after_deinit = len(destructor_recorder)
+    var recorded_value = destructor_recorder[0]
+
+    # `DelRecorder` isn't trivially deinitable, so `a` is linear and must be
+    # forgotten before any call (like `assert_equal`) that could raise.
+    a^.unsafe_forget()
+
+    assert_equal(value, 42)
+    assert_equal(dels_after_write, 0)
+    assert_equal(ptr_value, 42)
+    assert_equal(dels_after_deinit, 1)
+    assert_equal(recorded_value, 42)
     assert_equal(len(destructor_recorder), 1)
-    assert_equal(destructor_recorder[0], 42)
-    _ = a
-
-    # Last use of a, but the destructor should not have run
-    # since we assume uninitialized memory
-    assert_equal(len(destructor_recorder), 1)
 
 
-def test_write_does_not_trigger_destructor() raises:
+def test_unsafe_forget_skips_destructor() raises:
     var a = UnsafeMaybeUninit[AbortOnDel]()
     a.unsafe_write(AbortOnDel(42))
+    a^.unsafe_forget()
 
-    # Using the initializer should not trigger the destructor too.
-    _ = UnsafeMaybeUninit[AbortOnDel](AbortOnDel(42))
-
-    # The destructor of a and b have already run at this point, and it shouldn't have
-    # caused a crash since we assume uninitialized memory.
+    var b = UnsafeMaybeUninit[AbortOnDel](AbortOnDel(42))
+    b^.unsafe_forget()
 
 
-def test_init_from() raises:
-    var a = "hello"
-    var uninit = UnsafeMaybeUninit[String]()
-    uninit.unsafe_write(a^)
-    assert_equal(uninit.unsafe_assume_init(), "hello")
-    uninit.unsafe_ptr().unsafe_deinit_pointee()
+def test_unsafe_deinit_runs_destructor_once() raises:
+    var count = 0
+    var a = UnsafeMaybeUninit(DelCounter(Pointer(to=count)))
+    a^.unsafe_deinit()
+
+    assert_equal(count, 1)
 
 
-def test_take() raises:
+def test_write_over_initialized_leaks_previous_value() raises:
+    var count = 0
+    var a = UnsafeMaybeUninit(DelCounter(Pointer(to=count)))
+
+    # Does not invoke the destructor of the initial `DelCounter`
+    a.unsafe_write(DelCounter(Pointer(to=count)))
+
+    # Invoke the destructor once.
+    a^.unsafe_deinit()
+
+    assert_equal(count, 1)
+
+
+def test_unsafe_assume_init_move() raises:
     var a = MoveCounter(0)
     var uninit = UnsafeMaybeUninit[MoveCounter[Int]](a^)
     var moved = uninit^.unsafe_assume_init()
@@ -92,14 +110,20 @@ def test_zeroed() raises:
 
     var c = UnsafeMaybeUninit[String].zeroed()
     var arr = Array[Byte, size_of[String]()](fill=0)
-    assert_equal(
-        unsafe_memcmp(
-            c.unsafe_ptr().unsafe_bitcast[Byte](),
-            arr.unsafe_ptr(),
-            size_of[String](),
-        ),
-        0,
+    var cmp = unsafe_memcmp(
+        c.unsafe_ptr().unsafe_bitcast[Byte](),
+        arr.unsafe_ptr(),
+        size_of[String](),
     )
+    # All-zero bytes aren't a valid `String`, so forget rather than deinit.
+    c^.unsafe_forget()
+    assert_equal(cmp, 0)
+
+    # A linear `T` keeps the wrapper linear even after `.zeroed()`.
+    comptime LinearWrapper = UnsafeMaybeUninit[ExplicitDelOnly]
+    var d = LinearWrapper.zeroed()
+    d^.unsafe_forget()
+    assert_false(conforms_to(LinearWrapper, Deinitable))
 
 
 def test_triviality() raises:
@@ -108,6 +132,7 @@ def test_triviality() raises:
         ConfigureTrivial[
             copyinit_is_trivial=False,
             moveinit_is_trivial=False,
+            del_is_trivial=False,
         ]
     ]
 
@@ -117,8 +142,7 @@ def test_triviality() raises:
 
     assert_false(IsTriviallyCopyable[NotTrivial])
     assert_false(IsTriviallyMovable[NotTrivial])
-    # UnsafeMaybeUninit always has a trivial destructor
-    assert_true(IsTriviallyDeinitable[NotTrivial])
+    assert_false(IsTriviallyDeinitable[NotTrivial])
 
 
 def test_conditional_register_passable() raises:
@@ -126,6 +150,81 @@ def test_conditional_register_passable() raises:
     assert_true(conforms_to(UnsafeMaybeUninit[Bool], RegisterPassable))
     assert_false(conforms_to(UnsafeMaybeUninit[List[Int]], RegisterPassable))
     assert_false(conforms_to(UnsafeMaybeUninit[String], RegisterPassable))
+
+
+def test_conditional_conformance() raises:
+    comptime DelOnly = UnsafeMaybeUninit[ConfigureTrivial[del_is_trivial=True]]
+    assert_true(conforms_to(DelOnly, Deinitable))
+    assert_false(conforms_to(DelOnly, Movable))
+    assert_false(conforms_to(DelOnly, Copyable))
+    assert_false(conforms_to(DelOnly, ImplicitlyCopyable))
+
+    comptime MoveOnly = UnsafeMaybeUninit[
+        ConfigureTrivial[moveinit_is_trivial=True]
+    ]
+    assert_false(conforms_to(MoveOnly, Deinitable))
+    assert_true(conforms_to(MoveOnly, Movable))
+    assert_false(conforms_to(MoveOnly, Copyable))
+    assert_false(conforms_to(MoveOnly, ImplicitlyCopyable))
+
+    # Trivially copyable but not trivially movable: `ImplicitlyCopyable`
+    # requires both.
+    assert_true(IsTriviallyCopyable[TriviallyCopyableMoveCounter])
+    assert_false(IsTriviallyMovable[TriviallyCopyableMoveCounter])
+    comptime CopyOnly = UnsafeMaybeUninit[TriviallyCopyableMoveCounter]
+    assert_false(conforms_to(CopyOnly, Movable))
+    assert_false(conforms_to(CopyOnly, Copyable))
+    assert_false(conforms_to(CopyOnly, ImplicitlyCopyable))
+
+    comptime CopyAndMove = UnsafeMaybeUninit[
+        ConfigureTrivial[copyinit_is_trivial=True, moveinit_is_trivial=True]
+    ]
+    assert_false(conforms_to(CopyAndMove, Deinitable))
+    assert_true(conforms_to(CopyAndMove, Movable))
+    assert_true(conforms_to(CopyAndMove, Copyable))
+    assert_true(conforms_to(CopyAndMove, ImplicitlyCopyable))
+
+    # `String`: trivially movable, but not trivially copyable or deinitable.
+    assert_true(IsTriviallyMovable[String])
+    comptime StringWrapper = UnsafeMaybeUninit[String]
+    assert_false(conforms_to(StringWrapper, Deinitable))
+    assert_true(conforms_to(StringWrapper, Movable))
+    assert_false(conforms_to(StringWrapper, Copyable))
+    assert_false(conforms_to(StringWrapper, ImplicitlyCopyable))
+
+
+# This test doesn't need to run, it just needs to compile
+def _test_trivial_register_passable_types[T: TrivialRegisterPassable]():
+    var uninit = UnsafeMaybeUninit[T]()
+
+    # OK: Check that the type is implicitly copyable
+    var _uninit2 = uninit
+
+    # OK: Check that the type is movable
+    var _uninit3 = uninit^
+
+    # OK: No need to expliclilty deinit
+
+
+def test_linear_payload_round_trip() raises:
+    assert_false(conforms_to(UnsafeMaybeUninit[ExplicitDelOnly], Deinitable))
+    assert_true(conforms_to(UnsafeMaybeUninit[ExplicitDelOnly], Movable))
+
+    var a = UnsafeMaybeUninit[ExplicitDelOnly]()
+    a.unsafe_write(ExplicitDelOnly(5))
+
+    var value = a^.unsafe_assume_init()
+    var data = value.data
+    value^.destroy()
+
+    assert_equal(data, 5)
+
+
+def test_pinned_linear_payload_stays_pinned() raises:
+    assert_false(
+        conforms_to(UnsafeMaybeUninit[PinnedExplicitDelOnly], Deinitable)
+    )
+    assert_false(conforms_to(UnsafeMaybeUninit[PinnedExplicitDelOnly], Movable))
 
 
 def main() raises:

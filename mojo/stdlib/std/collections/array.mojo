@@ -396,6 +396,7 @@ struct Array[T: AnyType, length: Int](
             self.unsafe_ptr().unsafe_offset(i).unsafe_write_move_from(
                 unsafe_assume_initialized[i].unsafe_ptr()
             )
+        std.memory.forget_deinit(unsafe_assume_initialized^)
 
     @always_inline
     def __init__(

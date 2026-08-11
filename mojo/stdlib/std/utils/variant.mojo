@@ -104,7 +104,7 @@ trait _VariantStorage(Copyable, Deinitable):
         ...
 
 
-trait _NicheStorage(Defaultable, Deinitable, ImplicitlyCopyable):
+trait _NicheStorage(Defaultable, Deinitable):
     """Internal abstraction over niche backing storage backends."""
 
     def as_uninit[
@@ -113,7 +113,9 @@ trait _NicheStorage(Defaultable, Deinitable, ImplicitlyCopyable):
         ...
 
 
-struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
+struct _DefaultNicheStorage[T: AnyType](
+    Defaultable, Movable where False, _NicheStorage
+):
     """Default niche backing: stores the value in `UnsafeMaybeUninit[T]`
     (lowers to `pop.array<1, T>`)."""
 
@@ -122,6 +124,9 @@ struct _DefaultNicheStorage[T: AnyType](Defaultable, _NicheStorage):
     @always_inline
     def __init__(out self):
         self._memory = {}
+
+    def __deinit__(deinit self):
+        self._memory^.unsafe_forget()
 
     @always_inline
     def as_uninit[
