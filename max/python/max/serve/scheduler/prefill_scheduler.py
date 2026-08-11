@@ -379,6 +379,17 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
+        # The DI protocol has no failure reply, so the decode node is not
+        # notified; route-side validation makes this unreachable in practice.
+        for failed_id, error in self.batch_constructor.take_grammar_failed():
+            self.request_id_to_reply_context.pop(failed_id, None)
+            logger.error(
+                "Dropping prefill request %s: grammar build failed after "
+                "route-side validation passed: %s",
+                failed_id,
+                error,
+            )
+
         # With the overlap pipeline, a pending _prev_batch must be drained
         # even when the current batch is empty (last-batch flush).
         has_pending_outputs = (

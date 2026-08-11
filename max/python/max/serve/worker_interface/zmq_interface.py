@@ -24,6 +24,7 @@ from max.pipelines.context import (
     BaseContextType,
     TextContext,
 )
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
     PipelineOutputType,
@@ -186,6 +187,9 @@ class ZmqModelWorkerProxy(
                     (time.monotonic() - enqueue_s) * 1000
                 )
                 if item.result is None:
+                    # The route layer turns InputError into a client-facing 400.
+                    if item.error is not None:
+                        raise InputError(item.error)
                     break
 
                 outputs = [item.result]
@@ -197,6 +201,8 @@ class ZmqModelWorkerProxy(
                         break
 
                     if item.result is None:
+                        if item.error is not None:
+                            raise InputError(item.error)
                         should_stop = True
                         break
 

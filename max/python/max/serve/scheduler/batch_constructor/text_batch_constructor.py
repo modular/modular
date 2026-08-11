@@ -41,6 +41,7 @@ from ..lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
+from .grammar_gate import AsyncGrammarGate
 from .token_budget import (
     ActiveTokenBudget,
     BudgetStatus,
@@ -86,6 +87,17 @@ class _BoundRequest:
 
     ctx: TextContext
     replica_idx: int
+
+
+@dataclass
+class _GrammarPendingRequest:
+    """A fresh CE request held back while its grammar matcher builds off-thread.
+
+    ``replica_idx`` preserves a caller-pinned replica for promotion.
+    """
+
+    ctx: TextContext
+    replica_idx: int | None
 
 
 @dataclass
@@ -461,6 +473,14 @@ class TextBatchConstructor:
 
         self._lora_manager: LoRAManagerV3 | None = get_lora_manager(pipeline)
 
+        # Gated requests are held before DP pooling/binding, so the CE
+        # planner only ever prices grammar-ready work.
+        self._grammar_gate = AsyncGrammarGate.create(pipeline)
+        self._grammar_pending: OrderedDict[
+            RequestID, _GrammarPendingRequest
+        ] = OrderedDict()
+        self._grammar_failed: list[tuple[RequestID, str]] = []
+
         self.num_replicas = self.scheduler_config.data_parallel_degree
         if self._lora_manager and self.num_replicas > 1:
             raise ValueError("LoRA does not support data parallelism.")
@@ -580,7 +600,24 @@ class TextBatchConstructor:
             replica_idx: The replica index to assign the request to.
                 If None, the next replica index will be automatically chosen.
         """
+        # Decode-side requests (generated_length != 0) built their matcher at
+        # prefill admission.
+        if self._grammar_gate is not None and ctx.tokens.generated_length == 0:
+            self._grammar_gate.submit(ctx)
+            if not self._grammar_gate.is_ready(ctx):
+                self._grammar_pending[ctx.request_id] = _GrammarPendingRequest(
+                    ctx=ctx, replica_idx=replica_idx
+                )
+                return
+            error = self._grammar_gate.install_ready(ctx)
+            if error is not None:
+                self._fail_grammar_request(ctx.request_id, error)
+                return
 
+        self._admit_request(ctx, replica_idx)
+
+    def _admit_request(self, ctx: TextContext, replica_idx: int | None) -> None:
+        """Admits a grammar-ready request into the DP pool or a replica queue."""
         # DP-balanced CE deferral: fresh CE requests enter an unbound pool and
         # are bound to a replica by the per-step planner, which prices them by
         # estimated post-prefix-cache length. Caller-pinned requests and
@@ -704,8 +741,48 @@ class TextBatchConstructor:
         return (
             request_id in self._bound_requests
             or request_id in self._ce_pending
+            or request_id in self._grammar_pending
             or request_id in self._onloading_reqs
         )
+
+    def _promote_grammar_ready_requests(self) -> None:
+        """Admits held requests whose matcher build finished.
+
+        Runs before the DP CE planner so promotions join this iteration's
+        pool/bind flow. The ready matcher is installed here; a request whose
+        build failed is failed instead of admitted, so nothing strands.
+        """
+        gate = self._grammar_gate
+        if gate is None or not self._grammar_pending:
+            return
+        ready_ids = [
+            req_id
+            for req_id, pending in self._grammar_pending.items()
+            if gate.is_ready(pending.ctx)
+        ]
+        for req_id in ready_ids:
+            pending = self._grammar_pending.pop(req_id)
+            error = gate.install_ready(pending.ctx)
+            if error is None:
+                self._admit_request(pending.ctx, pending.replica_idx)
+            else:
+                self._fail_grammar_request(req_id, error)
+
+    def _fail_grammar_request(self, request_id: RequestID, error: str) -> None:
+        """Fails a request whose grammar build errored, without admitting it.
+
+        Nothing was claimed for the request (it was never bound), so only the
+        pipeline needs releasing; the owning scheduler drains
+        :meth:`take_grammar_failed` to terminate it client-side.
+        """
+        self.pipeline.release(request_id)
+        self._grammar_failed.append((request_id, error))
+
+    def take_grammar_failed(self) -> list[tuple[RequestID, str]]:
+        """Returns and clears requests failed by the grammar gate."""
+        failed = self._grammar_failed
+        self._grammar_failed = []
+        return failed
 
     def release_request(self, request_id: RequestID) -> None:
         """
@@ -720,6 +797,15 @@ class TextBatchConstructor:
         """
         if not self.contains(request_id):
             raise ValueError(f"Request {request_id} not found in any replica.")
+
+        # Grammar-gated requests are not bound to a replica yet: nothing was
+        # claimed in the KV cache and no replica queue holds them.
+        if request_id in self._grammar_pending:
+            del self._grammar_pending[request_id]
+            assert self._grammar_gate is not None
+            self._grammar_gate.release(request_id)
+            self.pipeline.release(request_id)
+            return
 
         # Pooled CE requests are not bound to a replica yet: nothing was
         # claimed in the KV cache and no replica queue holds them.
@@ -777,6 +863,9 @@ class TextBatchConstructor:
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
 
+        if self._grammar_gate is not None:
+            self._grammar_gate.release(request_id)
+
         # _bound_requests is the source of truth for whether a request
         # is managed by the scheduler (checked by contains()).
         # Remove from here, marking the request as fully released.
@@ -804,6 +893,11 @@ class TextBatchConstructor:
         reqs.update(
             (req_id, pending.ctx)
             for req_id, pending in self._ce_pending.items()
+        )
+        # Grammar-gated requests are still pending CE work.
+        reqs.update(
+            (req_id, pending.ctx)
+            for req_id, pending in self._grammar_pending.items()
         )
         # Cordoned onloading requests are still pending CE work.
         reqs.update(
@@ -1358,6 +1452,8 @@ class TextBatchConstructor:
         # ``kv_cache.alloc`` itself, so the scheduler only tracks the
         # request-level side here.
         self._readmit_completed_onloads()
+
+        self._promote_grammar_ready_requests()
 
         # DP-balanced CE deferral: decide this iteration's CE work (late
         # binding + per-replica deferral) before priorities are identified.

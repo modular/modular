@@ -208,6 +208,16 @@ This version is still a work in progress.
 
 ### Inference server
 
+- Structured-output grammar compilation now runs off both serving hot
+  paths. A new request's grammar matcher (from `response_format` JSON
+  schemas or tool-call grammars) is built on a worker thread while the
+  request waits for admission instead of on the scheduler's decode
+  thread, and the API server's admission-time schema validation runs off
+  the event loop instead of freezing in-flight streaming responses. A
+  cold multi-second compile of a complex schema now delays only that
+  request instead of stalling inter-token latency for every active
+  request.
+
 ### Server metrics
 
 - Fixed the speculative-decoding per-position acceptance-rate histogram

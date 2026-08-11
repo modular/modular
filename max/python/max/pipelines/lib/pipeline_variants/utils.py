@@ -26,6 +26,7 @@ import numpy.typing as npt
 from max.pipelines.context import (
     FUTURE_TOKEN,
     GenerationStatus,
+    GrammarMatcher,
     LogProbabilities,
     StructuredOutputRegionDelimiters,
     TextGenerationContextType,
@@ -498,6 +499,34 @@ class StructuredOutputHelper:
             tool_call_region_delimiters=tool_call_region_delimiters,
         )
 
+    def build_matcher(
+        self, grammar: str | None, json_schema: str | None
+    ) -> GrammarMatcher:
+        """Builds a grammar matcher without touching context state.
+
+        Safe to call from any thread: it reads only the immutable backend,
+        which releases the GIL during the expensive step. ``grammar`` takes
+        precedence over ``json_schema``, matching :meth:`update_context`.
+        """
+        assert self.backend is not None
+        if grammar:
+            return self.backend.create_matcher(grammar)
+        assert json_schema is not None
+        compiled = self.backend.compile_json_schema(json_schema)
+        return self.backend.create_matcher(compiled)
+
+    def install_matcher(
+        self, context: TextGenerationContextType, matcher: GrammarMatcher
+    ) -> None:
+        """Installs a built matcher on a context.
+
+        Sets the tool region for grammar requests; cheap enough for the
+        decode thread.
+        """
+        context.set_matcher(matcher)
+        if context.grammar:
+            self.set_context_tool_region(context)
+
     def update_context(
         self,
         context: TextGenerationContextType,
@@ -552,9 +581,8 @@ class StructuredOutputHelper:
             assert self.backend is not None
             try:
                 with Tracer("tool_grammar_compile"):
-                    matcher = self.backend.create_matcher(context.grammar)
-                context.set_matcher(matcher)
-                self.set_context_tool_region(context)
+                    matcher = self.build_matcher(context.grammar, None)
+                self.install_matcher(context, matcher)
             except Exception as e:
                 raise InputError(
                     f"Grammar provided in request cannot be compiled. "
@@ -572,9 +600,8 @@ class StructuredOutputHelper:
 
             assert self.backend is not None
             try:
-                grammar = self.backend.compile_json_schema(context.json_schema)
-                matcher = self.backend.create_matcher(grammar)
-                context.set_matcher(matcher)
+                matcher = self.build_matcher(None, context.json_schema)
+                self.install_matcher(context, matcher)
             except Exception as e:
                 raise InputError(
                     f"JSON schema provided in request cannot be compiled to "
@@ -1098,3 +1125,11 @@ class StructuredOutputHelper:
         # Return the packed int32 bitmask directly; the GPU acceptance sampler
         # unpacks and applies it in a single fused pass.
         return packed_bitmask
+
+
+def get_structured_output_helper(
+    pipeline: object,
+) -> StructuredOutputHelper | None:
+    """Returns the pipeline's structured-output helper, if it exposes one."""
+    helper = getattr(pipeline, "_structured_output", None)
+    return helper if isinstance(helper, StructuredOutputHelper) else None
