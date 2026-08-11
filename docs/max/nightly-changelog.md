@@ -10,6 +10,11 @@ This version is still a work in progress.
 
 ## MAX models
 
+- Fixed unbounded host-memory usage in Gemma 4 video pre-processing: the
+  server now decodes only the sampled frames of a video instead of
+  materializing every frame before sampling, bounding peak memory at the
+  sampled frame count (previously a long clip could transiently allocate
+  ~100 GB in the API server process).
 - Added GLM-5.2 (`GlmMoeDsaForCausalLM`) support, extending the GLM-5.1
   sparse-attention architecture with cross-layer index sharing.
   - Added multi-token prediction (MTP) speculative decoding for GLM-5.2
