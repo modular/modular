@@ -21,7 +21,7 @@ consumed by allreduce, scatter, and other collective operations.
 from std.collections import Array
 from std.utils import StaticTuple
 from std.math.uutils import umod
-from std.sys import size_of
+from std.sys import size_of, is_amd_gpu
 
 from std.atomic import Atomic, Ordering
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -464,7 +464,9 @@ def _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        comptime if need_fence:
+        # TODO(KERN-3443): Investigate why AMD GPUs require this to be a full fence
+        # instead of the lighter weight volatile loop used for nvidia GPUs.
+        comptime if need_fence or is_amd_gpu():
             # broadcast the value to all peers that I reached the barrier
             Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
                 peer_counter_ptr, val
