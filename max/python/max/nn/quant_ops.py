@@ -691,6 +691,7 @@ def quantized_fused_qkv_index_matmul(
     idx_head_dim: int,
     quant_config: QuantConfig,
     weight_scale: TensorValue,
+    prequantized: tuple[TensorValue, TensorValue] | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Fuses MiniMax-M3's QKV and index-QK projections into one MXFP8 matmul.
 
@@ -721,6 +722,9 @@ def quantized_fused_qkv_index_matmul(
         idx_head_dim: Index head dimension (also the IndexK width).
         quant_config: The quantization configuration; must be MXFP8.
         weight_scale: The concatenated E8M0 weight scale tensor (pre-interleave).
+        prequantized: ``(x_fp8, x_scales)`` for ``x``, skipping the quantize.
+            Scales are the plain rank-2 ``[rows, hidden / 32]`` E8M0 layout,
+            NOT the interleaved weight-scale one.
 
     Returns:
         A tuple ``(q, index_q)`` of bf16 tensors: ``q`` is
@@ -732,12 +736,39 @@ def quantized_fused_qkv_index_matmul(
             "quantized_fused_qkv_index_matmul only supports MXFP8, got"
             f" {quant_config.format}"
         )
-    x_fp8, x_scales = quantize_dynamic_block_scaled(
-        x,
-        sf_vector_size=32,
-        scales_type=DType.float8_e8m0fnu,
-        out_type=DType.float8_e4m3fn,
-    )
+    if prequantized is not None:
+        x_fp8, x_scales = prequantized
+        if not _is_amd_gpu():
+            raise ValueError(
+                "prequantized carries the plain rank-2 [rows, hidden/32] E8M0"
+                " scale the CDNA4 kernel takes; the SM100 op wants the"
+                " interleaved SF-atom layout, so it must quantize its own"
+                " activation."
+            )
+        if (
+            x_fp8.dtype != DType.float8_e4m3fn
+            or x_scales.dtype != DType.float8_e8m0fnu
+        ):
+            raise ValueError(
+                "prequantized must be (float8_e4m3fn, float8_e8m0fnu), got"
+                f" ({x_fp8.dtype}, {x_scales.dtype})"
+            )
+        if x_fp8.shape != x.shape:
+            raise ValueError(
+                f"prequantized payload shape {x_fp8.shape} != x {x.shape}"
+            )
+        if x_scales.rank != 2 or x_scales.shape[0] != x.shape[0]:
+            raise ValueError(
+                "prequantized scales must be rank-2 [rows, hidden/32]; got"
+                f" {x_scales.shape} for x {x.shape}"
+            )
+    else:
+        x_fp8, x_scales = quantize_dynamic_block_scaled(
+            x,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+            out_type=DType.float8_e4m3fn,
+        )
     if not _is_amd_gpu():
         weight_scale = block_scales_interleave(
             weight_scale.to(x.device), sf_vector_size=32
