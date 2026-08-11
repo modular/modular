@@ -281,7 +281,7 @@ def fa4_load[
         CacheEviction.EVICT_NORMAL if pair_cta else CacheEviction.EVICT_FIRST
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def q_async_copy[
         eviction_policy: CacheEviction = q_default_eviction,
@@ -361,7 +361,7 @@ def fa4_load[
         row_major=v_row_major,
     ]()
 
-    @parameter
+    @__parameter
     @always_inline
     def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
         """Valid K sub-tile pages at `current_kv_row` (per-CTA range)."""
@@ -374,7 +374,7 @@ def fa4_load[
             ),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def _v_num_valid_pages(current_kv_row: UInt32) -> UInt32:
         """Valid V sub-tile pages at `current_kv_row` (full BN range)."""
@@ -483,7 +483,7 @@ def fa4_load[
     # `k_nvp_peer`, `kv_head_idx`, `v_col_offset`, `k_tma_op`,
     # `v_tma_op`, `config`. Caller owns `populate`, `smem_ptr`, and the
     # producer-pipeline acquire/step lifecycle.
-    @parameter
+    @__parameter
     @always_inline
     def _produce_k[
         partial: Bool,
@@ -531,7 +531,7 @@ def fa4_load[
             depth_offset=UInt32(d_idx),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def _produce_v[
         partial: Bool,
@@ -621,7 +621,7 @@ def fa4_load[
         config.v_e_box_rows() * config.v_e_box_cols()
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def _produce_v_e[
         partial: Bool,
@@ -706,7 +706,7 @@ def fa4_load[
         # first peeled K slot passes `acquire=False` (initial phase=1).
         # The caller still owns `populate` (K computes `rows`, V reuses it)
         # and any interleaved Q TMA.
-        @parameter
+        @__parameter
         @always_inline
         def _emit_k[
             partial: Bool,
@@ -731,7 +731,7 @@ def fa4_load[
                 )
                 kv_pipeline.state.step()
 
-        @parameter
+        @__parameter
         @always_inline
         def _emit_v[
             partial: Bool, acquire: Bool = True

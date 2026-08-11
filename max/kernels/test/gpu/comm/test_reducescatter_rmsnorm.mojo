@@ -210,7 +210,7 @@ def _run_case[
             # Production two-launch fallback (== the op's closure): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`. Writing both outputs lets it hit the same oracles.
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](
@@ -494,13 +494,13 @@ def _rms_norm_shard[
 
     @always_inline
     @__copy_capture(src_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         return src_view.raw_load[width=width](src_view.layout(coords))
 
     @always_inline
     @__copy_capture(dst_view)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -671,7 +671,7 @@ def _run_prod_oracle_case[
             # Mirror the graph op's fallback (distributed.mojo): standalone
             # reduce-scatter into `sum_view`, then `rms_norm_gpu` into
             # `normed_view`.
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 reducescatter[

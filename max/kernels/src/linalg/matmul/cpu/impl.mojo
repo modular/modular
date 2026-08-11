@@ -367,7 +367,7 @@ struct TiledMatmul[
         )
 
         @__copy_capture(sub_tile_n_k, b_packed_tile)
-        @parameter
+        @__parameter
         @always_inline
         def row_iteration[tile_kernel_rows: Int](row_offset: Int):
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
@@ -427,7 +427,7 @@ struct TiledMatmul[
         )
         var tile_n: Int = self.tile_n_k[0]
 
-        @parameter
+        @__parameter
         @always_inline
         def m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
             self._outer_m_loop[secondary_tile_size](
@@ -469,7 +469,7 @@ struct TiledMatmul[
 
         # Each tiled iteration on the k dimension.
         @always_inline
-        @parameter
+        @__parameter
         def k_iteration(k_offset: Int, k_tile_size: Int):
             var last_k_tile = (
                 k_offset + k_tile_size + self.global_tile_offset.K
@@ -563,7 +563,7 @@ def _matmul_cpu_impl[
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
-        @parameter
+        @__parameter
         def pack_task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
@@ -585,7 +585,7 @@ def _matmul_cpu_impl[
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, mh, kh)
-        @parameter
+        @__parameter
         def task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
@@ -724,7 +724,7 @@ def matmul[
             scratch_ptr, row_major(Coord(scratch_m, scratch_n))
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def cast_epilogue[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1

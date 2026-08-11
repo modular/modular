@@ -317,7 +317,7 @@ def _apply_mask[
     var mask_warp_row: UInt32 = mask_warp_row_arg + fragment_row
     var mask_warp_col: UInt32 = kv_tile_start_row + fragment_col
 
-    @parameter
+    @__parameter
     @always_inline
     def _apply_mask_capture[masked: Bool]():
         comptime for m_mma in range(num_m_mmas):
@@ -600,7 +600,7 @@ def produce[
     var tile_state = tile_state_arg
     var position = initial_position
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
@@ -618,7 +618,7 @@ def produce[
     ]()
     comptime assert pipeline_stages >= 2
 
-    @parameter
+    @__parameter
     @always_inline
     def kv_tile(
         idx: UInt32,
@@ -654,7 +654,7 @@ def produce[
         BM, BN, page_size
     ]()
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _num_valid_pages(end_row: UInt32, current_kv_row: UInt32) -> UInt32:
         return min(
@@ -662,7 +662,7 @@ def produce[
             UInt32(KVPagedRows.num_pages),
         )
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def produce_kv[
         is_k_side: Bool,
@@ -711,7 +711,7 @@ def produce[
             )
         state.step()
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def produce_kv_partial[
         is_k_side: Bool,
@@ -767,7 +767,7 @@ def produce[
             )
         state.step()
 
-    @parameter
+    @__parameter
     @always_inline
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[

@@ -66,10 +66,10 @@ def bench_add[
         ](idx)
         output.store[width=simd_width](idx, val)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             elementwise[simd_width=unroll_by, target="gpu"](

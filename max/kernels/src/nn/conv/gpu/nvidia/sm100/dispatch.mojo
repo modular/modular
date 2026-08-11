@@ -265,7 +265,7 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch[
             swizzle: TensorMapSwizzle,

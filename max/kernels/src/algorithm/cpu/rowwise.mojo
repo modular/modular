@@ -594,7 +594,7 @@ def launch[
             unsafe_memset_zero(counters_buf, num_outputs)
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(partials_buf, counters_buf, num_splits, body)
             def split_worker(w: Int):
                 var row_idx = w // num_splits
@@ -627,10 +627,10 @@ def launch[
             var chunk = ceildiv(num_outputs, actual_workers)
 
             @always_inline
-            @parameter
+            @__parameter
             def run_coop[params: ContextParams]():
                 @always_inline
-                @parameter
+                @__parameter
                 @__copy_capture(body)
                 def row_worker(w: Int):
                     var start = w * chunk
@@ -703,7 +703,7 @@ def launch[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(body)
         def slice_worker(w: Int):
             var s_start = w * chunk

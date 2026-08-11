@@ -235,7 +235,7 @@ def flash_attention[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -716,7 +716,7 @@ def flash_attention[
 
     # TODO docstring
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -1666,7 +1666,7 @@ def flash_attention_dispatch[
                     # the split-K launch go through this one ladder, so their
                     # instantiation sets cannot drift. Returns whether a launch
                     # happened.
-                    @parameter
+                    @__parameter
                     def launch_mha_decoding[
                         out_dtype: DType
                     ](
@@ -3222,7 +3222,7 @@ def mha_single_batch[
     # Only the last iteration is doing boundary check.
     @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -3290,7 +3290,7 @@ def mha_single_batch[
         _ = p_reg_tile.fill(0)
 
         @always_inline
-        @parameter
+        @__parameter
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
@@ -3359,7 +3359,7 @@ def mha_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -3945,7 +3945,7 @@ def mha_single_batch_pipelined[
     #   ```
     # Only the last iteration is doing boundary check.
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -4089,7 +4089,7 @@ def mha_single_batch_pipelined[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -5109,7 +5109,7 @@ def mha_decoding_single_batch[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int
     ) -> type_of(tensor):
@@ -5144,7 +5144,7 @@ def mha_decoding_single_batch[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -5836,7 +5836,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int):
@@ -6389,7 +6389,7 @@ def mha_gpu_naive[
         block_dim=_NAIVE_BMM_BLOCK_DIM,
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
         _simd_width: Int

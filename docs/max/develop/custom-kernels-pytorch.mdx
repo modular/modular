@@ -131,12 +131,12 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
         ](idx: Coord) -> SIMD[DType.uint8, simd_width]:
-            @parameter
+            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:

@@ -105,9 +105,9 @@ def bench_rms_norm_rope_gpu[
         sin_fn,
         output_fn,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_rope[

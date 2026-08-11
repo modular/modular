@@ -284,7 +284,7 @@ def run_matmul_sm100_block_scaled_fp4_2sm_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
+        @__parameter
         @always_inline
         def run[
             MType: CoordLike,

@@ -80,7 +80,7 @@ def matrix_band_part[
         output,
         input_0_fn,
     )
-    @parameter
+    @__parameter
     def dispatch[exclude: Bool]() raises:
         _matrix_band_part_impl[
             dtype,

@@ -252,7 +252,7 @@ def test_fused_concat_cpu() raises:
     )
 
     # Input lambda: generates data based on input index
-    @parameter
+    @__parameter
     @always_inline
     def input_fn[
         input_index: Int, width: Int, _rank: Int, alignment: Int = 1
@@ -267,7 +267,7 @@ def test_fused_concat_cpu() raises:
             )
 
     # Output epilogue: multiply by 2
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output)
     def output_fn[
@@ -388,7 +388,7 @@ def test_concat_with_epilogue() raises:
         x2_dyn.as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output)
     def epilogue_add_10[

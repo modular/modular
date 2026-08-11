@@ -232,7 +232,7 @@ def copy_h2d(
     return Python.none()
 
 
-@parameter
+@__parameter
 def _do_broadcast_units[
     ngpus: Int
 ](

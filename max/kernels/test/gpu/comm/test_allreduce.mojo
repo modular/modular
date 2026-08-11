@@ -174,7 +174,7 @@ def allreduce_test[
 
     # Custom epilogue that negates values to distinguish from default
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
@@ -353,7 +353,7 @@ def allreduce_naive_test() raises -> None:
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
@@ -395,7 +395,7 @@ def allreduce_naive_test() raises -> None:
         host_ptrs[i].free()
 
 
-@parameter
+@__parameter
 def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(

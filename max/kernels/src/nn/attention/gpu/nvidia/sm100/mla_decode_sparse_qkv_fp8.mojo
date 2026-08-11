@@ -364,7 +364,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
 
-        @parameter
+        @__parameter
         @always_inline
         def _pdl_early_exit_all_q():
             comptime if Self.fold_shared_index:

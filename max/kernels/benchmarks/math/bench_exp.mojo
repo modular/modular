@@ -86,9 +86,9 @@ def bench_unary[
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
         input_ptr.unsafe_offset(i).unsafe_write(f)
 
-    @parameter
+    @__parameter
     def bench(mut b: Bencher, size: Int) raises:
-        @parameter
+        @__parameter
         def iter_fn():
             apply[func](
                 TileTensor(input_ptr, row_major(Coord(_ri(size)))),

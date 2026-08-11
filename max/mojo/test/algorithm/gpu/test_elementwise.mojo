@@ -77,7 +77,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
@@ -154,7 +154,7 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, shape)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
@@ -212,7 +212,7 @@ def run_elementwise_exact_boundary_uses_simd[
 
     @always_inline
     @__copy_capture(out_buffer, shape)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
@@ -269,7 +269,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer, in_strides, out_shape)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
 
@@ -361,7 +361,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(input_buffer, output_buffer, shape)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)

@@ -33,7 +33,7 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
@@ -68,7 +68,7 @@ struct Brightness:
         brightness: Float32,
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline  # Added for consistency
         def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
@@ -93,7 +93,7 @@ struct Blur:
         blur_size: Int64,
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def blur_kernel[
             simd_width: Int

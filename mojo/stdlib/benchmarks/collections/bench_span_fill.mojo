@@ -32,7 +32,7 @@ comptime SIZES = [64, 256, 4096, 65536, 1048576]
 comptime FILL_VALUE = Byte(0xA5)
 
 
-@parameter
+@__parameter
 def bench_span_fill[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 
@@ -46,7 +46,7 @@ def bench_span_fill[size: Int](mut b: Bencher) raises:
     dealloc(allocation^)
 
 
-@parameter
+@__parameter
 def bench_unsafe_memset[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 
@@ -60,7 +60,7 @@ def bench_unsafe_memset[size: Int](mut b: Bencher) raises:
     dealloc(allocation^)
 
 
-@parameter
+@__parameter
 def bench_span_fill_elementwise[size: Int](mut b: Bencher) raises:
     var allocation = alloc(Layout[Byte](count=black_box(size)))
 

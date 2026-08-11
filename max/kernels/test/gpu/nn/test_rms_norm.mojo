@@ -77,14 +77,14 @@ def run_rms_norm_gpu[
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
@@ -143,13 +143,13 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         return data_buf.raw_load[width=width](data_buf.layout(coords))
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:

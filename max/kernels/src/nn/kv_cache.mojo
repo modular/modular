@@ -115,7 +115,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -196,7 +196,7 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -359,7 +359,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     def write_to_cache[
@@ -526,7 +526,7 @@ def generic_fused_qk_rope_bshd_continuous_batch[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -610,7 +610,7 @@ def generic_fused_qk_rope_bshd_paged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -692,7 +692,7 @@ def generic_flash_attention_kv_cache_padded[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -767,7 +767,7 @@ def generic_flash_attention_kv_cache_padded_materialized_mask[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -845,7 +845,7 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(k, v)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
@@ -896,10 +896,10 @@ def _flash_attention_dispatch_materialized_mask[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @always_inline
-        @parameter
+        @__parameter
         def call_flash_attention[sink: Bool]() raises:
             comptime if is_cpu[target]():
                 return flash_attention_kv_cache_cpu(
@@ -1136,7 +1136,7 @@ def fused_qk_rms_norm_ragged_paged[
     var rows = q_rows + k_rows
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return (
             trace_arg(
@@ -1635,7 +1635,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
     var rows = q_rows + k_rows
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return (
             trace_arg(
@@ -2051,7 +2051,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
     var rows = q_main_rows + k_main_rows + q_index_rows + k_index_rows
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return (
             trace_arg(
@@ -2235,7 +2235,7 @@ def rms_norm_kv_cache_ragged_paged[
         shape[1] = rms_norm_cols
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, input_row_offsets)
     def key_cache_input_fn[
         width: Int, rank_: Int
@@ -2275,7 +2275,7 @@ def rms_norm_kv_cache_ragged_paged[
         ).cast[dtype]()
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache)
     def key_cache_output_fn[
         width: SIMDLength, alignment: Int
@@ -2320,7 +2320,7 @@ def rms_norm_kv_cache_ragged_paged[
         # `Coord` cannot express, so they stay IndexList-form; wrap them to the
         # `Coord` interface here (`coord_to_index_list` recovers the runtime
         # IndexList the cache logic subscripts) and pass `Coord(shape)`.
-        @parameter
+        @__parameter
         @always_inline
         def key_cache_input_fn_coord[
             width: Int, alignment: Int
@@ -2329,7 +2329,7 @@ def rms_norm_kv_cache_ragged_paged[
                 rebind[IndexList[rank]](coord_to_index_list(coords))
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def key_cache_output_fn_coord[
             width: SIMDLength, alignment: Int
@@ -2408,7 +2408,7 @@ def rms_norm_value_cache_ragged_paged[
         shape[1] = rms_norm_cols
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(v_cache, input_row_offsets)
     def value_cache_input_fn[
         width: Int, rank_: Int
@@ -2447,7 +2447,7 @@ def rms_norm_value_cache_ragged_paged[
         ).cast[dtype]()
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(v_cache)
     def value_cache_output_fn[
         width: SIMDLength, alignment: Int
@@ -2490,7 +2490,7 @@ def rms_norm_value_cache_ragged_paged[
         # See `rms_norm_key_cache_ragged_paged` above: cache lambdas stay
         # IndexList-form (runtime index subscripts) and are wrapped to the
         # `Coord` boundary `_rms_norm_impl` now expects.
-        @parameter
+        @__parameter
         @always_inline
         def value_cache_input_fn_coord[
             width: Int, alignment: Int
@@ -2499,7 +2499,7 @@ def rms_norm_value_cache_ragged_paged[
                 rebind[IndexList[rank]](coord_to_index_list(coords))
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def value_cache_output_fn_coord[
             width: SIMDLength, alignment: Int

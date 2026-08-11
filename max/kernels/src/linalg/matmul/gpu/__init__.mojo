@@ -190,7 +190,7 @@ def matmul_kernel[
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
     var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
-    @parameter
+    @__parameter
     @__copy_capture(row, localCol, a, b, localRow, col, a_shared, b_shared)
     @always_inline
     def update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):
@@ -409,7 +409,7 @@ def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def process_m(m: Int):
         var best_score = Int.MAX
         var best_idx = 0
@@ -539,7 +539,7 @@ def _matmul_gpu[
 
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c)
     def compute_lambda_wrapper[
@@ -561,7 +561,7 @@ def _matmul_gpu[
 
     # Helper for gemv_gpu dispatch — passes TileTensor directly.
     @always_inline
-    @parameter
+    @__parameter
     def _gemv_dispatch() raises:
         gemv_gpu[
             transpose_b=transpose_b,
@@ -729,7 +729,7 @@ def _matmul_gpu[
         if multi_gemm_cond:
 
             @always_inline
-            @parameter
+            @__parameter
             def _multistage_gemm[
                 config: MatmulConfig[a_type, b_type, c_type, transpose_b]
             ](
@@ -744,7 +744,7 @@ def _matmul_gpu[
                 ](c, a, b, runtime_config, ctx)
 
             @always_inline
-            @parameter
+            @__parameter
             def _multistage_gemm[
                 config: MatmulConfig[a_type, b_type, c_type, transpose_b]
             ]() raises:
@@ -763,7 +763,7 @@ def _matmul_gpu[
             comptime if has_amd_gpu_accelerator():
 
                 @always_inline
-                @parameter
+                @__parameter
                 def kernel_helper[
                     block_m: Int,
                     block_n: Int,
@@ -1190,7 +1190,7 @@ def _matmul_gpu[
                     if m >= 128 and m <= 256:
 
                         @always_inline
-                        @parameter
+                        @__parameter
                         def _small_m_gemm[
                             _bm: Int, _bn: Int, _bk: Int
                         ]() raises:
@@ -1385,7 +1385,7 @@ def _matmul_gpu[
         DType.bfloat16,
     ):
 
-        @parameter
+        @__parameter
         @always_inline
         def _enqueue_rdna_kernel[
             BLOCK_K: Int,
@@ -1642,7 +1642,7 @@ def multistage_gemm[
                 mma_shape=Index(16, 16, 128),
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_pingpong() raises:
                 var pp_grid = (
@@ -1666,7 +1666,7 @@ def multistage_gemm[
                     block_dim=pp_threads,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_skinny() raises:
                 var sk_grid = (
@@ -1690,7 +1690,7 @@ def multistage_gemm[
                     block_dim=sk_threads,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_standard() raises:
                 comptime std_config = MatmulConfig[
@@ -1934,7 +1934,7 @@ def multistage_gemm[
                 mma_shape=Index(16, 16, 128),
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_pingpong() raises:
                 var pp_grid = (
@@ -1958,7 +1958,7 @@ def multistage_gemm[
                     block_dim=pp_threads,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_skinny() raises:
                 var sk_grid = (
@@ -1982,7 +1982,7 @@ def multistage_gemm[
                     block_dim=sk_threads,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_standard() raises:
                 comptime std_config = MatmulConfig[

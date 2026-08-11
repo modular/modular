@@ -167,7 +167,7 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        @parameter
+        @__parameter
         def benchmark() raises:
             ctx.enqueue_function_collective_checked[ring_reduce](
                 dst,

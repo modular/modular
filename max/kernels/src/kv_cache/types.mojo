@@ -1260,7 +1260,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         SIMD load against the lookup table.
         """
 
-        @parameter
+        @__parameter
         def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
             return self.row_idx(batch_idx, start_tok_idx)
 

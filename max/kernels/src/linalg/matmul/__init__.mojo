@@ -114,7 +114,7 @@ def matmul[
             return
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
@@ -155,7 +155,7 @@ def matmul[
             return
 
         @always_inline
-        @parameter
+        @__parameter
         def cpu_description_fn() -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
@@ -186,7 +186,7 @@ def matmul[
 
             # The CPU version of matmul doesn't support compute lambda.
             # Wrap it around an epilogue lambda instead.
-            @parameter
+            @__parameter
             @always_inline
             def compute_lambda_wrapper[
                 _type: DType, _width: SIMDLength, *, alignment: Int = 1

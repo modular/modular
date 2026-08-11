@@ -138,7 +138,7 @@ def matmul_dispatch_sm90[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a, b)
     def _dispatch() raises -> Int:
         # General constraints for H100 matmul
@@ -637,7 +637,7 @@ def matmul_dispatch_sm90_fp8[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _dispatch[entry: TuningConfigSM90]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -658,7 +658,7 @@ def matmul_dispatch_sm90_fp8[
             grid_shape=entry.grid_shape,
         ](c, a, b, ctx)
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _search[
         T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
@@ -988,7 +988,7 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime tuning_list = _get_tuning_list_bf16[size_factor, mma_k, BK]()
     comptime tuning_table = Table(tuning_list, "tuning_table_bf16")
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _dispatch[entry: TuningConfigSM90]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -1022,7 +1022,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 raster_order=entry.raster_order.value(),
             ](c, a, b, ctx)
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _search[
         T: Table[TuningConfigSM90],
@@ -1892,14 +1892,14 @@ def matmul_dispatch_sm90_bf16_fp32[
                         ](c, a, b, ctx)
                         return DISPATCH_HIT
 
-        @parameter
+        @__parameter
         def get_k_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return None
             else:
                 return 1
 
-        @parameter
+        @__parameter
         def get_consumer_groups[N: Int]() -> Optional[Int]:
             comptime if N == 1536:
                 return 1

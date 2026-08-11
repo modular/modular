@@ -18,6 +18,11 @@ This version is still a work in progress.
 
 ## Language changes
 
+- Renamed the `@parameter` decorator on parametric closures to
+  `@__parameter`. The deprecated `@parameter if` / `@parameter for`
+  forms are unchanged; prefer `comptime if` / `comptime for` for
+  compile-time control flow.
+
 - The module & package system:
 
   - Directories may now have "namespace" semantics; a single directory name may

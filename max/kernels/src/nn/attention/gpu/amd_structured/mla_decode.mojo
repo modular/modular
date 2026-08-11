@@ -241,7 +241,7 @@ __extension Attention:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk():
             self.zero_p_buffer[0]()
             # ceildiv (not floor): when depth % BK != 0 (Kimi MLA: 576 %
@@ -259,7 +259,7 @@ __extension Attention:
                     )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             # Each warp's v_buffer holds only depth_per_warp tiles
             # (loaded from the warp's LDS depth offset), so mma_subtile
@@ -281,7 +281,7 @@ __extension Attention:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def prefetch_next():
             """Prefetch next K after current LDS reads have drained.
 
@@ -294,7 +294,7 @@ __extension Attention:
             _ = k_buffer.load_from_dram[0]()
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[has_next: Bool]():
             """Process one KV tile.
 

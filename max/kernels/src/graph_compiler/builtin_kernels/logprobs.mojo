@@ -245,7 +245,7 @@ struct LogProbabilitiesRagged:
 
         comptime if is_cpu[target]():
 
-            @parameter
+            @__parameter
             def lp_idx_kernel(output_token_index: Int) -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
@@ -264,7 +264,7 @@ struct LogProbabilitiesRagged:
             )
         elif is_gpu[target]():
 
-            @parameter
+            @__parameter
             @__copy_capture(num_output_tokens)
             @__name(t"log_probabilities_l{levels}")
             def raw_lp_kernel():

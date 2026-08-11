@@ -83,13 +83,13 @@ def _transpose_inplace_8x8[
     var row6 = bufloat0.raw_load[width=8](48)
     var row7 = bufloat0.raw_load[width=8](56)
 
-    @parameter
+    @__parameter
     def _apply_permute_0(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 8, 1, 9, 4, 12, 5, 13](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_1(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -104,13 +104,13 @@ def _transpose_inplace_8x8[
     var k6 = _apply_permute_0(row6, row7)
     var k7 = _apply_permute_1(row6, row7)
 
-    @parameter
+    @__parameter
     def _apply_permute_2(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 8, 9, 4, 5, 12, 13](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_3(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -125,13 +125,13 @@ def _transpose_inplace_8x8[
     var k570 = _apply_permute_2(k5, k7)
     var k571 = _apply_permute_3(k5, k7)
 
-    @parameter
+    @__parameter
     def _apply_permute_4(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
         return vec.shuffle[0, 1, 2, 3, 8, 9, 10, 11](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_5(
         vec: SIMD[dtype, 8], other: SIMD[dtype, 8]
     ) -> SIMD[dtype, 8]:
@@ -165,7 +165,7 @@ def _transpose_inplace_16x16[
     comptime assert cols == 16
     comptime assert bufloat0.flat_rank == 2
 
-    @parameter
+    @__parameter
     def _apply_permute_0(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -173,7 +173,7 @@ def _transpose_inplace_16x16[
             0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_1(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -181,7 +181,7 @@ def _transpose_inplace_16x16[
             2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_2(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -189,7 +189,7 @@ def _transpose_inplace_16x16[
             0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_3(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -197,7 +197,7 @@ def _transpose_inplace_16x16[
             2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_4(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -205,7 +205,7 @@ def _transpose_inplace_16x16[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_5(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -213,7 +213,7 @@ def _transpose_inplace_16x16[
             4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_6(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -221,7 +221,7 @@ def _transpose_inplace_16x16[
             0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
         ](other)
 
-    @parameter
+    @__parameter
     def _apply_permute_7(
         vec: SIMD[dtype, 16], other: SIMD[dtype, 16]
     ) -> SIMD[dtype, 16]:
@@ -607,7 +607,7 @@ def _transpose_2d_serial_tiled[
     var N = simplified_input_shape[simplified_rank - 2]
     var M = simplified_input_shape[simplified_rank - 1]
 
-    @parameter
+    @__parameter
     @__copy_capture(N, M)
     @always_inline
     def process_tile[tile_size_m: Int, tile_size_n: Int](m: Int, n: Int):
@@ -687,7 +687,7 @@ def _transpose_2d_parallel_tiled[
 
     var work_block_size = ceildiv(work, num_tasks)
 
-    @parameter
+    @__parameter
     @__copy_capture(work_block_size, m_tiles, N, M)
     @always_inline
     def _parallel_tile(thread_id: Int):
@@ -820,7 +820,7 @@ def _transpose_4d_swap_middle_helper[
 
         var work_block_size = ceildiv(work, num_tasks)
 
-        @parameter
+        @__parameter
         @__copy_capture(work, work_block_size)
         @always_inline
         def _parallel_copy(thread_id: Int):
@@ -1146,7 +1146,7 @@ def _copy_with_strides[
             input_axis_stride,
             output_axis_stride,
         )
-        @parameter
+        @__parameter
         def _parallel_copy(thread_id: Int) raises:
             var next_input_offset = (
                 thread_id * work_block_size * input_axis_stride + input_offset

@@ -1922,7 +1922,7 @@ def block_scaled_matmul_with_epilogue[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -2156,7 +2156,7 @@ def block_scaled_matmul[
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c)
     def compute_lambda_wrapper[
@@ -2244,7 +2244,7 @@ def block_scaled_matmul[
             raise Error("Heuristic and outliers dispatch failed")
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(

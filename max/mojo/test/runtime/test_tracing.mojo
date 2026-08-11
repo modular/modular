@@ -20,7 +20,7 @@ from max.runtime.tracing import Trace, TraceLevel
 
 
 def test_tracing[level: TraceLevel, enabled: Bool]() raises:
-    @parameter
+    @__parameter
     async def test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         comptime s1 = "ENABLED: trace event 2" if enabled else StaticString(
             "DISABLED: trace event 2"
@@ -34,7 +34,7 @@ def test_tracing[level: TraceLevel, enabled: Bool]() raises:
         except e:
             abort(String(e))
 
-    @parameter
+    @__parameter
     async def test_tracing_add_two_of_them[
         enabled: Bool
     ](a: Int, b: Int) -> Int:

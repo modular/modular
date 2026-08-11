@@ -109,12 +109,12 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
+    @__parameter
     def calc_row(m0: Int):
         for m in range(tile_m * m0, tile_m * m0 + tile_m):
             _ = m  # FIXME: param closures not noticing access.
 
-            @parameter
+            @__parameter
             def calc_tile[tile_x: Int, tile_y: Int](x: Int, y: Int):
                 comptime for _k in range(tile_y):
                     var k = _k + y
@@ -168,7 +168,7 @@ def matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
+    @__parameter
     def calc_row(m_1: Int):
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
@@ -230,7 +230,7 @@ def matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     comptime assert N % tile_n == 0, "N must be a multiple of tile_n"
     comptime assert K % tile_k == 0, "K must be a multiple of tile_k"
 
-    @parameter
+    @__parameter
     def calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
             dtype, Layout.row_major(tile_k, tile_n), MutAnyOrigin
@@ -300,7 +300,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
         tile_k % vec_size == 0
     ), "tile_k must be a multiple of vec_size"
 
-    @parameter
+    @__parameter
     def calc_row(m_1: Int):
         var rhs_cache = LayoutTensor[
             dtype, Layout.row_major(tile_n, tile_k), MutAnyOrigin

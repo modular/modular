@@ -375,7 +375,7 @@ def copy[
         )
 
 
-@parameter
+@__parameter
 def to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """Create swizzle based on predefined swizzle modes.
 

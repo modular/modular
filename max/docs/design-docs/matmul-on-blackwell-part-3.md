@@ -511,7 +511,7 @@ operating on smaller tiles.
       ...
             c_tma_op.commit_group()
 
-        @parameter
+        @__parameter
         # Keep one tma store in fly
         if stage < num_stages - 1:
             c_tma_op.wait_group[1]()

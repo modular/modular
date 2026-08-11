@@ -1227,7 +1227,7 @@ def _mha_sm90[
     )
 
     # returns `true` if we are done
-    @parameter
+    @__parameter
     @always_inline
     def advance[
         producer: Bool,
@@ -1273,7 +1273,7 @@ def _mha_sm90[
         decoding,
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def k_tile(
         idx: UInt32,
@@ -1290,7 +1290,7 @@ def _mha_sm90[
         comptime sz = BN * config.padded_depth
         k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
-    @parameter
+    @__parameter
     @always_inline
     def v_tile(
         idx: UInt32,
@@ -1307,7 +1307,7 @@ def _mha_sm90[
         comptime sz = BN * config.padded_depth
         v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
-    @parameter
+    @__parameter
     @always_inline
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
@@ -1380,7 +1380,7 @@ def _mha_sm90[
             _ = consumed_mbar_q[0].arrive()
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
-        @parameter
+        @__parameter
         @always_inline("nodebug")
         def q_consumer(
             q_idx: UInt32,
@@ -1428,7 +1428,7 @@ def _mha_sm90[
             address_space=AddressSpace.LOCAL,
         ].stack_allocation()
 
-        @parameter
+        @__parameter
         @always_inline
         def vectorize_p_reg_tile(
             out result: LayoutTensor[
@@ -1441,7 +1441,7 @@ def _mha_sm90[
         ):
             result = {p_reg_tile.ptr}
 
-        @parameter
+        @__parameter
         @always_inline
         def vectorize_o_reg_tile(
             out result: LayoutTensor[
@@ -1476,7 +1476,7 @@ def _mha_sm90[
             * log2e
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
             var k_smem_sub = k_tile(read_idx)
@@ -1500,7 +1500,7 @@ def _mha_sm90[
             wgmma_0.commit_group()
             warpgroup_fence(p_reg_tile)
 
-        @parameter
+        @__parameter
         @always_inline
         def p_mul_v(read_idx: UInt32, read_phase: UInt32):
             var v_smem_sub = v_tile(read_idx)
@@ -1515,19 +1515,19 @@ def _mha_sm90[
             wgmma_1.commit_group()
             warpgroup_fence(output_reg_tile)
 
-        @parameter
+        @__parameter
         @always_inline
         def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
             wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
-        @parameter
+        @__parameter
         @always_inline
         def wait_for_p_mul_v(read_idx: UInt32):
             wgmma_1.wait_group[0]()  # output is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
-        @parameter
+        @__parameter
         @always_inline
         def apply_mask(
             position: PositionType,
@@ -1549,7 +1549,7 @@ def _mha_sm90[
                 vectorize_p_reg_tile(),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def scale_output(correction: type_of(rowmax)):
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
@@ -1567,7 +1567,7 @@ def _mha_sm90[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
@@ -1579,7 +1579,7 @@ def _mha_sm90[
                 new_rowsum[row] = recip(old)[0]
                 old_rowsum[row] = new
 
-        @parameter
+        @__parameter
         @always_inline
         def write_output(
             position: PositionType,

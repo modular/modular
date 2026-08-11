@@ -406,7 +406,7 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var tensor_a = TileTensor(
@@ -420,7 +420,7 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
@@ -449,7 +449,7 @@ def bench_matmul[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -476,7 +476,7 @@ def bench_matmul[
                     elementwise_compute_lambda_fn=optional_compute_lambda_fn,
                 ](tensor_c, tensor_a, tensor_b, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
         bencher_iter_custom[kernel_launch](b, ctx)

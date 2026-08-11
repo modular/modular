@@ -111,9 +111,9 @@ def bench_single_group_router_eplb[
         layer_idx,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             single_group_router_eplb[
@@ -217,9 +217,9 @@ def bench_moe_create_indices[
         expert_usage_stats,
         topk_ids,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             moe_create_indices[input_type=DType.uint32, target="gpu"](
@@ -305,9 +305,9 @@ def bench_router_group_limited[
         expert_bias,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             router_group_limited[
@@ -402,9 +402,9 @@ def bench_single_group_router[
         expert_bias,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             single_group_router[
@@ -504,9 +504,9 @@ def bench_eplb_remap[
 
     @always_inline
     @__copy_capture(phy, router_idx, logcnt, log2phy, layer_idx)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             eplb_remap[

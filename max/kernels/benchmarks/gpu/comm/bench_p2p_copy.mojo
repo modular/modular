@@ -161,12 +161,12 @@ def bench_p2p[
         human_readable_size(num_bytes),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # In unidir mode only GPU 0 does work; GPU 1 is idle.

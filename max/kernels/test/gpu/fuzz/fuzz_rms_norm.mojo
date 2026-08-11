@@ -101,14 +101,14 @@ def run_one_case(
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[rn_type, width]) -> None:

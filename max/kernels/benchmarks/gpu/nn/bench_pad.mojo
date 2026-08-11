@@ -48,10 +48,10 @@ def bench_pad_gpu[
     var out_device = ctx.enqueue_create_buffer[dtype](output_size)
     var constant = Scalar[dtype](0)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             pad_constant(

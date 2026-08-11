@@ -525,7 +525,7 @@ struct AttentionRDNA[
         not_last_iter: Bool,
     ):
         @always_inline
-        @parameter
+        @__parameter
         def _mask_apply_impl[masked: Bool]():
             _mask_apply_rdna[
                 masked=masked,

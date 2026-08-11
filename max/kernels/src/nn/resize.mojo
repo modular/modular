@@ -49,7 +49,7 @@ struct CoordinateTransformationMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-@parameter
+@__parameter
 @always_inline
 def coord_transform[
     mode: CoordinateTransformationMode
@@ -190,7 +190,7 @@ def resize_nearest_neighbor[
             DType.float32
         ]()
 
-    @parameter
+    @__parameter
     @always_inline
     def round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
         comptime if round_mode == RoundMode.HalfDown:
@@ -250,7 +250,7 @@ def linear_filter(x: Float32) -> Float32:
     return 0
 
 
-@parameter
+@__parameter
 @always_inline
 def interpolate_point_1d[
     InputLayoutType: TensorLayout,

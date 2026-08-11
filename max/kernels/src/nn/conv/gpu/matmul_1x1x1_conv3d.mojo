@@ -153,7 +153,7 @@ def dispatch_1x1x1_matmul_conv3d[
     comptime if maybe_epilogue_func:
         comptime epilogue_5d = maybe_epilogue_func.value()
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[

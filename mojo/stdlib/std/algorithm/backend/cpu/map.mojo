@@ -43,7 +43,7 @@ def map[
         var list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         # Function applied to the value at each index
-        @parameter
+        @__parameter
         def exponent_2(idx: Int):
             list[idx] = 2.0 ** list[idx]
 

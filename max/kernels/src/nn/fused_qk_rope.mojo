@@ -360,7 +360,7 @@ def fused_qk_rope[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, valid_lengths)
     def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 4, "Invalid rank passed to rope kernel"
@@ -543,7 +543,7 @@ def fused_qk_rope_ragged[
     # parameter-closure overload until cache captures in unified closures are
     # supported.
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, batch_size, input_row_offsets, position_ids)
     def rope_fn[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 3, "Invalid rank passed to rope kernel"

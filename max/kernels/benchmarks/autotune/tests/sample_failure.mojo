@@ -24,11 +24,11 @@ from internal_utils import arg_parse, update_bench_config_args
 
 
 def bench_func(mut m: Bench, pe_rank: Int, sleep_secs: Float64) raises:
-    @parameter
+    @__parameter
     @__copy_capture(sleep_secs)
     @always_inline
     def bench_iter(mut b: Bencher):
-        @parameter
+        @__parameter
         @__copy_capture(sleep_secs)
         @always_inline
         def call_fn():

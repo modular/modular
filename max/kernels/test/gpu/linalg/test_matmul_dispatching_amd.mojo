@@ -409,7 +409,7 @@ def test_oob_epilogue[
     )
 
     # Epilogue writes to out_tensor using global (m, n) coordinates
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tensor)
     def epilogue_fn[
@@ -605,7 +605,7 @@ def test_oob_epilogue_dynamic_m[
 
     var out_tensor = TileTensor(out_dev, row_major(Coord(Int(alloc_m), Idx[N])))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tensor)
     def epilogue_fn[

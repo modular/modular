@@ -42,7 +42,7 @@ struct Grayscale:
             ctx: Device context for execution.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
@@ -56,7 +56,7 @@ struct Grayscale:
                 Grayscale value as SIMD vector.
             """
 
-            @parameter
+            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:

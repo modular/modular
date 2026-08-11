@@ -275,17 +275,17 @@ def gemm(
 
     # Utilities for accessing flattened matrices.
     @always_inline
-    @parameter
+    @__parameter
     def get_a(row: Int, col: Int) -> Float32:
         return a.load(row + m * col)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_b(row: Int, col: Int) -> Float32:
         return b.load(row * n + col)
 
     @always_inline
-    @parameter
+    @__parameter
     def set_c(row: Int, col: Int, val: Float32):
         c[row + col * m] = val
 

@@ -149,7 +149,7 @@ def initialize_runtime():
     ) abi("C"):
         initialize_runtime()
 
-        @parameter
+        @__parameter
         def fill(i: Int):
             data.unsafe_store(i, Int64(i * i))
 
@@ -317,7 +317,7 @@ struct Task[type: Deinitable, origins: OriginSet](Movable where False):
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
@@ -480,7 +480,7 @@ struct RaisingTask[type: Movable, origins: OriginSet](
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
@@ -644,7 +644,7 @@ struct TaskGroup(Defaultable):
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def await_body(cur_hdl: AnyCoroutine):
             Self.await_body_impl(cur_hdl, self)
 

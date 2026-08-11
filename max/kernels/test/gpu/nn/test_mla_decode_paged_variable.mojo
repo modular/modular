@@ -1716,7 +1716,7 @@ def run_bench_paged_variable[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         out_tt,
@@ -2966,7 +2966,7 @@ def run_bench_paged_variable_native_fp8[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tt, q_tt, kv_cache, row_offsets_tt, scalar_args_buf_tt)
     def kernel_launch(ctx: DeviceContext) raises:

@@ -164,7 +164,7 @@ def _reduce_along_inner_dimension[
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
     @always_inline
-    @parameter
+    @__parameter
     def simd_reduce_helper_fn[
         in_width: SIMDLength,
         out_width: Int,
@@ -183,7 +183,7 @@ def _reduce_along_inner_dimension[
         return out_acc_tup
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_rows_unrolled(start_row: Int, end_row: Int):
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
@@ -195,7 +195,7 @@ def _reduce_along_inner_dimension[
             )
 
             @always_inline
-            @parameter
+            @__parameter
             def unrolled_reduce_helper_fn[
                 width: SIMDLength,
             ](
@@ -264,7 +264,7 @@ def _reduce_along_inner_dimension[
             output_0_fn(indices, acc_scalar_tup)
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_rows(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)
@@ -343,7 +343,7 @@ def _reduce_along_outer_dimension[
 
     var chunk_size = ceildiv(parallelism_size, num_workers)
 
-    @parameter
+    @__parameter
     def reduce_slices(i: Int):
         var start_parallel_offset = i * chunk_size
         var end_parallel_offset = _min((i + 1) * chunk_size, parallelism_size)

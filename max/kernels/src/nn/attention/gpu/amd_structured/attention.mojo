@@ -795,7 +795,7 @@ struct Attention[
         not_last_iter: Bool,
     ):
         @always_inline
-        @parameter
+        @__parameter
         def _mask_apply_impl(masked: Bool):
             MaskTileOp[
                 accum_type=Self.accum_type,

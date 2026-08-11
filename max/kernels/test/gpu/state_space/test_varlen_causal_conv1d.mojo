@@ -561,7 +561,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     comptime TILE_SEQ = 128
 
-    @parameter
+    @__parameter
     @always_inline
     def launch_seqpar_gpu[kWidth: Int]() raises:
         var compiled_func = ctx.compile_function[

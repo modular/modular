@@ -28,7 +28,7 @@ def test_initialize_runtime_idempotent() raises:
     comptime N = 64
     var results = List[Int](length=N, fill=0)
 
-    @parameter
+    @__parameter
     def fill(i: Int):
         results[i] = i
 

@@ -120,7 +120,7 @@ def run_rms_norm_fused_residual_gpu[
     # Define input functions
     @__copy_capture(input_tensor)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -128,7 +128,7 @@ def run_rms_norm_fused_residual_gpu[
 
     @__copy_capture(residual_tensor)
     @always_inline
-    @parameter
+    @__parameter
     def residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -139,7 +139,7 @@ def run_rms_norm_fused_residual_gpu[
     # Define output functions
     @__copy_capture(output_tensor)
     @always_inline
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
@@ -147,7 +147,7 @@ def run_rms_norm_fused_residual_gpu[
 
     @__copy_capture(residual_output_tensor)
     @always_inline
-    @parameter
+    @__parameter
     def residual_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:

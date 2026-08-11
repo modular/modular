@@ -94,14 +94,14 @@ def _run_rms_norm_unfused(
 
     @always_inline
     @__copy_capture(in_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(out_view)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:

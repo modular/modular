@@ -354,7 +354,7 @@ struct Conv:
         num_groups: Scalar,
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output)
         def output_fn[
@@ -540,7 +540,7 @@ struct Conv2dResidualAdd:
         bias: InputTensor[dtype=output.dtype, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output, bias)
         def output_fn[
@@ -675,7 +675,7 @@ struct ConvTranspose:
             pad_h = Index(paddings[2], paddings[3])
             pad_w = Index(paddings[4], paddings[5])
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1

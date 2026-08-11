@@ -106,11 +106,11 @@ def bench_decode[
     ](batch_size, num_keys, 1, ctx)
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_k, cb_o, scalar_args_buf_lt)
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var q_device = TileTensor(
@@ -280,7 +280,7 @@ def bench_prefill[
         row_major(Coord(batch_size + 1)),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         cb_q,
@@ -292,7 +292,7 @@ def bench_prefill[
         cache_row_offsets_device,
     )
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var q_device = TileTensor(
@@ -544,11 +544,11 @@ def bench_prefill_sparse[
         group=num_heads,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_o, kv_cache, indices_tt, topk_lengths_tt, scale)
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var q_tt = TileTensor(

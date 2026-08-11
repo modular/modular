@@ -110,7 +110,7 @@ def quantize_static_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensor, in_tensor, scale)
     def scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
@@ -1145,7 +1145,7 @@ def _matmul_dynamic_scaled_fp8_impl[
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
@@ -1173,7 +1173,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
@@ -1212,7 +1212,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             # create a dummy TileTensor to instruct the matmul kernel to
             # output values in the correct dtype.
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn[
@@ -1239,7 +1239,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     scaled_val.cast[c_type](),
                 )
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn_tensor[
@@ -1895,7 +1895,7 @@ def convert_e4m3fn_to_e4m3fnuz(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1

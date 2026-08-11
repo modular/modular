@@ -198,7 +198,7 @@ def execute_kv_cache_ragged_rope[
     )
     var flop_count = num_flops_per_elem * num_elems
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_device,
         kv_collection_device,
@@ -208,7 +208,7 @@ def execute_kv_cache_ragged_rope[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             fused_qk_rope_ragged[

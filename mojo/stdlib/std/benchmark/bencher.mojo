@@ -393,7 +393,7 @@ struct BenchConfig(Copyable):
         self.verbose_metric_names = True
 
         # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
-        @parameter
+        @__parameter
         def argparse() raises:
             """Parse cmd line args to define benchmark configuration."""
 
@@ -565,10 +565,10 @@ struct Bench(Writable):
     var shape = IndexList[2](1024, 1024)
     var bench = Bench(BenchConfig(max_iters=100))
 
-    @parameter
+    @__parameter
     @always_inline
     def example(mut b: Bencher, shape: IndexList[2]) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[example_kernel](
@@ -640,7 +640,7 @@ struct Bench(Writable):
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
-        @parameter
+        @__parameter
         def argparse():
             """Parse cmd line args to define benchmark configuration."""
 
@@ -715,7 +715,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
@@ -747,7 +747,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher):
             func(b, input)
 
@@ -777,7 +777,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
@@ -809,7 +809,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher):
             func(b, input)
 
@@ -838,10 +838,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 try:
@@ -910,10 +910,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 bench_fn()
@@ -944,7 +944,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def bench_with_abort_on_err(mut b: Bencher):
             # TODO: if we don't catch the exception here we have to overload
             # almost every function in stdlib benchmark and stdlib time.

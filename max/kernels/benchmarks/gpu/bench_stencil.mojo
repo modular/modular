@@ -186,10 +186,10 @@ def bench_stencil_avg_pool[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_gpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -260,10 +260,10 @@ def bench_stencil_avg_pool[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -468,10 +468,10 @@ def bench_stencil_max_pool[
     }:
         d_output.store_linear(point, val)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_gpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -541,10 +541,10 @@ def bench_stencil_max_pool[
     }:
         h_output_ref.store_linear(point, val)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -741,10 +741,10 @@ def bench_stencil_avg_pool_padded[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_gpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -817,10 +817,10 @@ def bench_stencil_avg_pool_padded[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)

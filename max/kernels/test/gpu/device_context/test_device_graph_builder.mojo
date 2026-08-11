@@ -170,7 +170,7 @@ def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Captures `scale` from the enclosing scope while also taking runtime
         # arguments, exercising the capturing parameter-based overload.
-        @parameter
+        @__parameter
         @__copy_capture(scale)
         def scaled_vec_add(
             output: Pointer[Float32, MutAnyOrigin],

@@ -178,7 +178,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     def kernel_launch(ctx: DeviceContext) raises:

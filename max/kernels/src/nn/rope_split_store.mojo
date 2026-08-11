@@ -128,7 +128,7 @@ def _rope_split_store_ragged_impl[
     # fail codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(
         q_dim,
         qk_offset,
@@ -405,7 +405,7 @@ def _rope_split_store_ragged[
         context: DeviceContext for GPU.
     """
 
-    @parameter
+    @__parameter
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) -> Int:
@@ -557,7 +557,7 @@ def _rope_split_store_ragged_with_position_ids[
     var pos_ids_ptr = position_ids.ptr
     var pos_ids_stride = Int(position_ids.dim[1]())
 
-    @parameter
+    @__parameter
     @__copy_capture(pos_ids_ptr, pos_ids_stride)
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int

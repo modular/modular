@@ -787,7 +787,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         writer.write("HostBuffer")
         writer.write("(")
 
-        @parameter
+        @__parameter
         def serialize[T: Writable](val: T):
             writer.write(val)
 
@@ -1974,7 +1974,7 @@ struct DeviceBuffer[dtype: DType](
                 writer.write("DeviceBuffer")
                 writer.write("(")
 
-                @parameter
+                @__parameter
                 def serialize[T: Writable](val: T):
                     writer.write(val)
 
@@ -2861,7 +2861,7 @@ struct DeviceFunction[
         """
 
         # Get ASM - either from the pre-compiled func_impl or by compiling now
-        @parameter
+        @__parameter
         def get_asm() -> StaticString:
             comptime if Self._emission_kind == "asm":
                 return self._func_impl.asm
@@ -2954,7 +2954,7 @@ struct DeviceFunction[
 
     # Enqueue function on a stream
     @always_inline
-    @parameter
+    @__parameter
     def _call_with_pack[
         *Ts: AnyType,
     ](
@@ -3018,7 +3018,7 @@ struct DeviceFunction[
                 .as_unsafe_any_origin()
             )
 
-        @parameter
+        @__parameter
         def _populate_arg_sizes[i: Int]():
             dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
 
@@ -3190,7 +3190,7 @@ struct DeviceFunction[
         return (num_translated_args, translated_arg_offsets^)
 
     @always_inline
-    @parameter
+    @__parameter
     def _call_with_pack_checked[
         *Ts: DevicePassable,
     ](
@@ -3224,7 +3224,7 @@ struct DeviceFunction[
         # We need the total byte size of arguments as a compile time constant,
         # so we break out the calculation into a function executed at compile
         # time.
-        @parameter
+        @__parameter
         def calculate_args_size() -> Int:
             var tmp_args_size = 8  # always reserve 8 extra bytes for alignment.
 
@@ -3646,7 +3646,7 @@ struct DeviceExternalFunction:
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_attribute(self, attr: Attribute) raises -> Int:
         """Retrieves a specific attribute of this device function.
 
@@ -4566,7 +4566,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             location=location.or_else(call_location()),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -4817,7 +4817,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             )
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def execution_time[
         func: def(Self) raises capturing[_] -> None

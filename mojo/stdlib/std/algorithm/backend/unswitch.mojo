@@ -149,7 +149,7 @@ def unswitch[
     if dynamic_switch_a:
 
         @always_inline
-        @parameter
+        @__parameter
         def switched_a_true[static_switch: Bool]():
             switched_func[True, static_switch]()
 
@@ -157,7 +157,7 @@ def unswitch[
     else:
 
         @always_inline
-        @parameter
+        @__parameter
         def switched_a_false[static_switch: Bool]():
             switched_func[False, static_switch]()
 
@@ -378,7 +378,7 @@ def tile_middle_unswitch_boundaries[
 
         # middle
         @always_inline
-        @parameter
+        @__parameter
         def update_middle[_tile_size: Int](_offset: Int):
             work_fn[_tile_size, False, False](_offset)
 

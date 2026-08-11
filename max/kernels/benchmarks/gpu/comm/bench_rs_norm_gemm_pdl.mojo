@@ -413,14 +413,14 @@ def bench_rs_norm_gemm_pdl[
             == 4 else "consumer_only"
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_pair_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
             var local_rows = config.rank_units(ctx_idx)
 
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
                 comptime if not consumer_only:

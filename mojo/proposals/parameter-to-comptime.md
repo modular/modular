@@ -1,10 +1,10 @@
-# Replace `@parameter` with `comptime` Statement Modifier
+# Replace `@__parameter` with `comptime` Statement Modifier
 
 **Status**: Proposed.
 
 ## Introduction
 
-Mojo currently uses the `@parameter` decorator to indicate compile-time
+Mojo currently uses the `@__parameter` decorator to indicate compile-time
 evaluation of `for` loops and `if` statements:
 
 ```mojo
@@ -19,10 +19,10 @@ for x in range(1, 10):
 
 ## Problem Statement
 
-The `@parameter` decorator does not align with the existing `comptime` keyword.
-`@parameter if` and `@parameter for` are non-intuitive and require explanation
-to every newcomer to the Mojo ecosystem. We want terminology that is obvious
-and self-explanatory.
+The `@__parameter` decorator does not align with the existing `comptime`
+keyword. `@parameter if` and `@parameter for` are non-intuitive and require
+explanation to every newcomer to the Mojo ecosystem. We want terminology that
+is obvious and self-explanatory.
 
 Additionally, `__comptime_assert` needs a public name urgently.
 
@@ -41,11 +41,11 @@ comptime for x in range(1, 10):
 
 This will also apply to `match` once Mojo has it.
 
-This new combination will replace the `@parameter` decorator for all cases.
+This new combination will replace the `@__parameter` decorator for all cases.
 
 ### Interaction with `elif`
 
-In Mojo as of now, the `@parameter` decorator applied to an `if` statement
+In Mojo as of now, the `@__parameter` decorator applied to an `if` statement
 quetly changes the behavior of the `elif` statements on the same if chain.
 
 We propose to keep this behavior as is. Adding `comptime` modifier to `elif`
@@ -174,19 +174,20 @@ keyword for `@parameter for` if the new syntax is not well received.
 
 ## Implementation Plan
 
-The transition from `@parameter` to `comptime` will be rolled out in two phases:
+The transition from `@__parameter` to `comptime` will be rolled out in two
+phases:
 
 ### Phase 1: Introduce New Syntax (MAX 26.2, February 2026)
 
 - Add `comptime if`, `comptime for`, and `comptime assert` as statement
   modifiers in the parser.
-- The `@parameter` decorator continues to work without any warnings.
+- The `@__parameter` decorator continues to work without any warnings.
 - Both syntaxes are accepted, allowing users to migrate at their own pace.
 - Update documentation and examples to prefer the new syntax.
 
 ### Phase 2: Deprecate Old Syntax (targeted for MAX 26.4, May/June 2026)
 
-- Emit a deprecation warning when `@parameter` is used on `if` or `for`
+- Emit a deprecation warning when `@__parameter` is used on `if` or `for`
   statements, with a fixit suggesting the `comptime` equivalent.
 - Emit a deprecation warning when `__comptime_assert` is used, with a fixit
   suggesting `comptime assert`.

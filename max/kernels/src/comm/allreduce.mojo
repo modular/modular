@@ -777,7 +777,7 @@ def _allreduce_2stage_kernel[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tmp_buff)
         def rs_output_lambda[
             _dtype: DType,
@@ -1541,7 +1541,7 @@ def _allreduce_p2p[
         )
 
 
-@parameter
+@__parameter
 def allreduce[
     dtype: DType,
     ngpus: Int,
@@ -1622,7 +1622,7 @@ def allreduce[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,

@@ -720,7 +720,7 @@ def moe_create_indices[
 
 # Function to perform warp-level sorting
 @always_inline
-@parameter
+@__parameter
 def _warp_bitonic_sort[
     T: DType,
     num_lanes: Int = WARP_SIZE,

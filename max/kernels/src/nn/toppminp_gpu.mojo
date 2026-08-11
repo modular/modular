@@ -791,7 +791,7 @@ def _topp_minp_sampling_gpu[
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
-    @parameter
+    @__parameter
     @__copy_capture(input_logits)
     def apply_temperature[
         _simd_width: Int

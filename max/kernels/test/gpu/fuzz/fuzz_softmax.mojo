@@ -157,7 +157,7 @@ def run_one_case(
         in_dev.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int

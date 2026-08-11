@@ -71,7 +71,7 @@ def _softmax_unit_kernel(
 
     var output = OutMma.zero_accum()
 
-    @parameter
+    @__parameter
     def load_scores(
         src: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     ) -> ScoreMma.AccumType:
@@ -85,7 +85,7 @@ def _softmax_unit_kernel(
             acc[ni] = frag
         return acc.copy()
 
-    @parameter
+    @__parameter
     def add_output(
         mut acc: OutMma.AccumType,
         src: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],

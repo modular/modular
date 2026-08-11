@@ -107,7 +107,7 @@ def test_matches_one_row_kernel[
     var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
     var bias = TileTensor[mut=False](bias_dev, row_major(Coord(Idx[1], Idx[N])))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c, bias)
     def bias_epilogue[

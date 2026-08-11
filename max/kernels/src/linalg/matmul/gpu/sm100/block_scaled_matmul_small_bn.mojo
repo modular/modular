@@ -2667,7 +2667,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Reshape scale factors to 5D TileTensor for TMA.
     # create_tensor_tile reads .layout.shape/stride from the TileTensor.
-    @parameter
+    @__parameter
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[

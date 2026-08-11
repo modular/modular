@@ -626,7 +626,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # cluster-boundary drains.)
         var w_remap = w_id & 3
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_k_into(slot: Int, t: Int):
             var kp = _MlaKDmaPair[Self.config](
@@ -638,7 +638,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             kp.dma(k_slot, w_remap, l_id)
             kp.dma(k_slot, w_remap + 4, l_id)
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_v_into(slot: Int, t: Int):
             var v_slot = v_ring.tile[Self._V_SLOT_ROWS, Self._V_SUB_COLS](
@@ -657,7 +657,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 l_id,
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _dma_kv_split(k_slot_idx: Int, v_slot_idx: Int, t: Int):
             # Reference work-split: phase-lagged upper half (waves 4-7)
@@ -886,7 +886,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # reorder-fenced so the cadence survives codegen at the boundary, and
         # the cluster interior stays free of `lgkmcnt(0)` / `sched_barrier(0)`
         # walls.
-        @parameter
+        @__parameter
         @always_inline
         def _one_tile_exact[is_upper: Bool](t32_arg: Int32):
             # Reference-faithful non-materialized V (the lean band layout):
@@ -1039,7 +1039,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var f3 = _FRAG(0)
 
             # Load fragment `i` from SMEM (the rope sub-view for rope cols).
-            @parameter
+            @__parameter
             @always_inline
             def _load_frag[i: Int]() -> _FRAG:
                 comptime if _is_rope(i):
@@ -1049,7 +1049,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
 
             # Write fragment value into ring slot `s` (comptime dispatch to
             # one of the 4 distinct SSA values).
-            @parameter
+            @__parameter
             @always_inline
             def _put[s: Int](var v: _FRAG):
                 comptime if s == 0:
@@ -1062,7 +1062,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                     f3 = v
 
             # Read ring slot `s`.
-            @parameter
+            @__parameter
             @always_inline
             def _get[s: Int]() -> _FRAG:
                 comptime if s == 0:
@@ -1111,7 +1111,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _PF_K_AT = (2, 4, 6, 8)  # K sub-call -> MFMA iter
             comptime _PF_V_AT = (2, 6)  # V sub-call -> MFMA iter
 
-            @parameter
+            @__parameter
             @always_inline
             def _pf_spread_step[i_mfma: Int]():
                 comptime if is_upper:
@@ -1276,7 +1276,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # `ds_read_b64_tr_b8` = 3 fragments × 4 reads; ref asm QK-tail
             # L2245-2272). Default (`_V_QKTAIL=False`) the prologue stays in
             # C_PV_MFMA below, so the hoist is SSA-neutral (the band vars are
-            # dead until C_PV; the `@parameter @always_inline` helpers emit
+            # dead until C_PV; the `@__parameter @always_inline` helpers emit
             # nothing until called). The hoist is the lean-V design's mirror:
             # lean-V reads ALL 32 V in C_PV; `v_qktail` moves 12 up to match
             # the reference 12/20 placement, at the cost of holding 24 VGPR
@@ -1293,12 +1293,12 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             comptime _VRING = 4  # reference 4-slot rotating V band (v[28:59])
             comptime _VAHEAD = 3  # 3 slots in flight (see C_PV_MFMA notes)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vstrip(i: Int) -> Int:
                 return i // _N_DEPTH
 
-            @parameter
+            @__parameter
             @always_inline
             def _vdepth(i: Int) -> Int:
                 return i % _N_DEPTH
@@ -1306,7 +1306,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             # Load V fragment `i` from the per-lane V LDS base (4
             # `ds_read_tr8_b64` joined to one SIMD; `v_lane_base` CSEs to a
             # single base across the unrolled stream — the reference `v227`).
-            @parameter
+            @__parameter
             @always_inline
             def _vload[i: Int]() -> _VFRAG:
                 return rebind[_VFRAG](
@@ -1326,7 +1326,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
             var vf2 = _VFRAG(0)
             var vf3 = _VFRAG(0)
 
-            @parameter
+            @__parameter
             @always_inline
             def _vput[s: Int](var v: _VFRAG):
                 comptime if s == 0:
@@ -1338,7 +1338,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
                 else:
                     vf3 = v
 
-            @parameter
+            @__parameter
             @always_inline
             def _vget[s: Int]() -> _VFRAG:
                 comptime if s == 0:
@@ -1930,7 +1930,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         # x 16 head). The static grid and the reference persistent work-loop
         # drive this SAME body; they differ only in how (head_idx,
         # block_tile_idx, batch_idx) are sourced (block_idx vs WorkInfo).
-        @parameter
+        @__parameter
         @always_inline
         def _run_one_work(
             head_idx: Int,

@@ -209,7 +209,7 @@ def main() raises:
             transpose_b=True,
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(
             cb_a,
@@ -262,7 +262,7 @@ def main() raises:
                     ctx,
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
             bencher_iter_custom[kernel_launch](b, ctx)

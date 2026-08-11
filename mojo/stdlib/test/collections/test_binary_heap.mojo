@@ -38,7 +38,7 @@ def test_binary_heap() raises:
 
 
 def test_binary_heap_heap_property() raises:
-    @parameter
+    @__parameter
     def properties(forward: List[Scalar[DType.int]]) raises:
         var heap = BinaryHeap[Scalar[DType.int]]()
         for i in forward:

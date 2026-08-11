@@ -158,7 +158,7 @@ def test[
     comptime conv_attr = ConvInfoStatic[rank]()
 
     @always_inline
-    @parameter
+    @__parameter
     def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
@@ -218,7 +218,7 @@ def test[
 
     # Test epilogue
     @always_inline
-    @parameter
+    @__parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
         def body1[width: Int](idx: Int) {imm}:

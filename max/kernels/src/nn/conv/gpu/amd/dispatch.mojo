@@ -183,7 +183,7 @@ def _launch_amd_4wave_conv2d_runtime[
     row stride is `C_out` (NHWC contiguous).
     """
 
-    @parameter
+    @__parameter
     @always_inline
     def _launch[stride_v: Int, pad_v: Int]() raises:
         var _rt_N = Int(input.dim[0]())
@@ -445,7 +445,7 @@ def dispatch_amd_4wave_conv2d[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
-        @parameter
+        @__parameter
         @always_inline
         def _src_immut() -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
@@ -463,7 +463,7 @@ def dispatch_amd_4wave_conv2d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_hw_static:
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_static[stride_v: Int, pad_v: Int]() raises -> Bool:
                 comptime _eff_R = _R

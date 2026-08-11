@@ -88,7 +88,7 @@ comptime epilogue_func_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -158,7 +158,7 @@ def bench_bmm[
     init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)
     init_vector_launch[a_type](b_device_buffer, b_size, init_type, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device)
     def epilogue_fn[
@@ -185,11 +185,11 @@ def bench_bmm[
             update_val,
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(a_device, b_device, c_device)
     @always_inline
     def bench_func(mut bench: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             comptime if use_vendor_blas:

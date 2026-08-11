@@ -23,10 +23,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_writer_int[n: Int](mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var s1 = String()
         s1.write(n)
@@ -35,10 +35,10 @@ def bench_writer_int[n: Int](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_writer_simd[n: Int](mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var s1 = String()
         s1.write(SIMD[DType.int32, simd_width_of[DType.int32]()](n))

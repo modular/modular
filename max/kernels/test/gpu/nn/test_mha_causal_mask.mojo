@@ -133,7 +133,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -502,7 +502,7 @@ def main() raises:
             ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @parameter
+        @__parameter
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[

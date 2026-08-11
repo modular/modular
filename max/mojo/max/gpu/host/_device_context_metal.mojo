@@ -99,7 +99,7 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
 
 
 @always_inline
-@parameter
+@__parameter
 def call_with_pack_metal[
     func: Some[TrivialRegisterPassable],
     ContextT: _FunctionEnqueuer,
@@ -217,7 +217,7 @@ def call_with_pack_metal[
 
 
 @always_inline
-@parameter
+@__parameter
 def call_with_pack_checked_metal[
     func: Some[TrivialRegisterPassable],
     *Ts: DevicePassable,

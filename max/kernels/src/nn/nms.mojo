@@ -384,7 +384,7 @@ def non_max_suppression[
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (

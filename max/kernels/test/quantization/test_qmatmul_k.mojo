@@ -497,7 +497,7 @@ def reference_gemm[
     var num_workers = ceildiv(total_work, grain_size)
 
     @__copy_capture(total_work, N, K)
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
         var task_start = task_id * grain_size
         var task_count = min(total_work - task_start, grain_size)

@@ -97,7 +97,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
-    @parameter
+    @__parameter
     def run_mandelbrot(ctx: DeviceContext) raises:
         ctx.enqueue_function[mandelbrot](
             out_device,

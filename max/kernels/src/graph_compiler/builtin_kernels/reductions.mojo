@@ -1447,7 +1447,7 @@ struct ReduceGroupNorm:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int
@@ -1456,12 +1456,12 @@ struct ReduceGroupNorm:
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](coords)
 
-        @parameter
+        @__parameter
         @always_inline
         def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
@@ -1812,7 +1812,7 @@ struct RMSNormResidualAdd:
             # GPU path: the device kernel bakes the callbacks in as `capturing`
             # comptime closures, so build them as comptime parameters. Reads go
             # through `_lambda_load` so a fused producer op folds into the load.
-            @parameter
+            @__parameter
             @always_inline
             def input_fn[
                 width: Int, _rank: Int
@@ -1821,7 +1821,7 @@ struct RMSNormResidualAdd:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_input_fn[
                 width: Int, _rank: Int
@@ -1830,7 +1830,7 @@ struct RMSNormResidualAdd:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int
@@ -1840,7 +1840,7 @@ struct RMSNormResidualAdd:
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int

@@ -176,7 +176,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[

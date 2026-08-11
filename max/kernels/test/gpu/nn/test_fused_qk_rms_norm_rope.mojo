@@ -353,7 +353,7 @@ def run_fused_qk_rms_norm_rope[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_in_tt)
     def q_input_fn[
         width: Int, alignment: Int
@@ -864,7 +864,7 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_main_in_tt)
     def main_q_input_fn[
         width: Int, alignment: Int
@@ -872,7 +872,7 @@ def run_fused_dual_qk_rms_norm_rope[
         return q_main_in_tt.load[width=width](Coord(Index(token, head, col)))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(q_index_in_tt)
     def index_q_input_fn[
         width: Int, alignment: Int

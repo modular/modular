@@ -146,7 +146,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -243,7 +243,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -361,7 +361,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -487,7 +487,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -910,7 +910,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
     if batch_size == 0:
         return
 
-    @parameter
+    @__parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
@@ -1048,7 +1048,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
     if batch_size == 0:
         return
 
-    @parameter
+    @__parameter
     @__copy_capture(q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
@@ -1206,7 +1206,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     )
     comptime use_block_wise = not (use_per_tensor or use_per_channel)
 
-    @parameter
+    @__parameter
     @__copy_capture(
         input_scale, weight_scale, q_dim, qk_offset, batch_size, bias
     )
@@ -1371,7 +1371,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
     if batch_size == 0:
         return
 
-    @parameter
+    @__parameter
     @__copy_capture(input_scale, weight_scale, q_dim, qk_offset, batch_size)
     @always_inline
     def write_to_cache[
@@ -1571,7 +1571,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -1799,7 +1799,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl_scale_float4[
             " a multiple of the scale-block group size for bit-exact fusion."
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_end,
         k_end,
@@ -1967,7 +1967,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2163,7 +2163,7 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     if batch_size == 0:
         return
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_end,
         k_end,
@@ -2612,7 +2612,7 @@ def kv_matmul_ragged_paged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2745,7 +2745,7 @@ def _matmul_kv_cache_ragged_impl[
     # elements and V cache for the next N.
     var k_offset = kv_params.head_size * kv_params.num_heads
 
-    @parameter
+    @__parameter
     @__copy_capture(input_row_offsets, k_offset, batch_size)
     @always_inline
     def write_to_cache_common[
@@ -2798,7 +2798,7 @@ def _matmul_kv_cache_ragged_impl[
     var k_cache_reg = rebind[cache_t](k_cache)
     var v_cache_reg = rebind[cache_t](v_cache)
 
-    @parameter
+    @__parameter
     @__copy_capture(k_cache_reg, v_cache_reg)
     @always_inline
     def write_to_cache_continuous[
@@ -2866,7 +2866,7 @@ def k_matmul_ragged_paged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2983,7 +2983,7 @@ def _matmul_k_cache_ragged_impl[
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
-    @parameter
+    @__parameter
     @__copy_capture(batch_size)
     @always_inline
     def write_to_cache[
@@ -3079,7 +3079,7 @@ def k_matmul_ragged_paged_scale[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3179,7 +3179,7 @@ def _matmul_k_cache_ragged_scale_impl[
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
-    @parameter
+    @__parameter
     @__copy_capture(input_scale, weight_scale, batch_size)
     @always_inline
     def write_to_cache[
@@ -3302,7 +3302,7 @@ def unfused_qkv_matmul_ragged_paged_gguf_quantized[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3501,7 +3501,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
     var batch_size = input_row_offsets.dim[0]() - 1
 
-    @parameter
+    @__parameter
     @__copy_capture(input_row_offsets, batch_size)
     @always_inline
     def write_to_cache_common[
@@ -3538,7 +3538,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
             rebind[SIMD[k_or_v_type, width]](val),
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(k_or_v_cache)
     def write_to_k_or_v_cache_continuous[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -3713,7 +3713,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3842,7 +3842,7 @@ def generic_flash_attention_kv_cache_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
@@ -3979,10 +3979,10 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(k, v)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
-        @parameter
+        @__parameter
         def call_flash_attention[sink: Bool]() raises:
             return _launch_flash_attention_with_mask[
                 target=target,
@@ -4050,7 +4050,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
@@ -4075,7 +4075,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     var k = kv_collection.get_key_cache(Int(layer_idx))
     var v = kv_collection.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(k, v)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         return _launch_flash_attention_with_mask[
@@ -4173,7 +4173,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var desc_parts = List[String]()
         desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
@@ -4323,7 +4323,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -4481,7 +4481,7 @@ def _flare_mla_decode_kv_cache_ragged[
         num_partitions_in.value() if has_num_partitions else 0
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         k,
@@ -4612,7 +4612,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -4745,7 +4745,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     var k_lt = k.to_layout_tensor()
     var v_lt = v.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @__copy_capture(
         k_rope,
         k_lt,
@@ -5102,7 +5102,7 @@ def _cross_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
-    @parameter
+    @__parameter
     @__copy_capture(q, k, v, output, q_input_row_offsets, kv_input_row_offsets)
     def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
@@ -5219,7 +5219,7 @@ def generic_cross_attention_kv_cache[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -5343,7 +5343,7 @@ def generic_kv_cache_radd_dispatch[
     # fail codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, v_cache, input_row_offsets)
     def do_radd[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 2, "Rank must be 2"
@@ -5451,7 +5451,7 @@ def kv_cache_store_ragged[
     # fails codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(cache, input_row_offsets)
     def write_to_cache[
         width: Int,
@@ -5537,7 +5537,7 @@ def kv_cache_store_padded[
     # fails codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(cache, valid_lengths)
     @always_inline
     def write_to_cache[width: Int, alignment: Int = 1](idx: Coord) capturing:
@@ -5666,7 +5666,7 @@ def kv_cache_2m_iadd_dispatch[
     # fail codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(kv, k_cache, v_cache, input_row_offsets, m, M)
     def iadd[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 2, "Rank must be 2"

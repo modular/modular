@@ -331,7 +331,7 @@ def test_sliding_window_noncausal_mask_dispatch() raises:
 
     var dispatched_name = String("")
 
-    @parameter
+    @__parameter
     def capture[mask_t: MHAMask](mask: mask_t) raises:
         dispatched_name = mask_t.get_type_name()
 

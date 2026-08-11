@@ -713,7 +713,7 @@ def grouped_matmul_amd_kernel_launcher[
     var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
 
     @always_inline
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn_wrapper[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
@@ -869,7 +869,7 @@ def dispatch_amd_matmul_by_block_shape[
 
     # Fallback to default config
     @always_inline
-    @parameter
+    @__parameter
     def default_config_launcher[
         block_m: Int,
         block_n: Int,
@@ -1118,7 +1118,7 @@ def grouped_matmul[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a, b)
     def description_fn() -> String:
         # fmt: off
@@ -1145,7 +1145,7 @@ def grouped_matmul[
         # `expert_usage_stats` (device->host + sync). The SM100 persistent path
         # reads the device tensor directly and never calls this.
         @always_inline
-        @parameter
+        @__parameter
         def resolve_usage_stats() raises -> Tuple[Int, Int]:
             if host_stats:
                 return host_stats.value()
@@ -1823,7 +1823,7 @@ def grouped_matmul_vendor[
     var b_K = Int(b.dim[2]())
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a, b)
     def vendor_description_fn() -> String:
         # fmt: off

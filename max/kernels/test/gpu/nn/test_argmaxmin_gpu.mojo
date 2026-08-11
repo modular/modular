@@ -167,7 +167,7 @@ def test_argmaxmin_gpu_helper[
 
 
 def main() raises:
-    @parameter
+    @__parameter
     def fill_random[
         rank: Int, dtype: DType
     ](buffer: TileTensor[mut=True, dtype, ...]):

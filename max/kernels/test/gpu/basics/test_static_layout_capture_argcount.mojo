@@ -45,7 +45,7 @@ def run_v1_single_static_capture(ctx: DeviceContext) raises:
     out_dev.enqueue_fill(-1.0)
     var out_tt = TileTensor(out_dev, row_major[N]())
 
-    @parameter
+    @__parameter
     @__copy_capture(out_tt)
     def kernel():
         var tid = Int(global_idx.x)
@@ -76,7 +76,7 @@ def run_v2_static_capture_plus_scalar(ctx: DeviceContext) raises:
     var out_tt = TileTensor(out_dev, row_major[N]())
     var scale = Scalar[dtype](7.0)
 
-    @parameter
+    @__parameter
     @__copy_capture(out_tt, scale)
     def kernel():
         var tid = Int(global_idx.x)
@@ -109,7 +109,7 @@ def run_v3_two_static_captures(ctx: DeviceContext) raises:
     var a_tt = TileTensor(a_dev, row_major[N]())
     var b_tt = TileTensor(b_dev, row_major[N]())
 
-    @parameter
+    @__parameter
     @__copy_capture(a_tt, b_tt)
     def kernel():
         var tid = Int(global_idx.x)
@@ -144,7 +144,7 @@ def run_v4_scalar_first_then_static(ctx: DeviceContext) raises:
     var scale = Scalar[dtype](5.0)
     var out_tt = TileTensor(out_dev, row_major[N]())
 
-    @parameter
+    @__parameter
     @__copy_capture(scale, out_tt)
     def kernel():
         var tid = Int(global_idx.x)

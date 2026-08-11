@@ -84,7 +84,7 @@ struct TopK:
         var out_idxs_tensor = out_idxs.to_layout_tensor()
         var in_vals_tensor = in_vals.to_layout_tensor()
 
-        @parameter
+        @__parameter
         def top_k_gpu[
             K: Int,
         ](
@@ -151,7 +151,7 @@ struct TopK:
             )
         else:
 
-            @parameter
+            @__parameter
             def top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K

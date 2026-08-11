@@ -222,7 +222,7 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_device,

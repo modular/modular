@@ -1450,7 +1450,7 @@ def launch[
             sm_count * _SM_OVERPROVISION,
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(shape_il, num_blocks, body)
         def dispatch_warp[sw: Int]() raises:
             comptime warp_params = ContextParams(
@@ -1585,14 +1585,14 @@ def launch[
     # smaller block that one-pass-covers the row at full SIMD wins.
     var rows_saturate_gpu = num_rows >= sm_count
 
-    @parameter
+    @__parameter
     @__copy_capture(shape_il, num_blocks, body)
     def dispatch_bs_one_pass[BS: Int]() raises:
         # Smaller-BS one-pass path: `BS * simd >= row_size`. Active
         # threads do one SIMD tile; tail threads stay idle (contribute
         # identity to the block reduce). Reached only when
         # `num_rows >= sm_count`, so the GPU stays saturated.
-        @parameter
+        @__parameter
         def dispatch[use_simd: Bool]() raises:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(
@@ -1629,7 +1629,7 @@ def launch[
         )
         unswitch[dispatch](use_simd_full)
 
-    @parameter
+    @__parameter
     @__copy_capture(shape_il, num_blocks, body)
     def dispatch_bs_default() raises:
         # Default block tier: BS = launched BLOCK_SIZE, multi-pass via
@@ -1650,7 +1650,7 @@ def launch[
             )
         )
 
-        @parameter
+        @__parameter
         def dispatch[use_simd: Bool]() raises:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(
@@ -1684,7 +1684,7 @@ def launch[
 
         unswitch[dispatch](use_simd_full)
 
-    @parameter
+    @__parameter
     @__copy_capture(shape_il, num_blocks, body)
     def dispatch_bs_large[BS: Int]() raises:
         # Larger-BS path: few rows leave the GPU under-saturated even at
@@ -1694,7 +1694,7 @@ def launch[
         # rows). Reached when `num_rows < sm_count` and the row is big
         # enough that `BS * effective_simd` keeps threads busy (no
         # idle-tail).
-        @parameter
+        @__parameter
         def dispatch[use_simd: Bool]() raises:
             comptime sw = effective_simd if use_simd else 1
             comptime block_params = ContextParams(

@@ -302,7 +302,7 @@ def test[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_fp8_tt,
@@ -544,7 +544,7 @@ def bench[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_fp8_tt,
@@ -838,7 +838,7 @@ def test_sw[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_fp8_tt,

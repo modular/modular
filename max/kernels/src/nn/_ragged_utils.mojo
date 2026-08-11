@@ -146,7 +146,7 @@ def merge_ragged_tensors[
         # Compute flat offsets for pointer load/store (Horner form).
         # Inner dimensions are the same across a, b, and c.
         @always_inline
-        @parameter
+        @__parameter
         def _flat_offset[r: Int](index: IndexList[r]) -> Int:
             comptime assert r == rank
             var flat = index[0]

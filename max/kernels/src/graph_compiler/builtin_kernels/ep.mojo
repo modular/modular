@@ -416,7 +416,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -479,7 +479,7 @@ struct Struct_ep_dispatch_async_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[DType.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
         def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -1069,7 +1069,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1164,7 +1164,7 @@ struct Struct_ep_dispatch_block_scaled_nv:
         var input_scales_tensor = input_scales.to_tile_tensor[DType.int64]()
         comptime assert input_scales_tensor.flat_rank == 1
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_scales_tensor)
         def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -1209,7 +1209,7 @@ struct Struct_ep_dispatch_mxfp4:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         input_dtype: DType,
         dispatch_dtype: DType,
@@ -1412,7 +1412,7 @@ struct DistributedEPDispatchBlockScaledNV:
             var in_scales = input_scales[index].to_tile_tensor[DType.int64]()
             comptime assert in_scales.flat_rank == 1
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(in_scales)
             def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
@@ -1960,7 +1960,7 @@ struct DistributedEPCombine:
         }:
             var rw_tensor = router_weights[index].to_tile_tensor[DType.int64]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(rw_tensor)
             def router_weights_fn[
@@ -1970,7 +1970,7 @@ struct DistributedEPCombine:
                     DType.float32
                 ]()
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
                 dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2094,7 +2094,7 @@ struct Struct_ep_combine_async:
 struct Struct_ep_combine_wait:
     """Registers the `ep.combine_wait` graph op with the graph compiler."""
 
-    @parameter
+    @__parameter
     @always_inline
     @staticmethod
     def execute[
@@ -2159,7 +2159,7 @@ struct Struct_ep_combine_wait:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2169,7 +2169,7 @@ struct Struct_ep_combine_wait:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2214,7 +2214,7 @@ struct Struct_ep_combine:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
@@ -2299,7 +2299,7 @@ struct Struct_ep_combine:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2309,7 +2309,7 @@ struct Struct_ep_combine:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2353,7 +2353,7 @@ struct Struct_ep_combine_skip_a2a:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         combine_dtype: DType,
         router_weights_dtype: DType,
@@ -2448,7 +2448,7 @@ struct Struct_ep_combine_skip_a2a:
         comptime assert router_weights_tensor.flat_rank == 2
         comptime assert router_weights_tensor.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(router_weights_tensor)
         def router_weights_fn[
@@ -2458,7 +2458,7 @@ struct Struct_ep_combine_skip_a2a:
                 (token_idx, topk_id)
             ).cast[DType.float32]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -2549,7 +2549,7 @@ struct Struct_ep_fused_silu:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
@@ -2632,7 +2632,7 @@ struct Struct_ep_fused_silu_fp8:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
@@ -2739,7 +2739,7 @@ struct Struct_ep_fused_silu_mxfp4:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(
@@ -2877,7 +2877,7 @@ struct Struct_ep_fused_silu_nvfp4:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             # fmt: off
             return String(

@@ -131,7 +131,7 @@ def arange[
         ```
     """
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return (Scalar[dtype](i) * step + start) % end
 
@@ -196,7 +196,7 @@ def random[
     """
     comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return random_float64(
             min.cast[DType.float64](), max.cast[DType.float64]()
@@ -303,7 +303,7 @@ def arange[
         ```
     """
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return (Scalar[dtype](i) * step + start) % end
 
@@ -371,7 +371,7 @@ def random[
     """
     comptime assert not is_nvidia_gpu(), "Cannot run random on the gpu"
 
-    @parameter
+    @__parameter
     def filler(i: Int) -> Scalar[tensor.dtype]:
         return random_float64(
             min.cast[DType.float64](), max.cast[DType.float64]()

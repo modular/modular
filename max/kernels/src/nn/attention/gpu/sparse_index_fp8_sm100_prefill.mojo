@@ -417,7 +417,7 @@ def _fp8_index_score_prefill_kernel_sm100[
             var kp_state = PipelineState[NSTAGE](0, 1, 0)
             var n_prefetch = min(NSTAGE, n_key_tiles)
 
-            @parameter
+            @__parameter
             @always_inline
             def issue_k(it: Int, state: PipelineState[NSTAGE]):
                 var s = Int(state.index())

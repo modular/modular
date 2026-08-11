@@ -54,7 +54,7 @@ def null_print(tstring: Some[Writable]):
     tstring.write_to(black_box(writer))
 
 
-@parameter
+@__parameter
 def bench_tstring_single_value(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -66,7 +66,7 @@ def bench_tstring_single_value(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_only_literal(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -76,7 +76,7 @@ def bench_tstring_only_literal(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_many_values_no_literals(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -96,7 +96,7 @@ def bench_tstring_many_values_no_literals(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_long_literals(mut b: Bencher) raises:
     @always_inline
     def call_fn():
@@ -117,7 +117,7 @@ def bench_tstring_long_literals(mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_tstring_many_values_many_literals(mut b: Bencher) raises:
     @always_inline
     def call_fn():

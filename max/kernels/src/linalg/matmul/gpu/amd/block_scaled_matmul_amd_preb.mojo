@@ -819,7 +819,7 @@ struct BlockScaledMatmulAMD_PreB[
         var k_counter = 0
 
         @always_inline
-        @parameter
+        @__parameter
         def load_a_tile_from_dram[reg_slot: Int = 0]():
             # Register-bounce load into landing-ring slot `reg_slot` (no-op in dram_to_lds mode).
             comptime if not Self.dram_to_lds:
@@ -837,14 +837,14 @@ struct BlockScaledMatmulAMD_PreB[
                 k_counter += 1
 
         @always_inline
-        @parameter
+        @__parameter
         def a_smem_slot(
             slot: Int,
         ) -> type_of(a_smem.tile[Self.BM, Self.BK_BYTES](0, 0)):
             return a_smem.tile[Self.BM, Self.BK_BYTES](slot, 0)
 
         @always_inline
-        @parameter
+        @__parameter
         def copy_a_tile_to_smem[reg_slot: Int = 0](slot: Int):
             comptime if Self.dram_to_lds:
                 # DRAM->LDS via the shared swizzled loader (TileLoaderLDS does
@@ -881,7 +881,7 @@ struct BlockScaledMatmulAMD_PreB[
                         )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_scales_for_iter[slot: Int = 0](k_pair_base: Int):
             """Issue all A+B preshuffled scale-dword loads for one outer-K iter.
 
@@ -902,21 +902,21 @@ struct BlockScaledMatmulAMD_PreB[
                 )
 
         @always_inline
-        @parameter
+        @__parameter
         def s_setprio[priority: Int16]():
             # Raise wave priority during MFMA clusters so the matrix unit
             # isn't preempted by memory-issuing waves; lower it for loads.
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
         @always_inline
-        @parameter
+        @__parameter
         def _sched_barrier_zero():
             # Hard reorder fence: pins surrounding instrs to source order so the
             # scheduler can't hoist the interleaved B loads back into one block.
             llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
         @always_inline
-        @parameter
+        @__parameter
         def _s_barrier_raw():
             # Bare s_barrier (no vmcnt/lgkmcnt release) so in-flight B DMAs
             # cross it; stdlib barrier() forces vmcnt(0) and kills the prefetch.
@@ -933,7 +933,7 @@ struct BlockScaledMatmulAMD_PreB[
         comptime b_loads_in_flight = Self.num_k_mmas * Self.num_n_mmas
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_chain_plain[
             b_slot: Int, a_slot: Int = b_slot, scale_slot: Int = 0
         ]():
@@ -949,7 +949,7 @@ struct BlockScaledMatmulAMD_PreB[
             s_setprio[0]()
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_chain_scheduled[slot: Int]():
             var a_warp = a_smem_slot(slot).tile[Self.WM, Self.BK_BYTES](
                 warp_m, 0
@@ -971,7 +971,7 @@ struct BlockScaledMatmulAMD_PreB[
                 s_setprio[0]()
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_chain[slot: Int]():
             comptime if Self.cluster_drain_sched:
                 mma_chain_scheduled[slot]()
@@ -979,7 +979,7 @@ struct BlockScaledMatmulAMD_PreB[
                 mma_chain_plain[slot]()
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_chain_epilogue[slot: Int]():
             # Last resident tile, no B prefetch left to overlap.
             comptime if Self.cluster_drain_sched:

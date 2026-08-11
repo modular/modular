@@ -88,21 +88,21 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
         output_alloc.unsafe_ptr(), RuntimeLayout[layout].row_major(q_shape)
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def mask_fn[
         simd_width: Int, _rank: Int
@@ -112,10 +112,10 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     comptime scale = 0.25
 
     @always_inline
-    @parameter
+    @__parameter
     def flash_bench_fn(mut b: Bencher):
         @always_inline
-        @parameter
+        @__parameter
         def iter_fn[depth_static_dim: Int]():
             comptime output_static_shape = IndexList[3](
                 UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim

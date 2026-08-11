@@ -85,7 +85,7 @@ struct RMSNormFusedResidual:
         comptime if is_gpu[target]():
             # GPU path: the device kernel bakes the callbacks in as `capturing`
             # comptime closures, so build them as comptime parameters.
-            @parameter
+            @__parameter
             @always_inline
             def input_fn[
                 width: Int, _rank: Int
@@ -94,7 +94,7 @@ struct RMSNormFusedResidual:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_input_fn[
                 width: Int, _rank: Int
@@ -103,7 +103,7 @@ struct RMSNormFusedResidual:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int
@@ -113,7 +113,7 @@ struct RMSNormFusedResidual:
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int

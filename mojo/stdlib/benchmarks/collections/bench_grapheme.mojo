@@ -67,7 +67,7 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_count_graphemes[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -81,7 +81,7 @@ def bench_count_graphemes[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -95,7 +95,7 @@ def bench_count_codepoints[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -111,7 +111,7 @@ def bench_grapheme_iter[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_slice[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:

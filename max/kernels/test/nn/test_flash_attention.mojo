@@ -455,21 +455,21 @@ def test_case[
 
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
-    @parameter
+    @__parameter
     @always_inline
     def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def mask_fn[
         simd_width: Int, _rank: Int
@@ -621,7 +621,7 @@ def test_case_split_kv[
     reference_attention_bshd(q, k, v, mask, ref_output, cfg.scale)
 
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
-    @parameter
+    @__parameter
     @always_inline
     def input_k_fn[
         simd_width: Int, _rank: Int
@@ -632,7 +632,7 @@ def test_case_split_kv[
             )
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def input_v_fn[
         simd_width: Int, _rank: Int
@@ -643,7 +643,7 @@ def test_case_split_kv[
             )
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def input_k_cache_fn[
         simd_width: Int, _rank: Int
@@ -652,7 +652,7 @@ def test_case_split_kv[
             IndexList[k.rank](idx[1], idx[3], idx[2], idx[4])
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def input_v_cache_fn[
         simd_width: Int, _rank: Int
@@ -661,7 +661,7 @@ def test_case_split_kv[
             IndexList[v.rank](idx[1], idx[3], idx[2], idx[4])
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def mask_fn[
         simd_width: Int, _rank: Int
@@ -805,21 +805,21 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
     reference_attention_bshd(q, k, v, mask, ref_output_no_sinks, scale)
 
     # Test flash attention without sinks
-    @parameter
+    @__parameter
     @always_inline
     def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[k.rank]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[v.rank]](idx))
 
-    @parameter
+    @__parameter
     @always_inline
     def mask_fn[
         simd_width: Int, _rank: Int

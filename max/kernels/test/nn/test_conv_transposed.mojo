@@ -250,7 +250,7 @@ def test_conv_transposed[
     # Test epilogue
     @always_inline
     @__copy_capture(output, bias_ptr)
-    @parameter
+    @__parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
         def body1[width: Int](idx: Int) {var}:

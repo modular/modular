@@ -379,7 +379,7 @@ def mha_cross_gpu_naive[
         block_dim=(32, 16, 1),
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(p_buffer)
     def input_fn_device[
         _simd_width: Int

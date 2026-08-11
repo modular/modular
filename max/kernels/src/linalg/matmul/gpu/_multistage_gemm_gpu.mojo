@@ -296,7 +296,7 @@ def multistage_mma[
     ) and is_nvidia_gpu()
 
     @always_inline
-    @parameter
+    @__parameter
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
     ):
@@ -314,7 +314,7 @@ def multistage_mma[
         }
 
     @always_inline
-    @parameter
+    @__parameter
     def _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
@@ -921,7 +921,7 @@ def multistage_gemm_kernel[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
@@ -974,7 +974,7 @@ def multistage_gemm_kernel[
                             )
 
     @always_inline
-    @parameter
+    @__parameter
     def store_c_scalar():
         """Writes C one element at a time, bounded by the real (row, col).
 

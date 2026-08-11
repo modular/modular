@@ -104,7 +104,7 @@ struct Tuple[*Ts: Movable](
         )
 
         # Move each element into the tuple storage.
-        @parameter
+        @__parameter
         def init_elt[idx: Int](var elt: Self.Ts[idx]):
             Pointer(to=self[idx]).unsafe_write(elt^)
 
@@ -528,7 +528,7 @@ struct Tuple[*Ts: Movable](
         # Each `List` is moved out of the tuple, one at a time.
         var t = ([1, 2, 3], [4, 5, 6])
 
-        @parameter
+        @__parameter
         def handler[idx: Int](var elt: t.Ts[idx]):
             print(len(elt))  # prints 3, then 3
 

@@ -147,7 +147,7 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func() raises:
         for _ in range(10):
             context.enqueue_function[copy1](
@@ -168,10 +168,10 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 attributes=pdl_launch_attributes(),
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             run_func()
@@ -218,7 +218,7 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(d_device, d_host)
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func() raises:
         for _ in range(10):
             context.enqueue_function[copy1_n](
@@ -237,10 +237,10 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 block_dim=(block_dim),
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             run_func()

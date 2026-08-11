@@ -53,7 +53,7 @@ from std.utils.index import IndexList
 
 # Function to handle AMD-specific scheduling
 @always_inline
-# @parameter
+# @__parameter
 def amd_scheduling_hints[
     input_type: DType,
     output_type: DType,

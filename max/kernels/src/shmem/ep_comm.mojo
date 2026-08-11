@@ -231,7 +231,7 @@ def block_prefix_sum[
 
 
 @always_inline
-@parameter
+@__parameter
 def ep_signal_completion[
     p2p_world_size: Int,
     //,
@@ -4231,7 +4231,7 @@ def combine_kernel[
                 comptime hid_dim = input_tokens.static_shape[1]
 
                 @always_inline
-                @parameter
+                @__parameter
                 def add_shared_expert_output[
                     dtype: DType, width: SIMDLength, *, alignment: Int = 1
                 ](

@@ -119,7 +119,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     # The bias/residual as a store epilogue: `c = (a @ b) + epilogue[coords]`,
     # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
     # cuBLAS) applies this exactly once.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c, epilogue_tensor)
     def bias_residual_elementwise_lambda[

@@ -725,7 +725,7 @@ def _allreduce_rmsnorm_fp8_launch[
     comptime assert output.flat_rank >= 2
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output)
     def output_fn[
         width: SIMDLength
@@ -884,7 +884,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime assert output.flat_rank >= 2
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output)
     def output_fn[
         width: SIMDLength
@@ -969,7 +969,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
     @__copy_capture(residual_output, _cols)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -1001,7 +1001,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Step 1: Allreduce with add epilogue → residual_output.
     @__copy_capture(residual, residual_output, _cols)
     @always_inline
-    @parameter
+    @__parameter
     def add_epilogue[
         _dtype: DType,
         _width: SIMDLength,
@@ -1119,14 +1119,14 @@ def _dispatch_fused_kernel[
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
-    @parameter
+    @__parameter
     def _rank_4_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
-    @parameter
+    @__parameter
     def _rank_8_per_rank_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return 80 * 1024 if not has_residual else 96 * 1024
@@ -1144,7 +1144,7 @@ def _dispatch_fused_kernel[
     # 36.3us, a 12% loss). Use a column-aware threshold: 100 KB for wide
     # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
     # validated narrow-column crossover; cols=4096 crosses near 72 KB).
-    @parameter
+    @__parameter
     def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
         comptime if has_amd_gpu_accelerator():
             return _rank_8_per_rank_thresh()
@@ -1166,14 +1166,14 @@ def _dispatch_fused_kernel[
     #          split beats 2-stage for cols > 8192. See dispatch below.
     #   B200 4GPU: 1536 KB per-rank crossover
     #   B200 8GPU: conservative, same as 2-stage threshold
-    @parameter
+    @__parameter
     def _rank_4_split_thresh() -> Int:
         comptime if has_amd_gpu_accelerator():
             return _rank_4_per_rank_thresh()
         else:
             return 1536 * 1024
 
-    @parameter
+    @__parameter
     def _rank_8_split_thresh() -> Int:
         # For 8 GPUs the split threshold equals the 2-stage threshold on
         # both AMD and NVIDIA.  This intentionally means the 2-stage
@@ -1234,7 +1234,7 @@ def _dispatch_fused_kernel[
         else:
             use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
-    @parameter
+    @__parameter
     def launch_1stage[sw: Int]() raises:
         _allreduce_rmsnorm_fp8_launch[
             sw,
@@ -1261,7 +1261,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
-    @parameter
+    @__parameter
     def launch_2stage[sw: Int]() raises:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,

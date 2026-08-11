@@ -101,7 +101,7 @@ def shrink_qkv_permute_3mn_sm100(
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)
-    @parameter
+    @__parameter
     def permute_dim_lora_bmn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
@@ -319,7 +319,7 @@ def expand_qkv_sm100(
 
     @always_inline
     @__copy_capture(q_tensor, kv_tensor, M)
-    @parameter
+    @__parameter
     def route_qkv[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:

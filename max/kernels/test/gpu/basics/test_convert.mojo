@@ -17,7 +17,7 @@ from std.testing import *
 
 
 def test_convert_asm() raises:
-    @parameter
+    @__parameter
     def my_cast[
         frm: DType, to: DType
     ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):

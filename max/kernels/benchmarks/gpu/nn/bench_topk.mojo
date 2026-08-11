@@ -154,11 +154,11 @@ def bench_topk_batched[
 
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(K_dev_buffer, top_p_dev_buffer)
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
@@ -332,11 +332,11 @@ def bench_topk_multi_rank[
         )
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(k)
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             topk_gpu[sampling=sampling, largest=largest](
@@ -469,10 +469,10 @@ def bench_topk_fi[
     ctx.synchronize()
     var seed_tt = TileTensor(seed_device_buffer, row_major(batch_size))
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _topk_topp_sampling_fi[dtype, out_idx_type](
@@ -653,7 +653,7 @@ def bench_dispatch[
     )
     var iter0 = 0
 
-    @parameter
+    @__parameter
     @always_inline
     def do_bench(mut bb: Bencher) raises:
         @always_inline
@@ -751,11 +751,11 @@ def bench_bitonic_topk(
     scores_buf.enqueue_fill(Scalar[dtype](0.5))
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(scores_tt, idxs_buf)
     def bench_fn(mut bb: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def launch(dctx: DeviceContext) raises:
             persistent_topk_block(

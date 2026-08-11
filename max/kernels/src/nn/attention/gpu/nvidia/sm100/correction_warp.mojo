@@ -96,7 +96,7 @@ def fa4_correction[
     # `_correction_step` closure further down. `@always_inline` => inlining
     # it back into either caller reproduces the identical instruction stream
     # (2-O / DeepSeek / MHA codegen is unchanged).
-    @parameter
+    @__parameter
     @always_inline
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
         comptime batch_size = 16 if config.ov_depth % 16 == 0 else 8
@@ -294,7 +294,7 @@ def fa4_correction[
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
-    @parameter
+    @__parameter
     @always_inline
     def _correction_step[i: Int]():
         # correct

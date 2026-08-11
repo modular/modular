@@ -1671,7 +1671,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         # Move each element into the tuple storage.
-        @parameter
+        @__parameter
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
             Pointer(to=self[idx]).unsafe_write(elt)
 

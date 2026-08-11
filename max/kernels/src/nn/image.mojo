@@ -183,7 +183,7 @@ struct ImageData[
 
         @always_inline
         @__copy_capture(image_shape)
-        @parameter
+        @__parameter
         def _compute_index_nchw() -> Int:
             # Index [N,C,H,W]
             var idx = n
@@ -194,7 +194,7 @@ struct ImageData[
 
         @always_inline
         @__copy_capture(image_shape)
-        @parameter
+        @__parameter
         def _compute_index_nhwc() -> Int:
             # Index [N,H,W,C]
             var idx = n
@@ -226,7 +226,7 @@ struct ImageData[
 
         @always_inline
         @__copy_capture(image_shape)
-        @parameter
+        @__parameter
         def _compute_index_nchw() -> IndexList[4]:
             # Index [N,C,H,W]
             var lidx, w_idx = divmod(idx, image_shape.W)
@@ -236,7 +236,7 @@ struct ImageData[
 
         @always_inline
         @__copy_capture(image_shape)
-        @parameter
+        @__parameter
         def _compute_index_nhwc() -> IndexList[4]:
             # Index [N,H,W,C]
             var lidx, c_idx = divmod(idx, image_shape.C)

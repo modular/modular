@@ -294,7 +294,7 @@ def bench_sparse_kv_fp8[
 
     var indices_stride = topk
 
-    @parameter
+    @__parameter
     def _launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,

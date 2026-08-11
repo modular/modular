@@ -112,7 +112,7 @@ struct Struct_kv_cache_store_paged:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
@@ -300,7 +300,7 @@ struct Struct_kv_cache_store_padded:
         else:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, alignment: Int
@@ -473,7 +473,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
@@ -575,7 +575,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def main_q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:
@@ -584,7 +584,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             ](IndexList[3](token, head, col))
 
         @always_inline
-        @parameter
+        @__parameter
         def index_q_input_fn[
             width: Int, alignment: Int
         ](token: Int, head: Int, col: Int) -> SIMD[dtype, width]:

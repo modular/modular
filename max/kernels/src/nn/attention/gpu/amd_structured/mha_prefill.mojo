@@ -189,7 +189,7 @@ __extension Attention:
         # =============================================================
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk():
             """All QK MMAs for the tile, reading K regs from SMEM."""
             self.zero_p_buffer[0]()
@@ -213,7 +213,7 @@ __extension Attention:
                         )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             """All PV MMAs for the tile, reading V regs from SMEM."""
             comptime for strip in range(Self.BN // Self.BK):
@@ -269,7 +269,7 @@ __extension Attention:
         # =============================================================
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             comptime next_slot = 1 - slot
 

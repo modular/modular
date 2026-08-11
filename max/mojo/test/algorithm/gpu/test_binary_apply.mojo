@@ -50,7 +50,7 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = 2
 
-    @parameter
+    @__parameter
     def add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 

@@ -196,7 +196,7 @@ def top_k[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -280,7 +280,7 @@ def _top_k_cpu[
     var shape = coord_to_index_list(input.layout.shape_coord())
 
     @__copy_capture(shape)
-    @parameter
+    @__parameter
     def process_rows(start_row: Int, end_row: Int):
         # Allocate the index list without initializing its elements.
         var idxs = List[Int64](unsafe_uninit_length=shape[axis])
@@ -434,7 +434,7 @@ def fused_token_sampling_cpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -804,7 +804,7 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
 
 # Function to perform warp-level reduction to find the maximum TopK_2
 @always_inline
-@parameter
+@__parameter
 def _warp_reduce_topk[
     T: DType,
     largest: Bool,
@@ -835,7 +835,7 @@ def _warp_reduce_topk[
     var res = val
 
     # Shuffle function for TopK_2 structure
-    @parameter
+    @__parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
@@ -850,7 +850,7 @@ def _warp_reduce_topk[
             p=Int(shuffle_fn(Int32(v.p), UInt32(offset))),  # p is the index
         )
 
-    @parameter
+    @__parameter
     def reduce_fn(
         a: TopK_2[T, largest], b: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:
@@ -1675,7 +1675,7 @@ def topk_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -1979,7 +1979,7 @@ def fused_token_sampling_gpu[
     # for validation
     var batch_size = input_shape[0]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -2389,7 +2389,7 @@ def gumbel_sampling_fused_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return trace_arg("input", input_shape, dtype)
 
@@ -2467,7 +2467,7 @@ def gumbel_sampling_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return trace_arg("input", input_shape, dtype)
 

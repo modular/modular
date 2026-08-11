@@ -423,7 +423,7 @@ def mla_indexer_ragged_float8_paged[
         if max_new_tokens > 1:
 
             @always_inline
-            @parameter
+            @__parameter
             def apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
                 comptime mask_kernel = apply_mask_kernel[
                     mask_t,

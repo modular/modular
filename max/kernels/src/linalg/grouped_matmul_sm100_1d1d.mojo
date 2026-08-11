@@ -2595,7 +2595,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a)
     def description_fn() -> String:
         # fmt: off

@@ -809,7 +809,7 @@ __extension SM100MLA:
             Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_nope/V sub-tile pages at `current_kv_row`."""
@@ -820,7 +820,7 @@ __extension SM100MLA:
                 UInt32(ceildiv(Int(num_keys - current_kv_row), Int(kv_sub_BN))),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _rope_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_rope sub-tile pages at `current_kv_row`."""
@@ -859,7 +859,7 @@ __extension SM100MLA:
             Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_k_rope[
             partial: Bool,
@@ -924,7 +924,7 @@ __extension SM100MLA:
                     e,
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_v[
             partial: Bool,
@@ -984,7 +984,7 @@ __extension SM100MLA:
                 Self.config.fa4_config.num_rope_buffers()
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_rope_smem_ptr(
                 idx: UInt32,
@@ -1001,7 +1001,7 @@ __extension SM100MLA:
                     Scalar[KRopeType.dtype]
                 ]() + idx * UInt32(rope_stage_elems)
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_v_smem_ptr() -> (
                 SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
@@ -1011,7 +1011,7 @@ __extension SM100MLA:
                     kv_stage_elems
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_fused[
                 partial: Bool,
@@ -1080,7 +1080,7 @@ __extension SM100MLA:
                 # lifecycle (acquire / mbar / produce / rope-buf cycle /
                 # step). The first peeled K slot passes `acquire=False`
                 # (initial producer phase = 1).
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_k_1q[
                     partial: Bool,
@@ -1108,7 +1108,7 @@ __extension SM100MLA:
                     rope_idx = (rope_idx + 1) % num_rope_bufs
                     kv_pipeline.state.step()
 
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_v_1q[
                     partial: Bool
@@ -1459,7 +1459,7 @@ __extension SM100MLA:
             # Get K0 barrier (no wait needed for first iteration)
             var k0_mbar = k_pipeline.producer_mbar[qk_stage=0]()
 
-            @parameter
+            @__parameter
             @always_inline
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
@@ -1475,7 +1475,7 @@ __extension SM100MLA:
                     pair.smem.ptr
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_split[
                 partial: Bool,
@@ -1832,7 +1832,7 @@ __extension SM100MLA:
             # Release the KV slot at `release_idx`, advance to the next
             # stage, wait for it, and return its slot index (1Q only;
             # mirrors mma_warp.mojo's `_advance_kv`).
-            @parameter
+            @__parameter
             @always_inline
             def _advance_kv(release_idx: UInt32) -> UInt32:
                 kv_pipeline.consumer_release_at(release_idx, e)
@@ -2070,7 +2070,7 @@ __extension SM100MLA:
             # tail both loops used, so `@always_inline` keeps them
             # byte-identical. Captures pipeline_v/consumer_s0/pipeline_o0/
             # s0_tmem/o0_tmem from this scope (mirrors `_advance_kv`).
-            @parameter
+            @__parameter
             @always_inline
             def _pv_into_o0(mut s_phase: UInt32, mut c_scale: UInt32, e: Int32):
                 pipeline_v.wait_v()
@@ -2782,7 +2782,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     # their types fold to identical values for both configs (Q TMA and
     # ragged store use `BM // num_q` = 128 in both modes; K/V/rope TMA
     # shapes are BM-independent), so they are passed through unchanged.
-    @parameter
+    @__parameter
     @always_inline
     def _launch[cfg: MLAConfig]() raises:
         comptime assert cfg.supported(), cfg.fa4_config.description()

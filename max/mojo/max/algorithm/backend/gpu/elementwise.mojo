@@ -323,7 +323,7 @@ def _elementwise_impl_gpu_clc[
     if num_tiles == 0:
         num_tiles = 1
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _ClcKernel[
@@ -504,7 +504,7 @@ def _elementwise_impl_gpu_grid_stride[
         * num_waves,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _GridStrideKernel[
@@ -750,7 +750,7 @@ def _dual_elementwise_impl_gpu_grid_stride[
         or Int(shape_1[rank - 1].value()) % simd_width != 0
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def launch[handle_uneven_simd: Bool]() raises:
         var k = _DualGridStrideKernel[

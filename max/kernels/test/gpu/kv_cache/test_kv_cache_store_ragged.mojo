@@ -125,7 +125,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
 
     var q_device_tensor = q_managed.device_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device_tensor)
     def input_fn[
@@ -319,7 +319,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
 
     var q_device_tensor = q_managed.device_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device_tensor)
     def input_fn[

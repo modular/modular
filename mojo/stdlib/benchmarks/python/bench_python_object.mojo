@@ -26,7 +26,7 @@ runs the closure on. The acquire/release happens once per run, outside the
 measured loop, so it does not perturb the per-call numbers.
 
 Operands go in an explicit capture list, which keeps them alive for as long as
-the closure is. The implicit by-reference capture of an `@parameter` closure
+the closure is. The implicit by-reference capture of an `@__parameter` closure
 does not: it is not a use, so an operand whose last use precedes `b.iter` is
 destroyed before the measured closure runs, leaving the closure to operate on a
 freed `PyObject`.
@@ -40,7 +40,7 @@ comptime LOOP_SIZE = 1000
 """Number of interop calls per bench iteration."""
 
 
-@parameter
+@__parameter
 def bench_getattr(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -55,7 +55,7 @@ def bench_getattr(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_op_add(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -71,7 +71,7 @@ def bench_op_add(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_op_iadd(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -89,7 +89,7 @@ def bench_op_iadd(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_op_lt(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):
@@ -105,7 +105,7 @@ def bench_op_lt(mut b: Bencher) raises:
         b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_op_in(mut b: Bencher) raises:
     var py = Python()
     with GILAcquired(py):

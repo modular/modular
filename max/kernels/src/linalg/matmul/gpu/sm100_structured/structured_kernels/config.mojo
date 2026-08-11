@@ -912,7 +912,7 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             for bm in [64, 128]:
@@ -1481,7 +1481,7 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             var N_alignby64 = align_up(N, 64)

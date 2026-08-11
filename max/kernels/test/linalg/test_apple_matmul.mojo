@@ -298,7 +298,7 @@ def test_matmul[
         for j in range(n):
             c[i, j] = 0
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[
@@ -359,7 +359,7 @@ def test_shapes[
     b_packed: Bool,
     mixed_kernels: Bool,
 ]() raises:
-    @parameter
+    @__parameter
     def test_shapes_helper[
         transpose_b: Bool = False
     ](m: Int, n: Int, k: Int) raises:
@@ -514,7 +514,7 @@ def test_batched_matmul[
                 c[batch, i, j] = 0
                 golden[batch, i, j] = 0
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c)
     def epilogue_fn[

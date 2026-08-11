@@ -250,7 +250,7 @@ def ep_dispatch_async_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -401,7 +401,7 @@ def ep_dispatch_wait_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -593,7 +593,7 @@ def ep_fused_dispatch_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -779,7 +779,7 @@ def ep_combine_async_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -939,7 +939,7 @@ def ep_combine_wait_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1132,7 +1132,7 @@ def ep_fused_combine_kernel_api[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(

@@ -1638,7 +1638,7 @@ def format_layout[W: Writer](layout: Layout, mut writer: W):
         writer: The writer to output the formatted layout to.
     """
 
-    @parameter
+    @__parameter
     def _write_divider(column_count: Int, cell_width: Int):
         for _ in range(column_count):
             writer.write("+")

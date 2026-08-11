@@ -63,7 +63,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gemv(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             c_device,
@@ -117,7 +117,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,

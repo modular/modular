@@ -32,7 +32,7 @@ def _neon_dotprod[
     comptime assert c_type == DType.int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @parameter
+    @__parameter
     @always_inline
     def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
@@ -84,7 +84,7 @@ def _neon_matmul[
     comptime assert c_type == DType.int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @parameter
+    @__parameter
     @always_inline
     def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)

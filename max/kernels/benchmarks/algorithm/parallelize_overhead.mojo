@@ -18,20 +18,20 @@ from std.benchmark import Bench, Bencher, BenchId, keep
 from std.testing import assert_true
 
 
-@parameter
+@__parameter
 def bench_empty_sync_parallelize(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def parallel_fn(thread_id: Int):
         keep(thread_id)
 
     sync_parallelize[parallel_fn](num_physical_cores())
 
 
-@parameter
+@__parameter
 def bench_empty_parallelize(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def parallel_fn(thread_id: Int):
         keep(thread_id)
 

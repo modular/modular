@@ -145,7 +145,7 @@ def test_conv3d_qslice_direct[
 
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[

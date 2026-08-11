@@ -41,7 +41,7 @@ comptime PRINT_OUTPUT = False
 comptime NUM_VALIDATION_TRIALS = 50
 
 
-@parameter
+@__parameter
 def fill_random_for_test[
     dtype: DType, normalized: Bool
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -668,7 +668,7 @@ def test_topk_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
@@ -826,7 +826,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
@@ -896,7 +896,7 @@ def test_case_batched[
                 comptime if DEBUG_BENCH:
 
                     @always_inline
-                    @parameter
+                    @__parameter
                     def run_func_cpu(ctx: DeviceContext) raises:
                         _top_k_cpu[
                             dtype=dtype,
@@ -963,10 +963,10 @@ def test_case_batched[
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
@@ -980,7 +980,7 @@ def time_kernel[
     )
 
 
-@parameter
+@__parameter
 def fill_random[
     rank: Int, dtype: DType
 ](buffer: TileTensor[mut=True, dtype, ...]):

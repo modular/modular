@@ -260,7 +260,7 @@ struct _Accumulator[
         comptime assert is_load or origin.mut, "ahhh"
         comptime column_step = min(column_count, Self.simd_width)
 
-        @parameter
+        @__parameter
         @always_inline
         def body(row: Int, col: Int):
             comptime if is_load:
@@ -857,7 +857,7 @@ struct _Accumulator[
         """Accumulation optimized for NEON."""
         comptime assert CompilationTarget.has_neon()
 
-        @parameter
+        @__parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](
@@ -916,7 +916,7 @@ struct _Accumulator[
             a_base_offsets.flat_rank == 1
         ), "a_base_offsets must be rank 1"
 
-        @parameter
+        @__parameter
         @always_inline
         def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = Array[SIMD[a_type, num_lanes], Self.num_rows](

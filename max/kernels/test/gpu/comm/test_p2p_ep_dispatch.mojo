@@ -1000,55 +1000,55 @@ def test_dispatch_common[
             )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_send_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(send_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_recv_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)( ptr=(recv_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_recv_count_ptrs_tensor(slot_idx: Int, out result: TileTensor[DType.uint64, type_of(ptrs_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(recv_count_ptrs_inputs + slot_idx * n_ranks).as_unsafe_any_origin(), layout=ptrs_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_atomic_counters_tensor( dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(counters_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * counters_size).as_unsafe_any_origin(), layout=counters_layout
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(), layout=topk_ids_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(), layout=input_tokens_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(), layout=row_offsets_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(), layout=expert_ids_layout)
 
     @always_inline
-    @parameter
+    @__parameter
     def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
         return type_of(result)(ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(), layout=src_token_info_layout)
     # fmt: on
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ep_dispatch_async_kernel_api[
@@ -1070,7 +1070,7 @@ def test_dispatch_common[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         var format_handler = dispatch_test.get_token_handler(
@@ -1094,13 +1094,13 @@ def test_dispatch_common[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
 
     @always_inline
-    @parameter
+    @__parameter
     def clean_up(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_memset(atomic_counters_list[dev_idx], Int32(0))
@@ -1126,12 +1126,12 @@ def test_dispatch_common[
 
     # First, bench the dispatch kernel overhead
 
-    @parameter
+    @__parameter
     def per_gpu_dispatch(i: Int) raises:
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
@@ -1168,12 +1168,12 @@ def test_dispatch_common[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @parameter
+    @__parameter
     def per_gpu_dispatch_wait(i: Int) raises:
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
@@ -1213,12 +1213,12 @@ def test_dispatch_common[
             clean_up(dev_i)
             list_of_ctx[dev_i].synchronize()
 
-        @parameter
+        @__parameter
         def per_gpu_e2e(i: Int) raises:
-            @parameter
+            @__parameter
             @always_inline
             def bench_iter(mut b: Bencher) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                     var dev_id = Int(ctx.id())
@@ -1258,7 +1258,7 @@ def test_dispatch_common[
     # Verify the results for each device and each slot
     print("Verifying results...")
 
-    @parameter
+    @__parameter
     @always_inline
     def verify_results(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]

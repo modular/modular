@@ -303,7 +303,7 @@ def dispatch_rdna_conv2d[
         comptime BLOCK_K = 32
 
         # --- Helper to launch the implicit GEMM kernel ---
-        @parameter
+        @__parameter
         @always_inline
         def _launch_implicit_gemm[
             _epilogue: Optional[elementwise_epilogue_type] = None,
@@ -346,7 +346,7 @@ def dispatch_rdna_conv2d[
             )
 
         # --- Helper to launch explicit im2col + matmul fallback ---
-        @parameter
+        @__parameter
         @always_inline
         def _launch_explicit_im2col[
             _epilogue: Optional[elementwise_epilogue_type] = None,
@@ -400,7 +400,7 @@ def dispatch_rdna_conv2d[
             var resid_beta = beta
             var out_ptr = output.ptr
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(hw, out_w, N, resid_src, resid_beta, out_ptr)
             def _gemm_epilogue[

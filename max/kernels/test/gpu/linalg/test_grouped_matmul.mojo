@@ -200,7 +200,7 @@ def test[
 
     @always_inline
     @__copy_capture(c_dev_tile)
-    @parameter
+    @__parameter
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
@@ -219,7 +219,7 @@ def test[
 
     @always_inline
     @__copy_capture(c_dev_tile, total_num_tokens)
-    @parameter
+    @__parameter
     def perm_dim_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:

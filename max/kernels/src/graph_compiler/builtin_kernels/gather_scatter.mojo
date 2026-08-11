@@ -1710,7 +1710,7 @@ struct Concat:
         # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
         # by value, so the copy brings their device pointers into the kernel.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, _rank: Int, alignment: Int = 1
@@ -1726,7 +1726,7 @@ struct Concat:
         # by-reference capture leaves the device kernel holding a host pointer
         # to the output tensor on Metal.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -1794,7 +1794,7 @@ struct FusedConcatSlice:
         # all-zeros bug). Copy-capture brings the device pointers into the
         # closure.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int,
@@ -1810,7 +1810,7 @@ struct FusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output, slice_output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -1919,7 +1919,7 @@ struct DualFusedConcatSlice:
         # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
         # the device pointers into the closure.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda_0[
             input_index: Int,
@@ -1935,7 +1935,7 @@ struct DualFusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda_1[
             input_index: Int,
@@ -1951,7 +1951,7 @@ struct DualFusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output_0, slice_output_0)
         def epilogue_0[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -2005,7 +2005,7 @@ struct DualFusedConcatSlice:
             )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output_1, slice_output_1)
         def epilogue_1[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -2398,7 +2398,7 @@ struct AdvancedIndexingSetItem:
         """
 
         # First copy over input tensor into the output
-        @parameter
+        @__parameter
         @always_inline
         def func[
             width: Int, element_alignment: Int

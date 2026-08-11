@@ -241,7 +241,7 @@ def depth512_mma[
 
     # ---- Helper: P@V with depth-dependent commit strategy ---------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def pv_mma(*, is_first: Bool):
         """Execute P@V multiplication(s) and commit O barriers.

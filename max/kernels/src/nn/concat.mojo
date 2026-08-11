@@ -56,7 +56,7 @@ comptime elementwise_epilogue_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def preferred_simd_width[dtype: DType]() -> Int:
     """SIMD scalar count for fused GPU concat vectorization.
 
@@ -252,7 +252,7 @@ def _concat_parallel[
     @__copy_capture(
         total_output_bytes, output_h, output_c, output_data, output_wc
     )
-    @parameter
+    @__parameter
     def do_chunk(chunk_index: Int) raises:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
@@ -524,7 +524,7 @@ def _concat_cpu[
     _check_input_consistency[dtype](axis, inputs)
 
     @always_inline
-    @parameter
+    @__parameter
     def dispatch_serial(unused_thread_idx: Int) raises:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
@@ -571,7 +571,7 @@ def concat_shape[
     # extract hyper parameters
     var normalized_axis = normalize_neg_index(axis, InputLayoutType.rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[InputLayoutType.rank],
@@ -876,7 +876,7 @@ def _concat_gpu_elementwise[
         comptime _vec_width = 16 // size_of[dtype]()
         comptime _block_size = 256
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_flat[_vw: Int]() raises:
             comptime kernel_fn = _concat_gpu_flat_kernel[
@@ -1006,7 +1006,7 @@ def _concat_gpu[
         # Use input[0], all dims should be equal except axis.
         outer_dims *= Int(inputs[0].dim(i))
 
-    @parameter
+    @__parameter
     @always_inline
     def _concat_buffers_contiguously() raises:
         var input_size = 0
@@ -1436,7 +1436,7 @@ def _fused_dual_concat_gpu_elementwise[
     elementwise infrastructure handles iteration, SIMD width, and grid sizing.
     """
 
-    @parameter
+    @__parameter
     @always_inline
     def per_output_elem_0[
         simd_width: Int, alignment: Int = 1
@@ -1457,7 +1457,7 @@ def _fused_dual_concat_gpu_elementwise[
                 return
             in_index[axis] -= input_shape[axis]
 
-    @parameter
+    @__parameter
     @always_inline
     def per_output_elem_1[
         simd_width: Int, alignment: Int = 1

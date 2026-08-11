@@ -409,7 +409,7 @@ def test_tuple_consume_elements_move_only() raises:
     var t = (MoveOnly[Int](10), MoveOnly[Int](20), MoveOnly[Int](30))
     var collected = [0, 0, 0]
 
-    @parameter
+    @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         var e = rebind_var[MoveOnly[Int]](elt^)
         collected[idx] = e.data
@@ -430,7 +430,7 @@ def test_tuple_consume_elements_destroys_once() raises:
     )
     assert_equal(actions_ptr[unsafe_offset=0].count("__deinit__"), 0)
 
-    @parameter
+    @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         # Discarding the owned `elt` runs its destructor exactly once.
         _ = rebind_var[Observed](elt^)
@@ -447,7 +447,7 @@ def test_tuple_consume_elements_heterogeneous() raises:
     var got_int = 0
     var got_sum = 0
 
-    @parameter
+    @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)
@@ -468,7 +468,7 @@ def test_tuple_consume_elements_single() raises:
     var t = (MoveOnly[Int](7),)
     var collected = [0]
 
-    @parameter
+    @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         var e = rebind_var[MoveOnly[Int]](elt^)
         collected[idx] = e.data
@@ -483,7 +483,7 @@ def test_tuple_consume_elements_single() raises:
 def _count_consumed[*Ts: Movable & Deinitable](var t: Tuple[*Ts]) -> Int:
     var count = 0
 
-    @parameter
+    @__parameter
     def handler[idx: Int](var elt: t.Ts[idx]):
         _ = elt^
         count += 1
@@ -503,7 +503,7 @@ def test_tuple_deinit_with() raises:
     var t = (ExplicitDestroy(0), ExplicitDestroy(1), ExplicitDestroy(2))
     var destroyed = List[Int]()
 
-    @parameter
+    @__parameter
     def dispose[idx: Int](var elt: t.Ts[idx]):
         var e = rebind_var[ExplicitDestroy](elt^)
         destroyed.append(e.value)
@@ -520,7 +520,7 @@ def test_tuple_deinit_with_heterogeneous() raises:
     var got_str = String()
     var got_val = 0
 
-    @parameter
+    @__parameter
     def dispose[idx: Int](var elt: t.Ts[idx]):
         comptime if idx == 0:
             got_str = rebind_var[String](elt^)

@@ -296,7 +296,7 @@ def _quantize_a_Q8_K[
     for ko in range(0, K, quantized_k):
         var am_ptr = a.ptr + ko
 
-        @parameter
+        @__parameter
         @always_inline
         def process_rows[tile_m: Int](m: Int):
             comptime assert (
@@ -780,7 +780,7 @@ def _matmul_group_unpacked[
     local storage.
     """
 
-    @parameter
+    @__parameter
     def stream_b_vals(
         mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * 1
@@ -1005,7 +1005,7 @@ def _matmul_group_packed_Q4_K[
     comptime group_size = _block_Q4_K.group_size
     comptime tile_k = 2
 
-    @parameter
+    @__parameter
     def stream_b_vals(
         mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
@@ -1151,7 +1151,7 @@ def _matmul_Q4_K_columns[
             UInt8, origin_of(b_tile_ptr[].q_bits.bits)
         ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
-        @parameter
+        @__parameter
         def matmul_group_packed(
             a_q_bits_ptr: UnsafePointer[Int8, _],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
@@ -1182,13 +1182,13 @@ def _matmul_Q4_K_columns[
     ]()
     b_tile_ptr[].q_bits.unpack(b_q_bits)
 
-    @parameter
+    @__parameter
     @__copy_capture(b_tile_ptr, b_q_scales_and_mins_buf, b_q_bits)
     @always_inline
     def process_rows[tile_m: Int](m: Int):
         var b_q_bits_ptr = b_q_bits.unsafe_origin_cast[MutAnyOrigin]()
 
-        @parameter
+        @__parameter
         def matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8, _],
             mut c_int32_group: _Accumulator[
@@ -1237,7 +1237,7 @@ def _matmul_group_packed_Q6_K[
     comptime group_size = _block_Q6_K.group_size
     comptime tile_k = 4
 
-    @parameter
+    @__parameter
     def stream_b_vals(
         mut b_vals: Array[
             SIMD[DType.uint8, SIMDLength(simd_width) * 4], tile_n * tile_k
@@ -1403,7 +1403,7 @@ def _matmul_Q6_K_columns[
             UInt8, origin_of(b_tile_ptr[].q_bits.bits)
         ] = b_tile_ptr[].q_bits.bits.unsafe_ptr()
 
-        @parameter
+        @__parameter
         def matmul_group_packed(
             a_q_bits_ptr: UnsafePointer[Int8, _],
             mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
@@ -1426,13 +1426,13 @@ def _matmul_Q6_K_columns[
     ]()
     b_tile_ptr[].q_bits.unpack[zero_point=UInt8(b_zero_point)](b_q_bits)
 
-    @parameter
+    @__parameter
     @__copy_capture(b_tile_ptr, b_q_bits)
     @always_inline
     def process_rows[tile_m: Int](m: Int):
         var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
-        @parameter
+        @__parameter
         def matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8, _],
             mut c_int32_group: _Accumulator[
@@ -1512,7 +1512,7 @@ def _matmul_Qb_K[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_packed_base_ptr, k_blocks, M, N, K, work_count, num_workers
     )
@@ -1532,7 +1532,7 @@ def _matmul_Qb_K[
             # only run epilogue for the last iter of K loop
             var is_last_k_iter = k_block == k_blocks - 1
 
-            @parameter
+            @__parameter
             @always_inline
             def process_cols[tile_n: Int](n_idx: Int):
                 columns_fn[

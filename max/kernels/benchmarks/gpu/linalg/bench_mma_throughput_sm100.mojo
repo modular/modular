@@ -583,7 +583,7 @@ def main() raises:
             num_threads=num_threads,
         ]
 
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
@@ -598,7 +598,7 @@ def main() raises:
                 ),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
             bencher_iter_custom[kernel_launch](bencher, ctx)

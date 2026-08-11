@@ -26,7 +26,7 @@ from std.benchmark import (
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_parsing_all_floats_in_file[
     origin: Origin
 ](mut b: Bencher, items_to_parse: List[StringSlice[origin]]) raises:

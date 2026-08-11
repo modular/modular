@@ -177,7 +177,7 @@ def test_4wave_split_k_epilogue[
 
     ctx.enqueue_memset(device_out, 0)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tt)
     def epilogue_fn[

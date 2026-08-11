@@ -70,7 +70,7 @@ def broadcast_kernel(
     )
 
 
-@parameter
+@__parameter
 def _do_broadcast[
     ngpus: Int
 ](

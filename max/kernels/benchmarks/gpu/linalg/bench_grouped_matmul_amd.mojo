@@ -224,7 +224,7 @@ def bench_preb[
     )
     var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
 
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var a_tt = TileTensor[mut=False](
@@ -266,7 +266,7 @@ def bench_preb[
             estimated_total_m,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher):
         bencher_iter_custom[kernel_launch](bencher, ctx)

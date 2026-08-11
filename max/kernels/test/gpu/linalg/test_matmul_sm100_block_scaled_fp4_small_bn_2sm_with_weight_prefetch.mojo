@@ -234,7 +234,7 @@ def _test_impl[
 
     var c_device_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device_lt)
     def epilogue_fn[
@@ -318,7 +318,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_2sm_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
+        @__parameter
         @always_inline
         def run[
             MType: CoordLike,

@@ -348,7 +348,7 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
 def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
-    @parameter
+    @__parameter
     def test_block_k[
         in_type: DType,
         out_type: DType,
@@ -373,7 +373,7 @@ def test_block_k(ctx: DeviceContext) raises:
 def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
-    @parameter
+    @__parameter
     def test_warp_k_partitions[
         in_type: DType,
         out_type: DType,
@@ -652,7 +652,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     comptime for block_m in block_sizes:
         comptime for block_n in block_sizes:
 
-            @parameter
+            @__parameter
             def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k

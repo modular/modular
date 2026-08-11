@@ -97,9 +97,9 @@ def _argn[
     @__copy_capture(
         axis_size, chunk_size, output_stride, input_stride, parallel_size
     )
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
-        @parameter
+        @__parameter
         @always_inline
         def cmpeq[
             dtype: DType, simd_width: SIMDLength
@@ -111,7 +111,7 @@ def _argn[
             else:
                 return a.ge(b)
 
-        @parameter
+        @__parameter
         @always_inline
         def cmp[
             dtype: DType, simd_width: SIMDLength

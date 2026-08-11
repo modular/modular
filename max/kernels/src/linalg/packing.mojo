@@ -283,7 +283,7 @@ struct PackMatrixRows[
         # An unswitch-able unit function that transpose packs a small tile.
         @always_inline
         @__copy_capture(transpose_buffer)
-        @parameter
+        @__parameter
         def transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
@@ -411,7 +411,7 @@ struct PackMatrixCols[
         comptime unroll_factor = get_packB_unroll_factor()
 
         @always_inline
-        @parameter
+        @__parameter
         def pack_vector(row_idx: Int, col_idx: Int):
             var global_idx = self.global_offset + Index(row_idx, col_idx)
             var data = SIMD[Self.dtype, Self.simd_size](0)
@@ -448,12 +448,12 @@ struct PackMatrixCols[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def pack_body[idx: Int]():
             pack_vector(row_start + idx, col_start)
 
         @always_inline
-        @parameter
+        @__parameter
         def prefetch_body[idx: Int]():
             var global_row_idx = (
                 self.global_offset[0] + row_start + unroll_factor + idx
@@ -556,7 +556,7 @@ struct PackMatrixCols[
 
         @always_inline
         @__copy_capture(valid_row_count)
-        @parameter
+        @__parameter
         def pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx

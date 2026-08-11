@@ -105,9 +105,9 @@ def bench_layer_norm_gpu[
 
     @always_inline
     @__copy_capture(shape_coord, gamma, beta, epsilon, input_fn, output_fn)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             comptime if static_shape:
@@ -186,7 +186,7 @@ def bench_rms_norm_gpu[
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @__copy_capture(data_buf)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
 
@@ -199,7 +199,7 @@ def bench_rms_norm_gpu[
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
@@ -208,9 +208,9 @@ def bench_rms_norm_gpu[
 
     @always_inline
     @__copy_capture(shape, gamma, epsilon, weight_offset)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_gpu[

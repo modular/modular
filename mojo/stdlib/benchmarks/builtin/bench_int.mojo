@@ -17,10 +17,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_stringify_small_integers(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for i in range(1_000):
             var a = String(i)

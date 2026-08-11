@@ -195,7 +195,7 @@ __extension DeviceFunction:
 
 __extension DeviceExternalFunction:
     @always_inline
-    @parameter
+    @__parameter
     def _call_with_pack[
         *Ts: AnyType,
     ](
@@ -277,7 +277,7 @@ __extension DeviceContext:
     def _check_supports_default_compile_function(self):
         pass
 
-    @parameter
+    @__parameter
     @always_inline
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -405,7 +405,7 @@ __extension DeviceContext:
             location=location.or_else(call_location()),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def enqueue_function[
         *Ts: DevicePassable

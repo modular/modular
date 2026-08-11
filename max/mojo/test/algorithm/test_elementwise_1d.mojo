@@ -34,7 +34,7 @@ def test_elementwise_1d() raises:
 
     @always_inline
     @__copy_capture(vector)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx: Coord):
         var vector_ptr: Pointer[vector.T, vector.origin] = vector.unsafe_ptr()
         var elem = vector_ptr.unsafe_load[width=simd_width](idx[0].value())

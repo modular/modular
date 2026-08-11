@@ -198,12 +198,12 @@ def bench_dispatch[
     dealloc(host_input_tokens^)
 
     @always_inline
-    @parameter
+    @__parameter
     def clean_up(ctx: DeviceContext) raises:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     @always_inline
-    @parameter
+    @__parameter
     def setup_and_run_benchmark[
         TokenFmtType: TokenFormat,
         FormatHandlerType: TokenFormat,
@@ -280,7 +280,7 @@ def bench_dispatch[
         var func_combine_async_wait = ctx.compile_function[combine_wait]()
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
@@ -304,7 +304,7 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
                 func_dispatch_wait,
@@ -321,13 +321,13 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async_e2e(ctx: DeviceContext) raises:
             run_dispatch_async(ctx)
             run_dispatch_async_wait(ctx)
 
         @always_inline
-        @parameter
+        @__parameter
         def run_combine_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var combine_recv_buf_ptrs: Array[
@@ -351,7 +351,7 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_combine_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
                 func_combine_async_wait,
@@ -365,7 +365,7 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_combine_async_e2e(ctx: DeviceContext) raises:
             run_combine_async(ctx)
             run_combine_async_wait(ctx)
@@ -373,44 +373,44 @@ def bench_dispatch[
         shmem_barrier_all_on_stream(ctx.stream())
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async_func() raises:
             run_dispatch_async_e2e(ctx)
 
         @always_inline
-        @parameter
+        @__parameter
         def run_combine_async_func() raises:
             run_combine_async_e2e(ctx)
 
         @always_inline
-        @parameter
+        @__parameter
         def run_clean_up_func() raises:
             clean_up(ctx)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_dispatch_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 run_dispatch_async_func()
 
             bencher_iter_custom[kernel_launch](b, ctx)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_combine_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 run_combine_async_func()
 
             bencher_iter_custom[kernel_launch](b, ctx)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_clean_up_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 run_clean_up_func()

@@ -347,7 +347,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # Epilogue multiplies output by 2 so we can verify the lambda is actually
     # invoked — if TileWriter skips the lambda the result will be 1x, not 2x,
     # and the comparison against 2x reference will fail.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[
