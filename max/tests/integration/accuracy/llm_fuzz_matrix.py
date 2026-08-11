@@ -75,6 +75,19 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.mi355x.4",
         timeout=90,
     ),
+    # MXFP8 is vendor-agnostic (unlike MXFP4, which needs an AMD-repacked
+    # checkpoint), so this reuses the same model_path as the B200 MXFP8
+    # entries above; only the runner/topology differ. Mirrors the production
+    # smoke-test recipe at
+    # max_private/minimax_m3/recipes/mxfp8_tp4dp2ep8_8x_mi355.yaml.
+    PipelineEntry(
+        pipeline="amd/MiniMax-M3-MXFP8-ep-tp",
+        model_path="MiniMaxAI/MiniMax-M3-MXFP8",
+        runner="modrunner-mi355-8x",
+        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
+        instance_type="bm.gpu.mi355x.8",
+        timeout=90,
+    ),
     PipelineEntry(
         pipeline="nvidia/GLM-5.2-NVFP4-ep-tp-mtp",
         model_path="nvidia/GLM-5.2-NVFP4",
