@@ -20,9 +20,17 @@ Target hardware family: NVIDIA SM100 (B200).
 The whole `.ws` MMA_M=32 datapath: the shared KV sub-tile ring (producer +
 consumer), the packed-TMEM P@V, the per-quarter WS softmax, and the two-level
 (per-WG Level-1 + cross-WG Level-2) LSE combine wired into `fa4_softmax`'s
-epilogue (Md). A very short prompt (`valid_length <= 32`) routes the dispatch
-(sm100/dispatch.mojo) to the `BM=32` WS config; the output is compared against
-`mha_gpu_naive` over the full `[0, num_keys)` range with the SAME mask.
+epilogue (Md). A short prompt routes the dispatch (sm100/dispatch.mojo) to a WS
+config; the output is compared against `mha_gpu_naive` over the full
+`[0, num_keys)` range with the SAME mask.
+
+WHICH WS config depends on `group`, not on `valid_length` alone: the Layout-G
+(BM=32) gate needs `BM_eff() == BM // group >= max_prompt_len`, so at the default
+`num_q_heads=64` (`group == 8`) BM=32's `BM_eff()` is 4 and a `valid_length=8`
+prompt FAILS that gate and falls through to Layout-E (BM=64, MMA_M=64,
+`m_pack=2`), whose `BM_eff()` is 8. Only the `num_q_heads=32` cell (`group == 4`,
+`BM_eff() == 8`) is genuinely BM=32. Both layouts are worth covering, but do not
+read a passing cell here as evidence about MMA_M=32 unless its group says so.
 
 The `T = ceil(num_keys / 256)` WS-tile count (driven by `cache_length`) exercises
 both epilogue arms and the odd-tail alias-swap:
@@ -84,6 +92,7 @@ from std.collections import Set
 from std.math import ceildiv, isnan, rsqrt
 from std.random import rand, random_ui64, seed
 from std.sys import get_defined_int
+from std.utils.numerics import nan
 
 from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
@@ -123,8 +132,9 @@ def execute_ws_bm32_test[
     mask: mask_t, cache_length: Int, valid_length: Int, ctx: DeviceContext
 ) raises:
     # gpt-oss-20b-like shape: 8 kv-heads, `num_q_heads` q-heads (group =
-    # num_q_heads // 8), like the split-K LSE test. `valid_length <= 32` routes
-    # the dispatch to the WS BM=32 config.
+    # num_q_heads // 8), like the split-K LSE test. A short `valid_length` routes
+    # to a WS config; `group` picks WHICH one (Layout-G BM=32 needs
+    # `BM // group >= valid_length`) -- see the module docstring.
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=head_size)
     comptime dtype = DType.bfloat16
     comptime kv_heads = kv_params.num_heads
@@ -250,6 +260,20 @@ def execute_ws_bm32_test[
         RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
     )
     random(kv_block_host_tt)
+    # Reserve the last physical block as a NaN poison page. The LUT's padded
+    # tail points every unused column at it (see below), so any TMA that reads
+    # past a sequence's real pages pulls non-finite data instead of plausible
+    # KV -- `0 * NaN = NaN` then fails the comparison loudly rather than being
+    # silently masked to zero. With `page_size < BN` a trailing tile spans more
+    # page slots than the sequence has pages, and the kernel is required to
+    # OOB-zero-fill those slots rather than load them, so a correct kernel
+    # never touches this block.
+    var poison_block = num_paged_blocks - 1
+    var block_elems = (
+        2 * num_layers * page_size * kv_params.num_heads * head_size
+    )
+    for i in range(block_elems):
+        kv_block_host[poison_block * block_elems + i] = nan[dtype]()
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
     var kv_block_paged_lt = LayoutTensor[dtype, kv_block_6d_layout](
@@ -265,11 +289,21 @@ def execute_ws_bm32_test[
     )
     var lut_set = Set[Int]()
     for blk in range(full_pages):
-        var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+        # `poison_block` (the last one) is excluded so the real pages never
+        # alias it.
+        var randval = Int(random_ui64(0, UInt64(num_paged_blocks - 2)))
         while randval in lut_set:
-            randval = Int(random_ui64(0, UInt64(num_paged_blocks - 1)))
+            randval = Int(random_ui64(0, UInt64(num_paged_blocks - 2)))
         lut_set.add(randval)
         paged_lut_host[blk] = UInt32(randval)
+    # `padded_lut_cols` over-allocates so `PagedRowIndices.populate` can SIMD-read
+    # `num_pages` columns from any valid start (kv_cache/types.mojo), and populate
+    # does NOT clamp against the sequence's real page count. Leaving the tail
+    # uninitialized made those reads pick up arbitrary host memory -- an
+    # out-of-range physical block, i.e. an illegal global read rather than merely
+    # wrong data. Point the tail at the in-range NaN poison block instead.
+    for blk in range(full_pages, lut_cols):
+        paged_lut_host[blk] = UInt32(poison_block)
 
     # --- Cache lengths ---
     var cache_lengths_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -705,6 +739,24 @@ def main() raises:
         )
         execute_ws_bm32_test[CausalMask, 128, page_size=64](
             CausalMask(), cache_length=640, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 64, page_size=64](
+            CausalMask(), cache_length=640, valid_length=8, ctx=ctx
+        )
+        # Short trailing tile (num_keys=544 -> T=3, 32 real keys in tile 2).
+        # Layout-E key-splits each 256-key tile into two 128-key partitions, so
+        # here partition 0 holds 1 valid page of 2 and partition 1 starts past
+        # `num_keys` entirely (valid_pages == 0 -> every slot OOB-zero-filled).
+        # The P@V contraction cut cannot express a per-partition boundary --
+        # `mma_maybe_partial_k` predicates k-blocks on the MMA's shared BK axis
+        # while Layout-E's partitions are packed along MMA_N -- so zero-fill is
+        # the only protection, and these cells are what prove it engages. Runtime
+        # `cache_length` only, so no extra config elaborates.
+        execute_ws_bm32_test[CausalMask, 64, page_size=64](
+            CausalMask(), cache_length=536, valid_length=8, ctx=ctx
+        )
+        execute_ws_bm32_test[CausalMask, 128, page_size=64](
+            CausalMask(), cache_length=536, valid_length=8, ctx=ctx
         )
 
         # ---- A3-i regression: single-WG-fully-masked (all-empty-WG probe) -----

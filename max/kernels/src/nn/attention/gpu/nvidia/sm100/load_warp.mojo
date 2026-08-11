@@ -607,19 +607,33 @@ def fa4_load[
     # `num_v_sub_tiles=num_qk_stages` reduction split within one of those two
     # documented cases for any `page_size`.
     comptime partition_keys = config.BN // config.m_pack
-    # Per-partition SMEM footprint WITHIN one reduction-chunk ring slot: the
-    # TMA box (`v_e_box_rows()` chunk-keys x `v_e_box_cols()` full depth) =
-    # `pv_bk_chunk * padded_ov_depth` elems. `tma_copy_v`'s
-    # `num_v_sub_tiles`/`v_sub_tile_idx` offset only the SOURCE KV rows, never
-    # the destination, so partition `p`'s box is written verbatim at
-    # `smem_ptr + p*partition_region_elems`; partition 1 sits directly above
-    # partition 0 (probe `PARTITION_REGION_ELEMS`, = 8192 @d128 = 16 KB),
-    # together filling the 32 KB slot. NOT `partition_keys * ov_depth` -- that
-    # is a partition's TOTAL keys (all reduction chunks), which would overrun
-    # into the next ring slot and leave this slot's upper half unwritten.
+    # Per-partition SMEM footprint WITHIN one reduction-chunk ring slot: one
+    # reduction chunk (`v_e_chunk_rows()` chunk-keys x `v_e_box_cols()` full
+    # depth) = `pv_bk_chunk * padded_ov_depth` elems. This is the REGION size,
+    # deliberately NOT clamped by `page_size` the way the TMA box row count is:
+    # when paging splits the chunk, `_tma_copy_kv_impl` issues `pages_per_iter`
+    # boxes at stride `tma_per_issue_rows * gran` which together tile exactly
+    # this region. `tma_copy_v`'s `num_v_sub_tiles`/`v_sub_tile_idx` offset only
+    # the SOURCE KV rows, never the destination, so partition `p`'s region is
+    # written at `smem_ptr + p*partition_region_elems`; partition 1 sits directly
+    # above partition 0 (= 8192 elems @d128 = 16 KB), together filling the 32 KB
+    # slot. NOT `partition_keys * ov_depth` -- that is a partition's TOTAL keys
+    # (all reduction chunks), which would overrun into the next ring slot and
+    # leave this slot's upper half unwritten.
     comptime partition_region_elems = (
-        config.v_e_box_rows() * config.v_e_box_cols()
+        config.v_e_chunk_rows() * config.v_e_box_cols()
     )
+    # Layout-E's own page frame. `tma_copy_v` re-derives its per-issue rows and
+    # `pages_per_iter` from the PER-PARTITION LUT below (`kv_cache/types.mojo`'s
+    # `tma_per_issue_rows` / `pages_per_iter` off `Self.BN == partition_keys`
+    # and `num_v_sub_tiles == num_qk_stages`), so a valid-page count handed to
+    # it must be measured in THAT frame. The shared BN-wide `KVPagedRows` frame
+    # `_v_num_valid_pages` uses (`min(KVPagedRows.num_pages, ...)`) is a
+    # different, larger one -- feeding it here lands outside
+    # `[0, pages_per_iter]`, the partial dispatch chain's equality tests never
+    # match, and every slot loads real page-table data instead of OOB-filling.
+    comptime v_e_rows_per_page = config.v_tma_box_rows(page_size)
+    comptime v_e_pages_per_chunk = config.v_e_chunk_rows() // v_e_rows_per_page
 
     @__parameter
     @always_inline
@@ -630,7 +644,6 @@ def fa4_load[
         kv_row_base: UInt32,
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
-        v_num_valid_pages: UInt32,
     ):
         # `_produce_v_e` is Layout-E-only (m_pack==2 => use_ws), so the non-WS
         # per-page byte count `_produce_v` carries never applies: V bytes are
@@ -639,11 +652,24 @@ def fa4_load[
         comptime if is_leader:
             expect_bytes_pred(mbar, Int32(v_expect_bytes), e)
         comptime for p in range(config.m_pack):
+            var p_base = kv_row_base + UInt32(p * partition_keys)
             var p_rows = kv_lut.populate[
                 partition_keys, base_alignment, False, True
-            ](
-                seq_info.prompt_idx,
-                kv_row_base + UInt32(p * partition_keys),
+            ](seq_info.prompt_idx, p_base)
+            # Each partition owns a DIFFERENT key range, and sub-tile `r` sits
+            # `r` reduction chunks into it, so the valid-page count is per
+            # (partition, sub-tile) -- a single tile-wide count would leave the
+            # upper partition loading pages past `num_keys`. The P@V trim cannot
+            # rescue that: `mma_maybe_partial_k` predicates k-blocks on the
+            # MMA's shared BK axis while Layout-E's partitions are packed along
+            # MMA_N, so ALL packs get one cut. OOB zero-fill is the only
+            # protection (`0 * P == 0`), and it engages only when this count is
+            # exact. 0 is legal and means "fill every slot" (V's dispatch chain
+            # starts at slot 0).
+            var chunk_base = p_base + UInt32(r * config.v_e_chunk_rows())
+            var p_valid = UInt32(0) if chunk_base >= num_keys else min(
+                UInt32(v_e_pages_per_chunk),
+                UInt32(ceildiv(Int(num_keys - chunk_base), v_e_rows_per_page)),
             )
             p_rows.tma_copy_v[
                 needs_partial=partial,
@@ -656,7 +682,7 @@ def fa4_load[
                 mbar[],
                 kv_head_idx=kv_head_idx,
                 elect=e,
-                num_valid_pages=v_num_valid_pages,
+                num_valid_pages=p_valid,
             )
 
     comptime if config.use_shared_kv:
@@ -761,8 +787,11 @@ def fa4_load[
                     kv_stage_elems
                 )
                 comptime if config.m_pack == 2:
+                    # No `v_num_valid_pages`: Layout-E derives its own count
+                    # per (partition, sub-tile) in the per-partition LUT's page
+                    # frame, which the caller's tile-wide count cannot express.
                     _produce_v_e[partial=partial, r=stage](
-                        kv_row_base, smem_ptr, mbar, v_num_valid_pages
+                        kv_row_base, smem_ptr, mbar
                     )
                 else:
                     _produce_v[partial=partial, d_tile=stage](
