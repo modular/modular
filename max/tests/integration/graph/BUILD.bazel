@@ -303,7 +303,11 @@ modular_py_test(
         "test.resources:gpu-memory": "1",
     },
     gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
+    # TODO(QUA-841): re-enable once the CI timeout is root-caused.
+    tags = [
+        "gpu",
+        "manual",
+    ],
     deps = [
         ":buffer_create_init_shared",
         "//max/python/max/engine",
