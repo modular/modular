@@ -326,6 +326,9 @@ async def prerun_warmup_turns(
     )
 
     semaphore = asyncio.Semaphore(max_concurrency)
+    warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
+        requests_to_fire
+    )
 
     with progressbar_request_driver(
         request_driver,
@@ -334,11 +337,26 @@ async def prerun_warmup_turns(
         desc="warmup",
     ) as driver:
 
-        async def _fire(req: RequestFuncInput) -> None:
+        async def _fire(idx: int, req: RequestFuncInput) -> None:
             async with semaphore:
-                await driver.request(req)
+                warmup_results[idx] = await driver.request(req)
 
-        await asyncio.gather(*(_fire(r) for r in requests_to_fire))
+        await asyncio.gather(
+            *(_fire(idx, r) for idx, r in enumerate(requests_to_fire))
+        )
+
+    for idx, result in enumerate(warmup_results):
+        if result is None:
+            raise RuntimeError(
+                f"Warmup-prerun task {idx} did not produce a result"
+                " (this is a bug)"
+            )
+        if not result.success:
+            raise ValueError(
+                f"Warmup-prerun request failed at index {idx}"
+                f" (prompt_len: {requests_to_fire[idx].prompt_len}),"
+                f" error: {result.error}"
+            )
     logger.info("[warmup-prerun] complete.")
 
 
