@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Protocol
 
 import numpy as np
 from max.driver import Buffer
@@ -649,25 +649,18 @@ def build_synthetic_acceptance_sampler_graph(
 
 def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
-    *,
-    draft_proposal: Literal["argmax"],
 ) -> Graph:
-    """Builds a stochastic rejection sampler for speculative decoding.
+    """Builds a target-only stochastic rejection sampler for speculative decoding.
 
     Accepts draft tokens based on ``coin < p_target(draft_token)`` where
     p_target is computed after applying temperature, top-k, and top-p
-    filtering, and on rejection recovers from the positive residual
-    (p_target with the draft token's mass removed). The draft proposes
-    deterministically (argmax), so its one-hot proposal needs no draft
-    probabilities as input.
+    filtering.  No draft probabilities are needed.
 
     The sampling RNG seed is bound as a graph input — callers refresh it
     per execution so RNG varies across calls.
 
     Args:
         device: Device for the graph.
-        draft_proposal: Proposal distribution used to produce ``draft_tokens``.
-            Only ``"argmax"`` is supported by this point-mass residual graph.
 
     Returns:
         A graph that takes draft tokens, target logits, target logit
@@ -708,7 +701,6 @@ def build_stochastic_acceptance_sampler_graph(
                 top_p=top_p.tensor,
                 min_top_p=min_top_p.tensor,
                 seed=seed.tensor,
-                draft_proposal=draft_proposal,
             )
         )
         graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)
@@ -746,9 +738,7 @@ class _TypicalAcceptanceRunner(RejectionRunner):
             build_greedy_acceptance_sampler_graph(device=device_ref)
         )
         self._stochastic = session.load(
-            build_stochastic_acceptance_sampler_graph(
-                device=device_ref, draft_proposal="argmax"
-            )
+            build_stochastic_acceptance_sampler_graph(device=device_ref)
         )
         self._device = device_ref.to_device()
         self._seed_counter = 0
