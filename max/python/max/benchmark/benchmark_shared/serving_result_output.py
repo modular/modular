@@ -55,6 +55,9 @@ from max.benchmark.benchmark_shared.metrics import (
     StandardPercentileMetrics,
     ThroughputMetrics,
 )
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    json_safe,
+)
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
 from tabulate import tabulate
@@ -637,7 +640,9 @@ def save_result_json(
         )
         os.rename(result_filename, f"{result_filename}.orig")
     with open(result_filename, "w") as outfile:
-        json.dump(result_json, outfile)
+        # NaN latencies are real in partially-failed runs; scrub to null so
+        # the file stays consumable by strict JSON parsers (jq, JSON.parse).
+        json.dump(json_safe(result_json), outfile, allow_nan=False)
 
 
 def save_output_lengths(
