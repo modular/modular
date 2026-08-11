@@ -14,7 +14,9 @@
 #include "LLDB.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "KGEN/Support/Configuration.h"
+#include "Support/BazelRunfiles.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Process.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -96,6 +98,15 @@ int M::invokeLLDB(const State &state, ArrayRef<std::string> lldbArgs,
     llvm::outs() << "\n";
     return 0;
   }
+
+  // The MojoLLDB plugin resolves its paths through the runfiles tree, but in
+  // order to discover them we need to pass through our environment. Otherwise
+  // those lookups fall through to the package root and name files that don't
+  // exist.
+  const auto *env = M::getRunfilesEnvVars();
+  if (env)
+    for (const auto &[name, value] : *env)
+      (void)M::setProcessEnv(name, value);
 
   return llvm::sys::ExecuteAndWait(lldb.get(), subprocessArgs);
 }

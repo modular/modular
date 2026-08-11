@@ -135,6 +135,7 @@ modular_cc_library(
         "//KGEN:TargetTraits",
         "//KGEN:ToolCommon",
         "//Support:Base",
+        "//Support:BazelRunfiles",
         "//Support:Compiler",
         "//Support:CrashReporting",
         "//Support:DebugInfoDialect",
@@ -160,5 +161,24 @@ modular_cc_binary(
         "//conditions:default": {},
     }),
     linkopts = _MOJO_LINKOPTS,
+    deps = [":mojo_common"],
+)
+
+modular_cc_binary(
+    name = "mojo-full",
+    data = [
+        "//KGEN:MojoLLDB",
+        "//KGEN:gdb-server",
+        "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo-repl-entry-point",
+        "@llvm-project//lldb:lldb-argdumper",
+        "@llvm-project//llvm:llvm-symbolizer",
+    ],
+    env = {
+        "MODULAR_CRASH_REPORTING_ENABLED": "0",
+    },
+    linkopts = _MOJO_LINKOPTS,
+    mojo_deps = ["@mojo//:std"],
+    tags = ["manual"],
     deps = [":mojo_common"],
 )
