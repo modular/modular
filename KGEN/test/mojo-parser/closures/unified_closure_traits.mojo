@@ -27,7 +27,7 @@
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
 # S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
-# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){(eq $1.tag, $0)}"
+# S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){identical($1.tag, $0)}"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
 

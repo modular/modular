@@ -4,7 +4,7 @@
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
-kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_scalar : scalar<index>, p2_scalar : scalar<index>, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
+kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_scalar : scalar<index>, p2_scalar : scalar<index>, f1_scalar : scalar<f32>, f2_scalar : scalar<f32>, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
   // Generic attr syntax in generic ops
   // CHECK: "test.someop"() {
   "test.someop" () {
@@ -41,11 +41,11 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: = kgen.param.constant: i1 = <1>
   %5 = kgen.param.constant: i1 = <1>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
-  %6 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype type, f32))>
+  %6 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype type, f32))>
 
   // CHECK: = kgen.param.constant: i1 = <0>
-  %7 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype bf16, f16))>
+  %7 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype bf16, f16))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> from_builtin(p1), [add(from_builtin(p2), 1), from_builtin(p2), 3, 1]))>
   %8 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [3, 1, p2, add(p2, 1), 1]))>
@@ -59,12 +59,19 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: = kgen.param.constant: i1 = <1>
   %11 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [p1, 1]))>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(p1), 1))>
+  // COM: An unknown carries no value, so it does not match even itself and
+  // COM: membership stays open.
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> *?, [1, *?]))>
+  %in_unknown = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:scalar<index> *?, [*?, 1]))>
+
+  // COM: A one-element `in` degrades to an identity proposition, not to `eq`:
+  // COM: membership asks one yes/no, which is what identity answers.
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:scalar<index> from_builtin(p1), 1))>
   %12 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(p1, [1]))>
 
-  // CHECK: <index>i1 = <#kgen.gen<to_builtin(:scalar<bool> eq(:type simd<*(0,0), f32>, simd<2, f32>))>>
+  // CHECK: <index>i1 = <#kgen.gen<to_builtin(:scalar<bool> identical(:type simd<*(0,0), f32>, simd<2, f32>))>>
   kgen.param.constant: !kgen.generator<<index>i1> = <
-    #kgen.gen<to_builtin(:scalar<bool> eq(:type
+    #kgen.gen<to_builtin(:scalar<bool> identical(:type
       #kgen.type<!kgen.simd<*(0,0), f32>>,
       #kgen.type<!kgen.simd<2, f32>>
     ))>>
@@ -84,7 +91,9 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
   %17 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [type2, f32]))>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(:dtype type, f32))>
+  // COM: A one-element `in` degrades to identity, not `eq`: membership asks one
+  // COM: yes/no, which is what identity answers.
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:dtype type, f32))>
   %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> in(:dtype type, [f32]))>
 
   // CHECK: = kgen.param.constant: scalar<bool> = <not(int1)>
@@ -93,8 +102,8 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <not(int1)>
   %20 = kgen.param.constant: scalar<bool> = <not(int1)>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
-  %21 = kgen.param.constant: i1 = <xor(to_builtin(:scalar<bool> eq(:dtype type, f32)), 1)>
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:dtype type, f32)))>
+  %21 = kgen.param.constant: i1 = <xor(to_builtin(:scalar<bool> identical(:dtype type, f32)), 1)>
 
   // CHECK: = kgen.param.constant: i1 = <1>
   %22 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> le(5, 9))>
@@ -203,6 +212,17 @@ kgen.generator @param_expr<p1, p2, int1: scalar<bool>, int2: scalar<bool>, p1_sc
   // CHECK: kgen.param.constant: scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
   kgen.param.constant:scalar<index> = <cond(eq(:scalar<index> p1_scalar, 1), cond(eq(:scalar<index> p2_scalar, 2), cond(int1, cond(not(int2), 0, 1), 1), 1), 1)>
 
+  // COM: None of the substitutions above may fire through a float `eq`, which
+  // COM: is numeric rather than an identity: `+0.0 == -0.0` holds between two
+  // COM: values that are not interchangeable, and `NaN == NaN` fails between a
+  // COM: value and itself.
+  // CHECK: kgen.param.constant: scalar<f32> = <cond(eq(:scalar<f32> f1_scalar, f2_scalar), f2_scalar, f1_scalar)>
+  kgen.param.constant :scalar<f32> = <cond(eq(:scalar<f32> f1_scalar, f2_scalar), f2_scalar, f1_scalar)>
+  // CHECK: kgen.param.constant: scalar<f32> = <cond(ne(:scalar<f32> f1_scalar, f2_scalar), f1_scalar, f2_scalar)>
+  kgen.param.constant :scalar<f32> = <cond(ne(:scalar<f32> f1_scalar, f2_scalar), f1_scalar, f2_scalar)>
+  // CHECK: kgen.param.constant: scalar<f32> = <cond(eq(:scalar<f32> f1_scalar, "0"), mul(f1_scalar, "-1"), "5")>
+  kgen.param.constant :scalar<f32> = <cond(eq(:scalar<f32> f1_scalar, #kgen<simd "0.0">), mul(:scalar<f32> f1_scalar, #kgen<simd "-1.0">), #kgen<simd "5.0">)>
+
   // CHECK: constant: scalar<index> = <cond(int1, 1, 2)>
   kgen.param.constant: scalar<index> = <cond(int1, #kgen.simd<1>, #kgen.simd<2>)>
 
@@ -252,45 +272,6 @@ lit.struct.decl @StructType1<a: index, b: index> {}
 
 kgen.struct.generator @StructTypeGen0<a: index, b: index> = !kgen.struct<(index, index)>
 kgen.struct.generator @StructTypeGen1<a: index, b: index> = !kgen.struct<(index, index)>
-
-// CHECK-LABEL: @param_expr_type_equality
-kgen.generator @param_expr_type_equality<p1>() {
-  // COM: Trivial pointer equality.
-  // CHECK-NEXT: = kgen.param.constant: i1 = <1>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
-    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
-    #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>
-  ))>
-
-  // COM: Different struct type references.
-  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
-    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
-    #kgen.type<!lit.struct<@StructType1<:index 1, :index p1>>>
-  ))>
-
-  // COM: One struct type reference and one non-struct type reference.
-  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
-    :!kgen.type #kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>,
-    #kgen.type<index>
-  ))>
-
-  // COM: Different struct generator references.
-  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
-    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
-    [typevalue<#kgen.genref<@StructTypeGen1<1, p1>>>, !kgen.struct<(index, index)>]
-  ))>
-
-  // COM: One struct generator reference and one non-struct generator reference.
-  // CHECK-NEXT: = kgen.param.constant: i1 = <0>
-  kgen.param.constant: i1 = <to_builtin(:scalar<bool> eq(
-    :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
-    #kgen.type<index>
-  ))>
-  kgen.return
-}
 
 // CHECK-LABEL: @fixed_width_integers
 kgen.generator @fixed_width_integers<p1: si32, p2: si32>() {
@@ -392,8 +373,8 @@ kgen.generator @eq_compare_sub_elements<a: !kgen.param_list<index>, b: !kgen.par
 // CHECK-LABEL: kgen.generator @int1_aliases
 kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
-  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:dtype type, f32)))>
+  %0 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:dtype type, f32)))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:scalar<index> from_builtin(p1), 42))>
   %1 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(p1, 42))>
@@ -436,7 +417,9 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant: i1 = <0>
   %13 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [p1, 1]))>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:scalar<index> from_builtin(p1), 1))>
+  // COM: And `not_in` is its negation, which has no `ne` sugar since that stays
+  // COM: specific to `eq`.
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:scalar<index> from_builtin(p1), 1)))>
   %14 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(p1, [1]))>
 
   // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(in(:dtype f32, [type, f64])))>
@@ -451,7 +434,9 @@ kgen.generator @int1_aliases<p1, p2, int1: i1, type: dtype>()  {
   // CHECK: = kgen.param.constant: i1 = <0>
   %18 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [type, f32]))>
 
-  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> ne(:dtype type, f32))>
+  // COM: And its negation prints through the generic `not`, since `ne` sugar is
+  // COM: specific to `eq`.
+  // CHECK: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not(identical(:dtype type, f32)))>
   %19 = kgen.param.constant: i1 = <to_builtin(:scalar<bool> not_in(:dtype type, [f32]))>
 
   // This can't be folded because it is target specific: true on 32-bit and
@@ -574,10 +559,10 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // no value, so neither attribute equality nor inequality decides it.
   // CHECK: unknown: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(p1), from_builtin(*?)))>
   kgen.param.declare unknown: i1 = <to_builtin(:scalar<bool> eq(*?, p1))>
-  // CHECK: unknownEq: i1 = <to_builtin(:scalar<bool> eq(:dtype f32, *?))>
-  kgen.param.declare unknownEq: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, f32))>
-  // CHECK: unknownEqItself: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, *?))>
-  kgen.param.declare unknownEqItself: i1 = <to_builtin(:scalar<bool> eq(:dtype *?, *?))>
+  // CHECK: unknownEq: i1 = <to_builtin(:scalar<bool> identical(:dtype f32, *?))>
+  kgen.param.declare unknownEq: i1 = <to_builtin(:scalar<bool> identical(:dtype *?, f32))>
+  // CHECK: unknownEqItself: i1 = <to_builtin(:scalar<bool> identical(:dtype *?, *?))>
+  kgen.param.declare unknownEqItself: i1 = <to_builtin(:scalar<bool> identical(:dtype *?, *?))>
   // CHECK: unknownEqIndex: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(*?), 1))>
   kgen.param.declare unknownEqIndex: i1 = <to_builtin(:scalar<bool> eq(*?, 1))>
   // CHECK: unknownEqItselfIndex: i1 = <to_builtin(:scalar<bool> eq(:scalar<index> from_builtin(*?), from_builtin(*?)))>
@@ -649,8 +634,8 @@ kgen.generator @dtype_params<dt: dtype, f32: dtype, ui32: dtype>() {
 // MLIR TYPES
 // CHECK-LABEL: kgen.generator @type_params<dt: dtype, typeParam: type>()
 kgen.generator @type_params<dt: dtype, typeParam: type>() {
-  // CHECK: kgen.param.assert <eq(:type typeParam, scalar<f32>)>
-  kgen.param.assert <eq(:type typeParam, !kgen.scalar<f32>)>, "f32 scalarzzz"
+  // CHECK: kgen.param.assert <identical(:type typeParam, scalar<f32>)>
+  kgen.param.assert <identical(:type typeParam, !kgen.scalar<f32>)>, "f32 scalarzzz"
   // CHECK: kgen.param.declare ty1: type = <scalar<f32>>
   kgen.param.declare ty1: type = <scalar<f32>>
 
@@ -671,8 +656,8 @@ kgen.generator @type_params<dt: dtype, typeParam: type>() {
 // STRING TYPES
 // CHECK-LABEL: kgen.generator @string_params<a: string, b: string>()
 kgen.generator @string_params<a: string, b: string>() {
-  // CHECK: kgen.param.assert <eq(:string a, b)>, "samesies only"
-  kgen.param.assert <eq(:string a, b)>, "samesies only"
+  // CHECK: kgen.param.assert <identical(:string a, b)>, "samesies only"
+  kgen.param.assert <identical(:string a, b)>, "samesies only"
 
   // CHECK: kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
   kgen.param.assert <in(:string a, [b, "foo"])>, "samesies or foo"
@@ -689,8 +674,8 @@ kgen.generator @string_params<a: string, b: string>() {
 
 // CHECK-LABEL: kgen.generator @target_params2<t0: target>()
 kgen.generator @target_params2<t0: target>() {
-  // CHECK: kgen.param.assert <eq(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>)>, "must support target!!"
-  kgen.param.assert <eq(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>)>, "must support target!!"
+  // CHECK: kgen.param.assert <identical(:target t0, #kgen.target<triple = "triple", arch = "cpu", features = "features", data_layout = "p:32:32", simd_bit_width = 4>)>, "must support target!!"
+  kgen.param.assert <identical(:target t0, #kgen.target<triple="triple", arch="cpu", features="features", data_layout="p:32:32", simd_bit_width=4>)>, "must support target!!"
   kgen.return
 }
 
@@ -702,13 +687,13 @@ kgen.generator @target_has_feature<t0: target>() {
 
 // CHECK-LABEL: kgen.generator @target_is_os<t0: target>()
 kgen.generator @target_is_os<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
+  kgen.param.assert <identical(:string target_get_field(t0, "os"), "darwin")>, "os must be darwin"
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @target_is_little_endian<t0: target>()
 kgen.generator @target_is_little_endian<t0: target>() {
-  kgen.param.assert <eq(:string target_get_field(t0, "endianness"), "little")>, "target must be little endian"
+  kgen.param.assert <identical(:string target_get_field(t0, "endianness"), "little")>, "target must be little endian"
   kgen.return
 }
 
@@ -717,7 +702,7 @@ kgen.generator @target_is_little_endian<t0: target>() {
 kgen.generator @target_get_field() {
   kgen.param.assert<eq(128, target_get_field(#target, "simd_bit_width"))>,
                     "simd_bit_width is always greater than 1"
-  kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
+  kgen.param.assert<identical(:string target_get_field(#target, "os"), "darwin")>,
                     "target os is darwin"
   kgen.return
 }
@@ -1225,6 +1210,24 @@ kgen.generator @param_identical_vs_eq_floats() {
   kgen.return
 }
 
+// COM: The two also part ways on reflexivity for floats. `eq` is a numeric
+// COM: compare, so `x == x` cannot fold to true when `x` might be NaN; identity
+// COM: is reflexive regardless, since both operands denote the same value.
+// CHECK-LABEL: @param_identical_float_reflexivity
+kgen.generator @param_identical_float_reflexivity<f: scalar<f32>, i: scalar<index>>() {
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <eq(:scalar<f32> f, f)>
+  kgen.param.constant: scalar<bool> = <eq(:scalar<f32> f, f)>
+
+  // COM: Int-like dtypes have no NaN, so `eq` stays reflexive there.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <eq(:scalar<index> i, i)>
+
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <true>
+  kgen.param.constant: scalar<bool> = <identical(:scalar<f32> f, f)>
+
+  kgen.return
+}
+
 // COM: Identity must not decide *distinct* numeric constants whose value depends
 // COM: on the target: 2^32 and 0 are the same value at 32-bit index width and
 // COM: different at 64-bit, so attribute inequality proves nothing. Both
@@ -1240,7 +1243,7 @@ kgen.generator @param_identical_index_defers() {
 }
 
 // COM: Reuses the @StructType0/@StructType1 and @StructTypeGen0/@StructTypeGen1
-// COM: declarations above, mirroring @param_expr_type_equality.
+// COM: declarations above.
 // CHECK-LABEL: @param_identical_type_equality
 kgen.generator @param_identical_type_equality<p1>() {
   // COM: Two identical type values are one uniqued attribute, so this decides
@@ -1287,6 +1290,17 @@ kgen.generator @param_identical_type_equality<p1>() {
     :!kgen.type [typevalue<#kgen.genref<@StructTypeGen0<1, p1>>>, !kgen.struct<(index, index)>],
     #kgen.type<index>
   )>
+
+  // COM: The struct-ref cases above always see the struct on the left, because
+  // COM: `identical` sorts its operands and a simple constant sorts right. `in`
+  // COM: shares the same fold but compares its lhs against each element without
+  // COM: sorting, so it reaches the mirrored ordering. Folding to false at all
+  // COM: requires deciding the struct element, which only the mirror can do.
+  // CHECK-NEXT: = kgen.param.constant: scalar<bool> = <false>
+  kgen.param.constant: scalar<bool> = <in(
+    :!kgen.type #kgen.type<index>,
+    [#kgen.type<!lit.struct<@StructType0<:index 1, :index p1>>>, #kgen.type<f32>]
+  )>
   kgen.return
 }
 
@@ -1315,10 +1329,6 @@ kgen.generator @param_identical_generic_syntax<t1: type, t2: type>() {
 kgen.generator @param_identical_nested_index() {
   // CHECK: "test.someop"
   "test.someop" () {
-    // CHECK-SAME: eq_answers_from_representation = #kgen<simd false>
-    eq_answers_from_representation = #kgen.param.expr<eq,
-      #kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
-      #kgen.param_list<#kgen<simd 0> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>> : !kgen.scalar<bool>,
     // CHECK-SAME: identical_defers = #kgen.param.identical<#kgen.param_list<4294967296> : !kgen.param_list<scalar<index>>, #kgen.param_list<0> : !kgen.param_list<scalar<index>>> : !kgen.scalar<bool>
     identical_defers = #kgen.param.identical<
       #kgen.param_list<#kgen<simd 4294967296> : !kgen.scalar<index>> : !kgen.param_list<!kgen.scalar<index>>,
@@ -1368,23 +1378,6 @@ kgen.generator @param_identical_nested_index() {
 kgen.generator @param_identical_nested_unknown() {
   // CHECK: "test.someop"
   "test.someop" () {
-    // COM: Keys are in alphabetical order, which is the order the attribute
-    // COM: dictionary prints in and therefore the order CHECK-SAME must match.
-    // CHECK-SAME: eq_answers_from_representation = #kgen<simd false>
-    eq_answers_from_representation = #kgen.param.expr<eq,
-      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
-      #kgen.param_list<#kgen<simd 1> : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>> : !kgen.scalar<bool>,
-
-    // COM: Two *pointer-equal* nested unknowns are the one case where the two
-    // COM: spellings disagree: `eq` folds it to true through its own unguarded
-    // COM: representation-equality shortcut, while `identical` declines, because
-    // COM: the same representation twice still is not the same value when nobody
-    // COM: knows what that value is -- matching how it treats a top-level `*?`.
-    // CHECK-SAME: eq_same_unknown = #kgen<simd true>
-    eq_same_unknown = #kgen.param.expr<eq,
-      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
-      #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>> : !kgen.scalar<bool>,
-
     // CHECK-SAME: identical_defers = #kgen.param.identical<#kgen.param_list<1> : !kgen.param_list<scalar<si32>>, #kgen.param_list<*?> : !kgen.param_list<scalar<si32>>> : !kgen.scalar<bool>
     identical_defers = #kgen.param.identical<
       #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,

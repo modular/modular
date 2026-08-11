@@ -456,10 +456,10 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   a = #kgen.singleton : !kgen.struct<()>,
   // Two singletons of the same type denote the same value.
   // CHECK: b = #kgen<simd true> : !kgen.scalar<bool>
-  b = #kgen.param.expr<eq, #kgen.singleton : !kgen.struct<()>, #kgen.singleton : !kgen.struct<()>> : !kgen.scalar<bool>,
+  b = #kgen.param.identical<#kgen.singleton : !kgen.struct<()>, #kgen.singleton : !kgen.struct<()>> : !kgen.scalar<bool>,
   // Whereas two unknowns carry no value, so this stays symbolic.
-  // CHECK: c = #kgen.param.expr<eq, #kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
-  c = #kgen.param.expr<eq, #kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
+  // CHECK: c = #kgen.param.identical<#kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
+  c = #kgen.param.identical<#kgen.unknown : !kgen.struct<()>, #kgen.unknown : !kgen.struct<()>> : !kgen.scalar<bool>
 } : () -> ()
 
 "some.op"() {

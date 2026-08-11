@@ -3671,7 +3671,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
       if (lhsOr->isNull() || rhsOr->isNull())
         return {};
 
-      PValue res = ParamOperatorAttr::get(POC::EQ, {*lhsOr, *rhsOr});
+      PValue res = ParamIdenticalAttr::get(*lhsOr, *rhsOr);
       if (kind == ExprNode::Kind::kCmpNE)
         res = ParamOperatorAttr::getNot(res);
       return emitter.emitBool({res, callExpr}, dest);
