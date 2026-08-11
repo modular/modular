@@ -1733,6 +1733,7 @@ def fused_qk_rms_norm_rope_ragged(
     weight_offset: float | np.floating[Any],
     interleaved: bool = True,
     multiply_before_cast: bool = True,
+    q_out_dtype: DType | None = None,
 ) -> TensorValue:
     """Computes fused per-head RMSNorm and RoPE with ragged inputs and paged KV cache.
 
@@ -1740,8 +1741,9 @@ def fused_qk_rms_norm_rope_ragged(
     into a single GPU launch. It applies per-head RMSNorm to the query tensor
     and to the new key entries written into the paged KV cache, then applies
     RoPE to the normalized values. The query tensor is returned as a new tensor
-    with the same shape and dtype as ``input``; the key cache is updated in
-    place for the newly written entries.
+    with the same shape as ``input``, at ``q_out_dtype`` (default
+    ``input.dtype``); the key cache is updated in place for the newly written
+    entries.
 
     The RoPE dimension is taken from ``freqs_cis.shape[1]``. When it is smaller
     than the head dimension, RoPE is applied only to the prefix
@@ -1766,12 +1768,16 @@ def fused_qk_rms_norm_rope_ragged(
         layer_idx: The layer index for the KV cache. Must have dtype ``uint32``.
         weight_offset: The constant offset added to each RMSNorm weight.
         interleaved: Whether to use the interleaved RoPE pattern.
-        multiply_before_cast: Whether to multiply by the effective weight before
-            casting to the output dtype.
+        multiply_before_cast: Whether to multiply by the effective weight
+            before rounding the RMSNorm result to ``input``'s dtype. Governs
+            that round only, not the ``q_out_dtype`` cast.
+        q_out_dtype: Dtype of the returned query tensor (default
+            ``input.dtype``). Q rounds to ``input.dtype`` first, so this equals
+            a separate ``ops.cast`` bit for bit.
 
     Returns:
-        The normalized and RoPE-applied query tensor with the same shape and
-        dtype as ``input``.
+        The normalized and RoPE-applied query tensor with the same shape as
+        ``input``, at ``q_out_dtype``.
 
     Raises:
         ValueError: If the input ranks are invalid, the row offset or layer
@@ -1835,7 +1841,9 @@ def fused_qk_rms_norm_rope_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
+                dtype=q_out_dtype or input.dtype,
+                shape=input.shape,
+                device=input.device,
             )
         ],
         parameters=parameters,
@@ -1861,6 +1869,7 @@ def fused_dual_qk_rms_norm_rope_ragged(
     weight_offset: float | np.floating[Any],
     interleaved: bool = True,
     multiply_before_cast: bool = True,
+    q_main_out_dtype: DType | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Fuses two :obj:`fused_qk_rms_norm_rope_ragged` launches into one.
 
@@ -1875,7 +1884,8 @@ def fused_dual_qk_rms_norm_rope_ragged(
     ``interleaved``, head dim) must be identical across the two bands; a
     divergence trips a compile-time assert in the kernel rather than silently
     mis-roping a band. The two caches may differ in KV-head count, so this is
-    bit-exact to two separate :obj:`fused_qk_rms_norm_rope_ragged` calls.
+    bit-exact to two separate :obj:`fused_qk_rms_norm_rope_ragged` calls,
+    including when ``q_main_out_dtype`` narrows the main band.
 
     Args:
         main_kv_params: KV cache parameters for the main (GQA) cache.
@@ -1897,12 +1907,17 @@ def fused_dual_qk_rms_norm_rope_ragged(
         layer_idx: The layer index for both caches. Dtype ``uint32``.
         weight_offset: Constant offset added to each RMSNorm weight.
         interleaved: Whether to use the interleaved RoPE pattern (both bands).
-        multiply_before_cast: Whether to multiply by the effective weight before
-            casting to the output dtype.
+        multiply_before_cast: Whether to multiply by the effective weight
+            before rounding the RMSNorm result to ``input``'s dtype. Governs
+            that round only, not the ``q_main_out_dtype`` cast.
+        q_main_out_dtype: Dtype of the returned main query tensor (default
+            ``main_input.dtype``); the index band is not retypable. Q rounds to
+            ``main_input.dtype`` first, so this equals a separate ``ops.cast``.
 
     Returns:
         A tuple ``(q_main, q_index)`` of the normalized + RoPE-applied query
-        tensors, matching the shapes/dtypes of ``main_input`` / ``index_input``.
+        tensors, shaped like ``main_input`` / ``index_input``. ``q_index`` keeps
+        ``index_input``'s dtype; ``q_main`` is at ``q_main_out_dtype``.
 
     Raises:
         ValueError: On invalid ranks/dtypes, mismatched gamma sizes, a gamma
@@ -1990,7 +2005,7 @@ def fused_dual_qk_rms_norm_rope_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=main_input.dtype,
+                dtype=q_main_out_dtype or main_input.dtype,
                 shape=main_input.shape,
                 device=main_input.device,
             ),

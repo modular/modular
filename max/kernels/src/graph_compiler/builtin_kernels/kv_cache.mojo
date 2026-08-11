@@ -436,13 +436,14 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged[interleaved: Bool]:
     @staticmethod
     def execute[
         dtype: DType,
+        q_out_dtype: DType,
         freq_dtype: DType,
         multiply_before_cast: Bool,
         cache_dtype: DType,
         //,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_output: OutputTensor[dtype=q_out_dtype, rank=3, ...],
         q_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
@@ -521,6 +522,8 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
     @staticmethod
     def execute[
         dtype: DType,
+        q_main_out_dtype: DType,
+        q_index_out_dtype: DType,
         freq_dtype: DType,
         multiply_before_cast: Bool,
         main_cache_dtype: DType,
@@ -528,8 +531,8 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         //,
         target: StaticString,
     ](
-        q_main_output: OutputTensor[dtype=dtype, rank=3, ...],
-        q_index_output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
         q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
