@@ -22,12 +22,12 @@ from collections.abc import Mapping
 import click
 
 RUNNERS = {
-    "B200": "modrunner-b200",
+    "B200": "modrunner-b200-efa",
     "MI355": "modrunner-mi355",
-    "2xB200": "modrunner-b200-2x",
+    "2xB200": "modrunner-b200-efa-2x",
     "2xMI355": "modrunner-mi355-2x",
     "4xMI355": "modrunner-mi355-4x",
-    "8xB200": "modrunner-b200-8x",
+    "8xB200": "modrunner-b200-efa-8x",
     "8xMI355": "modrunner-mi355-8x",
     "8xB200_internal": "modrunner-prod-2-b200-8x",
 }
