@@ -43,7 +43,8 @@ def test_snprintf_mixed_variadic_args() raises:
     conversions read unrelated memory.
     """
     comptime SIZE = 64
-    var buf = alloc[c_char]({count = SIZE}).unsafe_leak()
+    var allocation = alloc[c_char]({count = SIZE}).into_managed()
+    var buf = allocation.unsafe_ptr()
     var fmt = "[%d|%s|%d|%.2f|%c]".as_c_string_slice()
     var word = "mid".as_c_string_slice()
 
@@ -61,7 +62,6 @@ def test_snprintf_mixed_variadic_args() raises:
     var formatted = String(
         StringSlice(unsafe_from_utf8=CStringSlice(unsafe_from_ptr=buf))
     )
-    buf.unsafe_free()
 
     assert_equal(formatted, "[42|mid|-7|2.50|z]")
     assert_equal(Int(written), 18)
