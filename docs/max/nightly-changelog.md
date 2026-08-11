@@ -255,6 +255,16 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- Fixed expert-parallel dispatch dropping half of every token belonging to an
+  expert that only one communication SM serves, which surfaced as NaN logits.
+  The block-scaled wire formats (NVFP4 and MXFP8) copy a token tile as two
+  column halves claimed separately, and the claim loop stopped as soon as a
+  claim covered the last token, so the remaining half was never copied unless
+  a second SM happened to be on the same expert. Since experts are assigned
+  round-robin over the communication SMs, this began once a device held more
+  experts than half that count — 74 per device on a B200, so a 896-expert MoE
+  over eight devices returned NaN while 512 experts stayed correct.
+
 ## Breaking changes
 
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction

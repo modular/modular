@@ -1575,3 +1575,25 @@ def main() raises:
                     n_tokens_per_rank=64,
                     bench_e2e=False,
                 ](ctx)
+
+        # More local experts than half the comm-SM count. `dispatch_wait`
+        # maps SMs to experts with `umod(sm_id, n_local_experts)`, so past
+        # that point an expert gets a single SM -- and the block-scaled
+        # format splits each token tile into two claims, one per K tile. An
+        # SM that stopped on the first claim left the second K half of the
+        # final token tile uncopied (every token at batch 1), which reached
+        # the expert matmuls as NaN. 112 experts per device is the first
+        # production shape that hits it (896 / EP8). Kept outside the sweep
+        # above because its `> 256` cap would skip this count on 4+ GPUs.
+        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            DeviceContext.default_device_info
+        ):
+            test_dispatch_block_scaled_nv[
+                hidden_size=3584,
+                top_k=16,
+                n_experts=num_gpus * 112,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=64,
+                bench_e2e=False,
+            ](ctx)

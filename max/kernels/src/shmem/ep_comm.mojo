@@ -2643,7 +2643,12 @@ struct EPDispatchKernel[
                 break
 
             var tile_end = min(tile_start + tile_size, total_tokens)
-            last_tile = tile_end == total_tokens
+            # One token tile needs `sms_per_tile` claims (one per K tile);
+            # stop only after the last of those, or the remaining half is dropped.
+            last_tile = (
+                tile_end == total_tokens
+                and umod(tile_id, sms_per_tile) == sms_per_tile - 1
+            )
 
             @always_inline
             def _recv_buf_ptr_for(
