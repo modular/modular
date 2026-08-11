@@ -479,6 +479,7 @@ def store_k_scale_cache_ragged(
             kv_collection.max_prompt_length,
             kv_collection.max_cache_length,
             kv_collection.kv_scales,
+            kv_collection.scales_lookup_table or kv_collection.lookup_table,
             layer_idx,
         ],
         parameters={
@@ -3697,6 +3698,7 @@ def flare_mla_decode_ragged_scaled(
             input_row_offsets,
             *kv_collection.flatten_without_attention_dispatch_metadata(),
             kv_scales,
+            kv_collection.scales_lookup_table or kv_collection.lookup_table,
             q_scales,
             layer_idx,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),

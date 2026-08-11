@@ -156,6 +156,10 @@ struct Struct_kv_cache_store_k_scales_paged:
         max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
+        # the scales share the values' block-id space; pass a distinct table
+        # when they are paged independently.
+        k_scales_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         context: DeviceContext,
     ) capturing raises:
@@ -207,6 +211,12 @@ struct Struct_kv_cache_store_k_scales_paged:
                 k_scales_blocks.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_scales_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
         )
