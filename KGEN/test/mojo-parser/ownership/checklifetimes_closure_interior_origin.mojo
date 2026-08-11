@@ -55,7 +55,7 @@ def outer():
     # A nested closure capturing that interior origin, then called indirectly.
     # CHECK: lit.fn {{.*}}emit(){{.*}}["element"]{{.*}}capturing
     # CHECK: lit.call{{.*}}emit()
-    @parameter
+    @__parameter
     def emit():
         use_any(r)
 

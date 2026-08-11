@@ -48,7 +48,7 @@ def run[
         cipher_init: def(Array[UInt8, KeySize]) raises capturing[_] -> C,
     ](Int) raises capturing[_],
 ](n: Int) raises:
-    @parameter
+    @__parameter
     def make[
         KeySize: Int
     ](key: Array[UInt8, KeySize]) raises -> MyCipher[KeySize]:

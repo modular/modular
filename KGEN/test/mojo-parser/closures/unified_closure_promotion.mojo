@@ -161,7 +161,7 @@ def take_closure_param[C: def[n: Int](arg: Int) -> Int](impl: C) -> Int:
     return impl[3](4)
 
 
-@parameter
+@__parameter
 def legacy(arg0: Int) -> Int:
     return arg0 + 3
 

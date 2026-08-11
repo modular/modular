@@ -251,22 +251,22 @@ def llvm_arg_meta_wrong_name[x: Int](a: Int, b: Int):
 
 def outer_function():
     @__copy_capture  # expected-error {{'@__copy_capture' must have arguments}}
-    @parameter()  # expected-error {{'@parameter' cannot have arguments}}
+    @__parameter()  # expected-error {{'@__parameter' cannot have arguments}}
     def copy_capture_no_args_1():
         pass
 
     @__copy_capture()  # expected-error {{'@__copy_capture' must have arguments}}
-    @parameter("abc")  # expected-error {{'@parameter' cannot have arguments}}
+    @__parameter("abc")  # expected-error {{'@__parameter' cannot have arguments}}
     def copy_capture_no_args_2():
         pass
 
     @__move_capture  # expected-error {{'@__move_capture' must have arguments}}
-    @parameter
+    @__parameter
     def move_capture_no_args_1():
         pass
 
     @__move_capture()  # expected-error {{'@__move_capture' must have arguments}}
-    @parameter
+    @__parameter
     def move_capture_no_args_2():
         pass
 

@@ -520,7 +520,7 @@ def test_cannot_consume_indirect_references():
     # expected-warning @+1 {{assignment to 'b' was never used}}
     var b = MovableStuff()
 
-    @parameter
+    @__parameter
     def callback():
         # expected-error @+1 {{cannot consume indirect references to values}}
         b = a^

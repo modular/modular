@@ -323,7 +323,7 @@ def autoparam_of_dependent_params[dp: DependentParams]():
 # CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
 # CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
 def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] -> None]():
-    @parameter
+    @__parameter
     def function():
         pass
 

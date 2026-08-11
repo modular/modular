@@ -343,7 +343,7 @@ struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 def convert_result_type():
-    @parameter
+    @__parameter
     def convert_result_type[T: ChangedResultTypeTrait]():
         pass
 
@@ -365,7 +365,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
-    @parameter
+    @__parameter
     def bind_trait[T: SimpleTraitMethod]():
         pass
 
@@ -639,15 +639,15 @@ struct TraitInheritance(Father, Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_trait_inheritance
 def test_trait_inheritance():
-    @parameter
+    @__parameter
     def take_great_grand_father[T: GreatGrandFather]():
         pass
 
-    @parameter
+    @__parameter
     def take_grand_father[T: GrandFather]():
         pass
 
-    @parameter
+    @__parameter
     def take_father[T: Father]():
         pass
 

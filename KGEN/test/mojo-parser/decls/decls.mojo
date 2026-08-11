@@ -1071,7 +1071,7 @@ async def mem_raises() raises -> Int:
 
 # CHECK-LABEL: lit.fn @"async_closure_capture
 def async_closure_capture(x: String):
-    @parameter
+    @__parameter
     # CHECK: lit.fn *"capture_it
     async def capture_it():
         _ = x
@@ -1091,7 +1091,7 @@ def topLevelFunction() -> Int:
     var a = 0
 
     # CHECK: lit.fn *"nestedFunction()"
-    @parameter
+    @__parameter
     def nestedFunction() -> Int:
         # CHECK-NEXT: lit.ref.load %a
         return a
@@ -1109,7 +1109,7 @@ struct SomeStruct(Movable where False):
         var a = 0
 
         # CHECK: lit.fn *"nestedFunction()"
-        @parameter
+        @__parameter
         def nestedFunction() -> Int:
             # CHECK-NEXT: lit.ref.load %a
             return a
@@ -1195,11 +1195,11 @@ struct CapturingStructTrait(CapturingTrait, RegisterPassable):
 def inferCaptureOrigins[
     lt: Origin[mut=True], param: HasLifetimeParam[lt]
 ](mut x: Int, mut y: Int, arg: HasParam):
-    @parameter
+    @__parameter
     def bareFunc():
         pass
 
-    @parameter
+    @__parameter
     def captureSomething():
         _ = x
 
@@ -1228,7 +1228,7 @@ def inferCaptureOrigins[
 
     # CHECK: lit.fn *"captureWithClosure
     # CHECK-SAME: :{mut *"y`{{.*}}", mut |*(0,0)|}:
-    @parameter
+    @__parameter
     def captureWithClosure[
         lts: OriginSet, //, f: def () capturing [lts] -> None
     ]():
@@ -1241,12 +1241,12 @@ def inferCaptureOrigins[
 # CHECK-LABEL: lit.fn @"testParameterCapture
 def testParameterCapture(mut x: Int, mut y: Int):
     # CHECK: lit.fn *"capture()":{mut *"x`"}
-    @parameter
+    @__parameter
     def capture():
         _ = x
 
     # CHECK: lit.fn *"do_it()":{mut *"x`", mut *"y`
-    @parameter
+    @__parameter
     def do_it():
         _ = y
         capture()
@@ -1265,7 +1265,7 @@ def topLevelParamFn[a_param: __mlir_type.index]():
     var value = 0
 
     @__copy_capture(value)
-    @parameter
+    @__parameter
     def capturingNestedFunction() -> Int:
         return value
 
