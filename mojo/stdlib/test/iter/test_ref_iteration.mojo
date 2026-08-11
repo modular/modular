@@ -13,8 +13,7 @@
 """Tests for by-reference iteration over move-only types."""
 
 from std.iter import StopIteration
-from std.memory import alloc
-from std.memory.memory import _free
+from std.memory import Allocation, alloc, dealloc
 from std.testing import TestSuite, assert_equal
 from test_utils import ExplicitCopyOnly
 
@@ -94,7 +93,11 @@ struct MoveOnlyList[T: Movable & Deinitable]:
         for i in range(self._len):
             self._data.unsafe_offset(i).unsafe_deinit_pointee()
         if self._capacity > 0:
-            _free(self._data)
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self._data, layout={count = self._capacity}
+                )
+            )
 
     def __len__(self) -> Int:
         return self._len
@@ -110,7 +113,12 @@ struct MoveOnlyList[T: Movable & Deinitable]:
                     self._data.unsafe_offset(i).unsafe_take_pointee()
                 )
             if self._capacity > 0:
-                _free(self._data)
+                dealloc(
+                    Allocation(
+                        unsafe_owned_ptr=self._data,
+                        layout={count = self._capacity},
+                    )
+                )
             self._data = new_data
             self._capacity = new_cap
         self._data.unsafe_offset(self._len).unsafe_write(value^)

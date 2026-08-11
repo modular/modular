@@ -35,7 +35,7 @@ from std.benchmark import (
     keep,
 )
 from std.math import ceildiv
-from std.memory import alloc
+from std.memory import Allocation, alloc, dealloc
 from std.atomic import Atomic
 from std.sys.info import num_physical_cores
 
@@ -67,7 +67,8 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                 if n_elems < 1:
                     n_elems = 1
 
-                var p = alloc[Int]({count = n_elems}).unsafe_leak()
+                var allocation = alloc[Int]({count = n_elems}).into_managed()
+                var p = allocation.unsafe_ptr()
                 var seed = Int(black_box(task_id + j))
 
                 var k = 0
@@ -82,7 +83,6 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
                     k += 1
                 acc += fold
 
-                p.unsafe_free()
                 j += 1
 
             _ = checksum.fetch_add(acc)

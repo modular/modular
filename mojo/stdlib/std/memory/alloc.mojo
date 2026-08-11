@@ -195,6 +195,31 @@ struct Allocation[T: AnyType](
         """
         self = managed^._into_allocation()
 
+    def __init__(
+        out self,
+        *,
+        unsafe_owned_ptr: Pointer[Self.T, MutUntrackedOrigin],
+        layout: Layout[Self.T],
+    ):
+        """Initializes a `Allocation` that takes ownership of a raw pointer.
+
+        Args:
+            unsafe_owned_ptr: The raw pointer to take ownership of. The
+                new `Allocation` assumes responsibility for deallocating
+                this storage.
+            layout: The associated layout.
+
+        Safety:
+
+        - The pointer must own storage that was previously created though
+        `alloc`, and no other value may own it.
+        - The provided `layout` must also exactly match the layout initially
+        passed to `alloc` which created this `Allocation`.
+
+        """
+        self._alloc = ThinAllocation(unsafe_owned_ptr=unsafe_owned_ptr)
+        self._layout = layout
+
     def unsafe_leak(
         deinit self,
     ) -> Pointer[Self.T, MutUntrackedOrigin]:

@@ -27,7 +27,12 @@ from std.benchmark import (
     keep,
     run,
 )
-from std.memory import unsafe_memcpy, unsafe_memset_zero
+from std.memory import (
+    Allocation,
+    dealloc,
+    unsafe_memcpy,
+    unsafe_memset_zero,
+)
 from std.testing import assert_equal
 
 
@@ -116,8 +121,17 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         )
 
     def __deinit__(deinit self):
-        self.keys.unsafe_free()
-        self.keys_end.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.keys,
+                layout={count = self.allocated_bytes},
+            )
+        )
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.keys_end, layout={count = self.capacity}
+            )
+        )
 
     @always_inline
     def add(mut self, key: StringSlice):
@@ -128,6 +142,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         var key_length = key.byte_length()
         var new_end = prev_end + Scalar[Self.KeyEndType](key_length)
 
+        var old_allocated_bytes = self.allocated_bytes
         var needs_realocation = False
         while new_end > Scalar[Self.KeyEndType](self.allocated_bytes):
             self.allocated_bytes += self.allocated_bytes >> 1
@@ -138,7 +153,12 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
                 {count = self.allocated_bytes}
             ).unsafe_leak()
             unsafe_memcpy(dest=keys, src=self.keys, count=Int(prev_end))
-            self.keys.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.keys,
+                    layout={count = old_allocated_bytes},
+                )
+            )
             self.keys = keys
 
         unsafe_memcpy(
@@ -153,7 +173,12 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
                 {count = new_capacity}
             ).unsafe_leak()
             unsafe_memcpy(dest=keys_end, src=self.keys_end, count=self.capacity)
-            self.keys_end.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.keys_end,
+                    layout={count = self.capacity},
+                )
+            )
             self.keys_end = keys_end
             self.capacity = new_capacity
 
@@ -274,9 +299,7 @@ struct StringDict[
                 count=self.capacity,
             )
         else:
-            self.key_hashes = alloc[Scalar[Self.KeyCountType]](
-                {count = 0}
-            ).unsafe_leak()
+            self.key_hashes = type_of(self.key_hashes).unsafe_dangling()
         self.values = copy.values.copy()
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](
             {count = self.capacity}
@@ -297,12 +320,29 @@ struct StringDict[
                 count=self.capacity >> 3,
             )
         else:
-            self.deleted_mask = alloc[UInt8]({count = 0}).unsafe_leak()
+            self.deleted_mask = type_of(self.deleted_mask).unsafe_dangling()
 
     def __deinit__(deinit self):
-        self.slot_to_index.unsafe_free()
-        self.deleted_mask.unsafe_free()
-        self.key_hashes.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=self.slot_to_index,
+                layout={count = self.capacity},
+            )
+        )
+        comptime if Self.destructive:
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.deleted_mask,
+                    layout={count = self.capacity >> 3},
+                )
+            )
+        comptime if Self.caching_hashes:
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.key_hashes,
+                    layout={count = self.capacity},
+                )
+            )
 
     def __len__(self) -> Int:
         return self.count
@@ -413,7 +453,12 @@ struct StringDict[
                 src=self.deleted_mask,
                 count=old_capacity >> 3,
             )
-            self.deleted_mask.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.deleted_mask,
+                    layout={count = old_capacity >> 3},
+                )
+            )
             self.deleted_mask = deleted_mask
 
         var modulo_mask = self.capacity - 1
@@ -449,9 +494,19 @@ struct StringDict[
                 key_hashes[unsafe_offset=slot] = key_hash
 
         comptime if Self.caching_hashes:
-            self.key_hashes.unsafe_free()
+            dealloc(
+                Allocation(
+                    unsafe_owned_ptr=self.key_hashes,
+                    layout={count = old_capacity},
+                )
+            )
             self.key_hashes = key_hashes
-        old_slot_to_index.unsafe_free()
+        dealloc(
+            Allocation(
+                unsafe_owned_ptr=old_slot_to_index,
+                layout={count = old_capacity},
+            )
+        )
 
     def get(self, key: StringSlice, default: Self.V) -> Self.V:
         var key_index = self._find_key_index(key)

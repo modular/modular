@@ -18,8 +18,8 @@ from std.memory import alloc
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
-    var ptr = alloc[Float32]({count = 4}).unsafe_leak()
-
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     # Initialize all elements to safe values.
     ptr.unsafe_store(0, Float32(1.0))
     ptr.unsafe_store(1, Float32(2.0))
@@ -36,4 +36,3 @@ def main():
     _ = ptr.unsafe_load[width=4]()
 
     # Should not reach here.
-    ptr.unsafe_free()

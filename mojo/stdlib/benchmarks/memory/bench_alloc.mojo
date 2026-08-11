@@ -20,9 +20,9 @@ def bench_allocation(mut b: Bencher) raises:
     @__parameter
     def call_fn():
         for _ in range(10000):
-            var a = alloc[Int]({count = 100}).unsafe_leak()
+            var allocation = alloc[Int]({count = 100}).into_managed()
+            var a = allocation.unsafe_ptr()
             keep(a)
-            a.unsafe_free()
 
     b.iter[call_fn]()
 
