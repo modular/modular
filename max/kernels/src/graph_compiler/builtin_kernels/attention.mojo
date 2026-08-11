@@ -130,6 +130,10 @@ struct MLAIndexerRaggedFloat8Paged:
         k_max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         k_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        # Resolves a request's scale pages. Pass `k_lookup_table` itself when
+        # the scales share the values' block-id space; pass a distinct table
+        # when they are paged independently.
+        k_scales_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -163,6 +167,9 @@ struct MLAIndexerRaggedFloat8Paged:
             k_max_prompt_length: Max prompt (query) length scalar tensor [1].
             k_max_cache_length: Max cache length scalar tensor [1].
             k_scales: K scale blocks matching k_blocks shape with scale values.
+            k_scales_lookup_table: Page lookup table for the scale blocks
+                [batch_size, pages_per_seq]. Equal to `k_lookup_table` when the
+                scales share the values' block-id space.
             layer_idx: Layer index for retrieving the correct cache layer.
             ctx: Device context for GPU execution.
         """
@@ -221,6 +228,12 @@ struct MLAIndexerRaggedFloat8Paged:
                 k_scales.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     k_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_scales_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
         )
@@ -2052,6 +2065,10 @@ struct Struct_mla_decode_ragged_paged_scaled:
         max_prompt_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         max_cache_length: InputTensor[dtype=DType.uint32, rank=1, ...],
         kv_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
+        # the scales share the values' block-id space; pass a distinct table
+        # when they are paged independently.
+        kv_scales_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
         q_scales: InputTensor[dtype=DType.float32, rank=1, ...],
         layer_idx: UInt32,
         scale: Float32,
@@ -2108,6 +2125,12 @@ struct Struct_mla_decode_ragged_paged_scaled:
                 kv_scales.to_layout_tensor().ptr,
                 RuntimeLayout[Layout.row_major[6]()].row_major(
                     kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_scales_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
                 ),
             ),
         )

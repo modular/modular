@@ -3146,6 +3146,11 @@ def generic_get_paged_cache_with_scales[
         mut=False, DType.uint32, Layout.row_major[1](), _
     ],
     scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
+    scales_lookup_table: OptionalReg[
+        LayoutTensor[
+            mut=False, DType.uint32, Layout.row_major[2](), lookup_table.origin
+        ]
+    ] = None,
     out result: PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -3167,6 +3172,11 @@ def generic_get_paged_cache_with_scales[
         max_prompt_length: Max prompt (query) length scalar tensor [1].
         max_cache_length: Max cache length scalar tensor [1].
         scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
+        scales_lookup_table: Page lookup table for the scales [batch_size, max_pages].
+            Pass this when the scales are paged independently of the values, so
+            a request's scale pages carry their own ids. When absent the scales
+            resolve through `lookup_table`, which is correct only while the two
+            share one block-id space.
     """
     # Thread the input tensors' origins into the collection so the borrow
     # checker keeps the backing buffers alive across the collection's use.
@@ -3177,6 +3187,7 @@ def generic_get_paged_cache_with_scales[
         max_seq_length = max_prompt_length[0][0],
         max_cache_length = max_cache_length[0][0],
         scales = scales,
+        scales_lookup_table = scales_lookup_table,
     }
 
 

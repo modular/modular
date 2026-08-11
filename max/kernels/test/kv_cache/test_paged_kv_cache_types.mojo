@@ -351,10 +351,132 @@ def test_paged_kv_cache_quantization() raises:
     )
 
 
+def test_scales_resolve_through_their_own_lookup_table() raises:
+    """A distinct scales_lookup_table must resolve scale pages independently
+    of lookup_table, not silently fall back to it.
+    """
+    comptime kv_params_small = KVCacheStaticParams(num_heads=1, head_size=4)
+    comptime page_size = 1
+    comptime granularity = 4
+    comptime batch_size = 1
+    comptime num_value_blocks = 1
+    comptime num_scale_blocks = 3
+
+    comptime blocks_shape = IndexList[6](
+        num_value_blocks,
+        2,
+        1,
+        page_size,
+        kv_params_small.num_heads,
+        kv_params_small.head_size,
+    )
+    var blocks_ptr = List(
+        length=blocks_shape.flattened_length(), fill=Float32(0)
+    )
+    var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
+        blocks_ptr,
+        RuntimeLayout[Layout.row_major[6]()].row_major(blocks_shape),
+    )
+
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(1))
+    var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
+        cache_lengths_ptr,
+        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
+    )
+
+    comptime layout_2d = Layout.row_major[2]()
+
+    # Both LUTs are `alloc`'d rather than backed by a `List`: the collection's
+    # `scales_lookup_table` parameter shares one origin type with
+    # `lookup_table` (both resolve through the same `lookup_table_origin`
+    # struct param), and `alloc[T](n)` returns a fixed `MutUntrackedOrigin`
+    # regardless of call site, so both tensors unify to the same type even
+    # though they're separately allocated.
+
+    # Values resolve through block 0.
+    var lookup_table_ptr = alloc[UInt32](batch_size)
+    lookup_table_ptr[0] = UInt32(0)
+    var lookup_table = LayoutTensor[mut=False, DType.uint32, layout_2d](
+        lookup_table_ptr,
+        RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
+    )
+
+    # Scales resolve through block 2 -- distinct from what lookup_table
+    # points at, and only reachable through scales_lookup_table.
+    var scales_lookup_table_ptr = alloc[UInt32](batch_size)
+    scales_lookup_table_ptr[0] = UInt32(2)
+    var scales_lookup_table_opt: OptionalReg[
+        LayoutTensor[mut=False, DType.uint32, layout_2d, MutUntrackedOrigin]
+    ] = LayoutTensor[mut=False, DType.uint32, layout_2d](
+        scales_lookup_table_ptr,
+        RuntimeLayout[layout_2d].row_major(IndexList[2](batch_size, 1)),
+    )
+
+    comptime scales_shape = IndexList[6](
+        num_scale_blocks, 2, 1, page_size, kv_params_small.num_heads, 1
+    )
+    var scales_ptr = alloc[Float32](scales_shape.flattened_length())
+    var scales = LayoutTensor[DType.float32, Layout.row_major[6]()](
+        scales_ptr,
+        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
+    ).fill(Float32(-1.0))
+    # Block 0 -- where lookup_table points -- holds a decoy value that a
+    # buggy fallback to lookup_table would read instead.
+    scales[0, 0, 0, 0, 0, 0] = Float32(111.0)
+    # Block 2 -- where scales_lookup_table points -- holds the real value.
+    scales[2, 0, 0, 0, 0, 0] = Float32(222.0)
+
+    var scales_opt: OptionalReg[
+        LayoutTensor[DType.float32, Layout.row_major[6](), MutUntrackedOrigin]
+    ] = scales
+
+    var collection = PagedKVCacheCollection[
+        DType.float32,
+        kv_params_small,
+        page_size,
+        scale_dtype_=DType.float32,
+        quantization_granularity_=granularity,
+    ](
+        LayoutTensor[blocks.dtype, Layout.row_major[6]()](
+            blocks.ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks.runtime_layout.shape.value,
+                blocks.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
+            cache_lengths.ptr.as_imm().as_unsafe_any_origin(),
+            RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                cache_lengths.runtime_layout.shape.value,
+                cache_lengths.runtime_layout.stride.value,
+            ),
+        ),
+        lookup_table,
+        UInt32(page_size),
+        UInt32(page_size),
+        scales_opt,
+        scales_lookup_table_opt,
+    )
+
+    var key_cache = collection.get_key_cache(0)
+    var scale = key_cache.load_scale[width=1](
+        bs=0, head_idx=0, tok_idx=0, head_dim_idx=0
+    )
+
+    assert_true(
+        Float32(scale) == Float32(222.0),
+        String("scale resolved through the wrong LUT: got ")
+        + String(scale)
+        + ", expected 222.0 (via scales_lookup_table, not lookup_table)",
+    )
+
+
 def main() raises:
     test_paged_kv_cache_stride_is_unknown()
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()
+    test_scales_resolve_through_their_own_lookup_table()
     do_test[16, 16]()
     do_test[64, 16]()
     do_test[128, 64]()
