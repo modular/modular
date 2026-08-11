@@ -491,6 +491,19 @@ struct PagedRowIndices[
             tile_rows, Self.page_size
         )
         comptime pages_per_iter = tile_rows // tma_per_issue_rows
+        # Anti-drift: the descriptor's box row count MUST equal the per-issue
+        # row count derived here. Each of the `pages_per_iter` issues below
+        # transfers the DESCRIPTOR's whole box, so a descriptor built without
+        # the paging split paired with a page-split issue loop over-delivers by
+        # `pages_per_iter` -- `expect_bytes` then under-counts, the mbarrier
+        # transaction count underflows into the next phase, and the consumer's
+        # ring accounting desyncs into a hang (SM100 FA4 Layout-E, where the V
+        # box row source is a reduction chunk rather than the whole tile).
+        comptime assert tile_shape[0] == tma_per_issue_rows, (
+            "kv TMA descriptor box rows must equal the issue-site per-issue"
+            " rows; a descriptor whose box was not split by page_size was"
+            " paired with a page-split issue loop"
+        )
         comptime effective_iters = (
             pages_per_iter if num_iters == -1 else num_iters
         )

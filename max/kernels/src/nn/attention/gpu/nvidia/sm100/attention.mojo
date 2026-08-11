@@ -209,8 +209,15 @@ struct FA4Config[
         return self.v_cols_per_cta()
 
     @always_inline
-    def v_e_box_rows(self) -> Int:
-        """Layout-E (`m_pack == 2`) V TMA box KEY-row count per issued sub-tile.
+    def v_e_chunk_rows(self) -> Int:
+        """Layout-E (`m_pack == 2`) V reduction-chunk KEY-row count.
+
+        NOT the TMA box row count -- deliberately not named `..._box_rows`. This
+        is the chunk the P@V MMA reduces over (`mma_warp`'s `pv_bk_chunk`) and
+        the SMEM region one issued sub-tile lands in (`load_warp`'s
+        `partition_region_elems`); `v_tma_box_rows()` splits it FURTHER when
+        `page_size` is smaller, and conflating the two is what let a
+        page-oblivious descriptor pair with a page-split issue loop.
 
         Layout-E KEY-splits V into `m_pack * num_qk_stages` per-partition
         reduction-chunk sub-tiles instead of Layout-G's DEPTH-split
@@ -230,7 +237,11 @@ struct FA4Config[
     def v_e_box_cols(self) -> Int:
         """Layout-E (`m_pack == 2`) V TMA box depth (columns) per issued
         sub-tile: the FULL `padded_ov_depth`, since Layout-E splits V by KEY
-        (reduction), not by depth. Sibling of `v_e_box_rows()`.
+        (reduction), not by depth. Counterpart of `v_e_chunk_rows()`.
+
+        This one DOES keep the `box` name: paging partitions the KEY axis only,
+        so unlike the row count this is the descriptor's column count outright,
+        with nothing further to split.
         """
         return self.padded_ov_depth
 
@@ -242,13 +253,25 @@ struct FA4Config[
         (dispatch `create_tma_tile`, kernel `VTMAOpType`, the `fa4_load`
         signature), so the box shape stays syntactically identical across
         sites -- the same single-source-of-truth rule `v_box_cols()`
-        documents. Layout-E (`m_pack == 2`) uses the KEY-split
-        `v_e_box_rows()`; Layout-G / non-WS use `kv_sub_tile_rows(BN,
-        page_size)` (byte-identical to the historical inline expression).
+        documents.
+
+        One composition, two row sources: Layout-E (`m_pack == 2`) starts from
+        its KEY-split reduction chunk `v_e_chunk_rows()`, Layout-G / non-WS from
+        the whole tile `BN`; BOTH are then split by paging. The paging split
+        does not substitute for the reduction split -- `v_e_chunk_rows()` is a
+        MATH partition (which keys one P@V MMA reduces) while `page_size` is a
+        PHYSICAL address discontinuity, so when `page_size < v_e_chunk_rows()` a
+        reduction chunk straddles pages and must be cut again.
+        `_tma_copy_kv_impl` re-derives that same cut as its per-issue row count
+        (`kv_sub_tile_rows(tile_rows, page_size)`) and issues `pages_per_iter`
+        TMAs of the descriptor's box, so a box built without the paging term
+        would over-deliver by exactly that factor and desync the KV ring's
+        `expect_tx` accounting. `kv_sub_tile_rows` is the identity whenever
+        `page_size >= rows`, so Layout-G / non-WS stay byte-identical to the
+        historical inline expression.
         """
-        if self.m_pack == 2:
-            return self.v_e_box_rows()
-        return kv_sub_tile_rows(self.BN, page_size)
+        var rows = self.v_e_chunk_rows() if self.m_pack == 2 else self.BN
+        return kv_sub_tile_rows(rows, page_size)
 
     @always_inline
     def v_tma_box_cols(self) -> Int:
