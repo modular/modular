@@ -1720,20 +1720,30 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
     } else if (sugarIsa<StructMetaMetaType, AnyTraitType>(
                    fromType.extractMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
+        SmallVector<SymbolRefAttr> toCheck;
         // Check for closure rebindability.
         for (const auto &symbol : trait.getSymbols()) {
           auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-          if (auto traitDeclOp =
-                  dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
-              traitDeclOp && traitDeclOp.getDefinesClosure()) {
-            if (succeeded(shared.closureEmitter->isCompatibleWith(
-                    fromType, &symbolDecl)) ||
-                succeeded(shared.closureEmitter->isTraitCompatibleWith(
-                    fromType, traitDeclOp, declScope))) {
-              return TriState::yes();
-            }
+          auto traitDeclOp = cast<TraitDeclOp>(symbolDecl.getIfOperation());
+          if (traitDeclOp.getDefinesClosure()) {
+            // If this is a struct, check whether we can do lazy conformance.
+            if (sugarIsa<StructMetaType>(fromType) &&
+                failed(shared.closureEmitter->isCompatibleWith(fromType,
+                                                               &symbolDecl)))
+              return TriState::no();
+
+            if (sugarIsa<TraitType>(fromType) &&
+                failed(shared.closureEmitter->isTraitCompatibleWith(
+                    fromType, traitDeclOp, declScope)))
+              toCheck.push_back(symbol); // maybe don't need extension.
+          } else {
+            // Non closure traits are checked separately.
+            toCheck.push_back(symbol);
           }
         }
+
+        // Test only traits which are not closure traits
+        trait = TraitType::get(shared.getContext(), toCheck);
 
         // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
         // Tuple[*Ts]: Writable when binding to a Writable parameter.
