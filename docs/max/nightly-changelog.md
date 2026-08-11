@@ -261,6 +261,11 @@ This version is still a work in progress.
   tensor-parallel-within-data-parallel topologies. It was previously full-world
   only.
 
+- `max.driver.Buffer` now implements `__str__`, so `str(buffer)` and
+  `print(buffer)` show the buffer's data formatted like a numpy array, followed
+  by its `dtype`, `shape`, and `device`. `repr(buffer)` still returns the
+  metadata-only representation.
+
 ### C API
 
 ## MAX kernels
