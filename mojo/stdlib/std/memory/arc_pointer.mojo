@@ -37,7 +37,9 @@ from std.memory.alloc import (
 
 
 @doc_hidden
-struct _ArcPointerInner[T: Movable & Deinitable]:
+struct _ArcPointerInner[T: Movable & Deinitable](
+    Movable where False,
+):
     """
     The backing _shared_ piece of an ArcPointer.
     Referenced by all Arc and Weak for a given value.
@@ -58,6 +60,12 @@ struct _ArcPointerInner[T: Movable & Deinitable]:
         self.strong = Atomic(UInt64(1))
         self.weak = Atomic(UInt64(1))
         self.payload = UnsafeMaybeUninit[Self.T](value^)
+
+    def __deinit__(deinit self):
+        # Safety:
+        # The payload has already been destroyed from the
+        # final ref-count drop.
+        self.payload^.unsafe_forget()
 
     def add_strong(mut self):
         """Atomically increment the strong refcount."""

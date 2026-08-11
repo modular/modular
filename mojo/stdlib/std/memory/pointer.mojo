@@ -1329,6 +1329,12 @@ struct Pointer[
 
             unsafe_memcpy(dest=self, src=other_tmp.unsafe_ptr(), count=1)
             unsafe_memcpy(dest=other, src=self_tmp.unsafe_ptr(), count=1)
+
+            # Safety:
+            # The memcpy moved the values from the temporary storage into
+            # self & other, so the values are uninitialized.
+            self_tmp^.unsafe_forget()
+            other_tmp^.unsafe_forget()
         else:
             # If `moveinit` is NOT trivial, we need to check if the pointers are
             # the same to avoid undefined behavior when moving from rhs to lhs.

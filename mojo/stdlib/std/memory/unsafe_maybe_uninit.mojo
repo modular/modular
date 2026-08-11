@@ -15,13 +15,33 @@
 from std.builtin.rebind import downcast
 from std.os import abort
 from std.memory import unsafe_memset_zero
-from std.traits import IsTriviallyCopyable, IsTriviallyMovable
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 
 struct UnsafeMaybeUninit[T: AnyType](
     Defaultable,
-    ImplicitlyCopyable,
-    RegisterPassable where conforms_to(T, RegisterPassable),
+    Deinitable where (
+        IsTriviallyDeinitable[T],
+        "T must be trivially deinitable, since UnsafeMaybeUninit never runs T's"
+        " __deinit__",
+    ),
+    ImplicitlyCopyable where (
+        IsTriviallyCopyable[T] and IsTriviallyMovable[T],
+        "T must be trivially copyable and movable, since copying"
+        " UnsafeMaybeUninit only copies the underlying bits",
+    ),
+    Movable where (
+        IsTriviallyMovable[T],
+        "T must be trivially movable, since moving UnsafeMaybeUninit only moves"
+        " the underlying bits",
+    ),
+    RegisterPassable where (
+        conforms_to(T, RegisterPassable) and IsTriviallyMovable[T]
+    ),
 ):
     """A wrapper type to represent memory that may or may not be initialized.
 
@@ -90,7 +110,7 @@ struct UnsafeMaybeUninit[T: AnyType](
 
     @staticmethod
     @always_inline
-    def zeroed() -> Self:
+    def zeroed(out result: Self):
         """Create an `UnsafeMaybeUninit` in an uninitialized state, with the memory set to all 0 bytes.
 
         It depends on `T` whether zeroed memory makes for proper initialization.
@@ -100,37 +120,8 @@ struct UnsafeMaybeUninit[T: AnyType](
         Returns:
             An `UnsafeMaybeUninit` with the memory set to all 0 bytes.
         """
-        var result = Self()
+        result = Self()
         unsafe_memset_zero(Pointer(to=result), 1)
-        return result^
-
-    def __init__(out self, *, copy: Self):
-        """Copies the raw bits from another `UnsafeMaybeUninit` instance.
-
-        This performs a bitwise copy of the underlying memory without invoking
-        `T`'s copy constructor. For `UnsafeMaybeUninit[T]` to be Copyable,
-        the held value `T` must be trivially copyable.
-
-        Args:
-            copy: The instance to copy from.
-        """
-        comptime assert conforms_to(Self.T, Copyable)
-        comptime assert IsTriviallyCopyable[Self.T]
-        self._array = copy._array
-
-    def __init__(out self, *, deinit move: Self):
-        """Moves the raw bits from another `UnsafeMaybeUninit` instance.
-
-        This performs a bitwise move of the underlying memory without invoking
-        `T`'s move constructor. For `UnsafeMaybeUninit[T]` to be Movable,
-        the held value `T` must be trivially movable.
-
-        Args:
-            move: The value to move from.
-        """
-        comptime assert conforms_to(Self.T, Movable)
-        comptime assert IsTriviallyMovable[Self.T]
-        self._array = move._array
 
     @always_inline
     def unsafe_write(

@@ -785,10 +785,20 @@ def mgp_buffer_bulk_slice[
 
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
-    for i in range(N):
-        result[i].unsafe_write(
-            mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
-        )
+    var initialized = 0
+    try:
+        for i in range(N):
+            result[i].unsafe_write(
+                mgp_buffer_slice(base, offsets[i], sizes[i], dev_context)
+            )
+            initialized += 1
+    except e:
+        # Need to destroy any previously created `OwnedByteBuffer` to not
+        # leak resources if `mpg_buffer_slice()` raises an error.
+        for i in range(initialized):
+            result[i].unsafe_ptr().unsafe_deinit_pointee()
+        result^.deinit_with(UnsafeMaybeUninit[OwnedByteBuffer].unsafe_forget)
+        raise e
 
     return {unsafe_assume_initialized = result^}
 
