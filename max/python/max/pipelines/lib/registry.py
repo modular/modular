@@ -17,27 +17,17 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import importlib
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.nn import Module
-from max.graph.weights import WeightsAdapter, WeightsFormat
-from max.pipelines.context import (
-    PixelContext,
-    TextAndVisionContext,
-    TextContext,
-)
-from max.pipelines.kv_cache.memory_planner import MemoryPlanner
+from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
-    InputModality,
     Pipeline,
     PipelineTask,
     PipelineTokenizer,
@@ -53,18 +43,26 @@ from transformers import (
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
-    from .pipeline_executor import PipelineExecutor
 
 from max.driver import load_devices
 from max.pipelines.diffusion.pipeline import PixelGenerationPipeline
 from max.pipelines.lib._hf_config import load_huggingface_config
 from max.pipelines.lib.memory_estimation import MemoryEstimator, _MemoryPlan
-from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.support.human_readable_formatter import to_human_readable_bytes
 
+from .arch_lookup import (
+    ARCH_LOOKUP,
+    ArchLookup,
+    SupportedArchitecture,
+)
+
+# PipelineModelType and SupportedArchitecture are re-exported here so existing
+# import paths (`from max.pipelines.lib.registry import SupportedArchitecture`)
+# keep working after their move to the arch_lookup leaf module.
+from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
-from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel
+from .interfaces import ArchConfigWithKVCache, PipelineModel
 from .interfaces.arch_config import validate_device_specs
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
@@ -76,12 +74,6 @@ from .tokenizer import TextTokenizer
 logger = logging.getLogger("max.pipelines")
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
-
-PipelineModelType: TypeAlias = (
-    "type[PipelineModel[Any]] "
-    "| type[PipelineExecutor[Any, Any, Any]] "
-    "| type[Module[Any, Any]]"
-)
 
 
 def get_pipeline_for_task(
@@ -129,297 +121,6 @@ def get_pipeline_for_task(
         return PixelGenerationPipeline
     else:
         raise ValueError(f"Unsupported pipeline task: {task}")
-
-
-@dataclass(frozen=False)
-class SupportedArchitecture:
-    """Represents a model architecture configuration for MAX pipelines.
-
-    Defines the components and settings required to
-    support a specific model architecture within the MAX pipeline system.
-    Each `SupportedArchitecture` instance encapsulates the model implementation,
-    tokenizer, supported encodings, and other architecture-specific configuration.
-
-    New architectures should be registered into the :obj:`PipelineRegistry`
-    using the :obj:`~PipelineRegistry.register()` method.
-
-    Example:
-        .. code-block:: python
-
-            from max.graph.weights import WeightsFormat
-            from max.pipelines.context import TextContext
-            from max.pipelines.lib.interfaces.pipeline_model import (
-                ModelOutputs,
-                PipelineModel,
-            )
-            from max.pipelines.lib.registry import SupportedArchitecture
-            from max.pipelines.lib.tokenizer import TextTokenizer
-            from max.pipelines.modeling.types import PipelineTask
-
-            # A concrete PipelineModel subclass. Registration stores the class
-            # itself, so it is never instantiated here.
-            class MyModel(PipelineModel[TextContext]):
-                def execute(self, model_inputs) -> ModelOutputs:
-                    raise NotImplementedError
-
-            class MyModelConfig:
-                pass
-
-            my_architecture = SupportedArchitecture(
-                name="MyModelForCausalLM",  # Must match your Hugging Face model class name
-                example_repo_ids=[
-                    "your-org/your-model-name",  # Add example model repository IDs
-                ],
-                default_encoding="q4_k",
-                supported_encodings={
-                    "q4_k",
-                    "bfloat16",
-                    # Add other encodings your model supports
-                },
-                pipeline_model=MyModel,
-                tokenizer=TextTokenizer,
-                context_type=TextContext,
-                config=MyModelConfig,  # Architecture-specific config class
-                default_weights_format=WeightsFormat.safetensors,
-                multi_gpu_supported=True,  # Set based on your implementation capabilities
-                required_arguments={"some_arg": True},
-                task=PipelineTask.TEXT_GENERATION,
-            )
-    """
-
-    name: str
-    """The name of the model architecture that must match the Hugging Face model class name."""
-
-    example_repo_ids: list[str]
-    """A list of Hugging Face repository IDs that use this architecture for testing and validation purposes."""
-
-    default_encoding: SupportedEncoding
-    """The default quantization encoding to use when no specific encoding is requested."""
-
-    # TODO: This should be a set[SupportedEncoding] once we remove the sentinel None value.
-    supported_encodings: set[SupportedEncoding]
-    """A dictionary of supported quantization encodings."""
-
-    pipeline_model: PipelineModelType
-    """The model class that defines the graph structure and execution logic.
-
-    Accepts either a :class:`PipelineModel` subclass (for LLM and other
-    token-generation architectures) or a :class:`PipelineExecutor` subclass
-    (for newer executor-based architectures such as diffusion pipelines).
-    """
-
-    task: PipelineTask
-    """The pipeline task type that this architecture supports."""
-
-    tokenizer: Callable[..., PipelineTokenizer[Any, Any, Any]]
-    """A callable that returns a `PipelineTokenizer` instance for preprocessing model inputs."""
-
-    default_weights_format: WeightsFormat
-    """The weights format expected by the `pipeline_model`."""
-
-    context_type: type[TextContext] | type[EmbeddingsContext]
-    """The context class type that this architecture uses for managing request state and inputs.
-
-    This should be a class (not an instance) that implements either the `TextContext`
-    or `EmbeddingsContext` protocol, defining how the pipeline processes and tracks requests.
-    """
-
-    config: type[ArchConfig]
-    """The architecture-specific configuration class for the model.
-
-    This class must implement the :obj:`ArchConfig` protocol, providing an
-    :obj:`initialize` method that creates a configuration instance from a
-    :obj:`PipelineConfig`. For models with KV cache, this should be a class
-    implementing :obj:`ArchConfigWithKVCache` to enable KV cache memory estimation.
-    """
-
-    weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
-        default_factory=dict
-    )
-    """A dictionary of weight format adapters for converting checkpoints from different formats to the default format."""
-
-    multi_gpu_supported: bool = False
-    """Whether the architecture supports multi-GPU execution."""
-
-    input_modalities: set[InputModality] = field(
-        default_factory=lambda: {InputModality.TEXT}
-    )
-    """The set of input modalities this architecture accepts.
-
-    Defaults to text-only. Multimodal architectures should declare all
-    supported input types explicitly, e.g.
-    ``{InputModality.TEXT, InputModality.IMAGE}`` for vision-language models.
-    """
-
-    required_arguments: dict[str, bool | int | float] = field(
-        default_factory=dict
-    )
-    """A dictionary specifying required values for PipelineConfig options."""
-
-    context_validators: list[
-        Callable[[TextContext | TextAndVisionContext | PixelContext], None]
-    ] = field(default_factory=list)
-    """A list of callable validators that verify context inputs before model execution.
-
-    These validators are called during context creation to ensure inputs meet
-    model-specific requirements. Validators should raise `InputError` for invalid
-    inputs, providing early error detection before expensive model operations.
-
-    .. code-block:: python
-
-        from max.pipelines.context import TextAndVisionContext, TextContext
-        from max.pipelines.context.exceptions import InputError
-
-        def validate_single_image(context: TextContext | TextAndVisionContext) -> None:
-            if isinstance(context, TextAndVisionContext):
-                if context.pixel_values and len(context.pixel_values) > 1:
-                    raise InputError(f"Model supports only 1 image, got {len(context.pixel_values)}")
-
-        # Pass ``context_validators=[validate_single_image]`` to
-        # ``SupportedArchitecture`` when registering the architecture.
-        validators = [validate_single_image]
-    """
-
-    supports_empty_batches: bool = False
-    """Whether the architecture can handle empty batches during inference.
-
-    When set to True, the pipeline can process requests with zero-sized batches
-    without errors. This is useful for certain execution modes and expert parallelism.
-    Most architectures do not require empty batch support and should leave this as False.
-    """
-
-    requires_max_batch_context_length: bool = False
-    """Whether the architecture requires a max batch context length to be specified.
-
-    If True and max_batch_context_length is not specified, we will default to
-    the max sequence length of the model.
-    """
-
-    tool_parser: str | Callable[[HuggingFaceRepo], str] | None = None
-    """Optional default tool parser for this architecture.
-
-    Either a registered parser name (str), or a callable that takes the
-    model's :class:`HuggingFaceRepo` handle (carrying ``repo_id``,
-    ``revision``, ``subfolder``, and ``trust_remote_code``) and returns a
-    registered parser name. Use the callable form when one architecture
-    name covers multiple checkpoint revisions with different tool-call
-    grammars (for example, DeepSeek V3 vs V3.1). The callable is invoked
-    once during pipeline config resolution and the resulting string is
-    stored on ``runtime.tool_parser``.
-
-    The returned name must correspond to a parser registered via
-    :func:`max.pipelines.lib.tool_parsing.register`. When set, the
-    pipeline config falls back to this value for ``runtime.tool_parser``
-    if the user did not explicitly configure one.
-
-    If None, no tool parser is enabled by default and the serving layer
-    falls back to its baseline parser.
-    """
-
-    batching: type[Any] | None = None
-    """Optional batch processor for input/output handling.
-
-    When set, must be a :class:`~max.pipelines.lib.interfaces.batch_processor.BatchProcessor`
-    subclass. The processor class is applied to :attr:`pipeline_model` at
-    registration time via :attr:`~max.pipelines.lib.interfaces.pipeline_model.PipelineModel.batch_processor_cls`.
-    Ragged text models should subclass
-    :class:`~max.pipelines.lib.interfaces.batch_processor.RaggedBatchProcessor`.
-    """
-
-    reasoning_parser: str | None = None
-    """Optional default reasoning parser name for this architecture.
-
-    The name must correspond to a parser registered via
-    :func:`max.pipelines.lib.reasoning.register`. When set, the pipeline
-    config will fall back to this value for ``runtime.reasoning_parser`` if
-    the user did not explicitly configure one. Different model architectures
-    emit reasoning content in different formats (e.g., Kimi K2.5 wraps
-    reasoning in ``<think>...</think>``), so the appropriate default is
-    architecture-specific.
-
-    If None, no reasoning parser is enabled by default and the user must
-    opt in by setting ``runtime.reasoning_parser`` explicitly.
-    """
-
-    default_structured_output_backend: str | None = None
-    """Optional default structured output backend for this architecture.
-
-    When set (e.g., ``"llguidance"`` or ``"xgrammar"``), the pipeline config
-    will use this value for ``sampling.structured_output_backend`` if the
-    user did not explicitly configure one. This allows architectures that
-    work better with a specific backend to override the global default.
-
-    If None, the global default from ``SamplingConfig`` is used.
-    """
-
-    supports_overlap_scheduler: bool = True
-    """Whether this architecture supports auto-enabling the overlap scheduler.
-
-    When ``False``, the overlap scheduler is not auto-enabled for this
-    architecture even when otherwise eligible. Users can still force-enable
-    via ``--enable-overlap-scheduler --force``.
-    """
-
-    supports_device_graph_capture: bool = True
-    """Whether this architecture supports auto-enabling device graph capture.
-
-    When ``False``, device graph capture is not auto-enabled for this
-    architecture even when otherwise eligible. Users can still force-enable
-    via ``--device-graph-capture --force``.
-    """
-
-    memory_planner: type[MemoryPlanner] | None = None
-    """Optional :class:`~max.pipelines.kv_cache.MemoryPlanner` subclass for
-    this architecture.
-
-    When set, ``PipelineConfig`` uses the planner to estimate weight size,
-    activation memory, signal-buffer memory, and vision cache entry bytes.
-    Autoregressive text-generation models should set this to
-    :class:`~max.pipelines.kv_cache.PagedMemoryPlanner` (or a subclass with
-    architecture-specific overrides).
-
-    ``None`` means the architecture manages its own memory estimation (e.g.
-    diffusion pipelines that skip KV cache estimation entirely).
-    """
-
-    cascade_pipeline_factory: Callable[[PipelineConfig], object] | None = None
-    """Optional cascade pipeline factory for this architecture.
-
-    A ``CascadePipeline`` subclass (from ``max.experimental.cascade``) that
-    accepts a :class:`PipelineConfig` in its constructor. The experimental
-    cascade server resolves the architecture and constructs
-    ``cascade_pipeline_factory(config)``, so cascade pipeline selection is
-    driven entirely by the architecture rather than by :class:`PipelineTask`.
-
-    The return is annotated ``object`` rather than ``CascadePipeline`` because
-    the cascade layer sits *above* :mod:`max.pipelines`; importing the base
-    class here to tighten the annotation would invert that dependency (the
-    cascade server narrows the constructed value back to ``CascadePipeline``).
-    ``None`` means the architecture has no cascade pipeline yet.
-    """
-
-    pipeline_cls: type | None = None
-    """Optional pipeline class overriding the task-based default from
-    :func:`get_pipeline_for_task`.
-
-    Most architectures leave this ``None`` and are driven by the standard
-    task pipelines. Set it when an architecture needs a bespoke generation
-    loop that the stock one-token-per-step
-    :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
-    cannot express — for example block-diffusion text generation, which runs
-    an encoder pass plus an inner denoising loop and emits a whole token
-    block per scheduler step. The value must be a
-    :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
-    subclass (or compatible) selected after ``pipeline_config.resolve()``.
-    """
-
-    @property
-    def tokenizer_cls(self) -> type[PipelineTokenizer[Any, Any, Any]]:
-        """Returns the tokenizer class for this architecture."""
-        if isinstance(self.tokenizer, type):
-            return self.tokenizer
-        # Otherwise fall back to PipelineTokenizer.
-        return TextTokenizer
 
 
 class _ValidatedNewContext:
@@ -772,21 +473,22 @@ class PipelineRegistry:
       :meth:`get_active_tokenizer` provide cached access to model configurations and tokenizers.
     """
 
-    def __init__(self, architectures: list[SupportedArchitecture]) -> None:
-        # Primary lookup by architecture name
-        self.architectures = {arch.name: arch for arch in architectures}
-        # Secondary lookup for architectures with duplicate names, keyed by (name, task)
-        self._architectures_by_task: dict[
-            tuple[str, PipelineTask], SupportedArchitecture
-        ] = {}
-        # Deferred registrations: architecture name -> list of (module, symbol,
-        # package) describing *how* to import the SupportedArchitecture. The
-        # module is imported lazily the first time the name is looked up (see
-        # register_lazy / _materialize_lazy). A name maps to a list because
-        # several modules may register the same name under different tasks.
-        self._lazy_architectures: dict[
-            str, list[tuple[str, str, str | None]]
-        ] = {}
+    def __init__(
+        self,
+        architectures: list[SupportedArchitecture],
+        *,
+        arch_lookup: ArchLookup | None = None,
+    ) -> None:
+        # Architecture tables live in the ArchLookup. The global
+        # PIPELINE_REGISTRY shares ARCH_LOOKUP so registry lookups and
+        # config-layer lookups hit the same table; other instances (tests)
+        # get their own fresh lookup for isolation.
+        self._arch_lookup = (
+            arch_lookup if arch_lookup is not None else ArchLookup()
+        )
+        self._arch_lookup.architectures.update(
+            {arch.name: arch for arch in architectures}
+        )
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
@@ -794,6 +496,23 @@ class PipelineRegistry:
         # retrieve_factory() calls don't re-run importlib.import_module and
         # spuriously re-register the same architectures.
         self._imported_custom_arch_specs: set[str] = set()
+
+    @property
+    def architectures(self) -> dict[str, SupportedArchitecture]:
+        """Primary architecture lookup table, keyed by architecture name."""
+        return self._arch_lookup.architectures
+
+    @property
+    def _architectures_by_task(
+        self,
+    ) -> dict[tuple[str, PipelineTask], SupportedArchitecture]:
+        return self._arch_lookup._architectures_by_task
+
+    @property
+    def _lazy_architectures(
+        self,
+    ) -> dict[str, list[tuple[str, str, str | None]]]:
+        return self._arch_lookup._lazy_architectures
 
     def register(
         self,
@@ -806,53 +525,7 @@ class PipelineRegistry:
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
         """
-        if architecture.batching is not None:
-            from .interfaces.pipeline_model import PipelineModel
-
-            pipeline_model_cls = architecture.pipeline_model
-            if not isinstance(pipeline_model_cls, type) or not issubclass(
-                pipeline_model_cls, PipelineModel
-            ):
-                raise TypeError(
-                    f"Architecture '{architecture.name}' sets batching= but "
-                    f"pipeline_model {pipeline_model_cls!r} is not a PipelineModel "
-                    "subclass."
-                )
-            pipeline_model_cls.batch_processor_cls = architecture.batching
-
-        task_key = (architecture.name, architecture.task)
-
-        if architecture.name in self.architectures:
-            existing_arch = self.architectures[architecture.name]
-
-            # If same task, this is a true conflict
-            if existing_arch.task == architecture.task:
-                if not allow_override:
-                    raise ValueError(
-                        f"Refusing to override existing architecture for '{architecture.name}' "
-                        f"with task {architecture.task}"
-                    )
-                logger.warning(
-                    f"Overriding existing architecture for '{architecture.name}' with task {architecture.task}"
-                )
-                self.architectures[architecture.name] = architecture
-                self._architectures_by_task[task_key] = architecture
-            else:
-                # Different tasks - store both, using task-based lookup
-                logger.info(
-                    f"Registering multiple architectures with name '{architecture.name}': "
-                    f"{existing_arch.task} and {architecture.task}"
-                )
-                # Move existing arch to task-based lookup if not already there
-                existing_key = (existing_arch.name, existing_arch.task)
-                if existing_key not in self._architectures_by_task:
-                    self._architectures_by_task[existing_key] = existing_arch
-                # Add new arch to task-based lookup
-                self._architectures_by_task[task_key] = architecture
-        else:
-            # First registration of this name
-            self.architectures[architecture.name] = architecture
-            self._architectures_by_task[task_key] = architecture
+        self._arch_lookup.register(architecture, allow_override=allow_override)
 
     def register_lazy(
         self,
@@ -879,9 +552,7 @@ class PipelineRegistry:
                 :class:`SupportedArchitecture`.
             package: Anchor package used to resolve a relative ``module`` path.
         """
-        self._lazy_architectures.setdefault(name, []).append(
-            (module, symbol, package)
-        )
+        self._arch_lookup.register_lazy(name, module, symbol, package=package)
 
     def _materialize_lazy(self, name: str) -> None:
         """Imports and registers any architectures deferred under ``name``.
@@ -890,12 +561,7 @@ class PipelineRegistry:
         removed before importing so a failed or repeated lookup does not retry
         the import.
         """
-        entries = self._lazy_architectures.pop(name, None)
-        if not entries:
-            return
-        for module, symbol, package in entries:
-            imported = importlib.import_module(module, package)
-            self.register(getattr(imported, symbol))
+        self._arch_lookup.materialize(name)
 
     def all_architectures(self) -> list[SupportedArchitecture]:
         """Returns every registered architecture, importing any deferred ones.
@@ -905,9 +571,7 @@ class PipelineRegistry:
         example, listing supported models). Normal lookups should go through
         :meth:`retrieve_architecture`, which imports only what it needs.
         """
-        for name in list(self._lazy_architectures):
-            self._materialize_lazy(name)
-        return list(self.architectures.values())
+        return self._arch_lookup.all_architectures()
 
     def retrieve_architecture(
         self,
@@ -930,36 +594,9 @@ class PipelineRegistry:
         Returns:
             The matching SupportedArchitecture or None if no match found.
         """
-        if architecture_name is None:
-            return None
-        lookup_name = (
-            architecture_name + "_ModuleV3"
-            if prefer_module_v3
-            else architecture_name
+        return self._arch_lookup.find(
+            architecture_name, prefer_module_v3=prefer_module_v3, task=task
         )
-
-        if arch := self._resolve_architecture(lookup_name, task):
-            return arch
-
-        # Fallback: if only one variant exists, use it
-        fallback_name = (
-            architecture_name + "_ModuleV3"
-            if not prefer_module_v3
-            else architecture_name
-        )
-        if arch := self._resolve_architecture(fallback_name, task):
-            logger.debug(
-                "Falling back from '%s' to '%s' (only one variant registered)",
-                lookup_name,
-                fallback_name,
-            )
-            return arch
-
-        logger.debug(
-            "optimized architecture not available for '%s' in MAX REGISTRY",
-            architecture_name,
-        )
-        return None
 
     def get_active_huggingface_config(
         self,
@@ -1037,14 +674,7 @@ class PipelineRegistry:
         Returns:
             The matching SupportedArchitecture, or None if not found.
         """
-        # Import any architecture deferred under this name before looking it up.
-        if name in self._lazy_architectures:
-            self._materialize_lazy(name)
-        if task is not None:
-            task_key = (name, task)
-            if task_key in self._architectures_by_task:
-                return self._architectures_by_task[task_key]
-        return self.architectures.get(name)
+        return self._arch_lookup.resolve(name, task)
 
     def retrieve_tokenizer(
         self,
@@ -1552,12 +1182,10 @@ class PipelineRegistry:
 
     def reset(self) -> None:
         """Clears all registered architectures (mainly for tests)."""
-        self.architectures.clear()
-        self._architectures_by_task.clear()
-        self._lazy_architectures.clear()
+        self._arch_lookup.reset()
 
 
-PIPELINE_REGISTRY = PipelineRegistry([])
+PIPELINE_REGISTRY = PipelineRegistry([], arch_lookup=ARCH_LOOKUP)
 """Global registry of supported model architectures and their pipelines.
 
 This singleton is automatically populated with all built-in architectures
