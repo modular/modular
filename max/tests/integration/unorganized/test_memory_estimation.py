@@ -316,23 +316,24 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
             KVConnectorType.null,
             1,
         ),
-        # KV-offload adds BlockOffloadEngine's set.
+        # KV connectors fan MLA-replicated blocks out via plain P2P copies
+        # (see dkv/kv-tier-connector/src/copy_engine.rs), not a signal-buffer
+        # broadcast, so none of them add an extra set.
         (
             [DeviceSpec.accelerator(id=i) for i in range(2)],
             KVConnectorType.tiered,
-            2,
+            1,
         ),
         (
             [DeviceSpec.accelerator(id=i) for i in range(4)],
             KVConnectorType.rust_tiered,
-            2,
+            1,
         ),
         (
             [DeviceSpec.accelerator(id=i) for i in range(8)],
             KVConnectorType.tiered,
-            2,
+            1,
         ),
-        # dkv connector doesn't allocate BlockOffloadEngine.
         (
             [DeviceSpec.accelerator(id=i) for i in range(2)],
             KVConnectorType.dkv,
@@ -367,8 +368,8 @@ def test_estimate_signal_buffer_memory__default(
         (1, KVConnectorType.null, 1),
         # Multi-GPU: mixin matches the default.
         (2, KVConnectorType.null, 1),
-        (4, KVConnectorType.tiered, 2),
-        (8, KVConnectorType.rust_tiered, 2),
+        (4, KVConnectorType.tiered, 1),
+        (8, KVConnectorType.rust_tiered, 1),
     ],
 )
 def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
@@ -395,39 +396,4 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     planner = planner_cls(arch_config)
     got = planner.estimate_signal_buffer_memory(cfg)
     expected = Signals.NUM_BYTES * expected_count_per_gpu * max(ngpus, 1)
-    assert got == expected
-
-
-@pytest.mark.parametrize(
-    "replicates_kv_across_tp,expected_count_per_gpu",
-    [
-        # BlockOffloadEngine only allocates signal buffers when the KV cache
-        # is replicated across TP (is_mla AND dp==1 AND n_devices>1).
-        (True, 2),  # main model + BCE
-        (False, 1),  # main model only, BCE skips signal-buffer setup
-    ],
-)
-def test_estimate_signal_buffer_memory__bce_gated_by_kv_params(
-    replicates_kv_across_tp: bool,
-    expected_count_per_gpu: int,
-) -> None:
-    """With an ``arch_config`` exposing :class:`KVCacheParamInterface`,
-    the BCE term is gated on ``replicates_kv_across_tp``."""
-    device_specs = [DeviceSpec.accelerator(id=i) for i in range(4)]
-    cfg = DummyPipelineConfig(
-        model_path="dummy",
-        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
-        max_batch_size=1,
-        max_length=1024,
-        device_specs=device_specs,
-    )
-    cfg.model.kv_cache.kv_connector = KVConnectorType.tiered
-
-    arch_config = MagicMock(spec=ArchConfigWithKVCache)
-    arch_config.get_kv_params.return_value.replicates_kv_across_tp = (
-        replicates_kv_across_tp
-    )
-
-    got = cfg.estimate_signal_buffer_memory(arch_config)
-    expected = Signals.NUM_BYTES * expected_count_per_gpu * len(device_specs)
     assert got == expected
