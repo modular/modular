@@ -23,6 +23,7 @@ from std.gpu import (
     block_dim,
     global_idx,
     lane_id,
+    WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
 )
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
@@ -2561,6 +2562,69 @@ def block_scales_interleave[
 ########################################################
 
 
+@always_inline
+def quantize_mxfp8_lane_group[
+    in_dtype: DType,
+    width: Int,
+    //,
+    out_dtype: DType,
+    scales_dtype: DType,
+    *,
+    SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
+](val: SIMD[in_dtype, width]) -> Tuple[
+    SIMD[out_dtype, width], Scalar[scales_dtype]
+]:
+    """Quantizes one thread's slice of an MX block to MXFP8, cooperatively.
+
+    The block max spans `SF_VECTOR_SIZE // width` lanes, so the caller's
+    thread-to-column map must land each MX block on one aligned lane group.
+
+    Parameters:
+        in_dtype: Element type of the incoming values (bfloat16).
+        width: Number of elements this thread holds.
+        out_dtype: Quantized element type (`float8_e4m3fn`).
+        scales_dtype: Block-scale type (`float8_e8m0fnu`).
+        SF_VECTOR_SIZE: Elements covered by one block scale (32).
+
+    Args:
+        val: This thread's `width` contiguous elements.
+
+    Returns:
+        `(quantized, e8m0_scale)`. Every lane in the group returns the same
+        scale; the caller stores it once, from the group's first lane.
+    """
+    comptime num_lanes = SF_VECTOR_SIZE // width
+    comptime assert (
+        num_lanes * width == SF_VECTOR_SIZE
+    ), "width must divide SF_VECTOR_SIZE"
+    comptime assert in_dtype == DType.bfloat16, "input dtype should be bfloat16"
+    comptime assert (
+        out_dtype == DType.float8_e4m3fn
+    ), "output dtype should be float8_e4m3fn"
+    comptime assert (
+        scales_dtype == MXFP8_SF_DTYPE
+    ), "scales dtype should be MXFP8_SF_DTYPE (float8_e8m0fnu)"
+    # `lane_group_max` reduces over `2 ** log2_floor(num_lanes)` lanes, so a
+    # non-power-of-two group silently drops the remainder from the block max.
+    comptime assert (
+        num_lanes & (num_lanes - 1) == 0 and num_lanes <= WARP_SIZE
+    ), "SF_VECTOR_SIZE // width must be a power of two no larger than the warp"
+
+    var thread_max = lane_group_max[num_lanes=num_lanes](abs(val).reduce_max())
+    var e8m0_scale: Scalar[scales_dtype]
+    var out_scale: Float32
+    var block_is_dead: Bool
+    e8m0_scale, out_scale, block_is_dead = compute_mxfp8_block_scale[
+        scales_dtype
+    ](thread_max.cast[DType.float32]())
+
+    var data = val.cast[DType.float32]()
+    # A dead block's multiplier is 0; zeroing avoids storing `inf * 0.0 = NaN`.
+    if block_is_dead:
+        data = type_of(data)(0.0)
+    return ((data * out_scale).cast[out_dtype](), e8m0_scale)
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
@@ -2611,35 +2675,26 @@ def _quantize_mx_amd_kernel[
                 Coord(global_row_idx, global_col_idx)
             )
 
-            # 2. Find per-thread max absolute value.
-            var thread_max = abs(input_vector).reduce_max()
-
-            # 3. Reduce across 4 threads to get 32-element block max.
-            thread_max = lane_group_max[num_lanes=NUM_THREADS_PER_SF](
-                thread_max
-            )
-
-            var group_max = thread_max.cast[DType.float32]()
-
-            # 4-6. Derive the E8M0 scale, convert, and store. MXFP4 rounds the
+            # 2-6. Derive the E8M0 scale, convert, and store. MXFP4 rounds the
             # scale even-mode and hands it to the packing intrinsic; MXFP8
             # divides by 448 (E4M3 maxabs) and scales the data by the exact
             # reciprocal of the resulting power of two.
             var e8m0_scale: Scalar[DType.float8_e8m0fnu]
             comptime if elems_per_byte == 1:
-                var out_scale: Float32
-                var block_is_dead: Bool
-                e8m0_scale, out_scale, block_is_dead = (
-                    compute_mxfp8_block_scale[DType.float8_e8m0fnu](group_max)
-                )
-                var data = input_vector.cast[DType.float32]()
-                if block_is_dead:
-                    data = type_of(data)(0.0)
+                var quantized: SIMD[out_dtype, ELEMENTS_PER_THREAD]
+                quantized, e8m0_scale = quantize_mxfp8_lane_group[
+                    out_dtype,
+                    DType.float8_e8m0fnu,
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                ](input_vector)
                 output.store[width=ELEMENTS_PER_THREAD](
-                    Coord(global_row_idx, global_col_idx),
-                    (data * out_scale).cast[out_dtype](),
+                    Coord(global_row_idx, global_col_idx), quantized
                 )
             else:
+                var thread_max = lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                    abs(input_vector).reduce_max()
+                )
+                var group_max = thread_max.cast[DType.float32]()
                 e8m0_scale = compute_mxfp4_even_scale(group_max)
                 var packed = cast_float_to_fp4e2m1_amd(
                     input_vector, e8m0_scale.cast[DType.float32]()
