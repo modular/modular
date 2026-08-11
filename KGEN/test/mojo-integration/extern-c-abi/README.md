@@ -40,6 +40,20 @@ floating point fields (5 tests, all passing).
 Tests struct coercion for structs containing pointer fields (3 tests, all
 passing).
 
+### Multiple Arguments (`test_struct_arguments_multi.mojo`)
+
+Tests register allocation *across* arguments rather than classification of a
+single one — every other file here passes exactly one struct (6 tests):
+
+- A scalar preceding a MEMORY-class struct, and preceding a sub-eightbyte
+  struct with tail padding
+- An HFA arriving after 8 leading doubles, with no SIMD register left, so it
+  reaches plain stack passing. The 7-double case, where one register is left
+  and AAPCS must burn it rather than split the aggregate, is MOCO-4611
+- A trailing scalar after an HFA, which must take the next free SIMD register
+- 3x `double` (24 bytes), where AAPCS keeps the HFA in D0-D2 and SysV calls
+  it MEMORY, in both argument and return position
+
 ### Variadic Functions
 
 Tests C variadic functions (`printf`-style) which have different ABI rules
@@ -85,10 +99,11 @@ This validates both argument passing AND return value ABI.
 - `c_abi_test_float_structs.c` - Float and mixed int/float functions (13
   functions)
 - `c_abi_test_ptr_structs.c` - Pointer struct functions (2 functions)
+- `c_abi_test_multi_args.c` - Cross-argument allocation (6 functions)
 - `c_abi_variadic_prototype.c` - Integer variadic functions (5 functions)
 - `c_abi_variadic_floats.c` - Float variadic functions (13 functions)
 
-**Mojo Tests (11 files):**
+**Mojo Tests (12 files):**
 
 Struct argument tests (consolidated):
 
@@ -96,6 +111,7 @@ Struct argument tests (consolidated):
 - `test_struct_arguments_floats.mojo` - Float/double structs (8 tests)
 - `test_struct_arguments_mixed.mojo` - Mixed int/float structs (5 tests)
 - `test_struct_arguments_pointers.mojo` - Pointer structs (3 tests)
+- `test_struct_arguments_multi.mojo` - Cross-argument allocation (6 tests)
 
 Variadic function tests:
 
@@ -118,7 +134,7 @@ Each test file includes a comment indicating which C file(s) it uses.
 ## Running Tests
 
 ```bash
-# Run all ABI tests (11 test files, all passing)
+# Run all ABI tests (12 test files, all passing)
 ./bazelw test //KGEN/test/mojo-integration/extern-c-abi:test
 
 # Run specific subset
@@ -132,7 +148,7 @@ Each test file includes a comment indicating which C file(s) it uses.
 
 **Test Status Summary:**
 
-- **Total test files:** 11 (all passing via Bazel)
+- **Total test files:** 12 (all passing via Bazel)
 - **All tests passing** on both ARM64 and x86-64
 
 ## How to Reproduce / Run Standalone
@@ -151,6 +167,7 @@ cd KGEN/test/mojo-integration/extern-c-abi/
 clang -c -O0 -g c_abi_test_int_structs.c \
                  c_abi_test_float_structs.c \
                  c_abi_test_ptr_structs.c \
+                 c_abi_test_multi_args.c \
                  c_abi_variadic_prototype.c \
                  c_abi_variadic_floats.c
 
