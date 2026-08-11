@@ -37,12 +37,12 @@ def main() raises:
     nested_func()
 
 
-# RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
-# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log || true
+# RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
 
-# RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
-# RUN: %t > %t.log || true
+# RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL-NO-STACK %s
 
 # O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MODULAR_DEBUG=stack-trace-on-error`

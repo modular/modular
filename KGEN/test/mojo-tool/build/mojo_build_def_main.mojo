@@ -11,18 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-build %s -o %t
-# RUN: not %t --arg1 | FileCheck %s
+# RUN: %mojo-build %s -o %t.bin
+# RUN: not %t.bin --arg1 1> %t.out.txt 2> %t.err.txt
+# RUN cat %t.out.txt | FileCheck %s --check-prefix OUT
+# RUN cat %t.err.txt | FileCheck %s --check-prefix ERR
 
-from std.sys import argv
+from std.sys import argv, stderr
 
 
 def main() raises:
-    # CHECK: This was called inside of `def` main
+    # OUT: This was called inside of `def` main
     print("This was called inside of `def` main")
 
-    # CHECK: --arg1
+    # ERR: This is printed to stderr
+    print("This is printed to stderr", file=stderr)
+
+    # OUT: --arg1
     print(argv()[1])
 
-    # CHECK: Unhandled exception caught during execution: main raised an error
+    # ERR: Unhandled exception caught during execution: main raised an error
     raise Error("main raised an error")
