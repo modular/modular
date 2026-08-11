@@ -40,6 +40,10 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     """The pipeline output data, if any. ``None`` for cancelled operations or
     intermediate streaming states."""
 
+    error: str | None = None
+    """User-facing message for a request the scheduler failed without
+    executing; ``None`` otherwise."""
+
     @classmethod
     def cancelled(cls) -> SchedulerResult[PipelineOutputType]:
         """Creates a ``SchedulerResult`` representing a cancelled operation.
@@ -48,6 +52,18 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
             A :class:`SchedulerResult` with ``is_done=True`` and no result.
         """
         return SchedulerResult(is_done=True, result=None)
+
+    @classmethod
+    def failed(cls, error: str) -> SchedulerResult[PipelineOutputType]:
+        """Creates a ``SchedulerResult`` for a request failed by the scheduler.
+
+        Args:
+            error: User-facing description of why the request failed.
+
+        Returns:
+            A terminal :class:`SchedulerResult` carrying the error.
+        """
+        return SchedulerResult(is_done=True, result=None, error=error)
 
     @classmethod
     def create(

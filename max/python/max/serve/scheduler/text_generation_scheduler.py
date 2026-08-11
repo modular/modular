@@ -165,6 +165,12 @@ class TokenGenerationScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
+        # Failed requests were never admitted and are already released.
+        for failed_id, error in self.batch_constructor.take_grammar_failed():
+            self.response_queue.put_nowait(
+                {failed_id: SchedulerResult.failed(error)}
+            )
+
         # Skip if there is no work to do.
         has_pending_outputs = (
             isinstance(self.pipeline, OverlapTextGenerationPipeline)

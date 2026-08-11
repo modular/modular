@@ -1794,7 +1794,10 @@ async def openai_create_chat_completion(
                 completion_request.tools, valid_tool_name_re
             )
 
-        response_format = _create_response_format(
+        # Off the event loop: validation compiles the schema, which can take
+        # seconds and would freeze in-flight streaming responses.
+        response_format = await asyncio.to_thread(
+            _create_response_format,
             completion_request.response_format,
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
             grammar_validator=request.app.state.grammar_validator,
@@ -1892,7 +1895,10 @@ async def openai_create_chat_completion(
             and response_format.grammar is not None
         ):
             try:
-                grammar_validator.check_tool_grammar(response_format.grammar)
+                await asyncio.to_thread(
+                    grammar_validator.check_tool_grammar,
+                    response_format.grammar,
+                )
             except InputError:
                 METRICS.structured_output_grammar_rejection("tool_grammar")
                 raise
