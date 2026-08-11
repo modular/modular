@@ -635,14 +635,22 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
 
     def _run(
         stacked: bool,
+        pre: str | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32."""
+        """Run one path; returns (Q, IndexQ, main blocks, index blocks) as fp32.
+
+        `pre` is the `(fp8, e8m0)` pair a producer epilogue would hand the op:
+        "same" is what the op would compute itself, "foreign" unrelated rows.
+        """
         main_sym = main_params.get_symbolic_inputs().inputs[0]
         index_sym = index_params.get_symbolic_inputs().inputs[0]
         n_main = len(main_sym.flatten())
 
+        name = "stacked" if stacked else "separate"
+        if pre is not None:
+            name += f"_pre_{pre}"
         with Graph(
-            f"qkv_index_mxfp8_amd_{'stacked' if stacked else 'separate'}",
+            f"qkv_index_mxfp8_amd_{name}",
             input_types=[
                 TensorType(
                     DType.bfloat16, (seq_len, hidden), device=device_ref
@@ -685,6 +693,19 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                 out_type=DType.float8_e4m3fn,
             )
             if stacked:
+                pre_pair = None
+                if pre is not None:
+                    # "foreign" borrows the first `seq_len` weight rows: right
+                    # shape and dtype, unrelated values.
+                    pre_src = (
+                        a.tensor if pre == "same" else wqkv.tensor[:seq_len]
+                    )
+                    pre_pair = quantize_dynamic_block_scaled(
+                        pre_src,
+                        sf_vector_size=32,
+                        scales_type=DType.float8_e8m0fnu,
+                        out_type=DType.float8_e4m3fn,
+                    )
                 q, index_q = quantized_fused_qkv_index_matmul(
                     kv_params=main_params,
                     index_kv_params=index_params,
@@ -699,6 +720,7 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
                     idx_head_dim=idx_head_dim,
                     quant_config=_mxfp8_quant_config(),
                     weight_scale=w_scales,
+                    prequantized=pre_pair,
                 )
             else:
                 a_q, a_scales = quantize_dynamic_block_scaled(
@@ -797,3 +819,24 @@ def test_fused_qkv_index_mxfp8_matmul_amd_stacked(
     assert np.any(index_st != 0.0), (
         "stacked path left the index cache unwritten"
     )
+
+    # Two arms: byte-equality against the op's own quantize is the layout gate,
+    # but an op ignoring the pair and requantizing `x` would pass it too -- so
+    # arm 2 feeds unrelated rows and requires the outputs to MOVE.
+    q_same, iq_same, main_same, index_same = _run(stacked=True, pre="same")
+    np.testing.assert_array_equal(q_same, q_st)
+    np.testing.assert_array_equal(iq_same, iq_st)
+    np.testing.assert_array_equal(main_same, main_st)
+    np.testing.assert_array_equal(index_same, index_st)
+
+    q_fgn, iq_fgn, main_fgn, index_fgn = _run(stacked=True, pre="foreign")
+    for name, got, ref in (
+        ("Q", q_fgn, q_st),
+        ("IndexQ", iq_fgn, iq_st),
+        ("main KV", main_fgn, main_st),
+        ("IndexK", index_fgn, index_st),
+    ):
+        assert not np.array_equal(got, ref), (
+            f"{name} unchanged when `prequantized` carried unrelated rows: the"
+            " op is quantizing `x` itself and ignoring the pair"
+        )
