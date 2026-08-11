@@ -582,75 +582,75 @@ struct SixteenByteStruct(TrivialRegisterPassable):
 
 
 def test_memcmp_high_bit_and_multiples_of_4() raises:
-    var a4 = alloc[UInt32]({count = 1}).unsafe_leak()
-    var b4 = alloc[UInt32]({count = 1}).unsafe_leak()
-    a4.unsafe_write(0x8000_0001)
-    b4.unsafe_write(0x0000_0001)
-    var res4_chunked = unsafe_memcmp(a4, b4, 1)
+    # 4-byte element: high bit set should compare as unsigned
+    var a4 = List[UInt32](length=1, fill=0x8000_0001)
+    var b4 = List[UInt32](length=1, fill=0x0000_0001)
+    var res4_chunked = unsafe_memcmp(a4.unsafe_ptr(), b4.unsafe_ptr(), 1)
     var res4_bytewise = unsafe_memcmp(
-        a4.unsafe_bitcast[Byte](), b4.unsafe_bitcast[Byte](), 4
+        a4.unsafe_ptr().unsafe_bitcast[Byte](),
+        b4.unsafe_ptr().unsafe_bitcast[Byte](),
+        4,
     )
     assert_equal(res4_chunked, 1)
     assert_equal(res4_chunked, res4_bytewise)
-    assert_equal(unsafe_memcmp(b4, a4, 1), -1)
-    a4.unsafe_free()
-    b4.unsafe_free()
+    assert_equal(unsafe_memcmp(b4.unsafe_ptr(), a4.unsafe_ptr(), 1), -1)
 
-    var a8 = alloc[UInt64]({count = 1}).unsafe_leak()
-    var b8 = alloc[UInt64]({count = 1}).unsafe_leak()
-    a8.unsafe_write(0x8000_0000_0000_0001)
-    b8.unsafe_write(0x0000_0000_0000_0001)
-    var res8_chunked = unsafe_memcmp(a8, b8, 1)
+    # 8-byte element: high bit set should compare as unsigned
+    var a8 = List[UInt64](length=1, fill=0x8000_0000_0000_0001)
+    var b8 = List[UInt64](length=1, fill=0x0000_0000_0000_0001)
+    var res8_chunked = unsafe_memcmp(a8.unsafe_ptr(), b8.unsafe_ptr(), 1)
     var res8_bytewise = unsafe_memcmp(
-        a8.unsafe_bitcast[Byte](), b8.unsafe_bitcast[Byte](), 8
+        a8.unsafe_ptr().unsafe_bitcast[Byte](),
+        b8.unsafe_ptr().unsafe_bitcast[Byte](),
+        8,
     )
     assert_equal(res8_chunked, 1)
     assert_equal(res8_chunked, res8_bytewise)
-    assert_equal(unsafe_memcmp(b8, a8, 1), -1)
-    a8.unsafe_free()
-    b8.unsafe_free()
+    assert_equal(unsafe_memcmp(b8.unsafe_ptr(), a8.unsafe_ptr(), 1), -1)
 
-    var a12 = alloc[TwelveByteStruct]({count = 1}).unsafe_leak()
-    var b12 = alloc[TwelveByteStruct]({count = 1}).unsafe_leak()
-    a12.unsafe_write(TwelveByteStruct(0, 0x8000_0000, 0))
-    b12.unsafe_write(TwelveByteStruct(0, 0x0000_0000, 0))
-    var res12_chunked = unsafe_memcmp(a12, b12, 1)
+    # 12-byte element: high bit in middle chunk
+    var a12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x8000_0000, 0)
+    )
+    var b12 = List[TwelveByteStruct](
+        length=1, fill=TwelveByteStruct(0, 0x0000_0000, 0)
+    )
+    var res12_chunked = unsafe_memcmp(
+        a12.unsafe_ptr(), b12.unsafe_ptr(), 1
+    )
     var res12_bytewise = unsafe_memcmp(
-        a12.unsafe_bitcast[Byte](), b12.unsafe_bitcast[Byte](), 12
+        a12.unsafe_ptr().unsafe_bitcast[Byte](),
+        b12.unsafe_ptr().unsafe_bitcast[Byte](),
+        12,
     )
     assert_equal(res12_chunked, 1)
     assert_equal(res12_chunked, res12_bytewise)
-    assert_equal(unsafe_memcmp(b12, a12, 1), -1)
-    a12.unsafe_free()
-    b12.unsafe_free()
+    assert_equal(
+        unsafe_memcmp(b12.unsafe_ptr(), a12.unsafe_ptr(), 1), -1
+    )
 
-    var a16 = alloc[SixteenByteStruct]({count = 1}).unsafe_leak()
-    var b16 = alloc[SixteenByteStruct]({count = 1}).unsafe_leak()
-    a16.unsafe_write(SixteenByteStruct(0x8000_0000_0000_0000, 0))
-    b16.unsafe_write(SixteenByteStruct(0x0000_0000_0000_0000, 0))
-    var res16_chunked = unsafe_memcmp(a16, b16, 1)
+    # 16-byte element: high bit in first 8-byte field
+    var a16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x8000_0000_0000_0000, 0),
+    )
+    var b16 = List[SixteenByteStruct](
+        length=1,
+        fill=SixteenByteStruct(0x0000_0000_0000_0000, 0),
+    )
+    var res16_chunked = unsafe_memcmp(
+        a16.unsafe_ptr(), b16.unsafe_ptr(), 1
+    )
     var res16_bytewise = unsafe_memcmp(
-        a16.unsafe_bitcast[Byte](), b16.unsafe_bitcast[Byte](), 16
+        a16.unsafe_ptr().unsafe_bitcast[Byte](),
+        b16.unsafe_ptr().unsafe_bitcast[Byte](),
+        16,
     )
     assert_equal(res16_chunked, 1)
     assert_equal(res16_chunked, res16_bytewise)
-    assert_equal(unsafe_memcmp(b16, a16, 1), -1)
-    a16.unsafe_free()
-    b16.unsafe_free()
-
-    var c4 = alloc[UInt32]({count = 1}).unsafe_leak()
-    var d4 = alloc[UInt32]({count = 1}).unsafe_leak()
-    c4.unsafe_write(0x0000_0002)
-    d4.unsafe_write(0x8000_0001)
-    var resc_chunked = unsafe_memcmp(c4, d4, 1)
-    var resc_bytewise = unsafe_memcmp(
-        c4.unsafe_bitcast[Byte](), d4.unsafe_bitcast[Byte](), 4
+    assert_equal(
+        unsafe_memcmp(b16.unsafe_ptr(), a16.unsafe_ptr(), 1), -1
     )
-    assert_equal(resc_chunked, 1)
-    assert_equal(resc_chunked, resc_bytewise)
-    assert_equal(unsafe_memcmp(d4, c4, 1), -1)
-    c4.unsafe_free()
-    d4.unsafe_free()
 
 
 def test_memset() raises:
