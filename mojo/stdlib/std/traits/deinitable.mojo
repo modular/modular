@@ -95,8 +95,8 @@ trait Deinitable:
 
 # TODO(MOCO-4525): Remove `downcast`
 comptime IsTriviallyDeinitable[T: AnyType]: Bool = conforms_to(
-    T, Deinitable
-) and downcast[T, Deinitable].__del__is_trivial
+    T, TrivialRegisterPassable
+) or (conforms_to(T, Deinitable) and downcast[T, Deinitable].__del__is_trivial)
 """Indicates whether `T` is `Deinitable` with a trivial deinitializer.
 
 A deinitializer is trivial when the compiler generates it and all of `T`'s
