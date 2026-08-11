@@ -12,8 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Rejection Sampler custom ops."""
 
-from typing import Literal
-
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
@@ -440,7 +438,6 @@ class AcceptanceSampler:
                 relaxed_topk=self._relaxed_topk,
                 relaxed_delta=self._relaxed_delta,
                 token_bitmasks=token_bitmasks,
-                draft_proposal="argmax",
             )
         return greedy_acceptance_sampler(draft_tokens, target_logits)
 
@@ -458,17 +455,13 @@ def stochastic_acceptance_sampler(
     relaxed_topk: int | None = None,
     relaxed_delta: float | None = None,
     token_bitmasks: TensorValue | None = None,
-    draft_proposal: Literal["argmax"] = "argmax",
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Stochastic rejection sampler for speculative decoding.
+    """Target-only rejection sampler for speculative decoding.
 
     Accepts a draft token with probability ``p_target(draft_token)`` after
-    applying temperature scaling and softmax. On rejection the recovered token
-    is sampled from the residual ``max(0, p_target - q)``; the draft proposes
-    deterministically (argmax), so ``q`` is one-hot and the residual is just
-    ``p_target`` with the draft token's mass removed. The returned tensor is
-    the committed token per position (the draft token where accepted). The
-    bonus token is sampled via ``topk_fused_sampling``.
+    applying temperature scaling and softmax. Recovered tokens are sampled
+    from the target distribution; the bonus token is sampled via
+    ``topk_fused_sampling``.
 
     When ``in_thinking_phase``, ``relaxed_topk``, and ``relaxed_delta``
     are all provided, rows where ``in_thinking_phase[b]`` is True
@@ -485,17 +478,9 @@ def stochastic_acceptance_sampler(
     Returns:
         Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
         - first_rejected_idx: Index of first rejected draft position ``[batch]``
-        - recovered_tokens: Committed token per position -- the draft token
-          where accepted, the residual sample at the first rejection
-          ``[batch, num_steps]``
+        - recovered_tokens: Tokens sampled from target distribution ``[batch, num_steps]``
         - bonus_tokens: Bonus token from final position ``[batch, 1]``
     """
-    if draft_proposal != "argmax":
-        raise ValueError(
-            "stochastic_acceptance_sampler currently supports only argmax "
-            "draft proposals; pass draft probabilities through a residual "
-            "sampler before enabling sampled proposals"
-        )
     ops.random.set_seed(seed)
 
     device = draft_tokens.device
@@ -586,21 +571,7 @@ def stochastic_acceptance_sampler(
 
     coins = ops.random.uniform(p_target.type)
     rejected_strict = coins >= p_target
-
-    # Residual max(0, p - q): the draft proposes deterministically (argmax), so
-    # its proposal q is one-hot on the draft token; zeroing that token's
-    # probability is the whole residual (``_multinomial`` ignores scale and
-    # zero entries). Sampling recovery from it makes acceptance
-    # distribution-preserving rather than target-only ("typical").
-    residual_probs = ops.scatter_nd(
-        target_probs,
-        ops.broadcast_to(
-            ops.constant(0.0, dtype=target_probs.dtype, device=device),
-            shape=[batch_size * num_steps],
-        ),
-        ops.reshape(gather_indices, shape=[batch_size * num_steps, 3]),
-    )
-    recovered_strict = _multinomial(residual_probs)
+    recovered_strict = _multinomial(target_probs)
 
     all_target_argmax = ops.squeeze(
         ops.argmax(target_logits_3d, axis=-1), axis=-1
@@ -706,17 +677,6 @@ def stochastic_acceptance_sampler(
     rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
     recovered_token_ids = ops.where(
         is_greedy_bk, recovered_greedy, recovered_token_ids
-    )
-
-    # Commit the draft token where accepted so ``recovered`` is the emitted
-    # token per position (matching the greedy sampler's contract): callers
-    # feed the whole vector back to the draft model, and only the first
-    # rejection is resampled -- accepted positions must keep their draft token,
-    # not the residual sample computed for them.
-    recovered_token_ids = ops.where(
-        rejected,
-        recovered_token_ids,
-        token_indices.cast(recovered_token_ids.dtype),
     )
 
     first_rejected_idx = ops.squeeze(
