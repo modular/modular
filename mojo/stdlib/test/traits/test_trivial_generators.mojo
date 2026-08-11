@@ -157,22 +157,22 @@ def test_helpers_match_underlying_flags() raises:
     assert_equal(IsTriviallyDeinitable[String], String.__del__is_trivial)
 
 
-struct TRP(TrivialRegisterPassable):
-    pass
-
-
-def _test_TRP[
-    T: TrivialRegisterPassable
+def has_trivial_where_clauses[
+    T: AnyType
 ]() where (
     IsTriviallyDeinitable[T]
-    and IsTriviallyCopyable[T]
     and IsTriviallyMovable[T]
+    and IsTriviallyCopyable[T]
 ):
     pass
 
 
-def test_trivial_register_passable_type() raises:
-    _test_TRP[TRP]()
+# NOTE: We don't actually need to call this function to test.
+# We only need to make sure the passing `T` to `has_trivial_where_clauses` compiles successfully.
+# As this proves the `T` conforming to `TrivialRegisterPassable` is enough evidence to conclude
+# that the deinit/move/copy are trivial.
+def takes_TRP_type[T: TrivialRegisterPassable]():
+    has_trivial_where_clauses[T]()
 
 
 def main() raises:
