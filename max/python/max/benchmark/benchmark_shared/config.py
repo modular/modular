@@ -47,14 +47,13 @@ Endpoint = Literal[
 CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
     "atom": "/reset_prefix_cache",
     "atom-chat": "/reset_prefix_cache",
+    "mach": "/reset_prefix_cache",
     "modular": "/reset_prefix_cache",
     "modular-chat": "/reset_prefix_cache",
     "vllm": "/reset_prefix_cache",
     "vllm-chat": "/reset_prefix_cache",
     "sglang": "/flush_cache",
     "sglang-chat": "/flush_cache",
-    # mach deliberately omitted: the Mammoth orchestrator fronting it has no
-    # way to fan a cache-reset call over its gRPC connection to the engine.
 }
 
 BenchmarkTask = Literal[
