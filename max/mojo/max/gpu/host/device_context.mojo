@@ -72,7 +72,7 @@ from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
     AnyCoroutine,
     _coro_resume_fn,
     _coro_destroy_fn,

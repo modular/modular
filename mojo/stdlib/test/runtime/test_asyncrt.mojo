@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.runtime.asyncrt import (
+from std.runtime._asyncrt import (
     create_raising_task,
     create_task,
     _create_task,

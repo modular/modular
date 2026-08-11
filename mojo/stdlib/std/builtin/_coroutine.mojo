@@ -12,7 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements classes and methods for coroutines.
 
-These are Mojo built-ins, so you don't need to import them.
+Async support in Mojo is unfinished and these types are not ready for general
+use. They are the return types the compiler synthesizes for `async def`, so they
+appear in inferred types and diagnostics, but nothing here carries a stability
+guarantee and the design is expected to change substantially. This module is
+private for that reason: `Coroutine` and `RaisingCoroutine` are not exported
+from the prelude, and code outside the standard library should not depend on
+them.
 """
 
 from std.sys import size_of

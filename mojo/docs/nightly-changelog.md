@@ -195,6 +195,19 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
   an argument to `run(f)` instead, which accepts a unified closure.
 
+- Removed `AnyCoroutine`, `Coroutine` and `RaisingCoroutine` from the prelude,
+  and made the module that defines them private. Mojo's async support is
+  unfinished, and these types being globally visible led people to build on an
+  API that carries no stability guarantees. `async def` is unaffected: the
+  compiler still synthesizes these types for you, so they continue to appear in
+  inferred types and diagnostics. There is no supported way to name them
+  directly.
+
+- Removed the async task API from the public `std.runtime.asyncrt` module,
+  which is now private. `initialize_runtime()` and `parallelism_level()` are
+  unaffected and have moved up to the `std.runtime` package, so import them
+  from `std.runtime` instead of `std.runtime.asyncrt`.
+
 ## Fixed
 
 - Parametric `raises` now accepts any primary expression as the thrown type in
