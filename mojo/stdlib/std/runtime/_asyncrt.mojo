@@ -10,19 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This module implements the low level concurrency library."""
+"""This module implements the low level concurrency library.
+
+Mojo's async support is unfinished. The task primitives here — `create_task`,
+`Task`, `RaisingTask`, `TaskGroup` — are the substrate that `parallelize()` is
+built on, not a general-purpose async runtime, and their design is expected to
+change substantially. This module is private for that reason; code outside the
+standard library and the kernel library should not depend on it.
+"""
 
 from std.os import abort
 from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
-from std.builtin.coroutine import (
+from std.builtin._coroutine import (
     AnyCoroutine,
+    Coroutine,
+    RaisingCoroutine,
     _coro_resume_fn,
     _suspend_async,
 )
-from std.builtin._startup import _ensure_runtime_init
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
@@ -109,68 +117,6 @@ def _async_wait_timeout(
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain, timeout
-    )
-
-
-# ===-----------------------------------------------------------------------===#
-# Global Runtime
-# ===-----------------------------------------------------------------------===#
-
-
-def initialize_runtime():
-    """Initializes the global Mojo runtime if it is not already initialized.
-
-    The Mojo runtime manages the thread pool used by parallel and
-    asynchronous APIs such as `parallelize()` and `TaskGroup`. Programs with
-    a Mojo `main()` function initialize the runtime automatically at startup,
-    so most programs never need to call this function.
-
-    However, when Mojo code is compiled into a shared library (with
-    `mojo build --emit shared-lib`) and called from a non-Mojo host program
-    (such as C or C++), no Mojo `main()` function runs and the runtime is
-    never initialized. In that case, call this function before using any API
-    that depends on the runtime — for example, at the start of each function
-    exported with `@export`. This function is idempotent and inexpensive when
-    the runtime is already initialized.
-
-    Initializing the runtime once covers all threads in the process. The
-    runtime remains alive for the remainder of the process.
-
-    Examples:
-
-    ```mojo
-    from max.algorithm import parallelize
-    from std.runtime import initialize_runtime
-
-
-    @export("fill_squares")
-    def fill_squares(
-        data: Pointer[Int64, MutUntrackedOrigin], len: Int
-    ) abi("C"):
-        initialize_runtime()
-
-        @__parameter
-        def fill(i: Int):
-            data.unsafe_store(i, Int64(i * i))
-
-        parallelize[fill](len)
-    ```
-    """
-    _ensure_runtime_init()
-
-
-@always_inline
-def parallelism_level() -> Int:
-    """Gets the parallelism level of the Runtime.
-
-    Returns:
-        The number of worker threads available in the async runtime.
-    """
-    return Int(
-        external_call[
-            "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
-            Int32,
-        ]()
     )
 
 

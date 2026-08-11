@@ -14,7 +14,7 @@
 from std.atomic import Atomic
 from std.time import time_function
 
-from std.runtime.asyncrt import TaskGroup
+from std.runtime._asyncrt import TaskGroup
 from std.testing import assert_equal, TestSuite
 
 from std.utils.lock import BlockingScopedLock, BlockingSpinLock

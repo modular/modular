@@ -64,7 +64,6 @@ from std.builtin.bool import Bool, Boolable, all, any
 from std.builtin.breakpoint import breakpoint
 from std.builtin.builtin_slice import Slice, slice
 from std.builtin.comparable import Comparable, Equatable
-from std.builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
 from std.builtin.debug_assert import debug_assert
 from std.builtin.dtype import DType
 from std.builtin.error import Error

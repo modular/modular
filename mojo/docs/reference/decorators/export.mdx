@@ -49,7 +49,7 @@ If you compile an exported function into a shared library
 (`mojo build --emit shared-lib`) and call it from a non-Mojo host program
 such as C or C++, no Mojo `main()` function runs, so the Mojo runtime is
 never initialized. Call
-[`initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/)
+[`initialize_runtime()`](/docs/std/runtime/initialize_runtime/)
 before calling any other standard library functions. See
 [Call a Mojo shared library from C or
 C++](/docs/tools/compilation/#call-a-mojo-shared-library-from-c-or-c)

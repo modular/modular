@@ -450,17 +450,17 @@ follows the C calling convention.
 ### Initialize the Mojo runtime
 
 When a Mojo program starts from its own `main()` function, compiler-generated
-startup code initializes the Mojo runtime — the thread pool that
-parallel and asynchronous APIs such as
-[`parallelize()`](/docs/std/algorithm/backend/cpu/parallelize/parallelize/) and
-[`TaskGroup`](/docs/std/runtime/asyncrt/TaskGroup/) depend on. When the
+startup code initializes the Mojo runtime — the thread pool that parallel APIs
+such as
+[`parallelize()`](/docs/std/algorithm/backend/cpu/parallelize/parallelize/)
+depend on. When the
 process `main()` belongs to a C or C++ host instead, that startup code
 never runs, so the runtime is never initialized. An exported function
 that then uses a runtime-dependent API crashes with a segmentation
 fault.
 
 To fix this, call
-[`initialize_runtime()`](/docs/std/runtime/asyncrt/initialize_runtime/)
+[`initialize_runtime()`](/docs/std/runtime/initialize_runtime/)
 before any runtime-dependent Mojo code executes. The call is idempotent
 and inexpensive when the runtime is already initialized, and one
 initialization covers all threads in the process. There are two common

@@ -13,7 +13,7 @@
 
 from std.testing import assert_equal, assert_true, TestSuite
 
-from std.runtime.asyncrt import _create_task
+from std.runtime._asyncrt import _create_task
 
 from max.runtime.asyncrt import task_id_for_device
 
