@@ -1305,19 +1305,20 @@ def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
     self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=True` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> GenericPyFunction:
+]() -> GenericPyFunction where (
+    func.has_kwargs,
+    "non-kwargs functions should use _py_function_fastcall_wrapper",
+):
     """Converts a kwargs-accepting PyObjectFunction to a GenericPyFunction.
 
     Wraps the user's function in a `METH_VARARGS | METH_KEYWORDS` dispatch
     shim. Non-kwargs callables go through `_py_function_fastcall_wrapper`
     (METH_FASTCALL) instead.
     """
-    comptime assert (
-        func.has_kwargs
-    ), "non-kwargs functions should use _py_function_fastcall_wrapper"
     comptime FuncT = type_of(func)
 
     @always_inline
@@ -1344,10 +1345,14 @@ def _py_function_fastcall_wrapper[
     method_type: TrivialRegisterPassable,
     self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=False` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> PyCFunctionFast:
+]() -> PyCFunctionFast where (
+    not func.has_kwargs,
+    "fastcall wrapper requires a non-kwargs function",
+):
     """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs
     `PyObjectFunction`.
 
@@ -1373,9 +1378,6 @@ def _py_function_fastcall_wrapper[
         A function value of type `PyCFunctionFast` suitable for passing to
         `PyMethodDef.function` for `METH_FASTCALL` registration.
     """
-    comptime assert (
-        not func.has_kwargs
-    ), "fastcall wrapper requires a non-kwargs function"
     comptime FuncT = type_of(func)
 
     @always_inline
