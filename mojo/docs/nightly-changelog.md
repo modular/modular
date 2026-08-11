@@ -103,6 +103,8 @@ This version is still a work in progress.
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
 
+- Uncaught exceptions now print to `stderr`, not `stdout`.
+
 ## GPU programming
 
 ## Tooling changes

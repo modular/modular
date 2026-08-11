@@ -14,6 +14,7 @@
 
 from std.ffi import external_call, _CPointer, _get_global
 from std.sys.compile import SanitizeAddress
+from std.sys import stderr
 
 
 def _init_global_runtime() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
@@ -105,14 +106,17 @@ def __wrap_and_execute_raising_main[
     except e:
         var stack_trace = e.get_stack_trace()
         if stack_trace:
-            print(stack_trace.value())
+            print(stack_trace.value(), file=stderr)
         else:
             print(
-                "stack trace was not collected. Enable stack trace collection"
-                " with environment variable"
-                " `MODULAR_DEBUG=stack-trace-on-error`"
+                (
+                    "stack trace was not collected. Enable stack trace"
+                    " collection with environment variable"
+                    " `MODULAR_DEBUG=stack-trace-on-error`"
+                ),
+                file=stderr,
             )
-        print("Unhandled exception caught during execution:", e)
+        print("Unhandled exception caught during execution:", e, file=stderr)
         return 1
 
     # Delete any globals we have allocated.
