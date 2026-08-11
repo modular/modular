@@ -50,7 +50,11 @@ from pathlib import Path
 from typing import NamedTuple
 
 import psutil
-from max.driver import Buffer
+from max.driver import (
+    Buffer,
+    _unsafe_alloc_fast_pinned_buffer,
+    _unsafe_free_fast_pinned_buffer,
+)
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
@@ -60,11 +64,7 @@ from max.nn.kv_cache.cache_params import (
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
 from ..kv_connector import KVConnectorTransfer
-from ..paged_kv_cache.block_copy_engine import (
-    _check_host_memory_capacity,
-    _unsafe_alloc_fast_pinned_buffer,
-    _unsafe_free_fast_pinned_buffer,
-)
+from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )

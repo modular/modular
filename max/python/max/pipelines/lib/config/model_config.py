@@ -1582,7 +1582,11 @@ class MAXModelConfig(MAXModelConfigBase):
             ("kv_connector", kv_config.kv_connector or "null"),
         ]
         cfg = kv_config.kv_connector_config
-        if kv_config.kv_connector == KVConnectorType.tiered and cfg:
+        if (
+            kv_config.kv_connector
+            in (KVConnectorType.tiered, KVConnectorType.rust_tiered)
+            and cfg
+        ):
             entries.append(
                 ("host_swap_space", f"{cfg.host_kvcache_swap_space_gb} GB")
             )

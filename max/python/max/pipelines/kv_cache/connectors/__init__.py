@@ -30,7 +30,6 @@ from typing import TYPE_CHECKING
 
 from max.driver import Device, accelerator_api
 from max.nn.kv_cache.cache_params import (
-    KVCacheBufferInterface,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
@@ -216,7 +215,6 @@ def create_connector(
 
 
 __all__ = [
-    "DKVConnector",
     "KVConnector",
     "KVConnectorType",
     "NullConnector",

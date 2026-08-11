@@ -93,7 +93,6 @@ modular_py_library(
         requirement("typing-extensions"),
         "//max/python/max:_core",
         "//max/python/max/_core_mojo",
-        "//max/python/max/_distributed_ops",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",

@@ -23,11 +23,7 @@ from max.config import ConfigFileModel
 from max.driver import accelerator_api
 from max.engine import InferenceSession
 from max.nn.comm import Signals
-from max.nn.kv_cache.cache_params import KVConnectorType
-from max.pipelines.lib.interfaces import (
-    ArchConfig,
-    ArchConfigWithKVCache,
-)
+from max.pipelines.lib.interfaces import ArchConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import (
     DISABLE_PARSER_SENTINEL,
@@ -403,23 +399,18 @@ class PipelineConfig(ConfigFileModel):
         """Estimates total signal-buffer memory across all devices.
 
         Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
-        per-GPU allocations used by P2P collectives. Each independent allocation
-        site contributes one set of ``ngpus`` buffers. The base estimate counts
-        the sites visible from :class:`PipelineConfig`:
-
-        - main model graph (multi-GPU only),
-        - :class:`BlockOffloadEngine` for KV-cache offloading, *only* when its
-          ``replicate_kv_across_tp`` path is active (MLA model with DP=1 and
-          multi-device TP). See ``block_copy_engine.py`` / ``transfer_engine.py``.
+        per-GPU allocations used by P2P collectives. The only site visible
+        from :class:`PipelineConfig` is the main model graph, and only for
+        multi-GPU pipelines. The ``tiered``/``rust_tiered`` KV connectors fan
+        MLA-replicated blocks out via plain P2P copies, not a signal-buffer
+        broadcast (see ``dkv/kv-tier-connector/src/copy_engine.rs``), so they
+        contribute no additional term here.
 
         Returns 0 for single-device pipelines.
 
         Args:
-            arch_config: Optional architecture config. When provided and it
-                exposes KV params, the BCE term is gated on the actual
-                ``replicates_kv_across_tp`` flag rather than only the
-                ``kv_connector`` setting. Without it, the BCE term is added
-                whenever a connector is configured (conservative).
+            arch_config: Unused; kept for interface parity with
+                :meth:`MemoryPlanner.estimate_signal_buffer_memory`.
 
         Returns:
             Estimated total signal-buffer memory in bytes (across all devices).
@@ -427,26 +418,7 @@ class PipelineConfig(ConfigFileModel):
         ngpus = len(self.model.device_specs)
         if ngpus <= 1:
             return 0
-
-        count_per_gpu = 1  # main model
-        if self.model.kv_cache.kv_connector in {
-            KVConnectorType.tiered,
-            KVConnectorType.rust_tiered,
-        }:
-            # BlockOffloadEngine only allocates signal buffers when its
-            # broadcast path is active (replicate_kv_across_tp = is_mla AND
-            # dp==1 AND n_devices>1; see block_copy_engine.py:242-306).
-            # Without arch_config we can't tell, so be conservative and add
-            # the set; with arch_config, gate precisely.
-            bce_allocates = True
-            if isinstance(arch_config, ArchConfigWithKVCache):
-                bce_allocates = (
-                    arch_config.get_kv_params().replicates_kv_across_tp
-                )
-            if bce_allocates:
-                count_per_gpu += 1  # BlockOffloadEngine
-
-        return Signals.NUM_BYTES * count_per_gpu * ngpus
+        return Signals.NUM_BYTES * ngpus
 
     def _apply_speculative_draft_architecture(self) -> None:
         """Rewrite the draft model's HuggingFace architecture for the method.

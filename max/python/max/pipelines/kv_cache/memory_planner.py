@@ -137,9 +137,8 @@ class MemoryPlanner:
 
         Args:
             pipeline_config: Pipeline configuration.
-            arch_config: Optional architecture config; when provided, tightens
-                the BlockOffloadEngine term using the actual
-                ``replicates_kv_across_tp`` flag.
+            arch_config: Unused; kept for interface parity with
+                :meth:`PipelineConfig.estimate_signal_buffer_memory`.
 
         Returns:
             Estimated signal-buffer memory in bytes across all devices.
