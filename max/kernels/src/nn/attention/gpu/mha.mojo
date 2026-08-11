@@ -28,6 +28,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -344,7 +345,7 @@ def _mha_decode_fold_ok[
 
     return (
         has_amd_gpu_accelerator()
-        and not _is_amd_rdna()
+        and not has_amd_rdna_gpu_accelerator()
         # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
         # is tested through the fold; widen once a test covers them.
         and (dtype == DType.bfloat16 or dtype.is_float8())
@@ -1227,7 +1228,7 @@ def flash_attention_dispatch[
                     # and output.dtype == DType.bfloat16
                     # and (config.depth == 64 or config.depth == 128)
                     # and has_amd_gpu_accelerator()
-                    # and not _is_amd_rdna()
+                    # and not has_amd_rdna_gpu_accelerator()
                     # and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
 
