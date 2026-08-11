@@ -417,9 +417,9 @@ struct Array[T: AnyType, length: Int](
         self = Self(uninitialized=True)
         var ptr = self.unsafe_ptr()
         for i in range(Self.length):
-            __get_address_as_uninit_lvalue(
-                ptr.unsafe_offset(i)._mlir_value
-            ) = Self.T()
+            ptr.unsafe_offset(i).unsafe_write(
+                init_with=lambda () -> Self.T: Self.T()
+            )
 
     @always_inline
     def __init__[

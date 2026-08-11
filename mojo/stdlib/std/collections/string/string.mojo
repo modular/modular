@@ -729,9 +729,9 @@ struct String(
         ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
-        __get_address_as_uninit_lvalue(
-            ptr.unsafe_bitcast[Atomic[Int]]()._get_kgen_pointer()
-        ) = Atomic[Int](1)
+        ptr.unsafe_bitcast[Atomic[Int]]().unsafe_write(
+            init_with=lambda () -> Atomic[Int]: Atomic[Int](1)
+        )
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.

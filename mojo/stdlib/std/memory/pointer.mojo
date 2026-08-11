@@ -2557,6 +2557,49 @@ struct Pointer[
     ](self: Pointer[U, _], var value: U) where type_of(self).mut:
         __get_address_as_uninit_lvalue(self._mlir_value) = value^
 
+    @always_inline
+    def unsafe_write(
+        self,
+        *,
+        init_with: Some[def() -> Self.T],
+    ) where Self.mut and Self.address_space == AddressSpace.GENERIC:
+        """Initializes the pointee in place using the value returned by `f`.
+
+        The value returned by `init_with` is constructed directly into the pointer's
+        memory location rather than being constructed elsewhere and then
+        moved, so `Self.T` does not need to be `Movable`.
+
+        Example:
+
+        ```mojo
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        @fieldwise_init
+        struct Pinned(Movable where False):
+            var value: Int
+
+        var allocation = alloc(Layout[Pinned].single())
+        var ptr = allocation.unsafe_ptr()
+        ptr.unsafe_write(init_with=lambda () -> Pinned: Pinned(7))
+        print(ptr[].value)  # => 7
+        ptr.unsafe_deinit_pointee()
+        dealloc(allocation^)
+        ```
+
+        Args:
+            init_with: A function that constructs and returns the value to emplace.
+
+        Safety:
+
+        - `self` must point to writable memory for `Self.T` that does not
+          currently hold a valid, live value. Writing into memory that
+          already holds one overwrites it without running its destructor,
+          leaking any resources it owned.
+        """
+        __get_address_as_uninit_lvalue(
+            self.unsafe_address_space_cast[AddressSpace.GENERIC]()._mlir_value
+        ) = init_with()
+
     @__allow_legacy_custom_self_type
     @always_inline
     def unsafe_write[
@@ -2635,7 +2678,7 @@ struct Pointer[
         U: Copyable,
         //,
     ](self: Pointer[U, _], value: U) where type_of(self).mut:
-        __get_address_as_uninit_lvalue(self._mlir_value) = value.copy()
+        self.unsafe_write(init_with=lambda () {imm} -> U: value.copy())
 
     @__allow_legacy_custom_self_type
     @always_inline
