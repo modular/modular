@@ -960,14 +960,11 @@ def test_paged_scheduler_dp8() -> None:
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(
-            kv_connector=KVConnectorType.local,
+            kv_connector=KVConnectorType.tiered,
             enable_prefix_caching=True,
             device=CPU(),
         )
-    assert (
-        "KVCacheMemory is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
-        in str(e.value)
-    )
+    assert "KVCacheMemory is on the CPU; cannot offload" in str(e.value)
 
 
 def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:

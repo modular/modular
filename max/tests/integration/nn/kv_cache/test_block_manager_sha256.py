@@ -35,9 +35,10 @@ import numpy as np
 import pytest
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.dkv.connector import DKVConnector
-from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
+from max.pipelines.kv_cache.connectors.rust_tier_connector import (
+    RustTierConnector,
+)
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVHashAlgo
 from max.pipelines.modeling.types import RequestID
@@ -359,25 +360,24 @@ def test_null_connector_supports_all_algos() -> None:
     assert NullConnector().supported_hash_algos == _FULL
 
 
-def test_local_and_tiered_connectors_declare_full_sha256_support() -> None:
-    """Lock the host-tier connectors' declared capabilities at the class
-    level. Both rely on numpy-keyed dicts so they natively handle the
-    ``bytes`` SHA-256 hashes alongside ``int`` ahash64 hashes.
+def test_rust_tier_connector_declares_full_sha256_support() -> None:
+    """Lock the host/disk tier connector's declared capabilities at the class
+    level. The Rust tier keys blocks by the caller-computed hash bytes, so it
+    handles SHA-256 hashes alongside ahash64 ones.
     """
-    # Both classes expose ``supported_hash_algos`` as a property; read it
-    # off the descriptor to avoid constructing real KV memory buffers.
-    for cls in (LocalConnector, TieredConnector):
-        prop = inspect.getattr_static(cls, "supported_hash_algos")
-        assert isinstance(prop, property), (
-            f"{cls.__name__}.supported_hash_algos must be a property"
-        )
-        # The property body is a single ``return frozenset({...})`` literal,
-        # so calling ``fget`` against ``None`` is unsafe. Instead, assert
-        # the literal source matches the expected set via a smoke roundtrip
-        # through a fresh subclass instance with __init__ patched out.
-        instance = cls.__new__(cls)
-        assert prop.fget is not None
-        assert prop.fget(instance) == _FULL
+    # The class exposes ``supported_hash_algos`` as a property; read it off the
+    # descriptor to avoid constructing real KV memory buffers.
+    prop = inspect.getattr_static(RustTierConnector, "supported_hash_algos")
+    assert isinstance(prop, property), (
+        "RustTierConnector.supported_hash_algos must be a property"
+    )
+    # The property body is a single ``return frozenset({...})`` literal, so
+    # calling ``fget`` against ``None`` is unsafe. Instead, assert the literal
+    # source matches the expected set via a smoke roundtrip through a fresh
+    # instance with __init__ patched out.
+    instance = RustTierConnector.__new__(RustTierConnector)
+    assert prop.fget is not None
+    assert prop.fget(instance) == _FULL
 
 
 # ---------------------------------------------------------------------------

@@ -431,7 +431,6 @@ class PipelineConfig(ConfigFileModel):
         count_per_gpu = 1  # main model
         if self.model.kv_cache.kv_connector in {
             KVConnectorType.tiered,
-            KVConnectorType.local,
             KVConnectorType.rust_tiered,
         }:
             # BlockOffloadEngine only allocates signal buffers when its

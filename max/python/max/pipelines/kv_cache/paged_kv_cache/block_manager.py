@@ -786,7 +786,7 @@ class BlockManager:
             return [], CompletedTransfer(TransferDirection.LOAD)
 
         if event.is_complete():
-            # Synchronous / stream-ordered connector (host, tiered, dKV): the
+            # Synchronous / stream-ordered connector (dKV): the
             # H2D is already ordered ahead of the forward, so commit into the
             # device prefix cache now.
             for block, block_hash in zip(
@@ -921,9 +921,9 @@ class BlockManager:
         # dKV touches the resident subset and tolerates
         # missing keys. The num_host_blocks early-return above gates on "has
         # host blocks," NOT "has an external tier": it skips only a connector
-        # with no host blocks (NullConnector); CPU/disk (local/tiered)
-        # connectors pass the gate and call their no-op touch -- only
-        # DKVConnector does real touch work.
+        # with no host blocks (NullConnector); the host/disk tiered connector
+        # passes the gate and calls its no-op touch -- only DKVConnector does
+        # real touch work.
         if device_blocks or host_blocks:
             cached_hashes = req_hashes[
                 : num_committed_blocks + len(device_blocks) + len(host_blocks)
@@ -1318,6 +1318,17 @@ class BlockManager:
                 active_block_ids_by_replica[req_replica].append(block.bid)
                 # Check that all active blocks have a ref_cnt > 0
                 assert block.ref_cnt > 0
+
+        # Blocks pinned by an in-flight async transfer are held out of the free
+        # queue while their copy lands, and an offload's sources outlive the
+        # request that owned them, so they are neither free nor request-active.
+        # Count them here or the pool's free + active == total check trips
+        # whenever an asynchronous connector has a transfer in flight.
+        for replica_idx_, pending_list in enumerate(self._pending_transfers):
+            for pending in pending_list:
+                for block in pending.blocks:
+                    active_block_ids_by_replica[replica_idx_].append(block.bid)
+                    assert block.ref_cnt > 0
 
         # Check that each block pool is consistent
         for pool, active_block_ids in zip(

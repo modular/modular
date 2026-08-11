@@ -18,7 +18,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from max.pipelines.kv_cache.connectors import disk_tier
+from max.pipelines.kv_cache.connectors import rust_tier_connector
 from max.pipelines.kv_cache.paged_kv_cache import block_copy_engine
 
 
@@ -64,22 +64,22 @@ def test_disk_capacity_rejects_oversized(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        disk_tier.psutil,
+        rust_tier_connector.psutil,
         "disk_usage",
         lambda path: SimpleNamespace(free=1024),
     )
 
     with pytest.raises(RuntimeError, match="disk_offload_max_gb"):
-        disk_tier._check_disk_capacity("/tmp", 2048)
+        rust_tier_connector._check_disk_capacity("/tmp", 2048)
 
 
 def test_disk_capacity_accepts_fitting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        disk_tier.psutil,
+        rust_tier_connector.psutil,
         "disk_usage",
         lambda path: SimpleNamespace(free=4096),
     )
 
-    disk_tier._check_disk_capacity("/tmp", 4096)
+    rust_tier_connector._check_disk_capacity("/tmp", 4096)

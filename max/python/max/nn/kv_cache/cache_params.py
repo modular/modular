@@ -77,35 +77,34 @@ class KVConnectorType(str, Enum):
     """Identifies which off-device backing store the KV cache uses.
 
     Set on :attr:`KVCacheParams.kv_connector` to control whether evicted
-    cache pages stay on device only, spill to host memory, tier across host
-    and disk, or route through a distributed block store.
+    cache pages stay on device only, tier across host and disk, or route
+    through a distributed block store.
     """
 
     null = "null"
     """No off-device backing store. Pages live on device only."""
-
-    local = "local"
-    """Spills evicted pages to host memory.
-
-    Requires ``enable_prefix_caching`` and ``host_kvcache_swap_space_gb``
-    to be set on :class:`KVCacheParams`.
-    """
 
     tiered = "tiered"
     """Tiers evicted pages across host memory and disk.
 
     Requires ``enable_prefix_caching``, ``host_kvcache_swap_space_gb``,
     and a ``disk_offload_dir`` on the connector config.
+
+    .. deprecated::
+        A backward-compatible alias for :attr:`rust_tiered`; the Python
+        implementation was removed.
     """
 
     rust_tiered = "rust_tiered"
     """Tiers evicted pages across host memory and disk, backed by the Rust
     ``kv_tier_connector`` extension.
 
-    The performant, CUDA-only successor to :attr:`tiered`: it runs its copies
-    and disk I/O on Rust threads (no GIL contention) and overlaps onloads with
-    GPU compute via asynchronous transfer handles. Same config requirements as
-    :attr:`tiered`. Falls back with an error on non-CUDA devices.
+    The only host/disk tiered implementation, and what :attr:`tiered` now
+    resolves to: it runs its copies and disk I/O on Rust threads (no GIL
+    contention) and overlaps onloads with GPU compute via asynchronous
+    transfer handles. Requires ``enable_prefix_caching``,
+    ``host_kvcache_swap_space_gb``, and a ``disk_offload_dir`` on the connector
+    config. Raises on non-CUDA/HIP devices.
     """
 
     dkv = "dkv"
@@ -749,7 +748,7 @@ class KVCacheParams(KVCacheParamInterface):
     models byte-identical."""
 
     kv_connector: KVConnectorType | None = None
-    """Type of KV cache connector to use (null, local, tiered, dkv)."""
+    """Type of KV cache connector to use (null, tiered, rust_tiered, dkv)."""
 
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for KV-cache block identity."""
@@ -764,7 +763,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Connector-specific configuration (KVConnectorConfig from the pipelines layer)."""
 
     host_kvcache_swap_space_gb: float | None = None
-    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when local or tiered connector is used."""
+    """Amount of host memory (in GB) to reserve for KV cache swapping. Required when the tiered connector is used."""
 
     page_size: int = 128
     """Number of tokens per page (block).
@@ -819,7 +818,6 @@ class KVCacheParams(KVCacheParamInterface):
 
         # Validate connector configuration
         if self.kv_connector in (
-            KVConnectorType.local,
             KVConnectorType.tiered,
             KVConnectorType.rust_tiered,
         ):
@@ -1100,7 +1098,6 @@ class KVCacheParams(KVCacheParamInterface):
                     f" {self.num_layers}"
                 )
             if self.kv_connector in (
-                KVConnectorType.local,
                 KVConnectorType.tiered,
                 KVConnectorType.rust_tiered,
                 KVConnectorType.dkv,
@@ -2346,7 +2343,6 @@ def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
         pool.
     """
     if params.kv_connector not in (
-        KVConnectorType.local,
         KVConnectorType.tiered,
         KVConnectorType.rust_tiered,
     ):

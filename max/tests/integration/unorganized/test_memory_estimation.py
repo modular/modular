@@ -324,7 +324,7 @@ def test_memory_estimation__raise_oom_error_max_batch_size_set_and_max_length_se
         ),
         (
             [DeviceSpec.accelerator(id=i) for i in range(4)],
-            KVConnectorType.local,
+            KVConnectorType.rust_tiered,
             2,
         ),
         (
@@ -368,7 +368,7 @@ def test_estimate_signal_buffer_memory__default(
         # Multi-GPU: mixin matches the default.
         (2, KVConnectorType.null, 1),
         (4, KVConnectorType.tiered, 2),
-        (8, KVConnectorType.local, 2),
+        (8, KVConnectorType.rust_tiered, 2),
     ],
 )
 def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(

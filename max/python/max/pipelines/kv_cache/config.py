@@ -147,7 +147,7 @@ class KVConnectorConfig(ConfigFileModel):
         default=50.0,
         description=(
             "Host memory (GiB) reserved for KV cache swapping. "
-            "Used by local and tiered connectors."
+            "Used by the tiered connector."
         ),
     )
     """Host memory in GiB for KV cache swapping."""

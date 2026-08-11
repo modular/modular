@@ -342,14 +342,14 @@ def test_kv_cache_flag_preserves_yaml_recipe_kv_cache_fields(
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(
             config_file=str(config_path),
-            kv_connector="local",
+            kv_connector="rust_tiered",
             kv_connector_config={"host_kvcache_swap_space_gb": 1200},
         )
     )
 
     kv = config.models["main"].kv_cache
     # The CLI flags override the connector fields they name...
-    assert kv.kv_connector == KVConnectorType.local
+    assert kv.kv_connector == KVConnectorType.rust_tiered
     assert kv.kv_connector_config is not None
     assert kv.kv_connector_config.host_kvcache_swap_space_gb == 1200
     # ...but the recipe's other kv_cache fields survive the override.
@@ -392,14 +392,14 @@ def test_kv_cache_flag_via_cli_preserves_config_file_fields(
             "--config-file",
             str(config_path),
             "--kv-connector",
-            "local",
+            "rust_tiered",
             "--kv-connector-config",
             '{"host_kvcache_swap_space_gb": 1200}',
         ],
     )
     assert result.exit_code == 0, result.output
     # CLI overrides the connector; the recipe's other kv_cache fields survive.
-    assert result.output.strip() == "local|0.8|False"
+    assert result.output.strip() == "rust_tiered|0.8|False"
 
 
 def test_speculative_flag_preserves_yaml_recipe_speculative_fields(

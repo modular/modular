@@ -19,9 +19,7 @@ from collections.abc import Sequence
 
 from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnectorTransfer,
@@ -144,32 +142,6 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
 
     connector._d2h_blocks_copied = 3
     assert bm.metrics.d2h_blocks_copied == 3
-
-
-def test_local_connector_reset_metrics() -> None:
-    connector = LocalConnector.__new__(LocalConnector)
-    connector._h2d_blocks_copied = 4
-    connector._d2h_blocks_copied = 7
-
-    connector.reset_metrics()
-
-    assert connector.metrics.h2d_blocks_copied == 0
-    assert connector.metrics.d2h_blocks_copied == 0
-
-
-def test_tiered_connector_reset_metrics() -> None:
-    connector = TieredConnector.__new__(TieredConnector)
-    connector._h2d_blocks_copied = 1
-    connector._d2h_blocks_copied = 2
-    connector._disk_blocks_written = 3
-    connector._disk_blocks_read = 4
-
-    connector.reset_metrics()
-
-    assert connector._h2d_blocks_copied == 0
-    assert connector._d2h_blocks_copied == 0
-    assert connector._disk_blocks_written == 0
-    assert connector._disk_blocks_read == 0
 
 
 def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
