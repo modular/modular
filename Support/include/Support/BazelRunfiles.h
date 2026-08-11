@@ -17,6 +17,8 @@
 #include "llvm/ADT/StringRef.h"
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace M {
 
@@ -30,6 +32,14 @@ namespace M {
 /// - The key is not expected to be loaded via runfiles (no mapping exists)
 /// - Runfiles is not available (not running under Bazel)
 std::optional<std::string> findConfigWithRunfiles(llvm::StringRef key);
+
+/// Get the environment variables a subprocess needs to resolve our runfiles,
+/// as name/value pairs. Empty when not running under Bazel.
+///
+/// A process finds its runfiles relative to its own executable, so a tool we
+/// spawn resolves nothing of ours unless it inherits these. Tools staged from
+/// another repository have no runfiles tree of their own at all.
+const std::vector<std::pair<std::string, std::string>> *getRunfilesEnvVars();
 
 } // namespace M
 

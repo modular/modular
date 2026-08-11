@@ -25,6 +25,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace M;
 using llvm::StringRef;
@@ -200,4 +202,12 @@ std::optional<std::string> M::findConfigWithRunfiles(StringRef key) {
     return fallback();
 
   return rlocation;
+}
+
+const std::vector<std::pair<std::string, std::string>> *
+M::getRunfilesEnvVars() {
+  Runfiles *rf = getRunfiles();
+  if (!rf)
+    return nullptr;
+  return &rf->EnvVars();
 }

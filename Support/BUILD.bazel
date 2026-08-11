@@ -281,9 +281,11 @@ modular_cc_library(
     name = "BazelRunfiles",
     srcs = ["lib/BazelRunfiles.cpp"],
     hdrs = ["include/Support/BazelRunfiles.h"],
-    # max._core resolves the NIXL plugin dir from runfiles via this helper, and
-    # the CUDA compilation driver resolves the dlopened NVPTX compiler with it.
+    # max._core resolves the NIXL plugin dir from runfiles via this helper, the
+    # CUDA compilation driver resolves the dlopened NVPTX compiler with it, and
+    # the mojo driver hands its runfiles down to the lldb it spawns.
     visibility = [
+        "//KGEN/tools/mojo:__pkg__",
         "//MLRT:__subpackages__",
         "//max/python/max:__pkg__",
     ],

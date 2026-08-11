@@ -19,6 +19,7 @@ load(
     "ASYNCRT_PROFILING_LOCAL_DEFINES",
     "CONFIG_SECTION_LOCAL_DEFINES",
     "KERNEL_PROFILING_LOCAL_DEFINES",
+    "TOP_LEVEL_TAG",
 )
 
 # gazelle:default_visibility //KGEN:consumers
@@ -1628,4 +1629,11 @@ modular_cc_library(
     ],
     hdrs = ["include/KGEN/DialectChecksum/DialectChecksum.h"],
     copts = ["-I$(GENDIR)/KGEN"],
+)
+
+alias(
+    name = "mojo",
+    actual = "//KGEN/tools/mojo:mojo-full",
+    # Used as a run target
+    tags = [TOP_LEVEL_TAG],
 )
