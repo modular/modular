@@ -849,8 +849,10 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
       inode->setToError(result.takeError());
       return failure();
     }
-    cached = result.takeValue();
-    writeGlobalCachedInterpretation(func, operandsAttr, cached);
+    // Get the value from the global cache and use it below. This way, all
+    // call sites to this function use exactly the same value.
+    cached =
+        writeGlobalCachedInterpretation(func, operandsAttr, result.takeValue());
   }
 
   // Bind the result and erase the operation.
