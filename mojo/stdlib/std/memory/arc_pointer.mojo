@@ -197,7 +197,8 @@ struct ArcPointer[T: Movable & Deinitable](
             value: The value to manage.
         """
         self._inner = alloc(Layout[Self._inner_type].single()).unsafe_leak()
-        # Cannot use init_pointee_move as _ArcPointerInner isn't movable.
+        # TODO(MOCO-4591)
+        # Cannot use unsafe_write as closure do not support consuming move-only types.
         __get_address_as_uninit_lvalue(
             self._inner._get_kgen_pointer()
         ) = Self._inner_type(value^)

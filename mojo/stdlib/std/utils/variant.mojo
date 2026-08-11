@@ -615,11 +615,7 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         self._storage = Self._Storage(unsafe_uninitialized=())
         self._storage.unsafe_set_active[T]()
-        # Placement-new: construct `init_with()`'s result directly into the
-        # storage slot without moving, so `T` need not be `Movable`.
-        __get_address_as_uninit_lvalue(
-            self._storage.unsafe_ptr[T]()._mlir_value
-        ) = init_with()
+        self._storage.unsafe_ptr[T]().unsafe_write(init_with=init_with)
 
     def __deinit__(
         deinit self,
@@ -961,10 +957,9 @@ struct Variant[*Ts: AnyType](
         self._storage^.__deinit__()
         self._storage = Self._Storage(unsafe_uninitialized=())
         self._storage.unsafe_set_active[T]()
-        # Placement-new the replacement value directly into the storage slot.
-        __get_address_as_uninit_lvalue(
-            self._storage.unsafe_ptr[T]()._mlir_value
-        ) = init_with()
+        self._storage.unsafe_ptr[T]().unsafe_write(
+            init_with=lambda () {ref} -> T: init_with()
+        )
 
     def isa[T: AnyType](self) -> Bool:
         """Check if the variant contains the required type.

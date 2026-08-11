@@ -95,6 +95,11 @@ This version is still a work in progress.
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
   and so on) still only support `Scalar` types.
 
+- Added `Pointer[T].unsafe_write(def() -> T)`, which initializes the pointee
+  with the value returned by a closure, constructing it directly in place rather
+  than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
+  this does not require the pointee type to be `Movable`.
+
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
 

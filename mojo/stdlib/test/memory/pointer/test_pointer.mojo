@@ -14,7 +14,7 @@
 from std.compile import compile_info
 from std.ffi import external_call
 from max.gpu.host import get_gpu_target
-from std.memory import UnsafeMaybeUninit
+from std.memory import UnsafeMaybeUninit, alloc, dealloc
 from std.memory.unsafe_pointer import pointer_to_int
 from std.sys import align_of, bit_width_of, size_of
 import std.memory.alloc
@@ -24,6 +24,7 @@ from test_utils import (
     MoveCounter,
     ObservableDel,
     ObservableMoveOnly,
+    PinnedExplicitDelOnly,
     check_write_to,
 )
 from std.testing import (
@@ -151,6 +152,28 @@ def test_unsafepointer_unsafe_write() raises:
 
     assert_equal(ptr[].value, 5)
     assert_equal(ptr[].copy_count, 1)
+
+
+def test_unsafepointer_unsafe_write_closure() raises:
+    var x = 66
+    var ptr = Pointer(to=x)
+    ptr.unsafe_write(init_with=lambda () -> Int: 42)
+    assert_equal(ptr[], 42)
+
+
+def test_unsafepointer_unsafe_write_non_movable() raises:
+    var allocation = alloc[PinnedExplicitDelOnly]({count = 1})
+    var ptr = allocation.unsafe_ptr()
+
+    def make() -> PinnedExplicitDelOnly:
+        return PinnedExplicitDelOnly(5)
+
+    ptr.unsafe_write(init_with=make)
+    var data = ptr[].data
+
+    ptr.unsafe_deinit_pointee_with(PinnedExplicitDelOnly.destroy)
+    dealloc(allocation^)
+    assert_equal(data, 5)
 
 
 def test_refitem() raises:

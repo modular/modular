@@ -637,7 +637,7 @@ def test_pointer_refitem() raises:
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
     var ptr = alloc[String]({count = 1}).unsafe_leak()
-    __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
+    ptr.unsafe_write(init_with=lambda () -> String: String())
     ptr[] = payload
     assert_equal(ptr[], payload)
     ptr.unsafe_free()
