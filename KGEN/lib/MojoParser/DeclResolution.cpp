@@ -1642,11 +1642,10 @@ registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
         GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
                             ref.externalName, ref.externalType);
 
-    // Create eq constraint: eq(C.T, RHS).
-    TypedAttr eqConstraint = ParamOperatorAttr::get(POC::EQ, witnessAttr, rhs);
+    TypedAttr idConstraint = ParamIdenticalAttr::get(witnessAttr, rhs);
     Location loc = shared.diags.translateLocation(decl.getLoc());
     constraints.push_back(
-        ConstraintAttr::get(eqConstraint, loc, /*message=*/StringAttr()));
+        ConstraintAttr::get(idConstraint, loc, /*message=*/StringAttr()));
   }
   return constraints;
 }

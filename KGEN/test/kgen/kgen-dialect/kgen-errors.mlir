@@ -286,7 +286,7 @@ kgen.generator @apply_error<fn: () -> ()>() {
 
 kgen.generator @target_params2<t0: target>() {
  // expected-error @below {{expected '='}}
-  kgen.param.assert <eq(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>)>, "must support target!!"
+  kgen.param.assert <identical(:target t0, #kgen.target<triple"triple", "cpu", "features", 3, 4>)>, "must support target!!"
   kgen.return
 }
 
@@ -509,6 +509,14 @@ kgen.func @illegal_applied_struct_param_length(%arg0: !kgen.struct_inst<"Bar"[el
 // expected-error @+2 {{comparisons return simd<bool>}}
 "some.op"() {
   b = #kgen.param.expr<eq, #kgen<simd 1> : !kgen.scalar<ui8>, #kgen<simd 2> : !kgen.scalar<ui8>> : !kgen.simd<3, ui8>
+} : () -> ()
+
+// -----
+
+// COM: Non-numeric equality belongs on `#kgen.param.identical`, not lane-wise `eq`.
+// expected-error @+2 {{eq operands must be numeric; use '#kgen.param.identical' to compare values of type '!kgen.dtype'}}
+"some.op"() {
+  b = #kgen.param.expr<eq, #kgen.dtype.constant<f32> : !kgen.dtype, #kgen.dtype.constant<bf16> : !kgen.dtype> : !kgen.scalar<bool>
 } : () -> ()
 
 // -----

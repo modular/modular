@@ -1161,20 +1161,22 @@ struct ParamIndexRefCollector
 };
 } // namespace
 
-/// Collect the individual equality (`==`) propositions
-static void
-collectEqualityPropositions(TypedAttr prop,
-                            SmallVectorImpl<ParamOperatorAttr> &out) {
-  auto op = sugarDynCast<ParamOperatorAttr>(prop);
-  if (!op)
-    return;
-  if (op.getOpcode() == POC::And) {
-    for (TypedAttr operand : op.getOperands())
-      collectEqualityPropositions(operand, out);
-    return;
+/// The two sides of an equality proposition.
+using EqualityPair = std::pair<TypedAttr, TypedAttr>;
+
+/// Collect the individual equality (`==`) propositions.
+static void collectEqualityPropositions(TypedAttr prop,
+                                        SmallVectorImpl<EqualityPair> &out) {
+  if (auto equality = sugarDynCast<ParamIdenticalAttr>(prop)) {
+    if (equality.getNumOperands() == 2) {
+      out.push_back(
+          std::make_pair(equality.getOperand(0), equality.getOperand(1)));
+    }
+  } else if (auto op = sugarDynCast<ParamOperatorAttr>(prop)) {
+    if (op.getOpcode() == POC::And)
+      for (TypedAttr operand : op.getOperands())
+        collectEqualityPropositions(operand, out);
   }
-  if (op.getOpcode() == POC::EQ && op.getOperands().size() == 2)
-    out.push_back(op);
 }
 
 LogicalResult ParamInf::inferFromBodyConstraints() {
@@ -1186,7 +1188,7 @@ LogicalResult ParamInf::inferFromBodyConstraints() {
   // Gather every equality proposition, flattening conjunctions so a
   // `where a == b and b == c` clause contributes both equalities rather than a
   // single (non-invertible) `and` proposition.
-  SmallVector<ParamOperatorAttr> equalities;
+  SmallVector<EqualityPair> equalities;
   for (ConstraintAttr constraint : bodyConstraints)
     collectEqualityPropositions(constraint.getProposition(), equalities);
   if (equalities.empty())
@@ -1198,8 +1200,8 @@ LogicalResult ParamInf::inferFromBodyConstraints() {
   DenseMap<size_t, SmallVector<size_t>> paramToEqualities;
   for (size_t idx = 0; idx < equalities.size(); ++idx) {
     llvm::SmallDenseSet<size_t, 4> refs;
-    ParamIndexRefCollector::collect(equalities[idx].getOperands()[0], refs);
-    ParamIndexRefCollector::collect(equalities[idx].getOperands()[1], refs);
+    ParamIndexRefCollector::collect(equalities[idx].first, refs);
+    ParamIndexRefCollector::collect(equalities[idx].second, refs);
     for (size_t param : refs)
       paramToEqualities[param].push_back(idx);
   }
@@ -1215,13 +1217,13 @@ LogicalResult ParamInf::inferFromBodyConstraints() {
     worklist.push_back(idx);
 
   while (!worklist.empty()) {
-    ParamOperatorAttr eq = equalities[worklist.pop_back_val()];
+    EqualityPair eq = equalities[worklist.pop_back_val()];
 
     // Fold any get witness expressions in the constraint. We can only drive
     // inference when exactly one side is fully determined and the other still
     // has unbound parameters.
-    TypedAttr lhs = evaluator.getReboundAttribute(eq.getOperands()[0]);
-    TypedAttr rhs = evaluator.getReboundAttribute(eq.getOperands()[1]);
+    TypedAttr lhs = evaluator.getReboundAttribute(eq.first);
+    TypedAttr rhs = evaluator.getReboundAttribute(eq.second);
     bool lhsOpen = paramFinder.hasReferences(lhs);
     bool rhsOpen = paramFinder.hasReferences(rhs);
     if (lhsOpen == rhsOpen)

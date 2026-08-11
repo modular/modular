@@ -1079,6 +1079,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto identical = dyn_cast<ParamIdenticalAttr>(param)) {
+    os << "identical(";
+    llvm::interleaveComma(identical.getOperands(), os, [&](TypedAttr operand) {
+      printParam(os, operand, ctx);
+    });
+    os << ")";
+    return;
+  }
+
   if (auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(param)) {
     if (auto concreteList =
             sugarDynCast<ParamListAttr>(conformsTo.getTypeValue());

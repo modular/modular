@@ -17,7 +17,7 @@
 @no_inline
 def _trait_is_eq[t1: type_of(AnyType), t2: type_of(AnyType)]() -> Bool:
     return __mlir_attr[
-        `#kgen.param.expr<eq,`,
+        `#kgen.param.identical<`,
         `#kgen.type<`,
         +t1,
         `> : !kgen.type`,

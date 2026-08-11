@@ -142,7 +142,7 @@ kgen.generator @test_variadic_ptrremove_map() {
 // CHECK:    kgen.return %[[V2]] : !kgen.scalar<f32>
 
 kgen.generator @float_constant_f32<value: f64, DT: dtype>() -> !kgen.scalar<DT> {
-  kgen.param.assert <eq(:dtype DT, f32)>, "float please"
+  kgen.param.assert <identical(:dtype DT, f32)>, "float please"
   %0 = kgen.param.constant: f64 = <value>
   %1 = llvm.fptrunc %0 : f64 to f32
   %2 = pop.cast_from_builtin %1: f32 to !kgen.scalar<DT>
@@ -383,7 +383,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
 // CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=\22foo\22"
 kgen.generator @takeStringParameter<SomeString: string>() {
-  kgen.param.assert <eq(:string SomeString, "foo")>, "I want foo"
+  kgen.param.assert <identical(:string SomeString, "foo")>, "I want foo"
   kgen.return
 }
 

@@ -960,26 +960,25 @@ static TypedAttr getNotOperand(TypedAttr prop) {
   return {};
 }
 
-/// Ingest the top-level `eq` facts of `assumption` (and of its AND conjuncts).
+/// Ingest the top-level equality facts of `assumption` (and of its AND
+/// conjuncts).
 static void addEqualityFacts(TypedAttr assumption,
                              llvm::EquivalenceClasses<TypedAttr> &classes) {
-  auto op = dyn_cast<ParamOperatorAttr>(assumption);
-  if (!op)
-    return;
-  if (op.getOpcode() == POC::EQ && op.getOperands().size() == 2) {
-    classes.unionSets(stripIdentityWrappers(
-                          getCanonicalAttr(cast<TypedAttr>(op.getOperand(0)))),
-                      stripIdentityWrappers(
-                          getCanonicalAttr(cast<TypedAttr>(op.getOperand(1)))));
-    return;
+  if (auto equality = sugarDynCast<ParamIdenticalAttr>(assumption)) {
+    if (equality.getNumOperands() == 2) {
+      classes.unionSets(
+          stripIdentityWrappers(getCanonicalAttr(equality.getOperand(0))),
+          stripIdentityWrappers(getCanonicalAttr(equality.getOperand(1))));
+    }
+  } else if (auto op = dyn_cast<ParamOperatorAttr>(assumption)) {
+    if (op.getOpcode() == POC::And)
+      for (TypedAttr operand : op.getOperands())
+        addEqualityFacts(operand, classes);
   }
-  if (op.getOpcode() == POC::And)
-    for (TypedAttr operand : op.getOperands())
-      addEqualityFacts(operand, classes);
 }
 
 namespace {
-/// The `eq` facts of an assumption, closed under symmetry and transitivity.
+/// The identity facts of an assumption, closed under symmetry & transitivity.
 class AssumptionEqualities {
   llvm::EquivalenceClasses<TypedAttr> classes;
   TypedAttr builtFor;
@@ -1050,13 +1049,12 @@ static TriState isPropositionImplied(TypedAttr proposition,
     }
   }
 
-  if (auto propositionOp = dyn_cast<ParamOperatorAttr>(proposition);
-      propositionOp && propositionOp.getOpcode() == POC::EQ &&
-      propositionOp.getOperands().size() == 2) {
-    if (assumptionEqs.provesEqual(cast<TypedAttr>(propositionOp.getOperand(0)),
-                                  cast<TypedAttr>(propositionOp.getOperand(1)),
-                                  assumption))
-      return TriState::yes();
+  if (auto equality = sugarDynCast<ParamIdenticalAttr>(proposition)) {
+    if (equality.getNumOperands() == 2) {
+      if (assumptionEqs.provesEqual(equality.getOperand(0),
+                                    equality.getOperand(1), assumption))
+        return TriState::yes();
+    }
   }
 
   // Conjunction elimination: (A AND B) implies B if any conjunct implies B.

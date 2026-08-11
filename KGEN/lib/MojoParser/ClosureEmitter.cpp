@@ -4201,8 +4201,7 @@ static void emitIsConvertibleToDeviceTypeBody(
   assert(!parameters.empty() &&
          "expected _is_convertible_to_device_type to have type parameter");
   TypedAttr targetType = ParamDeclRefAttr::get(parameters.front());
-  TypedAttr isConvertible =
-      ParamOperatorAttr::get(POC::EQ, targetType, deviceTypeAttr);
+  TypedAttr isConvertible = ParamIdenticalAttr::get(targetType, deviceTypeAttr);
   auto isConvertibleValue = KGEN::ParamConstantOp::create(b, isConvertible);
   IREmitter::emitNormalReturn(b, isConvertibleValue);
 }

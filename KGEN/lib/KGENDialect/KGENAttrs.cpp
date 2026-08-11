@@ -2372,8 +2372,16 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "comparison operators must have two operands";
     if (!KGEN::isSIMDOf<KGENDType::kBool>(type))
       return emitError() << "comparisons return simd<bool>";
+    // Comparisons are numeric. Equality over a non-numeric value domain is
+    // `#kgen.param.identical`, which answers one scalar bool rather than a
+    // lane-wise result.
+    if (!sugarIsa<SIMDType, IntegerType, IndexType, FloatType>(
+            operands.front().getType()))
+      return emitError() << stringifyEnum(opcode)
+                         << " operands must be numeric; use "
+                            "'#kgen.param.identical' to compare values of type "
+                         << operands.front().getType();
     // Allows almost every thing (index/float/bool/simd) for the operands.
-    // TODO: restrict to simd after fully migrated.
     break;
   case POC::CurrentTarget:
     if (!operands.empty())
@@ -2987,98 +2995,38 @@ static Type getTypeValueAsType(TypedAttr a) {
   return {};
 }
 
-/// Compute the result of == for the two specified attributes, handling the
-/// index truncation issue but otherwise relying on MLIR's canonicalization of
-/// attributes to do the job for us.  Both operands may be null, and this
-/// returns null if no folding is possible.
-static TypedAttr foldEquality(TypedAttr lhs, TypedAttr rhs) {
-  // This depends on pointer comparison, so sure to strip all sugar.
+/// Decide whether two parameter values denote the same value, returning null if
+/// no folding is possible. This is `#kgen.param.identical`'s fold.
+static TypedAttr foldParamIdentical(TypedAttr lhs, TypedAttr rhs);
+
+/// Fold a lane-wise `eq`. The operands are numeric and the result is per-lane,
+/// so this is only ever about comparing numbers. Both operands may be null, and
+/// this returns null if no folding is possible.
+static TypedAttr foldSIMDEquality(TypedAttr lhs, TypedAttr rhs) {
+  // This depends on pointer comparison, so be sure to strip all sugar.
   lhs = getCanonicalAttr(lhs);
   rhs = getCanonicalAttr(rhs);
 
-  // Equality involving an unknown value is undecidable: an UnknownAttr
-  // claims to be a simple constant (it is stable under substitution) but
-  // carries no value, so neither pointer equality nor inequality between
-  // the attributes says anything about the values. Builtin-typed unknowns
-  // canonicalize inside cast wrappers, so look through those. Note this does
-  // not catch unknowns nested inside aggregates.
-  auto isUnknownValue = [](TypedAttr a) {
-    while (true) {
-      if (auto cast = dyn_cast<CastFromBuiltinAttr>(a))
-        a = cast.getArg();
-      else if (auto cast = dyn_cast<CastToBuiltinAttr>(a))
-        a = cast.getArg();
-      else
-        break;
-    }
-    return isa<UnknownAttr>(a);
-  };
-  if (isUnknownValue(lhs) || isUnknownValue(rhs))
-    return {};
-
-  // both are simd attrs, fold it differently, `foldCompareOp` handles 32-bit
-  // truncation of input values + float value correctly.
+  // Both constants: compare them.  `foldCompareOp` handles the index-width
+  // truncation and float cases, and declines when the answer would depend on a
+  // target that is not known yet.
   if (isa<SIMDAttr>(lhs) && isa<SIMDAttr>(rhs))
     return foldCompareOp(lhs, rhs, POC::EQ);
 
-  // Folding to True is easy: If the values have pointer equality, we know they
-  // are equal.
+  // One expression compared against itself is equal in every lane -- except for
+  // floats, where it may be NaN, and for an unknown, which carries no number
+  // for even a self-comparison to be about.
   if (lhs == rhs) {
-    if (auto simdOperand = sugarDynCast<SIMDType>(lhs.getType())) {
-      auto retType = SIMDType::get(simdOperand.getSize(), KGENDType::kBool);
-      return splatIntLiteralToSIMD(true, retType);
+    if (auto simdTy = sugarDynCast<SIMDType>(lhs.getType())) {
+      std::optional<KGENDType> dtype = simdTy.getResolvedDType();
+      if (dtype && dtype->isIntLike() && !containsUnknownValue(lhs))
+        return splatIntLiteralToSIMD(
+            true, SIMDType::get(simdTy.getSize(), KGENDType::kBool));
     }
-
-    return SIMDAttr::getScalarBool(rhs.getContext(), true);
+    return {};
   }
 
-  Type lhsTypeVal = getTypeValueAsType(stripUpcast(lhs));
-  Type rhsTypeVal = getTypeValueAsType(stripUpcast(rhs));
-  if (lhsTypeVal && rhsTypeVal && isEqualCanon(lhsTypeVal, rhsTypeVal))
-    return SIMDAttr::getScalarBool(rhs.getContext(), true);
-
-  // Folding to False is a lot harder:
-  // If either side contains expression nodes that still need to be evaluated,
-  // we cannot fold to False since after evaluation they may become equal.
-  // Conservatively we only fold if both sides are simple constants (fully
-  // evaluated & contains no parameter references).
-  bool lhsSimpleConstant = ParameterAttr::isSimpleConstant(lhs);
-  bool rhsSimpleConstant = ParameterAttr::isSimpleConstant(rhs);
-  if (lhsSimpleConstant && rhsSimpleConstant) {
-    if (auto simdOperand = sugarDynCast<SIMDType>(lhs.getType())) {
-      auto retType = SIMDType::get(simdOperand.getSize(), KGENDType::kBool);
-      return splatIntLiteralToSIMD(lhs == rhs, retType);
-    }
-
-    return SIMDAttr::getScalarBool(rhs.getContext(), lhs == rhs);
-  }
-
-  // Type inequality is a bit stronger due to nominality of struct types.
-  // If both sides are type values and they point to different type references,
-  // we can fold to False.
-  if (auto lhsTypeParam = dyn_cast<TypeParamAttr>(lhs)) {
-    if (auto rhsTypeParam = dyn_cast<TypeParamAttr>(rhs)) {
-      auto lhsStructRef = getOptionalTypeSymbolRef(lhsTypeParam.getTypeValue());
-      auto rhsStructRef = getOptionalTypeSymbolRef(rhsTypeParam.getTypeValue());
-      if (lhsStructRef && rhsStructRef) {
-        // Both sides are struct types. If the referenced symbols are different,
-        // they are never equal.
-        if (lhsStructRef != rhsStructRef)
-          return SIMDAttr::getScalarBool(rhs.getContext(), false);
-      } else if (static_cast<bool>(lhsStructRef) !=
-                 static_cast<bool>(rhsStructRef)) {
-        // If one side is a struct type and the other is not, we can only fold
-        // to false if the non-struct side is already fully evaluated. Otherwise
-        // we do not yet know whether the non-struct side will evaluate to a
-        // struct.
-        if (lhsStructRef && rhsSimpleConstant)
-          return SIMDAttr::getScalarBool(rhs.getContext(), false);
-        if (rhsStructRef && lhsSimpleConstant)
-          return SIMDAttr::getScalarBool(rhs.getContext(), false);
-      }
-    }
-  }
-  // Otherwise can't fold something like "x == y".
+  // Anything else stays an unfolded `eq`.
   return {};
 }
 
@@ -3506,8 +3454,7 @@ static Attribute simplifyEQ(SmallVectorImpl<TypedAttr> &operands) {
   // Make sure parameters are ordered correctly, which also matters if they
   // don't fold.
   llvm::stable_sort(operands, ParameterAttr::compare);
-
-  return foldEquality(operands[0], operands[1]);
+  return foldSIMDEquality(operands[0], operands[1]);
 }
 
 /// Simplify the < and <= operations.
@@ -3648,20 +3595,18 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
   if (trailing.empty())
     return SIMDAttr::getScalarBool(b.getContext(), false);
 
-  // If there is only one trailing operand, canonicalize to an `eq` operator.
+  // If there is only one trailing operand, canonicalize to an identity
+  // proposition.
   if (trailing.size() == 1)
-    return ParamOperatorAttr::get(POC::EQ, operands);
+    return ParamIdenticalAttr::get(operands);
 
   bool allKnownFalse = true;
   for (TypedAttr operand : trailing) {
     // Fold to true if a match was found by value.
-    if (auto knownEq = foldEquality(lhs, operand)) {
+    if (auto knownEq = foldParamIdentical(lhs, operand)) {
       if (auto simdEq = sugarDynCast<SIMDAttr>(knownEq);
           simdEq && isAllIntLikeOne(simdEq))
         return SIMDAttr::getScalarBool(b.getContext(), true);
-    } else if (lhs == operand) {
-      // Fold to true if they match symbolically, like "x+1" and "x+1".
-      return SIMDAttr::getScalarBool(b.getContext(), true);
     } else {
       // If this is a symbolic comparison like "x == 5", then we cannot fold the
       // non-containment case.
@@ -3862,6 +3807,36 @@ static TypedAttr cloneOperandsWithSubstitution(
   return result;
 }
 
+/// If `prop` asserts that its two operands denote the same value -- so that a
+/// consumer may substitute either one for the other -- return the pair.
+static std::optional<std::pair<TypedAttr, TypedAttr>>
+getIdentityProposition(TypedAttr prop) {
+  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
+    if (identical.getNumOperands() == 2)
+      return std::make_pair(identical.getOperand(0), identical.getOperand(1));
+
+  auto op = sugarDynCast<ParamOperatorAttr>(prop);
+  if (!op || op.getOpcode() != POC::EQ || op.getOperands().size() != 2)
+    return std::nullopt;
+
+  // A lane-wise `eq` answers identity only where the two coincide, which rules
+  // out floats: IEEE equality holds between values that are not
+  // interchangeable (`+0.0` and `-0.0`) and fails between a value and itself
+  // (NaN). An unresolved dtype might still turn out to be a float.
+  //
+  // TODO(MOCO-4577): once width-1 int-like `eq` canonicalizes to
+  // `#kgen.param.identical`, drop this arm and take identity propositions only.
+  Type operandType = op.getOperand(0).getType();
+  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
+    std::optional<KGENDType> dtype = simdType.getResolvedDType();
+    if (!dtype || !dtype->isIntLike())
+      return std::nullopt;
+  } else if (!operandType.isIntOrIndex()) {
+    return std::nullopt;
+  }
+  return std::make_pair(op.getOperand(0), op.getOperand(1));
+}
+
 static TypedAttr simplifyCond(MutableArrayRef<TypedAttr> operands) {
   // FIXME: make sure the cond operand is passed in as scalar<bool> when it is
   // created instead of implicit convert here!!!
@@ -3882,17 +3857,17 @@ static TypedAttr simplifyCond(MutableArrayRef<TypedAttr> operands) {
   //
   // But A != B is represented as Xor(A == B, true)
   if (auto xorAttr = dyn_castPE(POC::Xor, condAttr)) {
-    auto eqAttr = dyn_castPE(POC::EQ, xorAttr.getOperand(0));
+    auto equality = getIdentityProposition(xorAttr.getOperand(0));
     auto simdAttr = sugarDynCast<SIMDAttr>(xorAttr.getOperand(1));
-    if (eqAttr && simdAttr && isAllIntLikeOne(simdAttr) &&
-        eqAttr.getOperand(0) == thenAttr && eqAttr.getOperand(1) == elseAttr)
+    if (equality && simdAttr && isAllIntLikeOne(simdAttr) &&
+        equality->first == thenAttr && equality->second == elseAttr)
       return thenAttr;
   }
 
   // cond(A == B, B, A) == A
-  if (auto eqAttr = dyn_castPE(POC::EQ, condAttr)) {
-    auto lhsEq = eqAttr.getOperand(0);
-    auto rhsEq = eqAttr.getOperand(1);
+  if (auto equality = getIdentityProposition(condAttr)) {
+    TypedAttr lhsEq = equality->first;
+    TypedAttr rhsEq = equality->second;
     if (thenAttr == rhsEq && elseAttr == lhsEq)
       return elseAttr;
 
