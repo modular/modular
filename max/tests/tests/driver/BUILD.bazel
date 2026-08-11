@@ -15,6 +15,7 @@ modular_py_test(
             "test_device_event.py",
             "test_buffer_device_pinned.py",
             "test_host_func.py",
+            "test_launch_trace.py",
         ],
     ),
     tags = [
@@ -38,6 +39,7 @@ modular_py_test(
         "test_buffer_sync_contracts.py",
         "test_device_event.py",
         "test_host_func.py",
+        "test_launch_trace.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

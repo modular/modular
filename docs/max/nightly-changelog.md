@@ -159,6 +159,18 @@ This version is still a work in progress.
   drafters overrode it at load time with a warning; a bare DFlash run now
   also sizes its KV cache draft headroom at the trained width instead of the
   old default.
+- Added `max.driver.begin_launch_trace()` and
+  `max.driver.take_launch_trace()`, exposing the launch trace recorded by the
+  runtime on CUDA and HIP devices. The trace lists the operations enqueued
+  across all streams — kernel launches (name, grid/block dimensions, shared
+  memory), memory copies, and memsets — in one enqueue-ordered list of
+  `max.driver.LaunchTraceEntry` values, each with a `stream_index` identifying
+  its stream and a deterministic, address-free `semantic_hash`. Because it is
+  process-global, work enqueued on streams the caller has no handle to (such as
+  a compiled graph's internal stream) is captured too. Intended for tests and
+  debugging that assert which device work a code path enqueues and on which
+  stream. The `max.driver.launch_trace()` context manager wraps the pair and
+  always stops recording on block exit, even if the block raises.
 - The graph compiler now fuses query/key RMSNorm followed by rotate-half RoPE
   into a single `rms_norm_rope` GPU kernel even when the RMSNorm upcasts to
   `float32`; numerics match the unfused graph.
