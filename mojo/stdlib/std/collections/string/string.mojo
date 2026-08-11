@@ -305,8 +305,11 @@ struct String(
     @always_inline("nodebug")
     def __init__(out self):
         """Construct an empty string."""
+        # this is UB if we ever touch the pointer, but so is
+        # an uninitialized pointer
+        self._ptr_or_data = {unsafe_from_address = Int(0)}
+        self._len_or_data = 0
         self._capacity_or_data = Self.FLAG_IS_INLINE
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline("nodebug")
     def __init__(out self, *, capacity: Int):
@@ -316,10 +319,7 @@ struct String(
             capacity: The capacity of the string to allocate.
         """
         if capacity <= Self.INLINE_CAPACITY:
-            self._capacity_or_data = Self.FLAG_IS_INLINE
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
+            self = Self()
         else:
             self._capacity_or_data = (capacity + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)

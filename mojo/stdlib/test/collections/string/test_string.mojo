@@ -1795,5 +1795,12 @@ def test_append_codepoint() raises:
     assert_equal(s.byte_length(), 8)
 
 
+def test_string_zero_init() raises:
+    var s = String()
+    assert_equal(Int(s._ptr_or_data), 0)
+    assert_equal(s._len_or_data, 0)
+    assert_equal(s._capacity_or_data, String.FLAG_IS_INLINE)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
