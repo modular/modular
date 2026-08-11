@@ -129,6 +129,13 @@ Each entry names its replacement.
 - Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
   instead.
 
+- Removed the `validate` parameter from
+  [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
+  validates. Passing `validate=False` did not skip any work on valid input; it
+  only turned characters outside the base64 alphabet into silently corrupt
+  output bytes. Drop `[validate=True]` from existing calls; calls that relied on
+  the default now raise instead of returning garbage.
+
 ## Fixed
 
 - Parametric `raises` now accepts any primary expression as the thrown type in
@@ -152,3 +159,7 @@ Each entry names its replacement.
 - `os.path.join()` now inserts separators based on the accumulated path rather
   than the first argument, so `join("/", "a", "b")` returns `/a/b` (previously
   `/ab`) and `join("a", "b/", "c")` returns `a/b/c` (previously `a/b//c`).
+
+- `base64.b64decode()` now raises an error when the input length is not
+  divisible by 4 instead of reading past the end of the input (or aborting
+  when asserts are enabled).
