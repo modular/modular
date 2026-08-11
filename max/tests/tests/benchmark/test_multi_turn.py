@@ -355,6 +355,38 @@ def test_prerun_warmup_turns_one_request_per_session_with_prefix() -> None:
     assert all(call.ignore_eos is True for call in driver.calls)
 
 
+def test_prerun_warmup_turns_raises_on_failed_request() -> None:
+    """A failed warmup request fails the benchmark instead of being silently
+    ignored (matches the check `prime_shared_contexts` has for single-turn).
+    """
+    sessions = [_make_session_with_id(0, prefix_turns=2)]
+
+    class _FailingDriver(RequestDriver):
+        async def request(
+            self, request_func_input: BaseRequestFuncInput
+        ) -> RequestFuncOutput:
+            assert isinstance(request_func_input, RequestFuncInput)
+            return RequestFuncOutput(
+                success=False,
+                error="simulated timeout",
+                prompt_len=request_func_input.prompt_len,
+            )
+
+    async def run() -> None:
+        await prerun_warmup_turns(
+            sessions=sessions,
+            request_driver=_FailingDriver(),
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            sampling=SamplingConfig(),
+            max_concurrency=128,
+        )
+
+    with pytest.raises(ValueError, match="simulated timeout"):
+        asyncio.run(run())
+
+
 def test_prerun_warmup_turns_request_prompt_is_last_turn_prefix() -> None:
     """For prefix_turns=N, the one request's prompt = dataset messages[0:2N-1]."""
     session = _make_session_with_id(0, prefix_turns=3)
