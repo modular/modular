@@ -30,7 +30,9 @@ Imports here are kept to stdlib + ``pydantic``-free so the
 from __future__ import annotations
 
 import math
+import statistics
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -63,6 +65,65 @@ class ConfidenceInfo:
     """Classification based on ci_relative_width."""
     sample_size: int
     """Number of data points used to compute the CI."""
+
+
+_T_CRITICAL_95: Mapping[int, float] = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
+    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+    15: 2.131, 20: 2.086, 25: 2.060, 30: 2.042,
+    40: 2.021, 60: 2.000, 80: 1.990, 100: 1.984, 120: 1.980,
+}  # fmt: skip
+_T_DF_KEYS = sorted(_T_CRITICAL_95.keys())
+
+
+def t_critical_95(df: int) -> float:
+    """Look up the 95% t critical value for given degrees of freedom."""
+    if df >= 120:
+        return 1.96
+    for k in reversed(_T_DF_KEYS):
+        if df >= k:
+            return _T_CRITICAL_95[k]
+    return _T_CRITICAL_95[1]
+
+
+def compute_confidence_info(
+    data: list[float], scaled_mean: float, scale_factor: float = 1.0
+) -> ConfidenceInfo | None:
+    """Compute a 95% t-interval for a metric from raw (unscaled) data.
+
+    Returns:
+        The interval and its high/medium/low/insufficient_data
+        classification, or ``None`` when fewer than two samples exist or
+        the scaled mean is not finite and positive.
+    """
+    n = len(data)
+    if n < 2 or not _is_finite_and_positive(scaled_mean):
+        return None
+
+    t = t_critical_95(n - 1)
+    se = statistics.stdev(data) * scale_factor / math.sqrt(n)
+    margin = t * se
+    ci_lower = scaled_mean - margin
+    ci_upper = scaled_mean + margin
+    ci_relative_width = (ci_upper - ci_lower) / scaled_mean
+
+    confidence: ConfidenceLevel
+    if n < 5:
+        confidence = "insufficient_data"
+    elif ci_relative_width <= 0.10:
+        confidence = "high"
+    elif ci_relative_width <= 0.20:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return ConfidenceInfo(
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        ci_relative_width=ci_relative_width,
+        confidence=confidence,
+        sample_size=n,
+    )
 
 
 class Metrics(ABC):

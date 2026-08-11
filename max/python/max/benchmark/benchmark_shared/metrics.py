@@ -39,6 +39,7 @@ from max.benchmark.benchmark_shared.percentile_metrics import (
     Metrics,
     PercentileMetrics,
     _is_finite_and_positive,
+    compute_confidence_info,
 )
 from max.benchmark.benchmark_shared.request import ServerTokenStats
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -79,15 +80,6 @@ def _calculate_basic_stats(
     }
 
 
-_T_CRITICAL_95: Mapping[int, float] = {
-    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
-    6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
-    15: 2.131, 20: 2.086, 25: 2.060, 30: 2.042,
-    40: 2.021, 60: 2.000, 80: 1.990, 100: 1.984, 120: 1.980,
-}  # fmt: skip
-_T_DF_KEYS = sorted(_T_CRITICAL_95.keys())
-
-
 class BatchType(str, Enum):
     """Type of batch."""
 
@@ -121,50 +113,6 @@ class HistogramMetric(str, Enum):
     TIME_TO_FIRST_TOKEN_MS = "maxserve_time_to_first_token_milliseconds"
     MAXSERVE_BATCH_EXECUTION_TIME_MILLISECONDS = (
         "maxserve_batch_execution_time_milliseconds"
-    )
-
-
-def _t_critical_95(df: int) -> float:
-    """Look up the 95% t critical value for given degrees of freedom."""
-    if df >= 120:
-        return 1.96
-    for k in reversed(_T_DF_KEYS):
-        if df >= k:
-            return _T_CRITICAL_95[k]
-    return _T_CRITICAL_95[1]
-
-
-def _compute_confidence_info(
-    data: list[float], scaled_mean: float, scale_factor: float
-) -> ConfidenceInfo | None:
-    """Compute 95% CI for a metric from raw (unscaled) data."""
-    n = len(data)
-    if n < 2 or not _is_finite_and_positive(scaled_mean):
-        return None
-
-    t = _t_critical_95(n - 1)
-    se = float(np.std(data, ddof=1)) * scale_factor / math.sqrt(n)
-    margin = t * se
-    ci_lower = scaled_mean - margin
-    ci_upper = scaled_mean + margin
-    ci_relative_width = (ci_upper - ci_lower) / scaled_mean
-
-    confidence: ConfidenceLevel
-    if n < 5:
-        confidence = "insufficient_data"
-    elif ci_relative_width <= 0.10:
-        confidence = "high"
-    elif ci_relative_width <= 0.20:
-        confidence = "medium"
-    else:
-        confidence = "low"
-
-    return ConfidenceInfo(
-        ci_lower=ci_lower,
-        ci_upper=ci_upper,
-        ci_relative_width=ci_relative_width,
-        confidence=confidence,
-        sample_size=n,
     )
 
 
@@ -204,7 +152,7 @@ class ThroughputMetrics(PercentileMetrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_throughput_percentiles(data, scale_factor)
 
-        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
+        ci = compute_confidence_info(data, basic_stats["mean"], scale_factor)
         super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
@@ -258,7 +206,7 @@ class StandardPercentileMetrics(PercentileMetrics):
         basic_stats = _calculate_basic_stats(data, scale_factor)
         percentiles = self._calculate_standard_percentiles(data, scale_factor)
 
-        ci = _compute_confidence_info(data, basic_stats["mean"], scale_factor)
+        ci = compute_confidence_info(data, basic_stats["mean"], scale_factor)
         super().__init__(
             unit=unit, confidence_info=ci, **basic_stats, **percentiles
         )
