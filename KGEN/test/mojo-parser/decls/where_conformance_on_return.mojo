@@ -46,7 +46,7 @@ def ret_move_from_copyable[
 
 
 # Exact shape from the bug report: stacked where-clauses including
-# `ImplicitlyDeletable` alongside `Copyable`.
+# `Deinitable` alongside `Copyable`.
 def ret_move_from_copyable_and_deletable[
     T: Deinitable
 ](var x: T) -> T where conforms_to(T, Copyable) where conforms_to(
