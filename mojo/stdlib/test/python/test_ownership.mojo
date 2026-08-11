@@ -88,5 +88,55 @@ def test_with_python_import() raises:
     _test_import(python)
 
 
+def _refcount(obj: PythonObject) raises -> Int:
+    var sys = Python.import_module("sys")
+    return Int(py=sys.getrefcount(obj))
+
+
+def test_call_does_not_leak_positional_args() raises:
+    var id_fn = Python.import_module("builtins").id
+    var obj = Python.evaluate("object()")
+    var before = _refcount(obj)
+    for _ in range(4):
+        _ = id_fn(obj)
+    assert_equal(_refcount(obj), before)
+
+
+def test_setitem_does_not_leak_key_or_value() raises:
+    var d = Python.evaluate("{}")
+    var key = Python.evaluate("object()")
+    var value = Python.evaluate("object()")
+    d[key] = value
+    var key_before = _refcount(key)
+    var value_before = _refcount(value)
+    for _ in range(4):
+        d[key] = value
+    assert_equal(_refcount(key), key_before)
+    assert_equal(_refcount(value), value_before)
+    # Keep the dict alive through the refcount measurements above.
+    _ = d
+
+
+def test_setattr_does_not_leak_value() raises:
+    var obj = Python.evaluate("type('Obj', (), {})()")
+    var value = Python.evaluate("object()")
+    obj.__setattr__("attr", value)
+    var before = _refcount(value)
+    for _ in range(4):
+        obj.__setattr__("attr", value)
+    assert_equal(_refcount(value), before)
+    # Keep the attribute holder alive through the refcount measurement above.
+    _ = obj
+
+
+def test_set_literal_does_not_leak_elements() raises:
+    var value = Python.evaluate("object()")
+    var before = _refcount(value)
+    for _ in range(4):
+        var s: PythonObject = {value}
+        _ = s
+    assert_equal(_refcount(value), before)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
