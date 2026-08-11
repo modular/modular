@@ -63,10 +63,10 @@ def bench_argmax[
     var num_bytes = batch * num_elements * size_of[Scalar[dtype]]()
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_streaming(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def launch(ctx: DeviceContext) raises:
             argmax_gpu(ctx, in_tensor, out_tensor)
@@ -78,10 +78,10 @@ def bench_argmax[
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_topk_k1(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def launch(ctx: DeviceContext) raises:
             topk_gpu[sampling=False, largest=True](

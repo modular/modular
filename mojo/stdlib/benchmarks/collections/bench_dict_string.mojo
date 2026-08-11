@@ -532,12 +532,12 @@ struct StringDict[
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = Dict[String, Int]()
         for i, key in enumerate(keys):
@@ -547,12 +547,12 @@ def bench_dict_init_with_short_keys[file_name: String](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = Dict[String, Int, default_hasher]()
         for i, key in enumerate(keys):
@@ -565,14 +565,14 @@ def bench_dict_init_with_long_keys[file_name: String](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark StringDict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_string_dict_init_with_short_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_small_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = StringDict[Int]()
         for i, key in enumerate(keys):
@@ -582,14 +582,14 @@ def bench_string_dict_init_with_short_keys[
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_string_dict_init_with_long_keys[
     file_name: String
 ](mut b: Bencher) raises:
     var keys = make_long_keys(file_name)
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var d = StringDict[Int]()
         for i, key in enumerate(keys):

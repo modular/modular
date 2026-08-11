@@ -40,14 +40,14 @@ def test_sync_parallelize() raises:
 
     @always_inline
     @__copy_capture(vector, chunk_size)
-    @parameter
+    @__parameter
     def parallel_fn(thread_id: Int):
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
         @__copy_capture(start)
-        @parameter
+        @__parameter
         def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
@@ -70,7 +70,7 @@ def test_parallelize() raises:
 
     var chunk_size = ceildiv(len(vector), num_work_items)
 
-    @parameter
+    @__parameter
     @__copy_capture(vector, chunk_size)
     @always_inline
     def parallel_fn(thread_id: Int):
@@ -79,7 +79,7 @@ def test_parallelize() raises:
 
         @always_inline
         @__copy_capture(start)
-        @parameter
+        @__parameter
         def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
@@ -88,7 +88,7 @@ def test_parallelize() raises:
     parallelize[parallel_fn](num_work_items)
 
 
-@parameter
+@__parameter
 def printme(i: Int):
     print(i, end="")
 
@@ -110,7 +110,7 @@ def test_parallelize_negative_work() raises:
 
 def test_parallelize_over_rows_zero_work() raises:
     # This should do nothing
-    @parameter
+    @__parameter
     def noop(start: Int, end: Int):
         pass
 
@@ -210,7 +210,7 @@ def test_parallelize_over_rows() raises:
     for i in range(num_rows * row_size):
         data[i] = Scalar[DType.int](0)
 
-    @parameter
+    @__parameter
     def process_rows(start_row: Int, end_row: Int):
         for row in range(start_row, end_row):
             for col in range(row_size):

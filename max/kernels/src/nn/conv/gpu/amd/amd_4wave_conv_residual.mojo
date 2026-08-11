@@ -247,7 +247,7 @@ def amd_4wave_conv_fprop_with_residual[
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_kpad[stride_v: Int, pad_v: Int]() raises:
             amd_4wave_conv[
@@ -296,7 +296,7 @@ def amd_4wave_conv_fprop_with_residual[
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
         var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_no_pad[stride_v: Int, pad_v: Int]() raises:
             amd_4wave_conv[
@@ -393,7 +393,7 @@ def _launch_plain_conv[
     var W_out = problem.out_width()
     var HW_out = H_out * W_out
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output, H_out, W_out, HW_out)
     def composed_epilogue[
@@ -441,7 +441,7 @@ def _launch_plain_conv[
         comptime _filter_2d_layout = row_major[_C_out, K_padded]()
         var filter_2d = TileTensor(filter_padded_buf, _filter_2d_layout)
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_kpad[stride_v: Int, pad_v: Int]() raises:
             comptime if Bool(elementwise_lambda_fn):
@@ -492,7 +492,7 @@ def _launch_plain_conv[
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
         var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_no_pad[stride_v: Int, pad_v: Int]() raises:
             comptime if Bool(elementwise_lambda_fn):

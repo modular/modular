@@ -354,7 +354,7 @@ def run_mla_prefill_v2[
         var work_info_ptr = dev_work_info.unsafe_ptr()
         var num_works = md.num_works
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(
             cb_q,
@@ -369,7 +369,7 @@ def run_mla_prefill_v2[
             num_cu,
         )
         def bench_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[

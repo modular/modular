@@ -244,7 +244,7 @@ def _index_tensor_1d[
     var work_per_thread = ceildiv(batch_volume, num_tasks)
 
     @__copy_capture(work_per_thread, batch_volume, last_index_dim)
-    @parameter
+    @__parameter
     def calc_batch_dim(task_id: Int):
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
         var work_start = task_id * work_per_thread

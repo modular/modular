@@ -101,21 +101,21 @@ def _check[
 
 
 def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
-    @parameter
+    @__parameter
     def fill_random[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = random_float64(-1e4, 1e4).cast[dtype]()
 
-    @parameter
+    @__parameter
     def fill_all_equal[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = Scalar[dtype](1.5)
 
-    @parameter
+    @__parameter
     def fill_peak_first[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
@@ -123,7 +123,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
             row[i] = Scalar[dtype](-1.0)
         row[0] = Scalar[dtype](7.0)
 
-    @parameter
+    @__parameter
     def fill_peak_last[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
@@ -131,7 +131,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
             row[i] = Scalar[dtype](-1.0)
         row[n - 1] = Scalar[dtype](7.0)
 
-    @parameter
+    @__parameter
     def fill_infs[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
@@ -143,14 +143,14 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
             row[n // 2] = inf[dtype]()
             row[n - 2] = inf[dtype]()
 
-    @parameter
+    @__parameter
     def fill_all_neg_inf[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
         for i in range(n):
             row[i] = neg_inf[dtype]()
 
-    @parameter
+    @__parameter
     def fill_nans[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):
@@ -159,7 +159,7 @@ def _run_dtype[dtype: DType, out_idx_type: DType](ctx: DeviceContext) raises:
                 Float64(i % 11) - 5.0
             )
 
-    @parameter
+    @__parameter
     def fill_all_nan[
         dtype: DType
     ](row: UnsafePointer[Scalar[dtype], MutUntrackedOrigin], n: Int, b: Int):

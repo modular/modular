@@ -35,7 +35,7 @@ __extension AttentionRDNA:
         comptime assert Self.BK == 32, "BK must be 32 for RDNA"
 
         @always_inline
-        @parameter
+        @__parameter
         def loop_over_kvcache[
             tile_size: Int
         ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):

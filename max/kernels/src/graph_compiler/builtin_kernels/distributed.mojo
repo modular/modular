@@ -145,7 +145,7 @@ struct DistributedAllReduceSum:
         # have subprogram scope' error that arises when parameterized functions
         # are defined inside closures.
         @always_inline
-        @parameter
+        @__parameter
         def output_lambda[
             output_index: Int,
             _dtype: DType,
@@ -354,7 +354,7 @@ struct DistributedReduceScatterSum:
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             def output_lambda[
                 output_index: Int,
                 _dtype: DType,
@@ -987,7 +987,7 @@ struct DistributedReduceScatterRMSNorm:
             # above the fuse threshold (prefill M); below it the fused kernel is
             # bit-identical to this. `sum_buf` is the plain reduce-scatter either
             # way, so the residual is bit-identical regardless. mbc=True.
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 reducescatter[
@@ -1009,7 +1009,7 @@ struct DistributedReduceScatterRMSNorm:
                 # it -> the closure reads a garbage host-stack pointer and
                 # corrupts device memory.
                 @__copy_capture(sum_buf)
-                @parameter
+                @__parameter
                 @always_inline
                 def norm_input_fn[
                     width: Int
@@ -1017,7 +1017,7 @@ struct DistributedReduceScatterRMSNorm:
                     return sum_buf.raw_load[width=width](sum_buf.layout(coords))
 
                 @__copy_capture(normed_buf)
-                @parameter
+                @__parameter
                 @always_inline
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
@@ -1198,7 +1198,7 @@ struct DistributedAllGatherRMSNorm:
             # fabric-saturated standalone gather wins): all-gather into `sum_buf`,
             # then `rms_norm_gpu` into `normed_buf`. `sum_buf` is the residual on
             # both branches. mbc=True.
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 # Gather each shard into its contiguous row-range of `sum_buf`
@@ -1234,7 +1234,7 @@ struct DistributedAllGatherRMSNorm:
                 # (`sum_buf`/`normed_buf`) reaches the `rms_norm_gpu` device
                 # kernel as a garbage host-stack pointer and corrupts memory.
                 @__copy_capture(sum_buf)
-                @parameter
+                @__parameter
                 @always_inline
                 def norm_input_fn[
                     width: Int
@@ -1242,7 +1242,7 @@ struct DistributedAllGatherRMSNorm:
                     return sum_buf.raw_load[width=width](sum_buf.layout(coords))
 
                 @__copy_capture(normed_buf)
-                @parameter
+                @__parameter
                 @always_inline
                 def norm_output_fn[
                     width: SIMDLength, alignment: Int
@@ -1363,7 +1363,7 @@ struct DistributedMatmulReduceScatterSum:
         # peer applies the residual-add lambda; the other peers launch
         # without it, so after RS-sum the output contains
         # `sum_j(A_j @ B_j) + residual` rather than `... + ngpus*residual`.
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(residual)
         def residual_add_fn[

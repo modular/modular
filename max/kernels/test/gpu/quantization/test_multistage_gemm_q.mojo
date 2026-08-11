@@ -101,7 +101,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -726,7 +726,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config

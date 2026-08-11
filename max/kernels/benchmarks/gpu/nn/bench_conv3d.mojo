@@ -375,11 +375,11 @@ def bench_conv3d[
 
     if impl == "im2col":
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
         def im2col_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 _ = dispatch_im2col_matmul_conv3d(
@@ -401,11 +401,11 @@ def bench_conv3d[
         )
     elif impl == "1x1x1":
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
         def p1x1x1_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 _ = dispatch_1x1x1_matmul_conv3d(
@@ -428,11 +428,11 @@ def bench_conv3d[
     elif impl == "qslice":
         comptime if not has_amd_gpu_accelerator():
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
             def qslice_bench(mut bencher: Bencher) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def kernel(ctx: DeviceContext) raises:
                     _ = dispatch_qslice_conv3d_sm100(
@@ -458,11 +458,11 @@ def bench_conv3d[
             comptime _BN_OVERRIDE = get_defined_int["BN_OVERRIDE", 0]()
             comptime _BK_OVERRIDE = get_defined_int["BK_OVERRIDE", 0]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
             def native_3d_bench(mut bencher: Bencher) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def kernel(ctx: DeviceContext) raises:
                     _ = dispatch_amd_4wave_conv3d[
@@ -493,11 +493,11 @@ def bench_conv3d[
     elif impl == "cudnn":
         comptime if has_amd_gpu_accelerator():
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_buf, filter_qrscf_tt, output_buf)
             def miopen_bench(mut bencher: Bencher) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def kernel(ctx: DeviceContext) raises:
                     conv_miopen(
@@ -520,11 +520,11 @@ def bench_conv3d[
 
         else:
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_buf, filter_fcqrs_buf, output_buf)
             def cudnn_bench(mut bencher: Bencher) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def kernel(ctx: DeviceContext) raises:
                     conv3d_cudnn(
@@ -560,11 +560,11 @@ def bench_conv3d[
         var grid_dim_y = ceildiv(d_out, block_size)
         var grid_dim_z = batch
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_buf, filter_qrscf_buf, output_buf)
         def naive_bench(mut bencher: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def kernel(ctx: DeviceContext) raises:
                 ctx.enqueue_function[naive_kernel](

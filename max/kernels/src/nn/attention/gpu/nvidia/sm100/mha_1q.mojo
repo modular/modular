@@ -2627,7 +2627,7 @@ def _mha_sm100[
         _is_decoding[MaxSeqLenType](),
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def get_position(seq_info: SeqInfo) -> PositionType:
         return _get_position[
@@ -2758,7 +2758,7 @@ def _mha_sm100[
                 # o_tmem = tmem_addr + UInt32(MMA_N0 * num_s)
             var s_accumulator = UMMA0Type.c_t(s_tmem)
 
-            @parameter
+            @__parameter
             @always_inline
             def q_mul_k(read_idx: UInt32, read_phase: UInt32):
                 var q = q_desc
@@ -2831,7 +2831,7 @@ def _mha_sm100[
                 var o_tmem: UInt32 = 0
                 var p_tmem: UInt32 = 0
 
-                @parameter
+                @__parameter
                 @always_inline("nodebug")
                 def p_mul_v(
                     read_idx: UInt32,
@@ -3009,21 +3009,21 @@ def _mha_sm100[
         var p_reg_tile = UMMA0Type.c_t.allocate_register_tile()
         var output_reg_tile = UMMA1Type.c_t.allocate_register_tile()
 
-        @parameter
+        @__parameter
         @always_inline
         def vectorize_p_reg_tile(
             out result: VecPType,
         ):
             result = {p_reg_tile.ptr}
 
-        @parameter
+        @__parameter
         @always_inline
         def vectorize_o_reg_tile(
             out result: VecOType,
         ):
             result = {output_reg_tile.ptr}
 
-        @parameter
+        @__parameter
         @always_inline
         def scale_p_for_fp8():
             # Apply the cuDNN-style 256x P scale in-place on p_reg_tile (fp8
@@ -3037,7 +3037,7 @@ def _mha_sm100[
                     comptime for col in range(num_cols_p):
                         vp[row, col] = vp[row, col] * s
 
-        @parameter
+        @__parameter
         @always_inline
         def apply_mask(
             position: PositionType,
@@ -3057,7 +3057,7 @@ def _mha_sm100[
                 vectorize_p_reg_tile(),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def scale(correction: type_of(rowmax), vout: VecOType):
             # Correct output
@@ -3072,7 +3072,7 @@ def _mha_sm100[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
@@ -3084,7 +3084,7 @@ def _mha_sm100[
                 new_rowsum[row] = recip(old)[0]
                 old_rowsum[row] = new
 
-        @parameter
+        @__parameter
         @always_inline
         def write_output(
             position: PositionType,
@@ -3201,7 +3201,7 @@ def _mha_sm100[
         var output_accumulator = UMMA1Type.c_t(o_tmem)
         var p_desc = UMMA1Type.a_mma_descriptor(p_tmem)
 
-        @parameter
+        @__parameter
         @always_inline
         def wait_for_q_mul_k(read_idx: UInt32):
             var p_acc = umma_0.wait_for_mma(p_accumulator)  # P is available
@@ -3211,7 +3211,7 @@ def _mha_sm100[
             p_acc.copy_to(p_reg_tile)
             umma_0.tmem_arrive()
 
-        @parameter
+        @__parameter
         @always_inline
         def wait_for_p_mul_v(read_idx: UInt32):
             umma_1_ts.wait_for_mma()  # output is available

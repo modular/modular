@@ -35,10 +35,10 @@ def make_dict[size: Int, *, random: Bool = False]() -> Dict[Int, Int]:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict init
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_init(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(1000):
             var d = Dict[Int, Int]()
@@ -50,7 +50,7 @@ def bench_dict_init(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_insert[size: Int](mut b: Bencher) raises:
     """Insert 10 new items 100_000 times."""
     var items = make_dict[size]()
@@ -67,7 +67,7 @@ def bench_dict_insert[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_lookup[size: Int](mut b: Bencher) raises:
     """Lookup 10 items 100_000 times."""
     var items = make_dict[size]()
@@ -85,7 +85,7 @@ def bench_dict_lookup[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict contains
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_contains[size: Int](mut b: Bencher) raises:
     """Check if the dict contains 10 keys 100_000 times."""
     var items = make_dict[size]()
@@ -103,7 +103,7 @@ def bench_dict_contains[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Lookup Miss
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
     """Lookup 10 missing keys 100_000 times."""
     var items = make_dict[size]()
@@ -121,7 +121,7 @@ def bench_dict_lookup_miss[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Insert/Delete
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
     """Insert and immediately delete 10_000 times."""
     var items = make_dict[size]()
@@ -140,7 +140,7 @@ def bench_dict_insert_delete[size: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Dict Iteration
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_dict_iter[size: Int](mut b: Bencher) raises:
     """Iterate over all keys."""
     var items = make_dict[size]()

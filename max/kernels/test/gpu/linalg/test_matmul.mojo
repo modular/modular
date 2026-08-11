@@ -42,7 +42,7 @@ comptime epilogue_func_type = def[
 ]
 
 
-@parameter
+@__parameter
 @always_inline
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -182,7 +182,7 @@ def test[
     ctx.enqueue_copy(c_device_buffer, c_host_ptr)
     ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device, m, n)
     def epilogue_fn[

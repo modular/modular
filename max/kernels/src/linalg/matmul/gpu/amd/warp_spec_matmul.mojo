@@ -65,7 +65,7 @@ comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
 ]
 
 
-@parameter
+@__parameter
 def validate_config[
     BM: Int,
     BN: Int,
@@ -150,7 +150,7 @@ def determine_thread_role[
         return (ThreadRole.CONSUMER, 2)
 
 
-@parameter
+@__parameter
 def smem_tile_layout[
     k_tile_size: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
@@ -207,7 +207,7 @@ def smem_tile_layout[
     )
 
 
-@parameter
+@__parameter
 def get_producer_warp_thread_layout[
     k_tile_size: Int, simd_width: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
@@ -624,7 +624,7 @@ def warp_specialized_matmul_kernel[
             swizzle=swizzle,
         ]()
 
-        @parameter
+        @__parameter
         def compute_indices(consumer_iteration: Int) -> Tuple[Int, Int]:
             """Computes warp tile indices for this consumer iteration."""
             var warp_tile_idx = (

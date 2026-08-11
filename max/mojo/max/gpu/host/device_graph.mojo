@@ -728,7 +728,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             return Self.Node(id.value())
         return None
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         *Ts: DevicePassable
@@ -997,7 +997,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         )
         return self._last_node().value()
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -1131,7 +1131,7 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             location=location.or_else(call_location()),
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def add_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],

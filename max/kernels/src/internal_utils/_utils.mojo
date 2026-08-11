@@ -91,10 +91,10 @@ def bench_compile_time[
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
-    @parameter
+    @__parameter
     def bench_call(mut b: Bencher) raises:
         @always_inline
-        @parameter
+        @__parameter
         def bench_iter() raises:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
@@ -362,7 +362,7 @@ def init_vector_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @parameter
+    @__parameter
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
@@ -437,7 +437,7 @@ def _init_block_scaled_scales_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @parameter
+    @__parameter
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:

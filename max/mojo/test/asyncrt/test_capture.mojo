@@ -63,7 +63,7 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             in0_host[i] = Float32(i)
             out_host[i] = Float32(length + i)
 
-    @parameter
+    @__parameter
     def add_with_captured(left: Float32, right: Float32) -> Float32:
         return left + right + captured
 

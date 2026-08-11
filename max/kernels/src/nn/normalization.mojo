@@ -711,7 +711,7 @@ def rms_norm_gpu_warp_tiling[
             var col = (c * bdim + tid) * simd_width
 
             @always_inline
-            @parameter
+            @__parameter
             def _normalize() -> SIMD[dtype, simd_width]:
                 comptime if multiply_before_cast:
                     var gamma_accum = (
@@ -871,14 +871,14 @@ def rms_norm_gpu[
     # Internal IndexList-form adapters: the warp-tiling / block GPU kernels
     # consume `def[width, rank](IndexList[rank])` lambdas (they build the n-D
     # index in-kernel), so wrap the Coord-form public lambdas back to that shape.
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_il[
         simd_width: Int, _rank: Int
     ](indices: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return input_fn[simd_width](Coord(rebind[IndexList[rank]](indices)))
 
-    @parameter
+    @__parameter
     @always_inline
     def output_fn_il[
         simd_width: SIMDLength, alignment: Int
@@ -923,7 +923,7 @@ def rms_norm_gpu[
     # reconstructs the static dims at comptime; the dynamic leaves are filled
     # from `shape_il`.
     @__copy_capture(shape_il)
-    @parameter
+    @__parameter
     @always_inline
     def output_fn_2d[
         simd_width: SIMDLength, alignment: Int
@@ -940,7 +940,7 @@ def rms_norm_gpu[
         output_fn[simd_width, alignment](Coord(indices), val)
 
     @__copy_capture(shape_il)
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_2d[
         simd_width: Int
@@ -981,7 +981,7 @@ def rms_norm_gpu[
     # warps, capped at the device max), each owning `eff_simd * chunks` columns.
     # Single source of truth for both the launcher and the warp-per-row gate
     # below.
-    @parameter
+    @__parameter
     @always_inline
     def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
@@ -992,7 +992,7 @@ def rms_norm_gpu[
 
     # `exact` means every thread is fully active (the block tiles the row with
     # no ragged tail), so the unguarded kernel can be used.
-    @parameter
+    @__parameter
     @always_inline
     def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
         return (
@@ -1041,13 +1041,13 @@ def rms_norm_gpu[
     # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
     # fully active, no ragged tail) is decided at runtime and selects the
     # unguarded instantiation.
-    @parameter
+    @__parameter
     @always_inline
     def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
         var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
         var exact = _wt_exact[eff_simd, chunks]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _enqueue[exact_fit: Bool]() raises:
             comptime kernel = rms_norm_gpu_warp_tiling[
@@ -1368,7 +1368,7 @@ def rms_norm_cpu[
     @__copy_capture(
         chunk_size, prod_all_but_last_dim, last_dim, epsilon, weight_offset
     )
-    @parameter
+    @__parameter
     def task_func(thread_id: Int):
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
@@ -1376,7 +1376,7 @@ def rms_norm_cpu[
         var row_idx = thread_id * chunk_size
 
         @__copy_capture(row_idx)
-        @parameter
+        @__parameter
         @always_inline
         def output_fn_2d[
             simd_width: SIMDLength, alignment: Int
@@ -1389,7 +1389,7 @@ def rms_norm_cpu[
             output_fn[simd_width, alignment](indices, val)
 
         @__copy_capture(row_idx)
-        @parameter
+        @__parameter
         @always_inline
         def input_fn_2d[
             simd_width: Int
@@ -1475,7 +1475,7 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
-    @parameter
+    @__parameter
     @always_inline
     def input_fn_target[width: Int](coords: Coord) -> SIMD[dtype, width]:
         comptime align = _rms_norm_input_alignment[dtype, width, target]()
@@ -1484,7 +1484,7 @@ def _rms_norm_impl[
     comptime if is_cpu[target]():
         # The CPU path consumes n-D `IndexList`-form lambdas; wrap the Coord
         # public lambdas back to that interface.
-        @parameter
+        @__parameter
         @always_inline
         def input_fn_il[
             width: Int, _rank: Int
@@ -1493,7 +1493,7 @@ def _rms_norm_impl[
                 Coord(rebind[IndexList[rank]](indices))
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn_il[
             width: SIMDLength, alignment: Int
@@ -1902,7 +1902,7 @@ def apply_qk_rms_norm[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return trace_arg("qk", IndexList[2](rows, q_cols + k_cols), in_dtype)
 
@@ -2391,7 +2391,7 @@ def group_norm_gpu[
     if num_rows == OutputLinearIdxType(0) or num_cols == OutputLinearIdxType(0):
         return
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(shape, num_groups, channels_per_group)
     def input_fn_2d[
@@ -2687,7 +2687,7 @@ def group_norm_cpu[
     var chunk_size = ceildiv(num_rows, num_workers)
 
     @__copy_capture(shape, num_groups, channels_per_group, spatial, epsilon)
-    @parameter
+    @__parameter
     def task_func(thread_id: Int) raises:
         var row_start = thread_id * chunk_size
         var row_end = min(row_start + chunk_size, num_rows)
@@ -2697,7 +2697,7 @@ def group_norm_cpu[
             var c_base = g * channels_per_group
 
             @__copy_capture(shape, n, c_base, spatial)
-            @parameter
+            @__parameter
             @always_inline
             def indices_for(col: Int) -> IndexList[rank]:
                 var c_offset, s = divmod(col, spatial)
@@ -2771,7 +2771,7 @@ def group_norm[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return trace_arg("input", shape, dtype)
 

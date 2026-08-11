@@ -831,7 +831,7 @@ struct Matmul2dFp4[
         var is_m_edge = tg_m_end > M
 
         @always_inline
-        @parameter
+        @__parameter
         def _kloop[bounded: Bool]():
             var k0 = 0
             while k0 < K:

@@ -138,7 +138,7 @@ def _verify_results[
 
     @__copy_capture(ar_ptr_v)
     @always_inline
-    @parameter
+    @__parameter
     def v_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -364,7 +364,7 @@ def _verify_add_results[
 
         @__copy_capture(ar_ptr_i, residual_ptr)
         @always_inline
-        @parameter
+        @__parameter
         def add_epilogue_v[
             _dtype: DType,
             _width: SIMDLength,
@@ -398,7 +398,7 @@ def _verify_add_results[
 
     @__copy_capture(ar_ptr_v)
     @always_inline
-    @parameter
+    @__parameter
     def v_ep_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -770,12 +770,12 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 1: allreduce only =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -804,12 +804,12 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 2: allreduce + fused RMSNorm+FP8 (FP8 only) =====
     comptime if quantize:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
                 comptime for _j in range(ngpus):
@@ -833,7 +833,7 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @__copy_capture(ar_ptr)
                 @always_inline
-                @parameter
+                @__parameter
                 def fused_in[
                     width: Int, _rank: Int
                 ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -877,12 +877,12 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -925,12 +925,12 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 4: allreduce (add epilogue) + fused RMSNorm+FP8 (FP8) ===
     comptime if quantize:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
                 comptime for _j in range(ngpus):
@@ -946,7 +946,7 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @__copy_capture(ar_ptr, residual_ptr_base)
                 @always_inline
-                @parameter
+                @__parameter
                 def add_epilogue[
                     _dtype: DType,
                     _width: SIMDLength,
@@ -981,7 +981,7 @@ def bench_allreduce_rmsnorm_fp8[
                 # allreduce + residual).
                 @__copy_capture(ar_ptr)
                 @always_inline
-                @parameter
+                @__parameter
                 def add_fused_in[
                     width: Int, _rank: Int
                 ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -1025,12 +1025,12 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 5: fused allreduce+add+RMSNorm (single kernel) =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):

@@ -23,7 +23,7 @@ from std.utils.index import Index
 
 
 def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_scatter_wrapper(
         mut b: Bencher, concrete_spec: ScatterSpec
@@ -35,7 +35,7 @@ def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
     )
 
 
-@parameter
+@__parameter
 def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
@@ -79,7 +79,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def bench_fn() raises:
         @always_inline
         def reduce_fn[

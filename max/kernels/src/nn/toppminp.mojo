@@ -180,7 +180,7 @@ def _topp_minp_sampling[
                 batch_offset + i, input_logits.raw_load(batch_offset + i)
             )
 
-    @parameter
+    @__parameter
     @__copy_capture(input_logits)
     def apply_temperature[
         _simd_width: Int

@@ -949,7 +949,7 @@ struct AppleM5MatMul[
         # view of C -- no pointer arithmetic. The lambda contract matches AMD's:
         # it receives `SIMD[c_type, width]` at absolute (row, col).
         @always_inline
-        @parameter
+        @__parameter
         def _apply_epilogue[
             bounded: Bool
         ](tile_row_base: Int, tile_col_base: Int):
@@ -963,7 +963,7 @@ struct AppleM5MatMul[
             var c_vec = c_sub.vectorize[1, 4]()
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
@@ -1048,7 +1048,7 @@ struct AppleM5MatMul[
         # is only entered when `c_type == fp32` (use_epilogue_path is False),
         # so the rebind is a no-op at runtime.
         @always_inline
-        @parameter
+        @__parameter
         def _fast_path_store[
             bounded: Bool
         ](valid_rows: Int = 0, valid_cols: Int = 0):
@@ -1113,7 +1113,7 @@ struct AppleM5MatMul[
         else:
 
             @always_inline
-            @parameter
+            @__parameter
             def _full_strip(k_strip: Int32):
                 var b_sub = b_slab.tile[BK, SG_N](Int(k_strip), 0)
                 loader.accumulate_strip[bounded=False](
@@ -1619,7 +1619,7 @@ struct AppleM5MatMul[
         else:
 
             @always_inline
-            @parameter
+            @__parameter
             def _full_strip(gstrip: Int32):
                 var a_sub = a_slab.tile[SG_M, BK](0, Int(gstrip))
                 var b_sub = b_slab.tile[BK, SG_N](Int(gstrip), 0)
@@ -2089,7 +2089,7 @@ def enqueue_apple_conv2d[
     # alignment can be lifted to a comptime kernel parameter without a per-shape
     # recompile. `c_aligned` lets the kernel DCE the per-element slow gather on
     # the interior strips (see `_load_a_im2col_fragment_x2`).
-    @parameter
+    @__parameter
     def _launch[c_aligned: Bool]() raises:
         comptime kernel = MM.run_conv[
             type_of(c).LayoutType,

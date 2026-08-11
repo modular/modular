@@ -487,7 +487,7 @@ def main() raises:
             trace_buf_dev.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(
             cb_a,
@@ -698,7 +698,7 @@ def main() raises:
                             attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
             bencher_iter_custom[kernel_launch](b, ctx)

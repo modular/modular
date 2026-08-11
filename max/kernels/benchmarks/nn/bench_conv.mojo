@@ -141,7 +141,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         num_groups=spec.num_groups,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
@@ -150,7 +150,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         var counter = 0
 
         @always_inline
-        @parameter
+        @__parameter
         def bench_fn():
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()

@@ -308,7 +308,7 @@ struct Copy:
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         def func[
             width: Int, element_alignment: Int
@@ -968,7 +968,7 @@ def concat_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
@@ -1026,7 +1026,7 @@ def concat_from_list_shape_impl[
     """
     var axis = normalize_neg_index(axis0, rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[rank], s2: IndexList[rank]
@@ -1665,7 +1665,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             return String(";").join(
                 Span(
@@ -1741,7 +1741,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         ctx: DeviceContext,
     ) capturing raises:
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             return String(";").join(
                 Span(
@@ -2020,7 +2020,7 @@ struct Struct_moe_router_group_limited:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2039,7 +2039,7 @@ struct Struct_moe_router_group_limited:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2106,7 +2106,7 @@ struct Struct_moe_single_group_router_eplb:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2130,7 +2130,7 @@ struct Struct_moe_single_group_router_eplb:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2171,7 +2171,7 @@ struct Struct_moe_single_group_router:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         scores_type: DType,
         bias_type: DType,
@@ -2188,7 +2188,7 @@ struct Struct_moe_single_group_router:
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def scores_input_fn[
             width: Int
@@ -2221,7 +2221,7 @@ struct Struct_moe_eplb_remap:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         num_log: Int,
         max_replicas: Int,
@@ -2778,7 +2778,7 @@ struct BundledAllReduceSum:
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def output_lambda[
             _dtype: DType,
             _width: SIMDLength,
@@ -3675,7 +3675,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_cpu[DSTATE_VAL: Int]() raises:
             mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE_VAL](
@@ -3710,7 +3710,7 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 Optional[DeviceContext](ctx),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_gpu[DSTATE_VAL: Int]() raises:
             comptime BLOCK_SIZE = 64
@@ -3952,7 +3952,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 + ". Expected 16, 64, 128, or 256."
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_cpu[DSTATE_VAL: Int]() raises:
             # The CPU kernel stores fp32 state only; bf16 state is wired on
@@ -4005,7 +4005,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     " kernel"
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def launch_gpu[DSTATE_VAL: Int]() raises:
             # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
@@ -4456,7 +4456,7 @@ struct CausalConv1DVarlenFwd[
             comptime TILE_SEQ = 128
             var silu_activation_int8 = Int8(silu_activation)
 
-            @parameter
+            @__parameter
             @always_inline
             def launch_gpu[kWidth: Int]() raises:
                 # Prefill/mixed segments (at least one sequence has >1

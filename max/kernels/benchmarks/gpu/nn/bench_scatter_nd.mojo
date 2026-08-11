@@ -63,11 +63,11 @@ def run_row_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 1]())
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             scatter_nd_generator[target="gpu"](
@@ -120,11 +120,11 @@ def run_elem_scatter[
     var upd_tt = TileTensor(upd_dev, row_major[num_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[num_idx, 2]())
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(data_tt, out_tt, upd_tt, idx_tt)
     def bench_func(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             scatter_nd_generator[target="gpu"](

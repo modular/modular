@@ -244,7 +244,7 @@ def test_quantize_known_scales(ctx: DeviceContext) raises:
     ctx.enqueue_copy(scales_host, scales_dev)
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     def _check_block(
         blk: Int, expected_e8m0: Int, expected_val: Float32
     ) raises:

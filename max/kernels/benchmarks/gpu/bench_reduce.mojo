@@ -90,7 +90,7 @@ def run_reduce[
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -99,7 +99,7 @@ def run_reduce[
         return reduce_fn[dtype, width](lhs, rhs)
 
     @__copy_capture(res_device)
-    @parameter
+    @__parameter
     def output_fn[
         _dtype: DType, width: SIMDLength, _rank: Int
     ](
@@ -110,10 +110,10 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
@@ -122,7 +122,7 @@ def run_reduce[
             )
 
             @__copy_capture(input_lt)
-            @parameter
+            @__parameter
             def input_fn[
                 dtype: DType,
                 width: Int,
@@ -174,7 +174,7 @@ def run_reduce[
     _ = res_host^
 
 
-@parameter
+@__parameter
 def reduce_add[
     dtype: DType,
     width: SIMDLength,

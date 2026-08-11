@@ -159,7 +159,7 @@ struct AddOne:
         x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_add_one[
             width: Int
@@ -355,7 +355,7 @@ def _vector_addition_gpu(
     alias BLOCK_SIZE = 16
     var vector_length = output.dim_size(0)
 
-    @parameter
+    @__parameter
     def vector_addition_gpu_kernel(length_dev: Int32):
         var length = Int(length_dev)
         var tid = block_dim.x * block_idx.x + thread_idx.x

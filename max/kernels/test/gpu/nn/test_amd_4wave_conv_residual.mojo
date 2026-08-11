@@ -42,7 +42,7 @@ from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
 # trivially in-register, real bias-per-channel would index by
 # coords[1] = C_out). Used to validate the SM100-style ordering
 # `D = lambda(Conv(A,B)) + beta * C`.
-@parameter
+@__parameter
 @always_inline
 def _bias_compute_lambda[
     _dtype: DType,

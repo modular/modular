@@ -275,7 +275,7 @@ def _block_reduce[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _indexed_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:

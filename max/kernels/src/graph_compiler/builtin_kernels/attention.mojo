@@ -414,7 +414,7 @@ struct FlashAttentionGPU:
         var k_buffer = k.to_layout_tensor()
         var v_buffer = v.to_layout_tensor()
 
-        @parameter
+        @__parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[](
@@ -469,7 +469,7 @@ struct PaddedFlashAttentionGPU:
             valid_length.to_layout_tensor()
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[
@@ -557,7 +557,7 @@ struct RaggedFlashAttentionGPU:
             input_row_offsets.to_layout_tensor()
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention_ragged[](
@@ -599,7 +599,7 @@ struct NoMaskFlashAttentionCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @parameter
+        @__parameter
         @always_inline
         def k_input_fn[
             width: Int, rank: Int
@@ -608,7 +608,7 @@ struct NoMaskFlashAttentionCPU:
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def v_input_fn[
             width: Int, rank: Int
@@ -617,7 +617,7 @@ struct NoMaskFlashAttentionCPU:
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def mask_input_fn[
             width: Int, _rank: Int
@@ -658,7 +658,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @parameter
+        @__parameter
         @always_inline
         def k_input_fn[
             width: Int, rank: Int
@@ -667,7 +667,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def v_input_fn[
             width: Int, rank: Int
@@ -676,7 +676,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def k_cache_input_fn[
             width: Int, rank: Int
@@ -685,7 +685,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
                 rebind[IndexList[k_cache.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def v_cache_input_fn[
             width: Int, rank: Int
@@ -694,7 +694,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
                 rebind[IndexList[v_cache.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def mask_input_fn[
             width: Int, rank: Int
@@ -761,7 +761,7 @@ struct WithMaskFlashAttentionCPU:
     ) capturing raises:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
-        @parameter
+        @__parameter
         @always_inline
         def k_input_fn[
             width: Int, rank: Int
@@ -770,7 +770,7 @@ struct WithMaskFlashAttentionCPU:
                 rebind[IndexList[k.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def v_input_fn[
             width: Int, rank: Int
@@ -779,7 +779,7 @@ struct WithMaskFlashAttentionCPU:
                 rebind[IndexList[v.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def mask_input_fn[
             width: Int, rank: Int
@@ -2288,7 +2288,7 @@ struct Struct_mla_prefill_graph_paged:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -2337,7 +2337,7 @@ struct Struct_mla_prefill_graph_paged:
             target
         ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2436,7 +2436,7 @@ struct Struct_mla_decode_graph_paged_fp8:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -2484,7 +2484,7 @@ struct Struct_mla_decode_graph_paged_fp8:
             target
         ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2531,7 +2531,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -2589,7 +2589,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
             target
         ](), "mo.mla.graph.decode.paged.fp8.sparse is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2672,7 +2672,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -2714,7 +2714,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.paged is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2751,7 +2751,7 @@ struct Struct_mla_decode_graph_bf16_paged:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -2792,7 +2792,7 @@ struct Struct_mla_decode_graph_bf16_paged:
             target
         ](), "mo.mla.graph.decode.paged is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2834,7 +2834,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -2879,7 +2879,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
             target
         ](), "mo.mla.graph.decode.paged.sparse is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -2946,7 +2946,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -3000,7 +3000,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
             target
         ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -3053,7 +3053,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         freq_dtype: DType,
@@ -3117,7 +3117,7 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
             " on GPU"
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -3199,7 +3199,7 @@ struct Struct_mla_prefill_sparse_paged:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         cache_dtype: DType,
@@ -3316,7 +3316,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         dtype: DType,
         //,
@@ -3426,7 +3426,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3471,7 +3471,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             target
         ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -3515,7 +3515,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
 struct Struct_mla_prefill_graph_decode_paged_sparse:
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         freq_dtype: DType,
         gamma_dtype: DType,
@@ -3564,7 +3564,7 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
             target
         ](), "mo.mla.graph.prefill.decode.paged.sparse is only supported on GPU"
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int
@@ -3639,7 +3639,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
 
     @always_inline
     @staticmethod
-    @parameter
+    @__parameter
     def execute[
         kv_dtype: DType,
         freq_dtype: DType,
@@ -3687,7 +3687,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
             " on GPU"
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def kv_input_fn[
             width: Int

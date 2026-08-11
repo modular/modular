@@ -317,7 +317,7 @@ def _elementwise_impl[
     trace_description: StaticString,
 ](func: FuncType, shape: Coord, context: DeviceContext) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var shape_str = trace_arg("shape", coord_to_index_list(shape))
         var vector_width_str = String(t"vector_width={simd_width}")
@@ -445,7 +445,7 @@ def _dual_elementwise_impl[
     context: DeviceContext,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         var s0 = trace_arg("shape_0", coord_to_index_list(shape_0))
         var s1 = trace_arg("shape_1", coord_to_index_list(shape_1))

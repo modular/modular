@@ -282,7 +282,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
                 c_tensor,

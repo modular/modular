@@ -38,7 +38,7 @@ def test_create_task_with_affinity_runs_coroutine() raises:
     """
     print("== test_create_task_with_affinity_runs_coroutine")
 
-    @parameter
+    @__parameter
     async def compute() -> Int:
         return 42
 

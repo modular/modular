@@ -198,7 +198,7 @@ def test_dynamic[
 
     @__copy_capture(in_ptr)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:

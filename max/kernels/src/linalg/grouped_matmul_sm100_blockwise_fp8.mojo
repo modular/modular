@@ -3017,7 +3017,7 @@ def grouped_matmul_dynamic_scaled_fp8[
         return
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(c, a, a_scales, b_scales)
     def description_fn() -> String:
         # fmt: off

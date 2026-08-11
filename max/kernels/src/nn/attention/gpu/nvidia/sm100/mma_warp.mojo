@@ -281,12 +281,12 @@ def fa4_mma[
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
-    @parameter
+    @__parameter
     @always_inline
     def blasst_should_skip(wg: UInt32, phase: UInt32) -> Bool:
         return blasst_vote_unanimous(blasst_vote, wg, phase)
 
-    @parameter
+    @__parameter
     @always_inline
     def _commit(
         mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
@@ -307,7 +307,7 @@ def fa4_mma[
     # sub-tiles). Each call site keeps its own `comptime if PARTIAL_K [and
     # num_q == 2]` gate and `valid_k_mmas` computation; only the duplicated
     # loop body lives here.
-    @parameter
+    @__parameter
     @always_inline
     def _pv_full(
         s_tmem: UInt32,
@@ -362,7 +362,7 @@ def fa4_mma[
                             c_scale=c_scale,
                         )
 
-    @parameter
+    @__parameter
     @always_inline
     def _pv_partial(
         s_tmem: UInt32,
@@ -570,7 +570,7 @@ def fa4_mma[
         # release/step/wait/capture idiom repeated across the 1Q path.
         # `consumer_mbar(idx)` with the current index is identical to the
         # no-arg `consumer_mbar()` (which forwards `state.index()`).
-        @parameter
+        @__parameter
         @always_inline
         def _advance_kv(release_idx: UInt32) -> UInt32:
             _commit(kv_pipeline.consumer_mbar(release_idx))
@@ -706,7 +706,7 @@ def fa4_mma[
         # K/Q bases and c_scale 0->1 -- NOT `mma[stage_idx=1]`, which adds an
         # internal +BK0 offset assuming one contiguous tile (would read OOB).
         # Empty (no-op) when num_qk_stages==1.
-        @parameter
+        @__parameter
         @always_inline
         def _qk_extra(q_base: MMASmemDescriptorPair, s_tmem: UInt32):
             comptime for d in range(1, config.num_qk_stages):
@@ -722,7 +722,7 @@ def fa4_mma[
         # `_v_wait_rest`: wait the remaining num_d_tiles-1 V depth-tile sub-slots
         # (produced consecutively right after the first). Leaves the ring state
         # at the last of them. Empty when num_d_tiles==1.
-        @parameter
+        @__parameter
         @always_inline
         def _v_wait_rest():
             comptime for d in range(1, num_d_tiles):
@@ -731,7 +731,7 @@ def fa4_mma[
 
         # `_v_release_rest`: release the num_d_tiles-1 V sub-slots after v_idx0
         # (ring-adjacent). Empty when num_d_tiles==1.
-        @parameter
+        @__parameter
         @always_inline
         def _v_release_rest(v_idx0: UInt32):
             comptime for d in range(1, num_d_tiles):
@@ -758,7 +758,7 @@ def fa4_mma[
         # `c_scale`; later chunks always accumulate (scale=1), composing with
         # `UMMA1Type`'s own per-`p_stage` internal `stage_idx==0 -> c_scale
         # else 1` handling.
-        @parameter
+        @__parameter
         @always_inline
         def _pv_ws[
             partial: Bool

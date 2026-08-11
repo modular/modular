@@ -522,7 +522,7 @@ def varlen_selective_state_update_cpu[
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
     var has_state_batch_indices_bool = Bool(Int(has_state_batch_indices) != 0)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, remaining = divmod(idx, nheads * dim)
         var h, m = divmod(remaining, dim)
@@ -697,7 +697,7 @@ def varlen_selective_scan_fwd_cpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
     var group_size = dim // ngroups
 
-    @parameter
+    @__parameter
     def worker(d: Int):
         # Pre-load D and delta_bias for this dim
         var D_val = Float32(0.0)

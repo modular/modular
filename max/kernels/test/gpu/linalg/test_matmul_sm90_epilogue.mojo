@@ -166,7 +166,7 @@ def main() raises:
             default_epilogue=True,
         ](ctx, Int(91), Idx[111], Idx[588])
 
-        @parameter
+        @__parameter
         @always_inline
         def test_lambda_fn_square[
             _dtype: DType,
@@ -192,7 +192,7 @@ def main() raises:
             default_epilogue=True,
         ](ctx, Int(277), Idx[2560], Idx[128])
 
-        @parameter
+        @__parameter
         @always_inline
         def test_lambda_add_coords[
             _dtype: DType,

@@ -22,7 +22,7 @@ def run_func[
 ](val: Scalar[dtype], ref_: Scalar[dtype], ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[dtype](1)
 
-    @parameter
+    @__parameter
     def kernel(
         out_dev: Pointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):

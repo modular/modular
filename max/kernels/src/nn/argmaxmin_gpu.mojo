@@ -325,7 +325,7 @@ def argmaxmin_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(

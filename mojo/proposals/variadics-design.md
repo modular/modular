@@ -158,7 +158,7 @@ with the `is_owned` parameter. When set, `__del__` walks the list in reverse and
 destroys each element, matching normal argument teardown order.
 
 ```mojo
-@parameter
+@__parameter
 def destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
     arg^.destroy()
 

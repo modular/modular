@@ -49,7 +49,7 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
 
     @always_inline
     @__copy_capture(in_buffer, out_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         out_buffer.unsafe_ptr().unsafe_store(

@@ -476,7 +476,7 @@ def fa4_splitk_combine[
     # 37`) is not itself a rung. Those shapes legitimately land on the fallback.
     comptime sm_count = ctx.default_device_info.sm_count
 
-    @parameter
+    @__parameter
     @always_inline
     def enqueue[P_STATIC: Int]() raises:
         comptime kernel = _fa4_splitk_combine_kernel[

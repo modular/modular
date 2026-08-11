@@ -116,9 +116,9 @@ def bench_rms_norm_fused_residual_add_gpu[
         output_fn,
         residual_output_fn,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             rms_norm_fused_residual_add[

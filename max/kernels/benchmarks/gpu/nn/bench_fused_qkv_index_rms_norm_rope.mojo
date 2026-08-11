@@ -340,7 +340,7 @@ def bench_fused_qkv_index_rms_norm_rope[
     var gamma_bytes = 4 * head_dim * elt
     var bytes_per_iter = rw_bytes + freqs_bytes + gamma_bytes
 
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_q_main,
         cb_q_index,
@@ -364,7 +364,7 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
     @always_inline
     def bench_unfused(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Named vars bind the per-iter ring-window pointer's origin before
@@ -401,7 +401,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ).as_immut()
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(q_main_src)
             def q_main_fn[
                 width: Int, alignment: Int
@@ -411,7 +411,7 @@ def bench_fused_qkv_index_rms_norm_rope[
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(q_index_src)
             def q_index_fn[
                 width: Int, alignment: Int
@@ -466,7 +466,7 @@ def bench_fused_qkv_index_rms_norm_rope[
         [ThroughputMeasure(BenchMetric.bytes, bytes_per_iter)],
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_q_main,
         cb_q_index,
@@ -490,7 +490,7 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
     @always_inline
     def bench_fused(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             var main_kv_lt = LayoutTensor[dtype, kv_block_layout](
@@ -525,7 +525,7 @@ def bench_fused_qkv_index_rms_norm_rope[
             ).as_immut()
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(q_main_src)
             def q_main_fn[
                 width: Int, alignment: Int
@@ -535,7 +535,7 @@ def bench_fused_qkv_index_rms_norm_rope[
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(q_index_src)
             def q_index_fn[
                 width: Int, alignment: Int

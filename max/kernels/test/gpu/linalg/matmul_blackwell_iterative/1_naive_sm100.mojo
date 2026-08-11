@@ -119,7 +119,7 @@ def test_kernel_1[
         comptime num_warmup = 20
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
                 c.device_tensor[update=False](),

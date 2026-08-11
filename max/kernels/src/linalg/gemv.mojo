@@ -614,7 +614,7 @@ def gemv_split_k[
         wait_on_dependent_grids()
 
     # Each thread sums local data in K.
-    @parameter
+    @__parameter
     @always_inline
     def _k_iter_body():
         """Single K-iteration: load weights, load activations, accumulate."""
@@ -1168,7 +1168,7 @@ def gemv_gpu_dispatch[
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         logger.info("Executing: GEMV_SPLIT_K kernel")
 
-        @parameter
+        @__parameter
         def _gemv_split_k_dispatch[
             num_threads: Int,
             tile_n: Int,
@@ -1321,7 +1321,7 @@ def gemv_gpu_dispatch[
                 )
         elif m == 1:
 
-            @parameter
+            @__parameter
             def _one_row_per_warp() raises:
                 comptime kernel = gemv_kernel_vector[
                     c_type,
@@ -1351,7 +1351,7 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
 
-            @parameter
+            @__parameter
             def _rows_per_warp[rows: Int]() raises:
                 logger.info("Rows per warp: ", rows)
                 # 128-thread blocks measured slightly ahead of 256 and stay
@@ -1387,7 +1387,7 @@ def gemv_gpu_dispatch[
                     attributes=pdl_launch_attributes(pdl_level),
                 )
 
-            @parameter
+            @__parameter
             def _grid_outruns_chip() -> Bool:
                 # One warp per output row needs `n` resident warps. Once that
                 # is several times what the chip can hold, the grid drains at
@@ -1686,7 +1686,7 @@ def gemv[
     var K = Int(a_buf.dim[1]())
 
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         dtype: DType, width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[dtype, width]:
@@ -1696,7 +1696,7 @@ def gemv[
         ).cast[dtype]()
 
     @always_inline
-    @parameter
+    @__parameter
     def output_fn[
         out_type: DType, width: SIMDLength, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
@@ -1711,7 +1711,7 @@ def gemv[
             )
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_impl[
         ty: DType, width: SIMDLength
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:

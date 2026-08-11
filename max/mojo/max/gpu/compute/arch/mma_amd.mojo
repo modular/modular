@@ -68,7 +68,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime fp8_dtype = get_amd_fp8_dtype().value()
     comptime bf8_dtype = get_amd_bf8_dtype().value()
 
-    @parameter
+    @__parameter
     def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.length]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
@@ -78,7 +78,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             a.length, b.length, c.length, d.length
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
-        @parameter
+        @__parameter
         def _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
             return (
                 _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype

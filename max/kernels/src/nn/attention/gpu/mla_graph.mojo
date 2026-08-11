@@ -1980,7 +1980,7 @@ def convert_bf16_to_fp8_e4m3fn(
     ), "Input and output must have the same rank"
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1

@@ -1,16 +1,17 @@
 ---
-title: '@parameter'
+title: '@__parameter'
 description: Declares a legacy closure (deprecated).
 codeTitle: true
 ---
 
 :::caution Deprecated
-The `@parameter` decorator is deprecated and will be removed in a future
+The `@__parameter` decorator is deprecated and will be removed in a future
 release. Use the current [closure](/docs/manual/functions/closures/) syntax
-instead.
+instead. The previous spelling `@parameter` is still accepted with a
+deprecation warning.
 :::
 
-You can add `@parameter` on a nested function to create a legacy
+You can add `@__parameter` on a nested function to create a legacy
 capturing closure. This means you can create a closure function that captures
 values from the outer scope (regardless of whether they are variables or
 parameters), and then use that closure as a parameter. For example:
@@ -22,7 +23,7 @@ def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
 def create_closure():
     var x = 1
 
-    @parameter
+    @__parameter
     def add(i: Int) -> Int:
         return x + i
 

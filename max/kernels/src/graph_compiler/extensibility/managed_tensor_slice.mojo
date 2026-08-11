@@ -825,7 +825,7 @@ struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@parameter
+@__parameter
 @always_inline
 def _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
@@ -875,7 +875,7 @@ def simd_store_into_managed_tensor_slice[
     ].static_value
 
     # Stride = 1
-    @parameter
+    @__parameter
     @always_inline
     def store_stride1():
         comptime if dtype == DType.bool:
@@ -885,7 +885,7 @@ def simd_store_into_managed_tensor_slice[
             tensor._ptr.unsafe_store[alignment=max_alignment](flat_index, value)
 
     # Stride > 1
-    @parameter
+    @__parameter
     @always_inline
     def store_strided(stride: Int):
         comptime if dtype == DType.bool:
@@ -1044,7 +1044,7 @@ def simd_load_from_managed_tensor_slice[
     comptime invariant = not tensor.io_spec.mut
 
     # Stride = 1
-    @parameter
+    @__parameter
     @always_inline
     def load_stride1() -> SIMD[dtype, simd_width]:
         comptime if dtype == DType.bool:
@@ -1059,7 +1059,7 @@ def simd_load_from_managed_tensor_slice[
             ](flat_index)
 
     # Stride > 1
-    @parameter
+    @__parameter
     @always_inline
     def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
         comptime if dtype == DType.bool:
@@ -2294,7 +2294,7 @@ struct ManagedTensorSlice[
         """
         writer.write("ManagedTensorSlice(")
 
-        @parameter
+        @__parameter
         def serialize[T: Writable](val: T):
             writer.write(val)
 

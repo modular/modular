@@ -173,7 +173,7 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test unfused operations for comparison
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
-    @parameter
+    @__parameter
     def unfused_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
@@ -184,7 +184,7 @@ def run_rms_norm_fused_residual_add_gpu[
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def rms_input_fn_coord[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
@@ -212,7 +212,7 @@ def run_rms_norm_fused_residual_add_gpu[
         ctx,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
     def unfused_input2_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
@@ -222,7 +222,7 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test unfused operations for comparison
     @always_inline
     @__copy_capture(result_unfused_buf)
-    @parameter
+    @__parameter
     def unfused_output2_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:

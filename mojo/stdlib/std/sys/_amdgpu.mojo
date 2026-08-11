@@ -160,7 +160,7 @@ def append_bytes(
 ) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
-    @parameter
+    @__parameter
     @always_inline
     def pack_uint64() -> UInt64:
         var arg = UInt64(0)

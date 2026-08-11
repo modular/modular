@@ -396,7 +396,7 @@ def _reduce_output[
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
-    @parameter
+    @__parameter
     @always_inline
     def reduce_task(tid: Int):
         # Use all threads in reduction.
@@ -591,7 +591,7 @@ struct ConvDirectNHWC[
         @__copy_capture(
             num_partitions, cf_tile_size, output_scratch, output_size
         )
-        @parameter
+        @__parameter
         @always_inline
         def task_func(task_id: Int):
             var partition = get_partition(
@@ -673,7 +673,7 @@ struct ConvDirectNHWC[
         merged and partitioned for parallelism."""
 
         @always_inline
-        @parameter
+        @__parameter
         def body[padded: Bool]():
             for ng in range(
                 self.partition.ng_offset,
@@ -697,7 +697,7 @@ struct ConvDirectNHWC[
         # fmt: on
 
         @always_inline
-        @parameter
+        @__parameter
         def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             # Only apply static shape optimizations to shapes with padding since
             # there is a fast path for pointwise (no padding) conv with strides.
@@ -763,7 +763,7 @@ struct ConvDirectNHWC[
         ) and Self.input_layout.rank() == 4
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             comptime if not merge_output_space_loops:
                 self.output_space_loop[
@@ -1247,10 +1247,10 @@ struct ConvDirectNHWC[
         comptime micro_kernel_width = micro_kernel_f_size // simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def iteration[tile_size: Int](output_flat_coord: Int):
             @always_inline
-            @parameter
+            @__parameter
             def body[c_fully_cached: Bool]():
                 self.update_output_tile_no_padding[
                     tile_size,  # micro kernel height
@@ -1439,7 +1439,7 @@ struct ConvDirectNHWC[
         # Points output to the start of the row
         var output_base = output
 
-        @parameter
+        @__parameter
         @always_inline
         def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
             conv1d_update_wo_tile[
@@ -1523,7 +1523,7 @@ struct ConvDirectNHWC[
                 output + self.conv_shape.f * self.conv_shape.wo() * ho
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                 conv2d_update_wo_tile[
@@ -1617,7 +1617,7 @@ struct ConvDirectNHWC[
                     * (ho + self.conv_shape.ho() * do)
                 )
 
-                @parameter
+                @__parameter
                 @always_inline
                 def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                     conv3d_update_wo_tile[
@@ -1677,7 +1677,7 @@ struct ConvDirectNHWC[
         ) * simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self._h_loop_static[
                 micro_kernel_shape[0],
@@ -1831,7 +1831,7 @@ struct ConvDirectNHWC[
                 # Update middle points if any. They aren't effected by padding.
                 @__copy_capture(filter_base)
                 @always_inline
-                @parameter
+                @__parameter
                 def update_middle[height: Int](wo: Int):
                     self._inner_loops_static[
                         height,
@@ -3132,7 +3132,7 @@ def pack_filter_lt[
 
         @always_inline
         @__copy_capture(group_start, F_per_group, F)
-        @parameter
+        @__parameter
         def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
@@ -3533,7 +3533,7 @@ def conv_nhwc_direct[
     ), "Filter and input ranks mismatch."
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return ";".join(
             [
@@ -3565,7 +3565,7 @@ def conv_nhwc_direct[
 
         # The closure updates a row segment of the output.
         @always_inline
-        @parameter
+        @__parameter
         def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
@@ -5058,7 +5058,7 @@ def conv_gpu[
                 )
             ):
 
-                @parameter
+                @__parameter
                 @always_inline
                 def _sm100_dispatch[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
@@ -5087,7 +5087,7 @@ def conv_gpu[
                     var out_w = output_lt.dim[2]()
                     var hw = out_h * out_w
 
-                    @parameter
+                    @__parameter
                     @always_inline
                     @__copy_capture(hw, out_w)
                     def sm100_void_epilogue[
@@ -5228,7 +5228,7 @@ def conv_gpu[
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
             from linalg.utils import elementwise_epilogue_type as _ew_2d_t
 
-            @parameter
+            @__parameter
             @always_inline
             def _amd_4wave_dispatch[
                 _epilogue_2d: Optional[_ew_2d_t] = None,
@@ -5275,7 +5275,7 @@ def conv_gpu[
             # residual path and the 4-wave kernel does the residual add
             # in-kernel. We pull `source_ptr`'s contents to host along
             # with the other two buffers and combine them in the loop.
-            @parameter
+            @__parameter
             @always_inline
             def _audit_amd_4wave_vs_miopen() raises:
                 if getenv("MODULAR_CONV_AUDIT_MIOPEN", "0") != "1":
@@ -5425,7 +5425,7 @@ def conv_gpu[
                 var _amd_4wave_out_w = output_lt.dim[2]()
                 var _amd_4wave_hw = _amd_4wave_out_h * _amd_4wave_out_w
 
-                @parameter
+                @__parameter
                 @always_inline
                 @__copy_capture(_amd_4wave_hw, _amd_4wave_out_w)
                 def _amd_4wave_void_epilogue[
@@ -5691,7 +5691,7 @@ def conv_gpu[
                     var _amd_3d_HW = _amd_3d_H_out * _amd_3d_W_out
                     var _amd_3d_DHW = _amd_3d_D_out * _amd_3d_HW
 
-                    @parameter
+                    @__parameter
                     @always_inline
                     @__copy_capture(_amd_3d_DHW, _amd_3d_HW, _amd_3d_W_out)
                     def amd_3d_void_epilogue[

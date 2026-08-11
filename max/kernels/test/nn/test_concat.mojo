@@ -70,7 +70,7 @@ def test_concat() raises:
         x3.make_dynamic[DType.int64]().as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
@@ -143,7 +143,7 @@ def test_concat_parallel() raises:
         x3_dyn.as_unsafe_any_origin().as_immut(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
@@ -217,7 +217,7 @@ def test_concat_inner() raises:
 
     var input_vec = _tuple_to_list(input_tuple)
 
-    @parameter
+    @__parameter
     @always_inline
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int

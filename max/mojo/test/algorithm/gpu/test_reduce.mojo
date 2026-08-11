@@ -71,7 +71,7 @@ def fused_reduce_inner_test[
     )
 
     @__copy_capture(input_buf_device, shape)
-    @parameter
+    @__parameter
     def input_fn[
         dtype: DType,
         width: Int,
@@ -89,7 +89,7 @@ def fused_reduce_inner_test[
         )
 
     @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
-    @parameter
+    @__parameter
     def output_fn[
         _dtype: DType, width: SIMDLength, _rank: Int
     ](
@@ -181,7 +181,7 @@ def reduce_inner_test[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -190,7 +190,7 @@ def reduce_inner_test[
         return reduce_fn[dtype, width](lhs, rhs)
 
     @__copy_capture(input_buf_device, shape)
-    @parameter
+    @__parameter
     def input_fn[
         dtype: DType,
         width: Int,
@@ -208,7 +208,7 @@ def reduce_inner_test[
         )
 
     @__copy_capture(output_buf_device, out_shape)
-    @parameter
+    @__parameter
     def output_fn[
         _dtype: DType, width: SIMDLength, _rank: Int
     ](
@@ -246,21 +246,21 @@ def reduce_inner_test[
 
 
 def test_reduce() raises:
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
-    @parameter
+    @__parameter
     def fused_reduce_add_max[
         dtype: DType,
         width: SIMDLength,
@@ -436,14 +436,14 @@ def test_multiblock_reduce() raises:
     """Tests the multiblock_reduce_kernel path for under-saturated cases
     where num_rows is small but the reduction axis is large."""
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def reduce_max[
         dtype: DType,
         width: SIMDLength,
@@ -509,7 +509,7 @@ def test_thread_saturated_contiguous_reduce() raises:
     boundary.
     """
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,

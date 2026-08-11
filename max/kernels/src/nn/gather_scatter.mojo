@@ -229,7 +229,7 @@ def gather_reduce[
         out_vecs_per_thread,
         gather_axis_size,
     )
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
         comptime prefetch_offset = -1
 
@@ -266,10 +266,10 @@ def gather_reduce[
 
             @always_inline
             @__copy_capture(input, indices, output)
-            @parameter
+            @__parameter
             def gather_k_tile[simd_width: Int](k: Int):
                 @always_inline
-                @parameter
+                @__parameter
                 def reduce_j_tile[
                     unroll_factor: Int
                 ](
@@ -362,7 +362,7 @@ def gather[
 
     var end_indices_ptr = indices.ptr + indices.num_elements()
 
-    @parameter
+    @__parameter
     @__copy_capture(end_indices_ptr)
     @always_inline
     def prefetch_fn[

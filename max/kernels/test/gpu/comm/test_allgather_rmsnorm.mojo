@@ -115,13 +115,13 @@ def _rms_norm_full[
 
     @always_inline
     @__copy_capture(src_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         return src_view.raw_load[width=width](src_view.layout(coords))
 
     @always_inline
     @__copy_capture(dst_view)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -279,7 +279,7 @@ def _run_case[
             # into the residual output `sum_full`, then `rms_norm_gpu` into
             # `normed`. `sum_out` must be the gathered stream on both branches
             # (op contract).
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 _allgather_full[in_dtype, ngpus, num_cols](
@@ -709,7 +709,7 @@ def _run_prod_oracle_case[
         comptime if use_dispatch:
             # Two-launch fallback writes the residual into `sum_full` (the op
             # contract), then norms it into `normed`.
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 _allgather_full[

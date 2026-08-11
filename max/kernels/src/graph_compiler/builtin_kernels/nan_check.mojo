@@ -145,7 +145,7 @@ def nan_check_count[
         var out_nan_ptr = nan_count_out.unsafe_ptr()
         var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-        @parameter
+        @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],

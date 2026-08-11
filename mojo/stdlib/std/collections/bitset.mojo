@@ -569,7 +569,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing all elements from both sets.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def _union[
             simd_width: Int
@@ -591,7 +591,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing only the elements present in both sets.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def _intersection[
             simd_width: Int
@@ -613,7 +613,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing elements from `self` that are not in `other`.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def _difference[
             simd_width: Int

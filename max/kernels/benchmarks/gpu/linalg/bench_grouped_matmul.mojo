@@ -104,7 +104,7 @@ def test_epilogue[
 
 
 @always_inline
-@parameter
+@__parameter
 def add_two[
     dtype: DType,
     width: SIMDLength,
@@ -274,7 +274,7 @@ def bench_grouped_matmul[
 
     @always_inline
     @__copy_capture(c_dev)
-    @parameter
+    @__parameter
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
@@ -386,7 +386,7 @@ def bench_grouped_matmul[
             row_major(Coord(Int64(num_experts))),
         ).as_unsafe_any_origin()
 
-        @parameter
+        @__parameter
         @__copy_capture(
             a_dev,
             b_dev,
@@ -400,7 +400,7 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func_nvfp4(mut bench: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:
@@ -509,7 +509,7 @@ def bench_grouped_matmul[
             ctx,
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(
             a_dev,
             b_dev,
@@ -521,7 +521,7 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func_fp8_1d2d(mut bench: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:
@@ -587,7 +587,7 @@ def bench_grouped_matmul[
         _ = b_scales_dev_buffer^
     else:
 
-        @parameter
+        @__parameter
         @__copy_capture(
             a_dev,
             b_dev,
@@ -597,7 +597,7 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func(mut bench: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
                 comptime if use_vendor_blas:

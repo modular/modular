@@ -47,7 +47,7 @@ def run_elementwise[
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx: Coord):
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx[0].value(),

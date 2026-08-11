@@ -45,7 +45,7 @@ comptime ELEMENTS_PER_ALLOC = 4096
 comptime ALLOCS_PER_ITER = 2048
 
 
-@parameter
+@__parameter
 def bench_heap_alloc_parallel(mut b: Bencher) raises:
     @always_inline
     def call_fn():

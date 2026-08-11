@@ -79,7 +79,7 @@ def block_reduce[
     comptime num_reductions = 1
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -136,7 +136,7 @@ def block_reduce[
     ), "block size must be a multiple of the warp size"
 
     @always_inline
-    @parameter
+    @__parameter
     def do_warp_reduce(
         val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
     ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
@@ -145,7 +145,7 @@ def block_reduce[
         comptime for i in range(num_reductions):
 
             @always_inline
-            @parameter
+            @__parameter
             def reduce_wrapper[
                 dtype: DType, width: SIMDLength
             ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -244,7 +244,7 @@ def row_reduce[
     comptime num_reductions = 1
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -522,7 +522,7 @@ def small_reduce_kernel[
                 comptime for i in range(num_reductions):
 
                     @always_inline
-                    @parameter
+                    @__parameter
                     def reduce_wrapper[
                         dtype: DType, width: SIMDLength
                     ](

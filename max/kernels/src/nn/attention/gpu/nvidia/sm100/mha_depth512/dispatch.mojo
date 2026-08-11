@@ -259,12 +259,12 @@ def mha_sm100_depth512_dispatch[
 
     # ---- Nested closure dispatch (no sink) -----------------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def with_kv_offsets[
         KVRowOffsetsType: OptionalPointer
     ](kv_row_offsets: KVRowOffsetsType) raises:
-        @parameter
+        @__parameter
         @always_inline
         def with_valid_length[
             ValidLengthType: OptionalPointer

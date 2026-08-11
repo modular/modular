@@ -428,10 +428,10 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         NUM_THREADS=K10_NUM_THREADS,
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_matmul_10(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[sgemm_type](
@@ -459,10 +459,10 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_naive(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def run_func_naive(ctx: DeviceContext) raises:
             ctx.enqueue_function[matmul_naive](

@@ -96,11 +96,11 @@ def run_elementwise[
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
-    @parameter
+    @__parameter
     @__copy_capture(cb_in, cb_out)
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @__copy_capture(N)
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:

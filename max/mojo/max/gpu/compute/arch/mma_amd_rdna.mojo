@@ -368,7 +368,7 @@ def _mma_wmma_rdna(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
           - Section 7.5 (8-bit Math) for FP8/BF8 details
     """
 
-    @parameter
+    @__parameter
     def get_intrinsic_name() -> String:
         # ===------------------------------------------------------------------===#
         # F32 = F16 * F16 + F32 (16x16x16)

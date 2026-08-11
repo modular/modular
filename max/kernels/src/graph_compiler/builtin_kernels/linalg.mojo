@@ -244,7 +244,7 @@ struct Matmul:
 
         comptime transposed_a = False
 
-        @parameter
+        @__parameter
         @always_inline
         def epilogue_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -254,7 +254,7 @@ struct Matmul:
                 rebind[SIMD[c.dtype, _width]](val),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def output_compute_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -319,7 +319,7 @@ struct BatchMatmul:
         var b_tile = b.to_tile_tensor[DType.int64]()
         var c_tile = c.to_tile_tensor[DType.int64]()
 
-        @parameter
+        @__parameter
         @always_inline
         def output_fn[
             _type: DType, _width: SIMDLength, _rank: Int, *, alignment: Int = 1
@@ -1011,7 +1011,7 @@ struct Struct_matmul_dynamic_block_scaled:
         # on the logical output dtype `c.dtype`. Use `cast` rather than `rebind`
         # so the conversion is correct on both the structured Mojo path (f32
         # accumulator) and the vendor path (`_dtype == c.dtype`).
-        @parameter
+        @__parameter
         @always_inline
         def epilogue_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -1021,7 +1021,7 @@ struct Struct_matmul_dynamic_block_scaled:
                 val.cast[c.dtype](),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def output_compute_fn[
             _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
@@ -1589,7 +1589,7 @@ struct MatmulStaticScaledFloat8:
             # all m>1. The compute lambda returns the value already cast to the
             # output dtype, as required by `_matmul_gpu`'s compute-lambda
             # wrapper (output.dtype must equal c_type).
-            @parameter
+            @__parameter
             @__copy_capture(input_scale, weight_scale)
             @always_inline
             def scaled_compute_fn[
@@ -1619,7 +1619,7 @@ struct MatmulStaticScaledFloat8:
             )
         else:
 
-            @parameter
+            @__parameter
             @__copy_capture(output_tt, input_scale, weight_scale)
             @always_inline
             def scaled_output_fn[
@@ -1967,7 +1967,7 @@ struct Struct_router_gate_mixed_gemv:
         var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
         var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(a_bf16_tt, a_f32_tt)
         def _cast_bf16_to_fp32[width: Int, alignment: Int = 1](idx: Coord):

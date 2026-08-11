@@ -944,7 +944,7 @@ struct BlockScaledMatmulAMD[
         var k_scale_counter = split_id * tiles_per_split
 
         @always_inline
-        @parameter
+        @__parameter
         def load_tiles_from_dram():
             """Load one BK-wide tile from DRAM to register buffers."""
             var a_block = a_blockrow.tile[Self.BM, BK_BYTES](0, k_counter)
@@ -954,7 +954,7 @@ struct BlockScaledMatmulAMD[
             k_counter += 1
 
         @always_inline
-        @parameter
+        @__parameter
         def copy_tiles_to_smem():
             """Copy register buffers to SMEM in row-major order.
 
@@ -987,7 +987,7 @@ struct BlockScaledMatmulAMD[
                 )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_scales_to_smem():
             """Cooperatively load scale tiles from GMEM to SMEM.
 
@@ -1047,7 +1047,7 @@ struct BlockScaledMatmulAMD[
         comptime b_loads_per_thread = Self.BN // load_thread_rows
 
         @always_inline
-        @parameter
+        @__parameter
         def simple_k_loop():
             """Fallback for small K where schedule prologue doesn't fit."""
             for k_iter in range(tiles_per_split):
@@ -1076,7 +1076,7 @@ struct BlockScaledMatmulAMD[
                 barrier()
 
         @always_inline
-        @parameter
+        @__parameter
         def scheduled_k_loop():
             """Pipelined K-loop via build_default_matmul_schedule."""
             comptime schedule = build_default_matmul_schedule[
@@ -1090,7 +1090,7 @@ struct BlockScaledMatmulAMD[
                 b_loads_per_thread=b_loads_per_thread,
             ]()
 
-            @parameter
+            @__parameter
             @always_inline
             def _bind[entry: ScheduleEntry]():
                 comptime if entry.op.tag == LOAD_DRAM:

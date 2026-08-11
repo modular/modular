@@ -411,7 +411,7 @@ def flare_mla_decoding[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -989,7 +989,7 @@ def flare_mla_decoding_dispatch[
         comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
 
         @always_inline
-        @parameter
+        @__parameter
         def launch_with_BM[
             BM: Int,
             q_seq_len: Int = 1,
@@ -2238,7 +2238,7 @@ def mla_decoding_single_batch[
         q_gmem_iter._incr()
 
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -2355,7 +2355,7 @@ def mla_decoding_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -2751,7 +2751,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -2891,7 +2891,7 @@ def flare_mla_prefill[
         comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3011,7 +3011,7 @@ def flare_mla_prefill[
     ), "Only support single and half precision."
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3124,7 +3124,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -3269,7 +3269,7 @@ def flare_mla_prefill[
     ] = None,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(";").join(
             Span(
@@ -4037,7 +4037,7 @@ def mla_prefill_single_batch[
     # Only the last iteration is doing boundary check.
     @__copy_capture(seq_len, max_seq_len, num_keys, start_pos)
     @always_inline
-    @parameter
+    @__parameter
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
@@ -4147,7 +4147,7 @@ def mla_prefill_single_batch[
         _ = p_reg_tile.fill(0)
 
         @always_inline
-        @parameter
+        @__parameter
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ):
@@ -4230,7 +4230,7 @@ def mla_prefill_single_batch[
         # Vectorize by 2.
         var p_reg_vec2 = p_reg_tile.vectorize[1, p_frag_simdwidth]()
 
-        @parameter
+        @__parameter
         def _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
                 scale.cast[
@@ -4834,7 +4834,7 @@ def _k_cache_to_buffer[
     comptime assert cache_offsets.flat_rank == 1
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(k_cache, buffer_row_offsets, cache_offsets)
     def copy_fn[
         width: Int, rank: Int, alignment: Int = 1

@@ -231,7 +231,7 @@ __extension Attention:
         ]
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk():
             self.zero_p_buffer[0]()
             comptime for i in range(Self.depth // Self.BK):
@@ -243,7 +243,7 @@ __extension Attention:
                     )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             # Each warp's v_buffer holds only depth_per_warp tiles
             # (loaded from the warp's LDS depth offset), so mma_subtile
@@ -270,7 +270,7 @@ __extension Attention:
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def prefetch_next[slot: Int]():
             """Prefetch next K (and V if not shared_kv) after current LDS
             reads have drained."""
@@ -286,7 +286,7 @@ __extension Attention:
                 _ = v_dma_buffer.load_from_dram[0]()
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             """Process one KV tile.
 

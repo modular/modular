@@ -606,7 +606,7 @@ def matmul[
     batch_size: Int = 1,
 ) raises:
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return String(
             trace_arg(

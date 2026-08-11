@@ -839,7 +839,7 @@ def mgp_buffer_plan[
         - offsets: Offsets for each allocation (static_sizes first, then runtime_sizes).
     """
 
-    @parameter
+    @__parameter
     def compute_static_allocations(
         out result: BufferPlanState[
             alignments,
@@ -2187,7 +2187,7 @@ def foreach_fusion[
     # resolve (see functional.mojo `_IndexListToCoordAdapter`); the adapter is
     # a concrete register-passable type, so passing it by value to
     # `elementwise` sends `elem`'s decomposed ptr/shape/strides through
-    # `crossDeviceCaptures` by value — which the host-stack `@parameter
+    # `crossDeviceCaptures` by value — which the host-stack `@__parameter
     # capturing` form did not.
     var adapter = _ElementwiseFusionAdapter[E](elem, tensor)
 

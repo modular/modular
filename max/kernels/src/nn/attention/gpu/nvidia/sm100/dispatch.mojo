@@ -416,7 +416,7 @@ def mha_sm100_dispatch[
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
-    @parameter
+    @__parameter
     @always_inline
     def with_fa4_config[
         NumPartitionsType: OptionallyStaticInt,
@@ -643,15 +643,15 @@ def mha_sm100_dispatch[
         ]
         var scheduler: SchedulerType = SchedulerType()
 
-        @parameter
+        @__parameter
         @always_inline
         def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
-            @parameter
+            @__parameter
             @always_inline
             def with_kv_offsets[
                 KVRowOffsetsType: OptionalPointer
             ](kv_row_offsets: KVRowOffsetsType) raises:
-                @parameter
+                @__parameter
                 @always_inline
                 def with_valid_length[
                     ValidLengthType: OptionalPointer
@@ -809,7 +809,7 @@ def mha_sm100_dispatch[
         else:
             with_sink[NullPointer[KVType.dtype]]({})
 
-    @parameter
+    @__parameter
     @always_inline
     def launch_workspace[fa4_config: FA4Config[KVType.dtype]](p: UInt32) raises:
         """Traditional (unfused / workspace) split-K launch: run the plain 1Q

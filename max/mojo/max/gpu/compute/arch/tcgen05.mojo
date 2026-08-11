@@ -222,7 +222,7 @@ def tcgen05_ld[
     ]() + "}"
     comptime addr_str = "[$" + String(width) + "]"
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable

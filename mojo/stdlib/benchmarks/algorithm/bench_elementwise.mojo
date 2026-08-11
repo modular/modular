@@ -24,14 +24,14 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = Array[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     def call_fn() raises {mut vector}:
         @always_inline
-        @parameter
+        @__parameter
         def func[simd_width: Int, alignment: Int = 1](idx: Coord):
             vector[Int(idx[0].value())] = 42
 

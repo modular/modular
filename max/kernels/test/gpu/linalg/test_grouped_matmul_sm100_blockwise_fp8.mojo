@@ -187,7 +187,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     var c_tensor = c_device_tt
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[

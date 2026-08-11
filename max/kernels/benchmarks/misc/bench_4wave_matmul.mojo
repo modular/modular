@@ -421,7 +421,7 @@ def bench_matmul[
         cb_b,
         cb_c,
     )
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var tensor_a = TileTensor(
@@ -435,7 +435,7 @@ def bench_matmul[
         )
         comptime assert tensor_c.flat_rank >= 2
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(tensor_c)
         def test_lambda_add_coords_prod[
@@ -455,7 +455,7 @@ def bench_matmul[
         ](test_lambda_add_coords_prod) if enable_compute_epilogue else None
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(tensor_c)
         def normal_elementwise_epilogue[
             dtype: DType, width: Int, *, alignment: Int = 1
@@ -473,7 +473,7 @@ def bench_matmul[
             # transpose_b=True is hardcoded in the kernel (FP8 layout).
             structured_4wave_matmul(tensor_a, tensor_b, tensor_c, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
         bencher_iter_custom[kernel_launch](b, ctx)

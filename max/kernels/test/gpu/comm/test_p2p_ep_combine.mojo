@@ -226,33 +226,33 @@ def test_combine[
 
     # Dispatch helpers
     @always_inline
-    @parameter
+    @__parameter
     def get_dispatch_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         result = (dispatch_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * msg_bytes).as_unsafe_any_origin()
 
     # Combine helpers
     @always_inline
-    @parameter
+    @__parameter
     def get_combine_send_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         result = (combine_send_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * combine_msg_bytes).as_unsafe_any_origin()
 
     @always_inline
-    @parameter
+    @__parameter
     def get_combine_recv_buf_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt8, MutAnyOrigin]) raises:
         result = (combine_recv_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * combine_msg_bytes).as_unsafe_any_origin()
 
     @always_inline
-    @parameter
+    @__parameter
     def get_combine_recv_count_ptr(dev_idx: Int, slot_idx: Int, out result: UnsafePointer[UInt64, MutAnyOrigin]) raises:
         result = (combine_recv_count_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_experts).as_unsafe_any_origin()
 
     @always_inline
-    @parameter
+    @__parameter
     def get_atomic_counters(dev_idx: Int, slot_idx: Int, out result: EPLocalSyncCounters[n_experts]) raises:
         return EPLocalSyncCounters[n_experts](atomic_counters_list[dev_idx].unsafe_ptr() + slot_idx * EPLocalSyncCounters[n_experts].total_size())
 
     @always_inline
-    @parameter
+    @__parameter
     def get_topk_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(topk_ids_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_topk_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k).as_unsafe_any_origin(),
@@ -260,7 +260,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_input_tokens_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(input_tokens_layout), ImmutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_input_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * hidden_size).as_unsafe_any_origin(),
@@ -268,7 +268,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(output_tt_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size).as_unsafe_any_origin(),
@@ -276,7 +276,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_row_offsets_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.uint32, type_of(row_offsets_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_row_offsets_bufs_list[dev_idx].unsafe_ptr() + slot_idx * (n_local_experts + 1)).as_unsafe_any_origin(),
@@ -284,7 +284,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_expert_ids_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(expert_ids_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_expert_ids_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_local_experts).as_unsafe_any_origin(),
@@ -292,7 +292,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_src_token_info_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[DType.int32, type_of(src_token_info_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_src_token_info_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * 2).as_unsafe_any_origin(),
@@ -300,7 +300,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def get_output_2_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(output_2_layout), MutAnyOrigin]) raises:
         return type_of(result)(
             ptr=(device_output_2_bufs_list[dev_idx].unsafe_ptr() + slot_idx * n_tokens_per_rank * top_k * hidden_size).as_unsafe_any_origin(),
@@ -369,7 +369,7 @@ def test_combine[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_async](
@@ -385,7 +385,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_wait](
@@ -402,13 +402,13 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
 
     @always_inline
-    @parameter
+    @__parameter
     def run_combine_async(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_async](
@@ -424,7 +424,7 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_combine_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_wait](
@@ -438,13 +438,13 @@ def test_combine[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)
 
     @always_inline
-    @parameter
+    @__parameter
     def clean_up(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_memset(atomic_counters_list[dev_idx], Int32(0))
@@ -487,12 +487,12 @@ def test_combine[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @parameter
+    @__parameter
     def per_gpu_combine(i: Int) raises:
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
@@ -529,12 +529,12 @@ def test_combine[
     for dev_i in range(n_ranks):
         list_of_ctx[dev_i].synchronize()
 
-    @parameter
+    @__parameter
     def per_gpu_combine_wait(i: Int) raises:
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher) raises:
-            @parameter
+            @__parameter
             @always_inline
             def call_fn(ctx: DeviceContext, cache_iter: Int) raises:
                 var dev_id = Int(ctx.id())
@@ -570,7 +570,7 @@ def test_combine[
     # Verify the results for each device and each slot
     print("Verifying results...")
 
-    @parameter
+    @__parameter
     @always_inline
     def verify_results(dev_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]

@@ -186,7 +186,7 @@ def gemm_l1_cache[
     #     l1_lhs_cache.append(LayoutTensor[dtype, L1.m, L1.k]())
     #     l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
 
-    @parameter
+    @__parameter
     def process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[

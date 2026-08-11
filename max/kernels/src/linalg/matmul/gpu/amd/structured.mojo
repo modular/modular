@@ -83,7 +83,7 @@ struct ThreadRole(Enum, Writable):
         writer.write(String(self))
 
 
-@parameter
+@__parameter
 @always_inline
 def pipeline_layout[layout: Layout, pipeline_stages: Int]() -> Layout:
     """Builds a 2D layout extended with a pipeline-stage dimension.

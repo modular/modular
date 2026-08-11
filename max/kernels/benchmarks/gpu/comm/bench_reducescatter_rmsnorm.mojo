@@ -90,13 +90,13 @@ def _launch_norm[
 
     @always_inline
     @__copy_capture(in_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         return in_buf.raw_load[width=width](in_buf.layout(coords))
 
     @always_inline
     @__copy_capture(out_buf)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -687,12 +687,12 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 1: reduce-scatter only -> t_RS =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_rs_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -716,14 +716,14 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold shard -> t_norm(shard) =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             if local_rows > 0:
@@ -747,14 +747,14 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 3: RS then RMSNorm on the live RS output -> t_chained =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -790,12 +790,12 @@ def bench_reducescatter_rmsnorm[
     )
 
     # ===== Variant 4: fused reduce-scatter + RMSNorm kernel -> t_fused =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -829,14 +829,14 @@ def bench_reducescatter_rmsnorm[
     # Two-launch path is caller-supplied so `comm` stays free of `nn`; the
     # dispatch auto-routes on per-rank shard size (fused below
     # `RS_NORM_FUSE_THRESHOLD`, two-launch above).
-    @parameter
+    @__parameter
     @always_inline
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for _j in range(ngpus):
@@ -847,7 +847,7 @@ def bench_reducescatter_rmsnorm[
                     row_major(Coord(Index(num_rows, num_cols))),
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 reducescatter[dtype=in_dtype, ngpus=ngpus, axis=0](

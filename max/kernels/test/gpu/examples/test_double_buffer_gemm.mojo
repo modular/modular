@@ -371,7 +371,7 @@ def test(ctx: DeviceContext) raises:
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function[gemm](
                 c_tensor,

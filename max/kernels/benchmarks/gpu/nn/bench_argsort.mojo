@@ -62,9 +62,9 @@ def bench_argsort[
 
     @always_inline
     @__copy_capture(device_input_tensor, device_indices_tensor)
-    @parameter
+    @__parameter
     def bench_ascending(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             argsort[ascending=True, target="gpu"](

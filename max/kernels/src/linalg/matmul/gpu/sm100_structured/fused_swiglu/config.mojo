@@ -468,7 +468,7 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             var N_aligned = align_up(N, 16)

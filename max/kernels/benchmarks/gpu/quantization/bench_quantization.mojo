@@ -124,9 +124,9 @@ def bench_1d1d_quantization[
 
     @always_inline
     @__copy_capture(input_tensor, output_tensor, scales_tensor)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             # Run the quantization kernel

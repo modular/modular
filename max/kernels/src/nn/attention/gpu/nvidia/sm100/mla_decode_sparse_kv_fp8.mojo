@@ -480,7 +480,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # owns (block_idx.y). @always_inline + comptime pruning => when
         # fold_shared_index=False this is byte-identical to the prior inline
         # call (verified kernel-scoped in Phase 6).
-        @parameter
+        @__parameter
         @always_inline
         def _pdl_early_exit_all_q():
             comptime if Self.fold_shared_index:

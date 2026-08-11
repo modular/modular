@@ -122,14 +122,14 @@ def _build_list[start: Int, stop: Int]() -> List[Int]:
 comptime width = bit_width_of[Int]()
 
 
-@parameter
+@__parameter
 def bench_next_power_of_two_int[
     func: def(Int) thin -> Int
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
@@ -139,14 +139,14 @@ def bench_next_power_of_two_int[
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_next_power_of_two_uint[
     func: def(UInt) thin -> UInt
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):

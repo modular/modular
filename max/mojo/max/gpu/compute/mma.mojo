@@ -298,7 +298,7 @@ def ld_matrix[
     # Full intrinsic is base + suffix
     comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
-    @parameter
+    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".b16.p3"
         if transpose:
@@ -404,7 +404,7 @@ def st_matrix[
 
     comptime base = "stmatrix.sync.aligned"
 
-    @parameter
+    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".m8n8"
         if transpose:
@@ -539,7 +539,7 @@ struct WGMMADescriptor[dtype: DType](
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @parameter
+        @__parameter
         def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
                 return mode.cast[DType.int64]()

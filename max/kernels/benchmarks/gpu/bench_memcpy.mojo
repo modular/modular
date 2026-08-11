@@ -125,10 +125,10 @@ def bench_memcpy(
         length_in_elements if config.direction == Config.DToD else 0
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
@@ -190,10 +190,10 @@ def bench_p2p(
     ctx1.enqueue_copy(src_buf, host_ptr)
     ctx1.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             ctx2.enqueue_copy(dst_buf, src_buf)
@@ -219,7 +219,7 @@ def bench_p2p(
     ctx2.synchronize()
 
     # Parallel verification
-    @parameter
+    @__parameter
     def verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:

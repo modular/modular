@@ -293,7 +293,7 @@ def execute_kv_cache_ragged_flash_attention[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_tensor,
         k_cache_device,
@@ -303,7 +303,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             flash_attention[ragged=True](

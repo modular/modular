@@ -643,7 +643,7 @@ struct TMemTile[
         ]
         comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
-        @parameter
+        @__parameter
         @always_inline
         def store_fn[pow_two: Int, offset: Int]():
             # pow_two is current repeat, offset total so far
@@ -752,7 +752,7 @@ struct TMemTile[
             ]
         ](dst.ptr)
 
-        @parameter
+        @__parameter
         @always_inline
         def load_fn[pow_two: Int, local_offset: Int]():
             comptime assert pow_two + local_offset <= num_repeats
@@ -800,7 +800,7 @@ struct TMemTile[
         comptime repeat = Self.dtype_size * Self.BN // 4
         comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
 
-        @parameter
+        @__parameter
         @always_inline
         def load_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
@@ -835,7 +835,7 @@ struct TMemTile[
     def store_async[
         src_type: DType
     ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
-        @parameter
+        @__parameter
         @always_inline
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:
@@ -894,7 +894,7 @@ struct TMemTile[
         src_len: Int,
         src_offset: Int = 0,
     ](self, src: Array[Scalar[src_type], src_len]):
-        @parameter
+        @__parameter
         @always_inline
         def store_fn[pow_two: Int, offset: Int]():
             comptime if pow_two > 0:

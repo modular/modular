@@ -49,10 +49,10 @@ comptime NRUN = 1
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
@@ -83,9 +83,9 @@ def run_cublas[
 
     with vendor_blas.Handle() as _handle:
 
-        @parameter
+        @__parameter
         def bench_func(mut m: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 vendor_blas.matmul[use_tf32=enable_tc](
@@ -99,7 +99,7 @@ def run_cublas[
 
             bencher_iter_custom[kernel_launch](m, ctx)
 
-        @parameter
+        @__parameter
         def get_bench_id() -> String:
             comptime if enable_tc:
                 return "cublas_tensorcore"
@@ -206,7 +206,7 @@ def run_gemm_kernel_1[
     comptime func = gemm_kernel_1[dtype, a.layout, b.layout, c.layout, BM, BN]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[func](
             a,
@@ -321,7 +321,7 @@ def run_gemm_kernel_2[
     comptime kernel = gemm_kernel_2[dtype, a.layout, b.layout, c.layout, BM, BN]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,
@@ -472,7 +472,7 @@ def run_gemm_kernel_3[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,
@@ -640,7 +640,7 @@ def run_gemm_kernel_4[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,
@@ -807,7 +807,7 @@ def run_gemm_kernel_5[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,
@@ -998,7 +998,7 @@ def run_gemm_kernel_6[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,
@@ -1228,7 +1228,7 @@ def run_gemm_kernel_tc[
     ]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             a,

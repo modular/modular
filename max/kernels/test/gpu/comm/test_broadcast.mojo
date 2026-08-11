@@ -28,7 +28,7 @@ from comm.sync import enable_p2p, init_signal_buffer
 
 
 @always_inline
-@parameter
+@__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
@@ -190,7 +190,7 @@ def broadcast_test[
                 )
 
 
-@parameter
+@__parameter
 def run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(

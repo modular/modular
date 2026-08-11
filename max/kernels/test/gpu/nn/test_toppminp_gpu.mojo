@@ -62,10 +62,10 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
@@ -75,7 +75,7 @@ def time_kernel[
     m.bench_function[bench_func](BenchId(kernel_name))
 
 
-@parameter
+@__parameter
 def fill_random[
     dtype: DType
 ](
@@ -91,7 +91,7 @@ def fill_random[
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-@parameter
+@__parameter
 def fill_iota[
     dtype: DType
 ](
@@ -200,7 +200,7 @@ def test_is_sorted_descending[
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = List(length=batch_size, fill=True)
 
-    @parameter
+    @__parameter
     def process_rows(start_batch: Int, end_batch: Int):
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
@@ -355,7 +355,7 @@ def test_case_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             if is_top_p:
                 top_p_sampling_gpu(

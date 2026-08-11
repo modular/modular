@@ -253,7 +253,7 @@ def test_to_bits() raises:
 
 # TODO: Use property testing framework to test this.
 def test_from_to_bits_roundtrip_property_test() raises:
-    @parameter
+    @__parameter
     def properties[dtype: DType, size: Int](simd: SIMD[dtype, size]) raises:
         var bits = simd.to_bits()
         var reconstructed = SIMD[dtype, size](from_bits=bits)
@@ -469,7 +469,7 @@ def test_issue_30237() raises:
         -2.76076847742355e-16,
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
@@ -483,7 +483,7 @@ def test_issue_30237() raises:
 
         return result
 
-    @parameter
+    @__parameter
     @always_inline
     def eval2(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
@@ -533,7 +533,7 @@ def test_truthy() raises:
         DType.uint,
     )
 
-    @parameter
+    @__parameter
     def test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
         assert_false(Scalar[dtype](0))
@@ -1377,7 +1377,7 @@ def test_extract() raises:
 
 
 def test_limits() raises:
-    @parameter
+    @__parameter
     def test_integral_overflow[dtype: DType]() raises:
         var max_value = Scalar[dtype].MAX
         var min_value = Scalar[dtype].MIN
@@ -1476,7 +1476,7 @@ def test_indexing() raises:
 
 
 def test_reduce() raises:
-    @parameter
+    @__parameter
     def test_dtype[dtype: DType]() raises:
         comptime X8 = SIMD[dtype, 8]
         comptime X4 = SIMD[dtype, 4]
@@ -2008,7 +2008,7 @@ def test_comparison() raises:
         DType.uint,
     )
 
-    @parameter
+    @__parameter
     def test_dtype[dtype: DType]() raises:
         comptime X4 = SIMD[dtype, 4]
 

@@ -116,7 +116,7 @@ def execute_fp8_index[
     # and a final scale+sum per (seq, key). Approximate with the GEMV term.
     var flop_count = batch_size * seq_len * num_keys * num_heads * depth * 2
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_device,
         qs_device,
@@ -128,7 +128,7 @@ def execute_fp8_index[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             fp8_index[num_heads, depth](

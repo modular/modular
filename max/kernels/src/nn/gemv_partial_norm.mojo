@@ -603,14 +603,14 @@ def _gemv_partial_norm_unfused_with_scratch[
 
     @always_inline
     @__copy_capture(y)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[c_type, width]:
         var idx = y.layout(coords)
         return y.ptr.load[width=width](idx)
 
     @always_inline
     @__copy_capture(normed_output)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[c_type, width]) -> None:

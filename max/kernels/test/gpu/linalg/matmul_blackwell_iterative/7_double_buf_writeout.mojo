@@ -993,7 +993,7 @@ def test_blackwell_kernel_7[
         comptime num_warmup = 100
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_7[
                 transpose_b=transpose_b,

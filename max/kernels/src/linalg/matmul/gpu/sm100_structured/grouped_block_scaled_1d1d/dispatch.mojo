@@ -414,7 +414,7 @@ def grouped_matmul_nvfp4_dispatch[
         # (mma_bn, cta_group, stages) vary. Factoring the call here keeps
         # the regime selection below a one-liner per regime.
         @always_inline
-        @parameter
+        @__parameter
         def _regime[
             mma_bn: Int,
             cta_group: Int,
@@ -464,7 +464,7 @@ def grouped_matmul_nvfp4_dispatch[
         # `_regime`/`_dispatch_regime`, whose (N, K) stage table has no (512,
         # 7168) row and would fall through to stages=auto).
         @always_inline
-        @parameter
+        @__parameter
         def _launch512[mma_bn: Int, cta_group: Int]() raises:
             _launch_grouped_block_scaled[
                 transpose_b,
@@ -656,7 +656,7 @@ def grouped_matmul_mxfp8_dispatch[
     # config) table as the NVFP4 path. Stages travel per-row as an Int with
     # -1 = auto (the classifier's pick), mirroring the NVFP4 table sentinel.
     @always_inline
-    @parameter
+    @__parameter
     def _go[mma_bn: Int, cta_group: Int, stages: Optional[Int]]() raises:
         _launch_grouped_block_scaled[
             transpose_b,

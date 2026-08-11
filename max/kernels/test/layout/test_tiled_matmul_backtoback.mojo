@@ -461,7 +461,7 @@ def copy_to[
     src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
 ):
     @always_inline
-    @parameter
+    @__parameter
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
@@ -495,7 +495,7 @@ def check_approx_equal[
     var fail: Bool = False
 
     @always_inline
-    @parameter
+    @__parameter
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](

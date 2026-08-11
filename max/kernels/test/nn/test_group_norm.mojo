@@ -77,7 +77,7 @@ def run_group_norm_cpu[
 
     @__copy_capture(data_buf)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -86,14 +86,14 @@ def run_group_norm_cpu[
 
     @__copy_capture(gamma)
     @always_inline
-    @parameter
+    @__parameter
     def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
         return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
-    @parameter
+    @__parameter
     def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
         return beta.raw_load[width=width](idx)

@@ -115,7 +115,7 @@ def scatter_pull_kernel[
 
 
 @always_inline
-@parameter
+@__parameter
 def scatter[
     dtype: DType,
     //,

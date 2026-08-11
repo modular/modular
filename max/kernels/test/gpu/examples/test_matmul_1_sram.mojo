@@ -82,7 +82,7 @@ def matmul_sram(
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
     var K_remainder = K - K_roundbytile if K - K_roundbytile > 0 else 1
 
-    @parameter
+    @__parameter
     @__copy_capture(localCol, a, row, a_shared, localRow, col, b, b_shared)
     @always_inline
     def update_tile[full_tile: Bool](offset: Int, end: Int, tile_size: Int):

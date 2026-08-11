@@ -89,7 +89,7 @@ def _block_minmax[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -127,7 +127,7 @@ def _block_reduce_pivot_bounds[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -412,7 +412,7 @@ def topk_mask_logits[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -444,7 +444,7 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int]() raises:
             comptime kernel = TopKMaskLogitsKernel[
                 block_size,
@@ -1164,7 +1164,7 @@ def topk_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -1202,7 +1202,7 @@ def topk_sampling_from_prob[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1230,7 +1230,7 @@ def topk_sampling_from_prob[
             )
 
         # Runtime dispatch to compile-time parameter.
-        @parameter
+        @__parameter
         def dispatch_vec_size[deterministic: Bool]() raises:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
@@ -1451,7 +1451,7 @@ def TopKTopPSamplingFromProbKernel[
                 thread_sum += exp((v - row_max) * inv_temp).reduce_add()
             z = block.sum[block_size=block_size, broadcast=True](thread_sum)
 
-        @parameter
+        @__parameter
         @always_inline
         def load_dist[width: Int](offset: Int) -> SIMD[DType.float32, width]:
             # Load `width` elements of the sampling distribution at `offset`.
@@ -1845,7 +1845,7 @@ def topk_topp_sampling_from_prob[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -1902,7 +1902,7 @@ def topk_topp_sampling_from_prob[
         if min_p:
             min_p_ptr = min_p.unsafe_value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
@@ -1934,7 +1934,7 @@ def topk_topp_sampling_from_prob[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @parameter
+        @__parameter
         def dispatch_vec_size[deterministic: Bool]() raises:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
@@ -2251,7 +2251,7 @@ def topk_softmax_sample[
     var batch_size = shape[0]
     var d = shape[1]
 
-    @parameter
+    @__parameter
     def trace_information() -> String:
         return String(";").join(
             Span(
@@ -2308,7 +2308,7 @@ def topk_softmax_sample[
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
-        @parameter
+        @__parameter
         def launch_kernel[vec_size: Int]() raises:
             comptime kernel = topk_softmax_sample_kernel[
                 block_size,

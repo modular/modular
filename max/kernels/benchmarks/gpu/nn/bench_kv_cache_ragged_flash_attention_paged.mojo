@@ -382,7 +382,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     if run_benchmark:
 
-        @parameter
+        @__parameter
         @__copy_capture(
             q_device_tensor,
             k_cache_device,
@@ -394,7 +394,7 @@ def execute_kv_cache_ragged_flash_attention[
         )
         @always_inline
         def bench_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 comptime if local_window_size > 0:

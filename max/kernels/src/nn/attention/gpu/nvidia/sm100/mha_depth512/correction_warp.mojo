@@ -137,7 +137,7 @@ def depth512_correction[
 
     # ---- Rescale helper (inlined for O_lo and O_hi) --------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def rescale_o(o_tmem: TmemAddress, c_pair: SIMD[DType.float32, 2]):
         """Double-buffered TMEM load/scale/store over o_cols columns."""

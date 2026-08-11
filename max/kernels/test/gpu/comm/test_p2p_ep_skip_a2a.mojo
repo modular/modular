@@ -199,7 +199,7 @@ def test_skip_a2a[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(router_weights_tt)
     def router_weights_fn[
         width: Int

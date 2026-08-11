@@ -109,9 +109,9 @@ def bench_rms_norm_fused_fp8[
         cb_data,
         cb_rms_output,
     )
-    @parameter
+    @__parameter
     def bench_rms_norm(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Construct buffers with offsets
@@ -128,7 +128,7 @@ def bench_rms_norm_fused_fp8[
             # shape boundary (softmax PR #88203).
             @__copy_capture(data_buf_offset)
             @always_inline
-            @parameter
+            @__parameter
             def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
                 var idx = data_buf_offset.layout(coords)
                 return data_buf_offset.raw_load[width=width, alignment=width](
@@ -138,7 +138,7 @@ def bench_rms_norm_fused_fp8[
             # Output function for RMS norm
             @always_inline
             @__copy_capture(rms_output_buf_offset)
-            @parameter
+            @__parameter
             def rms_output_fn[
                 width: SIMDLength, alignment: Int
             ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -175,9 +175,9 @@ def bench_rms_norm_fused_fp8[
         cb_fp8_output,
         scales_base_ptr,
     )
-    @parameter
+    @__parameter
     def bench_fp8_quant(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             # Input function for FP8 quant (reads from RMS norm output)
@@ -227,9 +227,9 @@ def bench_rms_norm_fused_fp8[
         cb_fused_output,
         scales_base_ptr_fused,
     )
-    @parameter
+    @__parameter
     def bench_fused(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
             # Input function with offset
@@ -237,7 +237,7 @@ def bench_rms_norm_fused_fp8[
 
             @__copy_capture(data_ptr_offset)
             @always_inline
-            @parameter
+            @__parameter
             def input_fn_fused[
                 width: Int, _rank: Int
             ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -314,7 +314,7 @@ def bench_rms_norm_fused_fp8[
     # shape boundary (softmax PR #88203).
     @__copy_capture(data_buf_verify)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_verify[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         var idx = data_buf_verify.layout(coords)
         return data_buf_verify.raw_load[width=width](idx)
@@ -322,7 +322,7 @@ def bench_rms_norm_fused_fp8[
     # Output function for verification
     @always_inline
     @__copy_capture(rms_output_buf_verify)
-    @parameter
+    @__parameter
     def rms_output_fn_verify[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -378,7 +378,7 @@ def bench_rms_norm_fused_fp8[
 
     @__copy_capture(data_base_ptr_verify)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn_fused_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:

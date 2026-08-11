@@ -123,7 +123,7 @@ def _default_desc_shape[
     return result
 
 
-@parameter
+@__parameter
 def _idx_product[rank: Int, shape: IndexList[rank]]() -> Int:
     """Compute the total number of elements from an IndexList shape."""
     var result = 1
@@ -132,13 +132,13 @@ def _idx_product[rank: Int, shape: IndexList[rank]]() -> Int:
     return result
 
 
-@parameter
+@__parameter
 def _idx_str[rank: Int, shape: IndexList[rank]]() -> String:
     """Build a debug string from an IndexList shape."""
     return String(shape)
 
 
-@parameter
+@__parameter
 def _desc_offset[
     rank: Int, dims: IndexList[rank], is_k_major: Bool
 ](coords: IndexList[rank]) -> Int:
@@ -4118,7 +4118,7 @@ def create_tma_tile[
     )
 
 
-@parameter
+@__parameter
 def _gather4_box_width[
     dtype: DType,
     tile_width: Int,
@@ -4150,7 +4150,7 @@ def _gather4_box_width[
         return swizzle_mode.bytes() // size_of[dtype]()
 
 
-@parameter
+@__parameter
 def _gather4_num_col_groups[
     dtype: DType,
     tile_width: Int,

@@ -267,13 +267,13 @@ def test_rmsnorm_then_matmul[
 
     @always_inline
     @__copy_capture(a_raw_tensor)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[a_type, width]:
         return a_raw_tensor.raw_load[width=width](a_raw_tensor.layout(coords))
 
     @always_inline
     @__copy_capture(a_normed_vendor_tensor)
-    @parameter
+    @__parameter
     def output_fn_vendor[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[a_type, width]) -> None:
@@ -296,7 +296,7 @@ def test_rmsnorm_then_matmul[
 
     @always_inline
     @__copy_capture(a_normed_ours_tensor)
-    @parameter
+    @__parameter
     def output_fn_ours[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[a_type, width]) -> None:
@@ -320,7 +320,7 @@ def test_rmsnorm_then_matmul[
         prefetch_tiles_n=prefetch_tiles_n,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_ours_tensor)
     def epilogue_fn[

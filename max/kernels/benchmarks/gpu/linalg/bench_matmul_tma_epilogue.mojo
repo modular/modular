@@ -257,7 +257,7 @@ def bench_matmul_tma_epilogue[
     cb_epilogue.init_on_device(init_type, ctx)
 
     @__copy_capture(cb_a, cb_b, cb_c, cb_epilogue)
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var tensor_a = TileTensor(
@@ -281,7 +281,7 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c, tensor_epilogue)
             def epilogue_lambda[
@@ -320,7 +320,7 @@ def bench_matmul_tma_epilogue[
                 ctx,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
         bencher_iter_custom[kernel_launch](b, ctx)
@@ -401,7 +401,7 @@ def bench_matmul_tma_epilogue[
 
         elif variant == "compute_lambda_bias":
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(epilogue_ver_nd)
             def ver_epilogue_lambda[

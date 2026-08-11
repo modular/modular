@@ -2782,7 +2782,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ), "output width must be a positive integer less than simd size"
 
         @always_inline
-        @parameter
+        @__parameter
         def slice_body() -> SIMD[Self.dtype, output_width]:
             var tmp = SIMD[Self.dtype, output_width]()
 
@@ -2959,7 +2959,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def body[
             width: SIMDLength
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
@@ -2989,7 +2989,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def body[w: Int](lhs: Self._T[w], rhs: Self._T[w]) -> Self._T[w]:
             return func(lhs, rhs)
 
@@ -3016,7 +3016,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         """
 
         @always_inline
-        @parameter
+        @__parameter
         def body[
             width: SIMDLength
         ](lhs: Self._T[width], rhs: Self._T[width]) -> Self._T[width]:
@@ -3787,7 +3787,7 @@ def _convert_float8_to_f32[
     else:
 
         @always_inline
-        @parameter
+        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -3843,7 +3843,7 @@ def _convert_f32_to_float8[
     else:
 
         @always_inline
-        @parameter
+        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -3860,7 +3860,7 @@ def _convert_f32_to_float8_scalar[
 ](x: Scalar[dtype]) -> Scalar[target]:
     # software implementation rounds toward nearest even
 
-    @parameter
+    @__parameter
     def max_finite_byte() -> UInt8:
         comptime if target == DType.float8_e4m3fn:
             return UInt8(0x7E)
@@ -4048,7 +4048,7 @@ def _convert_f32_to_float8_ue8m0[
     else:
 
         @always_inline
-        @parameter
+        @__parameter
         def wrapper_fn[
             input_dtype: DType, result_dtype: DType
         ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
@@ -4155,7 +4155,7 @@ def _bfloat16_to_f32[
     size: SIMDLength
 ](val: SIMD[DType.bfloat16, size]) -> SIMD[DType.float32, size]:
     @always_inline
-    @parameter
+    @__parameter
     def wrapper_fn[
         input_dtype: DType, result_dtype: DType
     ](val: Scalar[input_dtype]) capturing -> Scalar[result_dtype]:

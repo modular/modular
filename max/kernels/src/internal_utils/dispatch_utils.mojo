@@ -106,7 +106,7 @@ struct Table[type: TuningConfig](Writable):
         var result = List[ret_type]()
 
         @always_inline
-        @parameter
+        @__parameter
         def _get_search_domain() -> List[Int]:
             if len(materialize[domain]()):
                 return materialize[domain]()

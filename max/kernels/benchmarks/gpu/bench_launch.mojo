@@ -44,10 +44,10 @@ def small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
 
 
 def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_empty_launch(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[empty_kernel](
@@ -74,10 +74,10 @@ def bench_empty_launch_many_params_caller(
         Layout([1, 2], [3, 3]),
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_empty_launch_many_params(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         def launch() raises:
             ctx.enqueue_function[func_alias](grid_dim=Dim(1), block_dim=Dim(1))
 
@@ -100,10 +100,10 @@ def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
         )
 
     # Benchmark Mojo function
-    @parameter
+    @__parameter
     @always_inline
     def bench_gpu_kernel_enqueue(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         def launch() raises:
             for _ in range(NUM_KERNELS_PER_ITERATION):
                 ctx.enqueue_function[small_kernel](

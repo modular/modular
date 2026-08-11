@@ -250,7 +250,7 @@ def reducescatter_test[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_bufs)
     def outputs_lambda[
         input_index: Int,
@@ -572,7 +572,7 @@ def grouped_reducescatter_test(list_of_ctx: List[DeviceContext]) raises:
     _ = host_in^
 
 
-@parameter
+@__parameter
 def run_reducescatter_sweep[use_multimem: Bool]() raises:
     """Run reduce-scatter tests across 1D and 2D configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)

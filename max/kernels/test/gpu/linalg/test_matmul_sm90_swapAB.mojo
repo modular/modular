@@ -357,7 +357,7 @@ def main() raises:
         # Each position gets val + row + col * 0.5, creating unique values
         # Using larger offsets that are significant in bf16 precision
         # If indexing is wrong, the reference and swapAB results will mismatch
-        @parameter
+        @__parameter
         @always_inline
         def coord_lambda[
             _dtype: DType,

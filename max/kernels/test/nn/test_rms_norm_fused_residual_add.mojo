@@ -142,7 +142,7 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test unfused operations for comparison
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
-    @parameter
+    @__parameter
     def unfused_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
@@ -155,7 +155,7 @@ def run_rms_norm_fused_residual_add_gpu[
     # unfused reference uses its own comptime input loader (the fused kernel's
     # `input_fn` is now a value closure and cannot bind a comptime parameter).
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(data_buf)
     def rms_input_fn[
         width: Int, _rank: Int
@@ -190,7 +190,7 @@ def run_rms_norm_fused_residual_add_gpu[
         DeviceContext(api="cpu"),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
     def unfused_input2_fn[
@@ -202,7 +202,7 @@ def run_rms_norm_fused_residual_add_gpu[
     # Test unfused operations for comparison
     @always_inline
     @__copy_capture(result_unfused_buf)
-    @parameter
+    @__parameter
     def unfused_output2_fn[
         width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:

@@ -290,7 +290,7 @@ def bench_shape(
     ) * elt
 
     # ============ FUSED: one GEMM over the stacked weight ============
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_hs,
         cb_w,
@@ -330,7 +330,7 @@ def bench_shape(
             ctx,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def fused_bench(mut b: Bencher) raises:
         bencher_iter_custom[fused_launch](b, ctx)
@@ -344,7 +344,7 @@ def bench_shape(
     )
 
     # ============ UNFUSED: main QKV then indexer QKV (2 calls) ============
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_hs,
         cb_w,
@@ -400,7 +400,7 @@ def bench_shape(
             ctx,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def unfused_bench(mut b: Bencher) raises:
         bencher_iter_custom[unfused_launch](b, ctx)

@@ -301,7 +301,7 @@ def bench_shape(
     )
 
     # ============ FUSED: one GEMM, scatter from the epilogue ============
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_hs,
         cb_w,
@@ -366,7 +366,7 @@ def bench_shape(
             ctx,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def fused_bench(mut b: Bencher) raises:
         bencher_iter_custom[fused_launch](b, ctx)
@@ -380,7 +380,7 @@ def bench_shape(
     )
 
     # ============ UNFUSED: one dense GEMM per output band (5 calls) ==========
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_hs,
         cb_w,
@@ -416,7 +416,7 @@ def bench_shape(
         var asf_tt = lt_to_tt(asf)
 
         # Q band: the only wide one (N=2048); the other four are N=128.
-        @parameter
+        @__parameter
         @always_inline
         def band[
             band_n: Int
@@ -467,7 +467,7 @@ def bench_shape(
         # Placing K/V/IndexK is the other half of what the fused epilogue does,
         # so the unfused path pays for three paged-store launches on top of its
         # five GEMMs.
-        @parameter
+        @__parameter
         @always_inline
         def k_in[
             width: Int, alignment: Int
@@ -476,7 +476,7 @@ def bench_shape(
                 width=width
             ]()
 
-        @parameter
+        @__parameter
         @always_inline
         def v_in[
             width: Int, alignment: Int
@@ -485,7 +485,7 @@ def bench_shape(
                 _any(kv_out_ptr) + total_seq * kv_dim + idx[0] * kv_dim + idx[2]
             ).load[width=width]()
 
-        @parameter
+        @__parameter
         @always_inline
         def ik_in[
             width: Int, alignment: Int
@@ -516,7 +516,7 @@ def bench_shape(
             ctx,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def unfused_bench(mut b: Bencher) raises:
         bencher_iter_custom[unfused_launch](b, ctx)

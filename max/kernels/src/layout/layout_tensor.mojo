@@ -1351,7 +1351,7 @@ struct LayoutTensor[
             operator).
         """
 
-        @parameter
+        @__parameter
         def add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
@@ -1372,7 +1372,7 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @parameter
+        @__parameter
         def add_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) + val
 
@@ -1493,7 +1493,7 @@ struct LayoutTensor[
             (`*=` operator).
         """
 
-        @parameter
+        @__parameter
         def mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
@@ -1568,7 +1568,7 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @parameter
+        @__parameter
         def mul_val(val: Self.element_type) -> Self.element_type:
             return Self.element_type(other) * val
 
@@ -1642,7 +1642,7 @@ struct LayoutTensor[
             operator).
         """
 
-        @parameter
+        @__parameter
         def sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
@@ -1713,7 +1713,7 @@ struct LayoutTensor[
         - This operation modifies the tensor directly without creating a copy.
         """
 
-        @parameter
+        @__parameter
         def sub_val(val: Self.element_type) -> Self.element_type:
             return val - Self.element_type(other)
 
@@ -1790,7 +1790,7 @@ struct LayoutTensor[
         - For integer dtypes, this performs integer division.
         """
 
-        @parameter
+        @__parameter
         def div_val(val: Self.element_type) -> Self.element_type:
             return val / Self.element_type(other)
 
@@ -1869,7 +1869,7 @@ struct LayoutTensor[
         - For integer dtypes, this performs integer division.
         """
 
-        @parameter
+        @__parameter
         def div_val(val: Self.element_type) -> Self.element_type:
             return val / Self.element_type(other)
 
@@ -1935,7 +1935,7 @@ struct LayoutTensor[
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @parameter
+        @__parameter
         def exp_func(val: Self.element_type) -> Self.element_type:
             return exp(val)
 
@@ -7495,7 +7495,7 @@ def _copy_dram_to_local[
     ), "src_fragments must have known layout."
 
     @always_inline
-    @parameter
+    @__parameter
     def offset_helper(offset_val: Int):
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)

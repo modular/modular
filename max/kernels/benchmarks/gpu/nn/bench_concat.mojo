@@ -130,10 +130,10 @@ def bench_concat[
         input1_host.as_unsafe_any_origin(),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             _concat_gpu_elementwise[epilogue_fn=None](
@@ -210,10 +210,10 @@ def bench_concat_inner_most_single_dim[
     var out_dev = ctx.enqueue_create_buffer[dtype](n_out)
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fn(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             comptime if static_shape:

@@ -229,10 +229,10 @@ def main() raises:
         var src_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
         var dst_dev = ctx.enqueue_create_buffer[DType.uint8](total_bytes)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def kernel_launch(ctx: DeviceContext) raises:
                 ctx.enqueue_function[

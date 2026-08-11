@@ -46,7 +46,7 @@ from std.testing import assert_true
 
 
 @always_inline
-@parameter
+@__parameter
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
@@ -178,12 +178,12 @@ def bench_scatter[
         )
         list_of_ctx[gpu_idx].synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             # Update input pointers to the cache-busted offset.

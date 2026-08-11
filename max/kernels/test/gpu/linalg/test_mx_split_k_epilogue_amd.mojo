@@ -216,7 +216,7 @@ def test_split_k_epilogue[
     var fire_ptr = fire_d.unsafe_ptr()
     var wide_ptr = wide_d.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @__copy_capture(epi_ptr, fire_ptr, wide_ptr)
     @always_inline
     def record[
@@ -398,7 +398,7 @@ def test_dispatch_workspace_cap[
     var seen_ptr = seen_d.unsafe_ptr()
     var wide_ptr = wide_d.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @__copy_capture(seen_ptr, wide_ptr)
     @always_inline
     def probe[

@@ -1211,7 +1211,7 @@ struct QuantizeDynamicScaledFloat8:
     """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
-    @parameter
+    @__parameter
     @always_inline
     @staticmethod
     def execute[

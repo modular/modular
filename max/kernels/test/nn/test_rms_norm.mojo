@@ -64,7 +64,7 @@ def run_rms_norm_cpu[
 
     @__copy_capture(input_buf)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -73,7 +73,7 @@ def run_rms_norm_cpu[
 
     @always_inline
     @__copy_capture(output_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:

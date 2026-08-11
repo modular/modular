@@ -48,7 +48,7 @@ def make_string[
     abort(String())
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_forward[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -64,7 +64,7 @@ def bench_grapheme_iter_forward[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_reversed[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -80,7 +80,7 @@ def bench_grapheme_iter_reversed[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_alternating[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:

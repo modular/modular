@@ -56,7 +56,7 @@ from std.utils.index import StaticTuple
 
 
 @always_inline
-@parameter
+@__parameter
 def _per_gpu_value[
     dtype: DType,
 ](gpu_rank: Int, j: Int) -> Scalar[dtype]:
@@ -227,10 +227,10 @@ def bench_reduce[
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime if not use_multimem:

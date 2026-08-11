@@ -14,10 +14,10 @@
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
-@parameter
+@__parameter
 def bench_allocation(mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for _ in range(10000):
             var a = alloc[Int]({count = 100}).unsafe_leak()

@@ -203,7 +203,7 @@ def lamport_allreduce_test[
     for it in range(NUM_ITERS):
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(out_capture)
         def lamport_epilogue[
             input_index: Int,
@@ -345,7 +345,7 @@ def lamport_mixed_size_test[
         out_capture[i] = TileTensor(out_dev[i], row_major(max_length))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_capture)
     def mixed_epilogue[
         input_index: Int,
@@ -568,7 +568,7 @@ def lamport_coexist_test[
         out_capture[i] = TileTensor(sout_dev[i], row_major(small_len))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_capture)
     def coexist_epilogue[
         input_index: Int,
@@ -766,7 +766,7 @@ def lamport_unsynced_skew_test[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(out_capture)
         def skew_epilogue[
             input_index: Int,

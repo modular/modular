@@ -23,7 +23,7 @@ def run_func[
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
-    @parameter
+    @__parameter
     def kernel(
         output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
@@ -91,7 +91,7 @@ def powf_fn(val: SIMD) -> type_of(val):
 def test_math() raises:
     with DeviceContext() as ctx:
 
-        @parameter
+        @__parameter
         def test[
             *kernel_fns: def[dtype: DType, width: SIMDLength](
                 SIMD[dtype, width]

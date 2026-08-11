@@ -301,7 +301,7 @@ def multistage_mma_q[
     comptime b_idx_t = b_iter_arg.linear_idx_type
 
     @always_inline
-    @parameter
+    @__parameter
     def _async_copy_a_tile(
         dst: LayoutTensor[
             mut=True, a_type, address_space=AddressSpace.SHARED, ...
@@ -321,7 +321,7 @@ def multistage_mma_q[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def _async_copy_b_tile(
         dst: LayoutTensor[
             mut=True, b_type, address_space=AddressSpace.SHARED, ...
@@ -900,7 +900,7 @@ def multistage_qgemm_kernel[
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     @always_inline
-    @parameter
+    @__parameter
     def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
@@ -1216,7 +1216,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -1425,7 +1425,7 @@ def repack_GPTQ_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:

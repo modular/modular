@@ -470,7 +470,7 @@ def bench_matmul[
     cb_b_scales.init_scales_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    @parameter
+    @__parameter
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -491,7 +491,7 @@ def bench_matmul[
             c_row_major=True,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var a = TileTensor(cb_a.offset_ptr(iteration), row_major(shape_a))
@@ -505,7 +505,7 @@ def bench_matmul[
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c)
         def test_lambda_add_coords_prod[
@@ -542,7 +542,7 @@ def bench_matmul[
                 ctx,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
         bencher_iter_custom[kernel_launch](b, ctx)
@@ -722,7 +722,7 @@ def bench_mxfp4_amd[
 
     # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
     # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
-    @parameter
+    @__parameter
     @always_inline
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -765,7 +765,7 @@ def bench_mxfp4_amd[
                 c_row_major=True,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
@@ -782,7 +782,7 @@ def bench_mxfp4_amd[
         else:
             block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
         bencher_iter_custom[kernel_launch](bencher, ctx)

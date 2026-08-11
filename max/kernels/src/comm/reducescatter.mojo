@@ -487,7 +487,7 @@ def _reducescatter_p2p[
     )
 
 
-@parameter
+@__parameter
 def reducescatter[
     dtype: DType,
     ngpus: Int,
@@ -652,7 +652,7 @@ def reducescatter[
 
     # Default epilogue: store directly to output buffer
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output_buffer)
     def default_output_lambda[
         _dtype: DType,

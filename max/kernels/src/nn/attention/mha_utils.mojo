@@ -732,7 +732,7 @@ def dispatch_mask[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
         return callback_fn(mask)
 

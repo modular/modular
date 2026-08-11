@@ -271,7 +271,7 @@ def conv_transpose_shape[
     output_shape[0] = batch_size
     output_shape[input.rank - 1] = output_channels
 
-    @parameter
+    @__parameter
     @always_inline
     def compute_output_spatial_dim(
         input_spatial_dim: Int,
@@ -555,7 +555,7 @@ struct ConvTransposedPacked[
         var num_tasks = num_partitions.flattened_length()
 
         @__copy_capture(num_partitions, cf_tile_size)
-        @parameter
+        @__parameter
         def task_func(task_id: Int):
             var partition = get_partition(
                 task_id,
@@ -641,7 +641,7 @@ struct ConvTransposedPacked[
         """Loop over C tiles."""
 
         @always_inline
-        @parameter
+        @__parameter
         def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
 
@@ -675,7 +675,7 @@ struct ConvTransposedPacked[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self.input_space_loop[
                 micro_kernel_height, size // simd_size, False, last_c_tile
@@ -873,7 +873,7 @@ struct ConvTransposedPacked[
                 -self.conv_shape.pad_w[0] + self.conv_shape.wo() * ho
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                 update_w_tile_2d[
@@ -961,7 +961,7 @@ struct ConvTransposedPacked[
                     + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
                 )
 
-                @parameter
+                @__parameter
                 @always_inline
                 def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                     update_w_tile_3d[
@@ -1459,7 +1459,7 @@ def pack_filter(
 
         @always_inline
         @__copy_capture(group_start, C, F_per_group, F)
-        @parameter
+        @__parameter
         def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = (
                 group_start + f_tile_start * window_dims_prod * C
@@ -1570,7 +1570,7 @@ def conv_transposed_cpu[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1640,7 +1640,7 @@ def conv_transposed_cpu[
 
         # The closure updates a row segment of the output.
         @always_inline
-        @parameter
+        @__parameter
         def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):

@@ -168,7 +168,7 @@ def _bench_one[
     # conv-vs-matmul ratio compares apples-to-apples (the conv path
     # also routes through the framework body for all dtypes). Use
     # `structured_4wave_matmul` for all dtypes.
-    @parameter
+    @__parameter
     @always_inline
     def _ref_matmul() raises:
         structured_4wave_matmul(im2col_2d, filter, output, ctx)
