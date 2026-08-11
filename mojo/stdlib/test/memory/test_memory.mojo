@@ -615,9 +615,7 @@ def test_memcmp_high_bit_and_multiples_of_4() raises:
     var b12 = List[TwelveByteStruct](
         length=1, fill=TwelveByteStruct(0, 0x0000_0000, 0)
     )
-    var res12_chunked = unsafe_memcmp(
-        a12.unsafe_ptr(), b12.unsafe_ptr(), 1
-    )
+    var res12_chunked = unsafe_memcmp(a12.unsafe_ptr(), b12.unsafe_ptr(), 1)
     var res12_bytewise = unsafe_memcmp(
         a12.unsafe_ptr().unsafe_bitcast[Byte](),
         b12.unsafe_ptr().unsafe_bitcast[Byte](),
@@ -625,9 +623,7 @@ def test_memcmp_high_bit_and_multiples_of_4() raises:
     )
     assert_equal(res12_chunked, 1)
     assert_equal(res12_chunked, res12_bytewise)
-    assert_equal(
-        unsafe_memcmp(b12.unsafe_ptr(), a12.unsafe_ptr(), 1), -1
-    )
+    assert_equal(unsafe_memcmp(b12.unsafe_ptr(), a12.unsafe_ptr(), 1), -1)
 
     # 16-byte element: high bit in first 8-byte field
     var a16 = List[SixteenByteStruct](
@@ -638,9 +634,7 @@ def test_memcmp_high_bit_and_multiples_of_4() raises:
         length=1,
         fill=SixteenByteStruct(0x0000_0000_0000_0000, 0),
     )
-    var res16_chunked = unsafe_memcmp(
-        a16.unsafe_ptr(), b16.unsafe_ptr(), 1
-    )
+    var res16_chunked = unsafe_memcmp(a16.unsafe_ptr(), b16.unsafe_ptr(), 1)
     var res16_bytewise = unsafe_memcmp(
         a16.unsafe_ptr().unsafe_bitcast[Byte](),
         b16.unsafe_ptr().unsafe_bitcast[Byte](),
@@ -648,9 +642,7 @@ def test_memcmp_high_bit_and_multiples_of_4() raises:
     )
     assert_equal(res16_chunked, 1)
     assert_equal(res16_chunked, res16_bytewise)
-    assert_equal(
-        unsafe_memcmp(b16.unsafe_ptr(), a16.unsafe_ptr(), 1), -1
-    )
+    assert_equal(unsafe_memcmp(b16.unsafe_ptr(), a16.unsafe_ptr(), 1), -1)
 
 
 def test_memset() raises:
