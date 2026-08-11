@@ -30,7 +30,13 @@ from typing import Any, cast
 import ml_dtypes
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer, accelerator_count
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    accelerator_api,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
@@ -116,9 +122,16 @@ def _host_rmsnorm(
 
 
 def _inputs_and_gammas(
-    rows_per_device: list[int], devices: list[Accelerator]
+    rows_per_device: list[int],
+    devices: list[Accelerator],
+    signed: bool = False,
 ) -> tuple[list[Buffer], list[Buffer], list[np.ndarray], list[np.ndarray]]:
-    """Positive varied per-device shards + a DISTINCT gamma per device."""
+    """Varied per-device shards + a DISTINCT gamma per device.
+
+    `signed` flips the sign on a period coprime to the value period, so some
+    blocks peak on a negative element. Gamma is positive, so without it a
+    signed block max is indistinguishable from an absolute one.
+    """
     tensor_inputs: list[Buffer] = []
     gamma_inputs: list[Buffer] = []
     host_shards: list[np.ndarray] = []
@@ -128,6 +141,10 @@ def _inputs_and_gammas(
         size = rows * COLS
         arr = (((np.arange(size) + offset) % 251) + 1).reshape(rows, COLS)
         arr = arr.astype(np.float32)
+        if signed:
+            arr = np.where(
+                np.arange(size).reshape(rows, COLS) % 3 == 0, -arr, arr
+            )
         host_shards.append(_bf16(arr))
         tensor_inputs.append(_to_device_bf16(arr, devices[i]))
         # Distinct per device (the running offset), so gathering a sibling
@@ -357,3 +374,151 @@ def test_grouped_allgather_rms_norm_separation() -> None:
         host_gammas,
         "grouped-separation",
     )
+
+
+def _mxfp8_graph(
+    signals: Signals, rows_per_device: list[int], group_size: int | None
+) -> Graph:
+    devices = signals.devices
+    num_devices = len(devices)
+    with Graph(
+        "allgather_rms_norm_quant_mxfp8",
+        input_types=cast(
+            list[Type[Any]],
+            [
+                TensorType(
+                    dtype=DType.bfloat16,
+                    shape=[rows_per_device[i], COLS],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ]
+            + [
+                TensorType(dtype=DType.bfloat16, shape=[COLS], device=device)
+                for device in devices
+            ]
+            + signals.input_types(),
+        ),
+    ) as graph:
+        inputs = [v.tensor for v in graph.inputs[:num_devices]]
+        gammas = [v.tensor for v in graph.inputs[num_devices : 2 * num_devices]]
+        sigs = [v.buffer for v in graph.inputs[2 * num_devices :]]
+        normed, quant, scales, residual = ops.allgather_rms_norm_quant_mxfp8(
+            inputs=inputs,
+            signal_buffers=sigs,
+            gammas=gammas,
+            epsilon=EPS,
+            weight_offset=WEIGHT_OFFSET,
+            group_size=group_size,
+        )
+        # `normed, residual` first, in that order, so `_check` applies verbatim
+        # to the output prefix.
+        graph.output(*normed, *residual, *quant, *scales)
+        return graph
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason=(
+        "The MXFP8 quantize rides the CDNA4 path and emits its rank-2 scale "
+        "layout; the target's own bazel rule is arch-agnostic, so skip here."
+    ),
+)
+@pytest.mark.parametrize(
+    "num_gpus, shard_rows, regime",
+    [
+        (4, 2, "fused"),
+        (4, 128, "two_launch"),
+    ],
+)
+def test_allgather_rms_norm_quant_mxfp8_execution(
+    num_gpus: int, shard_rows: int, regime: str
+) -> None:
+    """The MXFP8 outputs must match a host quantize of the op's own norm.
+
+    Two layers: the quantize oracle re-derives each E8M0 scale from the returned
+    `normed`, so it is self-consistent by construction -- a wrong gamma index,
+    gather window, epsilon or group would still pass it. `_check` is the
+    independent half, rebuilding normed and residual from the INPUTS.
+    """
+    if num_gpus > accelerator_count():
+        pytest.skip(f"Not enough GPUs ({num_gpus}) for {regime} mxfp8 AG norm.")
+
+    rows_per_device = [shard_rows] * num_gpus
+    signals = Signals(devices=[DeviceRef.GPU(id=i) for i in range(num_gpus)])
+    graph = _mxfp8_graph(signals, rows_per_device, group_size=None)
+    host = CPU()
+    devices = [Accelerator(n) for n in range(num_gpus)]
+    session = InferenceSession(devices=[host, *devices])
+    compiled = session.load(graph)
+
+    tensor_inputs, gamma_inputs, host_shards, host_gammas = _inputs_and_gammas(
+        rows_per_device, devices, signed=True
+    )
+    outputs = list(
+        compiled.execute(*tensor_inputs, *gamma_inputs, *signals.buffers())
+    )
+
+    # The independent half. Ungrouped, so group_size == num_gpus.
+    _check(
+        outputs,
+        num_gpus,
+        num_gpus,
+        host_shards,
+        host_gammas,
+        f"mxfp8 {regime}",
+    )
+
+    nd = num_gpus
+    for dev in range(nd):
+        normed = _from_device_bf16(cast(Buffer, outputs[dev]))
+        quant = (
+            cast(Buffer, outputs[2 * nd + dev])
+            .copy(device=CPU())
+            .view(DType.uint8)
+            .to_numpy()
+        )
+        scales = (
+            cast(Buffer, outputs[3 * nd + dev])
+            .copy(device=CPU())
+            .view(DType.uint8)
+            .to_numpy()
+        )
+        assert quant.shape == normed.shape
+        assert scales.shape == (normed.shape[0], COLS // 32)
+
+        # Scale = ceil(log2(block_max / 448)), the smallest power of two that
+        # keeps a block inside E4M3's +/-448. NOT ml_dtypes' float8_e8m0fnu
+        # cast: it truncates, one exponent low, letting the max reach 896.
+        blocks = normed.reshape(normed.shape[0], COLS // 32, 32)
+        block_max = np.abs(blocks).max(axis=-1).astype(np.float32)
+        assert (block_max > 0).all(), (
+            "empty block: oracle assumes block_max > 0"
+        )
+        # frexp returns m in [0.5, 1), so ceil(log2(x)) is `e` except at the
+        # exact power of two m == 0.5, where it is `e - 1`.
+        mantissa, exponent = np.frexp(block_max / np.float32(448.0))
+        want_scales = (
+            np.where(mantissa == 0.5, exponent - 1, exponent) + 127
+        ).astype(np.uint8)
+        assert np.array_equal(scales, want_scales), (
+            f"device {dev}: fused E8M0 scales disagree with a host quantize of "
+            "the op's own normed output"
+        )
+
+        # Byte-exact on the payload too, against a host round-to-nearest-even
+        # E4M3 encode -- non-vacuity alone would accept the wrong tensor.
+        descaled = blocks / np.exp2(scales.astype(np.float32) - 127)[:, :, None]
+        want_quant = (
+            descaled.astype(ml_dtypes.float8_e4m3fn)
+            .view(np.uint8)
+            .reshape(quant.shape)
+        )
+        assert np.array_equal(quant, want_quant), (
+            f"device {dev}: fused MXFP8 payload disagrees with a host quantize "
+            "of the op's own normed output"
+        )
+
+        # Non-vacuity: an all-zero quant buffer would pass a shape check.
+        assert np.count_nonzero(quant) > quant.size // 2
+        assert len(np.unique(scales)) >= 4

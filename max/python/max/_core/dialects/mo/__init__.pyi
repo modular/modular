@@ -465,6 +465,53 @@ class CompositeDistributedAllgatherRmsNormOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.IntegerAttr, /
     ) -> None: ...
 
+class CompositeDistributedAllgatherRmsNormQuantMxfp8Op(max._core.Operation):
+    """
+    `mo.composite.distributed.allgather_rms_norm` plus an MXFP8 copy of the
+    normed `output`: `outQuant` (float8_e4m3fn, same shape) and `outScale`
+    (float8_e8m0fnu, `[rows, cols / 32]`, plain rank-2 row-major -- what
+    `block_scaled_matmul_amd` takes as `a_scales`, NOT the SM100 SF-atom
+    interleave and NOT the preshuffled atom order `block_scaled_matmul_amd_preb`
+    requires). Quantized from the bf16 written to `output`, so byte-identical
+    to a standalone quantize. Same `group_size` contract.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output: Sequence[max._core.Type],
+        out_quant: Sequence[max._core.Type],
+        out_scale: Sequence[max._core.Type],
+        out_residual: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        gamma: Sequence[max._core.Value[max._core.Type]],
+        epsilon: Sequence[max._core.Value[max._core.Type]],
+        weight_offset: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+        group_size: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def gamma(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def epsilon(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def group_size(self) -> int: ...
+    @group_size.setter
+    def group_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+
 class CompositeDistributedMatmulReduceScatterSumOp(max._core.Operation):
     """
     Each device computes a matmul (A_i @ B_i^T) and the results are
