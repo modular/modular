@@ -22,37 +22,37 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping3,
 )
 
+from std.builtin.globals import global_constant
 from std.collections import Span
 
 
 def _uppercase_mapping_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping or -1 if no mapping is given."""
-    return _to_index[has_uppercase_mapping](rune)
+    return _to_index(Span(global_constant[has_uppercase_mapping]()), rune)
 
 
 def _uppercase_mapping2_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping converting the rune to 2 runes, or -1 if no mapping is given.
     """
-    return _to_index[has_uppercase_mapping2](rune)
+    return _to_index(Span(global_constant[has_uppercase_mapping2]()), rune)
 
 
 def _uppercase_mapping3_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping converting the rune to 3 runes, or -1 if no mapping is given.
     """
-    return _to_index[has_uppercase_mapping3](rune)
+    return _to_index(Span(global_constant[has_uppercase_mapping3]()), rune)
 
 
 def _lowercase_mapping_index(rune: Codepoint) -> Int:
     """Return index for lower case mapping or -1 if no mapping is given."""
-    return _to_index[has_lowercase_mapping](rune)
+    return _to_index(Span(global_constant[has_lowercase_mapping]()), rune)
 
 
-@always_inline
-def _to_index[lookup: List[UInt32]](rune: Codepoint) -> Int:
+def _to_index(lookup: Span[UInt32, ImmStaticOrigin], rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
-    var result = Span(materialize[lookup]())._binary_search_index(rune.to_u32())
+    var result = lookup._binary_search_index(rune.to_u32())
 
     if result:
         return Int(result.unsafe_value())
@@ -75,20 +75,20 @@ def _get_uppercase_mapping(
 
     var index1 = _uppercase_mapping_index(char)
     if index1 != -1:
-        var rune = materialize[uppercase_mapping]()[index1]
+        var rune = global_constant[uppercase_mapping]()[index1]
         array[0] = Codepoint(unsafe_unchecked_codepoint=rune)
         return Tuple(Int(1), array^)
 
     var index2 = _uppercase_mapping2_index(char)
     if index2 != -1:
-        var runes = materialize[uppercase_mapping2]()[index2]
+        var runes = global_constant[uppercase_mapping2]()[index2]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         return Tuple(Int(2), array^)
 
     var index3 = _uppercase_mapping3_index(char)
     if index3 != -1:
-        var runes = materialize[uppercase_mapping3]()[index3]
+        var runes = global_constant[uppercase_mapping3]()[index3]
         array[0] = Codepoint(unsafe_unchecked_codepoint=runes[0])
         array[1] = Codepoint(unsafe_unchecked_codepoint=runes[1])
         array[2] = Codepoint(unsafe_unchecked_codepoint=runes[2])
@@ -99,12 +99,14 @@ def _get_uppercase_mapping(
 
 def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
     var index: Optional[Int] = Span(
-        materialize[has_lowercase_mapping]()
+        global_constant[has_lowercase_mapping]()
     )._binary_search_index(char.to_u32())
 
     if index:
         # SAFETY: We just checked that `result` is present.
-        var codepoint = materialize[lowercase_mapping]()[index.unsafe_value()]
+        var codepoint = global_constant[lowercase_mapping]()[
+            index.unsafe_value()
+        ]
 
         # SAFETY:
         #   We know this is a valid `Codepoint` because the mapping data tables
