@@ -316,11 +316,9 @@ def apple_gemv[
             {count = b.num_elements()}
         ).into_managed()
         transposed_b = TileTensor(
-            UnsafePointer(
-                transposed_b_alloc.unsafe_value()
-                .unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            ),
+            transposed_b_alloc.unsafe_value()
+            .unsafe_ptr()
+            .unsafe_origin_cast[MutUntrackedOrigin](),
             row_major(
                 Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),

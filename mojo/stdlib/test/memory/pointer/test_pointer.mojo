@@ -643,15 +643,6 @@ def test_unsafe_mut_cast() raises:
     assert_true(_mutable.mut)
 
 
-def test_cross_safe_conversion() raises:
-    var x = 42
-    var safe = Pointer(to=x)
-
-    var back = Pointer(safe)
-    assert_true(back.mut)
-    assert_equal(Int(back), Int(safe))
-
-
 def _ref_to[origin: ImmOrigin](ref[origin] to: String):
     pass
 

@@ -240,12 +240,12 @@ def bench_prefill[
     )
 
     # input row offsets and cache row offsets
-    var input_row_offsets = UnsafePointer(
-        alloc[UInt32]({count = batch_size + 1}).unsafe_leak()
-    )
-    var cache_row_offsets = UnsafePointer(
-        alloc[UInt32]({count = batch_size + 1}).unsafe_leak()
-    )
+    var input_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
+    var cache_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -445,7 +445,7 @@ def bench_prefill_sparse[
 
     # Sequential LUT: page i → physical block i (batch_size=1).
     var lut_host_alloc = alloc[UInt32]({count = num_pages}).into_managed()
-    var lut_host = UnsafePointer(lut_host_alloc.unsafe_ptr())
+    var lut_host = lut_host_alloc.unsafe_ptr()
     for i in range(num_pages):
         lut_host[i] = UInt32(i)
     var lut_device = ctx.enqueue_create_buffer[DType.uint32](num_pages)
@@ -454,9 +454,7 @@ def bench_prefill_sparse[
     var cache_lengths_host_alloc = alloc[UInt32](
         {count = batch_size}
     ).into_managed()
-    var cache_lengths_host = UnsafePointer(
-        cache_lengths_host_alloc.unsafe_ptr()
-    )
+    var cache_lengths_host = cache_lengths_host_alloc.unsafe_ptr()
     cache_lengths_host[0] = UInt32(num_kv_tokens)
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
@@ -467,7 +465,7 @@ def bench_prefill_sparse[
     var indices_host_alloc = alloc[UInt32](
         {count = total_indices}
     ).into_managed()
-    var indices_host = UnsafePointer(indices_host_alloc.unsafe_ptr())
+    var indices_host = indices_host_alloc.unsafe_ptr()
     for i in range(total_indices):
         var page_id = i % num_pages
         var tok_in_page = i % page_size
@@ -476,7 +474,7 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(indices_device, indices_host)
 
     var topk_lengths_host_alloc = alloc[UInt32]({count = s_q}).into_managed()
-    var topk_lengths_host = UnsafePointer(topk_lengths_host_alloc.unsafe_ptr())
+    var topk_lengths_host = topk_lengths_host_alloc.unsafe_ptr()
     for i in range(s_q):
         topk_lengths_host[i] = UInt32(topk)
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](s_q)

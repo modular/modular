@@ -224,7 +224,7 @@ def verify_matmul[
     var result_host_alloc = alloc[Scalar[DType.float32]](
         {count = NUM_BLOCKS * 5}
     ).into_managed()
-    var result_host = UnsafePointer(result_host_alloc.unsafe_ptr())
+    var result_host = result_host_alloc.unsafe_ptr()
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 

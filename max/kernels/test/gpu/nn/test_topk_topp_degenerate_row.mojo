@@ -55,11 +55,9 @@ comptime ROW_ALL_ZERO = 4
 
 
 def poison_lds_kernel[nbytes: Int]():
-    var p = UnsafePointer(
-        unsafe_stack_allocation[
-            nbytes // 8, Int64, address_space=AddressSpace.SHARED
-        ]()
-    )
+    var p = unsafe_stack_allocation[
+        nbytes // 8, Int64, address_space=AddressSpace.SHARED
+    ]()
     for i in range(thread_idx.x, nbytes // 8, BLOCK):
         p[i] = Int64(0x0BADF00DDEADBEEF)
     barrier()
