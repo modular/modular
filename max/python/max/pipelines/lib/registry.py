@@ -838,11 +838,6 @@ class PipelineRegistry:
             pipeline_config, arch, draft_arch=draft_arch
         )
 
-        # Must be called after memory planning so that max_batch_size is known.
-        pipeline_config._validate_and_resolve_overlap_scheduler(
-            arch=arch, max_batch_size=memory_plan.max_batch_size
-        )
-
         pipeline_class = get_pipeline_for_task(task, pipeline_config)
 
         # An architecture may declare a custom pipeline class that overrides
