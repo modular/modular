@@ -261,7 +261,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   }
 
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
-                     signature.getMetadata(),
+                     signature.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, candidate,
                      /*discardError=*/true);
   // Don't yield constraint failure for a single overload failure: we want a

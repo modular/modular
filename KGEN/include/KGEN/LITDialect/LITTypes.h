@@ -53,16 +53,17 @@ public:
   FuncType getBodyFnType() {
     return static_cast<SubClass *>(this)->getBodyFnType();
   }
-  PogListAttr getMetadata() {
-    return static_cast<SubClass *>(this)->getMetadata();
-  }
 
   //===--------------------------------------------------------------------===//
   // Acting as a GeneratorType
   //===--------------------------------------------------------------------===//
 
-  PogListAttr getParamListAttrs() { return getMetadata(); }
-  StringAttr getParamName(size_t idx) { return getMetadata().getName(idx); }
+  PogListAttr getParamListAttrs() {
+    return static_cast<SubClass *>(this)->getParamListAttrs();
+  }
+  StringAttr getParamName(size_t idx) {
+    return getParamListAttrs().getName(idx);
+  }
 
   //===--------------------------------------------------------------------===//
   // Acting as a FuncType
@@ -194,7 +195,7 @@ public:
 
   // CRTP for FnTypeWrapperGeneratorType
   FuncType getBodyFnType() { return getBody(); }
-  PogListAttr getMetadata();
+  PogListAttr getParamListAttrs();
 
   FuncType getBody();
 
@@ -244,7 +245,7 @@ public:
 
   // CRTP for FnTypeWrapperGeneratorType
   FuncType getBodyFnType() { return getBody().getFuncType(); }
-  PogListAttr getMetadata();
+  PogListAttr getParamListAttrs();
 
   FuncLiteralType getBody();
 
@@ -305,10 +306,10 @@ public:
     return getIfFnLiteralTypeGenerator().getBodyFnType();
   }
 
-  PogListAttr getMetadata() {
+  PogListAttr getParamListAttrs() {
     if (auto fnGen = getIfFnTypeGenerator())
-      return fnGen.getMetadata();
-    return getIfFnLiteralTypeGenerator().getMetadata();
+      return fnGen.getParamListAttrs();
+    return getIfFnLiteralTypeGenerator().getParamListAttrs();
   }
 
   // Debug Util.

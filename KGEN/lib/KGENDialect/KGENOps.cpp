@@ -1121,7 +1121,7 @@ CreateClosureOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
   results.push_back(FuncTypeGeneratorType::get(
       sigGen.getInputParamTypes(),
       Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
-      effects, sig.getMetadata(), sigGen.getMetadata(), argListAttrs));
+      effects, sig.getMetadata(), sigGen.getParamListAttrs(), argListAttrs));
   return mlir::success();
 }
 

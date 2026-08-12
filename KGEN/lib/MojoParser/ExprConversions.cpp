@@ -148,7 +148,7 @@ static bool canFullyDischargeBodyConstraints(
   // lets callers (e.g. conditional trait-conformance checking) supply facts
   // that hold in their context but are not in `declScope`'s known assumptions.
   ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
-  auto actualParamList = cast<PogListAttr>(actual.getMetadata());
+  auto actualParamList = cast<PogListAttr>(actual.getParamListAttrs());
   OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
   return canDischargeConstraintsInScope(
              declScope, actualParamList, actualConstraints, actualConstraints,
@@ -271,7 +271,7 @@ static GeneratorType getReducedGeneratorType(GeneratorType gen) {
     bodyType = getReducedFnType(fnType);
 
   ArrayRef<ConstraintAttr> bodyConstraints;
-  if (PogListAttr pogs = gen.getMetadata())
+  if (PogListAttr pogs = gen.getParamListAttrs())
     bodyConstraints = pogs.getBodyConstraints();
   auto metadata = PogListAttr::get(
       gen.getContext(), gen.getInputParamTypes().size(), bodyConstraints);
@@ -362,7 +362,7 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
   auto reboundCalleeType =
       sugarCast<FnTypeGeneratorType>(evaluator.getReboundType(actualSignature));
   ArrayRef<ConstraintAttr> remappedConstraints =
-      reboundCalleeType.getMetadata().getBodyConstraints();
+      reboundCalleeType.getParamListAttrs().getBodyConstraints();
 
   // Declare the function at the bottom of the decl.
   b = ImplicitLocOpBuilder(mlirLoc, moduleDecl.getDeclEndBuilder());
@@ -707,7 +707,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   SmallVector<ConstraintAttr> thunkBodyConstraints;
   for (ConstraintAttr constraint :
-       reducedExpected.getMetadata().getBodyConstraints()) {
+       reducedExpected.getParamListAttrs().getBodyConstraints()) {
     thunkBodyConstraints.push_back(cast<ConstraintAttr>(
         paramRefsReplacer.getReboundAttribute(constraint)));
   }
@@ -858,9 +858,9 @@ convertGeneratorValue(CValue value, const ExprNode *expr,
       additionalAssumptions);
 
   assert(convBody && convBody.getIfPValue());
-  auto convGen =
-      GeneratorAttr::get(expected.getInputParamTypes(),
-                         convBody.getIfPValue().get(), expected.getMetadata());
+  auto convGen = GeneratorAttr::get(expected.getInputParamTypes(),
+                                    convBody.getIfPValue().get(),
+                                    expected.getParamListAttrs());
   return emitter.emitCResult(convGen, expr, dest);
 }
 
@@ -939,7 +939,7 @@ classifyEmptyGeneratorToBody(ASTExprAnd<CValue> valueExpr, ASTType requiredType,
   // Whether the body constraints are dischargeable depends on this scope's
   // assumptions (and any caller-supplied assumptions), so the result is
   // scope-dependent and must not be cached.
-  auto paramList = cast<PogListAttr>(generator.getMetadata());
+  auto paramList = cast<PogListAttr>(generator.getParamListAttrs());
   OptionalDiag diag(declScope.getShared(), valueExpr.expr->getLoc(),
                     /*discardError=*/true);
   bool satisfied = canDischargeConstraintsInScope(

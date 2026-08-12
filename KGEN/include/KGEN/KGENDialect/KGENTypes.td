@@ -211,16 +211,16 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
   let parameters = (ins
     ArrayRefParameter<"Type">:$inputParamTypes,
     "Type":$body,
-    "PogListAttr":$metadata
+    "PogListAttr":$paramListAttrs
   );
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
         "ArrayRef<Type>":$inputParamTypes, "Type":$body,
-        CArg<"Attribute", "{}">:$metadata), [{
+        CArg<"Attribute", "{}">:$paramListAttrs), [{
       return $_get(body.getContext(), inputParamTypes, body,
-                   ::cast_or_null<PogListAttr>(metadata));
+                   ::cast_or_null<PogListAttr>(paramListAttrs));
     }]>
   ];
 
@@ -249,9 +249,6 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
       assert(isFullyBound() && "cannot instantiate parameterized body");
       return getBody();
     }
-
-    /// Alias for `getMetadata()`; the parameter list lives in the metadata.
-    PogListAttr getParamListAttrs();
 
     /// Return the name for the parameter at the specified index.
     StringAttr getParamName(size_t idx);

@@ -295,7 +295,7 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
     FnTypeGeneratorType signature = funcOp.getFullSignature();
     // Check that the signature can be rebound with our set of bindings.
     ParamInf inference(unverified, signature.getInputParamTypes(),
-                       signature.getMetadata(),
+                       signature.getParamListAttrs(),
                        /*allowImplicitConversions=*/true, &fnDecl,
                        /*discardError=*/false);
     verifiedBindings = inference.inferForStruct();

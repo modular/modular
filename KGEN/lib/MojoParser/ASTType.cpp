@@ -229,7 +229,7 @@ struct ParamDiffer {
       if (auto rhsGen = dyn_cast<GeneratorType>(rhs))
         // NOTE: We could complain about different pogs, but unclear how to
         // identify the right problem.
-        if (lhsGen.getMetadata() == rhsGen.getMetadata()) {
+        if (lhsGen.getParamListAttrs() == rhsGen.getParamListAttrs()) {
           // We know the parameter lists have the same names and kinds, check
           // that their types line up.
           for (auto [idx, lhsParam, rhsParam] : llvm::enumerate(
@@ -237,7 +237,7 @@ struct ParamDiffer {
             if (isEqualCanon(lhsParam, rhsParam))
               continue;
 
-            accessPath += "." + lhsGen.getMetadata().getName(idx).str();
+            accessPath += "." + lhsGen.getParamListAttrs().getName(idx).str();
             return diff(lhsParam, rhsParam);
           }
           // If the parameter lists match, check that the bodies match.

@@ -443,7 +443,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   auto body = sigGen.getBody();
   auto newBody = body.getWithFnEffects(body.getFnEffects().setCABI(true));
   clonedExprFn.setFuncTypeGenerator(LIT::FnTypeGeneratorType::get(
-      sigGen.getInputParamTypes(), newBody, sigGen.getMetadata()));
+      sigGen.getInputParamTypes(), newBody, sigGen.getParamListAttrs()));
 
   // Log the pre-elaboration module.
   Log *logChannel = GetLog(LLDBLog::Expressions);

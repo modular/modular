@@ -736,7 +736,7 @@ TypedAttr FnOp::getFuncLiteralGenerator(
       FuncSymbolAttr::get(symbol, fullSig.getBody(), paramValues)));
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
-                                       fullSig.getMetadata());
+                                       fullSig.getParamListAttrs());
   if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
         return isa<UnboundAttr>(binding);
       })) {

@@ -2085,7 +2085,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto body = sigGen.getBody();
   auto newBody = body.getWithFnEffects(body.getFnEffects().setCABI(true));
   shimMainFn.setFuncTypeGenerator(FnTypeGeneratorType::get(
-      sigGen.getInputParamTypes(), newBody, sigGen.getMetadata()));
+      sigGen.getInputParamTypes(), newBody, sigGen.getParamListAttrs()));
 
   // Populate the body of the shim. For this we designate the internal
   // implementation to one of the wrapper helpers in the Startup module,
@@ -2187,7 +2187,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
         [&](auto typeAndIdx) {
           auto [idx, implType] = typeAndIdx;
           ASTType type = implType;
-          if (fullSig.getMetadata().isPosVarArg(idx + numSkipped)) {
+          if (fullSig.getParamListAttrs().isPosVarArg(idx + numSkipped)) {
             os << "*";
             type = type.getParameterListInfo().elementType;
           }
@@ -2268,7 +2268,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   mangledName += ')';
 
   // Add def constraints to the mangled name.
-  printConstraints(os, fullSig.getMetadata().getBodyConstraints());
+  printConstraints(os, fullSig.getParamListAttrs().getBodyConstraints());
 
   // Having "@" in mangled names confuses gnu ld and triggers error at linking
   // stage. See issue #6918. So replacing "@" with "_".

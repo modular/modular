@@ -321,29 +321,27 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
 //===----------------------------------------------------------------------===//
 
 GeneratorType GeneratorType::getWithBody(Type newBody) {
-  return GeneratorType::get(getInputParamTypes(), newBody, getMetadata());
+  return GeneratorType::get(getInputParamTypes(), newBody, getParamListAttrs());
 }
 
-PogListAttr GeneratorType::getParamListAttrs() { return getMetadata(); }
-
 StringAttr GeneratorType::getParamName(size_t idx) {
-  return getMetadata().getName(idx);
+  return getParamListAttrs().getName(idx);
 }
 
 ArrayRef<ConstraintAttr> GeneratorType::getBodyConstraints() {
-  PogListAttr metadata = getMetadata();
-  if (!metadata)
+  PogListAttr paramListAttrs = getParamListAttrs();
+  if (!paramListAttrs)
     return {};
-  return metadata.getBodyConstraints();
+  return paramListAttrs.getBodyConstraints();
 }
 
 GeneratorType GeneratorType::getWithoutBodyConstraints() {
-  PogListAttr metadata = getMetadata();
-  if (!metadata || metadata.getBodyConstraints().empty())
+  PogListAttr paramListAttrs = getParamListAttrs();
+  if (!paramListAttrs || paramListAttrs.getBodyConstraints().empty())
     return *this;
-  PogListAttr stripped = PogListAttr::get(getContext(), metadata.getPogs(),
-                                          /*bodyConstraints=*/{},
-                                          metadata.getOrigVariadicConvention());
+  PogListAttr stripped = PogListAttr::get(
+      getContext(), paramListAttrs.getPogs(),
+      /*bodyConstraints=*/{}, paramListAttrs.getOrigVariadicConvention());
   return GeneratorType::get(getInputParamTypes(), getBody(), stripped);
 }
 
@@ -461,7 +459,7 @@ ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
 GeneratorType GeneratorType::getSpecializedGenerator(
     PartiallySpecializedInputParams &specialization,
     function_ref<InFlightDiagnostic()> emitErrorFn) {
-  PogListAttr genMetadata = getMetadata();
+  PogListAttr genMetadata = getParamListAttrs();
   if (genMetadata) {
     PogListAttr specialized = genMetadata.getSpecializedMetadata(
         specialization.evaluator, specialization.boundParams, emitErrorFn,
@@ -934,7 +932,7 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
 SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
   auto directSymbol = getBody().getTargetLiteral();
   auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
-                                getMetadata());
+                                getParamListAttrs());
 
   // The parameter values might have dependent type, erase the ref too in the
   // create a evaluator to erase the dependencies too.

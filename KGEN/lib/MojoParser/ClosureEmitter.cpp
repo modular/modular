@@ -463,7 +463,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
-      sig.getFnEffects(), metadata, sig.getMetadata(), newArgListAttr);
+      sig.getFnEffects(), metadata, sig.getParamListAttrs(), newArgListAttr);
 }
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
@@ -1525,7 +1525,7 @@ selfContainedSymbolAndCaptures(PValue fnPValue,
       symbol.getSymbol(), selfContainedSig.getBody(), params);
   TypedAttr fnVal =
       GeneratorAttr::get(selfContainedSig.getInputParamTypes(), fnSymbol,
-                         selfContainedSig.getMetadata());
+                         selfContainedSig.getParamListAttrs());
 
   assert(
       ClosureEmitter::isTypeRebindableTo(
@@ -1610,7 +1610,7 @@ ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
       cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSig));
 
   // Normalize auto parameters.
-  PogListAttr meta = canonicalSig.getMetadata();
+  PogListAttr meta = canonicalSig.getParamListAttrs();
   ArrayRef<PogMetadataAttr> pogs = meta.getPogs();
   SmallVector<PogMetadataAttr> normalizedPogs(pogs.begin(), pogs.end());
   bool changed = false;
@@ -1773,13 +1773,14 @@ ClosureEmitter::getSpecializedClosureTrait(GeneratorType aliasGenerator,
   FnTypeGeneratorType key = *keyOr;
 
   // Map each alias parameter name to its bound value
-  ArrayRef<PogMetadataAttr> genPogs = aliasGenerator.getMetadata().getPogs();
+  ArrayRef<PogMetadataAttr> genPogs =
+      aliasGenerator.getParamListAttrs().getPogs();
   llvm::DenseMap<StringAttr, TypedAttr> valueByName;
   for (auto [pog, value] : llvm::zip(genPogs, paramValues))
     valueByName[pog.getName()] = value;
 
   // "Bind" param to alias by replacing pog.
-  ArrayRef<PogMetadataAttr> keyPogs = key.getMetadata().getPogs();
+  ArrayRef<PogMetadataAttr> keyPogs = key.getParamListAttrs().getPogs();
   ArrayRef<Type> keyParamTypes = key.getInputParamTypes();
   SmallVector<TypedAttr> keyBindings;
   keyBindings.reserve(keyPogs.size());
@@ -1869,9 +1870,10 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
       oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly(),
       oldMeta.getDefinesInteriorOrigins());
-  return FnTypeGeneratorType::get(
-      sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects(), newMeta, sig.getMetadata(), sig.getArgListAttrs());
+  return FnTypeGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
+                                  sig.getArgConventions(), sig.getFnEffects(),
+                                  newMeta, sig.getParamListAttrs(),
+                                  sig.getArgListAttrs());
 }
 
 struct PromotedSignature {
@@ -1946,7 +1948,8 @@ static PromotedSignature buildPromotedSignature(
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
       sig.getFnEffects().setCapturing(shouldBeCapturing),
-      sig.getFnMetaOriginData(), sig.getMetadata(), sig.getArgListAttrs());
+      sig.getFnMetaOriginData(), sig.getParamListAttrs(),
+      sig.getArgListAttrs());
 
   Type selfRuntimeArgType;
   if (selfArg)
@@ -2935,7 +2938,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   FnTypeGeneratorType wrapperSig = FnTypeGeneratorType::get(
       closureSig.getInputParamTypes(), closureSig.getValues(),
       closureSig.getArgConventions(), closureSig.getFnEffects(),
-      closureSig.getFnMetaOriginData(), closureSig.getMetadata(),
+      closureSig.getFnMetaOriginData(), closureSig.getParamListAttrs(),
       closureSig.getArgListAttrs());
   trait = cast<TraitDeclOp>(shared
                                 .getOrCreateClosureTrait(nestedFnDecl.getLoc(),
@@ -2969,7 +2972,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
       original.getArgConventions(), original.getFnEffects().setCapturing(true),
-      original.getFnMetaOriginData(), original.getMetadata(),
+      original.getFnMetaOriginData(), original.getParamListAttrs(),
       original.getArgListAttrs());
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureBodySignature);
@@ -4535,8 +4538,8 @@ bool ClosureEmitter::isTypeRebindableTo(FuncTypeGeneratorType from,
   // pog list and are not user-bindable, so their names are arbitrary
   // disambiguators that may legitimately differ between alpha-equivalent
   // generator types.
-  PogListAttr fromPogs = from.getMetadata();
-  PogListAttr toPogs = to.getMetadata();
+  PogListAttr fromPogs = from.getParamListAttrs();
+  PogListAttr toPogs = to.getParamListAttrs();
   if (!fromPogs || !toPogs)
     return false;
   if (fromPogs == toPogs)

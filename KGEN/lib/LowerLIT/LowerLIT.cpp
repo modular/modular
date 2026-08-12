@@ -319,7 +319,7 @@ LITLowerer::lowerFunction(FnOp func, ArrayRef<ParamDeclAttr> parentInputParams,
   // dictionary doesn't establish one, so leaving them in would fail
   // `verify-parameters`. Reflection only needs the structural names today.
   PogListAttr sourceParamList;
-  if (PogListAttr fullList = signature.getMetadata()) {
+  if (PogListAttr fullList = signature.getParamListAttrs()) {
     SmallVector<PogMetadataAttr> strippedPogs;
     strippedPogs.reserve(fullList.getPogs().size());
     for (PogMetadataAttr pog : fullList.getPogs()) {

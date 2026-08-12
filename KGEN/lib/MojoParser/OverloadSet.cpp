@@ -578,7 +578,7 @@ bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
   if (!func.isSynthetic())
     return false;
   for (ConstraintAttr constraint :
-       func.getFullSignature().getMetadata().getBodyConstraints())
+       func.getFullSignature().getParamListAttrs().getBodyConstraints())
     if (isTriviallyFalseConstraint(constraint))
       return true;
   return false;
@@ -931,7 +931,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
     ParamInf inference(paramBindings, candidateType.getInputParamTypes(),
-                       candidateType.getMetadata(),
+                       candidateType.getParamListAttrs(),
                        /*allowImplicitConversions=*/true,
                        /*declIfDirect=*/nullptr,
                        /*discardError=*/true);

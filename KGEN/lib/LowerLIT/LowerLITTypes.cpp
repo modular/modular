@@ -409,7 +409,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
 
           SmallVector<Type> inputParamTypes = llvm::map_to_vector(
               inputParamTypesOr, [](FailureOr<Type> t) { return *t; });
-          Attribute metadata = gen.getMetadata();
+          Attribute metadata = gen.getParamListAttrs();
           if (metadata) {
             auto metadataOr = replacer.replace(metadata, domain);
             if (failed(metadataOr))
@@ -688,7 +688,7 @@ static LogicalResult detectIllegalStructDeclsRecursion(StructDecls &decls) {
       recursionStack.pop_back();
       return std::make_pair(Type(), WalkResult::interrupt());
     }
-    if (PogListAttr metadata = type.getMetadata()) {
+    if (PogListAttr metadata = type.getParamListAttrs()) {
       if (!dfs.replace(metadata)) {
         recursionStack.pop_back();
         return std::make_pair(Type(), WalkResult::interrupt());

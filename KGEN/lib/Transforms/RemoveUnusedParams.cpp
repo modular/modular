@@ -543,7 +543,7 @@ void RemoveUnusedParams::runOnOperation() {
             /*argConventions=*/conventions,
             /*fnEffects=*/oldBaseSig.getFnEffects(),
             /*fnMetadata=*/oldBaseSig.getMetadata(),
-            /*genMetadata=*/oldSigGen.getMetadata(), [&] {
+            /*genMetadata=*/oldSigGen.getParamListAttrs(), [&] {
               llvm_unreachable("Failed to remap generator signature.");
               return oldFunction.emitError(
                   "Failed to remap generator signature.");

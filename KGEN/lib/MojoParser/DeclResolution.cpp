@@ -2108,8 +2108,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     funcOp.setFuncTypeGenerator(FnTypeGeneratorType::get(
         provisionalSig.getInputParamTypes(), provisionalSig.getValues(),
         provisionalSig.getArgConventions(), fnSignature.effects,
-        provisionalSig.getFnMetaOriginData(), provisionalSig.getMetadata(),
-        provisionalSig.getArgListAttrs()));
+        provisionalSig.getFnMetaOriginData(),
+        provisionalSig.getParamListAttrs(), provisionalSig.getArgListAttrs()));
   }
 
   // TODO: effects parsing must be moved after captures parsing.

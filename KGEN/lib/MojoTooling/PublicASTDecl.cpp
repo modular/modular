@@ -1089,7 +1089,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   // each `ParameterInfo` carries the final user-facing type string.
   ParameterEvaluator evaluator = populatePublicParameterDecls(
       shared, signature.getInputParamTypes(), signature.getParamListAttrs(),
-      parameters, selfType, signature.getMetadata().getBodyConstraints(),
+      parameters, selfType, signature.getParamListAttrs().getBodyConstraints(),
       &fnConstraints, /*parentDeclContext=*/&declRef);
 
   // Populate argument infos.

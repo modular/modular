@@ -1541,8 +1541,8 @@ FnLiteralTypeGeneratorType::FnLiteralTypeGeneratorType(
          "expected LIT generator wrapping FuncLiteralType");
 }
 
-PogListAttr FnLiteralTypeGeneratorType::getMetadata() {
-  return ::cast<PogListAttr>(GeneratorType::getMetadata());
+PogListAttr FnLiteralTypeGeneratorType::getParamListAttrs() {
+  return ::cast<PogListAttr>(GeneratorType::getParamListAttrs());
 }
 
 FuncLiteralType FnLiteralTypeGeneratorType::getBody() {
@@ -1579,8 +1579,8 @@ FuncType FnTypeGeneratorType::getBody() {
   return ::cast<FuncType>(GeneratorType::getBody());
 }
 
-PogListAttr FnTypeGeneratorType::getMetadata() {
-  return ::cast<PogListAttr>(GeneratorType::getMetadata());
+PogListAttr FnTypeGeneratorType::getParamListAttrs() {
+  return ::cast<PogListAttr>(GeneratorType::getParamListAttrs());
 }
 
 FnTypeGeneratorType
@@ -1674,7 +1674,7 @@ FnTypeGeneratorType FnTypeGeneratorType::prependParams(
     names = llvm::to_vector(paramNames);
   }
 
-  PogListAttr oldMeta = remapper.replace(sigGen.getMetadata());
+  PogListAttr oldMeta = remapper.replace(sigGen.getParamListAttrs());
   SmallVector<TypedAttr> remappedParamDefaults;
   for (TypedAttr defaultValue : paramDefaults) {
     remappedParamDefaults.push_back(
