@@ -13,9 +13,10 @@
 
 """KV cache management for MAX pipelines."""
 
+from max.nn.kv_cache import KVCacheGroupId
+
 from .config import (
     KVCacheConfig,
-    KVCacheGroupId,
     KVConnectorConfig,
     cache_dtype_for_encoding,
 )

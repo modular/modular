@@ -73,6 +73,38 @@ def _filter_tiny_cache_lengths(
     return [cl for cl in probe_lengths if cl >= min_cache_length]
 
 
+@dataclass(frozen=True)
+class KVCacheGroupId:
+    """Identifies the caches a model reuses and evicts together.
+
+    Caches behind the same attention pattern share a prefix-cache hit and an
+    external tier namespace, so this doubles as the key for both.
+    """
+
+    type: Literal["full", "sliding_window"]
+    window_size: int = -1
+
+    def __post_init__(self):
+        if self.type == "full":
+            if self.window_size != -1:
+                raise ValueError("Window size must be -1 for full groups.")
+        elif self.type == "sliding_window":
+            if self.window_size <= 0:
+                raise ValueError(
+                    "Window size must be positive for sliding window groups."
+                )
+
+    def is_sliding_window(self) -> bool:
+        return self.type == "sliding_window"
+
+    def is_full(self) -> bool:
+        return self.type == "full"
+
+    @classmethod
+    def full(cls) -> KVCacheGroupId:
+        return cls(type="full")
+
+
 class KVConnectorType(str, Enum):
     """Identifies which off-device backing store the KV cache uses.
 

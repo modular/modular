@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 __all__ = ["KVCacheConfig", "KVConnectorConfig", "cache_dtype_for_encoding"]
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
@@ -100,38 +98,6 @@ def cache_dtype_for_encoding(
             "Unsupported quantization encoding for KV cache dtype resolution: "
             f"{quantization_encoding}"
         ) from None
-
-
-@dataclass(frozen=True)
-class KVCacheGroupId:
-    """Identifies the caches a model reuses and evicts together.
-
-    Caches behind the same attention pattern share a prefix-cache hit and an
-    external tier namespace, so this doubles as the key for both.
-    """
-
-    type: Literal["full", "sliding_window"]
-    window_size: int = -1
-
-    def __post_init__(self):
-        if self.type == "full":
-            if self.window_size != -1:
-                raise ValueError("Window size must be -1 for full groups.")
-        elif self.type == "sliding_window":
-            if self.window_size <= 0:
-                raise ValueError(
-                    "Window size must be positive for sliding window groups."
-                )
-
-    def is_sliding_window(self) -> bool:
-        return self.type == "sliding_window"
-
-    def is_full(self) -> bool:
-        return self.type == "full"
-
-    @classmethod
-    def full(cls) -> KVCacheGroupId:
-        return cls(type="full")
 
 
 class KVConnectorConfig(ConfigFileModel):
