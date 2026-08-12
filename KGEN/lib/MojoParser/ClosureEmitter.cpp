@@ -438,7 +438,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   argPogs.emplace_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
-  FnMetadataAttr oldFnMetadata = sig.getFnMetadata();
+  FnMetaOriginDataAttr oldFnMetadata = sig.getFnMetadata();
   PogListAttr argListAttr = sig.getArgListAttrs();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
@@ -456,10 +456,10 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto newArgListAttr = argListAttr.cloneWith(argPogs);
   auto metadata =
-      FnMetadataAttr::get(ctx, oldFnMetadata.getNumImplicitOriginDecls(),
-                          oldFnMetadata.getCaptureOrigins(),
-                          oldFnMetadata.getIsNestedOriginsReadOnly(),
-                          oldFnMetadata.getDefinesInteriorOrigins());
+      FnMetaOriginDataAttr::get(ctx, oldFnMetadata.getNumImplicitOriginDecls(),
+                                oldFnMetadata.getCaptureOrigins(),
+                                oldFnMetadata.getIsNestedOriginsReadOnly(),
+                                oldFnMetadata.getDefinesInteriorOrigins());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -1864,8 +1864,8 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
     }
   } shifter;
   sig = cast<FnTypeGeneratorType>(shifter.replace(sig));
-  FnMetadataAttr oldMeta = sig.getFnMetadata();
-  FnMetadataAttr newMeta = FnMetadataAttr::get(
+  FnMetaOriginDataAttr oldMeta = sig.getFnMetadata();
+  FnMetaOriginDataAttr newMeta = FnMetaOriginDataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
       oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly(),
       oldMeta.getDefinesInteriorOrigins());

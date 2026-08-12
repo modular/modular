@@ -284,17 +284,13 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     This type describes the type of a function KGEN, which can have input/output
     value arguments and results.
 
-    The metadata attribute is used to store additional information about a
-    function, such as its argument calling conventions and the effects of the
-    function itself. When the metadata only contains default values, it isn't
-    printed in the textual MLIR format.
+    The metadata attribute holds the argument calling conventions, the effects
+    of the function itself, and the dialect-specific function metadata.
   }];
 
   let parameters = (ins
     "FunctionType":$values,
-    ArrayRefParameter<"ArgConvention">:$argConventions,
-    "FnEffects":$fnEffects,
-    "FnMetadataAttrInterface":$metadata,
+    "FnMetaDataAttr":$metaDataAttr,
     "PogListAttr":$argListAttrs
   );
   let hasCustomAssemblyFormat = 1;
@@ -317,9 +313,11 @@ def KGEN_FuncType : KGENType<"Func", "func", [
       auto argListAttrsAttr = ::cast_or_null<PogListAttr>(argListAttrs);
       if (!argListAttrsAttr)
         argListAttrsAttr = PogListAttr::get(values.getContext());
-      return $_get(values.getContext(), values, convs, effects,
-                   ::cast_or_null<FnMetadataAttrInterface>(metadata),
-                   argListAttrsAttr);
+      return $_get(values.getContext(),
+        values,
+        FnMetaDataAttr::get(values.getContext(),
+          convs, effects, ::cast_or_null<FnMetadataAttrInterface>(metadata)),
+        argListAttrsAttr);
     }]>,
     TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
   ];
@@ -329,6 +327,13 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     ArrayRef<Type> getArguments() const;
     Type getArgument(size_t i) const { return getArguments()[i]; }
     ArrayRef<Type> getResults() const;
+
+    /// The convention of each value argument, held by the metadata attribute.
+    ArrayRef<ArgConvention> getArgConventions() const;
+    /// The effects of this function, held by the metadata attribute.
+    FnEffects getFnEffects() const;
+    /// The dialect-specific function metadata, held by the metadata attribute.
+    FnMetadataAttrInterface getMetadata() const;
 
     /// Return true if this signature's last argument is a result from the
     /// function returned through memory.

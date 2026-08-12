@@ -1769,11 +1769,11 @@ AnyValue DeclResolver::resolveAnonymousClosure(const LambdaNode *node,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   auto provisionalSig = GeneratorType::get(
       {},
-      FuncType::get(functionType,
-                    FnMetadataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}),
-                                        false,
-                                        /*definesInteriorOrigins=*/false),
-                    PogListAttr::get(ctx, argPogs)),
+      FuncType::get(
+          functionType,
+          FnMetaOriginDataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}), false,
+                                    /*definesInteriorOrigins=*/false),
+          PogListAttr::get(ctx, argPogs)),
       PogListAttr::get(ctx));
   StringAttr emptyStr = StringAttr::get(ctx, "");
   StringAttr baseName = StringAttr::get(

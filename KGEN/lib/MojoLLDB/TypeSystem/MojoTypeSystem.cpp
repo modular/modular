@@ -1170,7 +1170,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
   auto fnType = builder.getFunctionType({}, {NoneType::get(getMLIRContext())});
   // We might need to fill in the full signature when expression evaluation is
   // needed. We don't need it for now.
-  auto metadata = LIT::FnMetadataAttr::get(getMLIRContext());
+  auto metadata = LIT::FnMetaOriginDataAttr::get(getMLIRContext());
   auto signature = LIT::FnTypeGeneratorType::get(
       {}, fnType, {}, {}, metadata, PogListAttr::get(getMLIRContext()));
 

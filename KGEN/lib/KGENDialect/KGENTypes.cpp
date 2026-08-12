@@ -66,16 +66,6 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
 }
 
 //===----------------------------------------------------------------------===//
-// FnEffects
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN {
-static llvm::hash_code hash_value(FnEffects effects) {
-  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
-}
-} // namespace M::KGEN
-
-//===----------------------------------------------------------------------===//
 // KGENDialect
 //===----------------------------------------------------------------------===//
 
@@ -524,6 +514,16 @@ ArrayRef<Type> FuncType::getArguments() const {
 }
 ArrayRef<Type> FuncType::getResults() const { return getValues().getResults(); }
 
+ArrayRef<ArgConvention> FuncType::getArgConventions() const {
+  return getMetaDataAttr().getArgConventions();
+}
+FnEffects FuncType::getFnEffects() const {
+  return getMetaDataAttr().getFnEffects();
+}
+FnMetadataAttrInterface FuncType::getMetadata() const {
+  return getMetaDataAttr().getMetadata();
+}
+
 bool FuncType::hasMemoryOnlyResult() {
   ArrayRef<ArgConvention> conventions = getArgConventions();
   return !conventions.empty() &&
@@ -531,7 +531,8 @@ bool FuncType::hasMemoryOnlyResult() {
 }
 
 FuncType FuncType::getWithFnEffects(FnEffects effects) {
-  return FuncType::get(getValues(), getArgConventions(), effects, getMetadata(),
+  return FuncType::get(getContext(), getValues(),
+                       getMetaDataAttr().getWithFnEffects(effects),
                        getArgListAttrs());
 }
 FuncType FuncType::getWithValuesReplaced(FunctionType fnType) {
@@ -543,8 +544,9 @@ FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata,
                                    PogListAttr argListAttrs) {
   if (!argListAttrs)
     argListAttrs = getArgListAttrs();
-  return FuncType::get(getValues(), getArgConventions(), getFnEffects(),
-                       metadata, argListAttrs);
+  return FuncType::get(getContext(), getValues(),
+                       getMetaDataAttr().getWithMetadata(metadata),
+                       argListAttrs);
 }
 
 FuncType FuncType::get(FunctionType values, FnMetadataAttrInterface metadata,
@@ -677,19 +679,22 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               MLIRContext *context, TypeRange inputs,
                               TypeRange results) {
   auto result = get(context, inputs, results);
-  if (failed(verify(emitError, result.getValues(), result.getArgConventions(),
-                    result.getFnEffects(), result.getMetadata(),
+  if (failed(verify(emitError, result.getValues(), result.getMetaDataAttr(),
                     result.getArgListAttrs())))
     return {};
   return result;
 }
 
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
-                               FunctionType values,
-                               ArrayRef<ArgConvention> argConventions,
-                               FnEffects effects,
-                               FnMetadataAttrInterface metadata,
+                               FunctionType values, FnMetaDataAttr metaDataAttr,
                                PogListAttr argListAttrs) {
+  if (!metaDataAttr)
+    return emitError() << "func type requires a metadata attribute";
+
+  ArrayRef<ArgConvention> argConventions = metaDataAttr.getArgConventions();
+  FnEffects effects = metaDataAttr.getFnEffects();
+  FnMetadataAttrInterface metadata = metaDataAttr.getMetadata();
+
   // Check we have the right number of conventions.
   if (argConventions.size() != values.getInputs().size())
     return emitError() << "incorrect # of input conventions specified";

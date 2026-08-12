@@ -2735,6 +2735,51 @@ def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
 }
 
 //===----------------------------------------------------------------------===//
+// FnMetaDataAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_FnMetaDataAttr : KGENAttr<"FnMetaData", "fn_metadata", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "The metadata of a `!kgen.func` type";
+  let description = [{
+    The `#kgen.fn_metadata` attribute aggregates everything a `!kgen.func` type
+    describes on top of its value signature: the calling convention of each
+    input argument, the effects of the function, and the dialect-specific
+    metadata implementing `FnMetadataAttrInterface` (for example
+    `#lit.fn_meta_origin_data`).
+
+    Every `!kgen.func` type carries exactly one of these, so it is not printed
+    on its own in the sugared function type syntax.
+
+    Example:
+
+    ```mlir
+    #kgen.fn_metadata<[read, mut], "throws">
+    ```
+  }];
+
+  let parameters = (ins
+    ArrayRefParameter<"ArgConvention">:$argConventions,
+    "FnEffects":$fnEffects,
+    "FnMetadataAttrInterface":$metadata
+  );
+
+  let hasCustomAssemblyFormat = 1;
+
+  let extraClassDeclaration = [{
+    /// The type of this attribute is always `!kgen.non_struct_type`.
+    Type getType() const;
+
+    /// Return this metadata with the function effects replaced.
+    FnMetaDataAttr getWithFnEffects(FnEffects effects) const;
+
+    /// Return this metadata with the dialect-specific metadata replaced.
+    FnMetaDataAttr getWithMetadata(FnMetadataAttrInterface metadata) const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // PogListAttr
 //===----------------------------------------------------------------------===//
 

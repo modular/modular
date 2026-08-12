@@ -130,7 +130,7 @@ def SymbolAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
-def FnMetadataAttr : DialectAttribute<(attr
+def FnMetaOriginDataAttr : DialectAttribute<(attr
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
   Bool:$isNestedOriginsReadOnly,
@@ -299,7 +299,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     DenseResourceElementsArrayAttr,
     SymbolAttr,
     EllipsisAttr,
-    FnMetadataAttr,
+    FnMetaOriginDataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
     UnpackedAttr,

@@ -37,6 +37,7 @@ class FuncSymbolAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class ConstraintAttr;
+class FnMetaDataAttr;
 class PogListAttr;
 class StructDefFieldAttr;
 class SymbolConstantAttr;

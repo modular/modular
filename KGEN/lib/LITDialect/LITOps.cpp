@@ -898,9 +898,9 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
                        /*bodyConstraints=*/{});
-  auto metadata =
-      FnMetadataAttr::get(p.getContext(), originDecls.size(), captureOrigins,
-                          isNestedOriginsReadOnly, definesInteriorOrigins);
+  auto metadata = FnMetaOriginDataAttr::get(
+      p.getContext(), originDecls.size(), captureOrigins,
+      isNestedOriginsReadOnly, definesInteriorOrigins);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);

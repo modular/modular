@@ -1852,6 +1852,76 @@ TypedAttr GeneratorAttr::getInstantiatedValue() {
 }
 
 //===----------------------------------------------------------------------===//
+// FnMetaDataAttr
+//===----------------------------------------------------------------------===//
+
+Attribute FnMetaDataAttr::parse(AsmParser &p, Type type) {
+  SmallVector<ArgConvention> argConventions;
+  auto parseConvention = [&]() -> ParseResult {
+    FailureOr<ArgConvention> convention =
+        mlir::FieldParser<ArgConvention>::parse(p);
+    if (failed(convention))
+      return failure();
+    argConventions.push_back(*convention);
+    return success();
+  };
+  std::string effectsKeyword;
+  if (p.parseLess() ||
+      p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
+                                parseConvention) ||
+      p.parseComma() || p.parseString(&effectsKeyword))
+    return {};
+
+  std::optional<impl::FnEffects> effects =
+      impl::symbolizeFnEffects(effectsKeyword);
+  if (!effects) {
+    p.emitError(p.getCurrentLocation(), "invalid function effects: ")
+        << effectsKeyword;
+    return {};
+  }
+
+  // The metadata is dialect-specific and optional.
+  FnMetadataAttrInterface metadata;
+  if (succeeded(p.parseOptionalComma()) && p.parseAttribute(metadata))
+    return {};
+  if (p.parseGreater())
+    return {};
+  return FnMetaDataAttr::get(p.getContext(), argConventions, *effects,
+                             metadata);
+}
+
+void FnMetaDataAttr::print(AsmPrinter &p) const {
+  p << "<[";
+  llvm::interleaveComma(getArgConventions(), p, [&](ArgConvention convention) {
+    p << stringifyArgConvention(convention);
+  });
+  p << "], \"" << impl::stringifyFnEffects(getFnEffects().getImpl()) << '"';
+  if (FnMetadataAttrInterface metadata = getMetadata())
+    p << ", " << metadata;
+  p << '>';
+}
+
+Type FnMetaDataAttr::getType() const {
+  // TODO: `non_struct_type` is not accurate, but we only need a type in order
+  // to use the attribute in a parameter expression. A dedicated type would make
+  // more sense here.
+  return NonStructTypeType::get(getContext());
+}
+
+/// The metadata of a function type is never a parameter expression that needs
+/// further evaluation: it only aggregates already-evaluated data.
+bool FnMetaDataAttr::isConstant() const { return true; }
+
+FnMetaDataAttr FnMetaDataAttr::getWithFnEffects(FnEffects effects) const {
+  return get(getContext(), getArgConventions(), effects, getMetadata());
+}
+
+FnMetaDataAttr
+FnMetaDataAttr::getWithMetadata(FnMetadataAttrInterface metadata) const {
+  return get(getContext(), getArgConventions(), getFnEffects(), metadata);
+}
+
+//===----------------------------------------------------------------------===//
 // TargetParamAttr
 //===----------------------------------------------------------------------===//
 
