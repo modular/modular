@@ -13,6 +13,10 @@
 
 # shellcheck disable=SC2034  # Variables are used when sourced
 
+# Serve via //max_private:max_private: the tiered KV connector below needs the
+# private kv_tier_connector pyo3 extension, which only the max_private serve
+# binary bundles (same as the MiniMax-M3-MXFP8-ep-dp config).
+use_max_private=1
 batch_size=64
 max_length=262144
 
