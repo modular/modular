@@ -1124,7 +1124,7 @@ def _get_global_or_null(
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",
         _CPointer[NoneType, UntrackedOrigin[mut=True]],
-    ](name.unsafe_ptr(), name.byte_length())
+    ](name.as_bytes().unsafe_ptr(), name.byte_length())
 
 
 # ===-----------------------------------------------------------------------===#

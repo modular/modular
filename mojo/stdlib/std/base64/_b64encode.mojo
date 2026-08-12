@@ -216,7 +216,7 @@ def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
-    var res_ptr = result.unsafe_ptr_mut()
+    var res_ptr = result.unsafe_as_bytes_mut().unsafe_ptr()
     var res_offset = 0
 
     # Main loop

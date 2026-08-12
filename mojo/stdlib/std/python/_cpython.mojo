@@ -321,7 +321,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var method_name: _CPointer[c_char, ImmStaticOrigin]
+    var method_name: Optional[CStringSlice[ImmStaticOrigin]]
     """A pointer to the name of the method as a C string.
 
     Notes:
@@ -337,7 +337,7 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
     References:
     - https://docs.python.org/3/c-api/structures.html#c.PyMethodDef"""
 
-    var method_docstring: _CPointer[c_char, ImmStaticOrigin]
+    var method_docstring: Optional[CStringSlice[ImmStaticOrigin]]
     """The docstring for the method."""
 
     # ===-------------------------------------------------------------------===#
@@ -388,10 +388,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             | (METH_KEYWORDS if with_kwargs else 0)
         )
         return PyMethodDef(
-            func_name.unsafe_ptr().unsafe_bitcast[c_char](),
+            func_name.as_c_string_slice(),
             func_ptr,
             flags,
-            docstring.unsafe_ptr().unsafe_bitcast[c_char](),
+            docstring.as_c_string_slice(),
         )
 
     @staticmethod
@@ -416,10 +416,10 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
         """
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
         return PyMethodDef(
-            func_name.as_c_string_slice().unsafe_ptr(),
+            func_name.as_c_string_slice(),
             _fn_ptr_as_opaque(func),
             flags,
-            docstring.as_c_string_slice().unsafe_ptr(),
+            docstring.as_c_string_slice(),
         )
 
 
@@ -464,7 +464,7 @@ struct PyType_Spec(ImplicitlyCopyable, RegisterPassable):
     - https://docs.python.org/3/c-api/type.html#c.PyType_Spec
     """
 
-    var name: _CPointer[c_char, ImmStaticOrigin]
+    var name: Optional[CStringSlice[ImmStaticOrigin]]
     var basicsize: c_int
     var itemsize: c_int
     var flags: c_uint
@@ -686,10 +686,10 @@ struct PyModuleDef(Movable, Writable):
 
     var base: PyModuleDef_Base
 
-    var name: _CPointer[c_char, ImmStaticOrigin]
+    var name: Optional[CStringSlice[ImmStaticOrigin]]
     """Name for the new module."""
 
-    var docstring: _CPointer[c_char, ImmStaticOrigin]
+    var docstring: Optional[CStringSlice[ImmStaticOrigin]]
     """Points to the contents of the docstring for the module."""
 
     var size: Py_ssize_t
@@ -727,7 +727,7 @@ struct PyModuleDef(Movable, Writable):
 
     def __init__(out self, name: StaticString):
         self.base = {}
-        self.name = name.unsafe_ptr().unsafe_bitcast[c_char]()
+        self.name = name.as_c_string_slice()
         self.docstring = {}
         # setting `size` to -1 means that the module does not support sub-interpreters
         self.size = -1
@@ -3347,7 +3347,8 @@ struct CPython(Defaultable, Movable):
         - https://docs.python.org/3/c-api/unicode.html#c.PyUnicode_DecodeUTF8
         """
         return self._PyUnicode_DecodeUTF8(
-            s.unsafe_ptr()
+            s.as_bytes()
+            .unsafe_ptr()
             .unsafe_bitcast[c_char]()
             .as_imm()
             .as_unsafe_any_origin(),

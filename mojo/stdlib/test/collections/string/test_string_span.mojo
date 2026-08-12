@@ -320,7 +320,10 @@ def test_string_substring() raises:
     assert_equal(sub5.byte_length(), 0)
 
     # Empty slices still have a pointer value
-    assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
+    assert_equal(
+        Int(sub5.as_bytes().unsafe_ptr()) - Int(sub4.as_bytes().unsafe_ptr()),
+        2,
+    )
 
 
 def test_slice_len() raises:

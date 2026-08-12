@@ -423,7 +423,7 @@ struct _WriteBufferHeap(Writable, Writer):
             abort()
         unsafe_memcpy(
             dest=self._data.unsafe_offset(self._pos),
-            src=string.unsafe_ptr(),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self._pos += len_bytes
@@ -519,7 +519,7 @@ struct _WriteBufferStack[
         # Continue writing to buffer
         unsafe_memcpy(
             dest=self.data.unsafe_ptr().unsafe_offset(self.pos),
-            src=string.unsafe_ptr(),
+            src=string.as_bytes().unsafe_ptr(),
             count=len_bytes,
         )
         self.pos += len_bytes

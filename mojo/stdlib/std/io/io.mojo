@@ -200,8 +200,7 @@ def _printf_cpu[
         # themselves rather than references to them.
         _ = external_call["KGEN_CompilerRT_fprintf", Int32, num_fixed_args=2](
             fd,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr().unsafe_bitcast[c_char](),
+            get_static_string[fmt]().as_c_string_slice(),
             args.get_loaded_kgen_pack(),
         )
 
@@ -221,8 +220,7 @@ def _printf[
         var loaded_pack = args.get_loaded_kgen_pack()
 
         _ = external_call["vprintf", Int32](
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr(),
+            get_static_string[fmt]().as_c_string_slice(),
             Pointer(to=loaded_pack),
         )
     elif is_amd_gpu():
@@ -269,7 +267,7 @@ def _printf[
         message = printf_append_string_n(
             message,
             Span(
-                unsafe_ptr=fmt_str.unsafe_ptr(),
+                unsafe_ptr=fmt_str.as_bytes().unsafe_ptr(),
                 length=fmt_str.byte_length() + 1,
             ),
             args_len == 0,
@@ -347,8 +345,7 @@ def _snprintf[
         external_call["snprintf", Int32, num_fixed_args=3](
             str,
             size,
-            # Guarantee this is nul terminated.
-            get_static_string[fmt]().unsafe_ptr(),
+            get_static_string[fmt]().as_c_string_slice(),
             args.get_loaded_kgen_pack(),
         )
     )

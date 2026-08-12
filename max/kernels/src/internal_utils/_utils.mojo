@@ -98,7 +98,7 @@ def bench_compile_time[
         def bench_iter() raises:
             comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
-                keep(s.unsafe_ptr())
+                keep(s)
             elif emission_kind == "ptx":
                 with DeviceContext() as ctx:
                     var func = DeviceFunction[
@@ -141,9 +141,7 @@ def parse_shape[name: StaticString]() -> List[Int]:
     """
     comptime zero = "0".unsafe_ptr()[unsafe_offset=0]
     comptime x_ptr = "x".unsafe_ptr()[unsafe_offset=0]
-    comptime name_unsafe_ptr: UnsafePointer[
-        Byte, ImmStaticOrigin
-    ] = name.unsafe_ptr()
+    comptime name_unsafe_ptr = name.as_bytes().unsafe_ptr()
 
     var vals: List[Int] = List[Int]()
     var sum: Int = 0

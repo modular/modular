@@ -785,7 +785,7 @@ def test_optional_unsafe_pointer_across_c_ffi() raises:
         Result,
     ](string.as_c_string_slice(), Int8(ord("a")))
     assert_true(found)
-    assert_equal(Int(found[]), Int(string.unsafe_ptr()))
+    assert_equal(Int(found[]), Int(string.as_bytes().unsafe_ptr()))
 
 
 def _test_lower(pointer: Optional[Pointer[Int32, MutAnyOrigin]]) -> Bool:

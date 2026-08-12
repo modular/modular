@@ -57,7 +57,7 @@ def _metal_print_write(text: StringSlice[_]):
     Args:
         text: Sequence of bytes to write.
     """
-    var data_ptr = text.unsafe_ptr()
+    var data_ptr = text.as_bytes().unsafe_ptr()
     var length = text.byte_length()
 
     if length <= 0:
