@@ -150,6 +150,11 @@ class Qwen3_5Config(Llama3Config):
         num_full_attention_layers = sum(
             1 for lt in layer_types if lt == "full_attention"
         )
+        # The MHA kernel selects tile_size == head_dim. The KV cache
+        # page_size must be >= tile_size. Qwen3.5 has head_dim=256.
+        page_size = kv_cache_config.kv_cache_page_size
+        if text_config.head_dim > 128:
+            page_size = max(page_size, text_config.head_dim)
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
@@ -157,6 +162,7 @@ class Qwen3_5Config(Llama3Config):
             num_layers=num_full_attention_layers,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
+            page_size=page_size,
         )
 
     @staticmethod
@@ -289,13 +295,6 @@ class Qwen3_5Config(Llama3Config):
         )
 
         kv_cache_config = model_config.kv_cache
-        # The MHA kernel selects tile_size == head_dim. The KV cache
-        # page_size must be >= tile_size. Qwen3.5 has head_dim=256.
-        if text_config.head_dim > 128:
-            kv_cache_config.kv_cache_page_size = max(
-                kv_cache_config.kv_cache_page_size, text_config.head_dim
-            )
-
         cache_dtype = cache_dtype_for_encoding(
             base_config.quantization_encoding,
             model_config.kv_cache.kv_cache_format,
