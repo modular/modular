@@ -102,8 +102,9 @@ struct ReduceTier(ImplicitlyCopyable, TrivialRegisterPassable):
     """Warp-per-row: one warp covers the whole row (GPU only)."""
 
     comptime Serial = ReduceTier(2)
-    """One thread per row (unused; kept for future scalar-fallback
-    dispatches; GPU only)."""
+    """One thread per row: it walks the whole reduce axis and owns the
+    output, with no cross-thread join. Used by the non-inner tiled
+    tier's scalar fallback (GPU only)."""
 
     comptime Splitk = ReduceTier(3)
     """Multiple blocks cooperate on one row when `num_rows < sm_count`
