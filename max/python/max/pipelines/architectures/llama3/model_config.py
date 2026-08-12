@@ -21,7 +21,7 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import (
@@ -40,6 +40,7 @@ from max.pipelines.lib import (
     parse_quant_config,
 )
 from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
     _select_quantization_encoding,
 )
 from max.pipelines.lib.interfaces.arch_config import (
@@ -247,11 +248,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         device_specs = model_config.device_specs
         n_devices = len(device_specs)
 
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and (model_config.rope_type or "normal") == "normal"
-        )
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

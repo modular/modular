@@ -26,6 +26,7 @@ from max.driver import DeviceSpec
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
+    weights_format,
 )
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.context import SamplingParamsGenerationConfigDefaults
@@ -514,6 +515,21 @@ def _select_dtype_cast(
         config, default_encoding
     )
     return cast_from, cast_to
+
+
+def _interleaved_rope_weights(config: MAXModelConfig) -> bool:
+    """Returns whether RoPE weights use the GGUF interleaved layout.
+
+    GGUF checkpoints store rotary weights interleaved; other formats
+    (safetensors, pytorch) store them split. An unset ``rope_type`` means
+    the model default, which is ``normal``; only a non-``normal`` override
+    opts a GGUF checkpoint out of the interleaved layout. Read-only --
+    does not mutate *config*.
+    """
+    return (
+        weights_format(config.weight_path) == WeightsFormat.gguf
+        and (config.rope_type or "normal") == "normal"
+    )
 
 
 def _device_specs_for_encoding(
