@@ -561,9 +561,13 @@ def quantized_fused_qkv_matmul(
                 scales_type=DType.float8_e8m0fnu,
                 out_type=DType.float8_e4m3fn,
             )
-            weight_scale = block_scales_interleave(
-                weight_scale.to(x.device), sf_vector_size=32
-            )
+            # Only SM100 needs the rank-5 SF-atom interleave; CDNA4 consumes the
+            # checkpoint's rank-2 E8M0 scales directly.
+            weight_scale = weight_scale.to(x.device)
+            if not _is_amd_gpu():
+                weight_scale = block_scales_interleave(
+                    weight_scale, sf_vector_size=32
+                )
             return _fused_qkv_ragged_matmul_scaled_mxfp8(
                 kv_params,
                 input=x_fp8,
