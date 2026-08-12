@@ -91,14 +91,16 @@ def _fake_pipeline_model(n_devices: int) -> Any:
     return model
 
 
-def _graph_input_types(n_devices: int) -> tuple[Any, ...]:
+def _graph_input_types(
+    n_devices: int, *, enable_structured_output: bool = False
+) -> tuple[Any, ...]:
     """The fused graph's declared input arity, from the real ``input_types``
     with KV inputs zeroed out (matching the ``kv_cache_inputs=None`` model
     inputs on the buffers side).
 
-    ``input_types`` reads only the target's device list, DP degree, hidden size
-    and EP manager, so a duck-typed stand-in avoids building the target + draft
-    modules.
+    ``input_types`` reads only the target's device list, DP degree, hidden size,
+    EP manager and structured-output flag, so a duck-typed stand-in avoids
+    building the target + draft modules.
     """
     fake_self = cast(
         UnifiedDflashKimiK25,
@@ -111,11 +113,24 @@ def _graph_input_types(n_devices: int) -> tuple[Any, ...]:
                 )
             ),
             target=SimpleNamespace(ep_manager=None),
+            enable_structured_output=enable_structured_output,
         ),
     )
     kv_params = MagicMock()
     kv_params.flattened_kv_inputs.return_value = []
     return UnifiedDflashKimiK25.input_types(fake_self, kv_params)
+
+
+def _fill_spec_decode_tail(inputs: UnifiedDflashKimiK25Inputs) -> None:
+    """The unconditional tail fields, as the batch processor sets them."""
+    dummy = Buffer.zeros((1,), dtype=DType.int64)
+    inputs.draft_tokens = dummy
+    inputs.seed = dummy
+    inputs.temperature = dummy
+    inputs.top_k = dummy
+    inputs.max_k = dummy
+    inputs.top_p = dummy
+    inputs.min_top_p = dummy
 
 
 def test_arch_is_multimodal() -> None:
@@ -173,14 +188,7 @@ def test_inputs_pack_finalized_vision_merge_buffers() -> None:
     )
     encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
 
-    dummy = Buffer.zeros((1,), dtype=DType.int64)
-    inputs.draft_tokens = dummy
-    inputs.seed = dummy
-    inputs.temperature = dummy
-    inputs.top_k = dummy
-    inputs.max_k = dummy
-    inputs.top_p = dummy
-    inputs.min_top_p = dummy
+    _fill_spec_decode_tail(inputs)
 
     buffers = inputs.buffers
     assert len(buffers) == len(_graph_input_types(_N_DEVICES))
@@ -206,3 +214,48 @@ def test_inputs_pack_finalized_vision_merge_buffers() -> None:
     for index in indices:
         assert tuple(index.shape) == (0,)
         assert index.dtype == DType.int32
+
+
+def test_inputs_pack_vision_and_bitmask_together() -> None:
+    """Vision and the structured-output bitmask triple must coexist in the ABI.
+
+    Vision leads the signature and the bitmask triple trails it, so both
+    per-feature tests pass while the combination is misaligned. Pins the full
+    arity of what the deployment serves: distributed + vision + bitmask.
+    """
+    model = _fake_pipeline_model(_N_DEVICES)
+    inputs = _bare_dflash_inputs(_N_DEVICES)
+
+    encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
+        n_devices=_N_DEVICES
+    )
+    encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
+    _fill_spec_decode_tail(inputs)
+
+    pinned_bitmask = Buffer.zeros((1,), dtype=DType.int32)
+    wait_payload = Buffer.zeros((2,), dtype=DType.int64)
+    device_bitmask_scratch = Buffer.zeros((1,), dtype=DType.int32)
+    inputs.structured_output = True
+    inputs.pinned_bitmask = pinned_bitmask
+    inputs.wait_payload = wait_payload
+    inputs.device_bitmask_scratch = device_bitmask_scratch
+
+    buffers = inputs.buffers
+    assert len(buffers) == len(
+        _graph_input_types(_N_DEVICES, enable_structured_output=True)
+    )
+
+    # Vision still leads, bitmask still trails.
+    assert all(
+        packed is expected
+        for packed, expected in zip(
+            buffers[1 : 1 + _N_DEVICES],
+            inputs.vision_embeddings,
+            strict=True,
+        )
+    )
+    assert buffers[-3:] == (
+        pinned_bitmask,
+        wait_payload,
+        device_bitmask_scratch,
+    )

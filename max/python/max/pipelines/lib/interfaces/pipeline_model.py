@@ -312,9 +312,11 @@ class UnifiedSpecDecodeInputs(ModelInputs):
             assert self.in_thinking_phase is not None
             tail += (self.in_thinking_phase,)
         # Gate the bitmask triple on two compile-time flags, not a runtime
-        # pinned_bitmask is not None check: supports_structured_output
-        # is False for dflash (sets pinned_bitmask but declares no bitmask graph
-        # inputs); structured_output mirrors needs_bitmask_constraints.
+        # pinned_bitmask is not None check: supports_structured_output is False
+        # for the dflash Llama3 graph, which still declares no bitmask graph
+        # inputs even though the pipeline may set pinned_bitmask;
+        # structured_output mirrors needs_bitmask_constraints, the same value
+        # that gates the triple in build_spec_decode_input_types.
         if supports_structured_output and self.structured_output:
             assert self.pinned_bitmask is not None
             assert self.wait_payload is not None
