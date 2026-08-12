@@ -438,7 +438,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   argPogs.emplace_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
-  FnMetaOriginDataAttr oldFnMetadata = sig.getFnMetadata();
+  FnMetaOriginDataAttr oldFnMetadata = sig.getFnMetaOriginData();
   PogListAttr argListAttr = sig.getArgListAttrs();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
@@ -723,7 +723,7 @@ static SymbolConstantAttr getSymbolNoParamValues(StructDeclOp declOp,
                         baseSigGen.getBody().getArguments(),
                         baseSigGen.getResultType()),
       baseSigGen.getArgConventions(), baseSigGen.getFnEffects(),
-      baseSigGen.getFnMetadata(), {});
+      baseSigGen.getFnMetaOriginData(), {});
   return SymbolConstantAttr::get(implSymbol, baseSigGen, {});
 }
 
@@ -1641,7 +1641,7 @@ ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
       canonicalSig.getInputParamTypes(), canonicalSig.getValues(),
       canonicalSig.getArgConventions(),
       canonicalSig.getFnEffects().setCapturing(false),
-      canonicalSig.getFnMetadata(), normalizedMeta,
+      canonicalSig.getFnMetaOriginData(), normalizedMeta,
       canonicalSig.getArgListAttrs());
   return {key, capturedRefs.size()};
 }
@@ -1864,7 +1864,7 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
     }
   } shifter;
   sig = cast<FnTypeGeneratorType>(shifter.replace(sig));
-  FnMetaOriginDataAttr oldMeta = sig.getFnMetadata();
+  FnMetaOriginDataAttr oldMeta = sig.getFnMetaOriginData();
   FnMetaOriginDataAttr newMeta = FnMetaOriginDataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
       oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly(),
@@ -1889,7 +1889,7 @@ static PromotedSignature buildPromotedSignature(
     std::optional<bool> capturingOverride = std::nullopt) {
   MLIRContext *ctx = shared.getContext();
   size_t oldNumImplicitOrigins =
-      sig.getFnMetadata().getNumImplicitOriginDecls();
+      sig.getFnMetaOriginData().getNumImplicitOriginDecls();
   assert(oldNumImplicitOrigins <= params.size());
 
   // Step 1: prepend a new origin slot for self and collect origin decls.
@@ -1945,8 +1945,8 @@ static PromotedSignature buildPromotedSignature(
         hasCapturingParameterType(shared, explicitPrependedParams);
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects().setCapturing(shouldBeCapturing), sig.getFnMetadata(),
-      sig.getMetadata(), sig.getArgListAttrs());
+      sig.getFnEffects().setCapturing(shouldBeCapturing),
+      sig.getFnMetaOriginData(), sig.getMetadata(), sig.getArgListAttrs());
 
   Type selfRuntimeArgType;
   if (selfArg)
@@ -2935,7 +2935,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   FnTypeGeneratorType wrapperSig = FnTypeGeneratorType::get(
       closureSig.getInputParamTypes(), closureSig.getValues(),
       closureSig.getArgConventions(), closureSig.getFnEffects(),
-      closureSig.getFnMetadata(), closureSig.getMetadata(),
+      closureSig.getFnMetaOriginData(), closureSig.getMetadata(),
       closureSig.getArgListAttrs());
   trait = cast<TraitDeclOp>(shared
                                 .getOrCreateClosureTrait(nestedFnDecl.getLoc(),
@@ -2969,7 +2969,7 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
       original.getArgConventions(), original.getFnEffects().setCapturing(true),
-      original.getFnMetadata(), original.getMetadata(),
+      original.getFnMetaOriginData(), original.getMetadata(),
       original.getArgListAttrs());
   auto [capturedRefs, _] =
       DeclResolver::createSelfContainedSignature(closureBodySignature);

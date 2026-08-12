@@ -100,8 +100,13 @@ public:
   }
 
   /// Get the signature metadata.
-  FnMetaOriginDataAttr getFnMetadata() {
-    return cast<FnMetaOriginDataAttr>(getBodyFnType().getMetadata());
+  FnMetaOriginDataAttr getFnMetaOriginData() {
+    return cast<FnMetaOriginDataAttr>(
+        getBodyFnType().getMetaDataAttr().getMetadata());
+  }
+
+  FnMetaDataAttr getFnMetaData() {
+    return cast<FnMetaDataAttr>(getBodyFnType().getMetaDataAttr());
   }
 
   /// Get the argument list metadata.
