@@ -3436,11 +3436,11 @@ def flash_attention_ragged(
 
 
 def flash_attention_ragged_gpu(
-    q: TensorValue,
-    k: TensorValue,
-    v: TensorValue,
-    input_row_offsets: TensorValue,
-    max_seq_len: TensorValue,
+    q: TensorValueLike,
+    k: TensorValueLike,
+    v: TensorValueLike,
+    input_row_offsets: TensorValueLike,
+    max_seq_len: TensorValueLike,
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
@@ -3462,6 +3462,12 @@ def flash_attention_ragged_gpu(
     Returns:
         Output tensor of shape [total_seq_len, num_heads, head_dim]
     """
+    q = TensorValue(q)
+    k = TensorValue(k)
+    v = TensorValue(v)
+    input_row_offsets = TensorValue(input_row_offsets)
+    max_seq_len = TensorValue(max_seq_len)
+
     if q.dtype != k.dtype or q.dtype != v.dtype:
         raise ValueError(
             "q, k, v must have matching dtypes. Got "
@@ -8976,10 +8982,10 @@ def spatial_merge(
 
 
 def learnable_2d_interp_pos_emb(
-    x: TensorValue,
-    weight: TensorValue,
-    grid_thws: TensorValue,
-    time_weight: TensorValue,
+    x: TensorValueLike,
+    weight: TensorValueLike,
+    grid_thws: TensorValueLike,
+    time_weight: TensorValueLike,
 ) -> TensorValue:
     """Applies learnable 2D interpolated position embedding (Kimi K2.5).
 
@@ -9000,6 +9006,11 @@ def learnable_2d_interp_pos_emb(
     Raises:
         ValueError: On invalid input shapes or dtypes.
     """
+    x = TensorValue(x)
+    weight = TensorValue(weight)
+    grid_thws = TensorValue(grid_thws)
+    time_weight = TensorValue(time_weight)
+
     _check_rank(2, x=x)
     _check_rank(3, weight=weight)
     if grid_thws.rank != 2 or grid_thws.shape[1] != 3:
@@ -9311,12 +9322,12 @@ def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
 
 
 def tpool_patch_merger(
-    input: TensorValue,
-    grid_thws: TensorValue,
+    input: TensorValueLike,
+    grid_thws: TensorValueLike,
     kH: int,
     kW: int,
-    max_h: int | TensorValue,
-    max_w: int | TensorValue,
+    max_h: int | TensorValueLike,
+    max_w: int | TensorValueLike,
 ) -> TensorValue:
     """Performs temporal pooling patch merger on ragged video tokens.
 
@@ -9343,6 +9354,9 @@ def tpool_patch_merger(
     Raises:
         ValueError: On invalid input shapes or dtypes.
     """
+    input = TensorValue(input)
+    grid_thws = TensorValue(grid_thws)
+
     _check_rank(2, input=input)
 
     _check_dtype(DType.int64, grid_thws=grid_thws)
@@ -9358,12 +9372,12 @@ def tpool_patch_merger(
     max_h_val = (
         ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU())
         if isinstance(max_h, int)
-        else max_h
+        else TensorValue(max_h)
     )
     max_w_val = (
         ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU())
         if isinstance(max_w, int)
-        else max_w
+        else TensorValue(max_w)
     )
     # Compute exact merged row count dynamically and feed it to the custom-op
     # shape function as an integer scalar tensor.

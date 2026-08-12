@@ -86,6 +86,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         buffer_size: int = 16384,
         graph_mode: str | None = None,
         quant_config: QuantConfig | None = None,
+        quantize_o_proj: bool = True,
     ) -> None:
         super().__init__()
         _role = graph_mode or "auto"
@@ -118,7 +119,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         )
 
         # In NVFP4 quantized checkpoints, ``q``/``kv`` projections stay bf16
-        # (only ``o_proj`` is quantized)
+        # (only ``o_proj`` may be quantized)
         self.quant_config = quant_config
         self.quantized = quant_ops.is_fp8_block_quantized(quant_config)
         if self.quantized:
@@ -166,7 +167,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             in_dim=self.n_heads * self.v_head_dim,
             out_dim=self.hidden_size,
             bias=False,
-            quant_config=quant_config,
+            quant_config=quant_config if quantize_o_proj else None,
         )
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:

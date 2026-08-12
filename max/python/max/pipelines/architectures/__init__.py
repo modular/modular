@@ -190,6 +190,16 @@ def register_all_models() -> None:
             "KimiK25ForConditionalGeneration", ".kimik2_5", "kimik2_5_arch"
         ),
         _LazyArch("KimiVLForConditionalGeneration", ".kimik2_5", "kimivl_arch"),
+        _LazyArch(
+            "KimiK25ForConditionalGeneration_ModuleV3",
+            ".kimik2_5_modulev3",
+            "kimik2_5_modulev3_arch",
+        ),
+        _LazyArch(
+            "KimiVLForConditionalGeneration_ModuleV3",
+            ".kimik2_5_modulev3",
+            "kimivl_modulev3_arch",
+        ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
         _LazyArch("LlamaForCausalLM", ".llama3", "llama_arch"),
