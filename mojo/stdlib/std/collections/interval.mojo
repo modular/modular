@@ -297,7 +297,7 @@ struct _IntervalNode[
           and collection operations.
     """
 
-    comptime _OpaquePointer = Optional[Pointer[NoneType, MutUntrackedOrigin]]
+    comptime _PointerType = Optional[Pointer[Self, MutUntrackedOrigin]]
 
     var interval: Interval[Self.T]
     """The interval contained in this node."""
@@ -308,13 +308,13 @@ struct _IntervalNode[
     var max_end: Self.T
     """The maximum end value of this node."""
 
-    var _left: Self._OpaquePointer
+    var _left: Self._PointerType
     """The left child of this node."""
 
-    var _right: Self._OpaquePointer
+    var _right: Self._PointerType
     """The right child of this node."""
 
-    var _parent: Self._OpaquePointer
+    var _parent: Self._PointerType
     """The parent of this node."""
 
     var _is_red: Bool
@@ -324,25 +324,19 @@ struct _IntervalNode[
         ref self,
     ) -> ref[self._left] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the left child pointer."""
-        return Pointer(to=self._left).unsafe_bitcast[
-            Optional[Pointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._left
 
     def right(
         ref self,
     ) -> ref[self._right] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the right child pointer."""
-        return Pointer(to=self._right).unsafe_bitcast[
-            Optional[Pointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._right
 
     def parent(
         ref self,
     ) -> ref[self._parent] Optional[Pointer[Self, MutUntrackedOrigin]]:
         """Returns a reference to the parent pointer."""
-        return Pointer(to=self._parent).unsafe_bitcast[
-            Optional[Pointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._parent
 
     def __init__(
         out self,
@@ -350,9 +344,9 @@ struct _IntervalNode[
         end: Self.T,
         data: Self.U,
         *,
-        left: Self._OpaquePointer = {},
-        right: Self._OpaquePointer = {},
-        parent: Self._OpaquePointer = {},
+        left: Self._PointerType = {},
+        right: Self._PointerType = {},
+        parent: Self._PointerType = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
@@ -380,9 +374,9 @@ struct _IntervalNode[
         interval: Interval[Self.T],
         data: Self.U,
         *,
-        left: Self._OpaquePointer = {},
-        right: Self._OpaquePointer = {},
-        parent: Self._OpaquePointer = {},
+        left: Self._PointerType = {},
+        right: Self._PointerType = {},
+        parent: Self._PointerType = {},
         is_red: Bool = True,
     ):
         """Creates a new interval node.
