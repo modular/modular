@@ -126,7 +126,9 @@ def test_step() -> None:
         kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batches_by_replica)
+        for replica_batch in batches_by_replica:
+            for ctx in replica_batch:
+                kv_manager.step(ctx)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)

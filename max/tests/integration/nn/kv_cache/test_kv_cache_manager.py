@@ -94,7 +94,8 @@ async def test_step() -> None:
         kv_manager.runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step([batch])
+        for ctx in batch:
+            kv_manager.step(ctx)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
@@ -572,7 +573,7 @@ async def test_multi_cache_lifecycle() -> None:
     ctx.update(42)
 
     # Single step covers all caches.
-    kv_manager.step([[ctx]])
+    kv_manager.step(ctx)
 
     # Single release covers all caches.
     kv_manager.release(ctx)

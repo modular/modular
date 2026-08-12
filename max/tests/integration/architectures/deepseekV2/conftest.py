@@ -220,7 +220,8 @@ def _generate_latent_attention_max_outputs(
             for ctx in batch:
                 ctx.update(42)
 
-            kv_manager.step([batch])
+            for ctx in batch:
+                kv_manager.step(ctx)
             torch_output = from_dlpack(max_output[0]).to(torch.bfloat16)
             all_outputs.append(torch_output[:, None, :].to("cpu"))
         return torch.concat(all_outputs, dim=1)

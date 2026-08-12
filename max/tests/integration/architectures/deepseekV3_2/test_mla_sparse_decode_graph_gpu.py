@@ -611,7 +611,8 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
 
     for _ in range(prefill_len):
         context.update(42)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
 
     kv_manager.alloc(context)
     kv_ri_dec = kv_manager.runtime_inputs([batch])
@@ -631,4 +632,5 @@ def test_mla_decode_graph_sparse_multi_step_smoke() -> None:
     _run_check(out_dec, 1)
 
     context.update(42)
-    kv_manager.step([batch])
+    for ctx in batch:
+        kv_manager.step(ctx)
