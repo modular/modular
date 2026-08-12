@@ -120,9 +120,9 @@ params:
 
 # ---------------------------------------------------------------------------
 # MiniMax M3, tp=4 (per-GPU shapes). Attn Q/K/V/O and dense/shared-expert MLP
-# gate/up/down; the fused QKV+indexer projection (sparse layers) is a
-# separate epilogue-only path, benchmarked in
-# bench_fused_qkv_index_matmul_mxfp8_amd.mojo instead.
+# gate/up/down; the fused QKV projections (dense layers, and the QKV+indexer
+# one on sparse layers) are separate epilogue-only paths, benchmarked in
+# bench_fused_qkv_matmul_mxfp8_amd.mojo instead.
 # ---------------------------------------------------------------------------
 # Attn Q proj
 - <<: *commons_mxfp8

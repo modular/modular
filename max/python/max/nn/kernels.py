@@ -874,8 +874,10 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
         kv_collection: PagedCacheValues object for managing key-value cache.
         layer_idx: Layer index, expected to have dtype uint32 and live on CPU.
         n_heads: Number of attention heads.
-        input_scale: E8M0 input block scales in the rank-5 SF-atom layout.
-        weight_scale: E8M0 weight block scales in the rank-5 SF-atom layout.
+        input_scale: E8M0 input block scales; rank-5 SF-atom layout on SM100,
+            rank-2 ``[M, K // 32]`` on CDNA4.
+        weight_scale: E8M0 weight block scales; rank-5 SF-atom layout on SM100,
+            rank-2 ``[N, K // 32]`` on CDNA4.
         _output_dim: Optional output dimension. Defaults to
             ``n_heads * head_dim``.
 
@@ -919,7 +921,13 @@ def _fused_qkv_ragged_matmul_scaled_mxfp8(
         "SF_VECTOR_SIZE": 32,
     }
 
-    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8"
+    # The two ops share every operand but the scale layout: SM100 takes the
+    # rank-5 SF-atom interleave, CDNA4 the checkpoint's rank-2 E8M0 scales.
+    op_name = (
+        "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8.amd"
+        if _is_amd_gpu()
+        else "mo.fused_qkv_matmul.ragged.paged.scale.mxfp8"
+    )
     values = [
         input,
         input_row_offsets,

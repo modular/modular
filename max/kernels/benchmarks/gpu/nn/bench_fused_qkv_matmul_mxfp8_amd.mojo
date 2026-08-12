@@ -10,29 +10,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Kernel-level perf benchmark: MXFP8 QKV + indexer-QKV on CDNA4, fused vs not.
+"""Kernel-level perf benchmark: MXFP8 QKV projections on CDNA4, fused vs not.
 
-MXFP8 sibling of `bench_fused_qkv_index_matmul.mojo` (which covers the BF16
-kernel). Compares, at the raw-kernel level:
+Covers both attention flavours behind one `has_indexer` argument, since the
+harness (ragged offsets, paged caches, cache-busted operands, band slicing) is
+identical and only the band list and the fused entry point differ:
 
-  * FUSED   : ONE call to
-              `generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`
-              over the stacked weight [Wq|Wk|Wv|Wiq|Wik] (N_total=2560), whose
-              CDNA4 path scatters K/V/IndexK from the GEMM's own epilogue.
-  * UNFUSED : the path MXFP8-on-AMD bring-up left behind — FIVE separate
-              `block_scaled_matmul_amd` calls, one per output band
-              (N = 2048, 128, 128, 128, 128).
+  * DENSE  (`has_indexer=False`) -- layers with no sparse indexer. Bands
+    `[Wq|Wk|Wv]`, N_total=2304. FUSED is one
+    `generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4`; UNFUSED is
+    three `block_scaled_matmul_amd` calls (N = 2048, 128, 128) plus two paged
+    `kv_cache_store` launches to place K/V.
+  * SPARSE (`has_indexer=True`) -- layers that also project the indexer's
+    IndexQ/IndexK. Bands `[Wq|Wk|Wv|Wiq|Wik]`, N_total=2560. FUSED is one
+    `generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4`;
+    UNFUSED is five band GEMMs (N = 2048, 128, 128, 128, 128) plus three paged
+    stores.
 
-Both do the same 2*M*N_total*K FLOPs against the same cold weight bytes, so the
-difference is the GEMM count plus the three paged `kv_cache_store` launches
-the unfused path needs to place K/V/IndexK, which the fused epilogue does from
-the GEMM's own store path. Both are inside the timed closure.
+Either way both paths do the same 2*M*N_total*K FLOPs against the same cold
+weight bytes, so the difference is the GEMM count plus the paged stores the
+unfused path needs to place K/V (and IndexK), which the fused epilogue does from
+the GEMM's own store path. Everything is inside the timed closure.
 
 Shapes: M3 per-device (TP=4), MXFP8 operands with E8M0 scales over 32-element K
-blocks. Sweeps the DECODE regime (total_seq == decode batch size, one token
-each) across {1, 8, 16, 32, 64, 128, 256}, plus one PREFILL shape (2 prompts x
-256 tokens). Cache topologies match the differential test: MAIN = non-MLA GQA
-(K+V, 1 KV head); INDEX = MLA (K-only, 1 latent head).
+blocks. `batch_size` prompts of `seq_len` tokens each, so decode is seq_len=1
+across a batch sweep and prefill is a few long prompts; the regime label follows
+from seq_len. Cache topologies: MAIN = non-MLA GQA (K+V, 1 KV head); INDEX = MLA
+(K-only, 1 latent head).
 
 Timing: stdlib `benchmark` `Bench` / `iter_custom`. Operands and both scale
 tensors are cache-busted (`CacheBustingBuffer` + per-iteration `offset_ptr`) so
@@ -41,8 +45,17 @@ per-iteration mean plus GFLOP/s and GB/s via `ThroughputMeasure`.
 
 CDNA4 only: the fused epilogue and the block-scaled AMD matmul are MI355X paths.
 
-Run directly:  mojo max/kernels/benchmarks/gpu/nn/bench_fused_qkv_index_matmul_mxfp8_amd.mojo
-Or via bazel:  ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_fused_qkv_index_matmul_mxfp8_amd
+A run covers ONE variant at ONE shape, defaulting to dense at decode batch 1.
+The sibling yaml holds the sweep: `$has_indexer` over both variants crossed with
+`$batch_size` / `$seq_len` over the decode and prefill shapes.
+
+Run the default (dense, decode bs=1):
+    ./bazelw run //max/kernels/benchmarks:gpu/nn/bench_fused_qkv_matmul_mxfp8_amd
+One other point (sparse, decode bs=64):
+    ... -- --has_indexer=True --batch_size=64 --seq_len=1
+The whole sweep:
+    python max/kernels/benchmarks/autotune/kbench.py \\
+        max/kernels/benchmarks/gpu/nn/bench_fused_qkv_matmul_mxfp8_amd.yaml
 """
 
 from std.random import seed
@@ -70,11 +83,12 @@ from kv_cache.types import (
 from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 from nn.kv_cache_ragged import (
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
     kv_cache_store_ragged,
 )
 
 from internal_utils._cache_busting import CacheBustingBuffer
-from internal_utils._utils import InitializationType
+from internal_utils._utils import InitializationType, arg_parse
 
 from std.math import ceildiv
 from std.sys import size_of
@@ -95,7 +109,6 @@ comptime q_dim = NUM_Q_HEADS * HEAD_SIZE  # 2048
 comptime kv_dim = MAIN_KV_HEADS * HEAD_SIZE  # 128
 comptime iq_dim = NUM_INDEX_HEADS * HEAD_SIZE  # 128
 comptime ik_dim = HEAD_SIZE  # 128
-comptime n_total = q_dim + 2 * kv_dim + iq_dim + ik_dim  # 2560
 comptime k_scales = hidden // SF_VECTOR_SIZE  # 192
 
 comptime page_size = 512
@@ -119,26 +132,35 @@ comptime IndexCollection = PagedKVCacheCollection[
 def _any(
     ptr: UnsafePointer[Scalar[OUT_DTYPE], ...],
 ) -> UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin]:
-    """Erase a pointer's origin so one helper serves all three bands."""
+    """Erase a pointer's origin so one helper serves every band."""
     return UnsafePointer[Scalar[OUT_DTYPE], MutAnyOrigin](
         unsafe_from_address=Int(ptr)
     )
 
 
-# Column offset of each band in the stacked weight, for the unfused slices.
+# Column offset of each band in the stacked weight, for the unfused slices. The
+# index bands sit past the QKV ones, so the dense layout is a prefix of the
+# sparse one and these offsets serve both variants.
 comptime k_off = q_dim
 comptime v_off = k_off + kv_dim
 comptime iq_off = v_off + kv_dim
 comptime ik_off = iq_off + iq_dim
 
 
-def bench_shape(
+def bench_shape[
+    HAS_INDEXER: Bool
+](
     ctx: DeviceContext,
     mut m: Bench,
     prompt_lens: List[Int],
     regime: String,
 ) raises:
     """Build device inputs / caches for `prompt_lens`, register both entries."""
+    # Sparse stacks IndexQ/IndexK past the QKV bands; dense stops after V.
+    comptime n_total = q_dim + 2 * kv_dim + (iq_dim + ik_dim) * Int(HAS_INDEXER)
+    comptime variant = "sparse" if HAS_INDEXER else "dense "
+    comptime num_bands = 3 + 2 * Int(HAS_INDEXER)
+
     var batch_size = len(prompt_lens)
 
     var total_seq = 0
@@ -221,7 +243,7 @@ def bench_shape(
     cb_asf.init_on_device(InitializationType.uniform_distribution, ctx)
     cb_bsf.init_on_device(InitializationType.uniform_distribution, ctx)
 
-    # ---- outputs: fused writes Q / IndexQ; unfused writes one per band ----
+    # ---- outputs: fused writes Q (+ IndexQ); unfused writes one per band ----
     var q_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * q_dim)
     var q_out = LayoutTensor[OUT_DTYPE, Layout.row_major(UNKNOWN_VALUE, q_dim)](
         q_out_dev.unsafe_ptr(),
@@ -229,6 +251,9 @@ def bench_shape(
             IndexList[2](total_seq, q_dim)
         ),
     )
+    # IndexQ and the index cache are allocated for both variants: they are a few
+    # hundred KiB, sit outside the timed closure, and keeping them unconditional
+    # lets one closure body serve dense and sparse alike.
     var iq_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * iq_dim)
     var iq_out = LayoutTensor[
         OUT_DTYPE, Layout.row_major(UNKNOWN_VALUE, iq_dim)
@@ -285,19 +310,18 @@ def bench_shape(
 
     var flops = 2 * total_seq * n_total * hidden
     # Both paths read the same cold weight and scale bytes; the unfused chain
-    # re-reads the activation once per band.
+    # re-reads the activation once per band. Every band is written exactly once,
+    # so the write volume is N_total wide either way.
     var operand_bytes = n_total * hidden + n_total * k_scales
     var act_bytes = total_seq * hidden + total_seq * k_scales
-    var write_elems = (
-        total_seq * (q_dim + iq_dim)
-        + 2 * total_seq * kv_dim
-        + total_seq * ik_dim
-    )
+    var write_elems = total_seq * n_total
     var fused_bytes = (
         operand_bytes + act_bytes + write_elems * size_of[OUT_DTYPE]()
     )
     var unfused_bytes = (
-        operand_bytes + 5 * act_bytes + write_elems * size_of[OUT_DTYPE]()
+        operand_bytes
+        + num_bands * act_bytes
+        + write_elems * size_of[OUT_DTYPE]()
     )
 
     # ============ FUSED: one GEMM, scatter from the epilogue ============
@@ -348,23 +372,39 @@ def bench_shape(
                 IndexList[2](n_total, k_scales)
             ),
         )
-        generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
-        ](
-            hs,
-            iro_tensor,
-            w,
-            asf,
-            bsf,
-            Float32(1.0),
-            main_collection,
-            index_collection,
-            UInt32(layer_idx),
-            iq_dim,
-            q_out,
-            iq_out,
-            ctx,
-        )
+        comptime if HAS_INDEXER:
+            generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+            ](
+                hs,
+                iro_tensor,
+                w,
+                asf,
+                bsf,
+                Float32(1.0),
+                main_collection,
+                index_collection,
+                UInt32(layer_idx),
+                iq_dim,
+                q_out,
+                iq_out,
+                ctx,
+            )
+        else:
+            generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
+            ](
+                hs,
+                iro_tensor,
+                w,
+                asf,
+                bsf,
+                Float32(1.0),
+                main_collection,
+                UInt32(layer_idx),
+                q_out,
+                ctx,
+            )
 
     @__parameter
     @always_inline
@@ -372,14 +412,21 @@ def bench_shape(
         bencher_iter_custom[fused_launch](b, ctx)
 
     m.bench_function[fused_bench](
-        BenchId("fused   " + regime + " total_seq=" + String(total_seq)),
+        BenchId(
+            "fused   "
+            + variant
+            + " "
+            + regime
+            + " total_seq="
+            + String(total_seq)
+        ),
         [
             ThroughputMeasure(BenchMetric.flops, flops),
             ThroughputMeasure(BenchMetric.bytes, fused_bytes),
         ],
     )
 
-    # ============ UNFUSED: one dense GEMM per output band (5 calls) ==========
+    # ============ UNFUSED: one dense GEMM per output band ============
     @__parameter
     @__copy_capture(
         cb_hs,
@@ -415,7 +462,7 @@ def bench_shape(
         var hs_tt = lt_to_tt(hs).bitcast[DType.uint8]()
         var asf_tt = lt_to_tt(asf)
 
-        # Q band: the only wide one (N=2048); the other four are N=128.
+        # Q band: the only wide one (N=2048); the rest are N=128.
         @__parameter
         @always_inline
         def band[
@@ -461,12 +508,13 @@ def bench_shape(
         band[q_dim](0, _any(q_out.ptr))
         band[kv_dim](k_off, _any(kv_out_ptr))
         band[kv_dim](v_off, _any(kv_out_ptr) + total_seq * kv_dim)
-        band[iq_dim](iq_off, _any(iq_out.ptr))
-        band[ik_dim](ik_off, _any(kv_out_ptr) + 2 * total_seq * kv_dim)
+        comptime if HAS_INDEXER:
+            band[iq_dim](iq_off, _any(iq_out.ptr))
+            band[ik_dim](ik_off, _any(kv_out_ptr) + 2 * total_seq * kv_dim)
 
-        # Placing K/V/IndexK is the other half of what the fused epilogue does,
-        # so the unfused path pays for three paged-store launches on top of its
-        # five GEMMs.
+        # Placing K/V (and IndexK) is the other half of what the fused epilogue
+        # does, so the unfused path pays for those paged-store launches on top
+        # of its band GEMMs.
         @__parameter
         @always_inline
         def k_in[
@@ -509,12 +557,13 @@ def bench_shape(
             iro_tensor,
             ctx,
         )
-        kv_cache_store_ragged[target="gpu", input_fn=ik_in](
-            index_collection.get_key_cache(layer_idx),
-            IndexList[3](total_seq, 1, HEAD_SIZE),
-            iro_tensor,
-            ctx,
-        )
+        comptime if HAS_INDEXER:
+            kv_cache_store_ragged[target="gpu", input_fn=ik_in](
+                index_collection.get_key_cache(layer_idx),
+                IndexList[3](total_seq, 1, HEAD_SIZE),
+                iro_tensor,
+                ctx,
+            )
 
     @__parameter
     @always_inline
@@ -522,7 +571,14 @@ def bench_shape(
         bencher_iter_custom[unfused_launch](b, ctx)
 
     m.bench_function[unfused_bench](
-        BenchId("unfused " + regime + " total_seq=" + String(total_seq)),
+        BenchId(
+            "unfused "
+            + variant
+            + " "
+            + regime
+            + " total_seq="
+            + String(total_seq)
+        ),
         [
             ThroughputMeasure(BenchMetric.flops, flops),
             ThroughputMeasure(BenchMetric.bytes, unfused_bytes),
@@ -544,20 +600,21 @@ def bench_shape(
 
 
 def main() raises:
+    # One variant at one shape per run; the yaml holds the sweep, which is what
+    # keeps a default invocation short. All three knobs are runtime args, so a
+    # sweep reuses one build: `bench_shape` is instantiated for both variants
+    # and selected here rather than behind a `-D` define.
+    var has_indexer = arg_parse("has_indexer", False)
+    var batch_size = Int(arg_parse("batch_size", 1))
+    var seq_len = Int(arg_parse("seq_len", 1))
+
     seed(0)
     var m = Bench()
     with DeviceContext() as ctx:
-        for bs in [1, 8, 16, 32, 64, 128, 256, 512]:
-            var decode_lens = List[Int](length=bs, fill=1)
-            bench_shape(ctx, m, decode_lens, "decode")
-
-        bench_shape(ctx, m, [256, 256], "prefill")
-
-        # Speculative decoding: the target verifies num_spec+1 tokens per
-        # sequence in one pass, so M = bs * (num_spec+1). 3 is what M3
-        # actually runs on AMD.
-        var num_spec = 3
-        for bs in [1, 8, 16, 32, 64, 128, 256]:
-            var spec_lens = List[Int](length=bs, fill=num_spec + 1)
-            bench_shape(ctx, m, spec_lens, "decode_spec" + String(num_spec))
+        var prompt_lens = List[Int](length=batch_size, fill=seq_len)
+        var regime: String = "decode" if seq_len == 1 else "prefill"
+        if has_indexer:
+            bench_shape[True](ctx, m, prompt_lens, regime)
+        else:
+            bench_shape[False](ctx, m, prompt_lens, regime)
     m.dump_report()

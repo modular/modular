@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Numeric test for the fused MXFP8 QKV-matmul-with-KV-write kernel on SM100.
+"""Numeric test for the fused MXFP8 QKV-matmul-with-KV-write kernel.
 
-Exercises the ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path that
-``quantized_fused_qkv_matmul`` uses for ``QuantFormat.MXFP8``: the activation
-and the concatenated QKV weight are quantized to ``float8_e4m3fn`` with E8M0
-block scales, the fused matmul runs, the Q projection is returned, and K/V are
-written in place into a paged KV cache.
+Exercises the ``mo.fused_qkv_matmul.ragged.paged.scale.mxfp8`` path (and its
+``.amd`` CDNA4 sibling, which differs only in taking rank-2 rather than rank-5
+E8M0 scales) that ``quantized_fused_qkv_matmul`` uses for ``QuantFormat.MXFP8``:
+the activation and the concatenated QKV weight are quantized to
+``float8_e4m3fn`` with E8M0 block scales, the fused matmul runs, the Q
+projection is returned, and K/V are written in place into a paged KV cache.
 
 It checks two things:
 
@@ -77,6 +78,16 @@ def _skip_if_not_supported() -> None:
         pytest.skip("MXFP8 block-scaled MMA only supports NVIDIA GPUs")
     if not is_b100_b200():
         pytest.skip("MXFP8 block-scaled MMA requires B100 or B200 (SM100)")
+
+
+def _skip_if_no_fused_qkv_mxfp8() -> None:
+    """The 3-way fused QKV has both an SM100 and a CDNA4 op behind one wrapper."""
+    if accelerator_count() == 0:
+        pytest.skip("No GPU available for MXFP8 fused-QKV test")
+    if accelerator_api() != "hip" and not is_b100_b200():
+        pytest.skip(
+            "MXFP8 block-scaled MMA requires B100/B200 (SM100) or CDNA4"
+        )
 
 
 def _skip_if_not_amd() -> None:
@@ -298,6 +309,12 @@ def _run_path(
     [
         ("prefill", 96, 16, 4, 128, 768),
         ("decode", 1, 16, 4, 128, 768),
+        # Production M3 dense-layer shape at TP=4 (N=2304, K=6144). The short-K
+        # cases above leave CDNA4's split-K dispatch unqualified (3 BK-tiles,
+        # below its 2-tiles-per-split floor); K=6144 gives 24 tiles -> 12
+        # splits, which is what routes the KV-scatter epilogue through the
+        # split-K reduce kernel instead of the matmul's own store path.
+        ("decode_splitk", 1, 16, 1, 128, 6144),
     ],
 )
 def test_fused_qkv_mxfp8_matmul(
@@ -308,7 +325,7 @@ def test_fused_qkv_mxfp8_matmul(
     head_dim: int,
     hidden: int,
 ) -> None:
-    _skip_if_not_supported()
+    _skip_if_no_fused_qkv_mxfp8()
 
     qkv_dim = (num_heads + 2 * num_kv_heads) * head_dim
 
