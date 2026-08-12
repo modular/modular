@@ -211,9 +211,9 @@ def _resolve_config(config: PipelineConfig) -> None:
     """Replicate the registry's post-construction resolution steps.
 
     Convenience wrapper for tests that exercise these steps directly rather
-    than going through PIPELINE_REGISTRY.retrieve_factory(). Validation runs
-    at construction, so this covers only the registry-phase steps: memory
-    planning and overlap-scheduler/DGC resolution.
+    than going through PIPELINE_REGISTRY.retrieve_factory(). Validation and
+    overlap-scheduler/DGC resolution run at construction, so this covers
+    only the registry-phase step: memory planning.
     """
     task = (
         config.task
@@ -239,14 +239,9 @@ def _resolve_config(config: PipelineConfig) -> None:
         _model(config), arch.default_encoding
     )
     _model(config).quantization_encoding = resolved_encoding
-    # Overlap-scheduler/DGC resolution lives in the registry, after
-    # memory planning.
     from max.pipelines.lib.registry import _run_memory_planning
 
-    plan = _run_memory_planning(config, arch)
-    config._validate_and_resolve_overlap_scheduler(
-        arch=arch, max_batch_size=plan.max_batch_size
-    )
+    _run_memory_planning(config, arch)
 
 
 def _make_pipeline_config(
@@ -818,7 +813,7 @@ class TestDGCTaskDisambiguation:
 
     @prepare_registry
     def test_dgc_not_enabled_for_embedding_task(self) -> None:
-        """resolve(task=EMBEDDINGS_GENERATION) must not auto-enable DGC."""
+        """Construction with task=EMBEDDINGS_GENERATION must not auto-enable DGC."""
 
         shared_name = "SharedArchForCausalLM"
         text_gen_arch = SupportedArchitecture(
@@ -860,19 +855,17 @@ class TestDGCTaskDisambiguation:
                 hf_config=hf_config,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(
-                tmpdir,
-                max_batch_size=4,
-                pipeline_task=PipelineTask.EMBEDDINGS_GENERATION,
-            )
-            with (
-                _pipeline_resolve_mocks(),
-                patch(
-                    "max.pipelines.lib.config.config.accelerator_api",
-                    return_value="cuda",
-                ),
+            # Patch the accelerator probe around construction so the False
+            # comes from the task gating, not the host's accelerator.
+            with patch(
+                "max.pipelines.lib.config.config.accelerator_api",
+                return_value="cuda",
             ):
-                _resolve_config(config)
+                config = _make_pipeline_config(
+                    tmpdir,
+                    max_batch_size=4,
+                    pipeline_task=PipelineTask.EMBEDDINGS_GENERATION,
+                )
             assert config.runtime.device_graph_capture is False
 
     @prepare_registry
@@ -918,27 +911,13 @@ class TestDGCTaskDisambiguation:
                 hf_config=hf_config,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(tmpdir, max_batch_size=4)
-            # Look up the text-gen arch explicitly for the registry-phase
-            # overlap-scheduler/DGC decisions.
-            arch = PIPELINE_REGISTRY.retrieve_architecture(
-                architecture_name=shared_name,
-                prefer_module_v3=False,
-                task=PipelineTask.TEXT_GENERATION,
-            )
-            with (
-                _pipeline_resolve_mocks(),
-                patch(
-                    "max.pipelines.lib.config.config.accelerator_api",
-                    return_value="cuda",
-                ),
+            # Overlap-scheduler/DGC resolution happens at construction, so
+            # the accelerator probe must be patched around from_args.
+            with patch(
+                "max.pipelines.lib.config.config.accelerator_api",
+                return_value="cuda",
             ):
-                from max.pipelines.lib.registry import _run_memory_planning
-
-                plan = _run_memory_planning(config, arch)
-                config._validate_and_resolve_overlap_scheduler(
-                    arch=arch, max_batch_size=plan.max_batch_size
-                )
+                config = _make_pipeline_config(tmpdir, max_batch_size=4)
             assert config.runtime.device_graph_capture is True
 
 

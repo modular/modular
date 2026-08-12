@@ -791,9 +791,7 @@ class PipelineConfig(ConfigFileModel):
             arch.name if arch is not None else None,
         )
 
-    def _validate_and_resolve_overlap_scheduler(
-        self, arch: Any = None, max_batch_size: int = 1
-    ) -> None:
+    def _validate_and_resolve_overlap_scheduler(self, arch: Any = None) -> None:
         if not self.runtime.force:
             if (
                 self.runtime.device_graph_capture is None
@@ -806,10 +804,9 @@ class PipelineConfig(ConfigFileModel):
             ):
                 self.runtime.device_graph_capture = True
                 logger.info(
-                    "Automatically enabling device graph capture for %s with max_batch_size=%d. "
+                    "Automatically enabling device graph capture for %s. "
                     "You can manually disable this by setting --no-device-graph-capture.",
                     arch.name,
-                    max_batch_size,
                 )
 
         if self.runtime.device_graph_capture is None:
@@ -1079,6 +1076,8 @@ class PipelineConfig(ConfigFileModel):
         else:
             self._validate_model_config_against_arch(self.model, arch)
 
+        self._validate_and_resolve_overlap_scheduler(arch=arch)
+
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
     # Pydantic's BaseModel implements a pickling protocol that expects a specific
@@ -1182,6 +1181,10 @@ class PipelineConfig(ConfigFileModel):
         # Freeze the manifest: construction is complete, so any later dict
         # mutation must go through with_override() on a new manifest.
         config.models.resolve()
+        # Overlap/DGC resolution above is arch-gated; configs without a
+        # registered architecture still end with a concrete bool.
+        if config.runtime.device_graph_capture is None:
+            config.runtime.device_graph_capture = False
         return config
 
 
