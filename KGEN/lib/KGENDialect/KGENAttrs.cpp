@@ -3877,36 +3877,6 @@ static TypedAttr cloneOperandsWithSubstitution(
   return result;
 }
 
-/// If `prop` asserts that its two operands denote the same value -- so that a
-/// consumer may substitute either one for the other -- return the pair.
-static std::optional<std::pair<TypedAttr, TypedAttr>>
-getIdentityProposition(TypedAttr prop) {
-  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
-    if (identical.getNumOperands() == 2)
-      return std::make_pair(identical.getOperand(0), identical.getOperand(1));
-
-  auto op = sugarDynCast<ParamOperatorAttr>(prop);
-  if (!op || op.getOpcode() != POC::EQ || op.getOperands().size() != 2)
-    return std::nullopt;
-
-  // A lane-wise `eq` answers identity only where the two coincide, which rules
-  // out floats: IEEE equality holds between values that are not
-  // interchangeable (`+0.0` and `-0.0`) and fails between a value and itself
-  // (NaN). An unresolved dtype might still turn out to be a float.
-  //
-  // TODO(MOCO-4577): once width-1 int-like `eq` canonicalizes to
-  // `#kgen.param.identical`, drop this arm and take identity propositions only.
-  Type operandType = op.getOperand(0).getType();
-  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
-    std::optional<KGENDType> dtype = simdType.getResolvedDType();
-    if (!dtype || !dtype->isIntLike())
-      return std::nullopt;
-  } else if (!operandType.isIntOrIndex()) {
-    return std::nullopt;
-  }
-  return std::make_pair(op.getOperand(0), op.getOperand(1));
-}
-
 static TypedAttr simplifyCond(MutableArrayRef<TypedAttr> operands) {
   // FIXME: make sure the cond operand is passed in as scalar<bool> when it is
   // created instead of implicit convert here!!!

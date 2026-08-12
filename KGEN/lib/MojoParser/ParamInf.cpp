@@ -30,6 +30,7 @@
 #include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -1167,11 +1168,8 @@ using EqualityPair = std::pair<TypedAttr, TypedAttr>;
 /// Collect the individual equality (`==`) propositions.
 static void collectEqualityPropositions(TypedAttr prop,
                                         SmallVectorImpl<EqualityPair> &out) {
-  if (auto equality = sugarDynCast<ParamIdenticalAttr>(prop)) {
-    if (equality.getNumOperands() == 2) {
-      out.push_back(
-          std::make_pair(equality.getOperand(0), equality.getOperand(1)));
-    }
+  if (std::optional<EqualityPair> identity = getIdentityProposition(prop)) {
+    out.push_back(*identity);
   } else if (auto op = sugarDynCast<ParamOperatorAttr>(prop)) {
     if (op.getOpcode() == POC::And)
       for (TypedAttr operand : op.getOperands())

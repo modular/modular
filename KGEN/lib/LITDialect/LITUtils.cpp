@@ -961,16 +961,15 @@ static TypedAttr getNotOperand(TypedAttr prop) {
   return {};
 }
 
-/// Ingest the top-level equality facts of `assumption` (and of its AND
+/// Ingest the top-level identity facts of `assumption` (and of its AND
 /// conjuncts).
 static void addEqualityFacts(TypedAttr assumption,
                              llvm::EquivalenceClasses<TypedAttr> &classes) {
-  if (auto equality = sugarDynCast<ParamIdenticalAttr>(assumption)) {
-    if (equality.getNumOperands() == 2) {
-      classes.unionSets(
-          stripIdentityWrappers(getCanonicalAttr(equality.getOperand(0))),
-          stripIdentityWrappers(getCanonicalAttr(equality.getOperand(1))));
-    }
+  if (std::optional<std::pair<TypedAttr, TypedAttr>> identity =
+          getIdentityProposition(assumption)) {
+    classes.unionSets(
+        stripIdentityWrappers(getCanonicalAttr(identity->first)),
+        stripIdentityWrappers(getCanonicalAttr(identity->second)));
   } else if (auto op = dyn_cast<ParamOperatorAttr>(assumption)) {
     if (op.getOpcode() == POC::And)
       for (TypedAttr operand : op.getOperands())
@@ -1050,12 +1049,11 @@ static TriState isPropositionImplied(TypedAttr proposition,
     }
   }
 
-  if (auto equality = sugarDynCast<ParamIdenticalAttr>(proposition)) {
-    if (equality.getNumOperands() == 2) {
-      if (assumptionEqs.provesEqual(equality.getOperand(0),
-                                    equality.getOperand(1), assumption))
-        return TriState::yes();
-    }
+  if (std::optional<std::pair<TypedAttr, TypedAttr>> identity =
+          getIdentityProposition(proposition)) {
+    if (assumptionEqs.provesEqual(identity->first, identity->second,
+                                  assumption))
+      return TriState::yes();
   }
 
   // Conjunction elimination: (A AND B) implies B if any conjunct implies B.
