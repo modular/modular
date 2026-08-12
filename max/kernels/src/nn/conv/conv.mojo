@@ -4821,7 +4821,9 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...

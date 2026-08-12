@@ -324,7 +324,7 @@ struct ArcPointer[T: Movable & Deinitable](
         # TODO: consider removing this method.
         return (
             Pointer(to=self._inner[].payload_ref())
-            .mut_cast[mut]()
+            .unsafe_mut_cast[mut]()
             .unsafe_origin_cast[origin]()
         )
 

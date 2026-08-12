@@ -214,7 +214,7 @@ struct OwnedPointer[T: AnyType](
         """
         return (
             self._inner.unsafe_ptr()
-            .mut_cast[mut]()
+            .unsafe_mut_cast[mut]()
             .unsafe_origin_cast[origin]()
         )
 

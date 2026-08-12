@@ -401,7 +401,7 @@ def multistage_mma_q[
                             ](),
                             dst_fragments.ptr.address_space_cast[
                                 AddressSpace.SHARED
-                            ]().mut_cast[True](),
+                            ]().unsafe_mut_cast[True](),
                         )
 
                     scales_iter._incr()
@@ -635,7 +635,7 @@ def multistage_mma_q[
                                     ](),
                                     dst_fragments.ptr.address_space_cast[
                                         AddressSpace.SHARED
-                                    ]().mut_cast[True](),
+                                    ]().unsafe_mut_cast[True](),
                                 )
 
                             scales_iter._incr()

@@ -696,7 +696,7 @@ struct LayoutTensor[
         """
         self = Self.GenericLayoutTensorType(
             device_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
+            .unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin]()
         )
 
@@ -756,7 +756,7 @@ struct LayoutTensor[
         """
         self = Self.GenericLayoutTensorType(
             device_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
+            .unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
             runtime_layout,
         )
@@ -807,7 +807,7 @@ struct LayoutTensor[
         """
         self = Self.GenericLayoutTensorType(
             device_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
+            .unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
             runtime_layout,
             element_runtime_layout,
@@ -918,7 +918,9 @@ struct LayoutTensor[
             A tensor merged with the specified `other_type`.
         """
         return {
-            self.ptr.mut_cast[result.mut]().unsafe_origin_cast[result.origin](),
+            self.ptr.unsafe_mut_cast[result.mut]().unsafe_origin_cast[
+                result.origin
+            ](),
             self.runtime_layout,
             self.runtime_element_layout,
         }
@@ -1206,7 +1208,7 @@ struct LayoutTensor[
 
         comptime for i in range(self.layout.size()):
             comptime idx = self.layout(i)
-            self.ptr.mut_cast[True]().store(
+            self.ptr.unsafe_mut_cast[True]().store(
                 idx, func(self.ptr.load[width=Self.element_size](idx))
             )
         return self
@@ -1306,7 +1308,7 @@ struct LayoutTensor[
                 comptime lhs_idx = self.layout(i)
                 comptime rhs_idx = other.layout(i % other_size)
 
-                self.ptr.mut_cast[True]().store(
+                self.ptr.unsafe_mut_cast[True]().store(
                     lhs_idx,
                     func(
                         self.ptr.load[width=Self.element_size](lhs_idx),
@@ -1318,7 +1320,7 @@ struct LayoutTensor[
         comptime for i in range(self.layout.size()):
             comptime lhs_idx = self.layout(i)
             comptime rhs_idx = other.layout(i)
-            self.ptr.mut_cast[True]().store(
+            self.ptr.unsafe_mut_cast[True]().store(
                 lhs_idx,
                 func(
                     self.ptr.load[width=Self.element_size](lhs_idx),
@@ -1942,7 +1944,7 @@ struct LayoutTensor[
         return {
             self._stack_copy()
             ._elementwise_unary[exp_func]()
-            .ptr.mut_cast[Self.mut]()
+            .ptr.unsafe_mut_cast[Self.mut]()
             .unsafe_origin_cast[Self.origin](),
             self.runtime_layout,
             self.runtime_element_layout,
@@ -2169,7 +2171,7 @@ struct LayoutTensor[
 
         Element[index_type=Self.linear_idx_type](
             val, self.runtime_element_layout
-        ).store(self.ptr.mut_cast[True]() + offset)
+        ).store(self.ptr.unsafe_mut_cast[True]() + offset)
 
     @always_inline("nodebug")
     def load[
@@ -2738,7 +2740,7 @@ struct LayoutTensor[
             copy = self.stack_allocation()
         else:
             copy = Self.StackTensorType(
-                self.ptr.mut_cast[True]().as_unsafe_any_origin(),
+                self.ptr.unsafe_mut_cast[True]().as_unsafe_any_origin(),
                 self.runtime_layout,
             )
 
@@ -5653,7 +5655,7 @@ struct LayoutTensor[
 
         var dst_ptr = self.ptr.address_space_cast[
             AddressSpace.SHARED
-        ]().mut_cast[True]()
+        ]().unsafe_mut_cast[True]()
         var src_ptr = src.ptr.address_space_cast[AddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.

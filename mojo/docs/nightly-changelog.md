@@ -100,6 +100,10 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
+  mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
+  is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+
 - The following APIs have been migrated to unified closures: `sort`,
   `debug_assert`, `Span.apply`.
 
