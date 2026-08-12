@@ -18,7 +18,7 @@ from std.reflection import (
     source_location,
     SourceLocation,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.sys import size_of
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -260,7 +260,7 @@ def test_source_location_niche() raises:
     assert_equal(SourceLocation.niche_count(), 1)
     assert_equal(size_of[SourceLocation](), size_of[Optional[SourceLocation]]())
 
-    var storage = UnsafeMaybeUninit[SourceLocation]()
+    var storage = MaybeUninit[SourceLocation]()
 
     SourceLocation.write_niche(Pointer(to=storage))
     assert_true(SourceLocation.isa_niche(Pointer(to=storage)))

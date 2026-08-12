@@ -30,7 +30,7 @@
 """
 
 from std.hashlib import Hasher
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.os import abort
 from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
@@ -770,7 +770,7 @@ struct Observable[
     def write_niche[
         index: Int
     ](
-        memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=True, MaybeUninit[Self], _]
     ) where Self.opt_into_unsafe_niche:
         """Writes niche bit pattern `index` into storage.
 
@@ -789,7 +789,7 @@ struct Observable[
 
     @staticmethod
     def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, MaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.
 

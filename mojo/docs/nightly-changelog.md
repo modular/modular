@@ -90,6 +90,14 @@ This version is still a work in progress.
   predicates rather than functions, so drop the call parens at use sites, for
   example `IsTriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
 
+- Renamed `UnsafeMaybeUninit` to `MaybeUninit`. It conforms to `Movable`,
+  `Copyable`/`ImplicitlyCopyable`, and `Deinitable` only when the contained
+  type's own move, copy, or implicit deinitializer is trivial, since
+  moving, copying, or destroying a `MaybeUninit` only touches its raw bits,
+  never the contained value's own lifecycle methods. Gating conformance this way
+  turns what would otherwise be silent memory-safety bugs into compile-time
+  errors.
+
 - `Atomic` is now parameterized on a value type `T` instead of a `DType`.
   Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
   atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,

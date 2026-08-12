@@ -52,7 +52,7 @@ def main() raises:
 """
 
 
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable
 from .reflect import reflect
 
@@ -167,7 +167,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
         memory.unsafe_bitcast[Byte]().unsafe_offset(
             Self._LineByteOffset
         ).unsafe_bitcast[Int]().unsafe_write(Self._LineNiche)
@@ -175,9 +175,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
+    def isa_niche(memory: Pointer[mut=False, MaybeUninit[Self], _]) -> Bool:
         return (
             memory.unsafe_bitcast[Byte]()
             .unsafe_offset(Self._LineByteOffset)

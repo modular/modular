@@ -13,7 +13,7 @@
 """Implements C string interoperability utilities."""
 
 from std.collections.string.string_span import _unsafe_strlen
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
@@ -263,19 +263,19 @@ struct CStringSlice[origin: ImmOrigin](
     @always_inline
     def write_niche[
         index: Int
-    ](memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    ](memory: Pointer[mut=True, MaybeUninit[Self], _]):
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         Self._PointerType.write_niche[index](
-            memory.unsafe_bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )
 
     @staticmethod
     @doc_hidden
     @always_inline
     def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, MaybeUninit[Self], _]
     ) -> NicheIndex:
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         return Self._PointerType.classify_niche(
-            memory.unsafe_bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )

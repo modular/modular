@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.ffi import _Global
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.os import abort
 from std.traits import (
     IsTriviallyCopyable,

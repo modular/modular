@@ -58,4 +58,4 @@ from .pointer import (
 )
 from .unsafe import bitcast, pack_bits
 from .unsafe_pointer import UnsafePointer
-from .unsafe_maybe_uninit import UnsafeMaybeUninit
+from .maybe_uninit import MaybeUninit

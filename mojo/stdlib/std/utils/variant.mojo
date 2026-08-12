@@ -17,7 +17,7 @@ from std.format._utils import (
     FormatStruct,
     TypeNames,
 )
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
 from std.traits import (
@@ -109,17 +109,17 @@ trait _NicheStorage(Defaultable, Deinitable):
 
     def as_uninit[
         T: AnyType
-    ](ref self) -> Pointer[UnsafeMaybeUninit[T], origin_of(self)]:
+    ](ref self) -> Pointer[MaybeUninit[T], origin_of(self)]:
         ...
 
 
 struct _DefaultNicheStorage[T: AnyType](
     Defaultable, Movable where False, _NicheStorage
 ):
-    """Default niche backing: stores the value in `UnsafeMaybeUninit[T]`
+    """Default niche backing: stores the value in `MaybeUninit[T]`
     (lowers to `pop.array<1, T>`)."""
 
-    var _memory: UnsafeMaybeUninit[Self.T]
+    var _memory: MaybeUninit[Self.T]
 
     @always_inline
     def __init__(out self):
@@ -131,11 +131,11 @@ struct _DefaultNicheStorage[T: AnyType](
     @always_inline
     def as_uninit[
         U: AnyType
-    ](ref self) -> Pointer[UnsafeMaybeUninit[U], origin_of(self)]:
+    ](ref self) -> Pointer[MaybeUninit[U], origin_of(self)]:
         comptime assert Self.T == U
         return (
             Pointer(to=self._memory)
-            .unsafe_bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_bitcast[MaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -156,18 +156,16 @@ struct _CustomNicheStorage[Storage: UnsafeCustomNicheStorage](
     @always_inline
     def as_uninit[
         T: AnyType
-    ](ref self) -> Pointer[UnsafeMaybeUninit[T], origin_of(self)]:
+    ](ref self) -> Pointer[MaybeUninit[T], origin_of(self)]:
         comptime assert (
-            size_of[Self.Storage.NicheStorage]()
-            == size_of[UnsafeMaybeUninit[T]]()
+            size_of[Self.Storage.NicheStorage]() == size_of[MaybeUninit[T]]()
         ), "Custom storage must be the same size as Self"
         comptime assert (
-            align_of[Self.Storage.NicheStorage]()
-            == align_of[UnsafeMaybeUninit[T]]()
+            align_of[Self.Storage.NicheStorage]() == align_of[MaybeUninit[T]]()
         ), "Custom storage must have the the same alignment as Self"
         return (
             Pointer(to=self._memory)
-            .unsafe_bitcast[UnsafeMaybeUninit[T]]()
+            .unsafe_bitcast[MaybeUninit[T]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 

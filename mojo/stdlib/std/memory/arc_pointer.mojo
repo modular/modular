@@ -26,7 +26,7 @@ from std.format._utils import (
     TypeNames,
 )
 from std.hashlib.hasher import Hasher
-from std.memory.unsafe_maybe_uninit import UnsafeMaybeUninit
+from std.memory.maybe_uninit import MaybeUninit
 from std.memory.alloc import (
     alloc,
     dealloc,
@@ -48,7 +48,7 @@ struct _ArcPointerInner[T: Movable & Deinitable](
 
     var strong: Atomic[UInt64]
     var weak: Atomic[UInt64]
-    var payload: UnsafeMaybeUninit[Self.T]
+    var payload: MaybeUninit[Self.T]
 
     @doc_hidden
     def __init__(out self, var value: Self.T):
@@ -59,7 +59,7 @@ struct _ArcPointerInner[T: Movable & Deinitable](
         """
         self.strong = Atomic(UInt64(1))
         self.weak = Atomic(UInt64(1))
-        self.payload = UnsafeMaybeUninit[Self.T](value^)
+        self.payload = MaybeUninit[Self.T](value^)
 
     def __deinit__(deinit self):
         # Safety:

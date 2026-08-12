@@ -14,7 +14,7 @@
 from std.compile import compile_info
 from std.ffi import external_call
 from max.gpu.host import get_gpu_target
-from std.memory import Allocation, UnsafeMaybeUninit, alloc, dealloc
+from std.memory import Allocation, MaybeUninit, alloc, dealloc
 from std.memory.unsafe_pointer import pointer_to_int
 from std.sys import align_of, bit_width_of, size_of
 import std.memory.alloc
@@ -754,7 +754,7 @@ def test_unsafe_pointer_niche() raises:
     comptime UP = Pointer[Int, ImmOrigin(origin_of(x))]
     assert_equal(size_of[UP](), size_of[Optional[UP]]())
 
-    var storage = UnsafeMaybeUninit[UP]()
+    var storage = MaybeUninit[UP]()
     UP.write_niche(Pointer(to=storage))
     assert_true(UP.isa_niche(Pointer(to=storage)))
 

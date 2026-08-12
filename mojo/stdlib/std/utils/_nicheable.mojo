@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 
 
 struct NicheIndex(Equatable, TrivialRegisterPassable):
@@ -64,19 +64,19 @@ trait UnsafeCustomNicheStorage:
     """Allows a nicheable type to customize its backing storage representation.
 
     By default, niche-optimized containers (like `Optional`) store a nicheable
-    type's value in an `UnsafeMaybeUninit[T]`, which lowers to `pop.array<1,T>`.
+    type's value in a `MaybeUninit[T]`, which lowers to `pop.array<1,T>`.
     This is not always desirable. For example, `Pointer` needs to
     lower directly to `kgen.pointer` to preserve its ABI across exported
     function boundaries.
 
     A type conforming to this trait provides an associated `NicheStorage` type that
-    the container uses instead of `UnsafeMaybeUninit[T]`. The `NicheStorage` type
+    the container uses instead of `MaybeUninit[T]`. The `NicheStorage` type
     must have the same size and alignment as the nicheable type, and must conform
     to `NicheStorageTraits`.
     """
 
     comptime NicheStorage: NicheStorageTraits
-    """The backing storage type to use instead of `UnsafeMaybeUninit[Self]`.
+    """The backing storage type to use instead of `MaybeUninit[Self]`.
 
     Safety:
         This must have the same alignment and size as `Self`.
@@ -107,7 +107,7 @@ trait UnsafeNicheable:
 
     ```mojo
     from std.utils._nicheable import UnsafeNicheable, NicheIndex
-    from std.memory import UnsafeMaybeUninit
+    from std.memory import MaybeUninit
 
     struct NonMaxUInt(UnsafeNicheable):
         var _n: UInt
@@ -125,14 +125,14 @@ trait UnsafeNicheable:
 
         @staticmethod
         def write_niche[index: Int](
-            memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]
+            memory: Pointer[mut=True, MaybeUninit[Self], _]
         ):
             # Write UInt.MAX into the storage, not a valid NonMaxUInt.
             memory.unsafe_bitcast[UInt]().unsafe_store(UInt.MAX)
 
         @staticmethod
         def classify_niche(
-            memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+            memory: Pointer[mut=False, MaybeUninit[Self], _]
         ) -> NicheIndex:
             # UInt.MAX is the niche (index 0), anything else is a valid value.
             if memory.unsafe_bitcast[UInt]()[] == UInt.MAX:
@@ -153,14 +153,14 @@ trait UnsafeNicheable:
     @staticmethod
     def write_niche[
         index: Int
-    ](memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    ](memory: Pointer[mut=True, MaybeUninit[Self], _]):
         """Writes niche bit pattern `index` into the pointed-to storage.
 
         On entry, `memory` points to properly aligned, correctly sized storage
         for `Self` that must be treated as **uninitialized**: it does not
         contain a live `Self` value. On return, the bytes at `memory` encode
         niche `index` and are suitable for passing to `classify_niche`.
-        The pointer type is `UnsafeMaybeUninit[Self]` to make it clear that
+        The pointer type is `MaybeUninit[Self]` to make it clear that
         the storage does not yet hold a valid `Self` instance.
 
         Parameters:
@@ -175,13 +175,13 @@ trait UnsafeNicheable:
 
     @staticmethod
     def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, MaybeUninit[Self], _]
     ) -> NicheIndex:
         """Classifies the bit pattern at `memory` as either a niche or a real value.
 
         The storage is initialized: it either holds a genuine `Self` value or
         bytes previously written by `write_niche`. The pointer
-        type is `UnsafeMaybeUninit[Self]` rather than `Self` to make it clear
+        type is `MaybeUninit[Self]` rather than `Self` to make it clear
         that dereferencing the memory as a live `Self` is not safe — the bytes
         may encode a niche rather than a valid instance.
 
@@ -226,7 +226,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
 
     ```mojo
     from std.utils._nicheable import UnsafeSingleNicheable
-    from std.memory import UnsafeMaybeUninit
+    from std.memory import MaybeUninit
 
     struct NonMaxUInt(UnsafeSingleNicheable):
         var _n: UInt
@@ -239,20 +239,20 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
 
         @staticmethod
         def write_niche(
-            memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]
+            memory: Pointer[mut=True, MaybeUninit[Self], _]
         ):
             memory.unsafe_bitcast[UInt]().unsafe_store(UInt.MAX)
 
         @staticmethod
         def isa_niche(
-            memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+            memory: Pointer[mut=False, MaybeUninit[Self], _]
         ) -> Bool:
             return memory.unsafe_bitcast[UInt]()[] == UInt.MAX
     ```
     """
 
     @staticmethod
-    def write_niche(memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
         """Writes the single niche bit pattern into the pointed-to storage.
 
         On entry, `memory` points to properly aligned, correctly sized storage
@@ -267,9 +267,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
         ...
 
     @staticmethod
-    def isa_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
+    def isa_niche(memory: Pointer[mut=False, MaybeUninit[Self], _]) -> Bool:
         """Returns whether the bit pattern at `memory` is the niche value.
 
         Args:
@@ -298,7 +296,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     @doc_hidden
     def write_niche[
         index: Int
-    ](memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    ](memory: Pointer[mut=True, MaybeUninit[Self], _]):
         """Implements `UnsafeNicheable.write_niche` by delegating to the
         index-free `write_niche` overload.
 
@@ -315,7 +313,7 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     @always_inline
     @doc_hidden
     def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
+        memory: Pointer[mut=False, MaybeUninit[Self], _]
     ) -> NicheIndex:
         """Implements `UnsafeNicheable.classify_niche` by delegating to
         `isa_niche`.

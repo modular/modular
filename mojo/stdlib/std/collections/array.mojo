@@ -42,7 +42,7 @@ import std.format._utils as fmt
 from std.reflection import reflect
 from std.hashlib.hasher import Hasher
 from std.memory import (
-    UnsafeMaybeUninit,
+    MaybeUninit,
     forget_deinit,
     unsafe_destroy_n,
     unsafe_uninit_move_n,
@@ -369,15 +369,13 @@ struct Array[T: AnyType, length: Int](
     def __init__(
         out self,
         *,
-        var unsafe_assume_initialized: Array[
-            UnsafeMaybeUninit[Self.T], Self.length
-        ],
+        var unsafe_assume_initialized: Array[MaybeUninit[Self.T], Self.length],
     ) where conforms_to(Self.T, Movable):
         """Constructs an `Array` from an `Array` of
-        `UnsafeMaybeUninit`.
+        `MaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
+            unsafe_assume_initialized: The array of `MaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:

@@ -40,7 +40,7 @@ from max.gpu.host import (
 )
 from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
-from std.memory import Layout, ThinAllocation, UnsafeMaybeUninit, alloc, dealloc
+from std.memory import Layout, ThinAllocation, MaybeUninit, alloc, dealloc
 from std.os import abort
 from layout import (
     Coord,
@@ -779,9 +779,7 @@ def mgp_buffer_bulk_slice[
     Raises:
         If any slice does not fit within the pool buffer.
     """
-    var result = Array[UnsafeMaybeUninit[OwnedByteBuffer], N](
-        uninitialized=True
-    )
+    var result = Array[MaybeUninit[OwnedByteBuffer], N](uninitialized=True)
 
     # Placement-initialize each uninitialized slot to avoid running the
     # destructor.
@@ -797,7 +795,7 @@ def mgp_buffer_bulk_slice[
         # leak resources if `mpg_buffer_slice()` raises an error.
         for i in range(initialized):
             result[i].unsafe_ptr().unsafe_deinit_pointee()
-        result^.deinit_with(UnsafeMaybeUninit[OwnedByteBuffer].unsafe_forget)
+        result^.deinit_with(MaybeUninit[OwnedByteBuffer].unsafe_forget)
         raise e
 
     return {unsafe_assume_initialized = result^}

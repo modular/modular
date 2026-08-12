@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from test_utils import check_write_to
 from std.testing import TestSuite
 from std.testing import (
@@ -112,7 +112,7 @@ def test_nicheable() raises:
 
     assert_equal(PointerType.niche_count(), 1)
 
-    var memory = UnsafeMaybeUninit[PointerType]()
+    var memory = MaybeUninit[PointerType]()
 
     PointerType.write_niche(Pointer(to=memory))
     assert_true(PointerType.isa_niche(Pointer(to=memory)))
