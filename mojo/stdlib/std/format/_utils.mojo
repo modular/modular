@@ -460,7 +460,7 @@ struct _WriteBufferHeap(Writable, Writer):
             unsafe_from_utf8=Span[Byte, origin](
                 # `_data` is untracked, so handing it out under `origin` takes
                 # an explicit cast; untracked-to-named is never implicit.
-                unsafe_ptr=self._data.mut_cast[mut]().unsafe_origin_cast[
+                unsafe_ptr=self._data.unsafe_mut_cast[mut]().unsafe_origin_cast[
                     origin
                 ](),
                 length=self._pos,

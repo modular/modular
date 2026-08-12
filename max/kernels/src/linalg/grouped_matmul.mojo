@@ -1877,7 +1877,7 @@ def grouped_matmul_vendor[
                 row_major(Coord(_ri(b_N), _ri(b_K))),
             )
             var c_slice = TileTensor(
-                (c.ptr + token_start * UInt32(c_N)).mut_cast[True](),
+                c.ptr + token_start * UInt32(c_N),
                 row_major(Coord(_ri(num_tokens), _ri(c_N))),
             )
 

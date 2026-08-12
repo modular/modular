@@ -194,7 +194,9 @@ def dispatch_qslice_conv3d_sm100[
     filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
 ](
-    input: TileTensor[input_type, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     stride: IndexList[3],

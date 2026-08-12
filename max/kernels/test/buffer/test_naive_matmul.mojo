@@ -115,14 +115,14 @@ def print_matrix[size: Int](buf: UnsafePointer[Float32, _]):
 def _test_naive_matmul[size: Int]():
     print("== _test_naive_matmul")
     var c_stack = Array[Float32, size * size](fill=0)
-    var c = c_stack.unsafe_ptr().mut_cast[True]()
+    var c = c_stack.unsafe_ptr()
 
     var b_stack = Array[Float32, size * size](uninitialized=True)
-    var b = b_stack.unsafe_ptr().mut_cast[True]()
+    var b = b_stack.unsafe_ptr()
     fill_b[size](b)
 
     var a_stack = Array[Float32, size * size](uninitialized=True)
-    var a = a_stack.unsafe_ptr().mut_cast[True]()
+    var a = a_stack.unsafe_ptr()
     fill_a[size](a)
 
     _test_my_naive_matmul[size, DType.float32](c, a, b)

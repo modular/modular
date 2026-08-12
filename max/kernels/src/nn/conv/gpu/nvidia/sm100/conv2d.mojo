@@ -84,7 +84,9 @@ def conv2d_fprop[
     register_based_epilogue: Bool = True,
 ](
     output: TileTensor[mut=True, out_type, ...],  # NHWC
-    activation: TileTensor[act_type, ...],  # NHWC
+    activation: TileTensor[
+        mut=True, act_type, address_space=AddressSpace.GENERIC, ...
+    ],  # NHWC
     filter: TileTensor[filter_type, ...],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
@@ -335,7 +337,9 @@ def conv2d_fprop_with_residual[
     output: TileTensor[
         mut=True, out_type, ...
     ],  # NHWC - D = Conv(A,B) + beta*C
-    activation: TileTensor[act_type, ...],  # NHWC - A
+    activation: TileTensor[
+        mut=True, act_type, address_space=AddressSpace.GENERIC, ...
+    ],  # NHWC - A
     filter: TileTensor[filter_type, ...],  # KRSC - B
     source: TileTensor[out_type, ...],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor

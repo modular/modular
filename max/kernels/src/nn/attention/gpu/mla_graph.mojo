@@ -745,7 +745,7 @@ def mla_prefill_branch_fp8[
 
     # In-place update of the rope part of the `q` tensor
     var q_rope_mut = TileTensor(
-        q_rope.ptr.mut_cast[True](),
+        q_rope.ptr.unsafe_mut_cast[True](),
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -2155,7 +2155,7 @@ def mla_prefill_branch_bf16[
 
     # In-place update of the rope part of the `q` tensor
     var q_rope_mut = TileTensor(
-        q_rope.ptr.mut_cast[True](),
+        q_rope.ptr.unsafe_mut_cast[True](),
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),

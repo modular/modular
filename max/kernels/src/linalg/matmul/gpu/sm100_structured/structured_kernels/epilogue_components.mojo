@@ -208,7 +208,7 @@ def st_shared_frag_to_smem[
         var elem2 = vec[offset + 2]
         var elem3 = vec[offset + 3]
 
-        var dst_ptr = dst._storage.mut_cast[True]()
+        var dst_ptr = dst._storage.unsafe_mut_cast[True]()
 
         comptime if transpose_c:
             var m0n0 = (
@@ -347,7 +347,7 @@ def store_fragment_to_smem[
                 v[k * cast_width + _j] = casted[_j]
 
         st_matrix[simd_width=stmtx_simd_width, transpose=transpose_c](
-            dst._storage.mut_cast[True]() + offset,
+            dst._storage.unsafe_mut_cast[True]() + offset,
             bitcast[DType.float32, stmtx_simd_width](v),
         )
 
@@ -2074,7 +2074,7 @@ def shared_memory_epilogue_transpose[
 
                 # undo swizzle to get logical `c_smem[logical_crd]` value.
                 var ptr = (
-                    c_smem._storage.mut_cast[True]()
+                    c_smem._storage.unsafe_mut_cast[True]()
                     + swizzle(cj * swizzle_dim + ck)
                     + UInt32(ci * swizzle_dim) * UInt32(stageN)
                 )
@@ -2138,7 +2138,9 @@ def shared_memory_epilogue_transpose[
                     var local_j = logical_crd[1].value()
 
                     # Undo swizzle to get logical value
-                    var ptr = c_smem._storage.mut_cast[True]() + swizzle(offset)
+                    var ptr = c_smem._storage.unsafe_mut_cast[True]() + swizzle(
+                        offset
+                    )
                     var row = UInt32(local_i) + gmem_col
                     var col = UInt32(local_j) + gmem_row
                     if row < UInt32(Int(M)) and col < UInt32(Int(N)):
@@ -2216,11 +2218,11 @@ def shared_memory_epilogue[
         # through .vectorize().distribute() chain.
         comptime tile_layout = row_major[data_paths, stageN]()
         var upper_tt = TileTensor(
-            c_smem_warp_tile_upper._storage.mut_cast[True](),
+            c_smem_warp_tile_upper._storage.unsafe_mut_cast[True](),
             tile_layout,
         )
         var lower_tt = TileTensor(
-            c_smem_warp_tile_lower._storage.mut_cast[True](),
+            c_smem_warp_tile_lower._storage.unsafe_mut_cast[True](),
             tile_layout,
         )
 

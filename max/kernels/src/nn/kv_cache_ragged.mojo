@@ -3760,7 +3760,9 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 kv_collection,
                 freqs_cis,
                 TileTensor(
-                    position_ids.ptr.mut_cast[True]().as_unsafe_any_origin(),
+                    position_ids.ptr.unsafe_mut_cast[
+                        True
+                    ]().as_unsafe_any_origin(),
                     position_ids.layout,
                 ).as_immut(),
                 layer_idx,

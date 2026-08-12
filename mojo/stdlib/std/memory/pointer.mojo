@@ -2235,6 +2235,12 @@ struct Pointer[
     ]
 
     @always_inline("nodebug")
+    @deprecated(
+        "`mut_cast` is deprecated in favor of explicitly specifying a"
+        " mutability on the pointer type (`ImmPointer` or `MutPointer`). If"
+        " a mutability cast is truly needed (this should almost always be"
+        " avoided), use `unsafe_mut_cast` instead."
+    )
     def mut_cast[
         target_mut: Bool
     ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:

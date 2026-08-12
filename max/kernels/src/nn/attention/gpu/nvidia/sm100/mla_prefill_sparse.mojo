@@ -357,6 +357,7 @@ struct MLAPrefillSparse[
         var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
         ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
         var shared_qkv_ptr: UnsafePointer[
+            mut=True,
             Scalar[Self.qkv_dtype],
             origin_of(shared_qkv),
             address_space=AddressSpace.SHARED,
@@ -1067,6 +1068,7 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
         ],
         smem_tensor: TileTensor[
+            mut=True,
             Self.qkv_dtype,
             address_space=AddressSpace.SHARED,
             ...,
@@ -1117,6 +1119,7 @@ struct MLAPrefillSparse[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
         ],
         smem_tensor: TileTensor[
+            mut=True,
             Self.qkv_dtype,
             address_space=AddressSpace.SHARED,
             ...,
@@ -1213,7 +1216,10 @@ struct MLAPrefillSparse[
         ],
         kv_lut: Self.KVLUTType,
         k_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            mut=True,
+            Scalar[Self.qkv_dtype],
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         qk_ss_done: UnsafePointer[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...
@@ -1356,7 +1362,10 @@ struct MLAPrefillSparse[
             Self.v_desc_shape,
         ],
         v_smem_ptr: UnsafePointer[
-            Scalar[Self.qkv_dtype], address_space=AddressSpace.SHARED, ...
+            mut=True,
+            Scalar[Self.qkv_dtype],
+            address_space=AddressSpace.SHARED,
+            ...,
         ],
         sv_p0_done: UnsafePointer[
             SharedMemBarrier, address_space=AddressSpace.SHARED, ...

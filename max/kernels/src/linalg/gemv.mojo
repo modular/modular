@@ -1746,7 +1746,7 @@ def naive_gemv(
     comptime c_type = c_buf.dtype
     var M = Int(a_buf.dim[0]())
     var K = Int(a_buf.dim[1]())
-    var c_ptr = c_buf.ptr.mut_cast[True]()
+    var c_ptr = c_buf.ptr
     var a_ptr = a_buf.ptr
     var b_ptr = b_buf.ptr
 
@@ -2302,7 +2302,7 @@ def gemm_mma_cpasync_kernel[
     var cta_n = tile_n * Int(block_idx.y)
     var batch_idx = Int(block_idx.z)
 
-    var out_ptr = output.ptr.mut_cast[True]() + batch_idx * _gemm_m * _gemm_n
+    var out_ptr = output.ptr + batch_idx * _gemm_m * _gemm_n
 
     # K-loop parameters.
     var k_iters = _gemm_k // tile_k
