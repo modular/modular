@@ -67,11 +67,23 @@ modular_py_library(
     ],
 )
 
+# The NIXL plugin RTLD_GLOBAL preload as its own stdlib-only target, for the
+# same reason as :kv_connector above — every code path that creates a NIXL
+# agent needs it, including the dKV connector, which cannot depend on the full
+# kv_cache library without forming a cycle.
+modular_py_library(
+    name = "nixl_plugin_deps",
+    srcs = ["_nixl_plugin_deps.py"],
+)
+
 modular_py_library(
     name = "kv_cache",
     srcs = glob(
         ["**/*.py"],
-        exclude = ["kv_connector.py"],
+        exclude = [
+            "kv_connector.py",
+            "_nixl_plugin_deps.py",
+        ],
     ),
     # Stage the upstream NIXL transport plugins into the runfiles tree so that
     # `bazel run` workers (which have no install tree) can find them: max._core
@@ -85,6 +97,7 @@ modular_py_library(
     test_docstring_examples = True,
     deps = [
         ":kv_connector",
+        ":nixl_plugin_deps",
         "//max/python/max/pipelines/context",
         requirement("numpy"),
         requirement("msgspec"),
