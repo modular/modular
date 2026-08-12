@@ -20,7 +20,6 @@ from typing import Any, TypeVar
 from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
-from max.graph.weights import WeightsFormat
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -64,12 +63,7 @@ class DummyMAXModelConfig(MAXModelConfig):
     def weights_size(self) -> int:
         return 1000
 
-    def validate_and_resolve_with_resolved_quantization_encoding(
-        self,
-        resolved_encoding: SupportedEncoding,
-        applied_dtype_cast_from: SupportedEncoding | None,
-        default_weights_format: WeightsFormat,
-    ) -> None:
+    def _validate_final_architecture_model_path_weight_path(self) -> None:
         pass
 
 

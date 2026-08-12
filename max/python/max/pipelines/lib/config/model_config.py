@@ -300,14 +300,10 @@ def _infer_weight_path(
         #
         # Scoped to diffuser sub-components (``subfolder`` set): they skip
         # architecture validation, so this best-effort pass is their only
-        # resolution step. Architecture-validated models (LLMs and
-        # speculative-decoding draft models) must NOT bind weight_path to
-        # the float32 checkpoint here -- the downstream given-encoding
+        # resolution step. Architecture-validated models must NOT bind
+        # weight_path to the float32 checkpoint here -- the given-encoding
         # validation would then flip quantization_encoding to float32 and
-        # drop the requested bfloat16 (breaking e.g. Kimi-K2.6 Eagle3). For
-        # those, the identical float32->bfloat16 fallback in
-        # ``_resolve_weight_path`` runs after the cast bookkeeping is
-        # recorded and resolves it correctly.
+        # drop the requested bfloat16 (broke Kimi-K2.6 Eagle3).
         weight_files = config.huggingface_weight_repo.files_for_encoding(
             encoding="float32"
         )
@@ -456,6 +452,15 @@ def _select_encoding_and_dtype_cast(
         ``(encoding, cast_from, cast_to)``. The cast fields are ``None`` unless
         a cast was resolved.
     """
+    # Gate on isinstance, not `is not None`: objects that bypass __init__
+    # lack the PrivateAttr and MagicMock auto-attributes are truthy
+    # non-tuples; both must fall through to derivation.
+    resolved_cast = getattr(config, "_resolved_dtype_cast", None)
+    if isinstance(resolved_cast, tuple):
+        assert config.quantization_encoding is not None
+        cast_from, cast_to = resolved_cast
+        return config.quantization_encoding, cast_from, cast_to
+
     if config.quantization_encoding is not None:
         return _resolve_given_quantization_encoding(config)
 
@@ -587,6 +592,46 @@ def _discover_default_weight_paths(
         # Load any available weight file.
         return next(iter(weight_files.values()))
     return []
+
+
+def _populate_weights_and_encoding(
+    config: MAXModelConfig,
+    *,
+    default_encoding: SupportedEncoding,
+    supported_encodings: set[SupportedEncoding],
+    default_weights_format: WeightsFormat,
+) -> None:
+    """Assigns ``quantization_encoding`` and ``weight_path`` for an architecture.
+
+    Discovers default weight files when no explicit ``weight_path`` was
+    given, and records any load-time dtype cast on the config.
+
+    Raises:
+        ValueError: If the resolved encoding is unsupported by the
+            architecture, or no compatible weight files exist in the repo.
+    """
+    encoding, cast_from, cast_to = _select_encoding_and_dtype_cast(
+        config, default_encoding
+    )
+    if encoding not in supported_encodings:
+        raise ValueError(
+            f"quantization_encoding of '{encoding}' not supported by MAX engine."
+        )
+    config.quantization_encoding = encoding
+    config._resolved_dtype_cast = (cast_from, cast_to)
+    if not config.weight_path:
+        discovered = _discover_default_weight_paths(
+            config.huggingface_weight_repo,
+            encoding,
+            cast_from,
+            default_weights_format,
+        )
+        if not discovered:
+            raise ValueError(
+                f"compatible weights cannot be found for '{encoding}', in the provided repo: '{config.huggingface_weight_repo.repo_id}'"
+            )
+        config.weight_path = discovered
+    config._validate_final_architecture_model_path_weight_path()
 
 
 class MAXModelConfigBase(ConfigFileModel):
@@ -817,6 +862,14 @@ class MAXModelConfig(MAXModelConfigBase):
     _generation_config: GenerationConfig | None = PrivateAttr(default=None)
     """Hugging Face ``GenerationConfig``, loaded once at construction."""
 
+    _resolved_dtype_cast: (
+        tuple[SupportedEncoding | None, SupportedEncoding | None] | None
+    ) = PrivateAttr(default=None)
+    """Dtype cast ``(cast_from, cast_to)`` recorded at construction;
+    ``None`` when never resolved, ``(None, None)`` when resolved with no
+    cast. Persisted because re-deriving against the populated
+    ``weight_path`` gives a different answer for casted checkpoints."""
+
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -907,6 +960,7 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_cached_weight_repo", None)
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_generation_config", None)
+        private_state.setdefault("_resolved_dtype_cast", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -1287,65 +1341,6 @@ class MAXModelConfig(MAXModelConfigBase):
         ):
             raise ValueError(
                 f"Multiple GPU inference is currently not supported for {self.model_path}."
-            )
-
-    def validate_and_resolve_with_resolved_quantization_encoding(
-        self,
-        resolved_encoding: SupportedEncoding,
-        applied_dtype_cast_from: SupportedEncoding | None,
-        default_weights_format: WeightsFormat,
-    ) -> None:
-        """Validates model path and weight path against resolved quantization encoding.
-
-        Device/encoding compatibility is validated separately, by
-        :func:`~max.pipelines.lib.interfaces.arch_config.validate_device_specs`
-        at arch-config construction.
-
-        Args:
-            resolved_encoding: The encoding the model will actually run with, as
-                resolved by :func:`_select_quantization_encoding`.
-            applied_dtype_cast_from: The encoding weights are cast from at load
-                time, or ``None`` when no cast applies.
-            default_weights_format: The default weights format to use if no weights format is provided.
-        """
-        self._resolve_weight_path(
-            quantization_encoding=resolved_encoding,
-            applied_dtype_cast_from=applied_dtype_cast_from,
-            default_weights_format=default_weights_format,
-        )
-        self._validate_final_architecture_model_path_weight_path()
-
-    def _resolve_weight_path(
-        self,
-        quantization_encoding: SupportedEncoding,
-        applied_dtype_cast_from: SupportedEncoding | None,
-        default_weights_format: WeightsFormat,
-    ) -> None:
-        """Resolves the weight path.
-
-        This method should only be called after the quantization encoding has
-        been set.
-
-        Args:
-            quantization_encoding: The resolved encoding the model runs with.
-            applied_dtype_cast_from: The encoding weights are cast from at load
-                time, or ``None`` when no cast applies.
-            default_weights_format: The default weights format to use if no weight_path is provided.
-        """
-        # If no weight_path is provided, discover the default files (see the
-        # free function).
-        if not self.weight_path:
-            if discovered := _discover_default_weight_paths(
-                self.huggingface_weight_repo,
-                quantization_encoding,
-                applied_dtype_cast_from,
-                default_weights_format,
-            ):
-                self.weight_path = discovered
-
-        if not self.weight_path:
-            raise ValueError(
-                f"compatible weights cannot be found for '{quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
             )
 
     def _validate_final_architecture_model_path_weight_path(self) -> None:

@@ -15,15 +15,13 @@
 
 All tests use fake local safetensors/GGUF repos with no network access.
 
-Encoding/weight-path inference for LLM models happens in the consumer
-(an ``ArchConfig.initialize``): it calls the pure
-``_select_quantization_encoding()`` helper to pick the effective encoding,
-then ``validate_and_resolve_with_resolved_quantization_encoding()`` to
-validate device compatibility and discover weight files -- not inside
-``MAXModelConfig.resolve()``, which only validates device_specs and parses
-weight-path identity. Most tests below drive those two steps directly
-(via the helpers) rather than going through the full
-``PipelineConfig``/registry machinery, to keep the setup narrow.
+Encoding/weight-path resolution for LLM models happens at construction:
+``PipelineConfig.from_args`` calls ``_populate_weights_and_encoding()``
+once the architecture is known, which selects the effective encoding and
+discovers weight files. Most tests below drive that resolver (or the pure
+``_select_quantization_encoding()`` helper) directly rather than going
+through the full ``PipelineConfig``/registry machinery, to keep the setup
+narrow.
 """
 
 import json
@@ -33,6 +31,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import get_args
 from unittest.mock import patch
 
 import pytest
@@ -40,7 +39,7 @@ from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
 from max.pipelines.lib.config.model_config import (
-    _select_dtype_cast,
+    _populate_weights_and_encoding,
     _select_quantization_encoding,
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
@@ -183,16 +182,16 @@ def _resolve_encoding_and_weight_path(
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
-    """Resolves both encoding and weight_path the way a consumer does in
-    production: select the effective encoding, then validate device
-    compatibility and discover weight files against that resolved encoding.
+    """Resolves both encoding and weight_path via
+    :func:`_populate_weights_and_encoding`, the resolver
+    ``PipelineConfig.from_args`` runs. Every encoding is treated as
+    architecture-supported so these tests exercise inference/discovery, not
+    the supported-encodings gate.
     """
-    encoding = _select_quantization_encoding(config, default_encoding)
-    cast_from, _ = _select_dtype_cast(config, default_encoding)
-    config.quantization_encoding = encoding
-    config.validate_and_resolve_with_resolved_quantization_encoding(
-        resolved_encoding=encoding,
-        applied_dtype_cast_from=cast_from,
+    _populate_weights_and_encoding(
+        config,
+        default_encoding=default_encoding,
+        supported_encodings=set(get_args(SupportedEncoding)),
         default_weights_format=default_weights_format,
     )
 

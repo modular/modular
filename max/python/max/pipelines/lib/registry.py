@@ -492,10 +492,6 @@ class PipelineRegistry:
         self._cached_huggingface_tokenizers: dict[
             HuggingFaceRepo, PreTrainedTokenizer | PreTrainedTokenizerFast
         ] = {}
-        # Tracks already-imported custom architecture specs so that repeated
-        # retrieve_factory() calls don't re-run importlib.import_module and
-        # spuriously re-register the same architectures.
-        self._imported_custom_arch_specs: set[str] = set()
 
     @property
     def architectures(self) -> dict[str, SupportedArchitecture]:
@@ -768,42 +764,14 @@ class PipelineRegistry:
     def _import_custom_architectures(
         self, custom_architectures: list[str]
     ) -> None:
-        """Imports custom model modules and registers them in the pipeline registry."""
-        import importlib
-        import os
-        import sys
+        """Imports custom model modules and registers their architectures.
 
-        for module_spec in custom_architectures:
-            if module_spec in self._imported_custom_arch_specs:
-                continue
-            module_parts = module_spec.split(":")
-            if len(module_parts) > 2:
-                raise ValueError(
-                    f"Custom module spec contains too many colons: {module_spec}"
-                )
-            elif len(module_parts) == 2:
-                module_path, module_name = module_parts
-            else:
-                module_path = os.path.dirname(module_parts[0])
-                module_name = os.path.basename(module_parts[0])
-            sys.path.append(module_path)
-            try:
-                module = importlib.import_module(module_name)
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to import custom model from: {module_spec}"
-                ) from e
-
-            if not module.ARCHITECTURES or not isinstance(
-                module.ARCHITECTURES, list
-            ):
-                raise ValueError(
-                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
-                )
-
-            for arch in module.ARCHITECTURES:
-                self.register(arch, allow_override=True)
-            self._imported_custom_arch_specs.add(module_spec)
+        Delegates to :class:`ArchLookup`, which owns the import logic and the
+        per-spec dedup. ``PipelineConfig.from_args`` runs the same import
+        against the shared table, so this is a no-op for configs built there;
+        it remains for directly-constructed configs.
+        """
+        self._arch_lookup.import_custom_architectures(custom_architectures)
 
     def retrieve_factory(
         self,
@@ -823,14 +791,8 @@ class PipelineRegistry:
             pipeline_config.runtime.custom_architectures
         )
 
-        # Apply the unified spec-decode target-architecture override (e.g.
-        # "DeepseekV3ForCausalLM" -> "UnifiedMTPDeepseekV3ForCausalLM") *before*
-        # resolving ``arch``, so the resolved architecture passed to
-        # ``pipeline_config.resolve()`` is consumed by memory estimation, the
-        # overlap scheduler, and parser resolution as the overridden arch — not
-        # the stale base arch. Resolving after the override (as the inline block
-        # in ``resolve()`` did) regressed all unified spec-decode models (#88511).
-        pipeline_config._resolve_speculative_target_architecture()
+        # The spec-decode target override already ran in from_args, so
+        # ``arch`` reflects it — consumers must never see the base arch (#88511).
 
         # MAX pipeline
         if override_architecture:
