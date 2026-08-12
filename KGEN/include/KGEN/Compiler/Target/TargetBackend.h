@@ -150,7 +150,7 @@ public:
   /// block but never across kernels. The default uses
   /// `sharedMemoryAddressSpace()`; targets without shared memory (e.g. host)
   /// never match.
-  bool isSharedMemoryGlobal(const llvm::GlobalVariable &global) const;
+  virtual bool isSharedMemoryGlobal(const llvm::GlobalVariable &global) const;
 
 protected:
   /// The target's shared/threadgroup-memory address space, or nullopt for
