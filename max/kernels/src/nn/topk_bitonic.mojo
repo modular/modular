@@ -18,9 +18,10 @@ streaming variant folds `TILE`-wide tiles into a running top-`TILE`
 champion, selecting `K ≤ TILE` out of arbitrarily large `N`.
 """
 
-from std.sys import align_of, size_of
+from std.sys import align_of, is_nvidia_gpu, size_of
+from std.sys._assembly import inlined_assembly
 
-from std.bit import count_leading_zeros
+from std.bit import count_leading_zeros, log2_floor
 
 from std.atomic import Atomic, Ordering
 from shmem.ep_comm import BLOCK_SCOPE
@@ -817,6 +818,14 @@ comptime _HSEL_MIN_N: Int = PERSISTENT_TOPK_MAX_N + 1
 comptime _HSEL_RES_BLOCK: Int = 1024
 comptime _HSEL_RES_VECS: Int = 2
 comptime _HSEL_RES_MAX: Int = _HSEL_RES_BLOCK * _HSEL_RES_VECS * _PTOPK_ITEMS
+# A wider payload, for rows past what the narrow one holds. The streaming select
+# re-reads such a row once per round, and a distribution whose threshold bin
+# overflows `cand` makes that every round; holding the row instead costs only
+# registers, and where the rows under-fill the GPU those are free.
+comptime _HSEL_RES_VECS_WIDE: Int = 4
+comptime _HSEL_RES_MAX_WIDE: Int = (
+    _HSEL_RES_BLOCK * _HSEL_RES_VECS_WIDE * _PTOPK_ITEMS
+)
 
 # Trace slots per row: [0] block entry, [1 + 2r] end of round `r`'s pass,
 # [2 + 2r] end of its split, [13] thread 0 done appending, [16] every warp done
@@ -828,7 +837,16 @@ comptime _HSEL_RES_MAX: Int = _HSEL_RES_BLOCK * _HSEL_RES_VECS * _PTOPK_ITEMS
 # slowest warp's overhang on a ragged candidate list, otherwise charged to the
 # phase after it. 18..22 split the rank open: digit chosen, histogram built,
 # suffix scan and cursor done, keys grouped, run scan done; [14] closes it.
-comptime HSEL_TRACE_EVENTS: Int = 23
+#
+# [23 + r] is not a timestamp but round `r`'s shape,
+# `(bracket << 40) | (atOrAbove << 20) | need`, because a phase table says how long
+# a round took and never why it ran: whether a later round is needed is a question
+# about the bracket the previous one left, and `atOrAbove == need` is exactly the
+# exact-fit exit. [29] closes the cheap tail's per-group scans, and [30] and [31]
+# cut a split into its suffix scan, its walk to the bin, and whatever the contract
+# then does with the bracket -- unrelated costs that one phase boundary cannot
+# tell apart.
+comptime HSEL_TRACE_EVENTS: Int = 32
 
 
 @always_inline
@@ -907,6 +925,89 @@ def _phi4(
 
 
 @always_inline
+def _warp_sum_u32(val: UInt32) -> UInt32:
+    """Warp-wide sum of `val`, broadcast to every lane.
+
+    `redux` reduces a warp in a single instruction on recent NVIDIA parts, but the
+    stdlib wires it only for float32 max/min, so the integer form is spelled out
+    here the way it spells that one. The shuffle butterfly is the portable
+    fallback and takes a step per halving to reach the same answer.
+    """
+    comptime if is_nvidia_gpu():
+        return inlined_assembly[
+            "redux.sync.add.u32 $0, $1, $2;",
+            UInt32,
+            constraints="=r,r,i",
+            has_side_effect=True,
+        ](val, Int32(-1))
+    return warp.sum(val)
+
+
+@always_inline
+def _hsel_block_scan[
+    block_size: Int, mut_origin: MutOrigin
+](
+    val: UInt32,
+    wsum: UnsafePointer[
+        Scalar[DType.uint32], mut_origin, address_space=AddressSpace.SHARED
+    ],
+) -> UInt32:
+    """Block-wide inclusive prefix sum across `block_size` threads, one barrier.
+
+    `block.prefix_sum` needs two: it stores each warp's total, waits, has warp 0
+    scan those totals, and waits again so the rest can read the result. Having
+    every warp reduce the totals itself instead removes the second wait, and a
+    warp reduction is cheap enough that nothing replaces the barrier it drops.
+    `wsum` must hold `block_size / WARP_SIZE` entries and its previous contents
+    are not read.
+
+    The caller must already be past any barrier that protects `wsum`'s prior use.
+    """
+    comptime n_warps = block_size // WARP_SIZE
+    var lane = Int(lane_id())
+    var wid = Int(warp_id())
+    var inc = warp.prefix_sum(val)
+    if lane == WARP_SIZE - 1:
+        wsum[wid] = inc
+    barrier()
+    # Every warp sums the totals of the warps before it. A warp shares one `wid`,
+    # so masking by it leaves each warp reducing exactly its own prefix.
+    var mine = UInt32(0)
+    if lane < n_warps:
+        mine = wsum[lane]
+    return inc + _warp_sum_u32(mine if lane < wid else UInt32(0))
+
+
+@always_inline
+def _hsel_split_scan[
+    block_size: Int, one_barrier: Bool, mut_origin: MutOrigin
+](
+    val: UInt32,
+    wsum: UnsafePointer[
+        Scalar[DType.uint32], mut_origin, address_space=AddressSpace.SHARED
+    ],
+) -> UInt32:
+    """The round split's block-wide inclusive prefix sum, whichever is faster here.
+
+    Which one that is depends on the instantiation rather than on the shape, so the
+    choice is a parameter: the one-barrier scan wins everywhere except the ordered
+    per-bin digit, where it measured slower than the stdlib's. `wsum` is scratch for
+    that scan alone, so a caller which does not select it may pass a single element.
+
+    The value is returned rather than written into a variable the caller declares
+    ahead of the branch, which keeps that declaration a live initialization.
+
+    Neither arm leaves the block synchronized, so consecutive calls need a barrier
+    between them for the scratch each one reuses. What both do guarantee is that
+    every thread's input has been consumed before any thread returns, so a caller
+    may overwrite the slots its own input came from without one.
+    """
+    comptime if one_barrier:
+        return _hsel_block_scan[block_size](val, wsum)
+    return block.prefix_sum[block_size=block_size](val)
+
+
+@always_inline
 def _hsel_contested[
     half: Int
 ](phi: UInt32, rcol: UInt32, lo: UInt32, hi: UInt32, t_phi: UInt32) -> Bool:
@@ -950,6 +1051,8 @@ def _histsel_topk_kernel[
     rank_bits: Int = _HSEL_RANK_BITS - 1,
     rank_slots: Bool = False,
     sel_cap: Int = _PTOPK_TOTAL,
+    ordered: Bool = True,
+    deterministic: Bool = True,
 ](
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
@@ -1348,6 +1451,36 @@ def _histsel_topk_kernel[
                 UInt64(global_perf_counter_ns()),
             )
 
+    # The cheap contract is the append's own output read back out. `sel_cap` of
+    # `_PTOPK_TOTAL` makes the rounds land on `K` exactly, so `sel_k` already
+    # holds the `K` columns and the only thing the rank adds is their order.
+    #
+    # `deterministic` is what decides whether that is affordable here, and unlike
+    # the resident kernel it is not a free choice: the append claims slots with an
+    # atomic, so `sel_k`'s arrangement is arrival-ordered and varies between
+    # launches. The rank is what erases that, which makes it the *determinism*
+    # mechanism on this path and not only an ordering one. Placing deterministically
+    # instead would need each thread's slot base up front, and the counts that give
+    # it are only known after a pass -- a second pass over a row this long costs
+    # more than the rank it would save. So the reproducible contract keeps the rank
+    # and only `deterministic=False` skips it.
+    comptime if (not ordered) and (not deterministic):
+        var q = tid
+        while q < _K:
+            out_idxs[token * _K + q] = _key_column(sel_k[q])
+            q += _PTOPK_BLOCK
+        comptime if enable_trace:
+            if tid == 0:
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 14,
+                    UInt64(global_perf_counter_ns()),
+                )
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 15,
+                    UInt64(global_perf_counter_ns()),
+                )
+        return
+
     # `cand` is dead once the append is done, so the rank's per-bin cursor takes
     # its first 16 KB rather than costing the block more shared memory -- which
     # at the prefill row count is what decides whether two blocks fit an SM.
@@ -1616,7 +1749,10 @@ def _hsel_rank_write[
                 vphi |= UInt32(
                     (mine[i] ^ banchor[_hsel_coarse_bin(mine[i])]) >> UInt64(32)
                 )
-    comptime for sp in range(5):
+    # A step per lane-halving, so lane 0 below holds the whole warp's mask. A
+    # narrower one leaves out positions the keys differ at, and the digit built
+    # from it then stops preserving order.
+    comptime for sp in range(log2_floor(WARP_SIZE)):
         vary |= warp.shuffle_xor(vary, UInt32(1 << sp))
         comptime if bin_digit:
             vphi |= warp.shuffle_xor(vphi, UInt32(1 << sp))
@@ -1649,7 +1785,7 @@ def _hsel_rank_write[
         comptime for i in range(items):
             if p0 + i < M:
                 vbin |= mine[i] ^ banchor[_hsel_coarse_bin(mine[i])]
-        comptime for sp in range(5):
+        comptime for sp in range(log2_floor(WARP_SIZE)):
             vbin |= warp.shuffle_xor(vbin, UInt32(1 << sp))
         if Int(lane_id()) == 0:
             wor[Int(warp_id())] = vbin
@@ -1848,6 +1984,9 @@ def _histsel_resident_kernel[
     enable_trace: Bool = False,
     sel_cap: Int = _HSEL_SEL_CAP,
     bin_digit: Bool = False,
+    ordered: Bool = True,
+    deterministic: Bool = True,
+    res_vecs: Int = _HSEL_RES_VECS,
 ](
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
@@ -1858,18 +1997,31 @@ def _histsel_resident_kernel[
     """`_histsel_topk_kernel` with the row held in registers, for short rows.
 
     Same select, same key, same sort, so the output is byte-identical; only
-    where the scores live changes. A row of at most `_HSEL_RES_MAX`
-    columns is read once into `_HSEL_RES_VECS` `float4` per thread and every
-    round then re-tests registers. That removes both of the streaming path's
-    costs at these lengths: the second row scan, and the parked candidate list
-    every later round has to gather through (`cand` -> column -> score, two
-    dependent global loads per candidate). It is also why the candidate list is
-    absent here -- with the row in registers there is nothing to park -- which
-    drops the block's shared memory from 99 KB to 33.
+    where the scores live changes. A row is read once into at most `res_vecs`
+    `float4` per thread, and every round then re-tests those registers.
+    That removes both of the streaming path's costs at these lengths: the
+    second row scan, and the parked candidate list every later round has to
+    gather through (`cand` -> column -> score, dependent global loads per
+    candidate). It is also why the candidate list is absent here -- with the row
+    in registers there is nothing to park -- which is most of the block's shared
+    memory saved. `res_vecs` is therefore a width the dispatch chooses per row
+    length, not a constant: wider holds a longer row at the cost of registers,
+    and registers are what decide how many blocks an SM keeps resident.
+
+    `ordered` is the output contract. `True` emits the `K` columns ranked by
+    descending score and ascending column; `False` emits the same `K` columns in
+    ascending column order and skips the rank entirely, which is most of this
+    kernel's work. The *set* is identical either way -- the tie-break lives inside
+    the packed key the select already compares, so the rank only ever ordered a
+    set the select had already fixed, and `deterministic` then decides whether
+    even that set is promised. A caller can take the cheap contract when its
+    consumer reads a slot's index rather than the slot's position: the sparse-MLA
+    gather is one, since `SparseCausalLogical` decides causality by looking a
+    slot's key position up instead of counting slots.
 
     Trace slots are `_histsel_topk_kernel`'s, so one analyzer reads both.
     """
-    comptime items = _HSEL_RES_VECS * _PTOPK_ITEMS
+    comptime items = res_vecs * _PTOPK_ITEMS
     comptime res_step = _HSEL_RES_BLOCK * _PTOPK_ITEMS
     var tid = Int(thread_idx.x)
     var token = Int(block_idx.x)
@@ -1877,33 +2029,63 @@ def _histsel_resident_kernel[
     var hist = unsafe_stack_allocation[
         _HSEL_BINS + 1, Scalar[DType.uint32], address_space=AddressSpace.SHARED
     ]()
+    # Everything the rank needs is dead weight under the cheap contract, which
+    # compacts straight from registers to the output and never packs a key.
+    comptime selk_n = sel_cap if ordered else 1
+    comptime cur_n = (_HSEL_RANK_BINS + _PTOPK_TOTAL) if ordered else 1
+    comptime wor_n = (2 * (_HSEL_RES_BLOCK // WARP_SIZE) + 2) if ordered else 1
     var sel_k = unsafe_stack_allocation[
-        sel_cap,
+        selk_n,
         Scalar[DType.uint64],
         alignment=_V4_ALIGN,
         address_space=AddressSpace.SHARED,
     ]()
-    # As in `_histsel_topk_kernel`: [0] split bin, [1] keys strictly above it,
-    # [2] keys at or above it, [3] append cursor into `sel_k`.
+    # The leading slots are `_histsel_topk_kernel`'s: [0] split bin, [1] keys
+    # strictly above it, [2] keys at or above it, [3] append cursor. Past those
+    # the plateau fold reduces the bracket's extremes into a pair of its own, and
+    # the deterministic unordered tail takes one slot per column group beyond
+    # everything the select uses -- described by role rather than by index
+    # because the count of groups is a width the dispatch chooses, and a tail
+    # slot that collided with a live one would corrupt the row silently.
+    comptime ctl_tail: Int = 8
     var ctl = unsafe_stack_allocation[
-        8, Scalar[DType.uint32], address_space=AddressSpace.SHARED
+        ctl_tail + res_vecs,
+        Scalar[DType.uint32],
+        address_space=AddressSpace.SHARED,
     ]()
     # The rank's per-bin cursor and its staged output. The streaming path folds
     # these into its dead candidate list; with no candidate list there is nothing
     # to fold into.
     var cur = unsafe_stack_allocation[
-        _HSEL_RANK_BINS + _PTOPK_TOTAL,
+        cur_n,
         Scalar[DType.uint32],
         address_space=AddressSpace.SHARED,
     ]()
     var wor = unsafe_stack_allocation[
-        2 * (_HSEL_RES_BLOCK // WARP_SIZE) + 2,
+        wor_n,
         Scalar[DType.uint64],
+        address_space=AddressSpace.SHARED,
+    ]()
+    # The one-barrier block scan is taken wherever it measured faster, which is
+    # every instantiation except the ordered per-bin digit -- there it loses to the
+    # stdlib's, so that one keeps the stdlib scan and needs no scratch at all.
+    comptime one_barrier_scan = not (ordered and bin_digit)
+    # Per-warp totals for that scan. One region per column group, because the
+    # relaxed tail runs their scans back to back with no barrier between them and a
+    # shared region would let a fast warp's store race a slow warp's read of the
+    # scan before it; only that tail needs more than one region.
+    comptime wscan_warps = _HSEL_RES_BLOCK // WARP_SIZE
+    comptime wscan_n = res_vecs * wscan_warps if (
+        (not ordered) and deterministic
+    ) else (wscan_warps if one_barrier_scan else 1)
+    var wscan = unsafe_stack_allocation[
+        wscan_n,
+        Scalar[DType.uint32],
         address_space=AddressSpace.SHARED,
     ]()
     # Round 0's occupied bins, numbered densely, and one representative key per
     # bin -- both only for the instantiation whose digit uses them.
-    comptime nbin_aux = _HSEL_BINS if bin_digit else 1
+    comptime nbin_aux = _HSEL_BINS if (bin_digit and ordered) else 1
     var dmap = unsafe_stack_allocation[
         nbin_aux, Scalar[DType.uint32], address_space=AddressSpace.SHARED
     ]()
@@ -1931,7 +2113,7 @@ def _histsel_resident_kernel[
     # streaming path reaches two outstanding loads per thread by carrying one
     # group ahead; here the whole row is the prefetch.
     var ph = SIMD[DType.uint32, items](0)
-    comptime for v in range(_HSEL_RES_VECS):
+    comptime for v in range(res_vecs):
         var c0 = tid * _PTOPK_ITEMS + v * res_step
         var g = _phi4(in_scores, row + c0, c0, _N)
         comptime for j in range(_PTOPK_ITEMS):
@@ -1947,7 +2129,14 @@ def _histsel_resident_kernel[
     var found = False
 
     comptime half_rounds = _hsel_half_rounds[_HSEL_TAIL_BITS]()
-    comptime for half in range(2):
+    # The column half resolves *which* members of the tied plateau at `t_phi` are
+    # in, by narrowing `~column` until the bracket holds exactly `K`. The cheap
+    # contract does not need it: the tie-break is already the lowest column, and
+    # the compaction below walks columns in order, so it can take the plateau's
+    # first `need` members by counting instead. That is what makes a tie-dense
+    # row no more expensive here than a distinct one.
+    comptime nhalves = 2 if ordered else 1
+    comptime for half in range(nhalves):
         comptime for r in range(half_rounds):
             comptime rr = half * half_rounds + r
             if not found:
@@ -1972,14 +2161,42 @@ def _histsel_resident_kernel[
                     while z < nbins:
                         hist[z] = 0
                         z += _HSEL_RES_BLOCK
+                    # The cheap contract's single-valued question, asked of the
+                    # bracket this round is about to split. It rides the histogram's
+                    # own sweep, which already visits exactly the bracket's columns
+                    # and already ends in a barrier -- so the answer rides along on
+                    # registers the sweep has loaded anyway, where asking it
+                    # separately cost a sweep of its own.
+                    #
+                    # Asking it here rather than of the previous round's leftovers
+                    # is also what makes it unconditional: whether a bracket is a
+                    # plateau is a property of the bracket, and no property of the
+                    # row predicts it. A row of continuous scores still ends in a
+                    # plateau wherever the float grid is coarser than the
+                    # distribution it was sampled from, which at `K` close to `N`
+                    # is exactly where the threshold lands.
+                    comptime fold_bracket = (
+                        not ordered
+                    ) and half == 0 and r > 0
+                    comptime if fold_bracket:
+                        if tid == 0:
+                            ctl[6] = UInt32(0)
+                            ctl[7] = UInt32.MAX
                     barrier()
 
-                    comptime for v in range(_HSEL_RES_VECS):
+                    var pmax = UInt32(0)
+                    var pmin = UInt32.MAX
+                    comptime for v in range(res_vecs):
                         var c0 = tid * _PTOPK_ITEMS + v * res_step
                         comptime for j in range(_PTOPK_ITEMS):
                             var p = ph[v * _PTOPK_ITEMS + j]
                             var rc = ~UInt32(c0 + j)
                             if _hsel_contested[half](p, rc, lo, hi, t_phi):
+                                comptime if fold_bracket:
+                                    if p > pmax:
+                                        pmax = p
+                                    if p < pmin:
+                                        pmin = p
                                 _ = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
                                     ordering=Ordering.RELAXED
                                 ](
@@ -1987,93 +2204,144 @@ def _histsel_resident_kernel[
                                     + _hsel_digit[half, w_out, nbins](p, rc),
                                     UInt32(1),
                                 )
+                    comptime if fold_bracket:
+                        # One atomic per warp, not per thread: a whole block on one
+                        # shared address serializes into as many read-modify-writes.
+                        var wmax = warp.max(pmax)
+                        var wmin = warp.min(pmin)
+                        if lane_id() == 0:
+                            Atomic[UInt32, scope=BLOCK_SCOPE].max[
+                                ordering=Ordering.RELAXED
+                            ](ctl + 6, wmax)
+                            Atomic[UInt32, scope=BLOCK_SCOPE].min[
+                                ordering=Ordering.RELAXED
+                            ](ctl + 7, wmin)
                     barrier()
 
-                    comptime if enable_trace:
-                        if tid == 0:
-                            trace_buf.store(
-                                token * HSEL_TRACE_EVENTS + 1 + 2 * rr,
-                                UInt64(global_perf_counter_ns()),
+                    var folded = False
+                    comptime if fold_bracket:
+                        if ctl[6] == ctl[7]:
+                            t_phi = ctl[6]
+                            found = True
+                            folded = True
+
+                    # A plateau bracket has already answered the round, so the
+                    # scan, the split and their barriers are skipped rather than
+                    # run and discarded. Block-uniform: the verdict comes out of
+                    # shared memory.
+                    if not folded:
+                        comptime if enable_trace:
+                            if tid == 0:
+                                trace_buf.store(
+                                    token * HSEL_TRACE_EVENTS + 1 + 2 * rr,
+                                    UInt64(global_perf_counter_ns()),
+                                )
+
+                        # Suffix sum and split, as in `_histsel_topk_kernel`. 1024
+                        # threads halve the bins per thread, so the scan is half the
+                        # work as well.
+                        comptime run = max(1, nbins // _HSEL_RES_BLOCK)
+                        var top = nbins - 1 - tid * run
+                        var local = UInt32(0)
+                        if top >= 0:
+                            comptime for j in range(run):
+                                local += hist[top - j]
+                        var inclusive = _hsel_split_scan[
+                            _HSEL_RES_BLOCK, one_barrier_scan
+                        ](local, wscan)
+                        var exclusive = inclusive - local
+                        comptime if enable_trace:
+                            comptime if rr == 0:
+                                if tid == 0:
+                                    trace_buf.store(
+                                        token * HSEL_TRACE_EVENTS + 30,
+                                        UInt64(global_perf_counter_ns()),
+                                    )
+                        var uneed = UInt32(need)
+                        if exclusive < uneed and uneed <= inclusive:
+                            var acc = exclusive
+                            var split = top
+                            while True:
+                                acc += hist[split]
+                                if acc >= uneed:
+                                    break
+                                split -= 1
+                            ctl[0] = UInt32(split)
+                            ctl[1] = acc - hist[split]
+                            ctl[2] = acc
+                        barrier()
+
+                        comptime if enable_trace:
+                            comptime if rr == 0:
+                                if tid == 0:
+                                    trace_buf.store(
+                                        token * HSEL_TRACE_EVENTS + 31,
+                                        UInt64(global_perf_counter_ns()),
+                                    )
+
+                        lo += UInt32(Int(ctl[0])) << UInt32(w_out)
+                        hi = lo + ((UInt32(1) << UInt32(w_out)) - 1)
+                        # Hand over as soon as the columns at or above the bracket fit
+                        # `sel_k`, and from round 0 unlike `_histsel_topk_kernel`: the
+                        # append re-tests registers here, so there is no parked list to
+                        # wait for.
+                        #
+                        # `hist` still holds this round's *raw* per-bin counts -- the
+                        # split's scan reads them and writes nothing back, unlike the
+                        # rank's -- so a bin is occupied exactly when its count is
+                        # nonzero. The numbering has to be taken here because round 0
+                        # is the only round whose histogram covers every column.
+                        comptime if bin_digit and half == 0 and r == 0:
+                            comptime orun = nbins // _HSEL_RES_BLOCK
+                            var b0 = tid * orun
+                            var occ = SIMD[DType.uint32, orun](0)
+                            var nloc = UInt32(0)
+                            comptime for j in range(orun):
+                                if hist[b0 + j] > 0:
+                                    occ[j] = 1
+                                    nloc += 1
+                            # Flags only: turning them into dense numbers is a block
+                            # scan, and whether the digit will read them is not knowable
+                            # until the keys are parked, so the rank does that itself.
+                            comptime for j in range(orun):
+                                dmap[b0 + j] = occ[j]
+                            nocc = Int(
+                                block.sum[
+                                    block_size=_HSEL_RES_BLOCK, broadcast=True
+                                ](nloc)
                             )
 
-                    # Suffix sum and split, as in `_histsel_topk_kernel`. 1024
-                    # threads halve the bins per thread, so the scan is half the
-                    # work as well.
-                    comptime run = max(1, nbins // _HSEL_RES_BLOCK)
-                    var top = nbins - 1 - tid * run
-                    var local = UInt32(0)
-                    if top >= 0:
-                        comptime for j in range(run):
-                            local += hist[top - j]
-                    var inclusive = block.prefix_sum[
-                        block_size=_HSEL_RES_BLOCK
-                    ](local)
-                    var exclusive = inclusive - local
-                    var uneed = UInt32(need)
-                    if exclusive < uneed and uneed <= inclusive:
-                        var acc = exclusive
-                        var split = top
-                        while True:
-                            acc += hist[split]
-                            if acc >= uneed:
-                                break
-                            split -= 1
-                        ctl[0] = UInt32(split)
-                        ctl[1] = acc - hist[split]
-                        ctl[2] = acc
-                    barrier()
-
-                    lo += UInt32(Int(ctl[0])) << UInt32(w_out)
-                    hi = lo + ((UInt32(1) << UInt32(w_out)) - 1)
-                    # Hand over as soon as the columns at or above the bracket fit
-                    # `sel_k`, and from round 0 unlike `_histsel_topk_kernel`: the
-                    # append re-tests registers here, so there is no parked list to
-                    # wait for.
-                    #
-                    # `hist` still holds this round's *raw* per-bin counts -- the
-                    # split's scan reads them and writes nothing back, unlike the
-                    # rank's -- so a bin is occupied exactly when its count is
-                    # nonzero. The numbering has to be taken here because round 0
-                    # is the only round whose histogram covers every column.
-                    comptime if bin_digit and half == 0 and r == 0:
-                        comptime orun = nbins // _HSEL_RES_BLOCK
-                        var b0 = tid * orun
-                        var occ = SIMD[DType.uint32, orun](0)
-                        var nloc = UInt32(0)
-                        comptime for j in range(orun):
-                            if hist[b0 + j] > 0:
-                                occ[j] = 1
-                                nloc += 1
-                        # Flags only: turning them into dense numbers is a block
-                        # scan, and whether the digit will read them is not knowable
-                        # until the keys are parked, so the rank does that itself.
-                        comptime for j in range(orun):
-                            dmap[b0 + j] = occ[j]
-                        nocc = Int(
-                            block.sum[
-                                block_size=_HSEL_RES_BLOCK, broadcast=True
-                            ](nloc)
-                        )
-
-                    # A caller that gave no slack gets the old exact-fit test and
-                    # the old code -- see the dispatch for when that is chosen.
-                    var msel = _K
-                    var fits = Int(ctl[2]) == need
-                    comptime if sel_cap > _PTOPK_TOTAL:
-                        msel = _K - need + Int(ctl[2])
-                        fits = msel <= sel_cap
-                    if fits:
-                        comptime if half == 0:
-                            t_phi = lo
+                        # A caller that gave no slack gets the old exact-fit test and
+                        # the old code -- see the dispatch for when that is chosen.
+                        var msel = _K
+                        var fits = Int(ctl[2]) == need
+                        comptime if sel_cap > _PTOPK_TOTAL:
+                            msel = _K - need + Int(ctl[2])
+                            fits = msel <= sel_cap
+                        if fits:
+                            comptime if half == 0:
+                                t_phi = lo
+                            else:
+                                t_rcol = lo
+                            m_sel = msel
+                            found = True
                         else:
-                            t_rcol = lo
-                        m_sel = msel
-                        found = True
-                    else:
-                        need -= Int(ctl[1])
-                    # The next round's zeroing must not race the reads above.
-                    barrier()
+                            need -= Int(ctl[1])
 
+                        comptime if enable_trace:
+                            if tid == 0:
+                                trace_buf.store(
+                                    token * HSEL_TRACE_EVENTS + 23 + rr,
+                                    (
+                                        UInt64(Int(ctl[2]) - Int(ctl[1]))
+                                        << UInt64(40)
+                                    )
+                                    | (UInt64(ctl[2]) << UInt64(20))
+                                    | UInt64(UInt32(need)),
+                                )
+
+                        # The next round's zeroing must not race the reads above.
+                        barrier()
                     comptime if enable_trace:
                         if tid == 0:
                             trace_buf.store(
@@ -2087,7 +2355,201 @@ def _histsel_resident_kernel[
                 lo = UInt32(0)
                 hi = UInt32.MAX
 
-    comptime for v in range(_HSEL_RES_VECS):
+    comptime if not ordered:
+        comptime if enable_trace:
+            if tid == 0:
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 13,
+                    UInt64(global_perf_counter_ns()),
+                )
+
+        # `t_phi` brackets the K-th largest score, so `phi > t_phi` is in and the
+        # plateau at `phi == t_phi` contributes its lowest `K - count(>)` columns
+        # -- the same tie-break the packed key gives the ordered path, reached by
+        # counting instead of by the column half's rounds.
+        #
+        # Thread `tid` owns columns `_PTOPK_ITEMS*tid + v*res_step` upward, so
+        # within a group the thread index already *is* the column order, and the
+        # groups are in column order too: a key's rank among its class is its scan
+        # prefix, plus every earlier group's total.
+        #
+        # Both class counts ride in one word, greaters high and equals low.
+        # Neither total can exceed the row width, so at 16 bits apiece the low
+        # field cannot carry into the high one.
+        #
+        # An atomic cursor is cheaper still, and `deterministic=False` is what
+        # takes it: see below for what that costs and what it buys.
+        comptime if not deterministic:
+            # Warp-aggregated cursor claims and no block scan at all. What the
+            # block scans buy is an ordering, and this contract reads none: every
+            # column above the
+            # plateau is selected whatever slot it lands in, and the plateau is
+            # cut by arrival rather than by column, so which of its members
+            # survive varies between identical runs.
+            #
+            # That is a real weakening -- a different set of keys is attended, not
+            # merely a different arrangement -- and it is why the default is the
+            # other way. It exists because it is the contract this kernel is
+            # compared against: an implementation that ranks a wide tie plateau on
+            # the score alone, and places the survivors by atomic, cannot promise
+            # more than this, so matching it is what makes such a comparison
+            # like-for-like.
+            #
+            # The cut needs the count above the plateau, which no thread knows
+            # until every greater column has claimed, so the plateau is written
+            # after the barrier rather than in the same sweep. One cursor serves
+            # both: continuing it past `n_above` numbers the plateau's slots, and
+            # a claim at or beyond `K` is simply dropped -- exactly `K - n_above`
+            # survive, which is the cut.
+            var obase = token * _K
+            var emask = SIMD[DType.uint32, res_vecs](0)
+            var ec_all = UInt32(0)
+            comptime for v in range(res_vecs):
+                var c0 = tid * _PTOPK_ITEMS + v * res_step
+                var gmask = UInt32(0)
+                var gc = UInt32(0)
+                comptime for j in range(_PTOPK_ITEMS):
+                    var p = ph[v * _PTOPK_ITEMS + j]
+                    if p > t_phi:
+                        gmask |= UInt32(1) << UInt32(j)
+                        gc += 1
+                    elif p == t_phi:
+                        emask[v] |= UInt32(1) << UInt32(j)
+                        ec_all += 1
+                var pre = warp.prefix_sum[exclusive=True](gc)
+                var wb = UInt32(0)
+                if lane_id() == WARP_SIZE - 1:
+                    wb = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
+                        ordering=Ordering.RELAXED
+                    ](ctl + 3, pre + gc)
+                var gp = Int(warp.shuffle_idx(wb, UInt32(WARP_SIZE - 1)) + pre)
+                comptime for j in range(_PTOPK_ITEMS):
+                    if (gmask >> UInt32(j)) & UInt32(1) != 0:
+                        out_idxs[obase + gp] = Int32(c0 + j)
+                        gp += 1
+
+            comptime if enable_trace:
+                if tid == 0:
+                    trace_buf.store(
+                        token * HSEL_TRACE_EVENTS + 29,
+                        UInt64(global_perf_counter_ns()),
+                    )
+            barrier()
+            comptime if enable_trace:
+                if tid == 0:
+                    trace_buf.store(
+                        token * HSEL_TRACE_EVENTS + 14,
+                        UInt64(global_perf_counter_ns()),
+                    )
+
+            var epre = warp.prefix_sum[exclusive=True](ec_all)
+            var ewb = UInt32(0)
+            if lane_id() == WARP_SIZE - 1:
+                ewb = Atomic[UInt32, scope=BLOCK_SCOPE].fetch_add[
+                    ordering=Ordering.RELAXED
+                ](ctl + 3, epre + ec_all)
+            var ep = Int(warp.shuffle_idx(ewb, UInt32(WARP_SIZE - 1)) + epre)
+            comptime for v in range(res_vecs):
+                var c0 = tid * _PTOPK_ITEMS + v * res_step
+                comptime for j in range(_PTOPK_ITEMS):
+                    if (emask[v] >> UInt32(j)) & UInt32(1) != 0:
+                        if ep < _K:
+                            out_idxs[obase + ep] = Int32(c0 + j)
+                        ep += 1
+
+            comptime if enable_trace:
+                if tid == 0:
+                    trace_buf.store(
+                        token * HSEL_TRACE_EVENTS + 15,
+                        UInt64(global_perf_counter_ns()),
+                    )
+            return
+
+        var gmask = SIMD[DType.uint32, res_vecs](0)
+        var emask = SIMD[DType.uint32, res_vecs](0)
+        var pref = SIMD[DType.uint32, res_vecs](0)
+        comptime for v in range(res_vecs):
+            var gc = UInt32(0)
+            var ec = UInt32(0)
+            comptime for j in range(_PTOPK_ITEMS):
+                var p = ph[v * _PTOPK_ITEMS + j]
+                if p > t_phi:
+                    gmask[v] |= UInt32(1) << UInt32(j)
+                    gc += 1
+                elif p == t_phi:
+                    emask[v] |= UInt32(1) << UInt32(j)
+                    ec += 1
+            var local = (gc << UInt32(16)) | ec
+            var inclusive = _hsel_block_scan[_HSEL_RES_BLOCK](
+                local, wscan + v * wscan_warps
+            )
+            pref[v] = inclusive - local
+            if tid == _HSEL_RES_BLOCK - 1:
+                ctl[ctl_tail + v] = inclusive
+
+        comptime if enable_trace:
+            if tid == 0:
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 29,
+                    UInt64(global_perf_counter_ns()),
+                )
+        barrier()
+
+        # Every key above the plateau is in, so their count is where the plateau's
+        # slots start. Reading it off the scans rather than accumulating it over
+        # the rounds is what keeps an early exact fit correct: that exit leaves the
+        # bracket possibly holding keys above `t_phi` which no round counted.
+        #
+        # Each group scanned only itself, so a group's slots start after every
+        # earlier group's totals. Accumulating them is what keeps that right at any
+        # payload width; getting it wrong overlays an earlier group's slots and
+        # writes past the row.
+        var g_before = SIMD[DType.uint32, res_vecs](0)
+        var e_before = SIMD[DType.uint32, res_vecs](0)
+        var g_acc = UInt32(0)
+        var e_acc = UInt32(0)
+        comptime for v in range(res_vecs):
+            g_before[v] = g_acc
+            e_before[v] = e_acc
+            var tot = ctl[ctl_tail + v]
+            g_acc += tot >> UInt32(16)
+            e_acc += tot & UInt32(0xFFFF)
+        var n_above = Int(g_acc)
+        var need_eq = _K - n_above
+
+        comptime if enable_trace:
+            if tid == 0:
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 14,
+                    UInt64(global_perf_counter_ns()),
+                )
+
+        # Straight to `out_idxs`: a thread's own keys land on consecutive slots,
+        # and staging them in shared memory to copy out by slot measured slower
+        # than the scatter it avoids.
+        var obase = token * _K
+        comptime for v in range(res_vecs):
+            var c0 = tid * _PTOPK_ITEMS + v * res_step
+            var gp = Int(pref[v] >> UInt32(16)) + Int(g_before[v])
+            var ep = Int(pref[v] & UInt32(0xFFFF)) + Int(e_before[v])
+            comptime for j in range(_PTOPK_ITEMS):
+                if (gmask[v] >> UInt32(j)) & UInt32(1) != 0:
+                    out_idxs[obase + gp] = Int32(c0 + j)
+                    gp += 1
+                elif (emask[v] >> UInt32(j)) & UInt32(1) != 0:
+                    if ep < need_eq:
+                        out_idxs[obase + n_above + ep] = Int32(c0 + j)
+                    ep += 1
+
+        comptime if enable_trace:
+            if tid == 0:
+                trace_buf.store(
+                    token * HSEL_TRACE_EVENTS + 15,
+                    UInt64(global_perf_counter_ns()),
+                )
+        return
+
+    comptime for v in range(res_vecs):
         var c0 = tid * _PTOPK_ITEMS + v * res_step
         comptime for j in range(_PTOPK_ITEMS):
             var p = ph[v * _PTOPK_ITEMS + j]
@@ -2640,7 +3102,9 @@ def _choose_split_factor(rows: Int, num_tiles: Int, sm_count: Int) -> Int:
     return S
 
 
-def persistent_topk_block_split(
+def persistent_topk_block_split[
+    ordered: Bool = True, deterministic: Bool = True
+](
     ctx: DeviceContext,
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
     out_idxs: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
@@ -2656,6 +3120,24 @@ def persistent_topk_block_split(
     serially), the streaming fold is split across `rows * S` blocks (phase 1),
     each producing a sorted top-`_TILE` partial, then merged per row (phase 2).
     All other shapes fall back to `persistent_topk_block` unchanged.
+
+    Parameters:
+        ordered: Whether slot `q` must hold the `q`-th largest score. `True` is the
+            historical contract: descending score, ties by ascending column.
+            `False` promises the same `K` columns, deterministically, in an
+            unspecified order -- which lets the short-row path skip its ranking
+            pass, most of its work. The set does not depend on this, because the
+            tie-break lives in the key the select already compares. Only shapes
+            that have a cheaper path take one; the rest stay ordered, which
+            satisfies the weaker promise too.
+        deterministic: Whether one input must always give one output. `True`, the
+            default, is the guarantee above: the same `K` columns every run.
+            `False` drops it, and drops the *set* guarantee with it -- when more
+            columns tie at the threshold than there are slots left, which of them
+            survive is decided by the order the block's warps reach a cursor. In
+            exchange the cheap contract's tail needs no ordering scan at all.
+            Only meaningful together with `ordered=False`; the ordered path is
+            deterministic by construction.
 
     Args:
         ctx: Device context.
@@ -2679,8 +3161,36 @@ def persistent_topk_block_split(
         # Short enough to hold in registers: read the row once and let every later
         # round re-test registers instead of gathering a parked candidate's score.
         # Rows must also under-fill the GPU, because this block's register count
-        # leaves one block per SM where the streaming path's fits two.
-        if N <= _HSEL_RES_MAX and not hsel_fills_gpu:
+        # leaves one block per SM where the streaming path's fits two -- and the
+        # wider the payload the more that is true, which is why the width below is
+        # chosen by `N` rather than fixed at the widest that fits.
+        @__parameter
+        @always_inline
+        def launch_resident[res_vecs: Int]() raises:
+            comptime if not ordered:
+                # With no rank to feed there is no reason to hand over a superset
+                # and no reason for the per-bin digit -- both exist only to make
+                # ranking cheap. `sel_cap` of `_PTOPK_TOTAL` is what asks the
+                # rounds to land exactly on `K` instead.
+                ctx.enqueue_function[
+                    _histsel_resident_kernel[
+                        NullTrace,
+                        sel_cap=_PTOPK_TOTAL,
+                        ordered=False,
+                        deterministic=deterministic,
+                        res_vecs=res_vecs,
+                    ]
+                ](
+                    in_scores,
+                    out_idxs,
+                    Int32(N),
+                    Int32(K),
+                    NullTrace(),
+                    grid_dim=total_seq_len,
+                    block_dim=_HSEL_RES_BLOCK,
+                )
+                return
+
             # Whether the rounds may hand a superset to the rank has to be a
             # property of the instantiation, because the slack costs something
             # even when it is never taken: the rank's slot loop is sized by the
@@ -2690,7 +3200,9 @@ def persistent_topk_block_split(
             # score level including the masked tail, whose `phi` takes the digit's
             # top varying positions and leaves it unable to split within a level.
             if N >= K + K // 2:
-                ctx.enqueue_function[_histsel_resident_kernel[NullTrace]](
+                ctx.enqueue_function[
+                    _histsel_resident_kernel[NullTrace, res_vecs=res_vecs]
+                ](
                     in_scores,
                     out_idxs,
                     Int32(N),
@@ -2705,7 +3217,9 @@ def persistent_topk_block_split(
             # costs a scan and shared memory the shapes above do not need. With the
             # runs narrow again the hand-over is affordable here too.
             ctx.enqueue_function[
-                _histsel_resident_kernel[NullTrace, bin_digit=True]
+                _histsel_resident_kernel[
+                    NullTrace, bin_digit=True, res_vecs=res_vecs
+                ]
             ](
                 in_scores,
                 out_idxs,
@@ -2715,12 +3229,52 @@ def persistent_topk_block_split(
                 grid_dim=total_seq_len,
                 block_dim=_HSEL_RES_BLOCK,
             )
-            return
+
+        if not hsel_fills_gpu:
+            if N <= _HSEL_RES_MAX:
+                launch_resident[_HSEL_RES_VECS]()
+                return
+            # The wider payload serves the rank-free contracts only. Holding the
+            # row saves the streaming select a re-read per round, which is what
+            # pays for the registers; with a rank to run as well it measured
+            # slower than streaming, so the ordered contract keeps streaming here
+            # and is unchanged by this.
+            comptime if not ordered:
+                if N <= _HSEL_RES_MAX_WIDE:
+                    launch_resident[_HSEL_RES_VECS_WIDE]()
+                    return
 
         # Rows below the SM count leave every block resident whatever its
         # register count, so the scan can buy memory parallelism with registers
         # (see `prefetch`). Above it, occupancy is what throughput is made of.
+        #
+        # The rank-free contract takes the exact-fit `sel_cap` either way: the
+        # slack exists to let a round stop early and hand the rank a superset, and
+        # there is no rank here to drop the slack again.
         if not hsel_fills_gpu:
+            comptime if (not ordered) and (not deterministic):
+                ctx.enqueue_function[
+                    _histsel_topk_kernel[
+                        NullTrace,
+                        prefetch=True,
+                        tail_bits=_HSEL_TAIL_BITS,
+                        ordered=False,
+                        deterministic=False,
+                    ]
+                ](
+                    in_scores,
+                    out_idxs,
+                    Int32(N),
+                    Int32(K),
+                    NullTrace(),
+                    grid_dim=total_seq_len,
+                    block_dim=_PTOPK_BLOCK,
+                    shared_mem_bytes=_HSEL_SMEM_BYTES,
+                    func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                        UInt32(_HSEL_SMEM_BYTES)
+                    ),
+                )
+                return
             ctx.enqueue_function[
                 _histsel_topk_kernel[
                     NullTrace,
@@ -2745,7 +3299,11 @@ def persistent_topk_block_split(
             )
             return
 
-        ctx.enqueue_function[_histsel_topk_kernel[NullTrace]](
+        ctx.enqueue_function[
+            _histsel_topk_kernel[
+                NullTrace, ordered=ordered, deterministic=deterministic
+            ]
+        ](
             in_scores,
             out_idxs,
             Int32(N),
