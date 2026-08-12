@@ -84,7 +84,7 @@ void M::KGEN::printFunctionSignature(LIT::FnOp fnOp, LIT::SharedState &shared,
 
   // Function-level constraints (the trailing "where ...").
   std::string fnConstraints;
-  if (auto cs = signature.getMetadata().getBodyConstraints(); !cs.empty())
+  if (auto cs = signature.getParamListAttrs().getBodyConstraints(); !cs.empty())
     fnConstraints = mergeConformsToConstraints(cs, &evaluator, shared, params);
 
   SmallVector<ArgumentInfo, 2> args;

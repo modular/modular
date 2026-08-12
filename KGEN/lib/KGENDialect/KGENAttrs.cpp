@@ -1173,7 +1173,7 @@ inferBindParamsResultType(TypedAttr generator, ArrayRef<TypedAttr> paramValues,
 
   // By back-compat, we never eliminate the empty generator type wrapper on
   // func types. This should eventually be made consistent with other types.
-  PogListAttr metadata = specializedType.getMetadata();
+  PogListAttr metadata = specializedType.getParamListAttrs();
   bool hasBodyConstraints = metadata && !metadata.getBodyConstraints().empty();
   bool canEagerInstantiate = specializedType.isFullyBound() &&
                              !hasBodyConstraints &&
@@ -1227,7 +1227,7 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
     if (innerMask || discharged) {
       auto genType =
           sugarCast<GeneratorType>(bindParams.getGenerator().getType());
-      PogListAttr metadata = genType.getMetadata();
+      PogListAttr metadata = genType.getParamListAttrs();
       size_t origBodyCount =
           metadata ? metadata.getBodyConstraints().size() : 0;
       mergedMask = mergeDischargedConstraints(generator.getContext(), innerMask,
@@ -1371,7 +1371,7 @@ verifyBindParamsInputs(function_ref<InFlightDiagnostic()> emitError,
   if (!discharged || discharged.empty())
     return success();
 
-  PogListAttr genMetadata = genType.getMetadata();
+  PogListAttr genMetadata = genType.getParamListAttrs();
   size_t origBodyCount =
       genMetadata ? genMetadata.getBodyConstraints().size() : 0;
   size_t dischargedSize = static_cast<size_t>(discharged.size());
@@ -1568,7 +1568,7 @@ getSymbolSignature(FuncInterface func, ArrayRef<Operation *> symbolOps) {
   for (Type type : baseSigGen.getInputParamTypes())
     inputParamTypes.push_back(remapper.replace(type));
 
-  PogListAttr genMetadata = baseSigGen.getMetadata();
+  PogListAttr genMetadata = baseSigGen.getParamListAttrs();
   if (genMetadata) {
     SmallVector<StringAttr> paramNames = llvm::map_to_vector(
         paramDecls, [](const ParamDeclAttr &param) { return param.getName(); });
@@ -1770,7 +1770,7 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
       odsParser.parseGreater())
     return {};
   return GeneratorAttr::get(genType.getInputParamTypes(), body,
-                            genType.getMetadata());
+                            genType.getParamListAttrs());
 }
 
 void GeneratorAttr::print(::mlir::AsmPrinter &odsPrinter) const {

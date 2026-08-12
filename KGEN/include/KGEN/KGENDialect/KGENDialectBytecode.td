@@ -39,7 +39,7 @@ def StringType : DialectType<(type)>;
 def GeneratorType : DialectType<(type
   TypeArray:$inputParamTypes,
   Type:$body,
-  ConcreteOptionalAttribute<"PogListAttr">:$metadata
+  ConcreteOptionalAttribute<"PogListAttr">:$paramListAttrs
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }

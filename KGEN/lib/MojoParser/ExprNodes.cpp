@@ -1795,7 +1795,8 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   // Check the bindings.
   // FIXME: The error messages are bad for partial binding, because the
   // diagnostic emitter points to the original struct definition.
-  ParamInf inference(paramBindings, sig.getInputParamTypes(), sig.getMetadata(),
+  ParamInf inference(paramBindings, sig.getInputParamTypes(),
+                     sig.getParamListAttrs(),
                      /*allowImplicitConversions=*/true, nullptr,
                      /*discardError=*/false,
                      /*deferredTypingContext=*/emitter.deferredTypingContext);

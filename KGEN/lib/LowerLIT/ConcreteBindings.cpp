@@ -153,7 +153,7 @@ GeneratorType M::KGEN::getSpecializedWithConcreteBindings(
   SmallVector<Type> newParamTypes =
       replacer.getRemappedUnboundParamTypes(paramTypes);
   Type newBody = replacer.getReboundType(gen.getBody());
-  PogListAttr rawMetadata = gen.getMetadata();
+  PogListAttr rawMetadata = gen.getParamListAttrs();
   PogListAttr genMetadata = replacer.specializeMetadata(
       rawMetadata, paramBindings, paramTypes, emitErrorFn);
   if (rawMetadata && !genMetadata)

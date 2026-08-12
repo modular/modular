@@ -2135,7 +2135,7 @@ ParseResult KGEN::parseGenerator(AsmParser &p, Type &generator) {
 }
 
 void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
-  if (PogListAttr metadata = generator.getMetadata()) {
+  if (PogListAttr metadata = generator.getParamListAttrs()) {
     metadata.printGenerator(p, generator);
     return;
   }
@@ -2154,7 +2154,7 @@ void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
 void KGEN::printSignatureValues(AsmPrinter &p, FunctionType functionType,
                                 FuncTypeGeneratorType sigGen) {
   // If the signature has metadata, ask its dialect to print the signature.
-  if (PogListAttr metadata = sigGen.getMetadata()) {
+  if (PogListAttr metadata = sigGen.getParamListAttrs()) {
     metadata.printGenerator(p, sigGen);
     return;
   }

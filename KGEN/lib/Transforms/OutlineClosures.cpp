@@ -55,7 +55,7 @@ struct OutlineClosuresPass
 static FuncTypeGeneratorType
 prependParams(FuncTypeGeneratorType sigGen,
               ArrayRef<ParamDeclAttr> parentParams) {
-  assert(!sigGen.getMetadata() && "unlowered lit signature");
+  assert(!sigGen.getParamListAttrs() && "unlowered lit signature");
 
   IndexRefRemapper remapper(parentParams, parentParams.size());
   SmallVector<Type> inputParamTypes;

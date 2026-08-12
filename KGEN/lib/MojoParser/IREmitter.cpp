@@ -416,8 +416,9 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   if (auto signature = dyn_cast<FnTypeGeneratorType>(attr.getType())) {
     // Reject any unbound non-singleton parameters. This can't be materialized
     // to a runtime value, because it needs to get instantiated.
-    for (auto [paramType, pog] : llvm::zip(signature.getInputParamTypes(),
-                                           signature.getMetadata().getPogs())) {
+    for (auto [paramType, pog] :
+         llvm::zip(signature.getInputParamTypes(),
+                   signature.getParamListAttrs().getPogs())) {
       // Singleton values like origins are fine. They will be removed by
       // lowerlit before code generation.
       if (ASTType(paramType).isSingleton(shared))
@@ -1355,8 +1356,8 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
 
     // Function types with non-singleton parameters can only be used at
     // comptime.
-    for (auto [paramType, pog] :
-         llvm::zip(sig.getInputParamTypes(), sig.getMetadata().getPogs())) {
+    for (auto [paramType, pog] : llvm::zip(sig.getInputParamTypes(),
+                                           sig.getParamListAttrs().getPogs())) {
       // Singleton values like origins are fine. They will be removed by
       // lowerlit before code generation.
       if (ASTType(paramType).isSingleton(shared))
