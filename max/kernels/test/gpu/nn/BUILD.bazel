@@ -242,6 +242,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-3390 — Row rms_norm_rope writes all zeros on Metal, at every tier.
+    # Same KERN-3390 Metal gap in the Row-API rope body: every one of the 48
+    # output elements comes back 0.0 on an M3 Pro, reference non-zero.
+    "test_layer_norm_rope_ragged.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3390
     # SM100 FA4 1Q attention-sink double-count regression. SM100-only
     # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
     "attention/test_mha_sm100_1q_sink.mojo": select({
