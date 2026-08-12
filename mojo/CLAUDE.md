@@ -21,8 +21,8 @@ the Mojo Standard Library with:
 ./bazelw build //mojo/stdlib/std
 ```
 
-This creates a `std.mojopkg` (the built artifact) from the Bazel build
-directory: `bazel-bin/mojo/stdlib/std/std.mojopkg`.
+This creates a `std.mojoc` (the built artifact) from the Bazel build
+directory: `bazel-bin/mojo/stdlib/std/std.mojoc`.
 
 ### Running Tests
 

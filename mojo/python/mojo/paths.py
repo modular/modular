@@ -129,13 +129,13 @@ def _mojo_source_package_root_file(path: Path) -> Path | None:
 
 def is_mojo_binary_package_path(path: Path) -> bool:
     """Returns True if the given path is a Mojo binary package file, i.e.
-    a file ending in ".mojoc" or ".mojopkg".
+    a file ending in ".mojoc".
     """
 
     if not path.is_file():
         return False
 
-    return path.suffix in (".mojoc", ".mojopkg")
+    return path.suffix == ".mojoc"
 
 
 def _build_mojo_source_package(path: Path) -> Path:

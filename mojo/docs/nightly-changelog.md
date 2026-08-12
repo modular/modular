@@ -208,6 +208,9 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   unaffected and have moved up to the `std.runtime` package, so import them
   from `std.runtime` instead of `std.runtime.asyncrt`.
 
+- Removed support for `.mojopkg` files after a period of deprecation. Use
+  `.mojoc` files instead.
+
 ## Fixed
 
 - Parametric `raises` now accepts any primary expression as the thrown type in

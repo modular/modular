@@ -58,7 +58,7 @@ CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 :class:`InferenceSession`.
 
 It may be a single path or a sequence of paths, where each path is a ``str``
-or :class:`~pathlib.Path` pointing to a compiled ``.mojoc``/``.mojopkg`` custom ops
+or :class:`~pathlib.Path` pointing to a compiled ``.mojoc`` custom ops
 library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
 it's automatically compiled into a package before loading.
 """
@@ -532,8 +532,7 @@ class InferenceSession:
         num_threads: The number of execution threads. Defaults to ``None``,
             which lets the runtime choose automatically.
         custom_extensions: The extensions to load for the model. Supports
-            paths to a ``.mojoc``/``.mojopkg`` custom ops library or a
-            ``.mojo`` source file.
+            paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
             earlier session's ``export_mefs``. Every graph this session loads is
             initialized from its artifact instead of being compiled, which lets
@@ -679,7 +678,7 @@ class InferenceSession:
                 file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -743,7 +742,7 @@ class InferenceSession:
                 example, a ``.mef`` file), or a single :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -814,7 +813,7 @@ class InferenceSession:
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             tile_based_fusion: When ``True``, compile the graph under the tile-based
                 programming model, in which the graph compiler selects
@@ -906,7 +905,7 @@ class InferenceSession:
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             tile_based_fusion: When ``True``, compile the graph under the tile-based
                 programming model, in which the graph compiler selects
