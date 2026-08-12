@@ -1324,7 +1324,7 @@ def launch[
                 target="gpu",
             )
             var num_blocks = min(
-                (num_rows + TILED_BLOCK_SIZE * W - 1) // (TILED_BLOCK_SIZE * W),
+                ceildiv(num_rows, TILED_BLOCK_SIZE * W),
                 sm_count * _SM_OVERPROVISION,
             )
             ctx.enqueue_function(
@@ -1446,7 +1446,7 @@ def launch[
     if row_size <= warp_max:
         comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_BLOCK_WARPS
         var num_blocks = min(
-            (num_rows + WARP_BLOCK_WARPS - 1) // WARP_BLOCK_WARPS,
+            ceildiv(num_rows, WARP_BLOCK_WARPS),
             sm_count * _SM_OVERPROVISION,
         )
 
@@ -1636,9 +1636,7 @@ def launch[
         # grid stride. Under-utilization gate (#104) drops to sw=1 when
         # `row_size < BLOCK_SIZE * simd` so all threads stay busy with
         # scalar grid-stride loads rather than 1/N of them doing SIMD.
-        var iters_full = (row_size + BLOCK_SIZE * effective_simd - 1) // (
-            BLOCK_SIZE * effective_simd
-        )
+        var iters_full = ceildiv(row_size, BLOCK_SIZE * effective_simd)
         var enough_work_for_simd = row_size >= BLOCK_SIZE * effective_simd
         var use_simd_full = (
             effective_simd > 1

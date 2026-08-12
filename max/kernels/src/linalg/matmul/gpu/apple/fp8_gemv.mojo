@@ -342,7 +342,7 @@ def enqueue_fp8_materialize[
     ctx.enqueue_function[kernel](
         out_w,
         weight.as_immut(),
-        grid_dim=((K + BLK - 1) // BLK, (N + BLK - 1) // BLK),
+        grid_dim=(ceildiv(K, BLK), ceildiv(N, BLK)),
         block_dim=(BLK, BLK),
     )
 

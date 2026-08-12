@@ -1532,9 +1532,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         var max_q_end_pos = (
             max_tile_idx_local + 1
         ) * Self.Q_BLOCK_SIZE + _start_pos
-        var max_num_tiles_calc = (
-            max_q_end_pos + Self.KV_BLOCK - 1
-        ) // Self.KV_BLOCK
+        var max_num_tiles_calc = ceildiv(max_q_end_pos, Self.KV_BLOCK)
         var max_num_tiles_local: Int
         # FULL_MASK skip at the loop boundary for `CausalMask` (the
         # common case). For an arbitrary `MHAMask` we can't statically

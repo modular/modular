@@ -43,7 +43,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout
-from std.math import ceildiv, gcd, exp
+from std.math import align_up, ceildiv, gcd, exp
 from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
@@ -1992,7 +1992,7 @@ def topk_softmax_sample_kernel[
 
     # Allocate shared memory for caching top-k elements.
     # Round up to ensure proper alignment for Int array.
-    var k_rounded = ceildiv(k, WARP_SIZE) * WARP_SIZE
+    var k_rounded = align_up(k, WARP_SIZE)
 
     # On Apple the cache is a static allocation. Reserve headroom below the 32K
     # threadgroup limit for the kernel's auxiliary SMEM (`s_count` + the block
@@ -2279,7 +2279,7 @@ def topk_softmax_sample[
         # per-element idx < d guard handles non-aligned tails correctly.
         var vec_size = gcd(8, d)
 
-        var k_rounded = ceildiv(top_k_val, WARP_SIZE) * WARP_SIZE
+        var k_rounded = align_up(top_k_val, WARP_SIZE)
         var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
         comptime if has_apple_gpu_accelerator():
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_CACHE_BYTES:

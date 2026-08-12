@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides top-K selection kernels using warp- and block-level reductions for CPU and GPU."""
 
-from std.math import ceildiv, exp, iota
+from std.math import align_up, ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
 from std.memory import ThinAllocation, alloc, dealloc
 from std.memory.alloc import Layout as AllocLayout
@@ -1181,7 +1181,7 @@ def _topk_stage2[
     var _local_topk_idxs = local_topk_idxs + batch_id * num_elem_reduced
 
     # Allocate shared memory for values and indices
-    var num_e_rounded = ceildiv(num_elem_reduced, WARP_SIZE) * WARP_SIZE
+    var num_e_rounded = align_up(num_elem_reduced, WARP_SIZE)
     var vals_smem_size = num_e_rounded
     var vals_sram = unsafe_stack_allocation[
         _APPLE_STATIC_SHMEM_USABLE_COUNT[TopK_2[T]],
@@ -1515,9 +1515,7 @@ def _topk_gpu[
     )
     _ = input_buf_tmp^
 
-    var num_elem_reduced = (
-        ceildiv(num_blocks_per_input_ * max_k, WARP_SIZE) * WARP_SIZE
-    )
+    var num_elem_reduced = align_up(num_blocks_per_input_ * max_k, WARP_SIZE)
     var num_bytes_sample_cache = max_k * (
         size_of[Scalar[dtype]]() + 2 * size_of[DType.int]()
     )
@@ -1526,7 +1524,7 @@ def _topk_gpu[
         + num_bytes_sample_cache
     )
     # align to warp size
-    shared_mem_bytes_2 = ceildiv(shared_mem_bytes_2, WARP_SIZE) * WARP_SIZE
+    shared_mem_bytes_2 = align_up(shared_mem_bytes_2, WARP_SIZE)
     comptime if has_apple_gpu_accelerator():
         if shared_mem_bytes_2 > _APPLE_STATIC_SHMEM_MAX_BYTES:
             raise Error(
