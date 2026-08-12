@@ -134,6 +134,11 @@ pkg_files(
         exclude = [
             "README.md",
             "BUILD.bazel",
+            # The build kit that renders the cheat-sheet PDFs, not
+            # documentation. Shipping it into the docs package publishes its
+            # README and SKILL.md as orphan routes: reachable, but in no
+            # sidebar.
+            "cheatsheet-tooling/**",
             "code/**",
             "docs_root/**",
             "nightly-changelog.md",
