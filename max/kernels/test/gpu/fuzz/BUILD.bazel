@@ -20,6 +20,7 @@ build_test(
     name = "fuzz_build_test",
     tags = ["gpu"],
     targets = [
+        ":fuzz_attn_res_mix.mojo.test",
         ":fuzz_block_scaled_fp4.mojo.test",
         ":fuzz_block_scaled_mxfp8.mojo.test",
         ":fuzz_ep_combine.mojo.test",
@@ -551,6 +552,34 @@ mojo_test(
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# Target: attn_res_mix (K3's fused attention-residual softmax mixture). Fuzzes
+# hidden against both the grid-stride and warp moduli, the candidate count
+# across the op's whole comptime dispatch ladder, and the PDL producer
+# handshake at every shape.
+mojo_test(
+    name = "fuzz_attn_res_mix.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_attn_res_mix.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "fuzz_attn_res_mix.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//Kernels/lib/attn_res",
         "//max:nn",
         "@mojo//:std",
     ],
@@ -1134,6 +1163,13 @@ modular_py_binary(
     name = "fuzz",
     testonly = True,
     srcs = ["fuzz.py"],
+    # The curated regression corpus is this binary's runtime input:
+    # `--replay-corpus` reads every entry and re-runs it as the deterministic
+    # gate. Globbed so recording a new anchor needs no BUILD edit.
+    data = glob(
+        ["corpus/**/*.json"],
+        allow_empty = True,
+    ),
     main = "fuzz.py",
     tags = ["manual"],
 )

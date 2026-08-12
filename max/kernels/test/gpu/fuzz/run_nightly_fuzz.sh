@@ -86,36 +86,44 @@ mkdir -p "$RESULTS"
 # deliberately omitted so a red run means a real, new candidate finding rather
 # than known noise.
 #
-# On AMD (FUZZ_VENDOR=amd), redzone/ref additionally drop every target whose
-# kernel is SM100-only (no CDNA4/MI355 implementation exists yet); contract
-# needs no such trim since none of its targets are B200-only. memcheck and
+# On AMD (FUZZ_VENDOR=amd), redzone/ref/contract additionally drop every target
+# whose kernel is SM100-only (no CDNA4/MI355 implementation exists yet), plus
+# attn_res_mix -- that kernel is portable, but its fuzz target arms PDL on every
+# shape and has only ever been run on B200, so an AMD lane would be claiming
+# coverage nobody has measured. Add it once it runs green on MI355. memcheck and
 # initcheck have no AMD entry at all -- compute-sanitizer (the oracle tool
 # itself, not the targets) has no AMD equivalent wired into fuzz.py. determinism
 # has no AMD entry either: its only two targets (matmul, gemv_split_k) are both
 # SM100-only, so there is nothing AMD-safe to run under that oracle yet.
 default_targets() {
   case "$1" in
-    memcheck)    echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 ;;
+    memcheck)    echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 attn_res_mix ;;
     initcheck)   echo moe_indices topk_sampling ;;
     redzone)
       if [ "$FUZZ_VENDOR" = "amd" ]; then
         echo softmax rms_norm layer_norm mha_nullmask
       else
-        echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4
+        echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 attn_res_mix
       fi
       ;;
     ref)
       if [ "$FUZZ_VENDOR" = "amd" ]; then
         echo moe_router msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
       else
-        echo block_scaled_mxfp8 grouped_matmul_mxfp8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
+        echo block_scaled_mxfp8 grouped_matmul_mxfp8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix
       fi
       ;;
     # Held out until their live findings are fixed (else the notify lane is
     # always red): mha_causal (BUG-03, valid_length=0 hang) and ep_combine
     # (BUG-04, send_tokens_back OOB write). Re-add once fixed.
-    determinism) echo matmul gemv_split_k ;;
-    contract)    echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill ;;
+    determinism) echo matmul gemv_split_k attn_res_mix ;;
+    contract)
+      if [ "$FUZZ_VENDOR" = "amd" ]; then
+        echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill
+      else
+        echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill attn_res_mix
+      fi
+      ;;
     *) return 1 ;;
   esac
 }
