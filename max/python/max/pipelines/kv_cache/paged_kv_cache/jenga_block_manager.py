@@ -26,8 +26,8 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.config import KVCacheGroupId
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
