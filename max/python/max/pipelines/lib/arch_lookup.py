@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -382,6 +384,8 @@ class ArchLookup:
         self._lazy_architectures: dict[
             str, list[tuple[str, str, str | None]]
         ] = {}
+        # Already-imported module specs; repeated calls must not re-register.
+        self._imported_custom_arch_specs: set[str] = set()
 
     def register(
         self,
@@ -473,6 +477,48 @@ class ArchLookup:
             imported = importlib.import_module(module, package)
             self.register(getattr(imported, symbol))
 
+    def import_custom_architectures(
+        self, custom_architectures: list[str]
+    ) -> None:
+        """Imports custom model modules and registers their architectures.
+
+        Each spec is either a module path or ``directory:module_name``. The
+        module must expose an ``ARCHITECTURES`` list of
+        :class:`SupportedArchitecture`. Idempotent per spec: an
+        already-imported spec is skipped.
+        """
+        for module_spec in custom_architectures:
+            if module_spec in self._imported_custom_arch_specs:
+                continue
+            module_parts = module_spec.split(":")
+            if len(module_parts) > 2:
+                raise ValueError(
+                    f"Custom module spec contains too many colons: {module_spec}"
+                )
+            elif len(module_parts) == 2:
+                module_path, module_name = module_parts
+            else:
+                module_path = os.path.dirname(module_parts[0])
+                module_name = os.path.basename(module_parts[0])
+            sys.path.append(module_path)
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to import custom model from: {module_spec}"
+                ) from e
+
+            if not module.ARCHITECTURES or not isinstance(
+                module.ARCHITECTURES, list
+            ):
+                raise ValueError(
+                    f"Custom model imported, but did not expose an `ARCHITECTURES` list. Module: {module_spec}"
+                )
+
+            for arch in module.ARCHITECTURES:
+                self.register(arch, allow_override=True)
+            self._imported_custom_arch_specs.add(module_spec)
+
     def all_architectures(self) -> list[SupportedArchitecture]:
         """Returns every registered architecture, importing any deferred ones."""
         for name in list(self._lazy_architectures):
@@ -547,6 +593,7 @@ class ArchLookup:
         self.architectures.clear()
         self._architectures_by_task.clear()
         self._lazy_architectures.clear()
+        self._imported_custom_arch_specs.clear()
 
 
 ARCH_LOOKUP = ArchLookup()
@@ -579,3 +626,11 @@ def find_architecture(
         The matching SupportedArchitecture or None if no match found.
     """
     return ARCH_LOOKUP.find(name, prefer_module_v3=prefer_module_v3, task=task)
+
+
+def import_custom_architectures(custom_architectures: list[str]) -> None:
+    """Imports custom architectures into the global :obj:`ARCH_LOOKUP` table.
+
+    Idempotent per module spec.
+    """
+    ARCH_LOOKUP.import_custom_architectures(custom_architectures)

@@ -382,7 +382,7 @@ class TestNeedsBitmaskConstraints:
 
 
 class TestSpeculativeArchitectureOverride:
-    """Tests for ``_resolve_speculative_target_architecture``.
+    """Tests for ``_apply_speculative_target_architecture``.
 
     The override must rewrite ``model.huggingface_config.architectures[0]`` to
     the unified spec-decode target arch. The registry applies it *before*
@@ -419,7 +419,7 @@ class TestSpeculativeArchitectureOverride:
     @staticmethod
     def _resolved_arch(cfg: SimpleNamespace) -> str:
         # Invoke the method unbound on the lightweight stand-in.
-        PipelineConfig._resolve_speculative_target_architecture(cfg)  # type: ignore[arg-type]
+        PipelineConfig._apply_speculative_target_architecture(cfg)  # type: ignore[arg-type]
         return cfg.model.huggingface_config.architectures[0]
 
     def test_deepseek_mtp_no_draft(self) -> None:

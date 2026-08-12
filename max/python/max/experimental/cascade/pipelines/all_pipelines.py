@@ -153,6 +153,10 @@ async def build_pipeline(
     if model_path.startswith(_ECHO_PREFIX):
         return EchoTextGenPipeline(model_path.removeprefix(_ECHO_PREFIX))
 
+    # Cascade builds configs directly rather than via from_args, so
+    # resolve encoding and weight paths here.
+    config._populate_model_configs_from_archs()
+
     arch = _resolve_architecture(config)
     factory = arch.cascade_pipeline_factory
     if factory is None:
