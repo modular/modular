@@ -111,6 +111,12 @@ inline StreamT &operator<<(StreamT &os, FnEffects effects) {
   return os;
 }
 
+/// Found by ADL so that `FnEffects` can be used as an attribute or type
+/// parameter, whose uniquer needs to hash it.
+inline llvm::hash_code hash_value(FnEffects effects) {
+  return llvm::hash_value(static_cast<uint16_t>(effects.getImpl()));
+}
+
 //===----------------------------------------------------------------------===//
 // ArgConvention
 //===----------------------------------------------------------------------===//

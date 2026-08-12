@@ -46,9 +46,7 @@ def GeneratorType : DialectType<(type
 
 def FuncType : DialectType<(type
   ConcreteType<"FunctionType">:$values,
-  EnumAttrArray<"ArgConvention">:$argConventions,
-  Custom<"FnEffects">:$fnEffects,
-  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata,
+  ConcreteAttribute<"FnMetaDataAttr">:$metaDataAttr,
   ConcreteAttribute<"PogListAttr">:$argListAttrs
 )>;
 
@@ -160,6 +158,12 @@ def PogListAttr : DialectAttribute<(attr
   ConcreteAttrArray<"PogMetadataAttr">:$pogs,
   ConcreteAttrArray<"ConstraintAttr">:$bodyConstraints,
   EnumAttr<"ArgConvention">:$origVariadicConvention
+)>;
+
+def FnMetaDataAttr : DialectAttribute<(attr
+  EnumAttrArray<"ArgConvention">:$argConventions,
+  Custom<"FnEffects">:$fnEffects,
+  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
 )>;
 
 def ParameterExprArrayAttr : DialectAttribute<(attr
@@ -649,7 +653,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     PogListAttr,
     FuncPtrBitcastAttr,
     ParamIdenticalAttr,
-    SingletonAttr
+    SingletonAttr,
+    FnMetaDataAttr
   ];
 }
 

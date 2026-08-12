@@ -71,17 +71,18 @@ def LIT_SymbolAttr : LITAttr<"Symbol", "symbol"> {
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetadataAttr
+// FnMetaOriginDataAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
+def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
+    "fn_meta_origin_data",
     [DeclareAttrInterfaceMethods<FnMetadataAttrInterface>]> {
   let summary = "Function origin/lifetime metadata.";
   let description = [{
-    The `#lit.fn_metadata` attribute carries LIT-specific origin and lifetime
-    information for a function: the number of implicit origin declarations,
-    the captured origin set, and whether nested-origin exclusivity checking
-    is disabled. The parameter (POG) list lives on
+    The `#lit.fn_meta_origin_data` attribute carries LIT-specific origin and
+    lifetime information for a function: the number of implicit origin
+    declarations, the captured origin set, and whether nested-origin
+    exclusivity checking is disabled. The parameter (POG) list lives on
     [[kgen.func]]'s `argListAttrs` field, not here.
 
     Example:
@@ -89,7 +90,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
     ```mlir
     // Metadata for a function with two implicit origin declarations and
     // no captured origins.
-    #lit.fn_metadata<2>
+    #lit.fn_meta_origin_data<2>
     ```
   }];
 
@@ -103,7 +104,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   );
   let assemblyFormat = [{
     `<` $numImplicitOriginDecls
-    `` custom<FnMetadataOrigins>($captureOrigins)
+    `` custom<CaptureOrigins>($captureOrigins)
     (`,` $isNestedOriginsReadOnly^ (`,` $definesInteriorOrigins^)?)? `>`
   }];
 
@@ -119,7 +120,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let extraClassDeclaration = [{
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
-    FnMetadataAttr addCaptureOrigins(TypedAttr origins);
+    FnMetaOriginDataAttr addCaptureOrigins(TypedAttr origins);
   }];
 }
 

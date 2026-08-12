@@ -2108,9 +2108,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // Generate a reference to the main wrapper function, which expects the user
   // main to be provided via an parameter.
   FuncType mainWrapperSig = mainWrapperSigGen.getBody();
-  FnMetadataAttr mainWrapperFnMeta =
-      cast<FnMetadataAttr>(mainWrapperSig.getMetadata());
-  auto strippedMainWrapperFnMeta = FnMetadataAttr::get(
+  FnMetaOriginDataAttr mainWrapperFnMeta =
+      cast<FnMetaOriginDataAttr>(mainWrapperSig.getMetadata());
+  auto strippedMainWrapperFnMeta = FnMetaOriginDataAttr::get(
       getContext(), mainWrapperFnMeta.getNumImplicitOriginDecls(),
       mainWrapperFnMeta.getCaptureOrigins(),
       mainWrapperFnMeta.getIsNestedOriginsReadOnly(),

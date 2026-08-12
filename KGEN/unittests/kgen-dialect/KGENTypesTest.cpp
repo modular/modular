@@ -72,11 +72,11 @@ TEST_F(FuncTypeGeneratorTypeTest, TestSpecialization) {
         StringAttr::get(&ctx), PassingKind::PosOnly, VariadicKind::None);
     PogListAttr pogs =
         PogListAttr::get(&ctx, SmallVector<PogMetadataAttr>{posOnly});
-    FnMetadataAttr fnMetadata = FnMetadataAttr::get(
+    FnMetaOriginDataAttr fnMetadata = FnMetaOriginDataAttr::get(
         &ctx,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginsReadOnly=*/false, /*definesInteriorOrigins=*/false);
-    FnMetadataAttr fnMetadataNoParams = FnMetadataAttr::get(
+    FnMetaOriginDataAttr fnMetadataNoParams = FnMetaOriginDataAttr::get(
         &ctx,
         /*numImplicitOriginDecls=*/0, /*captureOrigins=*/nullptr,
         /*isNestedOriginsReadOnly=*/false, /*definesInteriorOrigins=*/false);

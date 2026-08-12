@@ -1359,9 +1359,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                                   defaultValues, origVariadicConvention,
                                   /*bodyConstraints=*/{});
-  auto metadata =
-      FnMetadataAttr::get(ctx, numOriginDecls, captureOrigins,
-                          isNestedOriginsReadOnly, definesInteriorOrigins);
+  auto metadata = FnMetaOriginDataAttr::get(ctx, numOriginDecls, captureOrigins,
+                                            isNestedOriginsReadOnly,
+                                            definesInteriorOrigins);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata, pogList);
@@ -1438,19 +1438,22 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 TypedAttr FuncType::getCaptureOrigins() {
-  return ::cast<FnMetadataAttr>(getMetadata()).getCaptureOrigins();
+  return ::cast<FnMetaOriginDataAttr>(getMetadata()).getCaptureOrigins();
 }
 
 bool FuncType::getIsNestedOriginsReadOnly() {
-  return ::cast<FnMetadataAttr>(getMetadata()).getIsNestedOriginsReadOnly();
+  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+      .getIsNestedOriginsReadOnly();
 }
 
 bool FuncType::getDefinesInteriorOrigins() {
-  return ::cast<FnMetadataAttr>(getMetadata()).getDefinesInteriorOrigins();
+  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+      .getDefinesInteriorOrigins();
 }
 
 size_t FuncType::getNumImplicitOriginDecls() {
-  return ::cast<FnMetadataAttr>(getMetadata()).getNumImplicitOriginDecls();
+  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+      .getNumImplicitOriginDecls();
 }
 
 Type FuncType::getUserResultType() {
@@ -1506,9 +1509,9 @@ FunctionType FuncType::substituteImplicitOriginsIntoValues(
 
 FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
   return getWithMetadata(
-      FnMetadataAttr::get(getContext(), getNumImplicitOriginDecls(), origins,
-                          getIsNestedOriginsReadOnly(),
-                          getDefinesInteriorOrigins()),
+      FnMetaOriginDataAttr::get(getContext(), getNumImplicitOriginDecls(),
+                                origins, getIsNestedOriginsReadOnly(),
+                                getDefinesInteriorOrigins()),
       getArgListAttrs());
 }
 

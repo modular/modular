@@ -43,10 +43,10 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetadataAttr
+// FnMetaOriginDataAttr
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseFnMetadataOrigins(AsmParser &p, TypedAttr &origins) {
+static ParseResult parseCaptureOrigins(AsmParser &p, TypedAttr &origins) {
   auto type = OriginSetType::get(p.getContext());
   if (failed(p.parseOptionalComma())) {
     origins = OriginSetAttr::get({}, type);
@@ -55,25 +55,26 @@ static ParseResult parseFnMetadataOrigins(AsmParser &p, TypedAttr &origins) {
   return parseParamValue(p, origins, type);
 }
 
-static void printFnMetadataOrigins(AsmPrinter &p, TypedAttr origins) {
+static void printCaptureOrigins(AsmPrinter &p, TypedAttr origins) {
   if (isEmptyOriginSet(origins))
     return;
   p << ", ";
   printParamValue(p, origins);
 }
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
-  return FnMetadataAttr::get(context, /*numImplicitOriginDecls=*/0,
-                             /*captureOrigins=*/OriginSetAttr::get(context, {}),
-                             /*isNestedOriginsReadOnly=*/false,
-                             /*definesInteriorOrigins=*/false);
+FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *context) {
+  return FnMetaOriginDataAttr::get(
+      context, /*numImplicitOriginDecls=*/0,
+      /*captureOrigins=*/OriginSetAttr::get(context, {}),
+      /*isNestedOriginsReadOnly=*/false,
+      /*definesInteriorOrigins=*/false);
 }
 
-FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx,
-                                   size_t numImplicitOriginDecls,
-                                   TypedAttr captureOrigins,
-                                   bool isNestedOriginsReadOnly,
-                                   bool definesInteriorOrigins) {
+FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *ctx,
+                                               size_t numImplicitOriginDecls,
+                                               TypedAttr captureOrigins,
+                                               bool isNestedOriginsReadOnly,
+                                               bool definesInteriorOrigins) {
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
@@ -105,7 +106,7 @@ LIT::getContextualVariadicParams(ArrayRef<Operation *> ops) {
   return variadics;
 }
 
-LogicalResult FnMetadataAttr::verifyFuncType(
+LogicalResult FnMetaOriginDataAttr::verifyFuncType(
     function_ref<InFlightDiagnostic()> emitError, FunctionType values,
     ArrayRef<ArgConvention> argConventions, FnEffects effects) const {
   // Verify input conventions.
@@ -133,7 +134,8 @@ LogicalResult FnMetadataAttr::verifyFuncType(
   return success();
 }
 
-FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
+FnMetaOriginDataAttr
+FnMetaOriginDataAttr::addCaptureOrigins(TypedAttr origins) {
   auto type = OriginType::get(getContext(), /*isMutable=*/true);
   SmallVector<TypedAttr> originUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
@@ -143,24 +145,26 @@ FnMetadataAttr FnMetadataAttr::addCaptureOrigins(TypedAttr origins) {
              getIsNestedOriginsReadOnly(), getDefinesInteriorOrigins());
 }
 
-void FnMetadataAttr::printFuncTypeBody(AsmPrinter &p, FuncType sig) const {
+void FnMetaOriginDataAttr::printFuncTypeBody(AsmPrinter &p,
+                                             FuncType sig) const {
 
   p << '<';
   printFnType(p, sig);
   p << '>';
 }
 
-void FnMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
+void FnMetaOriginDataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
   p << "!lit.fn";
   printFuncTypeBody(p, sig);
 }
 
-void FnMetadataAttr::printFuncTypeInline(AsmPrinter &p, FuncType sig) const {
+void FnMetaOriginDataAttr::printFuncTypeInline(AsmPrinter &p,
+                                               FuncType sig) const {
   printFnType(p, sig);
 }
 
-bool FnMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
-  auto other = ::dyn_cast<FnMetadataAttr>(otherMetadata);
+bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
+  auto other = ::dyn_cast<FnMetaOriginDataAttr>(otherMetadata);
   if (!other)
     return false;
 

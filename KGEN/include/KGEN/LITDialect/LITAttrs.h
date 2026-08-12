@@ -31,7 +31,7 @@ class OriginSetType;
 class RefPackType;
 class TraitType;
 class StructFieldOp;
-class FnMetadataAttr;
+class FnMetaOriginDataAttr;
 } // namespace LIT
 } // namespace M::KGEN
 
