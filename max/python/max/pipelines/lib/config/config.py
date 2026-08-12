@@ -679,10 +679,10 @@ class PipelineConfig(ConfigFileModel):
         # ``from_args`` *before* construction-time resolution and before the
         # registry resolves ``arch`` and passes it in here, so that the
         # ``arch`` consumed by memory estimation, the overlap scheduler, and
-        # parser resolution below already reflects the override. Applying it
-        # here (after ``arch`` is resolved) would leave those consumers using
-        # the stale pre-override architecture. See SERVOPT regression from
-        # PipelineConfig/registry decoupling (#88511).
+        # construction-time parser resolution already reflects the override.
+        # Applying it here (after ``arch`` is resolved) would leave those
+        # consumers using the stale pre-override architecture. See SERVOPT
+        # regression from PipelineConfig/registry decoupling (#88511).
 
         # By this point, we should have a valid model_path.
 
@@ -698,11 +698,6 @@ class PipelineConfig(ConfigFileModel):
             self._validate_remaining_pipeline_config(
                 model_config=self.model, resolved_arch=arch
             )
-
-        self._resolve_default_reasoning_parser(arch=arch)
-        self._resolve_default_tool_parser(arch=arch)
-        self._resolve_default_structured_output_backend(arch=arch)
-        self._validate_synthetic_acceptance_with_constrained_decoding()
 
     def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
         """Rejects synthetic acceptance when constrained decoding can fire.
@@ -816,10 +811,11 @@ class PipelineConfig(ConfigFileModel):
            ``"llguidance"``), use it.
         3. Otherwise, fall back to the global default ``"xgrammar"``.
 
-        Runs unconditionally so the field is always a concrete ``str`` after
-        ``resolve()``. The ``None`` sentinel (unset) is what distinguishes an
-        explicit user value from the default -- mirroring the reasoning/tool
-        parser resolvers above.
+        Runs whenever construction resolves an architecture, so the field is
+        a concrete ``str`` on any config with a registered architecture. The
+        ``None`` sentinel (unset) is what distinguishes an explicit user
+        value from the default -- mirroring the reasoning/tool parser
+        resolvers above.
         """
         if self.sampling.structured_output_backend is not None:
             # Explicit user configuration always wins.
@@ -983,10 +979,6 @@ class PipelineConfig(ConfigFileModel):
             model_config: The model configuration to validate.
             arch: The pre-resolved architecture to validate against.
         """
-        # Validate required arguments
-        if not self.runtime.force:
-            self._validate_required_arguments_against_architecture(arch)
-
         # Validate that model supports empty batches, if being requested.
         if (
             self.runtime.execute_empty_batches
@@ -1073,8 +1065,11 @@ class PipelineConfig(ConfigFileModel):
         self._validate_model_config_against_arch(model_config, resolved_arch)
 
     def _populate_model_configs_from_archs(self) -> None:
-        """Assigns each model's ``quantization_encoding`` and ``weight_path``.
+        """Applies architecture-driven defaults at construction.
 
+        Assigns each model's ``quantization_encoding`` and ``weight_path``,
+        then applies the architecture-declared defaults: required-argument
+        overrides, reasoning/tool parsers, and the structured output backend.
         Must use the same architecture-selection inputs as the registry.
         Models with no registered architecture keep their raw fields;
         ``resolve()`` reports those downstream.
@@ -1107,6 +1102,7 @@ class PipelineConfig(ConfigFileModel):
                 supported_encodings=arch.supported_encodings,
                 default_weights_format=arch.default_weights_format,
             )
+        draft_arch = None
         if self.draft_model is not None:
             try:
                 draft_arch_name: str | None = self.draft_model.architecture_name
@@ -1129,6 +1125,21 @@ class PipelineConfig(ConfigFileModel):
                     supported_encodings=draft_arch.supported_encodings,
                     default_weights_format=draft_arch.default_weights_format,
                 )
+
+        if arch is None:
+            return
+        if not self.runtime.force:
+            # Draft first so the target architecture wins conflicting keys,
+            # matching the order resolve() historically applied them in.
+            if draft_arch is not None:
+                self._validate_required_arguments_against_architecture(
+                    draft_arch
+                )
+            self._validate_required_arguments_against_architecture(arch)
+        self._resolve_default_reasoning_parser(arch=arch)
+        self._resolve_default_tool_parser(arch=arch)
+        self._resolve_default_structured_output_backend(arch=arch)
+        self._validate_synthetic_acceptance_with_constrained_decoding()
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #

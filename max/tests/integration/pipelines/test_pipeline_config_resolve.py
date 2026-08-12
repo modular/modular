@@ -35,6 +35,7 @@ from max.graph import DeviceRef
 from max.graph.weights import WeightsFormat
 from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.config import KVCacheConfig
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
 from max.pipelines.lib.config import SpeculativeConfig
@@ -770,12 +771,15 @@ class TestRequiredArguments:
                 tmpdir,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(tmpdir)
-            # Set a value that conflicts with the required argument
-            _model(config).kv_cache.enable_prefix_caching = True
+            # Pass a value that conflicts with the required argument;
+            # construction applies the architecture override.
+            config = _make_pipeline_config(
+                tmpdir, kv_cache=KVCacheConfig(enable_prefix_caching=True)
+            )
+            assert _model(config).kv_cache.enable_prefix_caching is False
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            # Architecture should have overridden it
+            # resolve() must not undo the construction-time override.
             assert _model(config).kv_cache.enable_prefix_caching is False
 
 
