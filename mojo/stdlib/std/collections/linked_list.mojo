@@ -35,47 +35,43 @@ from std.sys import align_of, size_of
     " `_into_value()`; its owning `LinkedList` manages this."
 )
 struct Node[
-    ElementType: Movable,
+    T: Movable,
 ](
-    Deinitable where conforms_to(ElementType, Deinitable),
+    Deinitable where conforms_to(T, Deinitable),
     Movable,
 ):
     """A node in a linked list data structure.
 
     Parameters:
-        ElementType: The type of element stored in the node.
+        T: The type of element stored in the node.
     """
 
-    comptime _OpaquePointer = Optional[Pointer[NoneType, MutUntrackedOrigin]]
+    comptime _PointerType = Optional[Pointer[Self, MutUntrackedOrigin]]
 
-    var value: Self.ElementType
+    var value: Self.T
     """The value stored in this node."""
-    var _prev: Self._OpaquePointer
+    var _prev: Self._PointerType
     """The previous node in the list."""
-    var _next: Self._OpaquePointer
+    var _next: Self._PointerType
     """The next node in the list."""
 
     @doc_hidden
     def prev(
         ref self,
     ) -> ref[self._prev] Optional[Pointer[Self, MutUntrackedOrigin]]:
-        return Pointer(to=self._prev).unsafe_bitcast[
-            Optional[Pointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._prev
 
     @doc_hidden
     def next(
         ref self,
     ) -> ref[self._next] Optional[Pointer[Self, MutUntrackedOrigin]]:
-        return Pointer(to=self._next).unsafe_bitcast[
-            Optional[Pointer[Self, MutUntrackedOrigin]]
-        ]()[]
+        return self._next
 
     def __init__(
         out self,
-        var value: Self.ElementType,
-        prev: Optional[Self._OpaquePointer],
-        next: Optional[Self._OpaquePointer],
+        var value: Self.T,
+        prev: Optional[Self._PointerType],
+        next: Optional[Self._PointerType],
     ):
         """Initialize a new Node with the given value and optional prev/next
         pointers.
@@ -86,16 +82,16 @@ struct Node[
             next: Optional pointer to the next node.
         """
         self.value = value^
-        self._prev = prev.value() if prev else Self._OpaquePointer()
-        self._next = next.value() if next else Self._OpaquePointer()
+        self._prev = prev.value() if prev else Self._PointerType()
+        self._next = next.value() if next else Self._PointerType()
 
-    def _into_value(deinit self) -> Self.ElementType:
+    def _into_value(deinit self) -> Self.T:
         return self.value^
 
     @no_inline
     def write_to(
         self, mut writer: Some[Writer]
-    ) where conforms_to(Self.ElementType, Writable):
+    ) where conforms_to(Self.T, Writable):
         """Write this node's value to the given writer.
 
         Args:
@@ -120,11 +116,7 @@ def _make_node[
         prev: Optional pointer to the previous node.
         next: Optional pointer to the next node.
     """
-    node = Node(
-        value^,
-        Pointer(to=prev).unsafe_bitcast[Node[T]._OpaquePointer]()[],
-        Pointer(to=next).unsafe_bitcast[Node[T]._OpaquePointer]()[],
-    )
+    node = Node(value^, prev, next)
 
 
 @fieldwise_init
