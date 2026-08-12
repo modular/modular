@@ -1129,7 +1129,6 @@ struct AMDBufferResource(TrivialRegisterPassable):
         )
 
 
-@__parameter
 def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
@@ -1208,7 +1207,6 @@ def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
         return DType.uint32
 
 
-@__parameter
 def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 

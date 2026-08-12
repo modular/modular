@@ -486,12 +486,18 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     # --------------------------------------------------------------------- #
     @always_inline
     @staticmethod
-    def _vectorize_apply[
-        func: def[simd_width: Int](
-            SIMD[DType.int64, simd_width],
-            SIMD[DType.int64, simd_width],
-        ) capturing -> SIMD[DType.int64, simd_width],
-    ](left: Self, right: Self) -> Self:
+    def _vectorize_apply[](
+        left: Self,
+        right: Self,
+        func: Some[
+            def[
+                simd_width: Int
+            ](
+                SIMD[DType.int64, simd_width],
+                SIMD[DType.int64, simd_width],
+            ) -> SIMD[DType.int64, simd_width]
+        ],
+    ) -> Self:
         """Applies a vectorized binary operation between two bitsets.
 
         This internal utility function optimizes set operations by processing
@@ -503,15 +509,13 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         if the number of words in the bitsets is greater than or equal to the
         SIMD width.
 
-        Parameters:
+        Args:
+            left: The first bitset operand.
+            right: The second bitset operand.
             func: A function that takes two SIMD vectors of UInt64 values and
                 returns a SIMD vector with the result of the operation. The
                 function should implement the desired set operation (e.g.,
                 union, intersection).
-
-        Args:
-            left: The first bitset operand.
-            right: The second bitset operand.
 
         Returns:
             A new bitset containing the result of applying the function to each
@@ -524,7 +528,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         @always_inline
         def _intersect[
             simd_width: Int
-        ](offset: Int) {mut res, imm left, imm right}:
+        ](offset: Int) {mut res, imm left, imm right, imm func}:
             # Initialize SIMD vectors to hold multiple words from each bitset
             var left_vec = SIMD[DType.int64, simd_width]()
             var right_vec = SIMD[DType.int64, simd_width]()
@@ -536,7 +540,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
 
             # Apply the provided operation (union, intersection, etc.) to the
             # vectors
-            var result_vec = func(left_vec, right_vec)
+            var result_vec = func[simd_width](left_vec, right_vec)
 
             # Store the results back into the result bitset
             comptime for i in range(simd_width):
@@ -569,7 +573,6 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing all elements from both sets.
         """
 
-        @__parameter
         @always_inline
         def _union[
             simd_width: Int
@@ -579,7 +582,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         ) -> SIMD[DType.int64, simd_width]:
             return left | right
 
-        return Self._vectorize_apply[_union](self, other)
+        return Self._vectorize_apply(self, other, _union)
 
     def intersection(self, other: Self) -> Self:
         """Returns a new bitset that is the intersection of `self` and `other`.
@@ -591,7 +594,6 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing only the elements present in both sets.
         """
 
-        @__parameter
         @always_inline
         def _intersection[
             simd_width: Int
@@ -601,7 +603,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         ) -> SIMD[DType.int64, simd_width]:
             return left & right
 
-        return Self._vectorize_apply[_intersection](self, other)
+        return Self._vectorize_apply(self, other, _intersection)
 
     def difference(self, other: Self) -> Self:
         """Returns a new bitset that is the difference of `self` and `other`.
@@ -613,7 +615,6 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             A new bitset containing elements from `self` that are not in `other`.
         """
 
-        @__parameter
         @always_inline
         def _difference[
             simd_width: Int
@@ -623,7 +624,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         ) -> SIMD[DType.int64, simd_width]:
             return left & ~right
 
-        return Self._vectorize_apply[_difference](self, other)
+        return Self._vectorize_apply(self, other, _difference)
 
     # --------------------------------------------------------------------- #
     # Representation helpers

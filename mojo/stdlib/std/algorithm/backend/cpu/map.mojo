@@ -19,19 +19,14 @@
 
 
 @always_inline
-def map[
-    origins: OriginSet, //, func: def(Int) capturing[origins] -> None
-](size: Int):
+def map(size: Int, func: Some[def(Int) -> None]):
     """Maps a function over the integer range [0, size).
     This lets you apply an integer index-based operation across data
     captured by the mapped function (for example, an indexed buffer).
 
-    Parameters:
-        origins: Capture origins for mapped function.
-        func: Parameterized function applied at each index.
-
     Args:
         size: Number of elements in the index range.
+        func: Parameterized function applied at each index.
 
     For example:
 
@@ -43,12 +38,11 @@ def map[
         var list: List[Float32] = [1.0, 2.0, 3.0, 4.0, 5.0]
 
         # Function applied to the value at each index
-        @__parameter
-        def exponent_2(idx: Int):
+        def exponent_2(idx: Int) {mut}:
             list[idx] = 2.0 ** list[idx]
 
         # Apply the mapped function across the index range
-        map[exponent_2](len(list))
+        map(len(list), exponent_2)
 
         # Show results
         for idx in range(len(list)):

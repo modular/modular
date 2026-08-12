@@ -311,11 +311,10 @@ def _write_int[
     # Write the digits of the number
     var remaining_int = value
 
-    @__parameter
     def process_digits[
         get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
         div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
-    ]():
+    ]() {mut}:
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
 
