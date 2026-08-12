@@ -11,23 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 from std.ffi import external_call
 
 
 def test_tracy_bridge_symbols_exist_and_disabled_by_default() raises:
-    # Query whether CompilerRT was built with TRACY_ENABLE.
-    var enabled = external_call["KGEN_CompilerRT_TracyIsEnabled", Int]()
+    # Check that the TRACY_ENABLE query symbol exists and is callable.
+    _ = external_call["KGEN_CompilerRT_TracyIsEnabled", Int]()
 
-    # Begin/End should behave based on `enabled`.
+    # Begin/End should behave based on `enabled`. Tracy is built with
+    # TRACY_ON_DEMAND and no profiler client is connected in this test, so
+    # the zone is inactive and packs to 0 even when Tracy is enabled; when
+    # Tracy is disabled the bridge is a no-op returning 0. Either way End(0)
+    # must be safe.
     var name = "tracy_bridge_test"
     var ctx = external_call["KGEN_CompilerRT_TracyZoneBegin", UInt64](
         name.unsafe_ptr(), name.byte_length(), 0
     )
-    if enabled != 0:
-        assert_true(ctx != UInt64(0))
-    else:
-        assert_equal(UInt64(0), ctx)
+    assert_equal(UInt64(0), ctx)
     external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](ctx)
 
 
