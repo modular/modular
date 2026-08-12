@@ -1720,14 +1720,12 @@ def atan2[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["atan2f", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2522,14 +2520,12 @@ def hypot[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["hypotf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2785,7 +2781,6 @@ def remainder[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2794,7 +2789,6 @@ def remainder[
         )
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -2947,14 +2941,12 @@ def scalb[
     """
 
     @always_inline("nodebug")
-    @__parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["scalbf", Scalar[result_type]](arg0, arg1)
 
     @always_inline("nodebug")
-    @__parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
