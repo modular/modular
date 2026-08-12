@@ -44,9 +44,9 @@ def _build_op_graph(m: int) -> Graph:
     return graph
 
 
-# m=2,16 take the fused mixed GEMV; m=32,512 exercise the runtime large-M
-# fallback (cast bf16->fp32 + ordinary fp32 matmul) inside the op.
-@pytest.mark.parametrize("m", [2, 16, 32, 512])
+# m<=16 = the original mixed-GEMV band, 17-64 = the widened band (formerly
+# fallback), 512 = still the large-M fallback.
+@pytest.mark.parametrize("m", [2, 16, 17, 24, 32, 64, 512])
 def test_router_gate_mixed_gemv_op(
     gpu_session: InferenceSession, m: int
 ) -> None:

@@ -752,7 +752,7 @@ def router_gate_use_mixed_gemv(m: Int) -> Bool:
     Returns:
         True if the fused mixed GEMV should be launched for this `m`.
     """
-    comptime max_m = 16
+    comptime max_m = 64
     return m > 0 and m <= max_m
 
 
@@ -785,10 +785,11 @@ def router_gate_mixed_gemv[
     first and running the fp32 GEMV.
 
     The launch config is the MI355X (gfx950 / CDNA4) cache-busting sweep winner
-    for the `N=128, K=6144, M<=16` router-gate shape: `simd_width=4, tile_m=1,
-    tile_n=2, 128 threads, unroll=2`, with the weight kept cache-resident
-    (`weight_non_temporal=False`) so the per-row-block weight rereads hit L2 —
-    the same cache policy the merged KERN-3219 fp32 router path selects.
+    for the `N=128, K=6144` router-gate shape: `simd_width=4, tile_m=1,
+    128 threads, unroll=2`, with `tile_n=2` at `M<=16` and `tile_n=4` above,
+    and the weight kept cache-resident (`weight_non_temporal=False`) so the
+    per-row-block weight rereads hit L2 — the same cache policy the merged
+    KERN-3219 fp32 router path selects.
 
     Parameters:
         static_N: Static output width (weight rows / expert count). Selects the
@@ -804,7 +805,7 @@ def router_gate_mixed_gemv[
         c: Output `[M, N]` fp32 tensor.
         a: Activation `[M, K]` bf16 tensor.
         b: Weight `[N, K]` fp32 tensor (transpose_b layout).
-        m: Runtime row count (`M`). Optimal for tiny `M` (router: `M<=16`).
+        m: Runtime row count (`M`). Optimal for tiny `M` (router: `M<=64`).
         n: Output width (`N`).
         k: Contraction dim (`K`).
         ctx: The device context.
@@ -813,7 +814,6 @@ def router_gate_mixed_gemv[
     # count vectorizes the bf16 activation load (8 B), matching the K tiling.
     comptime simd_width = 16 // size_of[DType.float32]()
     comptime tile_m = 1
-    comptime tile_n = 2
     comptime num_threads = 128
     comptime unroll_factor = 2
     # Empty-launch guard: a graph-capture warmup can call the router with M==0
@@ -821,35 +821,43 @@ def router_gate_mixed_gemv[
     # writes past the zero-length buffers.
     if m == 0 or n == 0:
         return
-    comptime kernel = gemv_split_k[
-        DType.float32,
-        DType.bfloat16,
-        DType.float32,
-        c_layout,
-        a_layout,
-        b_layout,
-        c_storage,
-        a_storage,
-        b_storage,
-        simd_width=simd_width,
-        tile_m=tile_m,
-        tile_n=tile_n,
-        num_threads=num_threads,
-        unroll_factor=unroll_factor,
-        weight_non_temporal=False,
-        check_bounds_m=tile_m > 1,
-        check_bounds_n=static_N % tile_n != 0,
-    ]
-    ctx.enqueue_function[kernel](
-        c,
-        a,
-        b,
-        Int32(m),
-        Int32(n),
-        Int32(k),
-        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
-        block_dim=num_threads,
-    )
+
+    @__parameter
+    def _launch[tile_n: Int]() raises:
+        comptime kernel = gemv_split_k[
+            DType.float32,
+            DType.bfloat16,
+            DType.float32,
+            c_layout,
+            a_layout,
+            b_layout,
+            c_storage,
+            a_storage,
+            b_storage,
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=num_threads,
+            unroll_factor=unroll_factor,
+            weight_non_temporal=False,
+            check_bounds_m=tile_m > 1,
+            check_bounds_n=static_N % tile_n != 0,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            Int32(m),
+            Int32(n),
+            Int32(k),
+            grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+            block_dim=num_threads,
+        )
+
+    if m <= 16:
+        _launch[2]()
+    else:
+        _launch[4]()
 
 
 # Row Vector-Matrix multiplication
