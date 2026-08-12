@@ -19,7 +19,10 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
-from nn.attention.gpu.sparse_index_fp8_sm100 import fp8_index_score_sm100
+from nn.attention.gpu.sparse_index_fp8_sm100 import (
+    SPEC_DECODE_N_TOKENS_ALT,
+    fp8_index_score_sm100,
+)
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     KVCacheScalesMHAOperand,
@@ -70,6 +73,10 @@ def _score_paged_sm100[
         num_heads,
         depth,
         _is_cache_length_accurate=False,
+        # Load-bearing, not decorative: the alternate N-tile is chosen from this
+        # hint, so omitting it scores the DEFAULT tile and the host-reference
+        # check below then proves nothing about the tile production runs.
+        N_TOKENS_ALT=SPEC_DECODE_N_TOKENS_ALT,
     ](
         output,
         q,
@@ -557,7 +564,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=256,
             mask_name=MaskName.NULL.name,
             strict_complete=True,
@@ -571,7 +578,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=64,
             mask_name=MaskName.CAUSAL.name,
         ](
@@ -581,7 +588,7 @@ def main() raises:
         )
 
         # strict_complete guard on the grid.z-split + causal path: max_seq_len=6
-        # keeps out of the prefill gate (ceildiv(6, 2) = 3 < 16) and base_ctas=16
+        # keeps out of the prefill gate (ceildiv(6, 2) = 3 < 16) and base_ctas=8
         # < sm_count forces num_slices=2 (split kernel), while top_k=256 covers
         # every token's causal key set (max 204) so the full set must be
         # selected. strict_complete on split otherwise only runs under NULL, and
@@ -589,7 +596,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=256,
             mask_name=MaskName.CAUSAL.name,
             strict_complete=True,
@@ -599,8 +606,8 @@ def main() raises:
             ctx=ctx,
         )
 
-        # page_size=128 (multiple of BM_key=64, larger than one tile): must stay
-        # on the SM100 tensor-core path.
+        # page_size == BM_key exactly (one K tile per page): must stay on the
+        # SM100 tensor-core path.
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
@@ -616,21 +623,10 @@ def main() raises:
 
         # Paged score check (B200 only): the SM100 scorer's TMA row mapping is
         # compared logit-by-logit against a host reference, for both a
-        # single-tile page (64 == BM_key) and a multi-tile page (128).  On H100
-        # these run the scalar fallback + index checks only.
-        test_mla_index_fp8_paged_variable_lengths[
-            num_heads=64,
-            depth=128,
-            page_size=64,
-            top_k=64,
-            mask_name=MaskName.NULL.name,
-            check_scores=True,
-        ](
-            seq_lens=[4, 2],
-            cache_lens=[100, 60],
-            ctx=ctx,
-        )
-
+        # single-tile page (128 == BM_key) and a multi-tile page (256).  Both
+        # carry caches deep enough to span several pages, so a wrong
+        # `key // page_size` -> LUT step cannot pass.  On H100 these run the
+        # scalar fallback + index checks only.
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
@@ -639,12 +635,25 @@ def main() raises:
             mask_name=MaskName.NULL.name,
             check_scores=True,
         ](
-            seq_lens=[3, 2],
-            cache_lens=[200, 120],
+            seq_lens=[4, 2],
+            cache_lens=[300, 160],
             ctx=ctx,
         )
 
-        # page_size=32 (not a multiple of BM_key=64): the dispatch guard must
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=256,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[3, 2],
+            cache_lens=[600, 300],
+            ctx=ctx,
+        )
+
+        # page_size=32 (not a multiple of BM_key): the dispatch guard must
         # fall back to the scalar kernel, which must still rank correctly.
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
@@ -672,7 +681,7 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=8,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=256,
                 mask_name=MaskName.NULL.name,
                 strict_complete=True,
@@ -686,7 +695,7 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=8,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=64,
                 mask_name=MaskName.CAUSAL.name,
             ](
@@ -700,13 +709,13 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=8,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=64,
                 mask_name=MaskName.NULL.name,
                 check_scores=True,
             ](
                 seq_lens=[18, 2],
-                cache_lens=[100, 60],
+                cache_lens=[300, 160],
                 ctx=ctx,
             )
 
@@ -717,7 +726,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=32,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=256,
             mask_name=MaskName.NULL.name,
             strict_complete=True,
@@ -730,7 +739,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=32,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=64,
             mask_name=MaskName.CAUSAL.name,
         ](
@@ -743,13 +752,104 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=32,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=64,
             mask_name=MaskName.NULL.name,
             check_scores=True,
         ](
             seq_lens=[5, 2],
-            cache_lens=[100, 60],
+            cache_lens=[300, 160],
+            ctx=ctx,
+        )
+
+        # ===== Key-split route: few token blocks over a deep cache, so
+        # `_KEYSPLIT_MAX_TOKEN_TILES`/`_KEYSPLIT_MIN_KEY_TILES` send these to the
+        # K-streaming kernel with grid.z splitting the key range. This is the
+        # decode/MTP geometry, and it is the ONLY value-level coverage of a
+        # split key window -- the two long-prefill cases below check top-k
+        # indices only. Each case targets a different window shape; the counts
+        # assume B200 (sm_count=148) and `_ctas_per_sm() == 2`. =====
+
+        # 94 key tiles over 74 parts: ~1 tile per CTA, so the load warp runs its
+        # prologue only and never reaches the k_empty refill loop.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 12000],
+            ctx=ctx,
+        )
+
+        # Same split, ragged cache: entry 1 has only 2 key tiles against 74
+        # parts, so its trailing parts get empty windows and must take the
+        # `n_tiles_local <= 0` bail while entry 0 runs a full window alongside.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12000, 200],
+            ctx=ctx,
+        )
+
+        # Ragged, and TILE-ALIGNED on purpose. `_MIN_TILES_PER_PART` narrows the
+        # launcher's 74 parts per entry: entry 0 (94 tiles) to 24, entry 1 (1
+        # tile) to 1, so 73 of its 74 grid.z CTAs must take the new
+        # `block_idx.z >= p_eff` bail. Both entries have `cache_len + seq_len` an
+        # exact multiple of BM_key (12032 = 94*128, 128 = 1*128), so a window
+        # that drops or double-counts a tile moves 128 whole key columns instead
+        # of hiding in a partial tail that the score tolerance would absorb.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[6, 4],
+            cache_lens=[12026, 124],
+            ctx=ctx,
+        )
+
+        # 260 key tiles over 37 parts: ~7 tiles per CTA, which is past the
+        # `_k_ring_stages` prologue, so the refill loop issues K TMAs at a
+        # NON-ZERO tile offset. Windowing the load warp's two loops
+        # inconsistently with the MMA/consumer trip counts hangs rather than
+        # returning wrong values, so this case is the deadlock net.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=64,
+            mask_name=MaskName.NULL.name,
+            check_scores=True,
+        ](
+            seq_lens=[6, 4, 6, 2],
+            cache_lens=[33200, 33200, 33200, 33200],
+            ctx=ctx,
+        )
+
+        # Causal over a split key range. `check_scores` cannot cover this: it
+        # scores through `_score_paged_sm100`, which passes causal=False.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=32,
+            depth=128,
+            page_size=128,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[12000, 12000, 12000, 12000],
             ctx=ctx,
         )
 
@@ -760,7 +860,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=32,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=2048,
             mask_name=MaskName.CAUSAL.name,
             strict_complete=True,
@@ -779,7 +879,7 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=4,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=256,
                 mask_name=MaskName.NULL.name,
                 strict_complete=True,
@@ -792,7 +892,7 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=4,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=64,
                 mask_name=MaskName.CAUSAL.name,
             ](
@@ -805,13 +905,13 @@ def main() raises:
             test_mla_index_fp8_paged_variable_lengths[
                 num_heads=4,
                 depth=128,
-                page_size=64,
+                page_size=128,
                 top_k=64,
                 mask_name=MaskName.NULL.name,
                 check_scores=True,
             ](
                 seq_lens=[34, 2],
-                cache_lens=[100, 60],
+                cache_lens=[300, 160],
                 ctx=ctx,
             )
 
@@ -915,7 +1015,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=2048,
             mask_name=MaskName.CAUSAL.name,
         ](
@@ -944,7 +1044,7 @@ def main() raises:
         test_mla_index_fp8_paged_variable_lengths[
             num_heads=64,
             depth=128,
-            page_size=64,
+            page_size=128,
             top_k=2048,
             mask_name=MaskName.CAUSAL.name,
             strict_complete=True,
