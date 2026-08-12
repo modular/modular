@@ -777,9 +777,9 @@ def _describe_arg(arg: Any) -> str:
                 f"dtype={arg.dtype}, placements={arg.placements}, "
                 f"shards={len(arg.local_shards)})"
             )
-        return f"Tensor(shape={list(arg.shape)}, dtype={arg.dtype})"
+        return f"Tensor(shape={list(arg.shape)}, dtype={arg.dtype}, device={arg.device})"
     if isinstance(arg, Buffer):
-        return f"Buffer(shape={list(arg.shape)}, dtype={arg.dtype})"
+        return f"Buffer(shape={list(arg.shape)}, dtype={arg.dtype}, device={arg.device})"
     if arg is None:
         return "None"
     return type(arg).__name__

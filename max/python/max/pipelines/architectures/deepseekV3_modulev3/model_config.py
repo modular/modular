@@ -119,6 +119,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     :meth:`DeepseekV3Model.load_model`; ``None`` for bf16 checkpoints.
     """
 
+    mla_o_proj_quantized: bool = True
+    """Whether the MLA output projection is quantized."""
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
