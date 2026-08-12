@@ -317,7 +317,8 @@ class FakeTokenGeneratorPipeline(
                 responses[req_id] = output
 
         # Step the kv cache manager
-        self.kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self.kv_manager.step(ctx)
 
         # If num spec tokens, populate the draft tokens for the reqs
         if self.num_speculative_tokens > 0:
@@ -461,7 +462,8 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                         123
                     ] * self.num_speculative_tokens
 
-            self.kv_manager.step(inputs.batches)
+            for ctx in inputs.flat_batch:
+                self.kv_manager.step(ctx)
             self._pending_outputs = new_outputs
             self._pending_contexts = list(inputs.flat_batch)
             self._pending_inputs = inputs

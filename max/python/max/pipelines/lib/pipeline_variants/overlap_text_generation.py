@@ -3824,7 +3824,8 @@ class OverlapTextGenerationPipeline(
 
         # Commit the new KV blocks into the prefix cache, ignoring the trailing
         # placeholder future tokens (one per pending forward).
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
 
         if curr_batch is not None:
             if self._disable_overlap:

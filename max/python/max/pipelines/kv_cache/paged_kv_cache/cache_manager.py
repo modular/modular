@@ -258,7 +258,8 @@ class PagedKVCacheManager:
         ctx2.update(42)
 
         # Commit newly written blocks to prefix cache
-        kv_manager.step([[ctx1, ctx2]])
+        kv_manager.step(ctx1)
+        kv_manager.step(ctx2)
 
         # Release metadata and KV blocks for these requests
         kv_manager.release(ctx1)
@@ -806,16 +807,16 @@ class PagedKVCacheManager:
             for context in claimed:
                 self.release(context)
 
-    def step(self, batches: Sequence[Sequence[TextContext]]) -> None:
-        """Commits new tokens into the prefix cache for per-replica batches."""
-        for replica, ctxs in zip(self._replica, batches, strict=True):
-            # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
-            # NIXL WRITEs here and registers the blocks. Asynchronous connectors
-            # settle offloads via ``poll_transfers`` (which unpins the D2H source
-            # blocks once the copy lands), so this is a no-op for them.
-            replica.connector.wait_for_offloads()
-            for ctx in ctxs:
-                self._block_manager.step(ctx)
+    def step(self, ctx: TextContext) -> None:
+        """Commits the request's newly written tokens into the prefix cache."""
+        # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
+        # NIXL WRITEs here and registers the blocks. Asynchronous connectors
+        # settle offloads via ``poll_transfers`` (which unpins the D2H source
+        # blocks once the copy lands), so this is a no-op for them. Only
+        # ``runtime_inputs`` posts offloads, so every call after the first in a
+        # batch finds nothing left to settle.
+        self._connector.wait_for_offloads()
+        self._block_manager.step(ctx)
 
     def poll_transfers(self) -> None:
         """Drains completed async KV transfers (onloads and offloads).
