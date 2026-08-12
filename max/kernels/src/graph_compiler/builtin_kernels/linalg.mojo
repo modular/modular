@@ -1882,7 +1882,7 @@ struct Struct_router_gate_mixed_gemv:
     decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
-    - tiny `M` (`M <= 16`, decode): the fused mixed GEMV — `a` is loaded as bf16
+    - tiny `M` (`M <= 64`, decode): the fused mixed GEMV — `a` is loaded as bf16
       and widened to fp32 in registers, then dotted against the unchanged fp32
       `b` in a SINGLE launch, fusing away the standalone bf16->fp32 activation
       cast that otherwise precedes the fp32 router GEMV.

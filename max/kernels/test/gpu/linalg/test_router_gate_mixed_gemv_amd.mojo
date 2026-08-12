@@ -149,11 +149,13 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
 
 
 def test_router_gate_use_mixed_gemv() raises:
-    """Pins the M window the fused path claims (`0 < m <= 16`)."""
+    """Pins the M window the fused path claims (`0 < m <= 64`)."""
     assert_false(router_gate_use_mixed_gemv(0))
     assert_true(router_gate_use_mixed_gemv(1))
     assert_true(router_gate_use_mixed_gemv(16))
-    assert_false(router_gate_use_mixed_gemv(17))
+    assert_true(router_gate_use_mixed_gemv(17))
+    assert_true(router_gate_use_mixed_gemv(64))
+    assert_false(router_gate_use_mixed_gemv(65))
 
 
 def main() raises:
@@ -165,12 +167,16 @@ def main() raises:
     test_router_gate_use_mixed_gemv()
 
     with DeviceContext() as ctx:
-        # Production router shape across the whole fused-path M window.
         _run_case[128, ROUTER_K](ctx, 1)
         _run_case[128, ROUTER_K](ctx, 2)
         _run_case[128, ROUTER_K](ctx, 16)
-        # Odd N: the check_bounds_n=True half of the launcher.
+        _run_case[128, ROUTER_K](ctx, 17)
+        _run_case[128, ROUTER_K](ctx, 24)
+        _run_case[128, ROUTER_K](ctx, 32)
+        _run_case[128, ROUTER_K](ctx, 64)
+        # Odd N exercises check_bounds_n in both tile_n bands.
         _run_case[127, ROUTER_K](ctx, 2)
+        _run_case[127, ROUTER_K](ctx, 24)
         # Empty-launch guard: no launch, no fault, output untouched.
         _run_case[128, ROUTER_K](ctx, 0)
 
