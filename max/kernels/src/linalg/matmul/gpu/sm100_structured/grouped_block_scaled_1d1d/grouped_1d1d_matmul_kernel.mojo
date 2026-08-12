@@ -612,9 +612,7 @@ struct RealSwiGLUOutput[
         # i3) are contiguous in linear memory, so each (row, i1) pair
         # zeroes 4 bytes via a single uint32 store instead of 4
         # separate `set_sf` byte writes.
-        var pad_end_local = (
-            (tokens_e + SF_MN_GROUP_SIZE - 1) // SF_MN_GROUP_SIZE
-        ) * SF_MN_GROUP_SIZE
+        var pad_end_local = align_up(tokens_e, SF_MN_GROUP_SIZE)
         var pad_total = pad_end_local - tokens_e
         if pad_total <= 0:
             return
@@ -1354,7 +1352,7 @@ struct Grouped1D1DMatmulKernel[
                 grp += 1
                 si = ei
                 continue
-            var mb = (gs + _cta_m - 1) / _cta_m
+            var mb = ceildiv(gs, _cta_m)
             var cum = cumsum + mb
             var bs = cum * _num_n_blks
             if nbi < bs:
@@ -3148,8 +3146,8 @@ struct Grouped1D1DMatmulKernel[
         # body strips entirely. The TMEM load, SMEM scatter, and both
         # WarpGroupBarrier syncs still execute — isolates "structural epi
         # cost" from "cooperative compute cost". OUTPUT IS INVALID.
-        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else (
-            (work_per_stage + total_threads - 1) // total_threads
+        comptime iters_per_stage = 0 if Self.swiglu_disable_compute else ceildiv(
+            work_per_stage, total_threads
         )
 
         # Per-tile pipeline START/END events are recorded by the outer

@@ -14,7 +14,7 @@
 
 from std.sys import size_of
 from std.sys.info import _has_blackwell_tcgen05
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 
 from layout import (
     Idx,
@@ -529,7 +529,7 @@ def mla_indexer_ragged_float8_paged[
         use_causal_mask,
     ]
 
-    var block_size = ceildiv(top_k, 32) * 32
+    var block_size = align_up(top_k, 32)
     block_size = min(block_size, 1024)  # Cap at max threads per block
 
     ctx.enqueue_function[fill_kernel](

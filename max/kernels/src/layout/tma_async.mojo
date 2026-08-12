@@ -4822,9 +4822,7 @@ def _padded_shape[
     """Compute the padded tile shape for SplitLastDimTMATensorTile."""
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
     comptime final_dim = tile_shape[rank - 1]
-    comptime num_tma = (
-        final_dim + swizzle_granularity - 1
-    ) // swizzle_granularity
+    comptime num_tma = ceildiv(final_dim, swizzle_granularity)
     var result: IndexList[rank] = {}
     comptime for i in range(rank - 1):
         result[i] = tile_shape[i]

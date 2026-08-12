@@ -18,7 +18,7 @@
 
 """Registers distributed and multi-GPU collective graph ops backed by the `comm` and `shmem` kernels."""
 
-from std.math import ceildiv
+from std.math import align_down, ceildiv
 from std.sys import get_defined_bool
 from std.sys.info import size_of
 import extensibility
@@ -1781,7 +1781,7 @@ struct LamportAllreduceRMSNorm:
         # the checks in `comm.allreduce_lamport_rmsnorm`.
         comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
         comptime max_tpb = ctx.default_device_info.max_thread_block_size
-        comptime BLOCK_SIZE = (max_tpb // WARP_SIZE) * WARP_SIZE
+        comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
         if cols % atomic_width != 0:
             raise Error(
                 "lamport_allreduce_rmsnorm: cols (",

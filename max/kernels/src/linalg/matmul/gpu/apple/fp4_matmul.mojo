@@ -247,8 +247,8 @@ struct AppleM5Fp4MatMul[
         var n_i32 = Int32(n)
         var k_i32 = Int32(k)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var tid = Int32(thread_idx.x)
         var sg_id = tid // Int32(WARP_SIZE)
@@ -859,8 +859,8 @@ def _launch_apple_fp4_matmul[
         coalesce_scales=coalesce_scales,
     ]
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0

@@ -439,7 +439,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             # Scale-fold + mask. apply_mask sees a half_load-wide tile
             # (BN_QK/4 instead of Layout E's BN_QK/2).
             var s_row_val_vectorized = s_row.vectorize[2]()
-            comptime vs_count = (half_load + 2 - 1) // 2
+            comptime vs_count = ceildiv(half_load, 2)
             comptime for _vi in range(vs_count):
                 s_row_val_vectorized[_vi] = (
                     s_row_val_vectorized[_vi] * scale_log2e

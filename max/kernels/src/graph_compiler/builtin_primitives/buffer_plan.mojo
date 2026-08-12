@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import BitSet, Array
+from std.math import align_up, ceildiv
 
 
 def _compute_unshareable[
@@ -223,11 +224,7 @@ struct BufferPlanState[
         return self.shareable_sets[index].copy()
 
     def allocate_new_block(mut self, index: Int, alloc_size: Int):
-        var new_offset = (
-            (self.pool_size + self.max_alignment - 1)
-            // self.max_alignment
-            * self.max_alignment
-        )
+        var new_offset = align_up(self.pool_size, self.max_alignment)
 
         comptime if Self.enable_sharing:
             self.blocks.append(

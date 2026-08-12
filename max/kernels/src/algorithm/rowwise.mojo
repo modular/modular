@@ -104,7 +104,7 @@ from max.gpu import barrier, syncwarp
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.memory import external_memory
 from std.gpu.host.info import is_cpu, is_gpu
-from std.math import iota
+from std.math import ceildiv, iota
 from std.memory import bitcast, stack_allocation
 from std.memory.unsafe_pointer import UnsafePointer
 from std.sys.info import (
@@ -1023,7 +1023,7 @@ struct Row[
     ) * Self._W
     comptime _cols = Self.AxisSize.static_value if Self.AxisSize.is_static_value else 0
     # Per-participant chunk count if we staged the row strip.
-    comptime _chunks = (Self._cols + Self._PSTRIDE - 1) // Self._PSTRIDE
+    comptime _chunks = ceildiv(Self._cols, Self._PSTRIDE)
     # Register-residency budget: only keep registers when the staged strip fits
     # a small per-thread footprint. Beyond it (very large cols) the cache
     # would spill, so fall back to streaming (always correct). Scaffolder-

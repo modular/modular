@@ -883,10 +883,8 @@ struct OffsetPosition[
             # Split-page-aligned strategy: only last CTA handles ragged remainder.
             # All other CTAs process complete split_page_size-element chunks.
             comptime page_size = Self.config.split_page_size
-            var total_pages = (self.num_keys + page_size - 1) // page_size
-            var pages_per_split = (
-                total_pages + num_partitions - 1
-            ) // num_partitions
+            var total_pages = ceildiv(self.num_keys, page_size)
+            var pages_per_split = ceildiv(total_pages, num_partitions)
 
             # Split boundaries are page-aligned
             var start_page = self.split_idx * pages_per_split
@@ -944,10 +942,8 @@ struct OffsetPosition[
             var total_topk = topk + extra_topk
             comptime if Self.decoding_warp_split_k:
                 comptime page_size = Self.config.split_page_size
-                var total_pages_s = (total_topk + page_size - 1) // page_size
-                var pages_per_split_s = (
-                    total_pages_s + num_partitions - 1
-                ) // num_partitions
+                var total_pages_s = ceildiv(total_topk, page_size)
+                var pages_per_split_s = ceildiv(total_pages_s, num_partitions)
                 var start_page_s = self.split_idx * pages_per_split_s
                 var end_page_s = min(
                     (self.split_idx + 1) * pages_per_split_s, total_pages_s
@@ -3851,7 +3847,7 @@ struct MLA_SM100_Decode_Common[
                 # Fused with scale_log2e below when per-token scales active.
 
             var s_row_val_vectorized = s_row.vectorize[2]()
-            comptime vs_count = (half_load + 2 - 1) // 2
+            comptime vs_count = ceildiv(half_load, 2)
 
             comptime if has_per_token_scales:
                 # Fused Place 1 + scale_log2e: vectorized multiply of
@@ -4011,7 +4007,7 @@ struct MLA_SM100_Decode_Common[
                 # Vectorized: use SIMD[Float32, 2] to halve instruction count.
                 var _sigma_kv_vec_p2 = _sigma_kv_regs.vectorize[2]()
                 var _s_row_vec_p2 = s_row.vectorize[2]()
-                comptime _vs_count_p2 = (half_load + 2 - 1) // 2
+                comptime _vs_count_p2 = ceildiv(half_load, 2)
                 comptime for _vi in range(_vs_count_p2):
                     _s_row_vec_p2[_vi] = (
                         _s_row_vec_p2[_vi] * _sigma_kv_vec_p2[_vi]

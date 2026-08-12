@@ -30,7 +30,7 @@ correctness is its own `wait_on_dependent_grids`. The signal buffers must be
 sentinel-initialized once (`lamport_init`) before the first call.
 """
 
-from std.math import rsqrt
+from std.math import align_down, rsqrt
 from std.sys import align_of, size_of
 
 from std.atomic import Atomic
@@ -283,7 +283,7 @@ def lamport_allreduce_rmsnorm[
     ), "lamport_allreduce_rmsnorm requires a floating-point dtype"
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
-    comptime BLOCK_SIZE = (max_tpb // WARP_SIZE) * WARP_SIZE
+    comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
 
     if cols % atomic_width != 0:
         raise Error(

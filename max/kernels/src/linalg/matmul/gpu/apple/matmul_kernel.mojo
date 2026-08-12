@@ -28,6 +28,7 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 
 from std.collections import Array, Optional
 from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
+from std.math import align_down, ceildiv
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
 from std.utils import IndexList
@@ -795,8 +796,8 @@ struct AppleM5MatMul[
         comptime SG_N_i32: Int32 = Int32(SG_N)
         comptime NUM_SG_N_i32: Int32 = Int32(Self.NUM_SG_N)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
         var sg_m_idx = sg_id // NUM_SG_N_i32
@@ -1311,7 +1312,7 @@ struct AppleM5MatMul[
 
         # Same A-slab clamp shift as `run` (see its comment). Unconditional
         # here since the `comptime assert` above guarantees `clamp_edge=True`.
-        var tile_row0 = (row_base // BM_i32) * BM_i32
+        var tile_row0 = align_down(row_base, BM_i32)
         if tile_row0 + BM_i32 > Int32(m):
             var row_shift = (Int32(m) - BM_i32) - tile_row0
             a_ptr = a_ptr + Int(row_shift) * k
@@ -1541,8 +1542,8 @@ struct AppleM5MatMul[
         comptime SG_N_i32: Int32 = Int32(SG_N)
         comptime NUM_SG_N_i32: Int32 = Int32(Self.NUM_SG_N)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var num_tiles = UInt32(1) << (log2_grid_m + log2_grid_n)
         var bx = UInt32(block_idx.x)
@@ -1839,8 +1840,8 @@ def enqueue_apple_matmul[
 
     # Per-axis next-pow2 grid for rectangular Z-order. e.g. 32x224 (Llama-3
     # MLP up-proj) -> 32x256 = 8192 launches vs the prior square 256x256 = 65536.
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     # Split-K routing. `force_split_k` overrides the heuristic; when unset, the
     # heuristic routes under-occupied shapes -- few 64x64 output tiles but deep
@@ -1849,7 +1850,7 @@ def enqueue_apple_matmul[
     # recovers 1.4-2.9x there (measured, M5 Max). The threshold is conservative;
     # normal shapes (many tiles) take the single-pass launch below.
     var tiles = grid_m * grid_n
-    var num_strips = (k + MM.BK - 1) // MM.BK
+    var num_strips = ceildiv(k, MM.BK)
     var route_split_k = force_split_k.value() if force_split_k else (
         tiles <= 16 and num_strips >= 32 and num_strips >= 8 * tiles
     )
@@ -2069,8 +2070,8 @@ def enqueue_apple_conv2d[
         in_elems,
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0
@@ -2202,8 +2203,8 @@ def enqueue_apple_matmul_split_k[
             n <= 65535, "Apple matmul (NN): N must fit in UInt16; got N=", n
         )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
     var side_m = 1
     var log2_m: UInt32 = 0
     while side_m < grid_m:
@@ -2217,10 +2218,10 @@ def enqueue_apple_matmul_split_k[
 
     # Cap splits so none is empty: distribute BK-strips evenly (round up), then
     # recompute how many splits that actually fills.
-    var num_strips = (k + MM.BK - 1) // MM.BK
+    var num_strips = ceildiv(k, MM.BK)
     var hint = max(1, num_splits_hint)
-    var strips_per_split = (num_strips + hint - 1) // hint
-    var actual_splits = (num_strips + strips_per_split - 1) // strips_per_split
+    var strips_per_split = ceildiv(num_strips, hint)
+    var actual_splits = ceildiv(num_strips, strips_per_split)
     var k_per_split = strips_per_split * MM.BK
 
     var partials = ctx.enqueue_create_buffer[DType.float32](
@@ -2292,7 +2293,7 @@ def enqueue_apple_matmul_split_k[
         c,
         partials.unsafe_ptr(),
         Int32(actual_splits),
-        grid_dim=((n_elems + MM.REDUCE_BLOCK - 1) // MM.REDUCE_BLOCK),
+        grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
         block_dim=(MM.REDUCE_BLOCK),
     )
     # Keep the workspace alive until both launches are enqueued.
@@ -2346,8 +2347,8 @@ def enqueue_apple_matmul_clamp_chain[
         ),
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
     var side_m = 1
     var log2_m: UInt32 = 0
     while side_m < grid_m:

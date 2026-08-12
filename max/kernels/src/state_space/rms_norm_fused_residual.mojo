@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm with fused residual connection for state space models."""
 
-from std.math import align_down, ceildiv, rsqrt
+from std.math import align_down, align_up, ceildiv, rsqrt
 from std.sys.info import align_of, simd_width_of, size_of
 
 from std.algorithm import vectorize
@@ -645,13 +645,11 @@ def rms_norm_fused_residual_gpu[
 
     var grid_dim = rows
     var block_dim = min(
-        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        align_up(ceildiv(cols, simd_width), WARP_SIZE),
         WARP_SIZE * max_warps_per_block,
     )
 
-    var shared_mem_size = (
-        ceildiv(cols, simd_width) * simd_width * size_of[dtype]()
-    )
+    var shared_mem_size = align_up(cols, simd_width) * size_of[dtype]()
 
     comptime kernel = rms_norm_fused_residual_gpu_block[
         GammaLayout=type_of(gamma).LayoutType,
