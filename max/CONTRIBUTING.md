@@ -159,9 +159,11 @@ for multiple days.
 Smaller pull requests means less work for the maintainers and faster reviews
 and merges for the contributors. It's a win-win!
 
-To help break apart big projects into smaller PRs, try using the
-[stack-pr](https://github.com/modular/stack-pr) tool, which simplifies
-the process of creating several PRs in a dependency chain.
+To help break apart big projects into smaller PRs, try using [stacked pull
+requests][stacked-prs] and the `gh stack` CLI, which simplify the process of
+creating several PRs in a dependency chain.
+
+[stacked-prs]: https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests
 
 ## Submitting pull requests
 
