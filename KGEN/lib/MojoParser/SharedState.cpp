@@ -1093,12 +1093,8 @@ SharedState::ModuleSpec::classify(const std::filesystem::path &path,
   // (i.e., without the final extension).
   if (auto stem = path.filename().stem().string();
       moduleName.empty() || stem == moduleName) {
-    if (Filesystem::isMojoBinaryPackagePath(path)) {
-      auto ext = path.filename().extension();
-      return ModuleSpec{stem, path,
-                        ext == ".mojopkg" ? ModuleSpec::Kind::LegacyPkg
-                                          : ModuleSpec::Kind::Precompiled};
-    }
+    if (Filesystem::isMojoBinaryPackagePath(path))
+      return ModuleSpec{stem, path, ModuleSpec::Kind::Precompiled};
 
     if (Filesystem::isMojoSourceFile(path))
       return ModuleSpec{stem, path, ModuleSpec::Kind::SourceModule};

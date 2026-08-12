@@ -275,12 +275,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
         pkgArgs.outputPath = outputPath;
       }
 
-      if (outputPath.extension() != ".mojoc") {
-        if (outputPath.extension() != ".mojopkg")
-          return Error("output path must have a '.mojoc' extension");
-        llvm::errs() << "warning: creating '.mojopkg' file extensions is "
-                        "deprecated; switch to '.mojoc'\n";
-      }
+      if (outputPath.extension() != ".mojoc")
+        return Error("output path must have a '.mojoc' extension");
 
       pkgArgs.name = outputPath.stem().string();
     }
