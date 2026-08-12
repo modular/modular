@@ -26,7 +26,6 @@ narrow.
 
 import json
 import os
-import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -49,6 +48,10 @@ from max.pipelines.weights.hf_utils import (
 from max.pipelines.weights.hf_utils import (
     generate_local_model_path as _real_generate_local_model_path,
 )
+from test_common.fake_weights import (
+    write_fake_safetensors,
+    write_mixed_safetensors,
+)
 
 _DEFAULT_ENCODING: SupportedEncoding = "bfloat16"
 
@@ -61,40 +64,6 @@ CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
 # ---------------------------------------------------------------------------
 
 
-def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
-    """Write a minimal safetensors file with a single tensor of the given dtype."""
-    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00\x00")
-
-
-def _write_mixed_safetensors(path: str, tensors: dict[str, str]) -> None:
-    """Write a safetensors file with multiple tensors of different dtypes.
-
-    Args:
-        path: File path to write.
-        tensors: Mapping of tensor name to safetensors dtype string,
-            e.g. {"model.layers.0.weight": "U8", "model.norm.weight": "BF16"}.
-    """
-    header: dict[str, dict[str, object]] = {}
-    offset = 0
-    for name, dtype in tensors.items():
-        header[name] = {
-            "dtype": dtype,
-            "shape": [1],
-            "data_offsets": [offset, offset + 2],
-        }
-        offset += 2
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00" * offset)
-
-
 def _make_local_repo(
     tmpdir: str,
     safetensors_files: dict[str, dict[str, str]] | None = None,
@@ -105,7 +74,7 @@ def _make_local_repo(
     Args:
         tmpdir: Root temp directory.
         safetensors_files: Mapping of relative path to {tensor_name: dtype}.
-            If the dict has one entry, uses _write_fake_safetensors for simplicity.
+            If the dict has one entry, uses write_fake_safetensors for simplicity.
         gguf_files: List of relative GGUF filenames to create as empty files.
 
     Returns:
@@ -117,9 +86,9 @@ def _make_local_repo(
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             if len(tensors) == 1:
                 _, dtype = next(iter(tensors.items()))
-                _write_fake_safetensors(full_path, dtype=dtype)
+                write_fake_safetensors(full_path, dtype=dtype)
             else:
-                _write_mixed_safetensors(full_path, tensors)
+                write_mixed_safetensors(full_path, tensors)
     if gguf_files:
         for rel_path in gguf_files:
             full_path = os.path.join(tmpdir, rel_path)
@@ -501,7 +470,7 @@ class TestEncodingFromExplicitWeightPath:
         """Encoding should be parsed from filename when a hint is present."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fp = os.path.join(tmpdir, "model-bf16.safetensors")
-            _write_fake_safetensors(fp, dtype="BF16")
+            write_fake_safetensors(fp, dtype="BF16")
             explicit = [Path(fp)]
             config = _make_config(
                 tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit
