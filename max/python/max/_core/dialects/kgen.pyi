@@ -4683,21 +4683,21 @@ class GeneratorType(max._core.Type):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: max._core.Attribute = ...,
+        param_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: PogListAttr,
+        param_list_attrs: PogListAttr,
     ) -> None: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
     def body(self) -> max._core.Type | None: ...
     @property
-    def metadata(self) -> PogListAttr: ...
+    def param_list_attrs(self) -> PogListAttr: ...
 
 class MLIRDeferredType(max._core.Type):
     """
