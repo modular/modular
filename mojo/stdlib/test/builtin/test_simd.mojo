@@ -468,9 +468,8 @@ def test_issue_30237() raises:
         -2.76076847742355e-16,
     ]
 
-    @__parameter
     @always_inline
-    def eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval1(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -482,9 +481,8 @@ def test_issue_30237() raises:
 
         return result
 
-    @__parameter
     @always_inline
-    def eval2(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval2(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -532,7 +530,6 @@ def test_truthy() raises:
         DType.uint,
     )
 
-    @__parameter
     def test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
         assert_false(Scalar[dtype](0))
@@ -1376,7 +1373,6 @@ def test_extract() raises:
 
 
 def test_limits() raises:
-    @__parameter
     def test_integral_overflow[dtype: DType]() raises:
         var max_value = Scalar[dtype].MAX
         var min_value = Scalar[dtype].MIN
@@ -1475,7 +1471,6 @@ def test_indexing() raises:
 
 
 def test_reduce() raises:
-    @__parameter
     def test_dtype[dtype: DType]() raises:
         comptime X8 = SIMD[dtype, 8]
         comptime X4 = SIMD[dtype, 4]
@@ -2007,7 +2002,6 @@ def test_comparison() raises:
         DType.uint,
     )
 
-    @__parameter
     def test_dtype[dtype: DType]() raises:
         comptime X4 = SIMD[dtype, 4]
 
