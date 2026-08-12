@@ -89,10 +89,12 @@ def test_huggingface_repo__encodings_supported(
 
 
 def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
-    with patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"):
+    with (
+        patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+    ):
         hf_repo = HuggingFaceRepo(
-            repo_id="RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic",
-            repo_type="online",
+            repo_id="RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
         )
 
     with (
@@ -446,10 +448,8 @@ class TestGenerateLocalModelPath:
         )
 
 
-class TestConfigRepoId:
-    def test_online_repo_uses_repo_id(self) -> None:
-        # A normal (non-offline) repo is not rewritten, so config_repo_id is
-        # just repo_id and no original hub id is stashed.
+class TestLocalPath:
+    def test_online_repo_raises(self) -> None:
         with (
             patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
             patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
@@ -457,14 +457,13 @@ class TestConfigRepoId:
             repo = HuggingFaceRepo(repo_id="org/model")
 
         assert repo.repo_type == "online"
-        assert repo._hub_repo_id is None
-        assert repo.config_repo_id == "org/model"
+        with pytest.raises(ValueError, match="online repo"):
+            _ = repo.local_path
 
-    def test_offline_repo_recovers_hub_id(self) -> None:
-        # Under HF_HUB_OFFLINE, repo_id is rewritten to the local snapshot
-        # directory, but config_repo_id recovers the original hub id so
-        # transformers stays on its hub/cache code path (avoiding the 5.12
-        # trust_remote_code snapshot-symlink loader bug).
+    def test_offline_repo_keeps_hub_id(self) -> None:
+        # Under HF_HUB_OFFLINE the repo resolves from the local cache, but
+        # repo_id stays the hub id so hub and transformers APIs keep working;
+        # the snapshot directory is exposed via local_path.
         snapshot_dir = "/tmp/hub/models--org--model/snapshots/abc123"
         with (
             patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
@@ -476,10 +475,37 @@ class TestConfigRepoId:
             repo = HuggingFaceRepo(repo_id="org/model", revision="abc123")
 
         assert repo.repo_type == "local"
-        assert repo.repo_id == snapshot_dir
-        assert repo._hub_repo_id == "org/model"
-        assert repo.config_repo_id == "org/model"
-        assert repo.config_repo_id != repo.repo_id
+        assert repo.repo_id == "org/model"
+        assert repo.local_path == snapshot_dir
+
+    def test_offline_repo_weight_files_are_repo_relative(self) -> None:
+        # Weight paths must be stripped of the snapshot directory rather than
+        # the hub id, so downstream code can re-join them onto local_path.
+        with tempfile.TemporaryDirectory() as snapshot_dir:
+            (Path(snapshot_dir) / "model-00001.safetensors").touch()
+            subfolder = Path(snapshot_dir) / "text_encoder"
+            subfolder.mkdir()
+            (subfolder / "model-00002.safetensors").touch()
+            with (
+                patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
+                patch(
+                    "max.pipelines.weights.hf_utils.huggingface_hub.snapshot_download",
+                    return_value=snapshot_dir,
+                ),
+            ):
+                repo = HuggingFaceRepo(repo_id="org/model", revision="abc123")
+
+            assert sorted(repo.weight_files[WeightsFormat.safetensors]) == [
+                "model-00001.safetensors",
+                "text_encoder/model-00002.safetensors",
+            ]
+
+    def test_on_disk_repo_returns_repo_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = HuggingFaceRepo(repo_id=temp_dir)
+
+            assert repo.repo_type == "local"
+            assert repo.local_path == temp_dir
 
 
 def test_hf_hub_download_retries_on_racy_cache_entry() -> None:

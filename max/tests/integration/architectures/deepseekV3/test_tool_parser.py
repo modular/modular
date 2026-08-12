@@ -820,11 +820,7 @@ def _local_repo(
     path: pathlib.Path, subfolder: str | None = None
 ) -> HuggingFaceRepo:
     """Construct a local HuggingFaceRepo handle pointing at ``path``."""
-    return HuggingFaceRepo(
-        repo_id=str(path),
-        repo_type="local",
-        subfolder=subfolder,
-    )
+    return HuggingFaceRepo(repo_id=str(path), subfolder=subfolder)
 
 
 def test_resolver_picks_v31_for_raw_json_template(

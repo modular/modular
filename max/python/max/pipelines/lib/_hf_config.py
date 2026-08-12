@@ -49,7 +49,7 @@ def load_raw_config_json(repo: HuggingFaceRepo) -> dict[str, Any]:
 
     if repo.repo_type == "local":
         for filename in filenames:
-            parts = [repo.repo_id]
+            parts = [repo.local_path]
             if repo.subfolder is not None:
                 parts.append(repo.subfolder)
             parts.append(filename)
@@ -75,9 +75,12 @@ def load_raw_config_json(repo: HuggingFaceRepo) -> dict[str, Any]:
                 continue
 
     if config_path is None:
+        location = (
+            repo.local_path if repo.repo_type == "local" else repo.repo_id
+        )
         raise FileNotFoundError(
             f"No config.json or scheduler_config.json found in"
-            f" {repo.repo_id}/{repo.subfolder or ''}"
+            f" {location}/{repo.subfolder or ''}"
         )
 
     with open(config_path) as f:
@@ -114,16 +117,8 @@ def load_huggingface_config(repo: HuggingFaceRepo) -> PretrainedConfig:
     if repo.subfolder is not None:
         kwargs["subfolder"] = repo.subfolder
 
-    # When the repo was resolved from the offline HF cache, `config_repo_id` is
-    # the original hub id rather than the local snapshot directory (which
-    # transformers 5.12's trust_remote_code loader cannot handle). Force a
-    # local-only lookup so it never hits the network.
-    config_repo_id = repo.config_repo_id
-    if config_repo_id != repo.repo_id:
-        kwargs["local_files_only"] = True
-
     try:
-        result = AutoConfig.from_pretrained(config_repo_id, **kwargs)
+        result = AutoConfig.from_pretrained(repo.repo_id, **kwargs)
     except Exception:
         # Fallback for non-transformers models (e.g. diffusers components):
         # load the raw config.json and wrap it in a PretrainedConfig so

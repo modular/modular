@@ -1168,9 +1168,13 @@ class MAXModelConfig(MAXModelConfigBase):
         total_weights_size = 0
         repo = self.huggingface_weight_repo
 
+        repo_root = (
+            repo.local_path if repo.repo_type == "local" else repo.repo_id
+        )
+
         for file_path in self.weight_path:
             file_path_str = str(file_path)
-            full_file_path = Path(repo.repo_id) / file_path
+            full_file_path = Path(repo_root) / file_path
 
             # 1. Check if the file exists locally (direct path, local repo, or cache)
             if local_file_location := self._local_weight_path(full_file_path):
@@ -1181,7 +1185,7 @@ class MAXModelConfig(MAXModelConfigBase):
             if repo.repo_type == "local":
                 if not self._local_weight_path(full_file_path):
                     raise FileNotFoundError(
-                        f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
+                        f"Weight file '{file_path_str}' not found within the local repository path '{repo_root}'"
                     )
             # If it was an online repo, we need to check the API.
             elif repo.repo_type == "online":
@@ -1357,10 +1361,10 @@ class MAXModelConfig(MAXModelConfigBase):
 
             # File not found locally.
             if repo.repo_type == "local":
-                if not self._local_weight_path(Path(repo.repo_id) / path):
+                if not self._local_weight_path(Path(repo.local_path) / path):
                     # Helper returning None for local repo means not found.
                     raise FileNotFoundError(
-                        f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
+                        f"weight file '{path_str}' not found within the local repository path '{repo.local_path}'"
                     )
             elif repo.repo_type == "online":
                 # Verify that it exists on Huggingface.
@@ -1465,7 +1469,7 @@ class MAXModelConfig(MAXModelConfigBase):
                 force_download=self.force_download,
             )
         else:
-            local_path = Path(weight_repo.repo_id)
+            local_path = Path(weight_repo.local_path)
             return [local_path / x for x in weight_path]
 
     def loader(self) -> WeightLoader:
