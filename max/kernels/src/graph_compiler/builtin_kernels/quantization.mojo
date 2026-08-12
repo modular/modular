@@ -126,7 +126,15 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
             raise Error("Input and output buffers are not same shape")
 
         var out_t = output.to_tile_tensor[DType.int64]()
-        var scale_t = scales.to_tile_tensor[DType.int64]()
+
+        # The scale output holds one value per input row, laid out
+        # [1, rows]. View it as rank-1 and index it by row number.
+        var in_shape = input.shape()
+        var rows = in_shape.flattened_length() // in_shape[rank - 1]
+        var scale_t = TileTensor(
+            scales.to_tile_tensor[DType.int64]()._storage,
+            row_major(Coord(rows)),
+        )
 
         @always_inline
         def input_fn[
@@ -150,11 +158,12 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         def scale_fn[
             coord_rank: Int
         ](coords: IndexList[coord_rank], val: Scalar[scale_dtype]) {
-            var scale_t
+            var scale_t, var in_shape
         }:
-            scale_t.store_linear[width=1, alignment=1](
-                rebind[IndexList[scale_t.rank]](coords), val
-            )
+            var row = 0
+            comptime for i in range(rank - 1):
+                row = row * in_shape[i] + coords[i]
+            scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
 
         # Static row width (when known) enables the register-cached row path.
         comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
