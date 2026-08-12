@@ -2108,7 +2108,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     funcOp.setFuncTypeGenerator(FnTypeGeneratorType::get(
         provisionalSig.getInputParamTypes(), provisionalSig.getValues(),
         provisionalSig.getArgConventions(), fnSignature.effects,
-        provisionalSig.getFnMetadata(), provisionalSig.getMetadata(),
+        provisionalSig.getFnMetaOriginData(), provisionalSig.getMetadata(),
         provisionalSig.getArgListAttrs()));
   }
 
@@ -2309,7 +2309,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     SmallVector<TypedAttr> origins =
         shared.cachedOriginFinder.findOriginsIn(captureTypes);
     signature = signature.getWithBody(signature.getBody().getWithMetadata(
-        signature.getFnMetadata().addCaptureOrigins(
+        signature.getFnMetaOriginData().addCaptureOrigins(
             OriginSetAttr::get(getContext(), origins)),
         signature.getBody().getArgListAttrs()));
     funcOp.setFuncTypeGenerator(signature);

@@ -223,6 +223,20 @@ canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr, GeneratorType actual,
       additionalAssumptions);
 }
 
+/// Return `metadata` with its capture origin set cleared. Capture origins
+/// describe which storage a callable's captures point into, which does not
+/// affect its representation, so signature comparisons that only care about
+/// representation compare the metadata with them cleared.
+static FnMetaDataAttr withoutCaptureOrigins(FnMetaDataAttr metadata) {
+  auto originData = cast_or_null<FnMetaOriginDataAttr>(metadata.getMetadata());
+  if (!originData)
+    return metadata;
+  return metadata.getWithMetadata(FnMetaOriginDataAttr::get(
+      metadata.getContext(), originData.getNumImplicitOriginDecls(),
+      /*captureOrigins=*/{}, originData.getIsNestedOriginsReadOnly(),
+      originData.getDefinesInteriorOrigins()));
+}
+
 // Strip out irrelevant details of a function that can be rebound away to make
 // convertibility checking easier.
 static FuncType getReducedFnType(FuncType sig) {
@@ -246,13 +260,8 @@ static FuncType getReducedFnType(FuncType sig) {
                        origPogListAttr.getOrigVariadicConvention(),
                        origPogListAttr.getBodyConstraints());
 
-  auto metadata = FnMetaOriginDataAttr::get(
-      ctx, sig.getNumImplicitOriginDecls(),
-      // Don't keep the capture origins, thunks don't care about those. Only the
-      // parameter-value passed in at the callsite cares about those.
-      {}, sig.getIsNestedOriginsReadOnly(), sig.getDefinesInteriorOrigins());
-  return FuncType::get(sig.getValues(), sig.getArgConventions(),
-                       sig.getFnEffects(), metadata, newPogListAttr);
+  FnMetaDataAttr metaData = withoutCaptureOrigins(sig.getMetaDataAttr());
+  return FuncType::get(ctx, sig.getValues(), metaData, newPogListAttr);
 }
 
 static GeneratorType getReducedGeneratorType(GeneratorType gen) {
@@ -1208,27 +1217,29 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   if (!from || !to)
     return false;
 
+  // If the fn meta data mismatches (different arg conventions, effects, or
+  // origin metadata), return false. Capture origins are excluded from the
+  // comparison (it will be deleted anyway in the near future).
+  if (withoutCaptureOrigins(from.getFnMetaData()) !=
+      withoutCaptureOrigins(to.getFnMetaData()))
+    return false;
+
   // Allow signature types to be converted for free if they differ only in
-  // argument names, parameter names, passing kinds, or implicit origins.
+  // argument names, parameter names, passing kinds.
   size_t fromNumArgs = from.getNumArguments();
   if (fromNumArgs != to.getNumArguments())
-    return false;
-  if (from.getArgConventions() != to.getArgConventions())
     return false;
 
   // Result types, and input/result parameter types must match exactly.
   if (from.getResults() != to.getResults() ||
-      from.getInputParamTypes() != to.getInputParamTypes() ||
-      from.getFnEffects() != to.getFnEffects())
+      from.getInputParamTypes() != to.getInputParamTypes())
     return false;
 
-  // The input argument types may have different implicit origins but otherwise
-  // must match exactly.
   for (auto [idx, fromTy, toTy, conv] : llvm::enumerate(
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
-    Type fromTyCmp = RefType::stripRefConvention(fromTy, conv);
-    Type toTyCmp = RefType::stripRefConvention(toTy, conv);
-    if (!ASTType(fromTyCmp).isEqualCanon(toTyCmp))
+    Type fromCmpTy = RefType::stripRefConvention(fromTy, conv);
+    Type toCmpTy = RefType::stripRefConvention(toTy, conv);
+    if (!ASTType(fromCmpTy).isEqualCanon(toCmpTy))
       return false;
 
     // If the argument has a required keyword, then the two must match names.
