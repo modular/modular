@@ -74,7 +74,23 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 comptime _PDL_LEVEL = PDLLevel.ON
 comptime _SM_OVERPROVISION = 32
+
+# Output rows per SM the long-reduce-axis tiled kernel needs to beat
+# cooperative.
 comptime _THREAD_SAT_OUTPUTS_PER_SM = 256
+
+# Minimum output rows per SM for the short-reduce-axis tiled tier: a
+# measured cooperative-vs-tiled crossover, not an SM-coverage guarantee
+# (both tiers are latency-bound in this band). The MI355 value doubles
+# as the default for unmeasured devices.
+comptime _TILED_MIN_ROWS_DEFAULT = 16
+comptime _TILED_MIN_ROWS_NVIDIA = 1
+
+# Row-size cutoff below which the non-inner tiled kernel beats the
+# cooperative one, scaled at the use site by cooperative's wave count.
+# Measured crossovers; the MI355 value doubles as the default.
+comptime _ROW_SIZE_CUTOFF_NVIDIA = 32
+comptime _ROW_SIZE_CUTOFF_DEFAULT = 8
 
 # Inner-axis block-tier SIMD-full thresholds. Switch to the SIMD
 # path only with enough `iters_full` axis steps to amortize address
@@ -1052,6 +1068,14 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
+        # The body needs one of these to take the one-thread-per-output
+        # branches; without either it compiles fine and reduces across
+        # output rows.
+        comptime assert (
+            Self.params.emit_tile_width > 1
+            or Self.params._tier == ReduceTier.Serial
+        ), "tiled kernel needs a one-thread-per-output tier"
+
         var axis_size = self.shape[Self.params.axis]
         var num_outputs = self.shape.flattened_length() // axis_size
 
@@ -1212,7 +1236,6 @@ def launch[
     supports_splitk: Bool = True,
     computationally_expensive: Bool = False,
     BLOCK_SIZE: Int = 256,
-    TILED_BLOCK_SIZE: Int = 32,
     COOPERATIVE_BLOCK_SIZE: Int = 128,
     WARP_BLOCK_WARPS: Int = 4,
     cache_dtype: Optional[DType] = None,
@@ -1229,9 +1252,14 @@ def launch[
       Warp-per-row when `row_size <= WARP_SIZE`, else block-per-row
       with a 2D SIMD-width heuristic over
       `(num_rows, row_size, sm_count)`.
-    - **Non-inner axis**, output count saturates the device — tiled
-      kernel (one thread per row tile, coalesced SIMD load + store on
-      the innermost non-axis dim).
+    - **Non-inner axis**, SIMD-tileable, and either (the reduce axis
+      is short and the output rows clear the per-SM floor) or the
+      output count saturates the device — tiled kernel (one thread per
+      row tile, coalesced SIMD load + store on the innermost non-axis
+      dim).
+    - **Non-inner axis**, short reduce axis clearing the same floor,
+      not SIMD-tileable — scalar (`W = 1`) tiled kernel: same
+      one-thread-per-output layout, without the vectorized load.
     - **Non-inner axis** otherwise — block-per-output cooperative
       (one block per output row, threads collaborate on the strided
       reduce axis with `simd_width = 1`).
@@ -1255,9 +1283,6 @@ def launch[
             address math for cheap reductions. Softmax / log-softmax
             / layernorm set this; plain sum / max do not.
         BLOCK_SIZE: Threads per block for the inner-axis block tier.
-        TILED_BLOCK_SIZE: Threads per block for the tiled tier (small
-            by design — more blocks per SM under scattered-write
-            pressure).
         COOPERATIVE_BLOCK_SIZE: Threads per block for the non-inner
             cooperative tier.
         WARP_BLOCK_WARPS: Warps per block for the warp tier.
@@ -1292,6 +1317,17 @@ def launch[
     comptime sm_count = ctx.default_device_info.sm_count
     comptime effective_simd = simd_width
 
+    # One wave per block: the smallest tiled block that leaves no lane idle.
+    comptime tiled_block_size = ctx.default_device_info.warp_size
+
+    comptime is_nvidia_device = ctx.default_device_info.api == "cuda"
+    comptime tiled_min_rows_per_sm = (
+        _TILED_MIN_ROWS_NVIDIA if is_nvidia_device else _TILED_MIN_ROWS_DEFAULT
+    )
+    comptime tiled_row_size_cutoff = (
+        _ROW_SIZE_CUTOFF_NVIDIA if is_nvidia_device else _ROW_SIZE_CUTOFF_DEFAULT
+    )
+
     var shape_il = coord_to_index_list(shape)
     var row_size = shape_il[axis]
     var num_rows = shape_il.flattened_length() // row_size
@@ -1302,35 +1338,73 @@ def launch[
     comptime if axis != rank - 1:
         var innermost = shape_il[rank - 1]
         var sat_threshold = sm_count * _THREAD_SAT_OUTPUTS_PER_SM
+        # The row size tiled can afford scales with cooperative's wave count.
+        var coop_waves = ceildiv(num_rows, sm_count * _SM_OVERPROVISION)
+        var short_axis_ok = (
+            row_size <= tiled_row_size_cutoff * coop_waves
+            and num_rows >= sm_count * tiled_min_rows_per_sm
+        )
+        var occupancy_ok = short_axis_ok or num_rows >= sat_threshold
         # Tiled non-inner tier: the monoid is W-wide (lanes = the W
         # adjacent output columns the thread owns), `join_parallel` /
         # `reduce` no-op here, and the body's `emit` writes
         # `emit_tile_width` lanes.
-        var use_tiled = (
+        var use_full_tiled = (
             effective_simd > 1
             and innermost >= effective_simd
             and innermost % effective_simd == 0
             and num_rows % effective_simd == 0
-            and num_rows >= sat_threshold
+            and occupancy_ok
         )
 
-        if use_tiled:
+        if use_full_tiled:
             comptime W = effective_simd
             comptime tiled_params = ContextParams(
                 axis=axis,
                 emit_tile_width=W,
-                BLOCK_SIZE=TILED_BLOCK_SIZE,
+                BLOCK_SIZE=tiled_block_size,
                 simd_width=W,
                 target="gpu",
             )
             var num_blocks = min(
-                ceildiv(num_rows, TILED_BLOCK_SIZE * W),
+                ceildiv(num_rows, tiled_block_size * W),
                 sm_count * _SM_OVERPROVISION,
             )
             ctx.enqueue_function(
                 _TiledKernel[rank, tiled_params, Body](body, shape_il),
                 grid_dim=num_blocks,
-                block_dim=TILED_BLOCK_SIZE,
+                block_dim=tiled_block_size,
+                attributes=pdl_launch_attributes(_PDL_LEVEL),
+            )
+            return
+
+        # Scalar (W=1) tiled fallback for short-axis shapes the
+        # full-width tier can't tile evenly. `tier=Serial` marks the
+        # one-thread-per-output contract that `emit_tile_width == 1`
+        # can't carry.
+        # TODO: retry with W/2, W/4, ... before giving up on
+        # vectorization — shapes that miss at W often divide at a
+        # smaller power of two, and scalar loses ~2.4x to the vector
+        # tier at large sizes. Deferred: each extra width instantiates
+        # _TiledKernel for every rowwise body, and the halved widths
+        # are unmeasured.
+        if effective_simd > 1 and short_axis_ok:
+            comptime w1_params = ContextParams(
+                axis=axis,
+                emit_tile_width=1,
+                BLOCK_SIZE=tiled_block_size,
+                simd_width=1,
+                target="gpu",
+                tier=ReduceTier.Serial,
+            )
+            var w1_num_blocks = min(
+                ceildiv(num_rows, tiled_block_size),
+                sm_count * _SM_OVERPROVISION,
+            )
+            ctx.enqueue_function(
+                _TiledKernel[rank, w1_params, Body](body, shape_il),
+                grid_dim=w1_num_blocks,
+                block_dim=tiled_block_size,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
             )
             return
