@@ -2686,10 +2686,84 @@ def expect_bytes_pred(
 
 
 @always_inline
+def store_global_pred[
+    dtype: DType,
+    address_space: AddressSpace,
+    //,
+](
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _, address_space=address_space],
+    value: Scalar[dtype],
+    pred: Int32,
+):
+    """Issue a global store predicated on `pred != 0`.
+
+    Equivalent to:
+
+        if pred != 0:
+            ptr[] = value
+
+    but folds the guard into a PTX `@%p` predicate on the store, so ptxas emits
+    a single predicated `STG` instead of the `BSSY`/`BRA`/`NOP`/`BSYNC`
+    reconvergence quartet an `if` costs.
+
+    That is a real trade, not a free win. The `if` form gives ptxas a basic
+    block boundary, which caps the scheduling region; this form does not, so
+    ptxas may hoist the producers of `value` across neighbouring code and spill.
+    Measure spill counts, not just the instruction count, when switching a site
+    to this helper.
+
+    There is no `~{memory}` clobber, matching `expect_bytes_pred` and the
+    `st.shared.v4.b32` helper above: adding one would force LLVM to reload every
+    value it has cached from memory at each call site. Callers must therefore
+    not read back what they store here without an explicit fence.
+
+    Parameters:
+        dtype: Element dtype of the store; must be 4 or 8 bytes (inferred).
+        address_space: Address space of `ptr` (inferred).
+
+    Args:
+        ptr: Destination address. Must point into global memory -- the
+            instruction is `st.global`, so a generic pointer into shared or
+            local memory is undefined behaviour rather than a compile error.
+        value: The value to store when `pred` is nonzero.
+        pred: Runtime predicate; the store is skipped when this is 0.
+    """
+    comptime assert (
+        address_space == AddressSpace.GENERIC
+        or address_space == AddressSpace.GLOBAL
+    ), "store_global_pred emits `st.global`; the pointer must address gmem"
+    comptime size = size_of[dtype]()
+    comptime assert size in (4, 8), (
+        "store_global_pred handles 4- and 8-byte scalars; got a "
+        + String(size)
+        + "-byte dtype"
+    )
+    comptime bits = "b32" if size == 4 else "b64"
+    # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
+    # pair covers float and integer dtypes alike; `st.global.bXX` is
+    # bit-preserving.
+    comptime word_type = DType.uint32 if size == 4 else DType.uint64
+    comptime word_constraint = "r" if size == 4 else "l"
+
+    inlined_assembly[
+        """{
+        .reg .pred %p;
+        setp.ne.s32 %p, $2, 0;
+        @%p st.global."""
+        + bits
+        + """ [$0], $1;
+        }""",
+        NoneType,
+        constraints="l," + word_constraint + ",r",
+    ](ptr, bitcast[word_type](value), pred)
+
+
+@always_inline
 def maximum[
     BN: Int, //, *, width: Int = 4
 ](x: Array[Scalar[DType.float32], BN], out res: StaticTuple[Float32, width],):
     """Reduces `BN` float32 scores into `width` lane-maxima using FTZ max."""
+    comptime assert 3 * width <= BN
     res = {}
 
     comptime for w in range(width):

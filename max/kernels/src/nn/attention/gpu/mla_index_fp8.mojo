@@ -31,6 +31,7 @@ from kv_cache.types import KVCollectionT
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
 from nn.attention.mha_mask import MHAMask, MaskName
@@ -352,6 +353,22 @@ def mla_indexer_ragged_float8_paged[
             num_heads,
             depth,
             _is_cache_length_accurate=False,
+            # Speculative-decode tile: 3 divides a 6-token MTP step, which the
+            # default 4-token tile at nh=32 covers only by spending 256 MMA
+            # columns on 192 live ones. Inert at every other head count.
+            #
+            # The `max_seq_len` this entry passes is `max_prompt_length()`, the
+            # batch maximum of NEW tokens -- not a context length -- so the
+            # reachability bound is "no request in the batch brings more than 9
+            # new tokens", not "not a prefill". A short prompt, a chunked-prefill
+            # final chunk, or a prefix-cache-hit tail of 3, 6 or 9 tokens does
+            # reach this tile when some entry's cache makes `max_num_keys` deep
+            # enough to open the key-split arm. That is intended: at <= 9 query
+            # tokens against >= 8065 keys the launch is decode-shaped by every
+            # measure the route uses, and it is already on the key-split arm
+            # without this hint -- the tile only makes its MMA columns exact.
+            # What cannot happen is a many-token prefill landing here.
+            N_TOKENS_ALT=SPEC_DECODE_N_TOKENS_ALT,
         ](
             scores_tile,
             q,
