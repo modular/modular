@@ -26,20 +26,26 @@
 namespace {
 
 // Fixtures staged as test data by the BUILD rule, reachable from the runfiles
-// root. Both libfabric builds carry SONAME libfabric.so.1; the plugin binds a
-// symbol only the EFA one exports, at FABRIC_1.8.
+// root. Each pair carries one SONAME in two builds: the plugin binds a symbol
+// only the EFA libfabric exports (FABRIC_1.8), and the libefa it pulls in binds
+// one only the EFA-patched libibverbs exports (IBVERBS_PRIVATE_59).
 constexpr const char *kEfaLibfabric =
     "Support/unittests/nixl_libfabric_efa_fixture.so";
 constexpr const char *kDistroLibfabric =
     "Support/unittests/nixl_libfabric_distro_fixture.so";
+constexpr const char *kEfaIbverbs =
+    "Support/unittests/nixl_ibverbs_efa_fixture.so";
+constexpr const char *kDistroIbverbs =
+    "Support/unittests/nixl_ibverbs_distro_fixture.so";
+constexpr const char *kLibefa = "Support/unittests/nixl_efa_fixture.so";
 constexpr const char *kPlugin = "Support/unittests/libplugin_FIXTURE.so";
 
 // Reproduces the staged package layout: transport plugins in
-// <prefix>/lib/nixl/<flavor>, libfabric flat in <prefix>/lib. The distro copy
-// sits outside the prefix, standing in for /usr/lib/x86_64-linux-gnu.
+// <prefix>/lib/nixl/<flavor>, the fabric stack flat in <prefix>/lib. The distro
+// copies sit outside the prefix, standing in for /usr/lib/x86_64-linux-gnu.
 class StagedLayout {
 public:
-  explicit StagedLayout(const std::string &name, bool stageLibfabric = true)
+  explicit StagedLayout(const std::string &name, bool stageFabricLibs = true)
       : prefix_(std::filesystem::temp_directory_path() /
                 ("nixl-plugin-dir-" + name)) {
     std::filesystem::remove_all(prefix_);
@@ -47,9 +53,13 @@ public:
     std::filesystem::create_directories(prefix_ / "distro");
     std::filesystem::copy_file(kPlugin, plugin());
     std::filesystem::copy_file(kDistroLibfabric, distroLibfabric());
-    if (stageLibfabric)
-      std::filesystem::copy_file(kEfaLibfabric,
-                                 prefix_ / "lib" / "libfabric.so.1");
+    std::filesystem::copy_file(kDistroIbverbs, distroIbverbs());
+    if (stageFabricLibs) {
+      const std::filesystem::path lib = prefix_ / "lib";
+      std::filesystem::copy_file(kEfaLibfabric, lib / "libfabric.so.1");
+      std::filesystem::copy_file(kEfaIbverbs, lib / "libibverbs.so.1");
+      std::filesystem::copy_file(kLibefa, lib / "libefa.so.1");
+    }
   }
 
   ~StagedLayout() {
@@ -66,6 +76,9 @@ public:
   std::filesystem::path distroLibfabric() const {
     return prefix_ / "distro" / "libfabric.so.1";
   }
+  std::filesystem::path distroIbverbs() const {
+    return prefix_ / "distro" / "libibverbs.so.1";
+  }
   std::filesystem::path errorFile() const { return prefix_ / "dlerror.txt"; }
 
 private:
@@ -78,17 +91,27 @@ struct LoadResult {
   std::string error;
 };
 
-// Loads the plugin the way NIXL does, with the foreign libfabric pulled into
-// the process the way another component would, optionally claiming the staged
-// copy first. Runs in a forked child because dlopen state is process-wide, and
-// which copy claimed the SONAME first is precisely what is under test.
-LoadResult loadPluginAlongsideForeignLibfabric(const StagedLayout &layout,
-                                               bool preloadStaged) {
+// When the staged copies are claimed, relative to the foreign copy arriving.
+enum class Claim {
+  Never,
+  BeforeForeign,
+  AfterForeign,
+};
+
+// Loads the plugin the way NIXL does, with `foreign` pulled into the process
+// the way an unrelated component would. Runs in a forked child because dlopen
+// state is process-wide, and which copy claimed the SONAME first is precisely
+// what is under test.
+LoadResult loadPluginAlongsideForeign(const StagedLayout &layout,
+                                      const std::filesystem::path &foreign,
+                                      Claim claim) {
   const pid_t pid = fork();
   if (pid == 0) {
-    if (preloadStaged)
-      M::preloadStagedLibfabric(layout.pluginDir());
-    ::dlopen(layout.distroLibfabric().c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (claim == Claim::BeforeForeign)
+      M::preloadStagedFabricLibs(layout.pluginDir());
+    ::dlopen(foreign.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    if (claim == Claim::AfterForeign)
+      M::preloadStagedFabricLibs(layout.pluginDir());
     if (!::dlopen(layout.plugin().c_str(), RTLD_NOW | RTLD_LOCAL)) {
       std::ofstream(layout.errorFile()) << ::dlerror();
       ::_exit(1);
@@ -163,55 +186,97 @@ TEST(StagesRequestedBackend, AcceptsAnyCasingOfTheBackendRequest) {
   EXPECT_TRUE(M::stagesRequestedBackend(plain.path()));
 }
 
-// The trap this all exists for: an older libfabric that got into the process
-// first owns the SONAME, and the loader never reconsiders the plugin's rpath,
-// so the plugin becomes permanently unloadable. Asserts the loader's behavior
-// rather than ours -- if this ever stops failing to load, the hazard is gone
-// and preloadStagedLibfabric can go with it.
-TEST(PreloadStagedLibfabric, AForeignLibfabricLoadedFirstBreaksThePlugin) {
-  StagedLayout layout("hijacked");
-
-  const LoadResult result =
-      loadPluginAlongsideForeignLibfabric(layout, /*preloadStaged=*/false);
-
+// Asserts the loader's behavior rather than ours: the plugin must fail, and
+// fail over `version` specifically, or the test is passing for the wrong
+// reason.
+void expectVersionMismatch(const LoadResult &result, const char *version) {
   EXPECT_FALSE(result.loaded);
-  EXPECT_NE(result.error.find("FABRIC_1.8"), std::string::npos)
-      << "expected a version-mismatch error, got: " << result.error;
+  EXPECT_NE(result.error.find(version), std::string::npos)
+      << "expected a " << version << " mismatch, got: " << result.error;
 }
 
-// ... which preloading the staged copy prevents, because ours gets the SONAME
-// and is a strict superset of the older copy's symbol versions.
-TEST(PreloadStagedLibfabric, PreloadingTheStagedCopyKeepsThePluginLoadable) {
-  StagedLayout layout("preloaded");
+// The trap this all exists for: an older libfabric that got into the process
+// first owns the SONAME, and the loader never reconsiders the plugin's rpath,
+// so the plugin becomes permanently unloadable. If this ever stops failing to
+// load, the hazard is gone and preloadStagedFabricLibs can go with it.
+TEST(PreloadStagedFabricLibs, AForeignLibfabricLoadedFirstBreaksThePlugin) {
+  StagedLayout layout("hijacked");
+
+  expectVersionMismatch(loadPluginAlongsideForeign(
+                            layout, layout.distroLibfabric(), Claim::Never),
+                        "FABRIC_1.8");
+}
+
+// The same trap one level below the plugin's own DT_NEEDED entries: it is
+// libefa that needs the EFA-patched libibverbs, and it is only reached when the
+// plugin is dlopened -- long after an unrelated component (torch's cuFile RDMA
+// plugin) has claimed the SONAME with the distro copy.
+TEST(PreloadStagedFabricLibs, AForeignLibibverbsLoadedFirstBreaksThePlugin) {
+  StagedLayout layout("hijacked-ibverbs");
+
+  expectVersionMismatch(
+      loadPluginAlongsideForeign(layout, layout.distroIbverbs(), Claim::Never),
+      "IBVERBS_PRIVATE_59");
+}
+
+// ... which claiming the staged copies prevents, because ours get the SONAMEs
+// and are a strict superset of the older copies' symbol versions.
+TEST(PreloadStagedFabricLibs, ClaimingBeatsAForeignLibfabric) {
+  StagedLayout layout("claimed-libfabric");
   requestBackend("libfabric");
 
-  const LoadResult result =
-      loadPluginAlongsideForeignLibfabric(layout, /*preloadStaged=*/true);
+  const LoadResult result = loadPluginAlongsideForeign(
+      layout, layout.distroLibfabric(), Claim::BeforeForeign);
 
   EXPECT_TRUE(result.loaded) << "plugin failed to load: " << result.error;
 }
 
-TEST(PreloadStagedLibfabric, AcceptsAnyCasingOfTheBackendRequest) {
+TEST(PreloadStagedFabricLibs, ClaimingBeatsAForeignLibibverbs) {
+  StagedLayout layout("claimed-ibverbs");
+  requestBackend("libfabric");
+
+  const LoadResult result = loadPluginAlongsideForeign(
+      layout, layout.distroIbverbs(), Claim::BeforeForeign);
+
+  EXPECT_TRUE(result.loaded) << "plugin failed to load: " << result.error;
+}
+
+// Why the claim runs at max._core import and not at transfer-engine
+// construction: once the foreign copy owns the SONAME, claiming ours -- even by
+// absolute path -- cannot take it back. A late claim is indistinguishable from
+// no claim at all, which is what the container's LD_LIBRARY_PATH guards.
+TEST(PreloadStagedFabricLibs, ClaimingAfterTheForeignCopyIsTooLate) {
+  StagedLayout layout("claimed-late");
+  requestBackend("libfabric");
+
+  expectVersionMismatch(loadPluginAlongsideForeign(layout,
+                                                   layout.distroIbverbs(),
+                                                   Claim::AfterForeign),
+                        "IBVERBS_PRIVATE_59");
+}
+
+TEST(PreloadStagedFabricLibs, AcceptsAnyCasingOfTheBackendRequest) {
   StagedLayout layout("casing");
   requestBackend("LibFabric");
-  EXPECT_TRUE(M::preloadStagedLibfabric(layout.pluginDir()));
+  EXPECT_TRUE(M::preloadStagedFabricLibs(layout.pluginDir()));
 }
 
-// Only the libfabric plugin binds the versioned symbols that make the SONAME
-// race matter, and the EFA build pulls in the CUDA driver stack, so no other
-// backend should pay for it.
-TEST(PreloadStagedLibfabric, SkipsBackendsThatDoNotNeedIt) {
+// Only the libfabric backend binds the versioned symbols that make the SONAME
+// race matter, the EFA libfabric pulls in the CUDA driver stack, and the verbs
+// UCX flavors need the host's own rdma-core, whose provider plugins bind the
+// matching IBVERBS_PRIVATE version. So no other backend should pay for it.
+TEST(PreloadStagedFabricLibs, SkipsBackendsThatDoNotNeedIt) {
   StagedLayout layout("ucx");
   requestBackend("ucx");
-  EXPECT_FALSE(M::preloadStagedLibfabric(layout.pluginDir()));
+  EXPECT_FALSE(M::preloadStagedFabricLibs(layout.pluginDir()));
 }
 
-// Layouts without a staged libfabric (bazel runfiles, ROCm-only packages) are
+// Layouts with no staged fabric stack (bazel runfiles, ROCm-only packages) are
 // ordinary, not errors.
-TEST(PreloadStagedLibfabric, ToleratesAnUnstagedLibfabric) {
-  StagedLayout layout("missing", /*stageLibfabric=*/false);
+TEST(PreloadStagedFabricLibs, ToleratesAnUnstagedFabricStack) {
+  StagedLayout layout("missing", /*stageFabricLibs=*/false);
   requestBackend("libfabric");
-  EXPECT_FALSE(M::preloadStagedLibfabric(layout.pluginDir()));
+  EXPECT_FALSE(M::preloadStagedFabricLibs(layout.pluginDir()));
 }
 
 } // namespace

@@ -11,15 +11,14 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-// Stands in for cuda/libplugin_LIBFABRIC.so in NixlPluginDirTest: it binds a
-// symbol that only the EFA libfabric fixture exports at FABRIC_1.8, so it loads
-// against that copy and fails against the distro one -- exactly how the real
-// plugin behaves. It also pulls in the libefa fixture, whose own requirement on
-// the EFA-patched libibverbs is the second SONAME the preload has to claim.
+// Stands in for libefa.so.1 in NixlPluginDirTest: the EFA verbs library the
+// libfabric plugin needs, which binds a symbol only the EFA-patched libibverbs
+// exports at IBVERBS_PRIVATE_59. It sits between the plugin and libibverbs on
+// purpose — the SONAME this guards is claimed one level below what the plugin
+// itself names, and only reached when the plugin is dlopened.
 
-extern "C" int fi_fixture_open_v18();
-extern "C" int efa_fixture_open();
+extern "C" int ibv_fixture_private();
 
-extern "C" __attribute__((visibility("default"))) int nixl_plugin_init() {
-  return fi_fixture_open_v18() + efa_fixture_open();
+extern "C" __attribute__((visibility("default"))) int efa_fixture_open() {
+  return ibv_fixture_private();
 }

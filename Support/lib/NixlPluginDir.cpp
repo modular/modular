@@ -58,19 +58,33 @@ bool M::stagesRequestedBackend(const std::filesystem::path &pluginDir) {
                                  ec);
 }
 
-bool M::preloadStagedLibfabric(const std::filesystem::path &pluginDir) {
+bool M::preloadStagedFabricLibs(const std::filesystem::path &pluginDir) {
   if (requestedBackend() != "libfabric")
     return false;
-  // The plugin dir is <prefix>/lib/nixl/<flavor>; libfabric is staged flat in
-  // <prefix>/lib next to libnixl.
-  const std::filesystem::path lib =
-      pluginDir.parent_path().parent_path() / "libfabric.so.1";
-  std::error_code ec;
-  if (!std::filesystem::exists(lib, ec))
-    return false;
-  // Deliberately never dlclosed: the point is to hold the SONAME for the life
-  // of the process.
-  return ::dlopen(lib.c_str(), RTLD_NOW | RTLD_GLOBAL) != nullptr;
+  // Leaf-first: libnl carries no versioned symbols of its own but underpins
+  // libibverbs, which underpins librdmacm and the libefa verbs library the
+  // plugin needs, which libfabric drives. Claiming in this order means each
+  // library's own DT_NEEDED entries bind to a copy claimed just above rather
+  // than to whatever ld.so.cache resolves them to.
+  static constexpr const char *kFabricLibs[] = {
+      "libnl-3.so.200", "libnl-route-3.so.200", "libibverbs.so.1",
+      "librdmacm.so.1", "libefa.so.1",          "libfabric.so.1",
+  };
+  // The plugin dir is <prefix>/lib/nixl/<flavor>; the fabric stack is staged
+  // flat in <prefix>/lib next to libnixl.
+  const std::filesystem::path libDir = pluginDir.parent_path().parent_path();
+  bool claimedAny = false;
+  for (const char *name : kFabricLibs) {
+    const std::filesystem::path lib = libDir / name;
+    std::error_code ec;
+    if (!std::filesystem::exists(lib, ec))
+      continue;
+    // Deliberately never dlclosed: the point is to hold the SONAME for the life
+    // of the process.
+    if (::dlopen(lib.c_str(), RTLD_NOW | RTLD_GLOBAL))
+      claimedAny = true;
+  }
+  return claimedAny;
 }
 
 // Returns true if this host has an RDMA device with an InfiniBand-link-layer
