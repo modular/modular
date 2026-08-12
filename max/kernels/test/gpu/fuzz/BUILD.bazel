@@ -700,7 +700,8 @@ mojo_test(
 # (`-D N=..`, multiple of 32). `contract` (--contract, default) checks the
 # finiteness guard (a finite-but-large input must not cast to NaN -- the
 # SERVOPT-1420 class) and scale validity; `ref` (--check) is a coarse dequant
-# round-trip. B200-only (SM100 TCGEN05 interleaved scales).
+# round-trip. Dual-arch (B200 SM100 TCGEN05 interleaved scales + MI355 rank-2
+# scales), via quantize_dynamic_block_scaled's vendor dispatch.
 mojo_test(
     name = "fuzz_mxfp8_quantize.mojo.test",
     size = "large",
@@ -717,10 +718,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max:internal_utils",
         "//max:linalg",

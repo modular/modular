@@ -554,7 +554,15 @@ def _oracle_command_and_env(
     racecheck -- compute-sanitizer racecheck (pool-independent).
     synccheck -- compute-sanitizer synccheck (pool-independent).
     """
-    env: dict[str, str] = {"CUDA_VISIBLE_DEVICES": str(gpu)}
+    # Set every vendor's device-visibility var; the runtime that's actually
+    # present reads its own and ignores the others, so this pins the device
+    # correctly on both NVIDIA and AMD without needing to detect which vendor
+    # built the target.
+    env: dict[str, str] = {
+        "CUDA_VISIBLE_DEVICES": str(gpu),
+        "HIP_VISIBLE_DEVICES": str(gpu),
+        "ROCR_VISIBLE_DEVICES": str(gpu),
+    }
     cs = _compute_sanitizer_path()
     cs_common = [
         cs,
@@ -1021,7 +1029,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
             "deterministic repro and corpus replay."
         ),
     )
-    p.add_argument("--gpu", type=int, default=0, help="CUDA device index.")
+    p.add_argument(
+        "--gpu",
+        type=int,
+        default=0,
+        help="GPU device index (NVIDIA or AMD).",
+    )
     p.add_argument(
         "--timeout",
         type=float,
