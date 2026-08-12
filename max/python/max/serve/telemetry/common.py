@@ -133,9 +133,12 @@ HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = _log_spaced_buckets(
 
 # Percentages / utilization ratios (0-100). Linear rather than geometric, since
 # utilization is only actionable near saturation: 5% steps through the bulk,
-# tightening to 2% above 90%.
+# tightening to 1% above 90% so a nearly-full KV cache tier resolves to a
+# single point instead of a range. Kept to 29 boundaries because several of
+# these metrics carry a label that multiplies the series count (batch_type,
+# draft position).
 HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = tuple(
-    float(pct) for pct in (*range(0, 91, 5), *range(92, 101, 2))
+    float(pct) for pct in (*range(0, 91, 5), *range(91, 101))
 )
 
 # Token counts per request/batch and other unbounded counts. Log-spaced from 1
