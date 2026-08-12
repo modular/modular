@@ -14,12 +14,11 @@
 
 from __future__ import annotations
 
-import logging
 import math
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from max.driver import Device, load_devices
+from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
@@ -33,8 +32,6 @@ from ..llama3.model_config import Llama3Config
 from ..qwen3vl_moe.model_config import VisionConfig
 
 __all__ = ["Qwen3_5Config", "VisionConfig"]
-
-logger = logging.getLogger("max.pipelines")
 
 
 @dataclass(kw_only=True)
@@ -444,34 +441,5 @@ class Qwen3_5Config(Llama3Config):
             vision_start_token_id=vision_start_token_id,
             mrope_section=mrope_section,
         )
-
-        # Set a safe default max_batch_size if not explicitly set by user.
-        # Qwen3.5 has per-request GPU overhead (recurrent-state buffers)
-        # beyond the KV cache, so the framework's default 512 can OOM us;
-        # compute a bound that fits actual free memory.
-        if pipeline_config.runtime.max_batch_size is None:
-            try:
-                actual_devices = load_devices(model_config.device_specs)
-            except Exception:
-                actual_devices = []
-            try:
-                weights_bytes = model_config.weights_size()
-            except (FileNotFoundError, ValueError, RuntimeError) as e:
-                logger.warning(
-                    "Qwen3.5: weights_size() failed (%s); assuming 0 bytes "
-                    "for max_batch_size inference. The state-pool budget "
-                    "may be over-allocated and risk OOM.",
-                    e,
-                )
-                weights_bytes = 0
-            pipeline_config.runtime.max_batch_size = (
-                config_instance.infer_optimal_batch_size(
-                    actual_devices,
-                    weights_size=weights_bytes,
-                    device_memory_utilization=(
-                        model_config.kv_cache.device_memory_utilization
-                    ),
-                )
-            )
 
         return config_instance

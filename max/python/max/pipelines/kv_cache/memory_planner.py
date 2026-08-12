@@ -119,6 +119,32 @@ class MemoryPlanner:
         """
         return 0
 
+    def infer_max_batch_size(
+        self,
+        pipeline_config: Any,
+        devices: list[Device],
+        weights_size: int,
+    ) -> int | None:
+        """Infers an architecture-specific default ``max_batch_size``.
+
+        Memory planning calls this when the user did not set
+        ``max_batch_size``, before :meth:`estimate_activation_memory` runs.
+        The default returns ``None``, deferring to the framework-wide
+        inference in memory estimation.  Override in planners for
+        architectures with per-request device memory beyond the KV cache
+        (e.g. recurrent-state pools) that need a tighter default.
+
+        Args:
+            pipeline_config: Pipeline configuration.
+            devices: Loaded devices the model will run on.
+            weights_size: Estimated model weights size in bytes.
+
+        Returns:
+            The inferred ``max_batch_size``, or ``None`` to use the
+            framework default.
+        """
+        return None
+
     def estimate_signal_buffer_memory(
         self,
         pipeline_config: Any,
