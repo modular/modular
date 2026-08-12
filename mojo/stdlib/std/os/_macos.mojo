@@ -18,12 +18,12 @@ from std.time.time import _CTimeSpec
 from .fstat import stat_result
 
 comptime dev_t = Int32
-comptime mode_t = Int16
-comptime nlink_t = Int16
+comptime mode_t = UInt16
+comptime nlink_t = UInt16
 
-comptime __darwin_ino64_t = Int64
-comptime uid_t = Int32
-comptime gid_t = Int32
+comptime __darwin_ino64_t = UInt64
+comptime uid_t = UInt32
+comptime gid_t = UInt32
 comptime off_t = Int64
 comptime blkcnt_t = Int64
 comptime blksize_t = Int32
