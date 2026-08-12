@@ -34,7 +34,7 @@ bool M::Filesystem::isMojoBinaryPackagePath(const std::filesystem::path &path) {
   if (!std::filesystem::is_regular_file(path, ec))
     return false;
   std::filesystem::path ext = path.extension();
-  return ext == ".mojoc" || ext == ".mojopkg";
+  return ext == ".mojoc";
 }
 
 bool M::Filesystem::isMojoSourceFile(const std::filesystem::path &path) {

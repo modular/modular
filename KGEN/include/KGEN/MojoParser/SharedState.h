@@ -416,7 +416,6 @@ public:
       SourcePackage,
       Precompiled,
       SourceModule,
-      LegacyPkg,
       SourceDir,
     };
 
@@ -471,10 +470,7 @@ public:
       return path.filename() < other.path.filename();
     }
 
-    bool isPrecompiled() const {
-      return kind == ModuleSpec::Kind::Precompiled ||
-             kind == ModuleSpec::Kind::LegacyPkg;
-    }
+    bool isPrecompiled() const { return kind == ModuleSpec::Kind::Precompiled; }
 
     bool isSourcePackage() const {
       return kind == ModuleSpec::Kind::SourcePackage;
