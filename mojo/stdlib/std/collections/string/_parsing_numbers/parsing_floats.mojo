@@ -83,7 +83,7 @@ def _get_w_and_q_from_float_string(
     ]
     var prt_to_array = array_ptr(to=exponent)
     var array_index = CONTAINER_SIZE
-    var buffer = input_string.unsafe_ptr()
+    var buffer = input_string.as_bytes().unsafe_ptr()
 
     if (
         not (ord_0 <= buffer[unsafe_offset=0] <= ord_9)
@@ -312,7 +312,7 @@ comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 def _is_nan(stripped: StringSlice) -> Bool:
     comptime `n` = Byte(ord("n"))
     comptime `a` = Byte(ord("a"))
-    var ptr = stripped.unsafe_ptr()
+    var ptr = stripped.as_bytes().unsafe_ptr()
     return stripped.byte_length() == 3 and (
         (ptr[unsafe_offset=0] | _ascii_lower == `n`)
         and (ptr[unsafe_offset=1] | _ascii_lower == `a`)
@@ -327,7 +327,7 @@ def _is_inf(stripped: StringSlice) -> Bool:
     comptime `f` = Byte(ord("f"))
     comptime `t` = Byte(ord("t"))
     comptime `y` = Byte(ord("y"))
-    var ptr = stripped.unsafe_ptr()
+    var ptr = stripped.as_bytes().unsafe_ptr()
     var in_start = (ptr[unsafe_offset=0] | _ascii_lower == `i`) and (
         ptr[unsafe_offset=1] | _ascii_lower == `n`
     )

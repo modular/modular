@@ -358,7 +358,7 @@ def dlsym[
 
 
 def realpath(
-    path: Pointer[mut=False, c_char, _],
+    path: CStringSlice[_],
     resolved_path: Pointer[mut=True, c_char, _],
     out result: _CPointer[c_char, MutUntrackedOrigin],
 ):

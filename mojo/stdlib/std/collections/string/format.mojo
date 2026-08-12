@@ -159,7 +159,7 @@ struct _FormatUtils:
         """Format the arguments using the given format string and precompiled entries.
         """
         var offset = 0
-        var ptr = compiled.format.unsafe_ptr()
+        var ptr = compiled.format.as_bytes().unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
 
         @always_inline
@@ -345,15 +345,15 @@ struct _FormatUtils:
         var entries = List[EntryType]()
         var start = Optional[Int](None)
         var skip_next = False
-        var fmt_ptr = format.unsafe_ptr()
-        var fmt_len = format.byte_length()
+        var fmt_bytes = format.as_bytes()
+        var fmt_len = len(fmt_bytes)
         var total_estimated_entry_byte_width = 0
 
         for i in range(fmt_len):
             if skip_next:
                 skip_next = False
                 continue
-            if fmt_ptr[unsafe_offset=i] == `{`:
+            if fmt_bytes.unsafe_get(i) == `{`:
                 if not start:
                     start = i
                     continue
@@ -363,12 +363,10 @@ struct _FormatUtils:
                 entries.append(EntryType(start.value(), i, field=False))
                 start = None
                 continue
-            elif fmt_ptr[unsafe_offset=i] == `}`:
+            elif fmt_bytes.unsafe_get(i) == `}`:
                 if not start:
                     # python escapes double curlies
-                    if (i + 1) < fmt_len and fmt_ptr[
-                        unsafe_offset=i + 1
-                    ] == `}`:
+                    if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
                         total_estimated_entry_byte_width += 2
                         skip_next = True
@@ -537,8 +535,10 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
                 )
             )
 
-        var field = _build_slice(fmt_src.unsafe_ptr(), start_value + 1, i)
-        var field_ptr = field.unsafe_ptr()
+        var field = _build_slice(
+            fmt_src.as_bytes().unsafe_ptr(), start_value + 1, i
+        )
+        var field_ptr = field.as_bytes().unsafe_ptr()
         var field_len = i - (start_value + 1)
         var exclamation_index = -1
         var idx = 0
