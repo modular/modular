@@ -147,9 +147,12 @@ def test_data_parallel_degree_cli_override_of_default_value_applied() -> None:
         patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
         patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
         patch("huggingface_hub.file_exists", return_value=False),
+        # architectures=None keeps the architecture name undeterminable, so
+        # construction-time resolution skips instead of rejecting the
+        # placeholder repo as an unknown architecture.
         patch(
             "max.pipelines.lib.config.model_config.load_huggingface_config",
-            return_value=MagicMock(),
+            return_value=MagicMock(architectures=None),
         ),
     ):
         manifest = ModelManifest(

@@ -242,8 +242,8 @@ def _run_memory_planning(
 ) -> _MemoryPlan:
     """Runs memory estimation and resolves max_length / max_batch_size.
 
-    Called by ``retrieve_factory`` after ``pipeline_config.resolve()`` has
-    completed validation. Returns a :class:`_MemoryPlan` whose
+    Called by ``retrieve_factory`` after the config is constructed.
+    Returns a :class:`_MemoryPlan` whose
     ``max_batch_size`` is passed to the pipeline constructor.
 
     Also applies ``max_length`` clamping and ``max_batch_total_tokens``
@@ -800,8 +800,8 @@ class PipelineRegistry:
                 f"No architecture found for {pipeline_config.models.main_architecture_name}"
             )
 
-        # For speculative decoding, pre-resolve the draft architecture before
-        # calling resolve() so config.py never needs a registry import.
+        # For speculative decoding, pre-resolve the draft architecture for
+        # memory planning, rejecting unknown draft architectures.
         draft_arch = None
         if pipeline_config.draft_model is not None:
             draft_arch_name = pipeline_config.draft_model.architecture_name
@@ -833,25 +833,12 @@ class PipelineRegistry:
                     "MAX-Optimized architecture not found for `draft_model`"
                 )
 
-        # The unified spec-decode target-architecture override is applied above
-        # (before ``arch`` is resolved), so ``arch`` already reflects it here
-        # and no post-resolve re-resolution is needed.
-        pipeline_config.resolve(
-            arch,
-            draft_arch=draft_arch,
-        )
-
         # Memory planning: derive sizes, run estimation, resolve max_length.
-        # Runs after validation (resolve()) and before the factory is built so
-        # that all resolved values are available to the pipeline constructor.
         memory_plan = _run_memory_planning(
             pipeline_config, arch, draft_arch=draft_arch
         )
 
-        # Must be called after memory planning so that max_batch_size is known,
-        # and after pipeline_config.resolve() so that enable_overlap_scheduler
-        # is set correctly (e.g. forced True when --device-graph-capture is
-        # explicitly passed).
+        # Must be called after memory planning so that max_batch_size is known.
         pipeline_config._validate_and_resolve_overlap_scheduler(
             arch=arch, max_batch_size=memory_plan.max_batch_size
         )

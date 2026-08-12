@@ -48,9 +48,12 @@ def _skip_repo_access_check() -> Iterator[None]:
             side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
         ),
         patch("huggingface_hub.file_exists", return_value=False),
+        # architectures=None keeps the architecture name undeterminable, so
+        # construction-time resolution skips instead of rejecting the
+        # placeholder repo as an unknown architecture.
         patch(
             "max.pipelines.lib.config.model_config.load_huggingface_config",
-            return_value=MagicMock(),
+            return_value=MagicMock(architectures=None),
         ),
     ):
         yield

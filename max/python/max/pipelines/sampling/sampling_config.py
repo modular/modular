@@ -77,10 +77,10 @@ class SamplingConfig(ConfigFileModel):
         default=None,
         description=(
             "Grammar backend for constrained decoding. One of ``xgrammar`` or "
-            "``llguidance``. When unset (``None``), resolved during "
-            "``PipelineConfig.resolve()`` to the architecture's default if it "
-            "declares one, else the global default ``xgrammar``. An explicit "
-            "value always wins."
+            "``llguidance``. When unset (``None``), resolved at config "
+            "construction to the architecture's default if it declares one, "
+            "else the global default ``xgrammar``. An explicit value always "
+            "wins."
         ),
     )
 

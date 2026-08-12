@@ -347,7 +347,7 @@ class SupportedArchitecture:
     an encoder pass plus an inner denoising loop and emits a whole token
     block per scheduler step. The value must be a
     :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
-    subclass (or compatible) selected after ``pipeline_config.resolve()``.
+    subclass (or compatible) selected in ``retrieve_factory``.
     """
 
     @property

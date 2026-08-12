@@ -643,61 +643,6 @@ class PipelineConfig(ConfigFileModel):
             if self.draft_model is None and has_mtp:
                 target_archs[0] = "UnifiedMTPGlmMoeDsaForCausalLM"
 
-    def resolve(
-        self,
-        arch: Any,
-        draft_arch: Any = None,
-    ) -> None:
-        """Validates the config.
-
-        Args:
-            arch: Pre-resolved target architecture from the registry.
-            draft_arch: Pre-resolved draft architecture (speculative decoding
-                only). Required when ``draft_model`` is set.
-        """
-        self.models.resolve()
-        # Diffusers pipelines don't have a "main" model — they have
-        # per-component configs (unet, vae, etc.).  The LLM-specific
-        # validations below all assume a single main model, so skip
-        # them for multi-component diffusers manifests.
-        if "main" not in self.models:
-            return
-
-        # Validation for max_length is handled in MAXModelConfig
-
-        if (
-            self.sampling.enable_structured_output
-            and self.model.default_device_spec.device_type == "cpu"
-        ):
-            raise ValueError(
-                "enable_structured_output is not currently supported on CPU."
-            )
-
-        # NOTE: the unified spec-decode target-architecture override
-        # (``_apply_speculative_target_architecture``) is applied in
-        # ``from_args`` *before* construction-time resolution and before the
-        # registry resolves ``arch`` and passes it in here, so that the
-        # ``arch`` consumed by memory estimation, the overlap scheduler, and
-        # construction-time parser resolution already reflects the override.
-        # Applying it here (after ``arch`` is resolved) would leave those
-        # consumers using the stale pre-override architecture. See SERVOPT
-        # regression from PipelineConfig/registry decoupling (#88511).
-
-        # By this point, we should have a valid model_path.
-
-        if self.draft_model:
-            self._validate_speculative_model_configs(
-                target_arch=arch, draft_arch=draft_arch
-            )
-            self._validate_pipeline_config_for_speculative_decoding(
-                target_arch=arch,
-                draft_arch=draft_arch,
-            )
-        else:
-            self._validate_remaining_pipeline_config(
-                model_config=self.model, resolved_arch=arch
-            )
-
     def _validate_synthetic_acceptance_with_constrained_decoding(self) -> None:
         """Rejects synthetic acceptance when constrained decoding can fire.
 
@@ -993,8 +938,8 @@ class PipelineConfig(ConfigFileModel):
             multi_gpu_supported=arch.multi_gpu_supported
         )
 
-        # Re-check for directly-constructed configs, which skip
-        # construction-time resolution.
+        # Re-check after the required-argument overrides, which may rewrite
+        # the encoding populated earlier in construction.
         resolved_encoding = _select_quantization_encoding(
             model_config, arch.default_encoding
         )
@@ -1019,39 +964,22 @@ class PipelineConfig(ConfigFileModel):
         # of the target model's quantization. The draft model auto-detects
         # its encoding from its weights during architecture resolution.
 
-        # Validate draft model config against its architecture (quantization,
-        # rope type, encoding, etc.). Target validation is handled inside
-        # _validate_remaining_pipeline_config below.
+        # Validate the draft model config against its architecture
+        # (quantization, rope type, encoding, etc.), then the target
+        # against its own.
         self._validate_model_config_against_arch(self.draft_model, draft_arch)
-        self._validate_remaining_pipeline_config(
-            model_config=self.model,
-            resolved_arch=target_arch,
-        )
-
-    def _validate_remaining_pipeline_config(
-        self,
-        model_config: MAXModelConfig,
-        resolved_arch: Any,
-    ) -> None:
-        """Validates model config against the architecture.
-
-        Memory estimation and max_length resolution have moved to the registry
-        (``retrieve_factory``), where they run after this validation completes.
-
-        Args:
-            model_config: The model configuration to validate.
-            resolved_arch: Pre-resolved architecture from the registry.
-        """
-        self._validate_model_config_against_arch(model_config, resolved_arch)
+        self._validate_model_config_against_arch(self.model, target_arch)
 
     def _populate_model_configs_from_archs(self) -> None:
-        """Assigns each model's encoding, weight paths, and devices.
+        """Assigns each model's encoding, weight paths, and devices, then validates.
 
         A CPU-only encoding downcasts all-GPU ``device_specs`` to CPU,
-        warning once per model. Also applies the arch-declared defaults.
+        warning once per model. Also applies the arch-declared defaults and
+        runs the arch-dependent validations.
         Must use the same architecture-selection inputs as the registry.
-        Models with no registered architecture keep their raw fields;
-        ``resolve()`` reports those downstream.
+        A determinable architecture name with no registered architecture is
+        an error; models whose architecture name cannot be determined keep
+        their raw fields and are reported downstream.
         """
         if "main" not in self.models:
             return
@@ -1074,6 +1002,11 @@ class PipelineConfig(ConfigFileModel):
             prefer_module_v3=self.runtime.prefer_module_v3,
             task=task,
         )
+        if arch_name is not None and arch is None:
+            # Custom architectures are imported before this lookup, so an
+            # unregistered name is a hard error here. Only an undeterminable
+            # name (a repo/metadata problem) defers to the downstream path.
+            raise ValueError(f"No architecture found for {arch_name}")
         if arch is not None:
             _populate_weights_and_encoding(
                 self.model,
@@ -1097,6 +1030,10 @@ class PipelineConfig(ConfigFileModel):
                 draft_arch_name,
                 prefer_module_v3=self.runtime.prefer_module_v3,
             )
+            if draft_arch_name is not None and draft_arch is None:
+                raise ValueError(
+                    "MAX-Optimized architecture not found for `draft_model`"
+                )
             if draft_arch is not None:
                 _populate_weights_and_encoding(
                     self.draft_model,
@@ -1120,6 +1057,28 @@ class PipelineConfig(ConfigFileModel):
         self._resolve_default_structured_output_backend(arch=arch)
         self._validate_synthetic_acceptance_with_constrained_decoding()
 
+        if (
+            self.sampling.enable_structured_output
+            and self.model.default_device_spec.device_type == "cpu"
+        ):
+            raise ValueError(
+                "enable_structured_output is not currently supported on CPU."
+            )
+
+        if self.draft_model is not None:
+            # draft_arch is only None here when the draft's architecture
+            # name could not be determined; the registry reports that.
+            if draft_arch is not None:
+                self._validate_speculative_model_configs(
+                    target_arch=arch, draft_arch=draft_arch
+                )
+                self._validate_pipeline_config_for_speculative_decoding(
+                    target_arch=arch,
+                    draft_arch=draft_arch,
+                )
+        else:
+            self._validate_model_config_against_arch(self.model, arch)
+
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
     # Pydantic's BaseModel implements a pickling protocol that expects a specific
@@ -1139,8 +1098,7 @@ class PipelineConfig(ConfigFileModel):
             args: Flat user-facing pipeline arguments.
 
         Returns:
-            A fully constructed :class:`PipelineConfig` ready for
-            architecture-driven resolution via :meth:`resolve`.
+            A fully constructed and validated :class:`PipelineConfig`.
         """
         # Register user-supplied custom architectures before any
         # construction-time architecture lookup (they may override built-ins).
@@ -1221,6 +1179,9 @@ class PipelineConfig(ConfigFileModel):
             )
         config._validate_repo_access()
         config._populate_model_configs_from_archs()
+        # Freeze the manifest: construction is complete, so any later dict
+        # mutation must go through with_override() on a new manifest.
+        config.models.resolve()
         return config
 
 

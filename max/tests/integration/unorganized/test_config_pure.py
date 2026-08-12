@@ -634,16 +634,10 @@ class TestDraftModelQuantizationEncoding:
                 if model_config.quantization_encoding is None:
                     model_config.quantization_encoding = draft_encoding
 
-        with (
-            patch.object(
-                PipelineConfig,
-                "_validate_model_config_against_arch",
-                side_effect=fake_validate_against_arch,
-            ),
-            patch.object(
-                PipelineConfig,
-                "_validate_remaining_pipeline_config",
-            ),
+        with patch.object(
+            PipelineConfig,
+            "_validate_model_config_against_arch",
+            side_effect=fake_validate_against_arch,
         ):
             config._validate_speculative_model_configs(
                 target_arch=mock_arch, draft_arch=mock_arch
