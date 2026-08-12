@@ -391,6 +391,7 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
+    "test_attn_res_mix.mojo": ["//Kernels/lib/attn_res"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],

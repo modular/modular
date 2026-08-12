@@ -68,6 +68,18 @@ class FuzzTarget:
 
 
 _TARGETS: dict[str, FuzzTarget] = {
+    "attn_res_mix": FuzzTarget(
+        name="attn_res_mix",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_attn_res_mix.mojo.test"
+        ),
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_attn_res_mix.mojo.test",
+        description=(
+            "attn_res_mix fused attention-residual softmax mixture "
+            "(fp64-reference oracle)"
+        ),
+        default_oracle="ref",
+    ),
     "mha_causal": FuzzTarget(
         name="mha_causal",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_mha_causal.mojo.test",
