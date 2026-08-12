@@ -277,9 +277,14 @@ def _run_memory_planning(
         pipeline_config, model_config=model_config
     )
 
+    max_batch_size = pipeline_config.runtime.max_batch_size
     if arch.memory_planner is not None:
         planner = arch.memory_planner(arch_config)
         weights_size = planner.estimate_weights_size(pipeline_config)
+        if max_batch_size is None:
+            max_batch_size = planner.infer_max_batch_size(
+                pipeline_config, devices, weights_size
+            )
         activation_size = planner.estimate_activation_memory(
             pipeline_config, model_config.huggingface_config
         )
@@ -306,7 +311,7 @@ def _run_memory_planning(
         activation_size,
         signal_buffer_size,
         arch=arch,
-        max_batch_size=pipeline_config.runtime.max_batch_size,
+        max_batch_size=max_batch_size,
     )
 
     # Clamp max_length to what the KV cache can support.

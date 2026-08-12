@@ -117,6 +117,12 @@ def test_paged_planner_estimate_activation_memory_zero_by_default() -> None:
     assert planner.estimate_activation_memory(MagicMock(), MagicMock()) == 0
 
 
+def test_paged_planner_infer_max_batch_size_none_by_default() -> None:
+    """Default infer_max_batch_size defers to the framework inference."""
+    planner = PagedMemoryPlanner(_KVConfig())
+    assert planner.infer_max_batch_size(MagicMock(), [], 0) is None
+
+
 def test_with_activation_reservation_returns_correct_bytes() -> None:
     """with_activation_reservation should return the configured value."""
     reservation = 15 * 1024**3
