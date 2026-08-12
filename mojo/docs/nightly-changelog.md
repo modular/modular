@@ -239,6 +239,12 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
   divisible by 4 instead of reading past the end of the input (or aborting
   when asserts are enabled).
 
+- On macOS, `os.stat()` and `os.lstat()` no longer return a negative
+  `st_mode` for regular files. The underlying `mode_t` and `nlink_t` C type
+  aliases were declared as signed 16-bit integers, but macOS defines them as
+  unsigned, so any mode with the `S_IFREG` bit set (every regular file)
+  sign-extended into a negative `Int`.
+
 - `PythonObject` no longer leaks a CPython reference per positional argument
   when calling a Python object, nor when setting an item, attribute, or set
   literal element.
