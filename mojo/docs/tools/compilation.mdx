@@ -452,11 +452,10 @@ follows the C calling convention.
 When a Mojo program starts from its own `main()` function, compiler-generated
 startup code initializes the Mojo runtime — the thread pool that parallel APIs
 such as
-[`parallelize()`](/docs/std/algorithm/backend/cpu/parallelize/parallelize/)
-depend on. When the
-process `main()` belongs to a C or C++ host instead, that startup code
-never runs, so the runtime is never initialized. An exported function
-that then uses a runtime-dependent API crashes with a segmentation
+[`parallelize()`](https://docs.modular.com/api/mojo/max/algorithm/backend/cpu/parallelize/parallelize/)
+depend on. When the process `main()` belongs to a C or C++ host instead, that
+startup code never runs, so the runtime is never initialized. An exported
+function that then uses a runtime-dependent API crashes with a segmentation
 fault.
 
 To fix this, call
