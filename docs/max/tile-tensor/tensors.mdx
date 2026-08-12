@@ -255,7 +255,7 @@ var tensor = TileTensor(storage, layout)
 :::note
 
 Both of these examples use a `TileTensor` constructor that accepts a
-[`Span`](https://mojolang.org/docs/std/memory/span/Span/), a type that
+[`Span`](https://mojolang.org/docs/std/collections/span/Span/), a type that
 represents a contiguous block of memory that's owned elsewhere. Mojo can
 implicitly convert a `List` or `Array` to a `Span` representing the underlying
 memory. The span tracks the size, data type, and ownership of the memory block,
