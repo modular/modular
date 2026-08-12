@@ -798,6 +798,37 @@ class ExtensionAttr(max._core.Attribute):
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
+class FnMetaDataAttr(max._core.Attribute):
+    """
+    The `#kgen.fn_metadata` attribute aggregates everything a `!kgen.func` type
+    describes on top of its value signature: the calling convention of each
+    input argument, the effects of the function, and the dialect-specific
+    metadata implementing `FnMetadataAttrInterface` (for example
+    `#lit.fn_meta_origin_data`).
+
+    Every `!kgen.func` type carries exactly one of these, so it is not printed
+    on its own in the sugared function type syntax.
+
+    Example:
+
+    ```mlir
+    #kgen.fn_metadata<[read, mut], "throws">
+    ```
+    """
+
+    def __init__(
+        self,
+        arg_conventions: Sequence[ArgConvention],
+        fn_effects: FnEffects,
+        metadata: FnMetadataAttrInterface,
+    ) -> None: ...
+    @property
+    def arg_conventions(self) -> Sequence[ArgConvention]: ...
+    @property
+    def fn_effects(self) -> FnEffects: ...
+    @property
+    def metadata(self) -> FnMetadataAttrInterface: ...
+
 class FnTypeIsCABIAttr(max._core.Attribute):
     """
     The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
@@ -4607,10 +4638,8 @@ class FuncType(max._core.Type):
     This type describes the type of a function KGEN, which can have input/output
     value arguments and results.
 
-    The metadata attribute is used to store additional information about a
-    function, such as its argument calling conventions and the effects of the
-    function itself. When the metadata only contains default values, it isn't
-    printed in the textual MLIR format.
+    The metadata attribute holds the argument calling conventions, the effects
+    of the function itself, and the dialect-specific function metadata.
     """
 
     @overload
@@ -4623,28 +4652,22 @@ class FuncType(max._core.Type):
     def __init__(
         self,
         values: max._core.dialects.builtin.FunctionType,
-        arg_convs: Sequence[ArgConvention] = [],
-        effects: FnEffects = FnEffects.none,
-        metadata: max._core.Attribute = ...,
-        arg_list_attrs: max._core.Attribute = ...,
+        meta_data_attr: FnMetaDataAttr,
+        arg_list_attrs: PogListAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         values: max._core.dialects.builtin.FunctionType,
-        arg_conventions: Sequence[ArgConvention],
-        fn_effects: FnEffects,
-        metadata: FnMetadataAttrInterface,
-        arg_list_attrs: PogListAttr,
+        arg_convs: Sequence[ArgConvention] = [],
+        effects: FnEffects = FnEffects.none,
+        metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
     @property
-    def arg_conventions(self) -> Sequence[ArgConvention]: ...
-    @property
-    def fn_effects(self) -> FnEffects: ...
-    @property
-    def metadata(self) -> FnMetadataAttrInterface: ...
+    def meta_data_attr(self) -> FnMetaDataAttr: ...
     @property
     def arg_list_attrs(self) -> PogListAttr: ...
 
