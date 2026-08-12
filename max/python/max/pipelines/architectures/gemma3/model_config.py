@@ -18,14 +18,17 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.rotary_embedding import LinearScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
@@ -205,10 +208,8 @@ class Gemma3Config(
             pipeline_config.model.kv_cache.kv_cache_format,
         )
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and (pipeline_config.model.rope_type or "normal") == "normal"
+        interleaved_rope_weights = _interleaved_rope_weights(
+            pipeline_config.model
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

@@ -18,13 +18,16 @@ from dataclasses import dataclass
 from typing import ClassVar, Literal
 
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchVLConfigWithTextSubconfig,
@@ -181,11 +184,7 @@ def _create_llama3_text_config(
         quantization_encoding, pipeline_config.model.kv_cache.kv_cache_format
     )
 
-    _weights_format = weights_format(pipeline_config.model.weight_path)
-    interleaved_rope_weights = (
-        _weights_format == WeightsFormat.gguf
-        and pipeline_config.model.rope_type == "normal"
-    )
+    interleaved_rope_weights = _interleaved_rope_weights(pipeline_config.model)
 
     device_refs = [
         DeviceRef(spec.device_type, spec.id)
