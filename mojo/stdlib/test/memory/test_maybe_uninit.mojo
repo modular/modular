@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import (
-    UnsafeMaybeUninit,
+    MaybeUninit,
     unsafe_memcmp,
 )
 from std.traits import (
@@ -39,7 +39,7 @@ def test_maybe_uninitialized() raises:
     var destructor_recorder = List[Int]()
 
     var ptr = Pointer(to=destructor_recorder).as_imm()
-    var a = UnsafeMaybeUninit[DelRecorder[ptr.origin]]()
+    var a = MaybeUninit[DelRecorder[ptr.origin]]()
     a.unsafe_write(DelRecorder(42, ptr))
 
     var value = a.unsafe_assume_init().value
@@ -63,17 +63,17 @@ def test_maybe_uninitialized() raises:
 
 
 def test_unsafe_forget_skips_destructor() raises:
-    var a = UnsafeMaybeUninit[AbortOnDel]()
+    var a = MaybeUninit[AbortOnDel]()
     a.unsafe_write(AbortOnDel(42))
     a^.unsafe_forget()
 
-    var b = UnsafeMaybeUninit[AbortOnDel](AbortOnDel(42))
+    var b = MaybeUninit[AbortOnDel](AbortOnDel(42))
     b^.unsafe_forget()
 
 
 def test_unsafe_deinit_runs_destructor_once() raises:
     var count = 0
-    var a = UnsafeMaybeUninit(DelCounter(Pointer(to=count)))
+    var a = MaybeUninit(DelCounter(Pointer(to=count)))
     a^.unsafe_deinit()
 
     assert_equal(count, 1)
@@ -81,7 +81,7 @@ def test_unsafe_deinit_runs_destructor_once() raises:
 
 def test_write_over_initialized_leaks_previous_value() raises:
     var count = 0
-    var a = UnsafeMaybeUninit(DelCounter(Pointer(to=count)))
+    var a = MaybeUninit(DelCounter(Pointer(to=count)))
 
     # Does not invoke the destructor of the initial `DelCounter`
     a.unsafe_write(DelCounter(Pointer(to=count)))
@@ -94,21 +94,21 @@ def test_write_over_initialized_leaks_previous_value() raises:
 
 def test_unsafe_assume_init_move() raises:
     var a = MoveCounter(0)
-    var uninit = UnsafeMaybeUninit[MoveCounter[Int]](a^)
+    var uninit = MaybeUninit[MoveCounter[Int]](a^)
     var moved = uninit^.unsafe_assume_init()
     assert_equal(moved.move_count, 2)
 
 
 def test_zeroed() raises:
     # For Int, zeroed memory is valid and should be 0.
-    var a = UnsafeMaybeUninit[Int].zeroed()
+    var a = MaybeUninit[Int].zeroed()
     assert_equal(a.unsafe_assume_init(), 0)
 
     # For UInt64, zeroed memory should also be 0.
-    var b = UnsafeMaybeUninit[UInt64].zeroed()
+    var b = MaybeUninit[UInt64].zeroed()
     assert_equal(b.unsafe_assume_init(), 0)
 
-    var c = UnsafeMaybeUninit[String].zeroed()
+    var c = MaybeUninit[String].zeroed()
     var arr = Array[Byte, size_of[String]()](fill=0)
     var cmp = unsafe_memcmp(
         c.unsafe_ptr().unsafe_bitcast[Byte](),
@@ -120,15 +120,15 @@ def test_zeroed() raises:
     assert_equal(cmp, 0)
 
     # A linear `T` keeps the wrapper linear even after `.zeroed()`.
-    comptime LinearWrapper = UnsafeMaybeUninit[ExplicitDelOnly]
+    comptime LinearWrapper = MaybeUninit[ExplicitDelOnly]
     var d = LinearWrapper.zeroed()
     d^.unsafe_forget()
     assert_false(conforms_to(LinearWrapper, Deinitable))
 
 
 def test_triviality() raises:
-    comptime Trivial = UnsafeMaybeUninit[Int]
-    comptime NotTrivial = UnsafeMaybeUninit[
+    comptime Trivial = MaybeUninit[Int]
+    comptime NotTrivial = MaybeUninit[
         ConfigureTrivial[
             copyinit_is_trivial=False,
             moveinit_is_trivial=False,
@@ -146,22 +146,20 @@ def test_triviality() raises:
 
 
 def test_conditional_register_passable() raises:
-    assert_true(conforms_to(UnsafeMaybeUninit[Int], RegisterPassable))
-    assert_true(conforms_to(UnsafeMaybeUninit[Bool], RegisterPassable))
-    assert_false(conforms_to(UnsafeMaybeUninit[List[Int]], RegisterPassable))
-    assert_false(conforms_to(UnsafeMaybeUninit[String], RegisterPassable))
+    assert_true(conforms_to(MaybeUninit[Int], RegisterPassable))
+    assert_true(conforms_to(MaybeUninit[Bool], RegisterPassable))
+    assert_false(conforms_to(MaybeUninit[List[Int]], RegisterPassable))
+    assert_false(conforms_to(MaybeUninit[String], RegisterPassable))
 
 
 def test_conditional_conformance() raises:
-    comptime DelOnly = UnsafeMaybeUninit[ConfigureTrivial[del_is_trivial=True]]
+    comptime DelOnly = MaybeUninit[ConfigureTrivial[del_is_trivial=True]]
     assert_true(conforms_to(DelOnly, Deinitable))
     assert_false(conforms_to(DelOnly, Movable))
     assert_false(conforms_to(DelOnly, Copyable))
     assert_false(conforms_to(DelOnly, ImplicitlyCopyable))
 
-    comptime MoveOnly = UnsafeMaybeUninit[
-        ConfigureTrivial[moveinit_is_trivial=True]
-    ]
+    comptime MoveOnly = MaybeUninit[ConfigureTrivial[moveinit_is_trivial=True]]
     assert_false(conforms_to(MoveOnly, Deinitable))
     assert_true(conforms_to(MoveOnly, Movable))
     assert_false(conforms_to(MoveOnly, Copyable))
@@ -171,12 +169,12 @@ def test_conditional_conformance() raises:
     # requires both.
     assert_true(IsTriviallyCopyable[TriviallyCopyableMoveCounter])
     assert_false(IsTriviallyMovable[TriviallyCopyableMoveCounter])
-    comptime CopyOnly = UnsafeMaybeUninit[TriviallyCopyableMoveCounter]
+    comptime CopyOnly = MaybeUninit[TriviallyCopyableMoveCounter]
     assert_false(conforms_to(CopyOnly, Movable))
     assert_false(conforms_to(CopyOnly, Copyable))
     assert_false(conforms_to(CopyOnly, ImplicitlyCopyable))
 
-    comptime CopyAndMove = UnsafeMaybeUninit[
+    comptime CopyAndMove = MaybeUninit[
         ConfigureTrivial[copyinit_is_trivial=True, moveinit_is_trivial=True]
     ]
     assert_false(conforms_to(CopyAndMove, Deinitable))
@@ -186,7 +184,7 @@ def test_conditional_conformance() raises:
 
     # `String`: trivially movable, but not trivially copyable or deinitable.
     assert_true(IsTriviallyMovable[String])
-    comptime StringWrapper = UnsafeMaybeUninit[String]
+    comptime StringWrapper = MaybeUninit[String]
     assert_false(conforms_to(StringWrapper, Deinitable))
     assert_true(conforms_to(StringWrapper, Movable))
     assert_false(conforms_to(StringWrapper, Copyable))
@@ -195,7 +193,7 @@ def test_conditional_conformance() raises:
 
 # This test doesn't need to run, it just needs to compile
 def _test_trivial_register_passable_types[T: TrivialRegisterPassable]():
-    var uninit = UnsafeMaybeUninit[T]()
+    var uninit = MaybeUninit[T]()
 
     # OK: Check that the type is implicitly copyable
     var _uninit2 = uninit
@@ -207,10 +205,10 @@ def _test_trivial_register_passable_types[T: TrivialRegisterPassable]():
 
 
 def test_linear_payload_round_trip() raises:
-    assert_false(conforms_to(UnsafeMaybeUninit[ExplicitDelOnly], Deinitable))
-    assert_true(conforms_to(UnsafeMaybeUninit[ExplicitDelOnly], Movable))
+    assert_false(conforms_to(MaybeUninit[ExplicitDelOnly], Deinitable))
+    assert_true(conforms_to(MaybeUninit[ExplicitDelOnly], Movable))
 
-    var a = UnsafeMaybeUninit[ExplicitDelOnly]()
+    var a = MaybeUninit[ExplicitDelOnly]()
     a.unsafe_write(ExplicitDelOnly(5))
 
     var value = a^.unsafe_assume_init()
@@ -221,10 +219,8 @@ def test_linear_payload_round_trip() raises:
 
 
 def test_pinned_linear_payload_stays_pinned() raises:
-    assert_false(
-        conforms_to(UnsafeMaybeUninit[PinnedExplicitDelOnly], Deinitable)
-    )
-    assert_false(conforms_to(UnsafeMaybeUninit[PinnedExplicitDelOnly], Movable))
+    assert_false(conforms_to(MaybeUninit[PinnedExplicitDelOnly], Deinitable))
+    assert_false(conforms_to(MaybeUninit[PinnedExplicitDelOnly], Movable))
 
 
 def main() raises:

@@ -49,7 +49,7 @@ from std.traits import IsTriviallyMovable
 from std.memory.address_space import AddressSpace
 from std.memory import unsafe_memcpy
 from std.memory.memory import _free
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.memory._poison import _check_not_poison
 from std._plugin import CurrentPlugin
 from std.python import PythonObject
@@ -116,10 +116,10 @@ struct _PointerNicheStorage[
     @always_inline
     def as_uninit[
         U: AnyType
-    ](ref self) -> Pointer[UnsafeMaybeUninit[U], origin_of(self)]:
+    ](ref self) -> Pointer[MaybeUninit[U], origin_of(self)]:
         return (
             Pointer(to=self.address)
-            .unsafe_bitcast[UnsafeMaybeUninit[U]]()
+            .unsafe_bitcast[MaybeUninit[U]]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 
@@ -569,7 +569,7 @@ struct Pointer[
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
         memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
             {}
         )
@@ -577,9 +577,7 @@ struct Pointer[
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> Bool:
+    def isa_niche(memory: Pointer[mut=False, MaybeUninit[Self], _]) -> Bool:
         comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
         return Int(memory.unsafe_bitcast[NullType]()[]) == null_address
@@ -1300,8 +1298,8 @@ struct Pointer[
             # and an unsafe_memcpy between the pointers it produces 3 load and
             # 3 stores.
 
-            var self_tmp = UnsafeMaybeUninit[U]()
-            var other_tmp = UnsafeMaybeUninit[U]()
+            var self_tmp = MaybeUninit[U]()
+            var other_tmp = MaybeUninit[U]()
             unsafe_memcpy(dest=self_tmp.unsafe_ptr(), src=self, count=1)
             unsafe_memcpy(dest=other_tmp.unsafe_ptr(), src=other, count=1)
 

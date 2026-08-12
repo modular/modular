@@ -15,7 +15,7 @@ from std.sys.info import size_of
 
 from std.compile import compile_info
 from std.hashlib import hash
-from std.memory import UnsafeMaybeUninit
+from std.memory import MaybeUninit
 from std.traits import (
     IsTriviallyCopyable,
     IsTriviallyDeinitable,
@@ -200,7 +200,7 @@ def test_array_int_pointer() raises:
 
 
 def test_array_unsafe_assume_initialized_constructor_string() raises:
-    var maybe_uninitialized_arr = Array[UnsafeMaybeUninit[String], 3](
+    var maybe_uninitialized_arr = Array[MaybeUninit[String], 3](
         uninitialized=True
     )
     maybe_uninitialized_arr[0].unsafe_write("hello")

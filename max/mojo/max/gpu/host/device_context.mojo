@@ -68,7 +68,7 @@ from std.builtin.device_passable import (
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import reflect, reflect_fn
 from std.memory import unsafe_stack_allocation
-from std.memory import alloc, dealloc, ThinAllocation, Layout, UnsafeMaybeUninit
+from std.memory import alloc, dealloc, ThinAllocation, Layout, MaybeUninit
 from std.memory.unsafe import bitcast
 from std.builtin.rebind import downcast
 
@@ -6691,12 +6691,12 @@ struct DeviceContextArray[length: Int](Copyable, Sized):
         if gpu_count != num_gpu_devices:
             raise Error("Invalid number of GPU device contexts")
 
-        # Build the result in an `UnsafeMaybeUninit` staging array. Its
+        # Build the result in a `MaybeUninit` staging array. Its
         # `__deinit__` is a no-op, so the staging array is safe to drop even
         # with uninitialized slots in scope (e.g. on an early raise). The
         # `unsafe_assume_initialized=` constructor then moves every slot
         # into a fully-initialized `Array[DeviceContext]`.
-        var staging = Array[UnsafeMaybeUninit[DeviceContext], num_gpu_devices](
+        var staging = Array[MaybeUninit[DeviceContext], num_gpu_devices](
             uninitialized=True
         )
         var dev_idx = 0
