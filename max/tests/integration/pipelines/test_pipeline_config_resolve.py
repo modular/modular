@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for the full PipelineConfig.resolve() flow with mock architectures.
+"""Tests for the full PipelineConfig construction-time resolution flow.
 
 All tests use fake local repos (config.json + weight files) and mock
 SupportedArchitecture instances registered in PIPELINE_REGISTRY.
@@ -155,7 +155,7 @@ def _pipeline_resolve_mocks(
     weight_path_return: tuple[list[Path], str | None] = ([], None),
     num_devices: int = 1,
 ) -> Iterator[None]:
-    """Patches external dependencies for the full PipelineConfig.resolve() flow.
+    """Patches external dependencies for the full config resolution flow.
 
     Mocks external I/O and hardware while leaving the real resolution
     logic intact:
@@ -208,11 +208,12 @@ def _model(config: PipelineConfig) -> MAXModelConfig:
 
 
 def _resolve_config(config: PipelineConfig) -> None:
-    """Look up the architecture from the registry, then call config.resolve(arch).
+    """Replicate the registry's post-construction resolution steps.
 
-    Convenience wrapper for tests that call resolve() directly rather than
-    going through PIPELINE_REGISTRY.retrieve_factory().  The arch lookup is
-    explicit here so _resolve_config(config) itself stays free of registry imports.
+    Convenience wrapper for tests that exercise these steps directly rather
+    than going through PIPELINE_REGISTRY.retrieve_factory(). Validation runs
+    at construction, so this covers only the registry-phase steps: memory
+    planning and overlap-scheduler/DGC resolution.
     """
     task = (
         config.task
@@ -231,7 +232,6 @@ def _resolve_config(config: PipelineConfig) -> None:
             " Please file a request at https://modul.ar/request to add this"
             " model architecture to MAX."
         )
-    config.resolve(arch)
     # from_args already resolved the encoding, making this write-back a
     # no-op; directly-constructed configs (a few tests below) still need the
     # effective encoding mirrored onto the field for assertions.
@@ -239,8 +239,8 @@ def _resolve_config(config: PipelineConfig) -> None:
         _model(config), arch.default_encoding
     )
     _model(config).quantization_encoding = resolved_encoding
-    # Overlap-scheduler/DGC resolution now lives in the registry, after
-    # memory planning. Tests that call resolve() directly must replicate it.
+    # Overlap-scheduler/DGC resolution lives in the registry, after
+    # memory planning.
     from max.pipelines.lib.registry import _run_memory_planning
 
     plan = _run_memory_planning(config, arch)
@@ -340,7 +340,7 @@ class TestArchitectureEncodingResolution:
     def test_resolve_f32_on_gpu_uses_arch_default(self) -> None:
         """F32 safetensors on GPU: architecture default_encoding is used.
 
-        MAXModelConfig.resolve() infers float32 from the file, but the
+        Construction infers float32 from the file, but the
         architecture-level validation may fall back to the arch default
         encoding when reconciling file encoding with device capabilities.
         """
@@ -501,7 +501,7 @@ class TestArchitectureNotFound:
 
     @prepare_registry
     def test_unknown_architecture_raises(self) -> None:
-        """Unknown architecture in config.json should raise ValueError."""
+        """Unknown architecture in config.json raises at construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
             unknown_config = dict(_LLAMA_CONFIG)
@@ -511,14 +511,14 @@ class TestArchitectureNotFound:
                 hf_config=unknown_config,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = _make_pipeline_config(tmpdir)
             with (
                 _pipeline_resolve_mocks(),
                 pytest.raises(
-                    ValueError, match="MAX-optimized architecture not available"
+                    ValueError,
+                    match="No architecture found for UnknownModelForCausalLM",
                 ),
             ):
-                _resolve_config(config)
+                _make_pipeline_config(tmpdir)
 
     @prepare_registry
     def test_missing_config_json_raises(self) -> None:
@@ -555,7 +555,7 @@ class TestMultiGPUValidation:
                 DeviceSpec(id=0, device_type="gpu"),
                 DeviceSpec(id=1, device_type="gpu"),
             ]
-            config = _make_pipeline_config(tmpdir, device_specs=two_gpus)
+            # Multi-GPU support is validated at construction.
             with (
                 _pipeline_resolve_mocks(num_devices=2),
                 pytest.raises(
@@ -563,7 +563,7 @@ class TestMultiGPUValidation:
                     match="Multiple GPU inference is currently not supported",
                 ),
             ):
-                _resolve_config(config)
+                _make_pipeline_config(tmpdir, device_specs=two_gpus)
 
     @prepare_registry
     def test_multi_gpu_allowed_for_supported_arch(self) -> None:
@@ -795,7 +795,8 @@ class TestRequiredArguments:
             assert _model(config).kv_cache.enable_prefix_caching is False
             with _pipeline_resolve_mocks():
                 _resolve_config(config)
-            # resolve() must not undo the construction-time override.
+            # Registry-phase resolution must not undo the construction-time
+            # override.
             assert _model(config).kv_cache.enable_prefix_caching is False
 
 
@@ -876,7 +877,7 @@ class TestDGCTaskDisambiguation:
 
     @prepare_registry
     def test_dgc_enabled_for_text_gen_task(self) -> None:
-        """resolve() without task (text-gen default) auto-enables DGC when eligible."""
+        """Without a task (text-gen default), DGC auto-enables when eligible."""
 
         shared_name = "SharedArchForCausalLM"
         text_gen_arch = SupportedArchitecture(
@@ -918,8 +919,8 @@ class TestDGCTaskDisambiguation:
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
             config = _make_pipeline_config(tmpdir, max_batch_size=4)
-            # Look up the text-gen arch explicitly; resolve() no longer falls back
-            # to the registry for overlap-scheduler/DGC decisions.
+            # Look up the text-gen arch explicitly for the registry-phase
+            # overlap-scheduler/DGC decisions.
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 architecture_name=shared_name,
                 prefer_module_v3=False,
@@ -932,7 +933,6 @@ class TestDGCTaskDisambiguation:
                     return_value="cuda",
                 ),
             ):
-                config.resolve(arch)
                 from max.pipelines.lib.registry import _run_memory_planning
 
                 plan = _run_memory_planning(config, arch)
@@ -1122,7 +1122,7 @@ class TestMemoryPlanDevices:
 class TestConstructionResolution:
     """``PipelineConfig.from_args`` resolves ``quantization_encoding``,
     ``weight_path``, and the effective ``device_specs`` against the
-    registered architecture; ``resolve()`` leaves them untouched.
+    registered architecture; the registry phase leaves them untouched.
 
     The dummy architectures must be registered *before* ``from_args`` is
     called: construction reads the shared ``ARCH_LOOKUP`` table that
@@ -1145,7 +1145,7 @@ class TestConstructionResolution:
 
     @staticmethod
     def _resolve_via_registry(config: PipelineConfig) -> tuple[Any, Any]:
-        """Resolves with the same selection inputs the registry uses."""
+        """Looks up the archs with the same selection inputs the registry uses."""
         task = (
             config.task
             if config.task != PipelineTask.UNDEFINED
@@ -1164,13 +1164,12 @@ class TestConstructionResolution:
                 prefer_module_v3=config.runtime.prefer_module_v3,
             )
             assert draft_arch is not None
-        config.resolve(arch, draft_arch=draft_arch)
         return arch, draft_arch
 
     def _assert_resolve_preserves(
         self, config: PipelineConfig
     ) -> tuple[Any, Any]:
-        """Runs resolve() and asserts the constructed values survive it."""
+        """Runs the registry arch lookup and asserts the constructed values survive."""
         model = _model(config)
         constructed_encoding = model.quantization_encoding
         constructed_paths = list(model.weight_path)
@@ -1347,9 +1346,8 @@ class TestConstructionResolution:
             assert _model(config).device_specs == [GPU_DEVICE_SPEC]
 
     @prepare_registry
-    def test_unknown_arch_leaves_fields_raw(self) -> None:
-        """An unregistered architecture skips construction-time resolution;
-        resolve()'s existing error path still reports it downstream."""
+    def test_unknown_arch_rejected_at_construction(self) -> None:
+        """A determinable but unregistered architecture fails construction."""
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
             unknown_config = dict(_LLAMA_CONFIG)
@@ -1359,9 +1357,11 @@ class TestConstructionResolution:
                 hf_config=unknown_config,
                 safetensors_files={"model.safetensors": {"w": "BF16"}},
             )
-            config = self._from_args(tmpdir)
-            assert _model(config).quantization_encoding is None
-            assert _model(config).weight_path == []
+            with pytest.raises(
+                ValueError,
+                match="No architecture found for UnknownModelForCausalLM",
+            ):
+                self._from_args(tmpdir)
 
     @prepare_registry
     def test_spec_decode_target_override_before_resolution(self) -> None:

@@ -1157,9 +1157,9 @@ class GenericOracle(PipelineOracle):
             )
 
         # Defer resolution so we can set _weights_repo_id before
-        # validation runs.  Without this, PipelineConfig.resolve() would
-        # look for weight files in the model repo (meta-llama) instead of
-        # the weights repo (bartowski).
+        # validation runs.  Without this, construction-time resolution
+        # would look for weight files in the model repo (meta-llama)
+        # instead of the weights repo (bartowski).
         config_kwargs = {
             "task": self.task,
             "device_specs": device_specs if device_specs else None,
