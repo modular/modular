@@ -68,28 +68,37 @@ resolveNixlPluginDir(const std::filesystem::path &base,
 /// prefers over the fully-stocked plain one.
 bool stagesRequestedBackend(const std::filesystem::path &pluginDir);
 
-/// Claims the `libfabric.so.1` SONAME with the copy staged alongside
-/// `pluginDir`, for hosts that asked for the libfabric backend.
+/// Claims the SONAMEs of the EFA fabric stack staged alongside `pluginDir`, for
+/// hosts that asked for the libfabric backend.
 ///
-/// The libfabric plugin binds versioned symbols (FABRIC_1.8) that only the EFA
-/// libfabric staged in `<prefix>/lib` provides, yet it records the generic
-/// `libfabric.so.1` SONAME — which a much older distro libfabric also claims
-/// (Ubuntu packages 1.14, FABRIC_1.3, for the Open MPI we install for expert
-/// parallelism), and which other components pull in: torch's bundled NVSHMEM
-/// ships its own libfabric transport, for one. Whichever copy loads first owns
-/// the SONAME process-wide, because an already-loaded SONAME is never
-/// re-resolved against the plugin's rpath, so losing that race leaves the
-/// plugin permanently unloadable under a generic "backend not found".
+/// The libfabric plugin and the libraries it pulls in bind versioned symbols
+/// that only the EFA build staged in `<prefix>/lib` provides — FABRIC_1.8 from
+/// `libfabric.so.1`, IBVERBS_PRIVATE_59 from `libibverbs.so.1` — yet they
+/// record generic SONAMEs that a much older distro copy also claims (Ubuntu
+/// packages libfabric 1.14 and rdma-core as dependencies of the Open MPI we
+/// install for expert parallelism), and that unrelated components drag in:
+/// torch's bundled NVSHMEM ships its own libfabric transport, and its bundled
+/// cuFile RDMA plugin (`libcufile_rdma.so.1`) needs libibverbs. Whichever copy
+/// loads first owns the SONAME process-wide, because an already-loaded SONAME
+/// is never re-resolved — not against a later rpath, and not even against a
+/// later request by absolute path. Losing the race leaves the plugin
+/// permanently unloadable, reported as a generic "backend not found".
 ///
-/// Loading our copy up front (and keeping it loaded) makes the outcome
-/// independent of load order: it is a strict superset of the distro's symbol
-/// versions, so later consumers bind against it happily.
+/// Claiming our copies up front (and keeping them loaded) makes the outcome
+/// independent of load order: each is a strict superset of the distro copy's
+/// symbol versions, so later consumers bind against it happily. They are
+/// claimed leaf-first, so each one's own dependencies resolve against a copy
+/// already claimed here rather than against whatever ld.so.cache offers.
 ///
-/// Returns false when nothing was preloaded — another backend was requested, no
-/// libfabric is staged next to the plugins, or the load failed (e.g. no CUDA
-/// driver, which the EFA build needs). None of those are errors here; the
-/// backend that needs it reports its own failure downstream.
-bool preloadStagedLibfabric(const std::filesystem::path &pluginDir);
+/// Only the libfabric backend gets this. The verbs UCX flavors deliberately run
+/// on the host's rdma-core, whose provider plugins (libmlx5) bind the matching
+/// IBVERBS_PRIVATE version and would fail to load against ours.
+///
+/// Returns false when nothing was claimed — another backend was requested,
+/// nothing is staged next to the plugins, or every load failed (e.g. no CUDA
+/// driver, which the EFA libfabric needs). None of those are errors here; the
+/// backend that needs them reports its own failure downstream.
+bool preloadStagedFabricLibs(const std::filesystem::path &pluginDir);
 
 } // namespace M
 

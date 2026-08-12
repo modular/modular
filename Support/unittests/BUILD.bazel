@@ -362,16 +362,66 @@ _NIXL_PLATFORM = [
     ]
 ]
 
+# Two libibverbs stand-ins sharing one SONAME: the EFA-patched build we stage
+# (exports IBVERBS_PRIVATE_59, which its provider libraries bind) and the distro
+# build with public symbols only.
+[
+    cc_binary(
+        name = "nixl_ibverbs_{}_fixture.so".format(flavor),
+        srcs = ["NixlIbverbsFixture.cpp"],
+        additional_linker_inputs = ["nixl_ibverbs_{}.map".format(flavor)],
+        defines = ["FIXTURE_HAS_IBVERBS_PRIVATE_59={}".format(1 if flavor == "efa" else 0)],
+        linkopts = [
+            "-Wl,-soname,libibverbs.so.1",
+            "-Wl,--version-script,$(location nixl_ibverbs_{}.map)".format(flavor),
+        ],
+        linkshared = True,
+        tags = ["manual"],
+        target_compatible_with = _NIXL_PLATFORM,
+    )
+    for flavor in [
+        "efa",
+        "distro",
+    ]
+]
+
+# libefa stand-in: the plugin's verbs library, one level below it, binding the
+# IBVERBS_PRIVATE_59 symbol only the EFA-patched libibverbs exports. Its own
+# rpath finds the staged libibverbs, so it is the already-resident distro copy —
+# not a missing file — that breaks it.
+modular_cc_binary(
+    name = "nixl_efa_fixture.so",
+    srcs = ["NixlEfaFixture.cpp"],
+    additional_linker_inputs = [":nixl_ibverbs_efa_fixture.so"],
+    linkopts = [
+        "-Wl,-soname,libefa.so.1",
+        "-Wl,-rpath,$$ORIGIN",
+        "$(location :nixl_ibverbs_efa_fixture.so)",
+    ],
+    linkshared = True,
+    tags = ["manual"],
+    target_compatible_with = _NIXL_PLATFORM,
+)
+
 # Plugin stand-in: binds a symbol only the EFA fixture exports at FABRIC_1.8, so
-# it loads against that copy and fails against the distro one.
+# it loads against that copy and fails against the distro one, and one from
+# libefa so the transitive libibverbs requirement is recorded too.
 modular_cc_binary(
     name = "libplugin_FIXTURE.so",
     srcs = ["NixlPluginFixture.cpp"],
-    additional_linker_inputs = [":nixl_libfabric_efa_fixture.so"],
-    # Linked straight against the EFA fixture so the DT_NEEDED on
-    # libfabric.so.1 and the FABRIC_1.8 version requirement are both recorded,
-    # like the real plugin's.
-    linkopts = ["$(location :nixl_libfabric_efa_fixture.so)"],
+    additional_linker_inputs = [
+        ":nixl_efa_fixture.so",
+        ":nixl_libfabric_efa_fixture.so",
+    ],
+    # Linked straight against the EFA fixtures so the DT_NEEDED entries and the
+    # symbol-version requirements are both recorded, like the real plugin's, and
+    # given the real plugin's rpath: the flavor dir is <prefix>/lib/nixl/<flavor>
+    # and the fabric stack is staged flat in <prefix>/lib.
+    linkopts = [
+        "-Wl,-rpath,$$ORIGIN/../..",
+        "$(location :nixl_efa_fixture.so)",
+        "$(location :nixl_libfabric_efa_fixture.so)",
+    ],
     linkshared = True,
     tags = ["manual"],
     target_compatible_with = _NIXL_PLATFORM,
@@ -382,6 +432,9 @@ modular_cc_test(
     srcs = ["NixlPluginDirTest.cpp"],
     data = [
         ":libplugin_FIXTURE.so",
+        ":nixl_efa_fixture.so",
+        ":nixl_ibverbs_distro_fixture.so",
+        ":nixl_ibverbs_efa_fixture.so",
         ":nixl_libfabric_distro_fixture.so",
         ":nixl_libfabric_efa_fixture.so",
     ],
