@@ -40,7 +40,6 @@ from max.pipelines.lib import (
     parse_quant_config,
 )
 from max.pipelines.lib.config.model_config import (
-    _device_specs_for_encoding,
     _select_quantization_encoding,
 )
 from max.pipelines.lib.interfaces.arch_config import (
@@ -245,11 +244,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
         )
-        # An encoding that cannot run on GPU (GGUF q4) overrides the GPU
-        # default and runs on CPU.
-        device_specs = _device_specs_for_encoding(
-            model_config.device_specs, quantization_encoding
-        )
+        device_specs = model_config.device_specs
         n_devices = len(device_specs)
 
         _weights_format = weights_format(model_config.weight_path)

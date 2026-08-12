@@ -63,7 +63,6 @@ from .arch_lookup import (
 from .arch_lookup import PipelineModelType as PipelineModelType
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import ArchConfigWithKVCache, PipelineModel
-from .interfaces.arch_config import validate_device_specs
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
@@ -265,14 +264,10 @@ def _run_memory_planning(
         return _MemoryPlan(
             max_batch_size=pipeline_config.runtime.max_batch_size or 1,
             footprint=0,
-            device_specs=validate_device_specs(
-                model_config, arch.default_encoding, arch.supported_encodings
-            ),
+            device_specs=tuple(model_config.device_specs),
         )
 
-    effective_specs = validate_device_specs(
-        model_config, arch.default_encoding, arch.supported_encodings
-    )
+    effective_specs = tuple(model_config.device_specs)
     logger.info(
         "devices: %s",
         ", ".join(f"{d.device_type}[{d.id}]" for d in effective_specs),
@@ -337,11 +332,6 @@ def _run_memory_planning(
     # For speculative decoding, clamp max_length to the draft model's limit
     # (the draft shares the target model's KV cache).
     if draft_arch is not None and pipeline_config.draft_model is not None:
-        validate_device_specs(
-            pipeline_config.draft_model,
-            draft_arch.default_encoding,
-            draft_arch.supported_encodings,
-        )
         draft_arch_config = draft_arch.config.initialize(
             pipeline_config, model_config=pipeline_config.draft_model
         )

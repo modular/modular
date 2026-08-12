@@ -55,7 +55,6 @@ from typing_extensions import Self
 
 from .model_config import (
     MAXModelConfig,
-    _effective_device_specs,
     _parse_component_overrides,
     _populate_weights_and_encoding,
     _select_quantization_encoding,
@@ -906,24 +905,10 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self._effective_device_type(arch) == "cpu":
+            if self.model.default_device_spec.device_type == "cpu":
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
-
-    def _effective_device_type(self, arch: Any) -> str:
-        """Returns the device type the main model actually runs on.
-
-        Uses the resolved device specs (the raw ``device_specs`` field may
-        differ when a CPU-only encoding downcasts defaulted GPU devices).
-        Falls back to the raw field when no arch is available to resolve the
-        encoding against.
-        """
-        if arch is None:
-            return self.model.device_specs[0].device_type
-        return _effective_device_specs(self.model, arch.default_encoding)[
-            0
-        ].device_type
 
     def _is_eligible_for_overlap_serve_optimizations(self, arch: Any) -> bool:
         # Overlap scheduling and device graph capture are only supported for
@@ -934,7 +919,7 @@ class PipelineConfig(ConfigFileModel):
             arch.task == PipelineTask.TEXT_GENERATION
             and not self.sampling.enable_variable_logits
             and not self.lora
-            and self._effective_device_type(arch) != "cpu"
+            and self.model.default_device_spec.device_type != "cpu"
         )
 
     def _validate_and_resolve_device_graph_capture(self) -> None:
@@ -999,12 +984,7 @@ class PipelineConfig(ConfigFileModel):
                     f"Model '{model_config.model_path}' uses the '{arch.name}' architecture."
                 )
             # Currently, LoRA supported on only 1 device.
-            if (
-                len(
-                    _effective_device_specs(model_config, arch.default_encoding)
-                )
-                > 1
-            ):
+            if len(model_config.device_specs) > 1:
                 raise ValueError(
                     "LoRA is currently not supported with the number of devices > 1."
                 )
@@ -1065,11 +1045,10 @@ class PipelineConfig(ConfigFileModel):
         self._validate_model_config_against_arch(model_config, resolved_arch)
 
     def _populate_model_configs_from_archs(self) -> None:
-        """Applies architecture-driven defaults at construction.
+        """Assigns each model's encoding, weight paths, and devices.
 
-        Assigns each model's ``quantization_encoding`` and ``weight_path``,
-        then applies the architecture-declared defaults: required-argument
-        overrides, reasoning/tool parsers, and the structured output backend.
+        A CPU-only encoding downcasts all-GPU ``device_specs`` to CPU,
+        warning once per model. Also applies the arch-declared defaults.
         Must use the same architecture-selection inputs as the registry.
         Models with no registered architecture keep their raw fields;
         ``resolve()`` reports those downstream.

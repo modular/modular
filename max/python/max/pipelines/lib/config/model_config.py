@@ -232,9 +232,9 @@ def _infer_quantization_encoding(
     # stable regardless of whether weight_path defaults have been discovered
     # yet — the filename/repo branches above otherwise disagree with the
     # supported-encodings branch on which encoding to pick. Scoped to the CPU
-    # target only: a CPU-only encoding on a GPU target is handled downstream
-    # by the CPU override in validate_device_specs (arch_config),
-    # and an explicit user encoding is validated separately.
+    # target only: a CPU-only encoding on a GPU target is handled by the CPU
+    # override in _populate_weights_and_encoding, and an explicit user
+    # encoding is validated separately.
     if (
         config.quantization_encoding is None
         and encoding is not None
@@ -529,8 +529,8 @@ def _device_specs_for_encoding(
     GPU-only encoding on CPU, is rejected by the caller's compatibility
     check). Read-only.
 
-    Set *warn* only at the validation choke point so the CPU override is
-    reported once per startup, not once per recomputation.
+    Set *warn* only where the downcast is applied
+    (:func:`_populate_weights_and_encoding`) so it fires once per model.
     """
     if supported_encoding_supported_devices(quantization_encoding) == (
         "cpu",
@@ -541,21 +541,6 @@ def _device_specs_for_encoding(
             )
         return [DeviceSpec.cpu()]
     return device_specs
-
-
-def _effective_device_specs(
-    config: MAXModelConfig,
-    default_encoding: SupportedEncoding,
-) -> list[DeviceSpec]:
-    """Returns the device specs the model effectively runs on.
-
-    Read-only; differs from ``config.device_specs`` only when a CPU-only
-    encoding (GGUF q4) overrides GPU devices.
-    """
-    return _device_specs_for_encoding(
-        config.device_specs,
-        _select_quantization_encoding(config, default_encoding),
-    )
 
 
 def _discover_default_weight_paths(
@@ -601,14 +586,17 @@ def _populate_weights_and_encoding(
     supported_encodings: set[SupportedEncoding],
     default_weights_format: WeightsFormat,
 ) -> None:
-    """Assigns ``quantization_encoding`` and ``weight_path`` for an architecture.
+    """Assigns encoding, weight paths, and devices for an architecture.
 
     Discovers default weight files when no explicit ``weight_path`` was
-    given, and records any load-time dtype cast on the config.
+    given, and records any load-time dtype cast on the config. Assigns the
+    effective ``device_specs`` (a CPU-only encoding downcasts all-GPU
+    devices to CPU, warning once per model).
 
     Raises:
         ValueError: If the resolved encoding is unsupported by the
-            architecture, or no compatible weight files exist in the repo.
+            architecture or the effective devices, or no compatible weight
+            files exist in the repo.
     """
     encoding, cast_from, cast_to = _select_encoding_and_dtype_cast(
         config, default_encoding
@@ -632,6 +620,18 @@ def _populate_weights_and_encoding(
             )
         config.weight_path = discovered
     config._validate_final_architecture_model_path_weight_path()
+    config.device_specs = _device_specs_for_encoding(
+        config.device_specs, encoding, warn=True
+    )
+    for spec in config.device_specs:
+        if not supported_encoding_supported_on(encoding, spec):
+            raise ValueError(
+                f"The encoding '{encoding}' is not compatible with the selected device type '{spec.device_type}'.\n\n"
+                f"You have two options to resolve this:\n"
+                f"1. Use a different device\n"
+                f"2. Use a different encoding (encodings available for this model: {', '.join(sorted(str(e) for e in supported_encodings))})\n\n"
+                f"Please use the --help flag for more information."
+            )
 
 
 class MAXModelConfigBase(ConfigFileModel):
