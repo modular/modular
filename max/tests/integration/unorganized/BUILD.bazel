@@ -449,6 +449,33 @@ modular_py_test(
     ],
 )
 
+# Output-distribution test for the stochastic acceptance sampler
+# (speculative decoding)
+modular_py_test(
+    name = "test-stochastic-acceptance-distribution",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "sampling/test_stochastic_acceptance_distribution.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = _SAMPLING_BASE_DEPS + [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
 # Test for rejection_sampler (speculative decoding)
 modular_py_test(
     name = "test-rejection-sampler",
