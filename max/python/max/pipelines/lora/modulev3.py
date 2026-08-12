@@ -81,8 +81,9 @@ def _download_adapter_repo(repo_id: str) -> str:
     """
     repo = HuggingFaceRepo(repo_id=repo_id)  # validates access for online repos
     if repo.repo_type == "local":
-        # HF_HUB_OFFLINE resolved the repo id to a fully cached snapshot dir.
-        return repo.repo_id
+        # Either a user-provided directory or a fully cached snapshot dir
+        # resolved under HF_HUB_OFFLINE.
+        return repo.local_path
     safetensors = repo.weight_files.get(WeightsFormat.safetensors, [])
     files = download_weight_files(
         huggingface_model_id=repo_id,
