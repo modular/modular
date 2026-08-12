@@ -14,7 +14,6 @@
 """Tests for MAXModelConfig subfolder support."""
 
 import os
-import struct
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -29,6 +28,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from test_common.fake_weights import write_fake_safetensors
 from test_common.mocks import (
     mock_pipeline_config_resolve,
 )
@@ -201,13 +201,13 @@ class TestHuggingFaceRepoSubfolderWeightDiscovery:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a BF16 safetensors file at root.
             root_weight = os.path.join(tmpdir, "model.safetensors")
-            _write_fake_safetensors(root_weight, dtype="BF16")
+            write_fake_safetensors(root_weight, dtype="BF16")
 
             # Create an F32 safetensors file inside subfolder.
             vae_dir = os.path.join(tmpdir, "vae")
             os.makedirs(vae_dir)
             subfolder_weight = os.path.join(vae_dir, "model.safetensors")
-            _write_fake_safetensors(subfolder_weight, dtype="F32")
+            write_fake_safetensors(subfolder_weight, dtype="F32")
 
             # Without subfolder: reads first file found (local repos assume
             # one encoding per repo).
@@ -350,15 +350,3 @@ class TestExternalWeightRepoRevision:
             mock_download.call_args.kwargs["revision"]
             == hf_hub_constants.DEFAULT_REVISION
         )
-
-
-def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
-    """Write a minimal safetensors file with a single tensor of the given dtype."""
-    import json
-
-    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00\x00")  # 2 bytes of fake tensor data

@@ -22,7 +22,6 @@ import dataclasses
 import json
 import os
 import pickle
-import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -57,6 +56,10 @@ from max.pipelines.lib.registry import (
 )
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.sampling import SamplingConfig
+from test_common.fake_weights import (
+    write_fake_safetensors,
+    write_mixed_safetensors,
+)
 from test_common.pipeline_model_dummy import (
     DUMMY_GEMMA_ARCH,
     DUMMY_LLAMA_ARCH,
@@ -68,39 +71,6 @@ from test_common.registry import prepare_registry
 
 GPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="gpu")
 CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
-
-
-# ---------------------------------------------------------------------------
-# Helpers — fake weight files
-# ---------------------------------------------------------------------------
-
-
-def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
-    """Write a minimal safetensors file with a single tensor of the given dtype."""
-    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00\x00")
-
-
-def _write_mixed_safetensors(path: str, tensors: dict[str, str]) -> None:
-    """Write a safetensors file with multiple tensors of different dtypes."""
-    header: dict[str, dict[str, object]] = {}
-    offset = 0
-    for name, dtype in tensors.items():
-        header[name] = {
-            "dtype": dtype,
-            "shape": [1],
-            "data_offsets": [offset, offset + 2],
-        }
-        offset += 2
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00" * offset)
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +135,9 @@ def _make_local_repo(
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             if len(tensors) == 1:
                 _, dtype = next(iter(tensors.items()))
-                _write_fake_safetensors(full_path, dtype=dtype)
+                write_fake_safetensors(full_path, dtype=dtype)
             else:
-                _write_mixed_safetensors(full_path, tensors)
+                write_mixed_safetensors(full_path, tensors)
     if gguf_files:
         for rel_path in gguf_files:
             full_path = os.path.join(tmpdir, rel_path)
@@ -539,7 +509,7 @@ class TestArchitectureNotFound:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         with tempfile.TemporaryDirectory() as tmpdir:
             # Write weight files but no config.json
-            _write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
+            write_fake_safetensors(os.path.join(tmpdir, "model.safetensors"))
             config = _make_pipeline_config(tmpdir)
             with _pipeline_resolve_mocks(), pytest.raises(Exception):
                 _resolve_config(config)
