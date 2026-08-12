@@ -39,14 +39,15 @@ def test_llm_fuzz_matrix_dispatch_specific() -> None:
             "--event-name",
             "workflow_dispatch",
             "--selected-pipeline",
-            "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp",
+            "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
         ],
     )
     assert result.exit_code == 0
     output = json.loads(result.output)
     assert len(output["include"]) == 1
     assert (
-        output["include"][0]["pipeline"] == "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp"
+        output["include"][0]["pipeline"]
+        == "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash"
     )
 
 

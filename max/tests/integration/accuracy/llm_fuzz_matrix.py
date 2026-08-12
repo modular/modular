@@ -28,12 +28,12 @@ import click
 from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/llm_fuzz/configs")
-SMOKE_TEST_PIPELINE = "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp"
+SMOKE_TEST_PIPELINE = "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash"
 
 
 PIPELINES: Final[list[PipelineEntry]] = [
     PipelineEntry(
-        pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp",
+        pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
         model_path="nvidia/Kimi-K2.7-Code-NVFP4",
         runner="modrunner-b200-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
