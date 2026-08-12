@@ -519,26 +519,7 @@ struct Pointer[
 
     @always_inline("builtin")
     @implicit
-    @doc_hidden
-    # TODO(MOCO-4504): This is needed otherwise the `ImmOrigin`
-    # conversion constructor is picked instead.
     def __init__(
-        other: Pointer,
-        out self: Pointer[
-            other.T,
-            other.origin,
-            address_space=other.address_space,
-        ],
-    ):
-        self._mlir_value = other._mlir_value
-
-    @always_inline("builtin")
-    @implicit
-    def __init__[
-        # TODO(MOCO-4504): This is needed otherwise this constructor
-        # is preferred over a normal copy when doing `Pointer(pointer)`.
-        __disambig: NoneType = None,
-    ](
         other: Pointer,
         out self: Pointer[
             other.T,
@@ -547,9 +528,6 @@ struct Pointer[
         ],
     ):
         """Implicitly casts a mutable pointer to immutable.
-
-        Parameters:
-            __disambig: A dummy parameter to make overload resolution prefer the normal "copy" constructor.
 
         Args:
             other: The mutable pointer to cast from.
