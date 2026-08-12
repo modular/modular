@@ -250,17 +250,17 @@ http_archive(
 http_archive(
     name = "efa_libfabric_prebuilt",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5",
+    sha256 = "a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0a2b8fb7971f32efefe1ea0609f9c541241b428dc480493ae3fb704ae0f50ce5/efa-libfabric-prebuilt-cpu.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/a35ed6624ddadd0db37be561c844c0a5cfe71aaf604e6c919e1a8bf914b4cd1f/efa-libfabric-prebuilt-cpu.tar.xz",
 )
 
 http_archive(
     name = "efa_libfabric_prebuilt_cuda",
     build_file = "//bazel/public-patches:efa_libfabric_prebuilt.BUILD",
-    sha256 = "0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271",
+    sha256 = "0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa",
     strip_prefix = "efa-libfabric-prebuilt",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod2/0645cc72de32045c7f57a5909bf26aa3280e79069612fe1702a38fcd4c560271/efa-libfabric-prebuilt-cuda.tar.xz",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/efa-libfabric-prebuilt/2.4.0amzn5.0-mod3/0bfd9160bcc4a79e65833c94b5fee3e873488d0cac830f5da3cb9d308926a3fa/efa-libfabric-prebuilt-cuda.tar.xz",
 )
 
 # CUDA Driver API + runtime headers used by libfabric_plugin_lib (-DHAVE_CUDA).

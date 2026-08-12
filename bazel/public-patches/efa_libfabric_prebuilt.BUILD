@@ -7,7 +7,9 @@ filegroup(
     name = "ibverbs_provider_files",
     srcs = [
         "etc/libibverbs.d/efa.driver",
+        "etc/libibverbs.d/mlx5.driver",
         "lib/libibverbs/libefa-rdmav59.so",
+        "lib/libibverbs/libmlx5-rdmav59.so",
     ],
 )
 
