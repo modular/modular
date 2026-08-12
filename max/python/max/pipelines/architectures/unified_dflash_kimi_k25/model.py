@@ -31,7 +31,7 @@ from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Module, Value
+from max.graph import BufferValue, DeviceRef, Graph, Module, TensorValue, Value
 from max.graph.weights import WeightData, load_weights
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import (
@@ -81,10 +81,11 @@ class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
     forward -- plus the spec-decode fields and trailing buffer packing from
     :class:`UnifiedSpecDecodeInputs`. The draft owns its own MHA
     :class:`KVCacheInputs` so its dispatch metadata is independent of the
-    target's MLA cache. The DFlash graph does not bind ``in_thinking_phase``.
+    target's MLA cache. The DFlash graph does not bind ``in_thinking_phase``
+    (it is only consumed by the relaxed-acceptance-for-thinking sampler rule,
+    which DFlash does not configure); the structured-output bitmask triple is
+    packed whenever the graph was compiled with it.
     """
-
-    token_bitmasks: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -112,7 +113,7 @@ class UnifiedDflashKimiK25Inputs(UnifiedSpecDecodeInputs, KimiK2_5ModelInputs):
             *self.ep_inputs,
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False, supports_structured_output=False
+            include_in_thinking_phase=False
         )
 
 
@@ -331,7 +332,10 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
         )
         unified_config.validate_dflash_fields()
 
-        nn_model = UnifiedDflashKimiK25(unified_config)
+        nn_model = UnifiedDflashKimiK25(
+            unified_config,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+        )
 
         nn_model.draft.embed_tokens = nn_model.target.embed_tokens
         nn_model.draft.lm_head = nn_model.target.lm_head
@@ -446,6 +450,21 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
 
+                # Optional constrained-decoding bitmask triple — present
+                # only when structured output is enabled (matches the
+                # conditional in input_types()). Bound at runtime by the
+                # OverlapTextGenerationPipeline from
+                # StructuredOutputOverlapState.
+                pinned_bitmask_graph: TensorValue | None = None
+                wait_payload_graph: BufferValue | None = None
+                device_bitmask_scratch_graph: BufferValue | None = None
+                if nn_model.enable_structured_output:
+                    pinned_bitmask_graph = next(variadic_args_iter).tensor
+                    wait_payload_graph = next(variadic_args_iter).buffer
+                    device_bitmask_scratch_graph = next(
+                        variadic_args_iter
+                    ).buffer
+
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=devices_input_row_offsets.tensor,
@@ -466,6 +485,9 @@ class UnifiedDflashKimiK25Model(_UnifiedSpecDecodeModelMixin, KimiK2_5Model):
                     image_token_indices=image_token_indices_in,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
+                    pinned_bitmask=pinned_bitmask_graph,
+                    wait_payload=wait_payload_graph,
+                    device_bitmask_scratch=device_bitmask_scratch_graph,
                 )
                 graph.output(*outputs)
 

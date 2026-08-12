@@ -330,6 +330,13 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed structured output and constrained tool calling being silently ignored
+  on the Kimi K2.5-family pipelines when serving with DFlash speculative
+  decoding (`--speculative-method dflash`). The unified DFlash graph compiled
+  without the constrained-decoding bitmask inputs. The graph now binds the
+  bitmask inputs and applies the grammar mask across every speculative position,
+  matching the EAGLE speculative-decoding pipelines.
+
 - Fixed DeepSeek-V3.2 and GLM-5.x pipelines ignoring `--max-length`: the
   resolved maximum sequence length was silently pinned to the DeepSeek
   default (163840) regardless of the flag or the checkpoint's advertised

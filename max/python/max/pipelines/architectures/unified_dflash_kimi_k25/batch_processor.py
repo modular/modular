@@ -89,4 +89,5 @@ class UnifiedDflashKimiK25BatchProcessor(KimiK2_5BatchProcessor):
             ep_inputs=base.ep_inputs,
             draft_tokens=draft_tokens,
             seed=self._next_seed(),
+            structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
         )
