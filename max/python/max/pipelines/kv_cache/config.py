@@ -287,6 +287,7 @@ class KVCacheConfig(ConfigFileModel):
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
         allow_kv_head_replication: bool | None = None,
+        page_size: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -314,6 +315,10 @@ class KVCacheConfig(ConfigFileModel):
             allow_kv_head_replication: Replicate KV heads for TP wider than the
                 KV head count. Defaults to ``None`` (falls back to the config's
                 :attr:`allow_kv_head_replication`).
+            page_size: Tokens per KV cache page. Defaults to ``None`` (falls
+                back to the config's :attr:`kv_cache_page_size`). Architectures
+                with a kernel-imposed minimum page size pass their effective
+                value here instead of mutating the shared config.
 
         Returns:
             The constructed KV cache parameters.
@@ -334,7 +339,9 @@ class KVCacheConfig(ConfigFileModel):
             dtype=dtype,
             head_dim=head_dim,
             num_layers=num_layers,
-            page_size=self.kv_cache_page_size,
+            page_size=(
+                page_size if page_size is not None else self.kv_cache_page_size
+            ),
             enable_prefix_caching=self.enable_prefix_caching,
             enable_dp_cross_replica_prefix_copy=(
                 self.enable_dp_cross_replica_prefix_copy
