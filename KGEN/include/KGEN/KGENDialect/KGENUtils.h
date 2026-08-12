@@ -28,6 +28,9 @@
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/BitVector.h"
 
+#include <optional>
+#include <utility>
+
 namespace M::KGEN {
 class DeclInterface;
 class FuncInterface;
@@ -97,6 +100,11 @@ bool isTypeExprType(Type type);
 
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
+
+/// If `prop` asserts that its two operands denote the same value -- so that a
+/// consumer may substitute either one for the other -- return the pair.
+std::optional<std::pair<TypedAttr, TypedAttr>>
+getIdentityProposition(TypedAttr prop);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like

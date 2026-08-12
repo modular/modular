@@ -1723,6 +1723,31 @@ bool KGEN::isTypeExprType(Type type) {
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
+std::optional<std::pair<TypedAttr, TypedAttr>>
+KGEN::getIdentityProposition(TypedAttr prop) {
+  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
+    if (identical.getNumOperands() == 2)
+      return std::make_pair(identical.getOperand(0), identical.getOperand(1));
+
+  auto op = sugarDynCast<ParamOperatorAttr>(prop);
+  if (!op || op.getOpcode() != POC::EQ || op.getOperands().size() != 2)
+    return std::nullopt;
+
+  // A lane-wise `eq` answers identity only where the two coincide, which rules
+  // out floats: IEEE equality holds between values that are not
+  // interchangeable (`+0.0` and `-0.0`) and fails between a value and itself
+  // (NaN). An unresolved dtype might still turn out to be a float.
+  Type operandType = op.getOperand(0).getType();
+  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
+    std::optional<KGENDType> dtype = simdType.getResolvedDType();
+    if (!dtype || !dtype->isIntLike())
+      return std::nullopt;
+  } else if (!operandType.isIntOrIndex()) {
+    return std::nullopt;
+  }
+  return std::make_pair(op.getOperand(0), op.getOperand(1));
+}
+
 KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
                                       CompilationContext *compileCtx) {
   NamedAttrList envAttrs;
