@@ -727,6 +727,39 @@ def test_multiple_tool_calls_same_function() -> None:
     assert queries == ["first query", "second query", "third query"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="TODO(CENG-769): the section scan takes the first SECTION_END, so a "
+    "lookalike inside a string argument strands its call and drops later ones",
+)
+def test_section_end_lookalike_in_argument_value() -> None:
+    """Test a JSON string argument that contains the section-end text.
+
+    With tool-call constrained decoding off the model can emit
+    ``<|tool_calls_section_end|>`` inside an argument value. Treating that
+    as the real section end strands the call it sits in and drops every
+    later call in the response.
+    """
+    parser = KimiToolParser()
+
+    response = f"""<|tool_calls_section_begin|>
+<|tool_call_begin|>functions.write_file:0<|tool_call_argument_begin|>
+{json.dumps({"content": "the marker is <|tool_calls_section_end|> here"})}
+<|tool_call_end|>
+<|tool_call_begin|>functions.get_time:1<|tool_call_argument_begin|>
+{{"timezone": "EST"}}
+<|tool_call_end|>
+<|tool_calls_section_end|>"""
+
+    result = parser.parse_complete(response)
+
+    assert [tc.name for tc in result.tool_calls] == ["write_file", "get_time"]
+    assert json.loads(result.tool_calls[0].arguments) == {
+        "content": "the marker is <|tool_calls_section_end|> here"
+    }
+    assert json.loads(result.tool_calls[1].arguments) == {"timezone": "EST"}
+
+
 def test_special_characters_in_arguments() -> None:
     """Test handling of special characters in tool arguments."""
     parser = KimiToolParser()
