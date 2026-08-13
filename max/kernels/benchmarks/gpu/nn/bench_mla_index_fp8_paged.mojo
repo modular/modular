@@ -234,33 +234,31 @@ def execute_mla_indexer_paged[
     )
     var o_tile = TileTensor(o_device, row_major(total_seq_len, top_k))
 
-    @__parameter
-    @__copy_capture(
-        o_tile, q_tile, qs_tile, input_row_offsets_tile, k_collection
-    )
     @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(launch_ctx: DeviceContext) raises:
-            mla_indexer_ragged_float8_paged[
-                DType.float8_e4m3fn,
-                type_of(k_collection),
-                num_heads,
-                depth,
-                top_k,
-                MaskName.CAUSAL.name,
-            ](
-                o_tile,
-                q_tile,
-                qs_tile,
-                input_row_offsets_tile,
-                k_collection,
-                UInt32(0),
-                launch_ctx,
-            )
+    def kernel_launch(
+        launch_ctx: DeviceContext,
+    ) raises {mut o_tile, imm}:
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            top_k,
+            MaskName.CAUSAL.name,
+        ](
+            o_tile,
+            q_tile,
+            qs_tile,
+            input_row_offsets_tile,
+            k_collection,
+            UInt32(0),
+            launch_ctx,
+        )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @__parameter
+    @always_inline
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(
