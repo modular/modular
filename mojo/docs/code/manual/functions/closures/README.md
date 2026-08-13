@@ -1,7 +1,7 @@
 # Code examples and tests for closures
 
-This directory contains Code examples and tests for the
-[Closures](../../../../manual/values/closures.mdx) section of
+This directory contains code examples and tests for the
+[Closures](../../../../manual/functions/closures.mdx) section of
 the Mojo Manual.
 
 Contents:

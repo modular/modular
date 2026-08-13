@@ -1,7 +1,8 @@
 # Code examples and tests for lambda expressions
 
 This directory contains code examples and tests for the
-[Lambda expressions](../../../manual/lambda.mdx) section of the Mojo Manual.
+[Lambda expressions](../../../../manual/functions/lambda.mdx) section of the
+Mojo Manual.
 
 Contents:
 

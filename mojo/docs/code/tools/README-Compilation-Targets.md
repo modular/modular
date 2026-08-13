@@ -19,7 +19,7 @@ and target resolution but not the end-to-end user experience on
 different host hardware.
 
 **Where:** Placed in _/oss/modular/mojo/docs/code/tools_
-under _README-Compilation-Targets.md_ and _test\_cross\_compile.sh_.
+under _README-Compilation-Targets.md_ and _test\_compilation\_targets.sh_.
 
 **Important note:** On non-Apple hosts, test 18 will fail. `metal:4` is
 hardcoded to the test.
