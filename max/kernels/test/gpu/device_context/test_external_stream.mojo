@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.ffi import _CPointer
 from std.gpu import global_idx
 from max.gpu.host import DeviceContext, DeviceStream
 from max.gpu.host._amdgpu_hip import HIP
@@ -24,7 +23,7 @@ from std.testing import assert_equal
 
 def native_stream_ptr(
     stream: DeviceStream,
-) raises -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
+) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
     comptime if has_nvidia_gpu_accelerator():
         return unsafe_cast[Type=NoneType](CUDA(stream))
     else:

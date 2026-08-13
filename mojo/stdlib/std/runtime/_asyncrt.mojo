@@ -21,7 +21,7 @@ standard library and the kernel library should not depend on it.
 
 from std.os import abort
 from std.atomic import Atomic
-from std.ffi import _CPointer, external_call
+from std.ffi import external_call
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 
 from std.builtin._coroutine import (
@@ -41,7 +41,7 @@ struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: _CPointer[Int, MutUntrackedOrigin]
+    var storage: OptionalPointer[Int, MutUntrackedOrigin]
 
     def __init__(out self):
         self.storage = {}

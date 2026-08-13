@@ -27,7 +27,7 @@ from max.gpu.host import (
 )
 
 from std.collections.optional import OptionalReg
-from std.ffi import c_size_t, external_call, _CPointer
+from std.ffi import c_size_t, external_call
 from std.logger import Logger
 from std.sys import bit_width_of, size_of
 from std.memory.unsafe import bitcast
@@ -68,13 +68,13 @@ comptime _DeviceGraphBuilderPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphBuilderCpp, origin]
+] = OptionalPointer[_DeviceGraphBuilderCpp, origin]
 
 comptime _DeviceGraphPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceGraphCpp, origin]
+] = OptionalPointer[_DeviceGraphCpp, origin]
 
 
 @fieldwise_init

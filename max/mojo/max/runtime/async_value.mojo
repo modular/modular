@@ -20,7 +20,7 @@ backing memory alive (for example, inside the `OwnedByteBuffer` and
 `RCRef[AsyncValue]`.
 """
 
-from std.ffi import _CPointer, external_call
+from std.ffi import external_call
 
 from max.gpu.host import DeviceBuffer
 
@@ -32,14 +32,14 @@ struct _AsyncValueCpp:
 
 
 # Typed, nullable C pointer to the C++ `AsyncValue`. A null handle is the empty /
-# non-tracked reference, so `_CPointer` (nullable) is required rather than a bare
+# non-tracked reference, so `OptionalPointer` (nullable) is required rather than a bare
 # `UnsafePointer`; the default `UntrackedOrigin` marks the pointee as living
 # outside the Mojo program, mirroring `_DeviceBufferPtr`.
 comptime _AsyncValuePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_AsyncValueCpp, origin]
+] = OptionalPointer[_AsyncValueCpp, origin]
 
 
 struct AnyAsyncValueRef(ImplicitlyCopyable, Movable):

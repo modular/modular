@@ -13,7 +13,7 @@
 
 from std.logger import Logger
 from std.math import fma
-from std.ffi import external_call, c_size_t, _CPointer
+from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 from max.algorithm.functional import elementwise
@@ -1359,7 +1359,7 @@ comptime TensorBufferRefPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_TensorBufferRefCpp, origin]
+] = OptionalPointer[_TensorBufferRefCpp, origin]
 
 
 # Opaque stand-in for the C++ `M::MLRT::StateContext` type. Mojo never sees the
@@ -1376,7 +1376,7 @@ comptime _StateContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_StateContextCpp, origin]
+] = OptionalPointer[_StateContextCpp, origin]
 
 # `StateContextRef` is the pointer representation passed across the FFI boundary;
 # Mojo never dereferences it directly.

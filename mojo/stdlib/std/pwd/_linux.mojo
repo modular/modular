@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import c_char, external_call, _CPointer
+from std.ffi import c_char, external_call
 
 from .pwd import Passwd
 
@@ -45,7 +45,7 @@ def _build_pw_struct(passwd_ptr: Pointer[mut=False, _C_Passwd, _]) -> Passwd:
 
 def _getpw_linux(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+        "getpwuid", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
     ](uid)
     try:
         return _build_pw_struct(passwd_ptr[])
@@ -55,7 +55,7 @@ def _getpw_linux(uid: UInt32) raises -> Passwd:
 
 def _getpw_linux(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", _CPointer[_C_Passwd, UntrackedOrigin[mut=True]]
+        "getpwnam", OptionalPointer[_C_Passwd, UntrackedOrigin[mut=True]]
     ](name.as_c_string_slice().unsafe_ptr())
     try:
         return _build_pw_struct(passwd_ptr[])

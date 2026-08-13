@@ -12,20 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from std.ffi import external_call, _CPointer, _get_global
+from std.ffi import external_call, _get_global
 from std.sys.compile import SanitizeAddress
 from std.sys import stderr
 
 
-def _init_global_runtime() -> _CPointer[NoneType, UntrackedOrigin[mut=True]]:
+def _init_global_runtime() -> (
+    OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+):
     return external_call[
         "KGEN_CompilerRT_AsyncRT_GetOrCreateCPUDevice",
-        _CPointer[NoneType, UntrackedOrigin[mut=True]],
+        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
 
 
 def _destroy_global_runtime(
-    ptr: _CPointer[NoneType, UntrackedOrigin[mut=True]]
+    ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 ):
     """Destroy the global runtime if ever used."""
     external_call["KGEN_CompilerRT_AsyncRT_ReleaseCPUDevice", NoneType](ptr)
@@ -35,7 +37,7 @@ def _destroy_global_runtime(
 def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentCPUDevice",
-        _CPointer[NoneType, UntrackedOrigin[mut=True]],
+        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
     ]()
     if current_runtime:
         return
