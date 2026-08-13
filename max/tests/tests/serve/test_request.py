@@ -71,10 +71,36 @@ def test_records_error_code(request_count: mock.Mock) -> None:
 
 
 def test_records_500_for_unhandled_exception(request_count: mock.Mock) -> None:
-    with TestClient(_make_app(), raise_server_exceptions=False) as client:
+    # ``raise_server_exceptions`` stays at its default: the middleware answers
+    # the request itself, so the exception never reaches the transport.
+    with TestClient(_make_app()) as client:
         response = client.get("/v1/crash")
     assert response.status_code == 500
     request_count.assert_called_once_with(500, "/v1/crash")
+
+
+def test_unhandled_exception_returns_openai_error_envelope() -> None:
+    """An unhandled route exception is answered in the OpenAI error shape.
+
+    Raising from this middleware instead bypasses the app's ``HTTPException``
+    handler -- it runs outside Starlette's exception middleware -- and reaches
+    ``ServerErrorMiddleware``, which replies in ``text/plain`` and re-raises,
+    closing the connection under a client that was owed a response.
+    """
+    with TestClient(_make_app()) as client:
+        response = client.get("/v1/crash")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["X-Request-ID"]
+    assert response.json() == {
+        "error": {
+            "code": "500",
+            "message": "Internal server error.",
+            "param": "",
+            "type": "api_error",
+        }
+    }
 
 
 def test_skips_probe_endpoints(request_count: mock.Mock) -> None:
