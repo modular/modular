@@ -455,6 +455,126 @@ def _stochastic_sampler_inputs(
     ]
 
 
+_TOP_P_GAP_PROBS = np.array([0.85, 0.10, 0.049, 0.001], dtype=np.float64)
+_TOP_P_GAP_TOP_P = 0.5
+_TOP_P_GAP_DRAFT_TOKEN = 2
+
+
+def _top_p_gap_inputs(
+    device: Device, batch_size: int, seed: int
+) -> list[Buffer]:
+    """Sampler inputs whose top_p=0.5 nucleus is exactly {token 0}.
+
+    The draft token (2) carries ~5% unfiltered probability, but zero
+    probability under any top_p-filtered distribution: a top_p-respecting
+    sampler can only ever emit token 0.
+    """
+    num_steps = 1
+    vocab_size = _TOP_P_GAP_PROBS.size
+    logits_row = np.log(_TOP_P_GAP_PROBS).astype(np.float32)
+    logits = np.tile(logits_row, (batch_size * (num_steps + 1), 1))
+    draft_tokens = np.full(
+        (batch_size, num_steps), _TOP_P_GAP_DRAFT_TOKEN, dtype=np.int64
+    )
+    return _stochastic_sampler_inputs(
+        device,
+        batch_size,
+        vocab_size,
+        draft_tokens,
+        logits,
+        np.ones(batch_size, dtype=np.float32),
+        top_p_np=np.full(batch_size, _TOP_P_GAP_TOP_P, dtype=np.float32),
+        seed=seed,
+    )
+
+
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+def test_stochastic_acceptance_bonus_token_honors_top_p(
+    device: Device,
+) -> None:
+    """Bonus tokens go through ``topk_fused_sampling``, so tokens outside
+    the top_p nucleus are never emitted there."""
+    session = InferenceSession(devices=[device])
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device)
+        )
+    )
+    batch_size = 64
+    for seed in range(1, 17):
+        _, _, bonus = model.execute(
+            *_top_p_gap_inputs(device, batch_size, seed)
+        )
+        bonus_np = cast(Buffer, bonus).to_numpy()
+        assert np.all(bonus_np == 0), (
+            f"bonus token escaped the top_p nucleus: {np.unique(bonus_np)}"
+        )
+
+
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+@pytest.mark.xfail(
+    strict=True,
+    reason="SERVOPT-1563",
+)
+def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
+    device: Device,
+) -> None:
+    """A draft token outside the top_p nucleus must never be committed."""
+    session = InferenceSession(devices=[device])
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device)
+        )
+    )
+    batch_size = 64
+    num_steps = 1
+    accepted = 0
+    for seed in range(1, 17):
+        first_rejected, _, _ = model.execute(
+            *_top_p_gap_inputs(device, batch_size, seed)
+        )
+        first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+        accepted += int((first_rejected_np == num_steps).sum())
+    assert accepted == 0, (
+        f"{accepted}/1024 draft positions committed a token outside the "
+        "top_p nucleus"
+    )
+
+
+@pytest.mark.parametrize("device", [Accelerator(), CPU()])
+@pytest.mark.xfail(
+    strict=True,
+    reason="SERVOPT-1563",
+)
+def test_stochastic_acceptance_honors_top_p_for_recovered_tokens(
+    device: Device,
+) -> None:
+    """The recovered token committed at a rejection must stay in the nucleus."""
+    session = InferenceSession(devices=[device])
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device)
+        )
+    )
+    batch_size = 64
+    rejected_rows = 0
+    outside_nucleus = 0
+    for seed in range(1, 17):
+        first_rejected, recovered, _ = model.execute(
+            *_top_p_gap_inputs(device, batch_size, seed)
+        )
+        first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+        recovered_np = cast(Buffer, recovered).to_numpy()
+        committed = recovered_np[first_rejected_np == 0, 0]
+        rejected_rows += committed.size
+        outside_nucleus += int((committed != 0).sum())
+    assert rejected_rows > 0, "expected frequent rejections with p(draft)~=0.05"
+    assert outside_nucleus == 0, (
+        f"{outside_nucleus}/{rejected_rows} recovered tokens landed outside "
+        "the top_p nucleus"
+    )
+
+
 def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     """Guards per-row indexing of temperature/top_k/top_p."""
     device = Accelerator()
