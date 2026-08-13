@@ -19,6 +19,20 @@ filegroup(
 )
 
 modular_py_test(
+    name = "test_preprocess_cache",
+    srcs = ["test_preprocess_cache.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen2_5vl",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/support",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
     name = "test_image_processor",
     srcs = ["test_image_processor.py"],
     tags = [

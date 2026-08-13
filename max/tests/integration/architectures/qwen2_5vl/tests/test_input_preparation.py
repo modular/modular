@@ -50,7 +50,7 @@ from max.pipelines.context import (
     TextAndVisionContext,
     TokenBuffer,
 )
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
@@ -329,6 +329,10 @@ def mock_pipeline_config(qwen_token_ids: dict[str, int]) -> MagicMock:
 
     # Create mock pipeline config
     pipeline_config = MagicMock()
+    # A real runtime config, not a MagicMock: the tokenizer sizes its
+    # preprocessed image cache from these budgets, and arithmetic on a
+    # MagicMock raises.
+    pipeline_config.runtime = PipelineRuntimeConfig()
     pipeline_config.model = model_config
     return pipeline_config
 
