@@ -217,15 +217,15 @@ def use_mypair():
     mine.dump()
 ```
 
-The `MyPair` struct contains two special methods, `__init__()`, the constructor,
-and `__init__(out self, *, copy: Self)`, the copy constructor.
+The `MyPair` struct contains two special methods, `__init__()`, the initializer,
+and `__init__(out self, *, copy: Self)`, the copy initializer.
 _Lifecycle methods_ like this control how Mojo creates, copies, moves, and
 destroys a struct.
 
 For most simple types, you don't need to write the lifecycle methods. You can
 use the [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/)
 decorator to generate the boilerplate field-wise initializer for you, and Mojo
-synthesizes copy and move constructors if you ask for them with trait
+synthesizes copy and move initializers if you ask for them with trait
 conformance. So you can simplify the `MyPair` struct to this:
 
 ```mojo

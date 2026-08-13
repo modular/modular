@@ -505,7 +505,7 @@ def add(x: String, y: String) -> String:
 If you pass anything other than `Int` or `String` to the `add()` function,
 you'll get a compiler error. That is, unless `Int` or `String` can implicitly
 cast the type into their own type. For example, `String` includes an overloaded
-version of its constructor (`__init__()`) that supports
+version of its initializer (`__init__()`) that supports
 [implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion)
 from a `StringLiteral` value. Thus, you can also pass a `StringLiteral` to a
 function that expects a `String`.
@@ -534,7 +534,7 @@ When resolving an overloaded function, Mojo looks at:
 - The type of each argument and each compile-time parameter.
 - The argument conventions on each argument.
 - Whether the candidate is an instance method or `@staticmethod`.
-- Whether a constructor is `@implicit`.
+- Whether an initializer is `@implicit`.
 
 Mojo does **not** look at the return type, the `raises` effect, or any
 context surrounding the call. Two functions that differ only in return
@@ -626,7 +626,7 @@ def get_name_tag(var name: String, out name_tag: NameTag):
 
 The `out` argument convention identifies an uninitialized variable that the
 function must initialize. (This is the same as the `out` convention used in
-[struct constructors](/docs/manual/lifecycle/life/#constructor).) The `out`
+[struct initializers](/docs/manual/lifecycle/life/#constructor).) The `out`
 argument for a named result can appear anywhere in the argument list, but by
 convention, it should be the last argument in the list.
 

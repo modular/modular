@@ -449,7 +449,7 @@ operands to the desired type.
 
 You can explicitly convert a `SIMD` value to a different `SIMD` type either by
 invoking its [`cast()`](/docs/std/builtin/simd/SIMD/#cast) method or by passing
-it as an argument to the constructor of the target type. For example:
+it as an argument to the initializer of the target type. For example:
 
 ```mojo
 var simd1 = SIMD[DType.float32, 4](2.2, 3.3, 4.4, 5.5)
@@ -458,7 +458,7 @@ var simd3 = simd1 * simd2.cast[DType.float32]()  # Convert with cast() method
 print("simd3:", simd3)
 var simd4 = simd2 + SIMD[DType.int16, 4](
     simd1
-)  # Convert with SIMD constructor
+)  # Convert with SIMD initializer
 print("simd4:", simd4)
 ```
 
@@ -467,7 +467,7 @@ simd3: [-2.2, 6.6, -13.200001, 22.0]
 simd4: [1, 5, 1, 9]
 ```
 
-You can convert a `Scalar` value by passing it as an argument to the constructor
+You can convert a `Scalar` value by passing it as an argument to the initializer
 of the target type. For example:
 
 ```mojo
@@ -482,11 +482,11 @@ Result: 9.0
 ```
 
 You can convert a scalar value of any numeric type to `Int` by passing the value
-to the [`Int()`](/docs/std/builtin/simd/SIMD/#__init__) constructor method.
+to the [`Int()`](/docs/std/builtin/simd/SIMD/#__init__) initializer method.
 Additionally, you can pass an instance of any struct that implements the
 [`Intable`](/docs/std/builtin/int/Intable/) trait or
 [`IntableRaising`](/docs/std/builtin/int/IntableRaising/) trait to the `Int()`
-constructor to convert that instance to an `Int`.
+initializer to convert that instance to an `Int`.
 
 ## Strings
 
@@ -507,7 +507,7 @@ print(s) # Testing Mojo strings
 Many standard library types conform to the
 [`Writable`](/docs/std/format/Writable/) trait, which indicates
 that a value can be converted into a `String` using the `String(...)`
-constructor.
+initializer.
 
 The built-in [`print()`](/docs/std/io/io/print/) function accepts values
 that conform to the `Writable` trait.
@@ -519,7 +519,7 @@ var s = "Items in list: " + String(5)
 print(s) # Items in list: 5
 ```
 
-Or, use the string constructor with variadic `Writable` types,
+Or, use the string initializer with variadic `Writable` types,
 so you don't have to call `String()` on each value:
 
 ```mojo
@@ -926,7 +926,7 @@ var empty_dict: Dict[String, Float64] = {}
 var values: Dict[String, Float64] = {"pi": 3.14159, "e": 2.71828}
 ```
 
-You can also use the constructor syntax:
+You can also use the initializer syntax:
 
 ```mojo
 var values = Dict[String, Float64]()

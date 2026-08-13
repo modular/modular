@@ -294,7 +294,7 @@ support the operation:
 ```mojo
 struct Unsound(Copyable):
     var item: SomeMoveOnlyType
-    # Error: cannot synthesize copy constructor because
+    # Error about synthesizing the copy initializer because
     # field 'item' has non-copyable type SomeMoveOnlyType
 ```
 

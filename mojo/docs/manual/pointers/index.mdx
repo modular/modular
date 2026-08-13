@@ -198,7 +198,7 @@ An owned pointer can hold almost any type of item, but when constructing an
 Since an `OwnedPointer` is designed to enforce single ownership, the pointer
 itself can be moved, but not copied.
 
-`OwnedPointer` does provide a constructor that creates a new `OwnedPointer` by
+`OwnedPointer` does provide an initializer that creates a new `OwnedPointer` by
 copying the _stored value_ from an existing `OwnedPointer`. This results in two
 owned pointers, each with its own separate allocation and its own copy of the
 stored value.

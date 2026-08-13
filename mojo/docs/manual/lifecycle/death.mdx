@@ -101,8 +101,8 @@ and algorithms.
 ### Benefits of ASAP destruction
 
 Similar to other languages, Mojo follows the principle that objects/values
-acquire resources in a constructor (`__init__()`) and release resources in
-a destructor (`__deinit__()`). However, Mojo's ASAP destruction has some
+acquire resources in an initializer (`__init__()`) and release resources in
+a deinitializer (`__deinit__()`). However, Mojo's ASAP destruction has some
 advantages over scope-based destruction (such as the C++ [RAII
 pattern](https://en.cppreference.com/w/cpp/language/raii), which waits until
 the end of the code scope to destroy values):
@@ -518,7 +518,7 @@ it's likewise impossible to destroy an object by destroying only its fields.
 
 ### Field lifetimes during move and destruction {#field-lifetimes-during-destruct-and-move}
 
-Both the consuming move constructor and the destructor take their operand
+Both the consuming move initializer and the destructor take their operand
 with the `deinit` argument convention. This grants exclusive ownership of
 the value and marks it as destroyed at the end of the function. Within the
 function body, Mojo's ASAP policy still applies to fields: each field is

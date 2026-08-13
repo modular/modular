@@ -117,7 +117,7 @@ initialized or uninitialized:
 
 - Pointing to initialized memory. You can initialize an allocated, uninitialized
   pointer by moving or copying an existing value into the memory. Or you can
-  construct a pointer to an existing value by calling the constructor with the
+  construct a pointer to an existing value by calling the initializer with the
   `to` keyword argument.
 
   ```mojo no-test
@@ -235,7 +235,7 @@ ptr.unsafe_write(copy=my_value)
 ```
 
 Alternately, you can get a pointer to an existing value by calling the
-`Pointer` constructor with the keyword `to` argument. This is useful for
+`Pointer` initializer with the keyword `to` argument. This is useful for
 getting a pointer to a value on the stack, for example.
 
 ```mojo
@@ -274,7 +274,7 @@ ptr.unsafe_offset(3)[] = 0
 You cannot safely use the dereference operator on uninitialized memory, even to
 *initialize* a pointee. This is because assigning to a dereferenced pointer
 calls lifecycle methods on the existing pointee (such as the destructor, move
-constructor or copy constructor).
+initializer or copy initializer).
 
 ```mojo
 var allocation = alloc[String]({count = 1})
@@ -289,7 +289,7 @@ str_ptr[] += " pointers"  # Works now
 The
 [`unsafe_take_pointee()`](/docs/std/memory/pointer/Pointer/#unsafe_take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is a
-consuming move. It invokes the move constructor on the destination value. It
+consuming move. It invokes the move initializer on the destination value. It
 leaves the memory location uninitialized.
 
 The
@@ -432,7 +432,7 @@ tracked by Mojo's lifetime checker and you're responsible for freeing it.
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside
 of the struct. For example, if you implement a static array type that allocates
-memory in its constructor, deallocates it in its destructor, and doesn't expose
+memory in its initializer, deallocates it in its destructor, and doesn't expose
 the pointer outside of the struct, the default origin is fine.
 
 But if the struct exposes a pointer or reference to that memory, you need to set
