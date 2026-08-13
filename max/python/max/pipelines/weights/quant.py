@@ -939,6 +939,90 @@ def _is_mxfp4_config(hf_quant_config: dict[str, Any]) -> bool:
     return False
 
 
+def _is_mxfp6_config(hf_quant_config: dict[str, Any]) -> bool:
+    """Checks whether a HuggingFace quantization config describes MXFP6."""
+    quant_method = hf_quant_config.get("quant_method", "").lower()
+    if quant_method == "mxfp6":
+        return True
+    # Quark-shaped config, as `amd/*-MXFP4` uses for FP4.
+    if quant_method == "quark":
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        return weight_cfg.get("scale_format") == "e8m0" and weight_cfg.get(
+            "dtype"
+        ) in ("fp6", "fp6_e2m3", "fp6_e3m2")
+    return False
+
+
+def _mxfp6_element_format(hf_quant_config: dict[str, Any]) -> str:
+    """Extracts the FP6 element encoding from a quantization config.
+
+    Both encodings occupy 6 bits, so the packed tensor shape cannot tell them
+    apart -- the config is the only record of which one the bytes hold, and
+    decoding with the wrong one silently produces garbage. Defaults to E2M3,
+    which is what the requantizer writes unless asked otherwise.
+    """
+    declared = hf_quant_config.get("fp6_format")
+    if declared is None:
+        weight_cfg = hf_quant_config.get("global_quant_config", {}).get(
+            "weight", {}
+        )
+        dtype = weight_cfg.get("dtype", "")
+        declared = dtype.removeprefix("fp6_") if "_" in dtype else None
+    if declared is None:
+        return "e2m3"
+    if declared.lower() not in ("e2m3", "e3m2"):
+        raise ValueError(
+            f"Unrecognized MXFP6 element format {declared!r}; expected "
+            f"'e2m3' or 'e3m2'."
+        )
+    return declared.lower()
+
+
+def _parse_mxfp6_config(
+    huggingface_config: AutoConfig,
+    state_dict: Mapping[str, WeightData],
+    dtype: DType,
+) -> QuantConfig:
+    """Parses a QuantConfig for MXFP6 quantization.
+
+    Structurally identical to MXFP4 -- float8_e8m0fnu scales over 32-element
+    blocks, no input scale in the checkpoint because activations are quantized
+    on the fly -- differing only in how many bytes the packed weight occupies
+    and in which element encoding those bytes use.
+
+    The caller must verify :func:`_is_mxfp6_config` before calling this.
+    """
+    hf_quant_config = getattr(huggingface_config, "quantization_config", {})
+
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float8_e8m0fnu,
+        block_size=(1, 32),
+    )
+
+    num_hidden_layers = _get_num_hidden_layers(huggingface_config)
+
+    return QuantConfig(
+        input_scale=input_spec,
+        weight_scale=weight_spec,
+        mlp_quantized_layers=set(range(num_hidden_layers)),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=DType.bfloat16,
+        bias_dtype=_bias_dtype(state_dict),
+        format=QuantFormat.MXFP6,
+        _mxfp6_element_format=_mxfp6_element_format(hf_quant_config),
+        can_use_fused_mlp=can_use_fused_mlp(state_dict),
+    )
+
+
 def _parse_mxfp4_config(
     huggingface_config: AutoConfig,
     state_dict: Mapping[str, WeightData],
@@ -1040,6 +1124,11 @@ def parse_quant_config(
     # since only MoE weights are quantized; attention/embedding stay bf16).
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     if hf_quant_config:
+        # MXFP6 is checked first: a Quark config declares both through the same
+        # fields, and only the weight `dtype` tells them apart.
+        if _is_mxfp6_config(hf_quant_config):
+            return _parse_mxfp6_config(huggingface_config, state_dict, dtype)
+
         if _is_mxfp4_config(hf_quant_config):
             return _parse_mxfp4_config(huggingface_config, state_dict, dtype)
 
@@ -1051,6 +1140,7 @@ def parse_quant_config(
             "gptq",
             "modelopt",
             "mxfp4",
+            "mxfp6",
             "mxfp8",
             "quark",
         ):
