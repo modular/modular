@@ -4616,6 +4616,57 @@ class DeferredType(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class FuncGeneratorTypeBuilderType(max._core.Type):
+    """
+    The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
+    from its components: the parameters declared by the generator (an array of
+    `param.decl`s), the argument types (a `param_list` of `kgen.type`), the
+    result type (a `kgen.type`), and the function metadata (a `fn_metadata`).
+    It folds into the generator type itself once all of its components are
+    constant.
+
+    Every component is a parameter expression, so a still-symbolic piece (e.g.
+    an argument pack referenced by name) can be represented before elaboration.
+
+    NOTE: the builder constructs a bare FuncTypeGeneratorType, poglist for
+    param/arg should be attached later.
+
+    Example:
+
+    ```mlir
+    !kgen.func_gen_type_builder<
+      #kgen<param.decls[T : !kgen.type]>,
+      #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
+      #kgen.param.decl.ref<"T"> : !kgen.type,
+      #kgen.fn_metadata<[read], "none">>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        param_decls: max._core.dialects.builtin.TypedAttr,
+        arg_types: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.dialects.builtin.TypedAttr,
+        metadata: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        param_decls: max._core.dialects.builtin.TypedAttr,
+        arg_types: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.dialects.builtin.TypedAttr,
+        metadata: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def param_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def arg_types(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def result_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def metadata(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class FuncLiteralType(max._core.Type):
     """
     This type describes the type of a literal function in KGEN, in additional to
