@@ -270,6 +270,72 @@ def KGEN_FuncTypeGeneratorType : DialectType<KGENDialect,
     "KGEN GeneratorType wrapping a FuncType", "FuncTypeGeneratorType">;
 
 //===----------------------------------------------------------------------===//
+// FuncGeneratorTypeBuilderType
+//===----------------------------------------------------------------------===//
+
+def KGEN_FuncGeneratorTypeBuilderType : KGENType<"FuncGeneratorTypeBuilder",
+    "func_gen_type_builder"> {
+  let summary = "A deferred construction of a `!kgen.generator<!kgen.func>`";
+  let description = [{
+    The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
+    from its components: the parameters declared by the generator (an array of
+    `param.decl`s), the argument types (a `param_list` of `kgen.type`), the
+    result type (a `kgen.type`), and the function metadata (a `fn_metadata`).
+    It folds into the generator type itself once all of its components are
+    constant.
+
+    Every component is a parameter expression, so a still-symbolic piece (e.g.
+    an argument pack referenced by name) can be represented before elaboration.
+
+    NOTE: the builder constructs a bare FuncTypeGeneratorType, poglist for
+    param/arg should be attached later.
+
+    Example:
+
+    ```mlir
+    !kgen.func_gen_type_builder<
+      #kgen<param.decls[T : !kgen.type]>,
+      #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
+      #kgen.param.decl.ref<"T"> : !kgen.type,
+      #kgen.fn_metadata<[read], "none">>
+    ```
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$paramDecls,
+    "TypedAttr":$argTypes,
+    "TypedAttr":$resultType,
+    "TypedAttr":$metadata
+  );
+
+  let assemblyFormat = [{
+    `<` $paramDecls `,` $argTypes `,` $resultType `,` $metadata `>`
+  }];
+
+  let genVerifyDecl = 1;
+
+  // Override the builder used by the generated parser: building this type
+  // folds to the generator type it describes when the components are concrete,
+  // so the result is not necessarily a !kgen.func_gen_type_builder.
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Convenience form with inferred context.
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$paramDecls,
+                                        "TypedAttr":$argTypes,
+                                        "TypedAttr":$resultType,
+                                        "TypedAttr":$metadata), [{
+      return get(paramDecls.getContext(), paramDecls, argTypes, resultType,
+                 metadata);
+    }], "Type">,
+
+    // Verbose form with MLIRContext, used by the generated parser.
+    TypeBuilder<(ins "TypedAttr":$paramDecls, "TypedAttr":$argTypes,
+                     "TypedAttr":$resultType, "TypedAttr":$metadata),
+                "", "Type">
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FuncType
 //===----------------------------------------------------------------------===//
 

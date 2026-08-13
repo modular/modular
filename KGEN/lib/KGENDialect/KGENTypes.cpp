@@ -504,6 +504,89 @@ GeneratorType GeneratorType::getSpecializedGenerator(
 }
 
 //===----------------------------------------------------------------------===//
+// FuncGeneratorTypeBuilderType
+//===----------------------------------------------------------------------===//
+
+Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
+                                       TypedAttr argTypes, TypedAttr resultType,
+                                       TypedAttr metadata) {
+  auto cstParamDecls = dyn_cast<ParamDeclArrayAttr>(paramDecls);
+  auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
+  auto cstMetadata = dyn_cast<FnMetaDataAttr>(metadata);
+
+  // If any of the components are not constants, skip.
+  if (!cstParamDecls || !cstArgTypes || !cstMetadata)
+    return Base::get(ctx, paramDecls, argTypes, resultType, metadata);
+
+  // We are going to introduce a new scope, adjust the depth of the existing
+  // index ref by one. Don't adjust implicit origin reference depth (those are
+  // not remapped to a named reference for the builder, should we?).
+  IndexDepthAdjuster adjuster(1, /*onlyAdjustIndexRef=*/true);
+  cstParamDecls = adjuster.replace(cstParamDecls);
+  cstArgTypes = adjuster.replace(cstArgTypes);
+  cstMetadata = adjuster.replace(cstMetadata);
+  resultType = adjuster.replace(resultType);
+
+  SmallVector<Type> inputParamTypes;
+  IndexRefRemapper remapper(ArrayRef<ParamDeclAttr>{});
+  for (ParamDeclAttr decl : cstParamDecls) {
+    auto remapped = remapper.replace(decl);
+    remapper.appendParamDecl(remapped);
+    // record the parameter type.
+    inputParamTypes.push_back(remapped.getType());
+  }
+
+  cstParamDecls = remapper.replace(cstParamDecls);
+  cstArgTypes = remapper.replace(cstArgTypes);
+  resultType = remapper.replace(resultType);
+
+  SmallVector<Type> inputArgTypes =
+      llvm::map_to_vector(cstArgTypes.getValues(), [](TypedAttr attr) -> Type {
+        return ParamType::get(attr);
+      });
+
+  // Fold to the generator type this builder describes.
+  return KGEN::FuncTypeGeneratorType::get(
+      inputParamTypes,
+      FuncType::get(
+          FunctionType::get(ctx, inputArgTypes, ParamType::get(resultType)),
+          cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
+          cstMetadata.getMetadata()),
+      nullptr);
+}
+
+Type FuncGeneratorTypeBuilderType::getChecked(
+    function_ref<InFlightDiagnostic()> emitError, MLIRContext *ctx,
+    TypedAttr paramDecls, TypedAttr argTypes, TypedAttr resultType,
+    TypedAttr metadata) {
+  if (failed(verify(emitError, paramDecls, argTypes, resultType, metadata)))
+    return {};
+  return get(ctx, paramDecls, argTypes, resultType, metadata);
+}
+
+LogicalResult FuncGeneratorTypeBuilderType::verify(
+    function_ref<InFlightDiagnostic()> emitError, TypedAttr paramDecls,
+    TypedAttr argTypes, TypedAttr resultType, TypedAttr metadata) {
+
+  // NOTE:we can not easily verify that this is a list of type values (since
+  // type expressions might in different forms between lit/kgen)
+  if (!isa<ParamListType>(argTypes.getType()))
+    return emitError() << name << " expect to have !kgen.param_list type";
+
+  if (!isa<NonStructTypeType>(paramDecls.getType()))
+    return emitError() << "parameter declarations should have "
+                          "!kgen.non_struct_type type, not "
+                       << paramDecls.getType();
+
+  if (!isa<NonStructTypeType>(metadata.getType()))
+    return emitError()
+           << "function metadata should have !kgen.non_struct_type type, not "
+           << metadata.getType();
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncType
 //===----------------------------------------------------------------------===//
 
