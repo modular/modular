@@ -17,7 +17,14 @@ from std.sys.info import simd_width_of
 
 from std.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TensorLayout, TileTensor
+from layout import (
+    Coord,
+    Idx,
+    PointerStorage,
+    TensorLayout,
+    TensorStorage,
+    TileTensor,
+)
 
 
 # ------------------------------------------------------------------------------
@@ -163,10 +170,17 @@ def tpool_patch_merger[
     output_layout: TensorLayout,
     x_layout: TensorLayout,
     bounds_layout: TensorLayout,
+    OutputStorage: TensorStorage = PointerStorage[element_width=1],
+    XStorage: TensorStorage = PointerStorage[element_width=1],
+    BoundsStorage: TensorStorage = PointerStorage[element_width=1],
 ](
-    output: TileTensor[dtype, output_layout, MutAnyOrigin],
-    x: TileTensor[dtype, x_layout, ImmutAnyOrigin],
-    bounds: TileTensor[DType.int64, bounds_layout, ImmutAnyOrigin],
+    output: TileTensor[
+        dtype, output_layout, MutAnyOrigin, Storage=OutputStorage
+    ],
+    x: TileTensor[dtype, x_layout, ImmutAnyOrigin, Storage=XStorage],
+    bounds: TileTensor[
+        DType.int64, bounds_layout, ImmutAnyOrigin, Storage=BoundsStorage
+    ],
     kH: Int,
     kW: Int,
     max_h: Int,
@@ -180,6 +194,9 @@ def tpool_patch_merger[
         output_layout: Memory layout of the output tensor.
         x_layout: Memory layout of the input tensor.
         bounds_layout: Memory layout of the bounds tensor.
+        OutputStorage: Storage policy of the output tensor.
+        XStorage: Storage policy of the input tensor.
+        BoundsStorage: Storage policy of the bounds tensor.
 
     Args:
         output: Contiguous output tensor [total_output_patches, D].

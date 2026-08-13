@@ -124,7 +124,10 @@ def test_blackwell_matmul_with_epilogue_tensor[
     )
 
     comptime EpilogueType = TileTensor[
-        matmul_config.c_type, type_of(epilogue_shape), ImmutAnyOrigin
+        matmul_config.c_type,
+        type_of(epilogue_shape),
+        ImmutAnyOrigin,
+        Storage=epilogue_tile.Storage,
     ]
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,

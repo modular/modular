@@ -37,7 +37,9 @@ from layout import (
     ComptimeInt,
     Coord,
     Idx,
+    PointerStorage,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -1308,9 +1310,15 @@ def TopKTopPSamplingFromProbKernel[
     out_idx_type: DType,
     deterministic: Bool,
     from_logits: Bool = False,
+    ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
+    OutputStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
-    output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
+    probs: TileTensor[
+        dtype, ProbsLayoutType, probs_origin, Storage=ProbsStorageType
+    ],
+    output: TileTensor[
+        out_idx_type, OutputLayoutType, output_origin, Storage=OutputStorageType
+    ],
     indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int32,
@@ -1357,6 +1365,8 @@ def TopKTopPSamplingFromProbKernel[
         from_logits: If True, `probs` holds raw logits and softmax with
             per-row temperature scaling and min-p masking is fused into the
             kernel (defaults to False).
+        ProbsStorageType: Storage type of the input `probs` tile.
+        OutputStorageType: Storage type of the output `output` tile.
 
     Args:
         probs: Input probability distribution [batch_size, _d].
@@ -1762,6 +1772,12 @@ def topk_topp_sampling_from_prob[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
     ],
+    TopKArrStorageType: TensorStorage = PointerStorage[element_width=1],
+    IndicesStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPArrStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -1770,23 +1786,53 @@ def topk_topp_sampling_from_prob[
     top_p_val: Float32 = 1.0,
     deterministic: Bool = False,
     rng_seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
     rng_offset: UInt64 = 0,
     indices: Optional[
-        TileTensor[out_idx_type, IndicesLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            out_idx_type,
+            IndicesLayoutType,
+            ImmutAnyOrigin,
+            Storage=IndicesStorageType,
+        ]
     ] = None,
     top_k_arr: Optional[
-        TileTensor[out_idx_type, TopKArrLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            out_idx_type,
+            TopKArrLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopKArrStorageType,
+        ]
     ] = None,
     top_p_arr: Optional[
-        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPArrLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPArrStorageType,
+        ]
     ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
     ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
@@ -1814,6 +1860,13 @@ def topk_topp_sampling_from_prob[
         TemperatureLayoutType: Memory layout of the optional `temperature`
             tensor.
         MinPLayoutType: Memory layout of the optional `min_p` tensor.
+        TopKArrStorageType: Storage type of the optional `top_k_arr` tensor.
+        IndicesStorageType: Storage type of the optional `indices` tensor.
+        TopPArrStorageType: Storage type of the optional `top_p_arr` tensor.
+        SeedStorageType: Storage type of the optional `rng_seed` tensor.
+        TemperatureStorageType: Storage type of the optional `temperature`
+            tensor.
+        MinPStorageType: Storage type of the optional `min_p` tensor.
 
     Args:
         ctx: Device context for kernel execution.
@@ -1915,6 +1968,8 @@ def topk_topp_sampling_from_prob[
                 out_idx_type,
                 deterministic,
                 from_logits,
+                ProbsStorageType=probs.Storage,
+                OutputStorageType=output.Storage,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),

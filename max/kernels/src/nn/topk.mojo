@@ -41,8 +41,10 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    PointerStorage,
     RowMajorLayout,
     TensorLayout,
+    TensorStorage,
     TileTensor,
     coord_to_index_list,
     row_major,
@@ -1371,6 +1373,11 @@ def _topk_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    KStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1379,20 +1386,44 @@ def _topk_gpu[
     device_local_topk_idxs: TileTensor[out_idx_type, ...],
     out_vals: TileTensor[mut=True, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[
+        TileTensor[
+            DType.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType
+        ]
+    ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     block_size: Int = 256,
     num_blocks_per_input: Optional[Int] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
     valid: Optional[UnsafePointer[Int8, MutAnyOrigin]] = None,
 ) raises:
@@ -1412,6 +1443,11 @@ def _topk_gpu[
         TopPLayoutType: Layout type of the top_p buffer.
         MinPLayoutType: Layout type of the min_p buffer.
         SeedLayoutType: Layout type of the seed buffer.
+        KStorageType: Storage type of the k buffer.
+        TemperatureStorageType: Storage type of the temperature buffer.
+        TopPStorageType: Storage type of the top_p buffer.
+        MinPStorageType: Storage type of the min_p buffer.
+        SeedStorageType: Storage type of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1600,6 +1636,11 @@ def topk_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    KStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1608,18 +1649,42 @@ def topk_gpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[
+        TileTensor[
+            DType.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType
+        ]
+    ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
     valid: Optional[UnsafePointer[Int8, MutAnyOrigin]] = None,
 ) raises:
@@ -1638,6 +1703,11 @@ def topk_gpu[
         TopPLayoutType: Layout type of the top_p buffer.
         MinPLayoutType: Layout type of the min_p buffer.
         SeedLayoutType: Layout type of the seed buffer.
+        KStorageType: Storage type of the k buffer.
+        TemperatureStorageType: Storage type of the temperature buffer.
+        TopPStorageType: Storage type of the top_p buffer.
+        MinPStorageType: Storage type of the min_p buffer.
+        SeedStorageType: Storage type of the seed buffer.
 
     Args:
         ctx: DeviceContext
@@ -1723,6 +1793,7 @@ def topk_gpu[
             ],
             input.origin,
             address_space=input.address_space,
+            Storage=input.Storage,
         ]
         var internal_out_idxs: TileTensor[
             out_idx_type,
@@ -1732,6 +1803,7 @@ def topk_gpu[
             ],
             out_idxs.origin,
             address_space=out_idxs.address_space,
+            Storage=out_idxs.Storage,
         ]
         var internal_out_vals: TileTensor[
             dtype,
@@ -1741,6 +1813,7 @@ def topk_gpu[
             ],
             out_vals.origin,
             address_space=out_vals.address_space,
+            Storage=out_vals.Storage,
         ]
 
         comptime if input.rank == 1:
@@ -1885,24 +1958,53 @@ def _topk_topp_sampling_fi[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    KStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
     min_top_p: Float32,
     input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
-    k: Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[
+        TileTensor[
+            out_idx_type, KLayoutType, ImmutAnyOrigin, Storage=KStorageType
+        ]
+    ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
     ] = None,
     rng_seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
 ) raises:
     """Top-K + top-P + min-P sampling.
@@ -1915,7 +2017,7 @@ def _topk_topp_sampling_fi[
     # Reshape out_idxs from [batch, 1] (rank 2) to [batch] (rank 1).
     var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
-        out_idxs.ptr,
+        out_idxs._storage,
         row_major(out_shape[0]),
     )
     topk_topp_sampling_from_prob[dtype, out_idx_type, from_logits=True](
@@ -1942,6 +2044,11 @@ def fused_token_sampling_gpu[
     TopPLayoutType: TensorLayout = RowMajorLayout[Int64],
     MinPLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    KStorageType: TensorStorage = PointerStorage[element_width=1],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    TopPStorageType: TensorStorage = PointerStorage[element_width=1],
+    MinPStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     max_k: Int,
@@ -1950,18 +2057,42 @@ def fused_token_sampling_gpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     block_size: Optional[Int] = None,
     num_blocks_per_input: Optional[Int] = None,
-    k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
+    k: Optional[
+        TileTensor[
+            DType.int64, KLayoutType, ImmutAnyOrigin, Storage=KStorageType
+        ]
+    ] = None,
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     top_p: Optional[
-        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TopPLayoutType,
+            ImmutAnyOrigin,
+            Storage=TopPStorageType,
+        ]
     ] = None,
     min_p: Optional[
-        TileTensor[DType.float32, MinPLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            MinPLayoutType,
+            ImmutAnyOrigin,
+            Storage=MinPStorageType,
+        ]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
 ) raises:
     """
@@ -2025,7 +2156,12 @@ def fused_token_sampling_gpu[
                 out_idxs,
                 k=rebind[
                     Optional[
-                        TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]
+                        TileTensor[
+                            out_idx_type,
+                            KLayoutType,
+                            ImmutAnyOrigin,
+                            Storage=KStorageType,
+                        ]
                     ]
                 ](k),
                 temperature=temperature,
@@ -2232,10 +2368,18 @@ def _gumbel_argmax_fused_kernel[
     out_idx_type: DType,
     InputLayoutType: TensorLayout,
     OutIdxLayoutType: TensorLayout,
+    InputStorageType: TensorStorage = PointerStorage[element_width=1],
+    OutIdxStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
-    input: TileTensor[dtype, InputLayoutType, ImmutAnyOrigin],
+    input: TileTensor[
+        dtype, InputLayoutType, ImmutAnyOrigin, Storage=InputStorageType
+    ],
     out_idxs: TileTensor[
-        mut=True, out_idx_type, OutIdxLayoutType, MutAnyOrigin
+        mut=True,
+        out_idx_type,
+        OutIdxLayoutType,
+        MutAnyOrigin,
+        Storage=OutIdxStorageType,
     ],
     temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
@@ -2253,6 +2397,8 @@ def _gumbel_argmax_fused_kernel[
         out_idx_type: Output index dtype.
         InputLayoutType: Layout of the `[batch, vocab]` input.
         OutIdxLayoutType: Layout of the `[batch, 1]` output indices.
+        InputStorageType: Storage policy of the `[batch, vocab]` input.
+        OutIdxStorageType: Storage policy of the `[batch, 1]` output indices.
 
     Args:
         input: Input logits `[batch, vocab]`.
@@ -2356,15 +2502,27 @@ def gumbel_sampling_fused_gpu[
     //,
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
 ) raises:
     """
@@ -2406,6 +2564,8 @@ def gumbel_sampling_fused_gpu[
             out_idx_type,
             input.LayoutType,
             out_idxs.LayoutType,
+            InputStorageType=input.Storage,
+            OutIdxStorageType=out_idxs.Storage,
         ]
 
         var temperature_ptr: Optional[
@@ -2435,15 +2595,27 @@ def gumbel_sampling_gpu[
     //,
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
+    SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     input: TileTensor[mut=False, dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     temperature: Optional[
-        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.float32,
+            TemperatureLayoutType,
+            ImmutAnyOrigin,
+            Storage=TemperatureStorageType,
+        ]
     ] = None,
     seed: Optional[
-        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            DType.uint64,
+            SeedLayoutType,
+            ImmutAnyOrigin,
+            Storage=SeedStorageType,
+        ]
     ] = None,
 ) raises:
     """
