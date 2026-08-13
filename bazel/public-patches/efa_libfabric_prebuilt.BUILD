@@ -58,6 +58,18 @@ cc_import(
     ],
 )
 
+# The mlx5dv API the UCX verbs transports call. Its provider sibling
+# (lib/libibverbs/libmlx5-rdmav59.so) is loaded by libibverbs at runtime and so
+# is not imported here.
+cc_import(
+    name = "libmlx5_import",
+    shared_library = "lib/libmlx5.so.1",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
+
 cc_import(
     name = "librdmacm_import",
     shared_library = "lib/librdmacm.so.1",
