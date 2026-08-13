@@ -5570,6 +5570,164 @@ def grouped_dynamic_block_scaled_matmul_amd(
     return output
 
 
+def grouped_dynamic_scaled_mxfp6_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    fp6_format: str = "e2m3",
+    out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
+    decode_grid_m_cap: int = 0,
+    decode_grid_m_rows: int = 0,
+) -> TensorValue:
+    """Performs a grouped MXFP6 matmul for MoE layers.
+
+    The FP6 sibling of :func:`grouped_dynamic_scaled_mxfp4_matmul`. Both
+    operands are packed FP6 bytes (four codes per three bytes) with E8M0 scales
+    over 32-element K blocks.
+
+    Preshuffled-B only: an FP6 lane fragment is 24 bytes and reaches the MFMA
+    plane-split, a layout the dense row-major grouped kernel has no path for.
+    ``weight`` must therefore already carry the plane-split permutation from
+    ``preshuffle_mxfp4_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+
+    Args:
+        hidden_states: Packed activations ``[total_tokens, K * 3 // 4]``.
+        weight: Plane-split preshuffled expert weights
+            ``[num_experts, N, K * 3 // 4]``.
+        a_scales: E8M0 activation scales ``[num_scale_rows, K // 32]``.
+        b_scales: E8M0 weight scales ``[num_experts, N, K // 32]``.
+        expert_start_indices: Where each expert's tokens start.
+        expert_ids: The expert ID for each group.
+        expert_usage_stats_host: ``[max_tokens_per_expert, num_active_experts]``.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+        out_type: Output dtype.
+        estimated_total_m: Estimated total token count, used to pick the
+            persistent vs direct kernel band.
+        decode_grid_m_cap: Decode-band gate; 0 disables.
+        decode_grid_m_rows: Rows grid.y must cover per expert on the decode
+            bands.
+
+    Returns:
+        The matmul result, ``[total_tokens, N]``.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 is supported on AMD CDNA4 (gfx950) only: the kernels issue"
+            " through the f8f6f4 MFMA, which has no NVIDIA equivalent. Use"
+            " float8_e4m3fn or float4_e2m1fnx2 on NVIDIA."
+        )
+    fp6_code = _fp6_format_code(fp6_format)
+
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+    if weight.shape[2] != hidden_states.shape[1]:
+        raise ValueError(
+            "expected weight of shape [num_experts, *, "
+            f"{hidden_states.shape[1]}] but got {weight.shape}"
+        )
+    if hidden_states.dtype != DType.uint8 or weight.dtype != DType.uint8:
+        raise TypeError(
+            "MXFP6 operands are packed into uint8 (four codes per three "
+            f"bytes), got {hidden_states.dtype}, {weight.dtype}"
+        )
+    if (
+        a_scales.dtype != DType.float8_e8m0fnu
+        or b_scales.dtype != DType.float8_e8m0fnu
+    ):
+        raise TypeError(
+            "a_scales and b_scales dtypes must be float8_e8m0fnu, but got "
+            f"{a_scales.dtype}, {b_scales.dtype}"
+        )
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+    if a_scales.rank != 2 or b_scales.rank != 3:
+        raise ValueError(
+            "expected a_scales of rank 2 and b_scales of rank 3 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    MX_SF_VECTOR_SIZE = 32
+    a_scales_dim_1 = ceildiv(
+        hidden_states.shape[1] * 4 // 3, Dim(MX_SF_VECTOR_SIZE)
+    )
+    if a_scales.shape[1] != a_scales_dim_1:
+        raise ValueError(
+            f"a_scales shape must be [*, {a_scales_dim_1}] but got "
+            f"{a_scales.shape}"
+        )
+    b_scales_dim_2 = ceildiv(weight.shape[2] * 4 // 3, Dim(MX_SF_VECTOR_SIZE))
+    if (
+        b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != weight.shape[1]
+        or b_scales.shape[2] != b_scales_dim_2
+    ):
+        raise ValueError(
+            f"b_scales shape must be [{weight.shape[0]}, {weight.shape[1]},"
+            f" {b_scales_dim_2}] but got {b_scales.shape}"
+        )
+
+    if estimated_total_m is None:
+        estimated_total_m_arg = ops.constant(
+            0, dtype=DType.uint32, device=hidden_states.device
+        )
+    else:
+        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
+
+    a_scales = block_scaled_preshuffle_grouped_scale_4d(
+        a_scales,
+        expert_start_indices,
+        expert_usage_stats_host[0].cast(DType.uint32),
+        expert_usage_stats_host[1].cast(DType.uint32),
+        num_experts=int(weight.shape[0]),
+    )
+
+    return ops.custom(
+        "mo.grouped.matmul.block.scaled.mxfp6",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+            estimated_total_m_arg,
+            ops.constant(
+                decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                decode_grid_m_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={"FP6_FORMAT": fp6_code},
+    )[0].tensor
+
+
 def grouped_matmul_block_scaled(
     hidden_states: TensorValueLike,
     weight: TensorValueLike,
@@ -7107,6 +7265,173 @@ def dynamic_block_scaled_matmul_amd(
     return result
 
 
+_FP6_FORMAT_CODE = {"e2m3": 0, "e3m2": 1}
+"""Maps an FP6 element encoding name to the ``FP6_FORMAT`` op parameter."""
+
+
+def _fp6_format_code(fp6_format: str) -> int:
+    """Validates an FP6 encoding name and returns its op parameter value."""
+    try:
+        return _FP6_FORMAT_CODE[fp6_format]
+    except KeyError:
+        raise ValueError(
+            f"fp6_format must be one of {sorted(_FP6_FORMAT_CODE)}, got "
+            f"{fp6_format!r}"
+        ) from None
+
+
+def dynamic_block_scaled_matmul_mxfp6(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    fp6_format: str = "e2m3",
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Performs a matmul of two MXFP6 tensors with E8M0 block scales.
+
+    The FP6 sibling of :func:`dynamic_block_scaled_matmul_amd`. It is a
+    separate op rather than another ``lane_bytes`` value because both FP6
+    encodings put 24 bytes in a lane, so the byte count cannot choose between
+    them -- the encoding travels as its own parameter.
+
+    AMD CDNA4 (gfx950) only.
+
+    Args:
+        a: The activations, packed FP6 bytes ``[M, K * 3 // 4]``.
+        b: The weights, packed FP6 bytes ``[N, K * 3 // 4]`` (transposed).
+        a_scales: E8M0 activation scales ``[M, K // 32]``.
+        b_scales: E8M0 weight scales ``[N, K // 32]``.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+        out_type: The dtype of the result.
+
+    Returns:
+        The result of the matmul operation, ``[M, N]``.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 is supported on AMD CDNA4 (gfx950) only: the kernels issue"
+            " through the f8f6f4 MFMA, which has no NVIDIA equivalent. Use"
+            " float8_e4m3fn or float4_e2m1fnx2 on NVIDIA."
+        )
+    fp6_code = _fp6_format_code(fp6_format)
+
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a_scales.rank != 2 or b_scales.rank != 2:
+        raise ValueError("Both a_scales and b_scales must be rank 2 tensors")
+    if a.shape[1] != b.shape[1]:
+        raise ValueError(
+            "MXFP6 matmul operands disagree on packed K: "
+            f"a={list(a.shape)} b={list(b.shape)} "
+            f"a_scales={list(a_scales.shape)} b_scales={list(b_scales.shape)}. "
+            "Both operands are byte-packed (four 6-bit codes per three "
+            "bytes), so a logical K of n is n * 3 // 4 columns; a mismatch "
+            "usually means one side was sized or sharded on the logical width."
+        )
+    if a.dtype != DType.uint8 or b.dtype != DType.uint8:
+        raise ValueError(
+            "MXFP6 operands are packed into uint8 (four codes per three "
+            f"bytes), got a={a.dtype}, b={b.dtype}"
+        )
+    if (
+        a_scales.dtype != DType.float8_e8m0fnu
+        or b_scales.dtype != DType.float8_e8m0fnu
+    ):
+        raise ValueError("a_scales and b_scales dtypes must be float8_e8m0fnu")
+
+    MX_SF_VECTOR_SIZE = 32
+    expected_scales_k = ceildiv(a.shape[1] * 4 // 3, Dim(MX_SF_VECTOR_SIZE))
+    if a_scales.shape[1] != expected_scales_k:
+        raise ValueError(
+            f"a_scales shape must be [*, {expected_scales_k}] but got "
+            f"{a_scales.shape}"
+        )
+    if b_scales.shape[1] != expected_scales_k:
+        raise ValueError(
+            f"b_scales shape must be [*, {expected_scales_k}] but got "
+            f"{b_scales.shape}"
+        )
+
+    return ops.custom(
+        "mo.matmul.dynamic.block.scaled.mxfp6",
+        device=a.device,
+        values=[a, b, a_scales, b_scales],
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+        parameters={"FP6_FORMAT": fp6_code},
+    )[0].tensor
+
+
+def quantize_dynamic_block_scaled_mxfp6(
+    input: TensorValue,
+    fp6_format: str = "e2m3",
+    scales_type: DType = DType.float8_e8m0fnu,
+    out_type: DType = DType.uint8,
+) -> tuple[TensorValue, TensorValue]:
+    """Dynamically quantizes the input tensor to MXFP6.
+
+    Args:
+        input: The tensor to quantize, ``[seq_len, hidden_size]`` bf16.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+        scales_type: The dtype of the scales tensor.
+        out_type: The dtype of the packed output.
+
+    Returns:
+        The packed tensor in ``[seq_len, hidden_size * 3 // 4]`` and the scales
+        in ``[seq_len, hidden_size // 32]``.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 is supported on AMD CDNA4 (gfx950) only: the kernels issue"
+            " through the f8f6f4 MFMA, which has no NVIDIA equivalent. Use"
+            " float8_e4m3fn or float4_e2m1fnx2 on NVIDIA."
+        )
+    fp6_code = _fp6_format_code(fp6_format)
+
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+    if out_type != DType.uint8:
+        raise ValueError("out_type must be uint8 (packed FP6)")
+    if scales_type != DType.float8_e8m0fnu:
+        raise ValueError("scales_type must be float8_e8m0fnu for MXFP6")
+
+    MX_SF_VECTOR_SIZE = 32
+    if int(input.shape[1]) % MX_SF_VECTOR_SIZE != 0:
+        raise ValueError(
+            "input.shape[1] must be a multiple of the 32-element MX block"
+        )
+
+    result = ops.custom(
+        "mo.quantize.dynamic.block.scaled.mxfp6",
+        device=input.device,
+        values=[input],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1] * 3 // 4],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    input.shape[0],
+                    ceildiv(input.shape[1], Dim(MX_SF_VECTOR_SIZE)),
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters={"FP6_FORMAT": fp6_code},
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def mxfp4_dequant(
     packed_weights: TensorValue,
     scales: TensorValue,
@@ -7167,6 +7492,80 @@ def mxfp4_dequant(
     )[0].tensor
 
     # Reshape back if originally rank 3
+    if is_batched_weights:
+        result = ops.reshape(result, [e, n, k])
+
+    return result
+
+
+def mxfp6_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    fp6_format: str = "e2m3",
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes MXFP6 packed weights to BF16 or FP8 on GPU.
+
+    The FP6 sibling of :func:`mxfp4_dequant`. Supports rank 2
+    ``[N, K * 3 // 4]`` and rank 3 ``[E, N, K * 3 // 4]`` inputs; for rank 3
+    the leading dims are flattened, dequantized, and reshaped back.
+
+    Args:
+        packed_weights: Packed FP6 bytes, four codes per three bytes.
+        scales: Block scales in ``float8_e8m0fnu``, ``[..., N, K // 32]``.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+        out_type: Output dtype (``bfloat16`` or ``float8_e4m3fn``).
+
+    Returns:
+        The dequantized tensor, ``[N, K]`` or ``[E, N, K]``.
+    """
+    if not _is_amd_gpu():
+        raise ValueError(
+            "MXFP6 is supported on AMD CDNA4 (gfx950) only: the kernels issue"
+            " through the f8f6f4 MFMA, which has no NVIDIA equivalent. Use"
+            " float8_e4m3fn or float4_e2m1fnx2 on NVIDIA."
+        )
+    fp6_code = _fp6_format_code(fp6_format)
+
+    if packed_weights.rank not in (2, 3):
+        raise ValueError(
+            f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
+        )
+    if scales.rank != packed_weights.rank:
+        raise ValueError(
+            f"scales rank ({scales.rank}) must match packed_weights rank"
+            f" ({packed_weights.rank})"
+        )
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError(
+            f"packed_weights must be uint8, got {packed_weights.dtype}"
+        )
+
+    is_batched_weights = packed_weights.rank == 3
+    if is_batched_weights:
+        e = packed_weights.shape[0]
+        n = packed_weights.shape[1]
+        k_packed = packed_weights.shape[2]
+        packed_weights = ops.reshape(packed_weights, [e * n, k_packed])
+        scales = ops.reshape(scales, [e * n, scales.shape[2]])
+
+    rows = packed_weights.shape[0]
+    k = packed_weights.shape[1] * 4 // 3  # Unpacked column count
+
+    result = ops.custom(
+        "mo.dequant.mxfp6",
+        device=packed_weights.device,
+        values=[packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[rows, k],
+                device=packed_weights.device,
+            )
+        ],
+        parameters={"FP6_FORMAT": fp6_code},
+    )[0].tensor
+
     if is_batched_weights:
         result = ops.reshape(result, [e, n, k])
 

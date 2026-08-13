@@ -51,6 +51,9 @@ from linalg.matmul.gpu.amd import (
     block_scaled_grouped_matmul_amd,
 )
 from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.fp6_utils import FP6Format
+from linalg.fp6_quantization import quantize_mxfp6_amd
+from linalg.mxfp6_dequant import dequant_mxfp6
 from nn.bicubic import resize_bicubic
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
@@ -943,6 +946,93 @@ struct Struct_dequant_mxfp4:
         var num_cols = Int(in_tt.dim[1]()) * 2
 
         dequant_mxfp4(
+            context,
+            out_tt,
+            in_tt,
+            scales_tt,
+            num_rows=num_rows,
+            num_cols=num_cols,
+        )
+
+
+@extensibility.register("mo.quantize.dynamic.block.scaled.mxfp6")
+struct Struct_quantize_dynamic_block_scaled_mxfp6:
+    """Registers the `mo.quantize.dynamic.block.scaled.mxfp6` graph op."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        in_dtype: DType,
+        //,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), (
+            "MXFP6 quantization requires a GPU with native block-scaled support"
+        )
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+
+        quantize_mxfp6_amd[FP6Format(FP6_FORMAT)](
+            context,
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+        )
+
+
+@extensibility.register("mo.dequant.mxfp6")
+struct Struct_dequant_mxfp6:
+    """Registers the `mo.dequant.mxfp6` graph op with the graph compiler."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        out_type: DType,
+        in_type: DType,
+        scales_type: DType,
+        //,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        input: InputTensor[dtype=in_type, rank=2, ...],
+        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "MXFP6 dequant only supports GPUs"
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "MXFP6 dequant output must be bfloat16 or float8_e4m3fn"
+        comptime assert (
+            in_type == DType.uint8
+        ), "MXFP6 dequant input must be uint8 (packed FP6)"
+        comptime assert (
+            scales_type == DType.float8_e8m0fnu
+        ), "MXFP6 dequant scales must be float8_e8m0fnu"
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var scales_tt = scales.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[DType.int64]()
+
+        var num_rows = Int(in_tt.dim[0]())
+        var num_cols = (Int(in_tt.dim[1]()) * 8) // 6
+
+        dequant_mxfp6[FP6Format(FP6_FORMAT)](
             context,
             out_tt,
             in_tt,
