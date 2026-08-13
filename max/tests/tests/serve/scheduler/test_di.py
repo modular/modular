@@ -1379,6 +1379,51 @@ def test_overlap_prefill_cancel_between_defer_and_resolve() -> None:
             break
 
 
+def test_overlap_prefill_pending_first_token_defers_insufficient_blocks() -> (
+    None
+):
+    """A CE-complete request parked in _pending_first_token still holds its
+    KV blocks and frees them via the same path as active_transfers, so a
+    new CE request hitting InsufficientBlocksError at that moment must
+    requeue as transient rather than raise (SERVOPT-1551)."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        overlap_prefill=True, num_blocks=2, page_size=128
+    )
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=200, output_len=5
+    )
+    q.request_queue.put(ctx1)
+
+    # Iteration 1: req1 completes CE and is deferred into
+    # _pending_first_token, pinning both KV blocks. It is not yet promoted to
+    # active_transfers, and clear_tg_reqs() has emptied the TG queue.
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert ctx1.request_id in prefill._pending_first_token
+    assert len(prefill.active_transfers) == 0
+    assert prefill.kv_cache.num_free_blocks(0) == 0
+    assert prefill.batch_constructor._is_anything_inflight(0)
+
+    # A new CE request arrives while req1 pins every block.
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=200, output_len=5
+    )
+    prefill.batch_constructor.enqueue_new_request(ctx2)
+
+    # Iteration 2: batch construction hits InsufficientBlocksError for req2
+    # with an empty batch and no TG work. The pending-first-token request
+    # counts as an in-flight transfer, so the error is transient: req2 is
+    # requeued instead of crashing the worker.
+    prefill.run_iteration()
+    assert ctx2.request_id in prefill.batch_constructor.all_ce_reqs
+
+    # The flush in iteration 2 resolved req1 into a real transfer.
+    assert len(prefill._pending_first_token) == 0
+    assert ctx1.request_id in prefill.active_transfers
+
+
 # E2E tests for DI with overlap scheduling on decode, prefill, or both
 
 
@@ -2380,6 +2425,73 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
         if isinstance(msg, CancelRequest) and msg.id == req_id:
             saw_cancel_to_prefill = True
     assert saw_cancel_to_prefill
+
+
+# ---------------------------------------------------------------------------
+# prefill_reqs is counted as in-flight KV work (SERVOPT-1551): a request
+# awaiting prefill converts into a tg_reqs reservation on the same blocks
+# rather than releasing them, but that reservation is then preemptible like
+# any other TG request, so its presence still means an InsufficientBlocksError
+# isn't necessarily a dead end.
+# ---------------------------------------------------------------------------
+
+
+def _setup_tg_alloc_deferred_with_pending_prefill() -> DecodeScheduler:
+    """Drives a decode scheduler into a TG deficit alongside a pending
+    prefill reservation.
+
+    With num_blocks=2 and page_size=128: req1 (100-token prompt) completes
+    prefill, holds one page, and generates until the page fills, at which
+    point its next-token alloc needs a second page. req2's decode-side
+    reservation pins that last page while it waits for a PrefillResponse
+    that never arrives (prefill is not pumped after req2 is sent).
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        num_blocks=2, page_size=128
+    )
+
+    ctx1 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=200
+    )
+    q.request_queue.put(ctx1)
+    decode.run_iteration()
+    prefill.run_iteration()
+    run_until(
+        lambda: decode.batch_constructor.contains(ctx1.request_id),
+        decode,
+        prefill,
+    )
+
+    ctx2 = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx2)
+    decode.reserve_memory_and_send_to_prefill()
+    assert ctx2.request_id in decode.prefill_reqs
+    assert len(decode.pending_reqs) == 0
+
+    # The upcoming InsufficientBlocksError must be attributable solely to
+    # req2's pending-prefill reservation: no local KV transfers and no
+    # cordoned onloads that would already make the failure non-fatal.
+    assert not decode.kv_cache.pending_transfers_exist(0)
+    assert len(decode.batch_constructor._onloading_reqs) == 0
+
+    return decode
+
+
+def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
+    """A TG alloc failure racing against a pending-prefill reservation
+    defers rather than raising: once req2's PrefillResponse lands, its
+    reservation converts into a preemptible TG request, so the deficit
+    isn't necessarily permanent."""
+    decode = _setup_tg_alloc_deferred_with_pending_prefill()
+    assert len(decode.prefill_reqs) == 1
+
+    # Generate until req1 fills its page; the next alloc needs a second
+    # block, which only req2's pending-prefill reservation holds. Must not
+    # raise -- prefill_reqs counts as in-flight work.
+    for _ in range(40):
+        decode.run_iteration()
 
 
 # ---------------------------------------------------------------------------

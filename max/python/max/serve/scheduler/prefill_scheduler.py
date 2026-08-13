@@ -109,7 +109,12 @@ class PrefillScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.PREFILL_FIRST,
-            get_inflight_kv_transfer_count=lambda: len(self.active_transfers),
+            # Requests parked in _pending_first_token are pre-active_transfers
+            # state on the same block-release path: they already hold KV
+            # blocks and will free them once their deferred first token
+            # resolves into a transfer. Counting them prevents a false-fatal
+            # InsufficientBlocksError during the one-batch overlap lag.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self.dispatcher = dispatcher
@@ -189,6 +194,18 @@ class PrefillScheduler(Scheduler):
         for id in to_be_deleted:
             del self.active_transfers[id]
 
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of active_transfers + _pending_first_token entries holding
+        blocks on this replica -- a transfer on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for active in self.active_transfers.values()
+            if active.replica_idx == replica_idx
+        ) + sum(
+            1 for _, r in self._pending_first_token.values() if r == replica_idx
+        )
+
     def initiate_transfer_and_send_reply(
         self, context: TextContext, src_replica_idx: int
     ) -> None:
@@ -201,9 +218,19 @@ class PrefillScheduler(Scheduler):
         req_id = context.request_id
         identity, transfer_dest = self.request_id_to_reply_context.pop(req_id)
 
-        # If cancelled, throw away result.
+        # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
+            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            self.kv_cache.release(context)
+            self.pipeline.release(req_id)
+            logger.warning(
+                "Dropping cancelled request %s before KV transfer: released "
+                "%d blocks on replica %d.",
+                req_id,
+                blocks_held,
+                src_replica_idx,
+            )
             return
 
         # Get Remote Metadata.

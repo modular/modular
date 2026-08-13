@@ -460,7 +460,7 @@ class TextBatchConstructor:
         kv_cache: PagedKVCacheManager,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
-        get_inflight_kv_transfer_count: Callable[[], int] | None = None,
+        get_inflight_kv_transfer_count: Callable[[int], int] | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -991,13 +991,38 @@ class TextBatchConstructor:
         # Otherwise, prioritize CE
         return RequestType.CE
 
-    def _inflight_kv_transfer_count(self) -> int:
-        # Cordoned onloading requests hold KV blocks while their H2D is in
-        # flight, so count them alongside any external (DI prefill) transfers.
-        count = len(self._onloading_reqs)
+    def _is_anything_inflight(self, replica_idx: int) -> bool:
+        """Whether anything that could still resolve into runnable work is
+        in flight on this replica -- existence, not magnitude, since the
+        fatal-vs-defer decision only needs to know whether anything at all
+        is happening, not how much. Checked across cordoned onloads (H2D
+        landing), any device-side pending transfer (e.g. a D2H offload),
+        and any external (DI prefill/decode) signal. Scoped to
+        replica_idx: a transfer on a different replica's device pool
+        can't free blocks on this one.
+        """
+        if any(
+            onloading.replica_idx == replica_idx
+            for onloading in self._onloading_reqs.values()
+        ):
+            return True
+        if self.kv_cache.pending_transfers_exist(replica_idx):
+            return True
         if self._get_inflight_kv_transfer_count is not None:
-            count += self._get_inflight_kv_transfer_count()
-        return count
+            return self._get_inflight_kv_transfer_count(replica_idx) > 0
+        return False
+
+    def _is_insufficient_blocks_fatal(
+        self, replica_idx: int, no_other_work: bool
+    ) -> bool:
+        """Fatal only when there's no other runnable work and nothing at
+        all is in flight -- presence, not magnitude, since a deficit
+        sized against what's in flight now can't see a transfer that
+        starts next iteration. A wrong "fatal" verdict kills the worker;
+        a wrong "defer" verdict just costs a retry, so this errs toward
+        retrying whenever anything at all is in flight.
+        """
+        return no_other_work and not self._is_anything_inflight(replica_idx)
 
     def _add_ce_requests(self, batch: ReplicaBatch, replica_idx: int) -> None:
         # Deferred by the DP CE balancer this iteration (also covers paths
@@ -1043,19 +1068,23 @@ class TextBatchConstructor:
 
                 try:
                     onload_event = self.kv_cache.alloc(ctx)
-                except InsufficientBlocksError:
-                    # Only a genuine OOM (nothing else to run and no in-flight
-                    # transfer that will free blocks once it lands) is fatal.
-                    # Otherwise requeue and retry next iteration; poll_transfers
-                    # unpins completed transfers' blocks in the meantime.
-                    if (
-                        len(replica_requests.tg_reqs) == 0
-                        and len(batch) == 0
-                        and self._inflight_kv_transfer_count() == 0
-                        and not self.kv_cache.pending_transfers_exist(
-                            replica_idx
-                        )
-                    ):
+                except InsufficientBlocksError as e:
+                    # Only fatal with no other work (no TG, no
+                    # already-admitted CE this iteration) and nothing in
+                    # flight can cover the deficit; otherwise requeue and
+                    # retry next iteration -- poll_transfers unpins
+                    # completed transfers' blocks in the meantime.
+                    no_other_work = (
+                        len(replica_requests.tg_reqs) == 0 and len(batch) == 0
+                    )
+                    fatal = self._is_insufficient_blocks_fatal(
+                        replica_idx, no_other_work
+                    )
+                    (logger.error if fatal else logger.warning)(
+                        f"_add_ce_requests InsufficientBlocksError "
+                        f"(replica_idx={replica_idx}, fatal={fatal}): {e}"
+                    )
+                    if fatal:
                         raise
                     self._return_to_request_queue(ctx, replica_idx)
                     break
@@ -1133,18 +1162,19 @@ class TextBatchConstructor:
                 try:
                     self.kv_cache.alloc(candidate_context)
                     break
-                except InsufficientBlocksError:
+                except InsufficientBlocksError as e:
                     if len(candidate_ids) == 0:
-                        # Only a genuine OOM is fatal: nothing left to preempt,
-                        # an empty batch, and no in-flight transfer that will
-                        # free blocks once it lands.
-                        if (
-                            len(batch) == 0
-                            and self._inflight_kv_transfer_count() == 0
-                            and not self.kv_cache.pending_transfers_exist(
-                                replica_idx
-                            )
-                        ):
+                        # Only a genuine OOM is fatal: nothing left to
+                        # preempt, an empty batch, and the deficit can't be
+                        # covered by anything in flight.
+                        fatal = self._is_insufficient_blocks_fatal(
+                            replica_idx, no_other_work=len(batch) == 0
+                        )
+                        (logger.error if fatal else logger.warning)(
+                            f"_add_tg_requests InsufficientBlocksError "
+                            f"(replica_idx={replica_idx}, fatal={fatal}): {e}"
+                        )
+                        if fatal:
                             raise
                         return
 
