@@ -381,7 +381,7 @@ kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
 
 // -----
 
-// CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=\22foo\22"
+// CHECK-LABEL: kgen.func @"takeStringParameter,SomeString=~Qfoo~Q"
 kgen.generator @takeStringParameter<SomeString: string>() {
   kgen.param.assert <identical(:string SomeString, "foo")>, "I want foo"
   kgen.return
@@ -389,7 +389,7 @@ kgen.generator @takeStringParameter<SomeString: string>() {
 
 // CHECK-LABEL: kgen.func @giveString
 kgen.generator @giveString() {
-  // CHECK-NEXT: kgen.call @"takeStringParameter,SomeString=\22foo\22"
+  // CHECK-NEXT: kgen.call @"takeStringParameter,SomeString=~Qfoo~Q"
   kgen.call @takeStringParameter<:string "foo">() : () -> ()
   kgen.return
 }
