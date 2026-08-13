@@ -40,10 +40,12 @@ from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,
     create_buffered_detokenizer,
 )
+from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
+from opentelemetry import propagate as otel_propagate
 
 logger = logging.getLogger("max.serve")
 
@@ -129,6 +131,25 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         or None,
         stop_sequence=stop_sequence,
     )
+
+
+def _inject_trace_carrier(context: BaseContextType) -> None:
+    """Serialize the current request's OTel trace context onto ``context``.
+
+    ``context`` crosses into the model-worker process by value (pickled onto
+    the request queue), so the ambient ``request_trace_ctx`` -- populated by
+    the route handler from the inbound request's W3C headers -- can't follow
+    it there directly. Inject it into a plain string-dict carrier instead,
+    which the scheduler re-``extract``s to parent its phase spans under the
+    caller's trace. A no-op for context types that don't carry a
+    ``trace_carrier`` field (only ``TextContext`` does).
+    """
+    if not isinstance(context, TextContext):
+        return
+    carrier: dict[str, str] = {}
+    otel_propagate.inject(carrier, context=request_trace_ctx.get())
+    if carrier:
+        context.trace_carrier = carrier
 
 
 def _apply_stop_truncation(
@@ -311,6 +332,7 @@ class TokenGeneratorPipeline(
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
+            _inject_trace_carrier(context)
 
             # Create buffered detokenizers for proper UTF-8 handling.
             # These handle multi-byte UTF-8 sequences that span multiple tokens,
@@ -614,6 +636,7 @@ class TokenGeneratorPipeline(
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
+            _inject_trace_carrier(context)
 
             with record_ms(METRICS.output_time):
                 # For embeddings tasks, the model worker runs an EmbeddingsPipeline which

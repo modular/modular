@@ -565,6 +565,13 @@ class TextContext:
     :meth:`realize_future_token`; the placeholders always occupy the last
     ``_pending_future_count`` positions of ``tokens.all``."""
 
+    trace_carrier: dict[str, str] | None = field(default=None)
+    """Serialized W3C trace context (via ``opentelemetry.propagate.inject``)
+    captured from the inbound request's OTel context. Threaded onto this
+    context because it crosses into the model-worker process by value, so the
+    scheduler can re-``extract`` it and parent its phase spans under the
+    caller's trace instead of starting new root spans."""
+
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
 
