@@ -1863,10 +1863,10 @@ TypedAttr GeneratorAttr::getInstantiatedValue() {
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetaDataAttr
+// FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-Attribute FnMetaDataAttr::parse(AsmParser &p, Type type) {
+Attribute FnMetadataAttr::parse(AsmParser &p, Type type) {
   SmallVector<ArgConvention> argConventions;
   auto parseConvention = [&]() -> ParseResult {
     FailureOr<ArgConvention> convention =
@@ -1897,11 +1897,11 @@ Attribute FnMetaDataAttr::parse(AsmParser &p, Type type) {
     return {};
   if (p.parseGreater())
     return {};
-  return FnMetaDataAttr::get(p.getContext(), argConventions, *effects,
+  return FnMetadataAttr::get(p.getContext(), argConventions, *effects,
                              metadata);
 }
 
-void FnMetaDataAttr::print(AsmPrinter &p) const {
+void FnMetadataAttr::print(AsmPrinter &p) const {
   p << "<[";
   llvm::interleaveComma(getArgConventions(), p, [&](ArgConvention convention) {
     p << stringifyArgConvention(convention);
@@ -1912,7 +1912,7 @@ void FnMetaDataAttr::print(AsmPrinter &p) const {
   p << '>';
 }
 
-Type FnMetaDataAttr::getType() const {
+Type FnMetadataAttr::getType() const {
   // TODO: `non_struct_type` is not accurate, but we only need a type in order
   // to use the attribute in a parameter expression. A dedicated type would make
   // more sense here.
@@ -1921,14 +1921,14 @@ Type FnMetaDataAttr::getType() const {
 
 /// The metadata of a function type is never a parameter expression that needs
 /// further evaluation: it only aggregates already-evaluated data.
-bool FnMetaDataAttr::isConstant() const { return true; }
+bool FnMetadataAttr::isConstant() const { return true; }
 
-FnMetaDataAttr FnMetaDataAttr::getWithFnEffects(FnEffects effects) const {
+FnMetadataAttr FnMetadataAttr::getWithFnEffects(FnEffects effects) const {
   return get(getContext(), getArgConventions(), effects, getMetadata());
 }
 
-FnMetaDataAttr
-FnMetaDataAttr::getWithMetadata(FnMetadataAttrInterface metadata) const {
+FnMetadataAttr
+FnMetadataAttr::getWithMetadata(FnMetadataAttrInterface metadata) const {
   return get(getContext(), getArgConventions(), getFnEffects(), metadata);
 }
 

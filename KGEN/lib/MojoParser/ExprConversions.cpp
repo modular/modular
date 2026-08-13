@@ -227,7 +227,7 @@ canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr, GeneratorType actual,
 /// describe which storage a callable's captures point into, which does not
 /// affect its representation, so signature comparisons that only care about
 /// representation compare the metadata with them cleared.
-static FnMetaDataAttr withoutCaptureOrigins(FnMetaDataAttr metadata) {
+static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
   auto originData = cast_or_null<FnMetaOriginDataAttr>(metadata.getMetadata());
   if (!originData)
     return metadata;
@@ -260,8 +260,8 @@ static FuncType getReducedFnType(FuncType sig) {
                        origPogListAttr.getOrigVariadicConvention(),
                        origPogListAttr.getBodyConstraints());
 
-  FnMetaDataAttr metaData = withoutCaptureOrigins(sig.getMetaDataAttr());
-  return FuncType::get(ctx, sig.getValues(), metaData, newPogListAttr);
+  FnMetadataAttr metadata = withoutCaptureOrigins(sig.getMetadataAttr());
+  return FuncType::get(ctx, sig.getValues(), metadata, newPogListAttr);
 }
 
 static GeneratorType getReducedGeneratorType(GeneratorType gen) {
@@ -1220,8 +1220,8 @@ bool IREmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   // If the fn meta data mismatches (different arg conventions, effects, or
   // origin metadata), return false. Capture origins are excluded from the
   // comparison (it will be deleted anyway in the near future).
-  if (withoutCaptureOrigins(from.getFnMetaData()) !=
-      withoutCaptureOrigins(to.getFnMetaData()))
+  if (withoutCaptureOrigins(from.getFnMetadata()) !=
+      withoutCaptureOrigins(to.getFnMetadata()))
     return false;
 
   // Allow signature types to be converted for free if they differ only in
