@@ -15,6 +15,7 @@
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.os import abort
 from std.reflection import reflect
+from std.collections import Array
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
 
@@ -345,6 +346,28 @@ struct Coord[*element_types: CoordLike](
             Pointer(to=self[i]).unsafe_write(
                 rebind[type_of(self[i])](Scalar[dtype](index_list[i]))
             )
+
+    def __init__[
+        rank: Int, dtype: DType
+    ](
+        out self: Coord[
+            *TypeList.splat[Trait=CoordLike, rank, Scalar[dtype]]()
+        ],
+        array: Array[Scalar[dtype], rank],
+    ):
+        """Construct an all-dynamic `Coord` from an `Array`.
+
+        Parameters:
+            rank: The number of elements in the array.
+            dtype: The data type of the array elements.
+
+        Args:
+            array: The `Array` to convert to a `Coord`.
+        """
+        self = type_of(self)()
+
+        comptime for i in range(rank):
+            Pointer(to=self[i]).unsafe_write(rebind[type_of(self[i])](array[i]))
 
     @staticmethod
     @always_inline("nodebug")
