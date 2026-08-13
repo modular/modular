@@ -249,6 +249,14 @@ This version is still a work in progress.
   request instead of stalling inter-token latency for every active
   request.
 
+- MAX Serve no longer drops uvicorn's log records. The console, file, and
+  OTLP handlers filter on an allowlist of logger prefixes that omitted
+  uvicorn, which owns the HTTP error log, so an exception escaping the ASGI
+  application, a malformed request, and the cancellation of in-flight
+  requests when the shutdown drain expires all went unreported. The uvicorn
+  logger stays at `WARNING`, so the per-request access log remains
+  suppressed.
+
 ### Server metrics
 
 - Fixed the speculative-decoding per-position acceptance-rate histogram

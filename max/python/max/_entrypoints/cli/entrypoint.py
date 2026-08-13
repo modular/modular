@@ -73,13 +73,17 @@ def configure_cli_logging(
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(log_level)
 
-    # Set up log filtering for MAX components
+    # Set up log filtering for MAX components. ``uvicorn`` is included because
+    # it owns the HTTP error log (exceptions escaping the ASGI app, malformed
+    # requests, shutdown cancellation of in-flight requests); it is pinned to
+    # WARNING below, which keeps the per-request access stream out.
     components_to_log = [
         "root",
         "max._entrypoints",
         "max.pipelines",
         "max.serve",
         "max.benchmark",
+        "uvicorn",
     ]
 
     def log_filter(record: logging.LogRecord) -> bool:
