@@ -150,16 +150,6 @@ modular_cc_library(
 
 modular_cc_binary(
     name = "mojo",
-    data = select({
-        "//:plugin_enabled": ["@plugin//KGEN:mojo-compiler-plugin"],
-        "//conditions:default": [],
-    }),
-    env = select({
-        "//:plugin_enabled": {
-            "MODULAR_COMPILER_PLUGINS": "$(location @plugin//KGEN:mojo-compiler-plugin)",
-        },
-        "//conditions:default": {},
-    }),
     linkopts = _MOJO_LINKOPTS,
     deps = [":mojo_common"],
 )
