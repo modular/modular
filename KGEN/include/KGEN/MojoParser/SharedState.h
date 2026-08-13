@@ -684,16 +684,6 @@ public:
   ///         ...
   ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
                                    FnTypeGeneratorType sig);
-  /// Given a signature [Int](y:Int) -> Int for example, return the struct
-  /// definition wrapper. If there is not a wrapper already generated, the
-  /// compiler will generate the following:
-  ///  struct Impl[T : Closure_Int_yInt_Int](Closure_Int_yInt_Int):
-  ///     var impl: T
-  /// ... and return the StructDeclOp for "Impl".
-  ASTDecl *getOrCreateClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
-                                     ASTDecl *moduleDecl, bool isCopyable,
-                                     TypeConvention typeConvention,
-                                     bool isStateless, bool capturesEncodable);
   /// Get or create a struct that defines conformance of targetTrait in terms of
   /// sourceTrait.
   ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,

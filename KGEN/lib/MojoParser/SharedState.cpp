@@ -372,11 +372,6 @@ struct SharedState::Impl {
   /// Closure traits have a unique generator type and are global to the module.
   /// Cache previously built traits.
   DenseMap<GeneratorType, ASTDecl *> closureTraits;
-  /// Closure wrappers are unique to their combined trait type and local to a
-  /// file module. The TraitType key encodes the closure trait plus Movable,
-  /// Copyable (if copyable), DevicePassable (if captures are device-encodable),
-  /// and extern trait (if stateless).
-  DenseMap<std::pair<TraitType, ASTDecl *>, ASTDecl *> unifiedClosureWrappers;
   /// Stateless closure extension structs, keyed by the (source trait,
   /// target trait) operation pair and the owning file module.
   DenseMap<std::pair<std::pair<Operation *, Operation *>, ASTDecl *>, ASTDecl *>
@@ -2947,33 +2942,6 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
     return result;
   }
   return ptr->second;
-}
-
-ASTDecl *SharedState::getOrCreateClosureWrapper(
-    SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl, bool isCopyable,
-    TypeConvention typeConvention, bool isStateless, bool capturesEncodable) {
-  ASTDecl *traitDecl = getOrCreateClosureTrait(loc, *moduleDecl, sig);
-
-  // Compute the wrapper's combined TraitType based on all conformances.
-  // This uniquely identifies the wrapper configuration.
-  TraitType wrapperTraitType = closureEmitter->getWrapperTraitType(
-      *traitDecl, *moduleDecl, isCopyable, typeConvention, capturesEncodable);
-  std::pair<TraitType, ASTDecl *> key{wrapperTraitType, moduleDecl};
-  if (ASTDecl *cached = impl->unifiedClosureWrappers.lookup(key))
-    return cached;
-
-  auto traitOp = cast<TraitDeclOp>(traitDecl->getIfOperation());
-  SmallString<128> baseName(traitOp.getSymName());
-  closureEmitter->enumerateWrapperTraits(baseName, wrapperTraitType,
-                                         *moduleDecl);
-  ASTDecl *wrapper = closureEmitter->createStructWrapper(
-      *moduleDecl, baseName, *traitDecl, loc, typeConvention, isCopyable,
-      isStateless, capturesEncodable, sig);
-
-  if (wrapper)
-    impl->unifiedClosureWrappers[key] = wrapper;
-
-  return wrapper;
 }
 
 ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,

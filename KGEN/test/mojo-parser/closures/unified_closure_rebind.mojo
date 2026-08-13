@@ -28,9 +28,8 @@
 # COM: The captured parameter becomes a parameter of the storage struct
 # S0: lit.struct.decl @"makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
 # S0: kgen.witness "U" : !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable = U
-# COM: The alias is set to the alias of the impl in the struct wrapper
-# S0: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"
-# S0: kgen.witness "U" : !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable = #kgen.get_witness<:{{.*}} impl, "def{{.*}} -> U{1}", "U">
+# COM: No parametric wrapper around storage.
+# S0-NOT: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"<impl:
 
 
 
@@ -132,8 +131,8 @@ def repro_top_level():
     _ = s.count(is_vec_a)
 
 # COM: Verify nested captured closures get conformance for count's
-# COM: closure trait.
-# S5-DAG: lit.struct.decl @"def[u: Int](vec: s5_ToySIMD[Int(1), u]) -> s5_ToyMask[Int(1), u]_{{.*}}"
+# COM: closure trait on the storage struct (no parametric wrapper).
+# S5-DAG: lit.struct.decl @"{{.*}}is_vec_a_capturing::__storage"
 # S5-DAG: kgen.conformance @"def[{{.*}}u: Int](vec: s5_ToySIMD[dtype_tag, u]) -> s5_ToyMask[dtype_tag, u]{1}" {
 # S5-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
 # S5-DAG: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
@@ -185,7 +184,7 @@ def repro_capturing(mem: String):
 
 # COM: Verify nested type parameters constrained by a trait (not just Int
 # COM: parameters) get conformance resolved from nested struct type arguments.
-# S6-DAG: lit.struct.decl @"def[n: Int](item: Box[ConcreteElem, n]) -> Box[ConcreteElem, n]_{{.*}}"
+# S6-DAG: lit.struct.decl @"{{.*}}apply_concrete::__storage"
 # S6-DAG: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]{1}" {
 # S6-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
 # S6-DAG: kgen.witness "E" : !AnyType_ElemLike = !ConcreteElem
@@ -231,7 +230,7 @@ def repro_nested_type_param(mem: String):
     _ = s.apply(apply_concrete)
 
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
-# S7-DAG: lit.struct.decl @"def[simd_width: Int, rank: Int, alignment: Int = Int(1)]() -> None_{{.*}}"
+# S7-DAG: lit.struct.decl @"{{.*}}my_func::__storage"
 # S7-DAG: kgen.conformance @"def[width: Int, rank: Int, alignment: Int = Int(1)]() -> None" {
 # S7-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
 
@@ -296,7 +295,7 @@ def rebindResult():
 
 # COM: Verify ParamListAttr matching: closure returning Tuple with parameterized
 # COM: elements requires recursive matching through #kgen.param_list param values.
-# S9-DAG: lit.struct.decl @"def(point: ToyIndex[Int(2)]) -> Tuple[ToyIndex[Int(2)], ToyIndex[Int(2)]]_{{.*}}"
+# S9-DAG: lit.struct.decl @"{{.*}}my_map_fn::__storage"
 # S9-DAG: @"def[rank: Int, //](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]{1}" {
 # S9-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
 # S9-DAG:   kgen.witness "rank" : !Int = {:scalar<index> 2}

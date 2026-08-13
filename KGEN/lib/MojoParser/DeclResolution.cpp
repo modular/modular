@@ -1467,13 +1467,13 @@ emitClosureInstance(ArrayRef<Capture> captures, ASTDecl &nestedFnDecl,
         capturedRefs.push_back(ref);
     }
   }
-  Value wrapperInstance =
+  Value closureInstance =
       emitter.emitClosure(*moduleDecl, nestedFnDecl, captures,
                           cast<TraitDeclOp>(closureTrait->getIfOperation()),
                           mlirLoc, isCopyable, closureSig, capturedRefs);
-  if (!wrapperInstance)
+  if (!closureInstance)
     return {};
-  return MLValue(wrapperInstance);
+  return MLValue(closureInstance);
 }
 
 namespace {
@@ -1528,7 +1528,7 @@ static BodyCaptures collectBodyCaptures(SharedState &shared, ASTDecl &decl,
 
 /// Construct the runtime value for a fully-resolved non-legacy nested-`def`
 /// closure: promote a stateless closure to a top-level function, or otherwise
-/// materialize a closure instance. Sets the decl's IR value on success.
+/// materialize a storage-struct instance. Sets the decl's IR value on success.
 static LogicalResult
 constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
                  ArrayRef<Capture> captures,
@@ -1544,13 +1544,9 @@ constructClosure(SharedState &shared, ASTDecl &decl, FnOp funcOp,
     return failure();
   }
 
-  // Check if this is a stateless unified closure. This means it has:
-  // - no captured values
-  // - no explicit dynamic captures
-  // - no default capture convention
-  // Captured parameter references are handled by rebinding the promoted
-  // symbol within the defining scope. There is one constraint per external
-  // ref, so an empty constraint list means there were no external refs.
+  // Stateless nested defs (no runtime captures) are still promoted to thin
+  // functions so they remain usable as parameter values (e.g.
+  // `_reflection_write_to[f=call_write_to]`).
   if (closureExternalRefConstraints.empty() &&
       captureSignature.parsedCaptures.empty() &&
       !captureSignature.captureAllByConvention) {

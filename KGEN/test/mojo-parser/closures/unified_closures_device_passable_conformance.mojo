@@ -23,12 +23,12 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 # CHECK-NEXT: lit.struct.field capture2 : !kgen.param<:!AnyType #kgen.get_witness<:!{{.*}}Hosty{{.*}} Y, "std::builtin::device_passable::DevicePassable", "device_type">>
 
 # CHECK-LABEL: lit.struct.decl @"{{.*}}capturesClosure{{.*}}__storage"
-# CHECK-SAME: attributes {synthetic} {
+# CHECK-SAME: attributes {definesClosure,{{.*}}synthetic}
 # CHECK-NEXT: lit.struct.field capture2 : !HostInt
-# CHECK-NEXT: lit.struct.field anotherClosure : !lit.struct<{{.*}}
+# CHECK-NEXT: lit.struct.field anotherClosure : !{{.*}}storage{{.*}}
 
 # CHECK-LABEL: lit.struct.decl @"{{.*}}anotherClosure{{.*}}__storage"
-# CHECK-SAME: attributes {synthetic} {
+# CHECK-SAME: attributes {definesClosure,{{.*}}synthetic}
 # CHECK-NEXT: lit.struct.field capture1 : !HostString
 # CHECK-NEXT: lit.struct.field capture3 : !HostString
 

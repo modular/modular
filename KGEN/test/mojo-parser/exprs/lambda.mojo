@@ -45,7 +45,7 @@ def withNoCapture():
 
 # Nested storage methods print inside the struct (before the enclosing fn's
 # init call), so body checks are CHECK-DAG.
-# CHECK-DAG: lit.struct.decl @"withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-DAG: lit.struct.decl @"withCapturingMut()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
 # CHECK-DAG: lit.fn @"`lambda_0(::SIMD[::DType(int), ::SIMDLength(1)]){{.*}}"{{.*}} capturing -> {{.*}} attributes {{{.*}}sourceName = "`lambda_0"{{.*}}synthetic}
 # CHECK-DAG: lit.ref.struct.ger %{{.*}}[z]
@@ -62,7 +62,7 @@ def withCapturingMut():
 
 # COM: Named capture by imm (a bare `{z}` is equivalent): captured by immutable ref.
 
-# CHECK: lit.struct.decl @"withCapturingRead()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK: lit.struct.decl @"withCapturingRead()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 
 
@@ -76,7 +76,7 @@ def withCapturingRead():
 # COM: Named capture by var: captured by value (owned), so the storage field is the
 # COM: value itself, not a reference.
 
-# CHECK: lit.struct.decl @"withCapturingVar()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK: lit.struct.decl @"withCapturingVar()::`lambda_0::__storage"({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK: lit.struct.field z : !Int{{[0-9]*}}
 
 
@@ -89,7 +89,7 @@ def withCapturingVar():
 
 # COM: Multiple named captures with mixed conventions: z by imm, w by mut.
 
-# CHECK: lit.struct.decl @"withCapturingMixed()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK: lit.struct.decl @"withCapturingMixed()::`lambda_0::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, mut {{.*}}>
 # The lambda instantiates the scope-qualified storage, capturing `z` and `w`.
@@ -104,7 +104,7 @@ def withCapturingMixed():
 
 # // -----
 
-# CHECK: lit.struct.decl @"withCapturingOverride()::`lambda_0::__storage"<{{.*}}>({{.*}}) attributes {synthetic}
+# CHECK: lit.struct.decl @"withCapturingOverride()::`lambda_0::__storage"<{{.*}}>({{.*}}) attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, mut {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK: lit.call @{{.*}}List{{.*}}append
@@ -265,8 +265,8 @@ def withElidedReturn():
 # COM: several free variables at once. (Structs emit in reverse order, hence CHECK-DAG.)
 
 # CHECK-NOT: @"{{.*}}`lambda_0::__storage"
-# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
-# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {synthetic}
+# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_1::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
+# CHECK-DAG: lit.struct.decl @"withOmittedCaptures()::`lambda_2::__storage"<{{.*}}>({{.*}}) register_passable_trivial attributes {{{.*}}synthetic}
 # CHECK-DAG: lit.struct.field z : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK-DAG: lit.struct.field w : !lit.ref<{{.*}}, imm {{.*}}>
 # CHECK: lit.call @{{.*}}::@"withOmittedCaptures()::`lambda_2::__storage"::@"__init__({{.*}},{{.*}})"{{.*}}("z": {{.*}}, "w": {{.*}} ref, |

@@ -153,8 +153,14 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
 
 FailureOr<SmallVector<TypedAttr>>
 SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
-  FnTypeGeneratorType actualSig = actualFn.getFuncTypeGenerator();
+  return inferSpecialization(target, actualFn.getFuncTypeGenerator(),
+                             actualFn.getInputParams());
+}
 
+FailureOr<SmallVector<TypedAttr>>
+SpecializeInf::inferSpecialization(FnTypeGeneratorType target,
+                                   FnTypeGeneratorType actualSig,
+                                   ArrayRef<ParamDeclAttr> actualParams) {
   // The target may have a ByRefResult slot that the actual lacks when the
   // actual returns in-register. Allow that convention size difference.
   bool targetHasExtraResultSlot =
@@ -181,7 +187,7 @@ SpecializeInf::inferSpecialization(FnTypeGeneratorType target, FnOp actualFn) {
       return mlir::failure();
   }
 
-  ParamRefRemapper remapper(actualFn.getInputParams());
+  ParamRefRemapper remapper(actualParams);
 
   if (!actualSig.hasMemoryOnlyResult()) {
     Type actualResultType = remapper.replace(actualSig.getUserResultType());

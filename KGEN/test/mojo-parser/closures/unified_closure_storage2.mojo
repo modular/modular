@@ -14,7 +14,7 @@
 
 # COM: COnstructor is generated correctly
 
-# CHECK-LABEL: lit.struct.decl @"{{.*}}closure_ref::__storage"<["O._mlir_origin`"]*"O._mlir_origin`": origin<false>, ["immut_ptr`5"]*"immut_ptr`5": origin<true>, ["x`1"]*"x`1": origin<false>, |>
+# CHECK-LABEL: lit.struct.decl @"{{.*}}closure_ref::__storage"<["O._mlir_origin`"]*"O._mlir_origin`": origin<false>, ["immut_ptr`5"]*"immut_ptr`5": origin<true>, ["x`1"]*"x`1": origin<false>, +>
 # CHECK:       lit.fn @"__init__(::SIMD{{.*}}::String%{{.*}}%)"
 # CHECK-SAME:    %y: !lit.ref<!Int, imm *"y`"> read_mem
 # CHECK-SAME:    %x: !lit.ref<!String, imm *"x`1"> ref
@@ -23,7 +23,7 @@
 # `closure_var` captures everything by `var` (copied into the struct), so no
 # reference origins are promoted (only the `Ptr` type's own `O._mlir_origin`
 # remains) and every constructor argument is a `read_mem` borrow of the source.
-# CHECK-LABEL: lit.struct.decl @"{{.*}}closure_var::__storage"<["O._mlir_origin`"]*"O._mlir_origin`": origin<false>, |>
+# CHECK-LABEL: lit.struct.decl @"{{.*}}closure_var::__storage"<["O._mlir_origin`"]*"O._mlir_origin`": origin<false>, +>
 # CHECK:       lit.fn @"__init__(::String,::SIMD{{.*}})"
 # CHECK-SAME:    %x: !lit.ref<!String, imm *"x`"> read_mem
 # CHECK-SAME:    %y: !lit.ref<!Int, imm *"y`"> read_mem

@@ -27,7 +27,7 @@
 # COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
 # COM: requires recursive matching through both composite attr types.
 # S0-LABEL: lit.fn @"repro_struct_attr()"
-# S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Container[Pair(Int(2), Int(0))]"
+# S0: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
 # S0: lit.call @unified_closure_traits::@"struct_callee[::SIMD[::DType(int), ::SIMDLength(1)],def[tag: Int, //]() -> Container[Pair(tag, Int(0))]{1} & ::AnyType & ::Deinitable & ::Movable]($1){identical($1.tag, $0)}"
 # S0-SAME: <:!Int {:scalar<index> 2}
 
@@ -62,7 +62,7 @@ def repro_struct_attr():
 # COM: Verify SymbolConstantAttr matching: closure returning a type
 # COM: parameterized by a function reference (exercises symbol recursion).
 # S1-LABEL: lit.fn @"repro_symbol_attr()"
-# S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}} <:trait<@"def() -> Dispatch[identity]"
+# S1-DAG: lit.var.decl "my_fn" var : !lit.ref<!lit.struct<{{.*}}storage{{.*}}
 # S1-DAG: lit.call @unified_closure_traits::@"symbol_callee[::SIMD[::DType(int), ::SIMDLength(1)],def() -> Dispatch[identity] & ::AnyType & ::Deinitable & ::Movable]($1)"{{.*}}<:!Int {:scalar<index> 1}
 
 
@@ -93,14 +93,12 @@ def repro_symbol_attr():
     symbol_callee[1, type_of(my_fn)](my_fn)
 
 
-# COM: Ensure non-ref closure call operands are transformed/rebound in wrapper
-# COM: __call__ before dispatching to impl witness call.
-# S2-LABEL: lit.fn @"__call__[::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)]](unified_closure_traits::def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}_{{.*}}"
-# S2: [[S2_REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
-# S2-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
-# S2: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:{{.*}} impl, "def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}", "tag">
-# S2-SAME: ]{{.*}}(%{{.*}}, [[S2_REBIND]])
-
+# COM: Storage owns the call trait directly; `tag` is witnessed from the
+# COM: captured type param (no parametric wrapper / `impl` hop).
+# S2-LABEL: lit.struct.decl @"{{.*}}repro_rebind_nonref_operand{{.*}}::body::__storage"
+# S2-DAG: kgen.conformance @"def[tag: Int, //, w: Int](val: Vec[tag, w]) -> Bool{1}" {
+# S2-DAG: kgen.witness "tag" : !Int = tag
+# S2-DAG: lit.fn @"body[{{.*}}(unified_closure_traits::Vec[tag,{{.*}})`"
 
 struct Width(TrivialRegisterPassable):
     var _mlir_value: __mlir_type.index
@@ -129,7 +127,7 @@ def repro_rebind_nonref_operand[
     _ = body
 
 
-# S3: lit.struct.decl @"def() -> None_{{.*}}"
+# S3: lit.struct.decl @"{{.*}}thing(unified_closure_traits::s3_Foo)::thing::__storage"
 # S3: kgen.conformance @"std::builtin::{{.*}}::Copyable"
 # S3-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
 
@@ -230,7 +228,7 @@ def bar[U: DoB](x: U):
 # COM: Verify that a register_passable closure capturing a generic
 # COM: register_passable closure and a concrete register_passable struct gets
 # COM: convention register_passable (not trivial)
-# S7-DAG: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable attributes
+# S7-DAG: lit.struct.decl @"{{.*}}s7_call_inner{{.*}}::outer::__storage"{{.*}} register_passable attributes
 
 
 struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
@@ -254,7 +252,7 @@ def s7_call_inner[
 # COM: Verify that a register_passable closure capturing a trivially
 # COM: register_passable callback and a trivial struct gets convention
 # COM: register_passable_trivial.
-# S8-DAG: lit.struct.decl @"def(y: Int) -> Int_{{.*}}"{{.*}} register_passable_trivial attributes
+# S8-DAG: lit.struct.decl @"{{.*}}s8_call_inner{{.*}}::outer::__storage"{{.*}} register_passable_trivial attributes
 
 
 struct TrivialPayload(TrivialRegisterPassable):
