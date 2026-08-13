@@ -544,6 +544,300 @@ def test_mla_index_fp8_paged_variable_lengths[
     _ = o_device
 
 
+def test_mla_index_frozen_metadata_equivalence[
+    num_heads: Int,
+    depth: Int,
+    page_size: Int,
+    top_k: Int,
+    mask_name: StaticString,
+](
+    seq_lens: List[Int],
+    cache_lens: List[Int],
+    frozen_cache_len: Int,
+    ctx: DeviceContext,
+) raises:
+    """The metadata bound must not change which indices are selected.
+
+    This is the central invariant of the bounded-top-k / no-fill / streaming-
+    scorer stack: the `max_cache_length` metadata (which a captured decode
+    graph bakes at its capture-time upper bound) may only affect cost, never
+    results. Chosen shapes make the two runs take different dispatch routes
+    (K-resident scorer + one top-k variant at the runtime-length bound; the
+    K-streaming scorer + another top-k variant at the frozen bound), so
+    equality also cross-checks the routes' numerics against each other —
+    include rows with more valid keys than `top_k` (real sparsity) so a score
+    divergence near the selection boundary would change the set.
+
+    Compared per token: the count of valid (non -1) slots, and the SET of
+    selected indices. Order is not compared: tie order among equal scores is
+    a per-kernel implementation detail (the bitonic sort and the
+    histogram-select rank ties differently), and fp8 inputs make exact score
+    ties routine.
+    """
+    var batch_size = len(seq_lens)
+    assert len(cache_lens) == batch_size
+
+    var total_seq_len = 0
+    var max_seq_len = 0
+    var max_cache_len = 0
+    for i in range(batch_size):
+        total_seq_len += seq_lens[i]
+        max_seq_len = max(max_seq_len, seq_lens[i])
+        max_cache_len = max(max_cache_len, cache_lens[i])
+    assert frozen_cache_len >= max_cache_len
+
+    print(
+        "test_mla_index_frozen_metadata_equivalence with params:",
+        "num_heads:",
+        num_heads,
+        "mask:",
+        mask_name,
+        "batch_size:",
+        batch_size,
+        "max_cache_len:",
+        max_cache_len,
+        "frozen_cache_len:",
+        frozen_cache_len,
+        "top_k:",
+        top_k,
+    )
+
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=1, head_size=depth, is_mla=True
+    )
+    comptime num_layers = 1
+
+    # One shared LUT, wide enough for the frozen metadata; the reference run only
+    # dereferences the real-page prefix. Tail slots point at block 0.
+    var real_pages_per_seq = (max_cache_len + max_seq_len + page_size - 1) // (
+        page_size
+    )
+    var lut_pages_per_seq = (
+        frozen_cache_len + max_seq_len + page_size - 1
+    ) // page_size
+    var num_blocks = batch_size * real_pages_per_seq + 1
+
+    var q_size = total_seq_len * num_heads * depth
+    var q_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
+    with q_device.map_to_host() as q_host:
+        rand(q_host.as_span())
+
+    var qs_size = total_seq_len * num_heads
+    var qs_device = ctx.enqueue_create_buffer[DType.float32](qs_size)
+    with qs_device.map_to_host() as qs_host:
+        rand(qs_host.as_span())
+
+    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+    with input_row_offsets_device.map_to_host() as iro_host:
+        iro_host[0] = UInt32(0)
+        for i in range(batch_size):
+            iro_host[i + 1] = iro_host[i] + UInt32(seq_lens[i])
+
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    with cache_lengths_device.map_to_host() as cl_host:
+        for i in range(batch_size):
+            cl_host[i] = UInt32(cache_lens[i])
+
+    var k_shape = IndexList[6](
+        num_blocks,
+        1,
+        num_layers,
+        page_size,
+        kv_params.num_heads,
+        kv_params.head_size,
+    )
+    comptime k_block_layout = Layout.row_major[6]()
+    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
+        k_shape
+    )
+    var k_block_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+        k_shape.flattened_length()
+    )
+    with k_block_device.map_to_host() as k_block_host:
+        rand(k_block_host.as_span())
+
+    comptime head_dim_granularity = 1
+    var ks_shape = IndexList[6](
+        num_blocks,
+        1,
+        num_layers,
+        page_size,
+        kv_params.num_heads,
+        head_dim_granularity,
+    )
+    comptime ks_block_layout = Layout.row_major[6]()
+    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
+        ks_shape
+    )
+    var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
+        ks_shape.flattened_length()
+    )
+    with ks_block_device.map_to_host() as ks_block_host:
+        rand(ks_block_host.as_span())
+
+    comptime paged_lut_layout = Layout.row_major[2]()
+    var paged_lut_shape = IndexList[2](batch_size, lut_pages_per_seq)
+    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
+        paged_lut_shape
+    )
+    var k_lut_device = ctx.enqueue_create_buffer[DType.uint32](
+        paged_lut_shape.flattened_length()
+    )
+    with k_lut_device.map_to_host() as k_lut_host:
+        for bs in range(batch_size):
+            for page_idx in range(lut_pages_per_seq):
+                var block_idx = 0
+                if page_idx < real_pages_per_seq:
+                    block_idx = 1 + bs * real_pages_per_seq + page_idx
+                k_lut_host[bs * lut_pages_per_seq + page_idx] = UInt32(
+                    block_idx
+                )
+
+    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_shape = IndexList[1](batch_size)
+    var cache_lengths_runtime_layout = RuntimeLayout[
+        cache_lengths_layout
+    ].row_major(cache_lengths_shape)
+
+    var total_output_size = total_seq_len * top_k
+    var o_ref_device = ctx.enqueue_create_buffer[DType.int32](total_output_size)
+    var o_frozen_device = ctx.enqueue_create_buffer[DType.int32](
+        total_output_size
+    )
+
+    var q_tile = TileTensor(
+        q_device, row_major(total_seq_len, num_heads, depth)
+    )
+    var qs_tile = TileTensor(qs_device, row_major(total_seq_len, num_heads))
+    var input_row_offsets_tile = TileTensor(
+        input_row_offsets_device, row_major(batch_size + 1)
+    )
+
+    for run in range(2):
+        var metadata_cache = max_cache_len if run == 0 else frozen_cache_len
+        var k_collection = PagedKVCacheCollection[
+            DType.float8_e4m3fn,
+            kv_params,
+            page_size,
+            scale_dtype_=DType.float32,
+            quantization_granularity_=128,
+        ](
+            LayoutTensor[DType.float8_e4m3fn, k_block_layout](
+                k_block_device,
+                k_block_runtime_layout,
+            ),
+            LayoutTensor[mut=False, DType.uint32, cache_lengths_layout](
+                cache_lengths_device,
+                cache_lengths_runtime_layout,
+            ),
+            LayoutTensor[mut=False, DType.uint32, paged_lut_layout](
+                k_lut_device,
+                paged_lut_runtime_layout,
+            ),
+            UInt32(max_seq_len),
+            UInt32(metadata_cache),
+            LayoutTensor[DType.float32, ks_block_layout](
+                ks_block_device,
+                ks_block_runtime_layout,
+            ),
+        )
+        var o_tile = TileTensor(
+            o_ref_device if run == 0 else o_frozen_device,
+            row_major(total_seq_len, top_k),
+        )
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            top_k,
+            mask_name,
+        ](
+            o_tile,
+            q_tile,
+            qs_tile,
+            input_row_offsets_tile,
+            k_collection,
+            UInt32(0),
+            ctx,
+        )
+        ctx.synchronize()
+
+    var o_ref_host = ctx.enqueue_create_host_buffer[DType.int32](
+        total_output_size
+    )
+    var o_frozen_host = ctx.enqueue_create_host_buffer[DType.int32](
+        total_output_size
+    )
+    ctx.enqueue_copy(o_ref_host, o_ref_device)
+    ctx.enqueue_copy(o_frozen_host, o_frozen_device)
+    ctx.synchronize()
+
+    for token in range(total_seq_len):
+        var ref_set = Set[Int]()
+        var frozen_set = Set[Int]()
+        var ref_valid = 0
+        var frozen_valid = 0
+        for k in range(top_k):
+            var h = Int(o_ref_host[token * top_k + k])
+            var f = Int(o_frozen_host[token * top_k + k])
+            if h >= 0:
+                ref_valid += 1
+                ref_set.add(h)
+            if f >= 0:
+                frozen_valid += 1
+                frozen_set.add(f)
+        assert_true(
+            ref_valid == frozen_valid,
+            String(
+                "metadata changed the valid-slot count at token ",
+                token,
+                ": ref=",
+                ref_valid,
+                " frozen=",
+                frozen_valid,
+            ),
+        )
+        for idx in ref_set:
+            assert_true(
+                idx in frozen_set,
+                String(
+                    "metadata changed the selection at token ",
+                    token,
+                    ": ref selected ",
+                    idx,
+                    ", frozen did not",
+                ),
+            )
+        for idx in frozen_set:
+            assert_true(
+                idx in ref_set,
+                String(
+                    "metadata changed the selection at token ",
+                    token,
+                    ": frozen selected ",
+                    idx,
+                    ", ref did not",
+                ),
+            )
+
+    print("  Test passed!")
+
+    _ = q_device
+    _ = qs_device
+    _ = input_row_offsets_device
+    _ = cache_lengths_device
+    _ = k_block_device
+    _ = ks_block_device
+    _ = k_lut_device
+    _ = o_ref_device
+    _ = o_frozen_device
+
+
 def main() raises:
     with DeviceContext() as ctx:
         print("Testing mla_indexer_ragged_float8_paged...")
@@ -1176,5 +1470,76 @@ def main() raises:
                 ctx=ctx,
                 metadata_cache_len=65536,
             )
+
+            # Deep rows route the scorer through the
+            # decode-streaming (key-split) kernel; check its logits against
+            # the host reference — the small-shape check_scores cases above
+            # all stay on the K-resident path.
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=4,
+                depth=128,
+                page_size=128,
+                top_k=64,
+                mask_name=MaskName.NULL.name,
+                check_scores=True,
+            ](
+                seq_lens=[1, 1, 1, 1, 1, 1, 1, 1],
+                cache_lens=[
+                    32800,
+                    32800,
+                    32800,
+                    32800,
+                    32800,
+                    32800,
+                    32800,
+                    32800,
+                ],
+                ctx=ctx,
+            )
+
+        # ===== Metadata must not change results =====
+        # Rationale and comparison semantics live on
+        # `test_mla_index_frozen_metadata_equivalence`.
+        print("\n--- frozen-metadata equivalence tests ---")
+
+        test_mla_index_frozen_metadata_equivalence[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[4000, 2500, 1500, 50],
+            frozen_cache_len=65536,
+            ctx=ctx,
+        )
+
+        test_mla_index_frozen_metadata_equivalence[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[4000, 2500, 1500, 50],
+            frozen_cache_len=65536,
+            ctx=ctx,
+        )
+
+        # Frozen stride in the register-resident histsel range (N <= 8192).
+        test_mla_index_frozen_metadata_equivalence[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[4000, 2500, 1500, 50],
+            frozen_cache_len=8000,
+            ctx=ctx,
+        )
 
         print("\nAll tests passed!")
