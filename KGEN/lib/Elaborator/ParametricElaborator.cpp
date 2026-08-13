@@ -2764,9 +2764,7 @@ LogicalResult ParametricElaborator::run(
   //   - The host stub was created in evaluateCompileOffloadClosureAttr using
   //     the pre-rename sym (mangleParameterValues of the generator).
   //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
-  //     function
-  //     using kernelPreRenameSyms, which captures the same pre-rename sym
-  //     before the offload rename loop runs.
+  //     function using the same mangled kernel.name.
   //
   // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
   // finds the host stub by that same name.

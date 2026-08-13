@@ -326,16 +326,11 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   // Tag the entry generator with a kernel ID so we can find the resulting
   // FuncOp after elaboration (which may rename symbols for offload targets).
   static constexpr uint64_t kAsmEntryKernelId = 0;
-  // Capture the pre-rename sym before elaboration renames functions, so that
-  // writeCaptureArgs can name populate_captures consistently with host stubs.
-  StringAttr entryPreRenameSym;
   if (!symbol.getParamValues().empty()) {
     generateInstantiateStub(func, symbol, name, mapping, /*symtab=*/nullptr,
                             kAsmEntryKernelId);
-    entryPreRenameSym = name;
   } else {
     GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
-    entryPreRenameSym = sliced.getSymNameAttr();
     ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
     SmallVector<Attribute> metadataArray =
         llvm::to_vector(sliced.getLLVMMetadataArrayAttr().getValue());
@@ -365,7 +360,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   if (!entryFunc)
     return Error("internal error: cannot find kernel by its ID");
   auto [capturesFunc, numCaptures, captureSizes] =
-      writeCaptureArgs(*module, entryFunc, entryPreRenameSym);
+      writeCaptureArgs(*module, entryFunc, name);
 
   // Handle the emission options.
   ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
@@ -517,12 +512,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       // Collect SymbolConstantAttr names to rename.
       DenseMap<SymbolRefAttr, StringAttr> symToRename;
 
-      // Map from kernel ID to pre-rename sym name, captured before elaboration
-      // renames functions. Used by writeCaptureArgs to name populate_captures
-      // functions consistently with host stubs (which used the pre-rename sym
-      // at stub creation time in evaluateCompileOffloadClosureAttr).
-      DenseMap<uint64_t, StringAttr> kernelPreRenameSyms;
-
       for (auto [op, symbolInfo] : offloadInfo.symbols) {
         // If there are input parameters, we have to go generate a stub to root
         // instantiation of the generator. Go find the cloned generator.
@@ -550,9 +539,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
             generateInstantiateStub(func, symbol, kernelInfo.name, mapping,
                                     &slicedSymtab, kernelInfo.kernelId);
-            // For parametric kernels, the instantiation stub name is the
-            // pre-rename sym (the symbol that the host stub was named after).
-            kernelPreRenameSyms[kernelInfo.kernelId] = kernelInfo.name;
           } else {
             // Set kernelId
             GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
@@ -564,9 +550,6 @@ static ElaboratorCompileOffloadRetType compileOffloads(
             metadataArray.push_back(b.getIndexAttr(kernelInfo.kernelId));
             sliced.setLLVMMetadataArrayAttr(
                 ArrayAttr::get(sliced.getContext(), metadataArray));
-            // For non-parametric kernels, the GeneratorOp sym name is the
-            // pre-rename sym (the symbol that the host stub was named after).
-            kernelPreRenameSyms[kernelInfo.kernelId] = sliced.getSymNameAttr();
           }
         }
         if (newName) {
@@ -652,8 +635,8 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           FuncOp kernelFunc = findFuncByKernelId(*module, kernel.kernelId);
           if (!kernelFunc)
             return Error("internal error: cannot find kernel by its ID");
-          auto [capturesFunc, numCaptures, captureSizes] = writeCaptureArgs(
-              *module, kernelFunc, kernelPreRenameSyms.lookup(kernel.kernelId));
+          auto [capturesFunc, numCaptures, captureSizes] =
+              writeCaptureArgs(*module, kernelFunc, kernel.name);
 
           // renameFunctions has already run, so sym_name is the exact name
           // that will be emitted. Use it directly as the output file basename

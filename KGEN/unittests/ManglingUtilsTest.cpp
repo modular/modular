@@ -31,12 +31,15 @@ protected:
 
   MangleParameterValuesTest() { ctx.loadDialect<KGENDialect>(); }
 
-  /// Parses a module holding one single-parameter generator named `name`, and
-  /// returns that generator. A generator name is a symbol name, so `name` is
-  /// spelled as MLIR string-literal contents: `\1B` for an escape character.
+  /// Parses a module holding one single-parameter generator named `name`.
   GeneratorOpInterface getGenerator(StringRef name = "gen") {
     std::string source =
         ("kgen.generator @\"" + name + "\"<p: string>() { kgen.return }").str();
+    return getGeneratorFromSource(source);
+  }
+
+  /// Parses `source` as a module and returns its first generator.
+  GeneratorOpInterface getGeneratorFromSource(StringRef source) {
     modules.push_back(parseSourceString<ModuleOp>(source, &ctx));
     ModuleOp module = *modules.back();
     assert(module && "failed to parse the test generator");
@@ -47,12 +50,14 @@ protected:
     return cast<TypedAttr>(StringAttr::get(value, StringType::get(&ctx)));
   }
 
-  /// Renders escape characters, so a failure prints legibly and an expected
-  /// value needs no raw control byte written into this file.
   static std::string show(StringRef mangled) {
     std::string result;
-    for (char c : mangled)
-      result += (c == '\033') ? "<ESC>" : std::string(1, c);
+    for (char c : mangled) {
+      if (c == '\033')
+        result += "<ESC>";
+      else
+        result.push_back(c);
+    }
     return result;
   }
 
@@ -65,28 +70,18 @@ TEST_F(MangleParameterValuesTest, NoParameterValuesIsTheGeneratorName) {
   EXPECT_EQ(mangleParameterValues(getGenerator(), {}), "gen");
 }
 
-// A parameter is carried as `name=value` so a symbol is unique per
-// instantiation and stays readable in a linker error or a profile.
 TEST_F(MangleParameterValuesTest, ParameterValuesAreNamedInTheMangling) {
+  // String params print as `"..."`, then `"` is encoded to `~Q` on join so
+  // NotEscaped and Escaped paths cannot disagree on quote spelling.
   EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("42")})),
-            "gen,p=\"42\"");
+            "gen,p=~Q42~Q");
 }
 
-// `@` is encoded as an escape character followed by `A`, which is what leaves
-// room for an escape character to encode as itself doubled - see
-// DistinctNamesStayDistinct.
-TEST_F(MangleParameterValuesTest, AtSignIsEncodedAsEscapeThenA) {
+TEST_F(MangleParameterValuesTest, AtSignIsEncodedAsTildeA) {
   const std::pair<StringRef, StringRef> cases[] = {
-      {"@", "gen,p=\"<ESC>A\""},
-      {"a@b", "gen,p=\"a<ESC>Ab\""},
-      // Adjacent occurrences: an escaper stepping by a fixed stride walks past
-      // the second one and leaves it in the symbol. Longer runs exercise no
-      // further state here, but pin the progression against an escaper that
-      // does carry some.
-      {"@@", "gen,p=\"<ESC>A<ESC>A\""},
-      {"a@@b", "gen,p=\"a<ESC>A<ESC>Ab\""},
-      {"a@@@b", "gen,p=\"a<ESC>A<ESC>A<ESC>Ab\""},
-      {"a@@@@b", "gen,p=\"a<ESC>A<ESC>A<ESC>A<ESC>Ab\""},
+      {"@", "gen,p=~Q~A~Q"},           {"a@b", "gen,p=~Qa~Ab~Q"},
+      {"@@", "gen,p=~Q~A~A~Q"},        {"a@@b", "gen,p=~Qa~A~Ab~Q"},
+      {"a@@@b", "gen,p=~Qa~A~A~Ab~Q"}, {"a@@@@b", "gen,p=~Qa~A~A~A~Ab~Q"},
   };
   for (auto [value, expected] : cases)
     EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam(value)})),
@@ -94,51 +89,74 @@ TEST_F(MangleParameterValuesTest, AtSignIsEncodedAsEscapeThenA) {
         << "for parameter value " << value.str();
 }
 
-// The invariant the encoding exists for: `@` is invalid in an ELF symbol name
-// and fails the link, so none may survive however many there are. Stated
-// separately from the encoding above, so it keeps holding if the encoding is
-// ever changed.
-TEST_F(MangleParameterValuesTest, NoAtSignSurvivesEscaping) {
+TEST_F(MangleParameterValuesTest, NoAtSignSurvivesEncoding) {
   for (StringRef value :
        {"@", "@@", "a@b", "a@@b", "@a@", "@@@", "a@@@@b", "@A"}) {
     std::string mangled =
         mangleParameterValues(getGenerator(), {stringParam(value)});
     EXPECT_EQ(mangled.find('@'), std::string::npos)
-        << "parameter value " << value.str() << " mangled to " << show(mangled)
-        << ", which the linker rejects";
+        << "parameter value " << value.str() << " mangled to " << show(mangled);
   }
 }
 
-// Encoding must stay reversible, or two instantiations collide on one symbol.
-// Because `@` maps onto the escape character, an escape character already in a
-// name has to be encoded too - doubled - or it is indistinguishable from an
-// encoded `@`. A name arrives holding one when an already-mangled name is
-// mangled again.
-TEST_F(MangleParameterValuesTest, DistinctNamesStayDistinct) {
-  TypedAttr param = stringParam("42");
-  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen@"), {param})),
-            "gen<ESC>A,p=\"42\"");
-  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen\\1B"), {param})),
-            "gen<ESC><ESC>,p=\"42\"");
+TEST_F(MangleParameterValuesTest, TildeInNotEscapedTextIsDoubled) {
+  EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("a~b")})),
+            "gen,p=~Qa~~b~Q");
 }
 
-// The delicate point of this encoding: `@` becomes an escape character plus
-// `A`, so a literal `A` sitting right after either an `@` or an escape
-// character is where a decoder could go wrong. `@A` must not encode to what an
-// escape character followed by `A` encodes to, or the two decode alike.
-TEST_F(MangleParameterValuesTest, LiteralAAfterAnEscapeStaysDistinct) {
+// Escaped already-encoded generator names must not re-encode `~A` into `~~A`.
+TEST_F(MangleParameterValuesTest, NestedMangledNameIsNotReEncoded) {
   TypedAttr param = stringParam("42");
+  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen~A"), {param})),
+            "gen~A,p=~Q42~Q");
+  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen~~"), {param})),
+            "gen~~,p=~Q42~Q");
+}
+
+TEST_F(MangleParameterValuesTest, AtInGeneratorNameIsSanitizedOnce) {
+  TypedAttr param = stringParam("42");
+  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen@"), {param})),
+            "gen~A,p=~Q42~Q");
   EXPECT_EQ(show(mangleParameterValues(getGenerator("gen@A"), {param})),
-            "gen<ESC>AA,p=\"42\"");
-  EXPECT_EQ(show(mangleParameterValues(getGenerator("gen\\1BA"), {param})),
-            "gen<ESC><ESC>A,p=\"42\"");
+            "gen~AA,p=~Q42~Q");
+}
+
+// NotEscaped path: `~` doubles, so an input that already looks encoded would
+// be wrong to feed as NotEscaped — callers must mark Escaped for that. This
+// pins the NotEscaped rule itself.
+TEST_F(MangleParameterValuesTest, NotEscapedNestedTildeAIsEncodedOnceOnJoin) {
+  EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("~A")})),
+            "gen,p=~Q~~A~Q");
 }
 
 // A parameter value cannot deliver a raw escape character: it is rendered
-// through the MLIR asm printer, which writes non-printables as hex text. So the
-// doubling above is reached only through a generator's name, and a value that
-// spells an escape sequence stays distinct from one holding `@` for free.
+// through the MLIR asm printer, which writes non-printables as hex text.
 TEST_F(MangleParameterValuesTest, EscapeCharacterInAValueArrivesAsHexText) {
   EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("\033")})),
-            "gen,p=\"\\1B\"");
+            "gen,p=~Q\\1B~Q");
+}
+
+// Quotes must become `~Q` on both fragment kinds so host stubs and offload
+// kernelInfo names cannot disagree when the same `"` arrives via an Escaped
+// generator name vs a NotEscaped param print.
+TEST_F(MangleParameterValuesTest, QuoteInEscapedGeneratorNameIsSanitized) {
+  TypedAttr param = stringParam("42");
+  // `\22` is MLIR's hex escape for `"`, so the generator sym_name is `gen"`.
+  EXPECT_EQ(show(mangleParameterValues(
+                getGeneratorFromSource(
+                    R"(kgen.generator @"gen\22"<p: string>() { kgen.return })"),
+                {param})),
+            "gen~Q,p=~Q42~Q");
+  EXPECT_EQ(show(mangleParameterValues(
+                getGeneratorFromSource(
+                    R"(kgen.generator @"a\22b"<p: string>() { kgen.return })"),
+                {param})),
+            "a~Qb,p=~Q42~Q");
+}
+
+TEST_F(MangleParameterValuesTest, QuoteInNotEscapedStringParamIsSanitized) {
+  // Asm printer writes an embedded quote as the hex text `\22` inside the
+  // wrapping `"..."`, then join encodes those wrapping quotes to `~Q`.
+  EXPECT_EQ(show(mangleParameterValues(getGenerator(), {stringParam("a\"b")})),
+            "gen,p=~Qa\\22b~Q");
 }
