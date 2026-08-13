@@ -150,6 +150,9 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
+    per_test_tags = {
+        "test_prefer_module_v3.py": ["manual"],
+    },  # FIXME: QUA-845
     tags = [
         "gpu",
         "no-sandbox",
