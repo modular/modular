@@ -328,13 +328,10 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
 def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
     pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
 ) -> None:
-    """CE requests deferred by InsufficientBlocksError are admitted once
-    blocks free up (e.g. after in-flight KV transfers complete).
-
-    Simulates the case with in-flight KV transfers: get_inflight_kv_transfer_count
-    returns 1 (transfers in flight, safe to defer), then 0 (transfers drained,
-    blocks freed, admission proceeds).
-    """
+    """A CE request deferred by InsufficientBlocksError is admitted once
+    blocks free up: something is in flight, so the first call defers
+    (presence, not magnitude -- it doesn't matter whether that in-flight
+    signal is "enough"); the second call's alloc succeeds outright."""
     scheduler_config = TokenGenerationSchedulerConfig(
         max_batch_size=5,
         max_batch_total_tokens=None,
@@ -343,24 +340,23 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
         target_tokens_per_batch_ce=30,
     )
     kv_cache = Mock()
-    # First alloc call fails; subsequent calls succeed (blocks freed).
     kv_cache.alloc = Mock(
         side_effect=[
-            InsufficientBlocksError,
+            InsufficientBlocksError("insufficient blocks"),
             CompletedTransfer(TransferDirection.LOAD),
             CompletedTransfer(TransferDirection.LOAD),
         ]
     )
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
     set_mock_kv_usage(kv_cache, 0.0)
 
-    inflight_count = [1]  # mutable so the lambda can be updated between calls
     batch_constructor = TextBatchConstructor(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         kv_cache=kv_cache,
-        get_inflight_kv_transfer_count=lambda: inflight_count[0],
+        get_inflight_kv_transfer_count=lambda replica_idx: 1,
     )
 
     for _ in range(2):
@@ -371,18 +367,155 @@ def test_text_batch_constructor__insufficient_blocks_defers_then_retries(
         )
         batch_constructor.enqueue_new_request(context)
 
-    # First call: alloc fails, but inflight transfers are present → defer.
+    # First call: alloc fails, but something is in flight → defer.
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 0
     assert len(batch_constructor.replicas[0].ce_reqs) == 2
-
-    # Transfers complete, blocks freed.
-    inflight_count[0] = 0
 
     # Second call: alloc succeeds → both requests admitted.
     inputs = batch_constructor.construct_batch()
     assert len(inputs.batches[0]) == 2
     assert len(batch_constructor.replicas[0].ce_reqs) == 0
+
+
+def _presence_test_setup(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    *,
+    inflight_count: int = 0,
+    is_tg: bool = False,
+) -> TextBatchConstructor:
+    """Builds a TextBatchConstructor with one request (CE, or TG when
+    is_tg) whose alloc always fails, backed by an in-flight tracker
+    reporting the given count."""
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=30,
+    )
+    kv_cache = Mock()
+    kv_cache.alloc = Mock(
+        side_effect=InsufficientBlocksError("insufficient blocks")
+    )
+    kv_cache.claim = Mock()
+    kv_cache.contains = Mock()
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
+    set_mock_kv_usage(kv_cache, 0.0)
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+        get_inflight_kv_transfer_count=lambda replica_idx: inflight_count,
+    )
+    context = (
+        create_lora_context(seq_len=9, is_tg=True)
+        if is_tg
+        else TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+            max_length=100,
+        )
+    )
+    batch_constructor.enqueue_new_request(context)
+    return batch_constructor
+
+
+def test_text_batch_constructor__ce_insufficient_blocks_fatal_when_nothing_inflight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """No other work and nothing in flight -- genuinely stuck, must raise."""
+    batch_constructor = _presence_test_setup(pipeline)
+    with pytest.raises(InsufficientBlocksError):
+        batch_constructor.construct_batch()
+
+
+def _fatal_test_batch_constructor(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    *,
+    inflight_count: int = 0,
+    pending_transfers_exist: bool = False,
+) -> TextBatchConstructor:
+    """Builds a bare TextBatchConstructor for calling
+    _is_insufficient_blocks_fatal directly, without going through
+    construct_batch()."""
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=5,
+        max_batch_total_tokens=None,
+        enable_in_flight_batching=False,
+        enable_chunked_prefill=False,
+        target_tokens_per_batch_ce=30,
+    )
+    kv_cache = Mock()
+    kv_cache.pending_transfers_exist = Mock(
+        return_value=pending_transfers_exist
+    )
+    return TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+        get_inflight_kv_transfer_count=lambda replica_idx: inflight_count,
+    )
+
+
+def test_text_batch_constructor__is_insufficient_blocks_fatal_false_with_other_work(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """With other runnable work present, never fatal regardless of what's
+    in flight."""
+    batch_constructor = _fatal_test_batch_constructor(pipeline)
+    assert not batch_constructor._is_insufficient_blocks_fatal(
+        replica_idx=0, no_other_work=False
+    )
+
+
+def test_text_batch_constructor__is_insufficient_blocks_fatal_true_when_nothing_inflight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """No other work and nothing in flight -- genuinely stuck, fatal."""
+    batch_constructor = _fatal_test_batch_constructor(pipeline)
+    assert batch_constructor._is_insufficient_blocks_fatal(
+        replica_idx=0, no_other_work=True
+    )
+
+
+def test_text_batch_constructor__is_insufficient_blocks_fatal_false_when_anything_inflight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """No other work, but something is in flight -- not fatal, no matter
+    how little: a single in-flight transfer might still resolve, and
+    sizing "enough" against a snapshot would only ever undercount what
+    could actually come back."""
+    batch_constructor = _fatal_test_batch_constructor(
+        pipeline, inflight_count=1
+    )
+    assert not batch_constructor._is_insufficient_blocks_fatal(
+        replica_idx=0, no_other_work=True
+    )
+
+
+def test_text_batch_constructor__is_insufficient_blocks_fatal_false_when_pending_transfer_exists(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A pending device-side transfer (e.g. a D2H offload) alone is enough
+    to defer, even with no external in-flight signal."""
+    batch_constructor = _fatal_test_batch_constructor(
+        pipeline, pending_transfers_exist=True
+    )
+    assert not batch_constructor._is_insufficient_blocks_fatal(
+        replica_idx=0, no_other_work=True
+    )
+
+
+def test_text_batch_constructor__tg_insufficient_blocks_fatal_when_nothing_inflight(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """Same presence check on the TG path: raises once candidate_ids is
+    exhausted and nothing at all is in flight."""
+    batch_constructor = _presence_test_setup(pipeline, is_tg=True)
+    with pytest.raises(InsufficientBlocksError):
+        batch_constructor.construct_batch()
 
 
 def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_preemption(
@@ -400,6 +533,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     kv_cache.alloc.return_value = CompletedTransfer(TransferDirection.LOAD)
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
+    kv_cache.pending_transfers_exist = Mock(return_value=False)
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -1981,14 +2115,19 @@ def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
     """OOM does not crash the server while a cordoned onload is in flight.
 
     The first request is cordoned (onload in flight); the second hits
-    ``InsufficientBlocksError`` but is deferred rather than raised, because the
-    in-flight transfer will free blocks once it lands (its blocks are pinned now
-    but released by ``poll_transfers`` on completion).
+    ``InsufficientBlocksError``. A's cordoned onload is enough on its own
+    (presence, not magnitude) for B to defer rather than raise.
     """
     onload = _IncompleteOnload()
     kv_cache = _make_cordon_kv_cache(
-        Mock(side_effect=[onload, InsufficientBlocksError])
+        Mock(
+            side_effect=[
+                onload,
+                InsufficientBlocksError("insufficient blocks"),
+            ]
+        )
     )
+    kv_cache.get_req_blocks = Mock(return_value=[0, 1, 2, 3, 4])
     batch_constructor = TextBatchConstructor(
         scheduler_config=_cordon_config(),
         pipeline=pipeline,
@@ -1999,7 +2138,7 @@ def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
     batch_constructor.enqueue_new_request(ctx_a)
     batch_constructor.enqueue_new_request(ctx_b)
 
-    # Must not raise: A cordons, B's OOM is deferred (an onload is in flight).
+    # Must not raise: A cordons, B's OOM defers (A's cordoned blocks cover it).
     inputs = batch_constructor.construct_batch()
 
     assert len(inputs.batches[0]) == 0

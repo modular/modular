@@ -134,6 +134,15 @@ class DecodeScheduler(Scheduler):
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
             dp_padder=dp_padder,
+            # A prefill_reqs entry doesn't free its own blocks on
+            # resolution -- it converts into a tg_reqs reservation on the
+            # same blocks -- but that reservation is then preemptible like
+            # any other TG request, so its presence still means a stuck
+            # allocation isn't necessarily a dead end. inflight_transfers
+            # is a strict subset of prefill_reqs (an entry only exists
+            # there once its matching prefill_reqs entry does), so
+            # counting prefill_reqs alone covers both.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self._last_batch_activity: float = time.monotonic()
@@ -489,6 +498,18 @@ class DecodeScheduler(Scheduler):
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
+
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of prefill_reqs entries on this replica -- inflight_transfers
+        is a strict subset (an entry only exists there once its matching
+        prefill_reqs entry does), so counting the superset covers both.
+        Scoped to replica_idx: a reservation on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for pending in self.prefill_reqs.values()
+            if pending.replica_idx == replica_idx
+        )
 
     @traced
     def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
