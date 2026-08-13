@@ -186,36 +186,40 @@ def bench_stencil_avg_pool[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
+
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            avg_pool_compute_init_gpu,
+            avg_pool_compute_gpu,
+            avg_pool_compute_finalize_gpu,
+        )
+
     @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                avg_pool_compute_init_gpu,
-                avg_pool_compute_gpu,
-                avg_pool_compute_finalize_gpu,
-            )
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -468,36 +472,40 @@ def bench_stencil_max_pool[
     }:
         d_output.store_linear(point, val)
 
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
+
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            max_pool_compute_init_gpu,
+            max_pool_compute_gpu,
+            max_pool_compute_finalize_gpu,
+        )
+
     @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                max_pool_compute_init_gpu,
-                max_pool_compute_gpu,
-                max_pool_compute_finalize_gpu,
-            )
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -741,36 +749,40 @@ def bench_stencil_avg_pool_padded[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
+
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            avg_pool_compute_init_gpu,
+            avg_pool_compute_gpu,
+            avg_pool_compute_finalize_gpu,
+        )
+
     @__parameter
     @always_inline
-    def bench_gpu(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                avg_pool_compute_init_gpu,
-                avg_pool_compute_gpu,
-                avg_pool_compute_finalize_gpu,
-            )
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],

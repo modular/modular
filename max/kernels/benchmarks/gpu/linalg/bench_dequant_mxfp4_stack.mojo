@@ -70,10 +70,10 @@ def bench_dequant_stack[
     )
     var b_out_tt = TileTensor(b_out_device, row_major((num_rows_total, Idx[K])))
 
-    @__copy_capture(b_out_tt, b_packed_tt, b_scales_tt)
-    @__parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut b_out_tt, imm}:
         dequant_mxfp4(
             ctx,
             b_out_tt,
@@ -86,7 +86,7 @@ def bench_dequant_stack[
     @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     comptime total_bytes = (
         num_rows_total * packed_K

@@ -97,35 +97,36 @@ def bench_argmax[
 
     var in_shape = Coord(IndexList[2](batch, num_elements))
 
-    @__parameter
     @always_inline
-    def bench_rowwise(mut b: Bencher):
-        @__parameter
+    def launch_rowwise(
+        ctx: DeviceContext,
+    ) raises {mut out_tensor, imm}:
         @always_inline
-        def launch(ctx: DeviceContext) raises:
-            @always_inline
-            def input_fn[
-                width: Int, alignment: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var in_tensor} -> SIMD[dtype, width]:
-                return in_tensor.load_linear[width=width](
-                    rebind[IndexList[2]](coords)
-                )
-
-            @always_inline
-            def output_fn[
-                width: SIMDLength, _rank: Int
-            ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {
-                var out_tensor
-            }:
-                out_tensor.store_linear[width=Int(width)](
-                    rebind[IndexList[2]](coords), val.cast[out_idx_type]()
-                )
-
-            reduce_argmax[dtype, target="gpu", reduce_dim=1](
-                input_fn, output_fn, in_shape, ctx
+        def input_fn[
+            width: Int, alignment: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var in_tensor} -> SIMD[dtype, width]:
+            return in_tensor.load_linear[width=width](
+                rebind[IndexList[2]](coords)
             )
 
-        bencher_iter_custom[launch](b, ctx)
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {
+            var out_tensor
+        }:
+            out_tensor.store_linear[width=Int(width)](
+                rebind[IndexList[2]](coords), val.cast[out_idx_type]()
+            )
+
+        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+            input_fn, output_fn, in_shape, ctx
+        )
+
+    @__parameter
+    @always_inline
+    def bench_rowwise(mut b: Bencher) raises:
+        bencher_iter_custom(b, launch_rowwise, ctx)
 
     m.bench_function[bench_rowwise](
         BenchId(String("argmax-rowwise", suffix)),

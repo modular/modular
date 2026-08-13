@@ -181,29 +181,27 @@ def execute_topk_bitonic[
     var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
     ctx.synchronize()
 
-    @__parameter
-    @__copy_capture(scores_t, idxs_t)
     @always_inline
-    def bench_func(mut b: Bencher):
-        @__parameter
-        @always_inline
-        def kernel_launch(c: DeviceContext) raises:
-            persistent_topk_block_split[
-                ordered=ordered, deterministic=deterministic
-            ](
-                c,
-                rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
-                    scores_t.ptr
-                ),
-                rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
-                    idxs_t.ptr
-                ),
-                N,
-                K,
-                rows,
-            )
+    def kernel_launch(c: DeviceContext) raises {mut idxs_t, imm}:
+        persistent_topk_block_split[
+            ordered=ordered, deterministic=deterministic
+        ](
+            c,
+            rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+                scores_t.ptr
+            ),
+            rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+                idxs_t.ptr
+            ),
+            N,
+            K,
+            rows,
+        )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @__parameter
+    @always_inline
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(_get_run_name(rows, N, K, dist, mode)), []
