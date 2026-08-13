@@ -1680,11 +1680,9 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
 // Returns the upcastability verdict (`yes`/`no`/`unknown`) for converting a
 // type value to a trait. Returns failure for non-applicable cases (i.e.,
 // `fromType` is not a typetype and/or `toType` is not a trait type).
-FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
-                                                   SMLoc loc, ASTType fromType,
-                                                   ASTType toType,
-                                                   ASTDecl *declScope,
-                                                   bool *scopeDependent) {
+FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
+    SharedState &shared, SMLoc loc, ASTType fromType, ASTType toType,
+    ASTDecl *declScope, bool *scopeDependent, ConstraintFailure *details) {
   // By default the verdict depends only on the (fromType, toType) pair. The
   // branches below that consult `declScope`'s assumptions set this, since an
   // assumption-derived verdict is scope-dependent and must not be memoized.
@@ -1764,7 +1762,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
         auto assumptions = ASTDecl::getAssumptionsFromScope(declScope);
         if (scopeDependent && !assumptions.empty())
           *scopeDependent = true;
-        return fromType.doesConformTo(trait, shared, assumptions);
+        return fromType.doesConformTo(trait, shared, assumptions, details);
       }
     } else if (auto fnGen =
                    sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(
@@ -1821,7 +1819,7 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(SharedState &shared,
       if (scopeDependent && !assumptions.empty())
         *scopeDependent = true;
       return concreteType.doesConformTo(anyTrait.getTraitType(), shared,
-                                        assumptions);
+                                        assumptions, details);
     }
   }
 
@@ -1875,10 +1873,14 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
 bool IREmitter::canImplicitlyConvertToType(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
     ArrayRef<ConstraintAttr> additionalAssumptions,
-    DeferredTypingContext *deferralCtx) {
+    DeferredTypingContext *deferralCtx, ConstraintFailure *details) {
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
+  // Clear so a non-conformance early return leaves no stale details.
+  if (details)
+    details->clear();
+
   // If it already matches, then we're done.
   if (rvType.isEqualCanon(requiredType))
     return true;
@@ -1893,10 +1895,11 @@ bool IREmitter::canImplicitlyConvertToType(
   if (sugarIsa<OriginType>(rvType) && sugarIsa<OriginSetType>(requiredType))
     return true;
 
-  // Check to see if we already cached this convertibility check.
+  // Check to see if we already cached this convertibility check. If user
+  // requested failure details, we use the cached only if the verdict was true.
   std::optional<bool> cache =
       shared.getCachedImplicitConvertibility(rvType, requiredType);
-  if (cache.has_value())
+  if (cache.has_value() && (!details || cache.value()))
     return cache.value();
 
   // Cache and return a convertibility verdict. When `scopeDependent` is true
@@ -1947,7 +1950,7 @@ bool IREmitter::canImplicitlyConvertToType(
   bool upCastScopeDependent = false;
   FailureOr<TriState> canUpCast =
       canMetaTypeUpCastTo(shared, value.expr->getLoc(), rvType, requiredType,
-                          &declScope, &upCastScopeDependent);
+                          &declScope, &upCastScopeDependent, details);
   if (succeeded(canUpCast))
     return resolveTriStateVerdict(*canUpCast, upCastScopeDependent);
 
@@ -1967,7 +1970,7 @@ bool IREmitter::canImplicitlyConvertToType(
     bool eltUpCastScopeDependent = false;
     FailureOr<TriState> canUpCast =
         canMetaTypeUpCastTo(shared, value.expr->getLoc(), fromEltTp, toEltTp,
-                            &declScope, &eltUpCastScopeDependent);
+                            &declScope, &eltUpCastScopeDependent, details);
     if (succeeded(canUpCast))
       return resolveTriStateVerdict(*canUpCast, eltUpCastScopeDependent);
   }

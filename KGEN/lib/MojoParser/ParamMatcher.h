@@ -23,6 +23,7 @@
 
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "Support/ADT/SmartVariant.h"
 
 namespace M::KGEN::LIT {
@@ -40,6 +41,8 @@ struct MatchFailure {
   struct TypeConflict {
     size_t paramIdx; // TODO: Render this name.
     ASTType paramType, argParamType;
+    /// From the upcast check that rejected this match, if any.
+    ConstraintFailure constraintFailure;
   };
 
   /// This failure happens when a parameter is inferred to two different values.
@@ -67,11 +70,8 @@ struct MatchFailure {
   template <typename Failure>
   MatchFailure(Failure info) : info(info) {}
 
-  // Describe what went wrong. `scope`, if non-null, supplies the caller
-  // assumptions used to explain an unsatisfied conditional conformance.
-  // Required (not defaulted) so every call site consciously supplies its
-  // scope; pass nullptr only when no scope is available.
-  void addExplanation(MojoInflightDiag &diag, const ASTDecl *scope) const;
+  /// Append a note explaining this failure.
+  void addExplanation(MojoInflightDiag &diag) const;
 
   /// If this failure is due to an unresolved parameter, return the index of the
   /// parameter.

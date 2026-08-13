@@ -31,6 +31,19 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+void ConstraintFailure::attachNotes(MojoInflightDiag &diag,
+                                    StringRef subject) const {
+  auto emitNote = [&](ConstraintAttr constraint, StringRef kind) {
+    diag.attachNote(constraint.getLoc()) << kind << " " << subject;
+    if (StringAttr message = constraint.getMessage())
+      diag << ": " << message.getValue();
+  };
+  for (ConstraintAttr failed : failedConstraints)
+    emitNote(failed, "failed");
+  for (ConstraintAttr unproven : unprovenConstraints)
+    emitNote(unproven, "unproven");
+}
+
 /// Emit a note explaining why a constraint is inconclusive. The incoming
 /// constraint is expected to be the folded form with all input parameters
 /// already substituted.

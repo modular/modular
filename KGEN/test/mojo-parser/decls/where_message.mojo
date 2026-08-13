@@ -111,8 +111,8 @@ struct CondConfNoMsg[T: Base](
 
 
 ##===----------------------------------------------------------------------===##
-# A messaged conformance constraint followed by another entry: the message is
-# inside the parentheses, so the separating comma is unambiguous.
+# A conformance constraint with a user message, followed by another entry: the
+# message is inside the parentheses, so the separating comma is unambiguous.
 ##===----------------------------------------------------------------------===##
 # CHECK-DAG: where #kgen.constraint<{{.*}}, "must be extra when wrapped">
 struct CondConfMsgThenEntry[T: Base](
@@ -122,7 +122,7 @@ struct CondConfMsgThenEntry[T: Base](
 
 
 ##===----------------------------------------------------------------------===##
-# `comptime` (alias) declaration with a messaged where clause
+# `comptime` (alias) declaration with a `where` clause that has a user message
 ##===----------------------------------------------------------------------===##
 # CHECK-DAG: lit.alias.decl *"AliasMsg{{.*}}"T must be extra"
 comptime AliasMsg[T: AnyType] where (conforms_to(T, Extra), "T must be extra") = T

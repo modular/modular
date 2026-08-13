@@ -1001,11 +1001,17 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
 /// that wrapper. If `sawErroneousExtension` is non-null, it is set to true when
 /// a conformance-contributing extension of `self` is erroneous, signaling the
 /// caller that the result is unstable and must not be cached.
+///
+/// When `details` is non-null, its `constraints` are populated with the
+/// conditional-conformance constraints behind each failing/unproven required
+/// symbol. Requesting `details` disables the loop's short-circuit so every
+/// failing symbol is reported.
 static TriState
 doesNominalTypeConformToUncached(ASTDecl *self, TraitType trait,
                                  ASTType concreteType,
                                  ArrayRef<ConstraintAttr> callerAssumptions,
-                                 bool *sawErroneousExtension = nullptr);
+                                 bool *sawErroneousExtension = nullptr,
+                                 ConstraintFailure *details = nullptr);
 
 /// Given a decl for a struct or trait type, check if this type conforms to the
 /// specified trait type. If concreteType is provided, it is used to extract
@@ -1018,62 +1024,92 @@ doesNominalTypeConformToUncached(ASTDecl *self, TraitType trait,
 ///   statically
 TriState
 ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                                  ArrayRef<ConstraintAttr> callerAssumptions) {
-  // Only the assumption-free queries are context-independent enough to memoize;
-  // where-clause assumptions make the result caller-dependent, so those bypass
-  // the cache entirely.
-  if (!callerAssumptions.empty())
-    return doesNominalTypeConformToUncached(this, trait, concreteType,
-                                            callerAssumptions);
+                                  ArrayRef<ConstraintAttr> callerAssumptions,
+                                  ConstraintFailure *details) {
+  TriState result = TriState::no();
+  if (!callerAssumptions.empty()) {
+    // Only the assumption-free queries are context-independent enough to
+    // memoize; where-clause assumptions make the result caller-dependent, so
+    // those bypass the cache entirely.
+    result = doesNominalTypeConformToUncached(
+        this, trait, concreteType, callerAssumptions,
+        /*sawErroneousExtension=*/nullptr, details);
+  } else {
+    // Never consult or populate the cache for an erroneous decl: its
+    // conformance answer is unstable -- an optimistic declared `yes` (e.g. a
+    // struct that declares RegisterPassable but has a non-conforming member)
+    // becomes `no` once the invalidating error is diagnosed -- and it is
+    // irrelevant since compilation is already failing. Also skip
+    // not-yet-signature-resolved decls: resolvedness only moves forward and
+    // stores only happen at >= signature, so they can have no entry yet and the
+    // lookup would always miss.
+    const bool mayBeCached =
+        resolvedness >= DeclResolvedness::signature && !isErroneous();
+    // If user requested failure details, we use the cached only if the verdict
+    // was true.
+    if (mayBeCached) {
+      std::optional<bool> conforms =
+          shared.getCachedNominalConformance(this, trait, concreteType);
+      if (conforms.has_value() && (!details || *conforms)) {
+        TriState cached = TriState::fromBool(*conforms);
+        if (details) {
+          details->clear();
+          details->verdict = cached;
+        }
+        return cached;
+      }
+    }
 
-  // Never consult or populate the cache for an erroneous decl: its conformance
-  // answer is unstable -- an optimistic declared `yes` (e.g. a struct that
-  // declares RegisterPassable but has a non-conforming member) becomes `no`
-  // once the invalidating error is diagnosed -- and it is irrelevant since
-  // compilation is already failing. Also skip not-yet-signature-resolved decls:
-  // resolvedness only moves forward and stores only happen at >= signature, so
-  // they can have no entry yet and the lookup would always miss.
-  const bool mayBeCached =
-      resolvedness >= DeclResolvedness::signature && !isErroneous();
-  if (mayBeCached)
-    if (std::optional<bool> conforms =
-            shared.getCachedNominalConformance(this, trait, concreteType))
-      return TriState::fromBool(*conforms);
+    // Caching a definitive answer for this (decl, trait, concreteType) assumes
+    // the answer is stable once the decl is signature-resolved and
+    // non-erroneous. That relies on the conformance-contributing decls being
+    // stable too: extension conformances are currently unconditional (never
+    // retracted after signature resolution), and `sawErroneousExtension`
+    // catches the one exception -- an erroneous contributing extension whose
+    // contribution may still change.
+    bool sawErroneousExtension = false;
+    result = doesNominalTypeConformToUncached(this, trait, concreteType,
+                                              callerAssumptions,
+                                              &sawErroneousExtension, details);
 
-  // Caching a definitive answer for this (decl, trait, concreteType) assumes
-  // the answer is stable once the decl is signature-resolved and non-erroneous.
-  // That relies on the conformance-contributing decls being stable too:
-  // extension conformances are currently unconditional (never retracted after
-  // signature resolution), and `sawErroneousExtension` catches the one
-  // exception -- an erroneous contributing extension whose contribution may
-  // still change.
-  bool sawErroneousExtension = false;
-  TriState result = doesNominalTypeConformToUncached(
-      this, trait, concreteType, callerAssumptions, &sawErroneousExtension);
+    // Cache only stable, definitive answers: skip `unknown` (phase-dependent,
+    // may become yes/no as more of the program is type checked), erroneous
+    // decls (see above), results that depend on an erroneous extension, and
+    // results produced before the signature resolved (the error path returns
+    // `no` and must re-run so its diagnostics re-emit on each query).
+    // NB: re-read resolvedness/isErroneous here rather than reuse `mayBeCached`
+    // -- the uncached call above resolves the signature, so a first query can
+    // still populate the cache even though `mayBeCached` was false.
+    if (result.isDefinite() && resolvedness >= DeclResolvedness::signature &&
+        !isErroneous() && !sawErroneousExtension)
+      shared.cacheNominalConformance(this, trait, concreteType,
+                                     result.isTrue());
+  }
 
-  // Cache only stable, definitive answers: skip `unknown` (phase-dependent, may
-  // become yes/no as more of the program is type checked), erroneous decls (see
-  // above), results that depend on an erroneous extension, and results produced
-  // before the signature resolved (the error path returns `no` and must re-run
-  // so its diagnostics re-emit on each query).
-  // NB: re-read resolvedness/isErroneous here rather than reuse `mayBeCached`
-  // -- the uncached call above resolves the signature, so a first query can
-  // still populate the cache even though `mayBeCached` was false.
-  if (result.isDefinite() && resolvedness >= DeclResolvedness::signature &&
-      !isErroneous() && !sawErroneousExtension)
-    shared.cacheNominalConformance(this, trait, concreteType, result.isTrue());
+  if (details)
+    details->verdict = result;
   return result;
 }
 
 static TriState doesNominalTypeConformToUncached(
     ASTDecl *self, TraitType trait, ASTType concreteType,
-    ArrayRef<ConstraintAttr> callerAssumptions, bool *sawErroneousExtension) {
+    ArrayRef<ConstraintAttr> callerAssumptions, bool *sawErroneousExtension,
+    ConstraintFailure *details) {
   SharedState &shared = self->getShared();
+
+  // Clear so an early return leaves no stale constraints behind.
+  if (details)
+    details->clear();
 
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
   if (failed(shared.declResolver->resolveSignature(*self, self->getLoc())))
     return TriState::no(); // Error emitted.
+
+  // `where` clauses with messages only live on struct conformance lists, so
+  // only a struct can supply diagnostic witnesses.
+  const bool selfIsStruct =
+      isa_and_nonnull<StructDeclOp>(self->getIfOperation());
 
   // Collect all the symbols that the type explicitly provides.
   TraitType providedCanonTrait = getDeclProvidedTrait(self);
@@ -1106,6 +1142,14 @@ static TriState doesNominalTypeConformToUncached(
         constraints.empty()
             ? TypedAttr()
             : evaluator.getReboundAttribute(constraints[i].getProposition());
+
+  // Parallel to `providedConditions`, retain each provider constraint so a
+  // diagnostic caller can point at the failing `where` clause (and its optional
+  // user message). Extension conformances below are unconditional today.
+  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> providedConstraints;
+  if (details && selfIsStruct && !constraints.empty())
+    for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr))
+      providedConstraints[symbol] = constraints[i];
 
   if (auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
@@ -1160,14 +1204,40 @@ static TriState doesNominalTypeConformToUncached(
   }
 
   // Check the provided symbols against the required symbols by the target
-  // trait. Track whether any required symbol relies on unproven constraints.
+  // trait: a definitively-missing required symbol keeps the whole thing `no`,
+  // an unproven one makes it `unknown`, and all-present makes it `yes`.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
   SmallVector<TypedAttr> callerAssumptionProps =
       llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
         return constraint.getProposition();
       });
   SmallVector<TypedAttr> scratch;
-  bool hasUnprovenRequired = false;
+
+  // With `details`, bucket every failed/unproven provider constraint (no
+  // short-circuit) and dedupe on (loc, proposition) so derived/ancestor copies
+  // of the same `where` clause emit once. Cold path.
+  const bool collectAll = details != nullptr;
+  DenseSet<std::pair<LocationAttr, Attribute>> seenConstraints;
+  auto recordFailure = [&](SymbolRefAttr required, TriState kind) {
+    if (!collectAll)
+      return;
+    assert(kind.isFalse() || kind.isUnknown());
+    ConstraintAttr constraint = providedConstraints.lookup(required);
+    // No provider constraint means the symbol was never declared (even
+    // conditionally); the primary "does not conform" diagnostic covers that.
+    if (!constraint || isTriviallyTrueConstraint(constraint))
+      return;
+    if (!seenConstraints
+             .insert({constraint.getLoc(), constraint.getProposition()})
+             .second)
+      return;
+    if (kind.isFalse())
+      details->failedConstraints.push_back(constraint);
+    else
+      details->unprovenConstraints.push_back(constraint);
+  };
+
+  TriState result = TriState::yes();
   for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
@@ -1189,13 +1259,13 @@ static TriState doesNominalTypeConformToUncached(
             ? TriState::yes()
             : isPropositionImplied(it->second, assumptions);
 
-    if (provided.isTrue()) {
-      // Symbol is definitely provided.
-      continue;
-    }
+    if (provided.isTrue())
+      continue; // Symbol is definitely provided.
+
     if (provided.isUnknown()) {
-      // Symbol is conditionally provided but constraint is unproven.
-      hasUnprovenRequired = true;
+      // Symbol is conditionally provided but its constraint is unproven.
+      recordFailure(required, TriState::unknown());
+      result &= TriState::unknown();
       continue;
     }
 
@@ -1215,127 +1285,22 @@ static TriState doesNominalTypeConformToUncached(
                 assumptions)
                 .isTrue())
           continue;
-        return TriState::unknown();
+        recordFailure(required, TriState::unknown());
+        result &= TriState::unknown();
+        if (!collectAll)
+          return TriState::unknown();
+        continue;
       }
     }
-    return TriState::no();
+    recordFailure(required, TriState::no());
+    result &= TriState::no();
+    if (!collectAll)
+      return TriState::no();
   }
 
-  // All required symbols are present (either proven or unproven).
-  if (hasUnprovenRequired)
-    return TriState::unknown();
-  return TriState::yes();
-}
-
-SmallVector<ConstraintAttr>
-LIT::getFailedConformanceMessages(ASTType concreteType, TraitType trait,
-                                  SharedState &shared,
-                                  ArrayRef<ConstraintAttr> callerAssumptions) {
-  SmallVector<ConstraintAttr> result;
-  ASTDecl *self = concreteType.getDecl(shared);
-  if (!self)
-    return result;
-  auto structOp = dyn_cast_or_null<StructDeclOp>(self->getIfOperation());
-  if (!structOp)
-    return result;
-
-  TraitType providedCanonTrait = getDeclProvidedTrait(self);
-  ArrayRef<SymbolRefAttr> providedSymbols = providedCanonTrait.getSymbols();
-  ArrayRef<ConstraintAttr> constraints = providedCanonTrait.getConstraints();
-  // An empty constraints array means every conformance is unconditional, so
-  // there is no user message to surface.
-  if (constraints.empty())
-    return result;
-  // A non-empty constraints array is parallel to the symbols (one constraint
-  // per symbol); the indexed access below relies on this, matching the
-  // invariant used in `doesNominalTypeConformToUncached`.
-  assert(constraints.size() == providedSymbols.size() &&
-         "trait constraints must be parallel to symbols");
-
-  // Fold the conditional-conformance constraints under the concrete type's
-  // parameter bindings, mirroring `doesNominalTypeConformToUncached`.
-  ParameterEvaluator evaluator;
-  ArrayRef<TypedAttr> paramBindings = concreteType.getParamBindings();
-  if (!paramBindings.empty())
-    evaluator =
-        shared.getParameterEvaluator(structOp.getInputParams(), paramBindings);
-
-  // Collect the message of every trait REQUIRED by `trait` whose conditional
-  // conformance does not hold. A derived trait and its propagated ancestors
-  // carry the same message at the same `where`-clause location, so a single
-  // requirement can match several of them; dedupe on (location, message) so
-  // the note is shown once. Map each required symbol to its own condition so
-  // the verdict-mirroring rules below (skip a vacuous requirement, assume a
-  // live requirement's condition) stay in lockstep with
-  // `doesNominalTypeConformToUncached` -- otherwise a note could contradict
-  // the conformance decision.
-  ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
-  SmallVector<TypedAttr> callerAssumptionProps =
-      llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
-        return constraint.getProposition();
-      });
-  llvm::SmallDenseMap<SymbolRefAttr, TypedAttr> requiredConds;
-  for (auto [i, symbol] : llvm::enumerate(trait.getSymbols()))
-    requiredConds[symbol] = requiredConstraints.empty()
-                                ? TypedAttr()
-                                : requiredConstraints[i].getProposition();
-  DenseSet<std::pair<LocationAttr, StringAttr>> seen;
-  SmallVector<TypedAttr> scratch;
-  for (auto [i, symbol] : llvm::enumerate(providedSymbols)) {
-    auto reqIt = requiredConds.find(symbol);
-    if (reqIt == requiredConds.end())
-      continue;
-    // Assume the requirement's own condition, mirroring
-    // `doesNominalTypeConformToUncached`: a requirement whose condition cannot
-    // hold imposes nothing (so its provider's message must not surface), while
-    // an unconditional condition discharges to `yes` and pushes a no-op `True`
-    // -- both fall out of the same rules with no trivially-true special case. A
-    // null entry means the requirement is unconditional (no `c_req` to
-    // consult).
-    TypedAttr requiredCond = reqIt->second;
-    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
-    if (requiredCond) {
-      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
-        continue;
-      scratch.assign(callerAssumptionProps.begin(),
-                     callerAssumptionProps.end());
-      scratch.push_back(requiredCond);
-      assumptions = scratch;
-    }
-
-    ConstraintAttr constraint = constraints[i];
-    if (isTriviallyTrueConstraint(constraint) || !constraint.getMessage())
-      continue;
-    if (!seen.insert({constraint.getLoc(), constraint.getMessage()}).second)
-      continue;
-    TypedAttr proposition =
-        evaluator.getReboundAttribute(constraint.getProposition());
-    if (!isPropositionImplied(proposition, assumptions).isTrue())
-      result.push_back(constraint);
-  }
+  // All required symbols are present (proven `yes`), or `result` already folded
+  // in the `unknown`/`no` outcomes of any that were not.
   return result;
-}
-
-// FIXME(MOCO-4423): this re-derives which conditional conformance failed
-// because the conversion check (`canImplicitlyConvertToType`) reports only that
-// the conversion failed, not why. Re-deriving is brittle -- it can diverge from
-// the reason the conversion actually rejected. This should be rewritten so that
-// the conversion returns a failure reason, and code here consumes that reason
-// directly instead of recomputing the failing constraints.
-void LIT::attachFailedConformanceNotes(MojoInflightDiag &diag, ASTType srcType,
-                                       Type targetType, SharedState &shared,
-                                       const ASTDecl *scope) {
-  auto trait = sugarDynCast<TraitType>(targetType);
-  if (!trait || !srcType)
-    return;
-  // Evaluate the conditional conformances under the caller's assumptions, so a
-  // conformance the caller proved via its own `where` clause is not reported.
-  SmallVector<ConstraintAttr> assumptions =
-      ASTDecl::getAssumptionsFromScope(scope);
-  for (ConstraintAttr failed :
-       getFailedConformanceMessages(srcType, trait, shared, assumptions))
-    diag.attachNote(failed.getLoc()) << "unsatisfied conditional conformance: "
-                                     << failed.getMessage().getValue();
 }
 
 void LIT::canonicalizeTraitCompositionSymbols(
@@ -1394,9 +1359,9 @@ ConstraintAttr LIT::fuseConstraints(SharedState &shared,
   // Conjoining constraints has no single correct `where` message, so the
   // message is dropped. Unobservable today: authored messages only live on
   // struct conformance lists, and conformance diagnostics read them off the
-  // source struct (`getFailedConformanceMessages`), never a fused meta-type
-  // bound. Revisit if traits ever gain messaged `where` clauses (see the
-  // "Failure messages" section of oss/modular/mojo/proposals/where_clauses.md).
+  // source struct, never a fused meta-type bound. Revisit if traits ever gain
+  // `where` clauses with user messages (see the "Failure messages" section of
+  // oss/modular/mojo/proposals/where_clauses.md).
   SmallVector<TypedAttr> props;
   SmallVector<Location> locs;
   props.reserve(constraints.size());
@@ -1764,12 +1729,15 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Check that the struct or super trait implements the trait.
   // Assumptions needed: e.g. `where AllWritable[*Ts]` proves
   // Tuple[*Ts]: Writable.
+  ConstraintFailure details;
   TriState verdict = type.doesConformTo(
-      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()));
+      trait, shared, ASTDecl::getAssumptionsFromScope(&getDeclScope()),
+      &details);
   if (verdict.isFalse()) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
+    details.attachNotes(diag, "conditional conformance");
     return {};
   }
 

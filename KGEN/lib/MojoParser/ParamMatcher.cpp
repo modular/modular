@@ -48,8 +48,7 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
-void MatchFailure::addExplanation(MojoInflightDiag &diag,
-                                  const ASTDecl *scope) const {
+void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   SharedState *shared = diag.getSharedIfActive();
   if (!shared)
     return;
@@ -97,10 +96,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag,
       ASTType argType(anyStruct.getType());
       diag << ", argument type " << argType << " does not conform to trait "
            << failure.paramType;
-      // Surface any user message from a conditional-conformance `where` clause
-      // that was not satisfied for this type.
-      LIT::attachFailedConformanceNotes(diag, argType, failure.paramType,
-                                        *shared, scope);
+      failure.constraintFailure.attachNotes(diag, "conditional conformance");
       return;
     }
     if (sugarIsa<TraitType>(failure.argParamType)) {
@@ -792,6 +788,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // #kgen.type<!Int> : !lit.trait<!AnyType> and
       // #param.ref<....> : !lit.trait<!Copyable>
       bool fixableByUpCast = false;
+      // Why the rejecting upcast failed; carried into TypeConflict below.
+      ConstraintFailure upCastDetails;
       if (LIT::isTypeExpr(actualAttr) ||
           LIT::isVariadicOfTypeExpr(actualAttr)) {
         auto targetMT = getTargetMetaTypeForTypeValue(expectedAttr.getType());
@@ -814,7 +812,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           }
           FailureOr<TriState> upCastable = IREmitter::canMetaTypeUpCastTo(
               shared, state.declScope.getLoc(), tightestBound, targetMT,
-              &state.declScope);
+              &state.declScope, /*scopeDependent=*/nullptr, &upCastDetails);
           if (succeeded(upCastable) && upCastable->isTrue())
             return true;
 
@@ -854,7 +852,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       if (!fixableByUpCast) {
         if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
           return error(MatchFailure::TypeConflict{
-              ire.getIndex(), expectedAttr.getType(), actualAttr.getType()});
+              ire.getIndex(), expectedAttr.getType(), actualAttr.getType(),
+              /*constraintFailure=*/std::move(upCastDetails)});
         }
         return error(MatchFailure::Unclassified{});
       }

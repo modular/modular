@@ -37,6 +37,7 @@ class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
+struct ConstraintFailure;
 
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
@@ -200,8 +201,12 @@ public:
   /// If concreteType is provided, its parameter bindings are used to evaluate
   /// conditional trait conformances. If callerAssumptions is non-empty, those
   /// where-clause assumptions are used to prove unfoldable constraints.
+  ///
+  /// When `failure` is non-null, it receives the verdict and any
+  /// failed/unproven provider `where` constraints.
   TriState doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
-                                    ArrayRef<ConstraintAttr> callerAssumptions);
+                                    ArrayRef<ConstraintAttr> callerAssumptions,
+                                    ConstraintFailure *failure = nullptr);
 
   /// Find all extensions in this scope that target a specific struct.
   /// If filterTrait is provided, only returns extensions that implement that
