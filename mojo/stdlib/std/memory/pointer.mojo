@@ -807,11 +807,12 @@ struct Pointer[
 
         Safety:
 
-        - Both pointers should point into the same allocation (or one past
+        - Both pointers must point into the same allocation (or one past
           its end); the distance between pointers into unrelated
           allocations is not meaningful.
         - The byte distance between the two pointers must be an exact
-          multiple of `size_of[T]()`.
+          multiple of `size_of[T]()`. Violating this is undefined
+          behavior.
 
         Examples:
 
@@ -1191,11 +1192,12 @@ struct Pointer[
 
         Safety:
 
-        - Both pointers should point into the same allocation (or one past
+        - Both pointers must point into the same allocation (or one past
           its end); the distance between pointers into unrelated
           allocations is not meaningful.
         - The byte distance between the two pointers must be an exact
-          multiple of `size_of[T]()`.
+          multiple of `size_of[T]()`. Violating this is undefined
+          behavior.
 
         Examples:
 
@@ -1218,9 +1220,11 @@ struct Pointer[
             byte_diff % size_of[Self.T]() == 0,
             "pointer difference is not a multiple of the element size",
         )
-        # TODO(MSTDL-2917): use an exact-division intrinsic here for better
-        # codegen, since this divide is always exact.
-        return byte_diff // size_of[Self.T]()
+        return Int(
+            mlir_value=__mlir_op.`pop.div`[isExact=__mlir_attr.`unit`](
+                byte_diff._mlir_value, size_of[Self.T]()._mlir_value
+            )
+        )
 
     @always_inline
     @staticmethod
