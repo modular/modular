@@ -2734,10 +2734,10 @@ def KGEN_PogMetadataAttr : KGENAttr<"PogMetadata", "pog_metadata"> {
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetaDataAttr
+// FnMetadataAttr
 //===----------------------------------------------------------------------===//
 
-def KGEN_FnMetaDataAttr : KGENAttr<"FnMetaData", "fn_metadata", [
+def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata", [
     TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
   let summary = "The metadata of a `!kgen.func` type";
@@ -2771,10 +2771,10 @@ def KGEN_FnMetaDataAttr : KGENAttr<"FnMetaData", "fn_metadata", [
     Type getType() const;
 
     /// Return this metadata with the function effects replaced.
-    FnMetaDataAttr getWithFnEffects(FnEffects effects) const;
+    FnMetadataAttr getWithFnEffects(FnEffects effects) const;
 
     /// Return this metadata with the dialect-specific metadata replaced.
-    FnMetaDataAttr getWithMetadata(FnMetadataAttrInterface metadata) const;
+    FnMetadataAttr getWithMetadata(FnMetadataAttrInterface metadata) const;
   }];
 }
 

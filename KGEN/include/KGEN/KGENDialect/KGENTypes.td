@@ -353,7 +353,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
 
   let parameters = (ins
     "FunctionType":$values,
-    "FnMetaDataAttr":$metaDataAttr,
+    "FnMetadataAttr":$metadataAttr,
     "PogListAttr":$argListAttrs
   );
   let hasCustomAssemblyFormat = 1;
@@ -378,7 +378,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
         argListAttrsAttr = PogListAttr::get(values.getContext());
       return $_get(values.getContext(),
         values,
-        FnMetaDataAttr::get(values.getContext(),
+        FnMetadataAttr::get(values.getContext(),
           convs, effects, ::cast_or_null<FnMetadataAttrInterface>(metadata)),
         argListAttrsAttr);
     }]>,

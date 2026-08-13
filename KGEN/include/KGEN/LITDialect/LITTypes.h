@@ -103,11 +103,11 @@ public:
   /// Get the signature metadata.
   FnMetaOriginDataAttr getFnMetaOriginData() {
     return cast<FnMetaOriginDataAttr>(
-        getBodyFnType().getMetaDataAttr().getMetadata());
+        getBodyFnType().getMetadataAttr().getMetadata());
   }
 
-  FnMetaDataAttr getFnMetaData() {
-    return cast<FnMetaDataAttr>(getBodyFnType().getMetaDataAttr());
+  FnMetadataAttr getFnMetadata() {
+    return cast<FnMetadataAttr>(getBodyFnType().getMetadataAttr());
   }
 
   /// Get the argument list metadata.

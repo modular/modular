@@ -512,7 +512,7 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
                                        TypedAttr metadata) {
   auto cstParamDecls = dyn_cast<ParamDeclArrayAttr>(paramDecls);
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
-  auto cstMetadata = dyn_cast<FnMetaDataAttr>(metadata);
+  auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
 
   // If any of the components are not constants, skip.
   if (!cstParamDecls || !cstArgTypes || !cstMetadata)
@@ -596,13 +596,13 @@ ArrayRef<Type> FuncType::getArguments() const {
 ArrayRef<Type> FuncType::getResults() const { return getValues().getResults(); }
 
 ArrayRef<ArgConvention> FuncType::getArgConventions() const {
-  return getMetaDataAttr().getArgConventions();
+  return getMetadataAttr().getArgConventions();
 }
 FnEffects FuncType::getFnEffects() const {
-  return getMetaDataAttr().getFnEffects();
+  return getMetadataAttr().getFnEffects();
 }
 FnMetadataAttrInterface FuncType::getMetadata() const {
-  return getMetaDataAttr().getMetadata();
+  return getMetadataAttr().getMetadata();
 }
 
 bool FuncType::hasMemoryOnlyResult() {
@@ -613,7 +613,7 @@ bool FuncType::hasMemoryOnlyResult() {
 
 FuncType FuncType::getWithFnEffects(FnEffects effects) {
   return FuncType::get(getContext(), getValues(),
-                       getMetaDataAttr().getWithFnEffects(effects),
+                       getMetadataAttr().getWithFnEffects(effects),
                        getArgListAttrs());
 }
 FuncType FuncType::getWithValuesReplaced(FunctionType fnType) {
@@ -626,7 +626,7 @@ FuncType FuncType::getWithMetadata(FnMetadataAttrInterface metadata,
   if (!argListAttrs)
     argListAttrs = getArgListAttrs();
   return FuncType::get(getContext(), getValues(),
-                       getMetaDataAttr().getWithMetadata(metadata),
+                       getMetadataAttr().getWithMetadata(metadata),
                        argListAttrs);
 }
 
@@ -760,21 +760,21 @@ FuncType FuncType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                               MLIRContext *context, TypeRange inputs,
                               TypeRange results) {
   auto result = get(context, inputs, results);
-  if (failed(verify(emitError, result.getValues(), result.getMetaDataAttr(),
+  if (failed(verify(emitError, result.getValues(), result.getMetadataAttr(),
                     result.getArgListAttrs())))
     return {};
   return result;
 }
 
 LogicalResult FuncType::verify(function_ref<InFlightDiagnostic()> emitError,
-                               FunctionType values, FnMetaDataAttr metaDataAttr,
+                               FunctionType values, FnMetadataAttr metadataAttr,
                                PogListAttr argListAttrs) {
-  if (!metaDataAttr)
+  if (!metadataAttr)
     return emitError() << "func type requires a metadata attribute";
 
-  ArrayRef<ArgConvention> argConventions = metaDataAttr.getArgConventions();
-  FnEffects effects = metaDataAttr.getFnEffects();
-  FnMetadataAttrInterface metadata = metaDataAttr.getMetadata();
+  ArrayRef<ArgConvention> argConventions = metadataAttr.getArgConventions();
+  FnEffects effects = metadataAttr.getFnEffects();
+  FnMetadataAttrInterface metadata = metadataAttr.getMetadata();
 
   // Check we have the right number of conventions.
   if (argConventions.size() != values.getInputs().size())
