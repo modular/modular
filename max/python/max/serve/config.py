@@ -104,6 +104,21 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
     )
 
+    http_keepalive_timeout_s: int = Field(
+        description=(
+            "Seconds an idle HTTP connection is held open before the server "
+            "closes it. Keep this above the idle-connection timeout of every "
+            "client that pools connections to MAX Serve. Whichever side closes "
+            "first wins the race, and a server-side close landing just as a "
+            "pooled client writes its next request reaches that client as a "
+            "TCP reset instead of a response -- the client cannot replay a "
+            "POST body, so it surfaces as a user-visible error rather than a "
+            "retry. Go's default client-side idle timeout is 90 seconds."
+        ),
+        default=120,
+        alias="MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S",
+    )
+
     max_queue_size: int | None = Field(
         description=(
             "Cap (N) on the request queue to the model worker. The queue to "
