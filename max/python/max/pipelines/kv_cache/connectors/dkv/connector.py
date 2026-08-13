@@ -51,6 +51,11 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
@@ -311,6 +316,25 @@ def _heartbeat_overrides() -> dict[str, int]:
         overrides[keyword] = value
 
     return overrides
+
+
+def _nixl_backend_override() -> NixlBackendType | None:
+    """The validated NIXL transfer backend override, or ``None`` when unset.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
+    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
+    ``auto`` mean auto-select (``None`` here) — the dKV server's own
+    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
+    must not crash the MAX pod — and anything else goes through the same
+    validator as the KV transfer engine, so a typo fails model load with the
+    accepted set rather than surfacing as a handshake mismatch. The default
+    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
+    the connector auto-selects.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    return validate_nixl_backend(raw)
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -671,7 +695,7 @@ class DKVConnector:
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        backend = _nixl_backend_override()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
