@@ -621,6 +621,12 @@ class HuggingFaceRepo:
                     # Discard that false-positive and keep float8_e4m3fn.
                     supported_encodings.discard("float4_e2m1fnx2")
                     supported_encodings.add("float8_e4m3fn")
+                elif quant_config.get("quant_method") == "mxfp6":
+                    # MXFP6 packs both weights and scales as uint8, so the scan
+                    # above cannot tell it from MXFP4 -- on disk the two differ
+                    # only by this config entry.
+                    supported_encodings.discard("float4_e2m1fnx2")
+                    supported_encodings.add("float6_e2m3fn")
 
         return list(supported_encodings)
 
@@ -784,6 +790,7 @@ class HuggingFaceRepo:
             if len(supported) > 1:
                 for candidate in (
                     "float4_e2m1fnx2",
+                    "float6_e2m3fn",
                     "float8_e4m3fn",
                     "bfloat16",
                     "float32",
