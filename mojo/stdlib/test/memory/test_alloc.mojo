@@ -226,6 +226,17 @@ def test_destroy_n_runs_pointee_destructors_before_dealloc() raises:
     assert_true(ran)
 
 
+def test_alloc_count_0() raises:
+    comptime ZST = Array[Int, 0]
+    var zst_alloc = alloc(Layout[ZST](count=0)).into_managed()
+    assert_equal(zst_alloc.layout().count(), 0)
+    dealloc(zst_alloc^)
+
+    var int_alloc = alloc(Layout[Int](count=0)).into_managed()
+    assert_equal(int_alloc.layout().count(), 0)
+    dealloc(int_alloc^)
+
+
 def test_alloc_free_single_zst() raises:
     comptime ZST = Array[Int, 0]
     comptime assert (
