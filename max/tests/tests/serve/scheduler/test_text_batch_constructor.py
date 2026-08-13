@@ -1515,6 +1515,68 @@ def test_batch_scheduling_strategy__decode_first() -> None:
     assert inputs.batches[2][0].tokens.generated_length > 0
 
 
+def test_batch_scheduling_strategy__decode_first_idle_replica_does_not_starve_sibling() -> (
+    None
+):
+    """Test an idle replica can't veto a sibling's real CE request (SERVOPT-1560).
+
+    Regression test for a livelock: DECODE_FIRST computed a batch-wide
+    priority override from the set of every replica's _identify_priority()
+    result. A replica with zero CE *and* zero TG requests used to default to
+    RequestType.TG (indistinguishable from a replica that genuinely needs
+    TG), so its phantom vote alone could force priority_override=TG for
+    every replica -- including a sibling with a real, ready CE request and
+    zero TG requests, whose CE admission would then be skipped every single
+    iteration forever, with no exception and no error log.
+    """
+    from max.serve.scheduler.batch_constructor.text_batch_constructor import (
+        BatchSchedulingStrategy,
+    )
+
+    data_parallel_degree = 2
+    pipeline = Mock(spec=["release"])
+    pipeline.release = Mock()
+    kv_cache = create_mock_kv_cache()
+
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=10,
+        target_tokens_per_batch_ce=100,
+        data_parallel_degree=data_parallel_degree,
+        enable_in_flight_batching=False,
+    )
+
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=scheduler_config,
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+        batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
+    )
+
+    # Replica 0: completely idle (no CE, no TG requests).
+    # Replica 1: one real, ready CE request, no TG requests -- matches the
+    # exact captured state at max-concurrency=1: ce_reqs=[0, 1] tg_reqs=[0, 0].
+    ctx_ce = TextContext(
+        request_id=RequestID(),
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+        max_length=100,
+    )
+    batch_constructor.enqueue_new_request(ctx_ce, replica_idx=1)
+
+    # An idle replica has no preference at all, not a TG preference.
+    assert batch_constructor._identify_priority(0) is None
+    assert batch_constructor._identify_priority(1) == RequestType.CE
+
+    inputs = batch_constructor.construct_batch()
+
+    # Replica 0 has nothing to do either way.
+    assert len(inputs.batches[0]) == 0
+
+    # Replica 1's CE request must be admitted -- it must not be starved by
+    # replica 0's idleness being mistaken for a TG override.
+    assert len(inputs.batches[1]) == 1
+    assert inputs.batches[1][0].tokens.generated_length == 0
+
+
 def test_batch_scheduling_strategy__balanced_majority_ce() -> None:
     """Test BALANCED strategy prioritizes CE when CE is the majority."""
     from max.serve.scheduler.batch_constructor.text_batch_constructor import (
