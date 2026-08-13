@@ -228,6 +228,10 @@ class Linear(Module, Shardable):
             k_dim = int(self.weight.shape[1])
             if quant_config.is_fp4:
                 k_dim *= 2  # FP4 weights are packed 2x as uint8
+            elif quant_config.is_mxfp6:
+                # Four 6-bit codes per three bytes. Exact: K is a multiple of
+                # 32, so the packed width is always a multiple of 3.
+                k_dim = k_dim * 4 // 3
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),

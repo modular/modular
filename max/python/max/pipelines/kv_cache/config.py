@@ -54,6 +54,7 @@ _ENCODING_TO_KV_CACHE_DTYPE: dict[str, DType] = {
     "float16": DType.float16,
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.bfloat16,
+    "float6_e2m3fn": DType.bfloat16,
     "float4_e2m1fnx2": DType.bfloat16,
     "q4_k": DType.float32,
     "q4_0": DType.float32,
