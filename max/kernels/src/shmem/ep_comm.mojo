@@ -39,6 +39,14 @@ from linalg.fp4_utils import (
     compute_mxfp4_even_scale,
     set_scale_factor,
 )
+from linalg.fp6_utils import (
+    MXFP6_SF_VECTOR_SIZE,
+    FP6Format,
+    compute_mxfp6_even_scale,
+    encode_f32_to_fp6,
+    pack_fp6_x4,
+)
+from linalg.mx_format import MXFormat
 from linalg.matmul.gpu.amd import Shuffler
 
 import std.gpu.primitives.warp as warp
@@ -87,7 +95,7 @@ from layout.tma_async import (
     create_tensor_tile,
     _default_desc_shape,
 )
-from std.math import exp, recip
+from std.math import exp, isfinite, recip
 from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
@@ -1432,6 +1440,7 @@ struct MXTokenFormat[
     _alignment: Int = 0,
     *,
     fuse_a_scale_preshuffle: Bool = False,
+    mx_format: MXFormat = MXFormat.from_dtype[quant_dtype](),
 ](TokenFormat, TrivialRegisterPassable):
     """Token format for MX (microscaling) FP4 quantization.
 
@@ -1453,16 +1462,20 @@ struct MXTokenFormat[
             selects `get_device_alignment()`.
         fuse_a_scale_preshuffle: When `True`, fuses the per-expert scale
             preshuffle into the tile copy for reduced memory traffic.
+        mx_format: Which MX element encoding the wire payload holds, defaulting
+            to whatever `quant_dtype` denotes. Pass a six-bit `quant_dtype`
+            (`float6_e2m3fn`/`float6_e3m2fn`) and the format follows; the legacy
+            `uint8` spelling is ambiguous -- MXFP4 and MXFP6 both travel as
+            packed `uint8` with `float8_e8m0fnu` scales -- so it resolves to FP4
+            and an MXFP6 caller stuck on `uint8` must name the format here.
     """
 
     comptime hid_dim = Self._hid_dim
     comptime top_k = Self._top_k
     comptime alignment = Self._alignment or get_device_alignment()
     comptime group_size = MXFP4_SF_VECTOR_SIZE
-    # 2 for MXFP4 (nibble-packed into uint8), 1 for MXFP8 (one e4m3 byte
-    # per element). The scale path is identical at both: group_size is 32
-    # either way, so only the quant byte extents differ.
-    comptime elems_per_byte = 2 if Self.quant_dtype == DType.uint8 else 1
+    comptime bits_per_element = Self.mx_format.bits_per_element()
+    comptime is_fp6 = Self.bits_per_element == 6
 
     comptime dispatch_wait_tile_shape = (128, 1)
     comptime dispatch_smem_size = 0
@@ -1545,7 +1558,9 @@ struct MXTokenFormat[
     @always_inline
     @staticmethod
     def quant_size() -> Int:
-        return align_up(Self.hid_dim // Self.elems_per_byte, Self.alignment)
+        return align_up(
+            (Self.hid_dim * Self.bits_per_element) // 8, Self.alignment
+        )
 
     @always_inline
     @staticmethod
@@ -1568,6 +1583,74 @@ struct MXTokenFormat[
     def scales_offset() -> Int:
         return Self.quant_size()
 
+    comptime fp6_fmt = (
+        Self.mx_format.fp6_format() if Self.mx_format.is_fp6() else FP6Format.E2M3
+    )
+
+    @always_inline
+    @staticmethod
+    def _copy_token_to_send_buf_fp6[
+        src_type: DType,
+        block_size: Int,
+        buf_addr_space: AddressSpace = AddressSpace.GENERIC,
+    ](
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
+    ) -> None:
+        """Quantizes one token to packed MXFP6, one MX block per thread.
+
+        The 32 elements of a block share one E8M0 scale and occupy exactly 24
+        bytes (eight whole 4-element / 3-byte groups, so no group straddles a
+        thread), which keeps the reduction in registers and the store to three
+        aligned 8-byte writes.
+        """
+        comptime blk = MXFP6_SF_VECTOR_SIZE
+        comptime bytes_per_blk = (blk * 6) // 8
+        comptime scale_bytes = size_of[Self.scales_dtype]()
+        comptime assert (
+            Self.hid_dim % blk == 0
+        ), "hid_dim must be divisible by the MXFP6 block size"
+
+        for b in range(thread_idx.x, Self.hid_dim // blk, block_size):
+            var data = src_p.load[
+                width=blk, alignment=Self.alignment, invariant=True
+            ](b * blk).cast[DType.float32]()
+
+            var group_max = abs(data).reduce_max()
+            var e8m0_scale = compute_mxfp6_even_scale[Self.fp6_fmt](group_max)
+
+            #
+            var out_scale = Float32(0.0)
+            if group_max != Float32(0.0) and isfinite(group_max):
+                out_scale = recip(e8m0_scale.cast[DType.float32]())
+            if not isfinite(group_max) or not isfinite(out_scale):
+                out_scale = Float32(0.0)
+                e8m0_scale = bitcast[DType.float8_e8m0fnu](UInt8(0))
+                data = type_of(data)(0.0)
+
+            var codes = encode_f32_to_fp6[Self.fp6_fmt](data * out_scale)
+
+            var packed = SIMD[DType.uint8, 32](0)
+            comptime for g in range(blk // 4):
+                var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
+                comptime for i in range(3):
+                    packed[g * 3 + i] = UInt8(
+                        (word >> UInt32(8 * i)) & UInt32(0xFF)
+                    )
+
+            comptime for chunk in range(bytes_per_blk // 8):
+                buf_p.store[alignment=8](
+                    b * bytes_per_blk + chunk * 8,
+                    packed.slice[8, offset=chunk * 8](),
+                )
+
+            buf_p.store[alignment=scale_bytes](
+                Self.scales_offset() + b * scale_bytes,
+                bitcast[DType.uint8, scale_bytes](
+                    rebind[Scalar[Self.scales_dtype]](e8m0_scale)
+                ),
+            )
+
     @always_inline
     @staticmethod
     def copy_token_to_send_buf[
@@ -1579,71 +1662,76 @@ struct MXTokenFormat[
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
         input_scale: Float32,
     ) -> None:
-        comptime src_width = 8
-        comptime byte_width = src_width // Self.elems_per_byte
-        comptime NUM_THREADS_PER_SF = MXFP4_SF_VECTOR_SIZE // src_width
+        comptime if Self.is_fp6:
+            Self._copy_token_to_send_buf_fp6[src_type, block_size](buf_p, src_p)
+        else:
+            comptime src_width = 8
+            comptime byte_width = (src_width * Self.bits_per_element) // 8
+            comptime NUM_THREADS_PER_SF = MXFP4_SF_VECTOR_SIZE // src_width
 
-        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
-            var loaded_vec = src_p.load[
-                width=src_width, alignment=Self.alignment, invariant=True
-            ](i * src_width).cast[DType.float32]()
+            for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
+                var loaded_vec = src_p.load[
+                    width=src_width, alignment=Self.alignment, invariant=True
+                ](i * src_width).cast[DType.float32]()
 
-            # each thread finds maximum value in its local 8 elements
-            var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
-            # find the maximum value among all 32 elements
-            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
-                thread_max
-            )
-
-            var fp8_scale_factor: Scalar[Self.scales_dtype]
-            var scale_f32: Float32
-            var block_is_dead = False
-            comptime if Self.elems_per_byte == 1:
-                # MXFP8 multiplies the data by the scale's RECIPROCAL, unlike
-                # the FP4 path below, which hands the scale itself to the
-                # packing helper.
-                fp8_scale_factor, scale_f32, block_is_dead = (
-                    compute_mxfp8_block_scale[Self.scales_dtype](group_max)
+                # each thread finds maximum value in its local 8 elements
+                var thread_max = (
+                    abs(loaded_vec).reduce_max().cast[DType.float32]()
                 )
-            else:
-                # Use MXFP4 even-mode rounding for the E8M0 scale.
-                fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
-                    Self.scales_dtype
-                ]()
-                scale_f32 = fp8_scale_factor.cast[DType.float32]()
+                # find the maximum value among all 32 elements
+                var group_max = warp.lane_group_max[
+                    num_lanes=NUM_THREADS_PER_SF
+                ](thread_max)
 
-            # write back the scale factor
-            comptime scale_bytes = size_of[Self.scales_dtype]()
-            if i % NUM_THREADS_PER_SF == 0:
-                buf_p.store[alignment=scale_bytes](
-                    Self.scales_offset()
-                    + i // NUM_THREADS_PER_SF * scale_bytes,
-                    bitcast[DType.uint8, scale_bytes](fp8_scale_factor),
-                )
-
-            comptime if Self.elems_per_byte == 1:
-                # A dead block has no E4M3 representation, so its data must be
-                # zeroed too -- a non-finite lane would otherwise store
-                # `inf * 0.0 = NaN`.
-                var data = type_of(loaded_vec)(
-                    0.0
-                ) if block_is_dead else loaded_vec
-                var fp8_vec = (data * scale_f32).cast[Self.quant_dtype]()
-                buf_p.store[alignment=byte_width](
-                    i * byte_width,
-                    bitcast[DType.uint8, byte_width](fp8_vec),
-                )
-            else:
-                var output_vector = bitcast[Self.quant_dtype, byte_width](
-                    cast_float_to_fp4e2m1_amd(
-                        loaded_vec,
-                        scale_f32,
+                var fp8_scale_factor: Scalar[Self.scales_dtype]
+                var scale_f32: Float32
+                var block_is_dead = False
+                comptime if Self.bits_per_element == 8:
+                    # MXFP8 multiplies the data by the scale's RECIPROCAL, unlike
+                    # the FP4 path below, which hands the scale itself to the
+                    # packing helper.
+                    fp8_scale_factor, scale_f32, block_is_dead = (
+                        compute_mxfp8_block_scale[Self.scales_dtype](group_max)
                     )
-                )
-                buf_p.store[alignment=byte_width](
-                    i * byte_width,
-                    bitcast[DType.uint8, byte_width](output_vector),
-                )
+                else:
+                    # Use MXFP4 even-mode rounding for the E8M0 scale.
+                    fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
+                        Self.scales_dtype
+                    ]()
+                    scale_f32 = fp8_scale_factor.cast[DType.float32]()
+
+                # write back the scale factor
+                comptime scale_bytes = size_of[Self.scales_dtype]()
+                if i % NUM_THREADS_PER_SF == 0:
+                    buf_p.store[alignment=scale_bytes](
+                        Self.scales_offset()
+                        + i // NUM_THREADS_PER_SF * scale_bytes,
+                        bitcast[DType.uint8, scale_bytes](fp8_scale_factor),
+                    )
+
+                comptime if Self.bits_per_element == 8:
+                    # A dead block has no E4M3 representation, so its data must be
+                    # zeroed too -- a non-finite lane would otherwise store
+                    # `inf * 0.0 = NaN`.
+                    var data = type_of(loaded_vec)(
+                        0.0
+                    ) if block_is_dead else loaded_vec
+                    var fp8_vec = (data * scale_f32).cast[Self.quant_dtype]()
+                    buf_p.store[alignment=byte_width](
+                        i * byte_width,
+                        bitcast[DType.uint8, byte_width](fp8_vec),
+                    )
+                else:
+                    var output_vector = bitcast[Self.quant_dtype, byte_width](
+                        cast_float_to_fp4e2m1_amd(
+                            loaded_vec,
+                            scale_f32,
+                        )
+                    )
+                    buf_p.store[alignment=byte_width](
+                        i * byte_width,
+                        bitcast[DType.uint8, byte_width](output_vector),
+                    )
 
     @always_inline
     def copy_msg_to_output_tensor[
@@ -1660,7 +1748,7 @@ struct MXTokenFormat[
         ), "output_tokens expects rank >= 2"
         # First we copy the FP4 quants.
         comptime fp4_width = simd_width_of[Self.quant_dtype]()
-        comptime quant_bytes = Self.hid_dim // Self.elems_per_byte
+        comptime quant_bytes = (Self.hid_dim * Self.bits_per_element) // 8
         comptime assert (
             quant_bytes % fp4_width == 0
         ), "quant_bytes must be divisible by fp4_width"
@@ -5354,3 +5442,145 @@ def fused_silu_mxfp8_interleaved_kernel[
                     scale_simd_idx * SF_ATOM_K,
                     SIMD[scales_dtype, SF_ATOM_K](0.0),
                 )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"ep_fused_silu_mxfp6_{input_dtype}")
+def fused_silu_mxfp6_kernel[
+    scales_dtype: DType,
+    input_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    offsets_layout: TensorLayout,
+    num_threads: Int,
+    num_sms: Int,
+    *,
+    fp6_format: FP6Format,
+    fuse_a_scale_preshuffle: Bool = False,
+    # Clamped SwiGLU-OAI variant; False (default) = plain SiLU(g) * u:
+    #   g'=min(g,L); u'=clamp(u,-L,L); z=(u'+1)*g'*sigmoid(g'*alpha)
+    clamp_activation: Bool = False,
+](
+    output_tensor: TileTensor[DType.uint8, output_layout, MutUntrackedOrigin],
+    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmUntrackedOrigin],
+    alpha: Float32 = 0.0,
+    limit: Float32 = 0.0,
+):
+    """SwiGLU + MXFP6 quantization for the EP MoE down-projection input.
+
+    MXFP6 counterpart of `fused_silu_mx_kernel`, which serves MXFP4 and MXFP8
+    from one body by switching on elements-per-byte. FP6 cannot join it: four
+    codes per three bytes is a ratio of 4/3, which that integer truncates to 1
+    and so cannot distinguish from FP8.
+
+    The structural departure is that a thread owns a whole 32-element MX block
+    rather than 8 elements. At FP4 and FP8 a block is split across 2 or 4
+    cooperating threads, each holding a whole number of bytes; at FP6 an
+    8-element slice is 6 bytes, which is neither a legal SIMD width nor a legal
+    alignment, and a 4-element code group would straddle two threads' bytes. A
+    whole block is exactly 24 bytes and one scale, so the amax reduction stays
+    in registers -- no `lane_group_max` -- and the store is three aligned
+    8-byte writes.
+    """
+    comptime accum_dtype = DType.float32
+    comptime assert (
+        output_tensor.flat_rank >= 2
+    ), "output_tensor must be at least 2D"
+    comptime assert scales_tensor.flat_rank == 2, "scales_tensor must be 2D"
+    comptime assert (
+        input_tensor.flat_rank >= 2
+    ), "input_tensor must be at least 2D"
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be 1D"
+    comptime assert not fuse_a_scale_preshuffle, (
+        "MXFP6 has no A-scale slot-layout producer: the FP6 grouped matmul"
+        " runs the standalone preshuffle, so writing scales in slot layout"
+        " here would be read back as row-major"
+    )
+
+    comptime input_dim = input_tensor.static_shape[1]
+    comptime output_dim = output_tensor.static_shape[1]
+    comptime hidden_size = (output_dim * 4) // 3
+    comptime blk = MXFP6_SF_VECTOR_SIZE
+    comptime bytes_per_blk = (blk * 6) // 8
+
+    comptime assert (
+        output_dim * 4 == hidden_size * 3
+    ), "output_dim must be exactly three quarters of the hidden size"
+    comptime assert (
+        input_dim == hidden_size * 2
+    ), "Input dimension must be twice the hidden size (gate || up)."
+    comptime assert (
+        hidden_size % blk == 0
+    ), "Hidden size must be divisible by MXFP6_SF_VECTOR_SIZE."
+
+    # Scatter processing of a single token across different thread blocks
+    # to improve the memory access performance.
+    var global_warp_id = block_idx.x + warp_id() * num_sms
+    var gid = lane_id() + global_warp_id * WARP_SIZE
+
+    with PDL():
+        var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
+        var num_elem = num_tokens * UInt32(hidden_size)
+
+        for i in range(
+            gid,
+            Int(num_elem // UInt32(blk)),
+            num_threads * num_sms,
+        ):
+            var m = (i * blk) // hidden_size
+            var k = (i * blk) % hidden_size
+
+            var gate_proj = input_tensor.load[width=blk]((m, k)).cast[
+                accum_dtype
+            ]()
+            var up_proj = input_tensor.load[width=blk](
+                (m, k + hidden_size)
+            ).cast[accum_dtype]()
+
+            var output_val: SIMD[accum_dtype, blk]
+            comptime if clamp_activation:
+                var g_c = min(gate_proj, limit)
+                var u_c = up_proj.clamp(-limit, limit)
+                output_val = (g_c * _sigmoid(g_c * alpha)) * (u_c + 1.0)
+            else:
+                gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+                output_val = gate_proj * up_proj
+
+            var group_max = abs(output_val).reduce_max()
+            var e8m0_scale = compute_mxfp6_even_scale[fp6_format](group_max)
+
+            #
+            var out_scale = Float32(0.0)
+            if group_max != Float32(0.0) and isfinite(group_max):
+                out_scale = recip(e8m0_scale.cast[DType.float32]())
+            if not isfinite(group_max) or not isfinite(out_scale):
+                out_scale = Float32(0.0)
+                e8m0_scale = bitcast[DType.float8_e8m0fnu](UInt8(0))
+                output_val = type_of(output_val)(0.0)
+
+            var codes = encode_f32_to_fp6[fp6_format](output_val * out_scale)
+
+            var packed = SIMD[DType.uint8, 32](0)
+            comptime for g in range(blk // 4):
+                var word = pack_fp6_x4(codes.slice[4, offset=g * 4]())
+                comptime for b in range(3):
+                    packed[g * 3 + b] = UInt8(
+                        (word >> UInt32(8 * b)) & UInt32(0xFF)
+                    )
+
+            var byte_col = (k * 6) // 8
+            comptime for chunk in range(bytes_per_blk // 8):
+                output_tensor.store(
+                    (m, byte_col + chunk * 8),
+                    packed.slice[8, offset=chunk * 8](),
+                )
+
+            scales_tensor.store(
+                (m, k // blk),
+                rebind[Scalar[scales_dtype]](e8m0_scale),
+            )
