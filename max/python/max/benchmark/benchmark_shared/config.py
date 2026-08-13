@@ -168,6 +168,26 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Name or path of the tokenizer, if not using the default tokenizer.",
     )
 
+    tokenizer_local_files_only: bool = Field(
+        default=False,
+        description=(
+            "Load the tokenizer from the local HF cache only. Set this for a"
+            " checkpoint the Hub will not serve this caller, where the remote"
+            " chat-template probe fails instead of degrading."
+        ),
+    )
+
+    tokenizer_revision: str | None = Field(
+        default=None,
+        description=(
+            "Commit revision to load the tokenizer at. Set this for a"
+            " checkpoint whose revision cannot be looked up on the Hub (a"
+            " private repo, or one staged into the cache with no branch ref),"
+            " where the default lookup returns nothing and the load falls back"
+            " to ``main``."
+        ),
+    )
+
     model_max_length: int | None = Field(
         default=None,
         description="Override for tokenizer max length. Needed if server has a lower max length than the tokenizer.",
