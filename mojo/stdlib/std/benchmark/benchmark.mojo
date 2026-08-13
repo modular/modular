@@ -474,7 +474,7 @@ struct _RunOptions[TimingFn: def(Int) raises -> Int]:
 
 
 def run(
-    f: Some[def() raises],
+    f: Some[ImplicitlyCopyable & (def() raises)],
     num_warmup_iters: Int = 1,
     max_iters: Int = 1_000_000_000,
     min_runtime_secs: Float64 = 0.1,

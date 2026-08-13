@@ -42,7 +42,9 @@ comptime some_constant = 20
 comptime do_benchmarking = False
 
 
-def bench_run(func: Some[def() raises]) raises -> std.benchmark.Report:
+def bench_run(
+    func: Some[ImplicitlyCopyable & (def() raises)],
+) raises -> std.benchmark.Report:
     return std.benchmark.run(func, 2, 1_000_000, 1, 3)
 
 
