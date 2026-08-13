@@ -65,7 +65,7 @@ from std.sys.info import (
     has_apple_gpu_accelerator,
     is_apple_gpu,
 )
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
@@ -1036,10 +1036,14 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
     """Block-per-row kernel: one block per row, grid-strided over rows."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         # `body` borrowed + copied (not consumed) so the launch's dispatch
         # closures can construct the kernel without moving out of a
         # copy-captured value.
@@ -1052,8 +1056,8 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1061,7 +1065,7 @@ struct _BlockKernel[rank: Int, params: ContextParams, Body: RowBody](
                 var row_coords = _get_nd_indices_from_flat_index(
                     row_idx, self.shape, Self.params.axis
                 )
-                self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+                self.body[Self.params](row_coords, ctx)
 
 
 struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -1071,10 +1075,14 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     grid-strided over row groups."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         self.body = body
         self.shape = shape
 
@@ -1085,8 +1093,8 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
     )
     def __call__(self) capturing:
         comptime warps_per_block = Self.params.BLOCK_SIZE // WARP_SIZE
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1100,9 +1108,7 @@ struct _WarpKernel[rank: Int, params: ContextParams, Body: RowBody](
                     var row_coords = _get_nd_indices_from_flat_index(
                         row_idx, self.shape, Self.params.axis
                     )
-                    self.body[Self.params](
-                        Coord(row_coords.canonicalize()), ctx
-                    )
+                    self.body[Self.params](row_coords, ctx)
 
 
 struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -1113,10 +1119,14 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
     Grid-strided over output tiles."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
 
     @always_inline
-    def __init__(out self, body: Self.Body, shape: IndexList[Self.rank]):
+    def __init__(
+        out self,
+        body: Self.Body,
+        shape: DynamicCoord[DType.int64, Self.rank],
+    ):
         self.body = body
         self.shape = shape
 
@@ -1134,8 +1144,8 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
             or Self.params._tier == ReduceTier.Serial
         ), "tiled kernel needs a one-thread-per-output tier"
 
-        var axis_size = self.shape[Self.params.axis]
-        var num_outputs = self.shape.flattened_length() // axis_size
+        var axis_size = Int(self.shape[Self.params.axis].value())
+        var num_outputs = Int(self.shape.product()) // axis_size
 
         # Index math is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
@@ -1153,7 +1163,7 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
                 var row_coords = _get_nd_indices_from_flat_index(
                     base, self.shape, Self.params.axis
                 )
-                self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+                self.body[Self.params](row_coords, ctx)
                 base += stride
 
 
@@ -1167,7 +1177,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     without seeing the split-K plumbing."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var counters: UnsafePointer[Int32, MutUntrackedOrigin]
     var blocks_per_row: Int32
@@ -1176,7 +1186,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: IndexList[Self.rank],
+        shape: DynamicCoord[DType.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         counters: UnsafePointer[Int32, MutUntrackedOrigin],
         blocks_per_row: Int32,
@@ -1193,8 +1203,8 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         var qr = udivmod(Int(block_idx.x), Int(self.blocks_per_row))
         var row_idx_ = qr[0]
@@ -1216,7 +1226,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
                 row_idx=Int32(row_idx_),
                 is_last_block=False,
             )
-            self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+            self.body[Self.params](row_coords, ctx)
 
 
 struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
@@ -1229,7 +1239,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`."""
 
     var body: Self.Body
-    var shape: IndexList[Self.rank]
+    var shape: DynamicCoord[DType.int64, Self.rank]
     var partials: UnsafePointer[UInt8, MutUntrackedOrigin]
     var num_splits: Int32
     var phase: Int32
@@ -1238,7 +1248,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __init__(
         out self,
         body: Self.Body,
-        shape: IndexList[Self.rank],
+        shape: DynamicCoord[DType.int64, Self.rank],
         partials: UnsafePointer[UInt8, MutUntrackedOrigin],
         num_splits: Int32,
         phase: Int32,
@@ -1255,8 +1265,8 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
         )
     )
     def __call__(self) capturing:
-        var row_size = self.shape[Self.params.axis]
-        var num_rows = self.shape.flattened_length() // row_size
+        var row_size = Int(self.shape[Self.params.axis].value())
+        var num_rows = Int(self.shape.product()) // row_size
 
         var qr = udivmod(Int(block_idx.x), Int(self.num_splits))
         var row_idx_ = qr[0]
@@ -1278,7 +1288,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
             is_last_block=False,
             phase=self.phase,
         )
-        self.body[Self.params](Coord(row_coords.canonicalize()), ctx)
+        self.body[Self.params](row_coords, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1387,6 +1397,7 @@ def launch[
     )
 
     var shape_il = coord_to_index_list(shape)
+    var shape_dc = Coord(shape_il)
     var row_size = shape_il[axis]
     var num_rows = shape_il.flattened_length() // row_size
     if num_rows == 0 or row_size == 0:
@@ -1429,7 +1440,7 @@ def launch[
                 sm_count * _SM_OVERPROVISION,
             )
             ctx.enqueue_function(
-                _TiledKernel[rank, tiled_params, Body](body, shape_il),
+                _TiledKernel[rank, tiled_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=tiled_block_size,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1460,7 +1471,7 @@ def launch[
                 sm_count * _SM_OVERPROVISION,
             )
             ctx.enqueue_function(
-                _TiledKernel[rank, w1_params, Body](body, shape_il),
+                _TiledKernel[rank, w1_params, Body](body, shape_dc),
                 grid_dim=w1_num_blocks,
                 block_dim=tiled_block_size,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1477,7 +1488,7 @@ def launch[
         )
         var coop_num_blocks = min(num_rows, sm_count * _SM_OVERPROVISION)
         ctx.enqueue_function(
-            _BlockKernel[rank, coop_params, Body](body, shape_il),
+            _BlockKernel[rank, coop_params, Body](body, shape_dc),
             grid_dim=coop_num_blocks,
             block_dim=COOPERATIVE_BLOCK_SIZE,
             attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1541,7 +1552,7 @@ def launch[
                 ctx.enqueue_function(
                     _PointwiseSplitkKernel[rank, splitk_params, Body](
                         body,
-                        shape_il,
+                        shape_dc,
                         partials_ptr,
                         Int32(num_splits),
                         Int32(phase),
@@ -1594,7 +1605,7 @@ def launch[
                 target="gpu",
             )
             ctx.enqueue_function(
-                _WarpKernel[rank, warp_params, Body](body, shape_il),
+                _WarpKernel[rank, warp_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=WARP_BLOCK_SIZE,
                 attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1702,7 +1713,7 @@ def launch[
                 ctx.enqueue_function(
                     _SplitkKernel[rank, splitk_params, Body](
                         body,
-                        shape_il,
+                        shape_dc,
                         partials_ptr,
                         counters_ptr,
                         Int32(blocks_per_row),
@@ -1775,7 +1786,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1786,7 +1797,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1831,7 +1842,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BLOCK_SIZE,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1842,7 +1853,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BLOCK_SIZE,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1875,7 +1886,7 @@ def launch[
                     row_size * cache_count * size_of[cache_dtype.value()]()
                 )
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
@@ -1886,7 +1897,7 @@ def launch[
                 )
             else:
                 ctx.enqueue_function(
-                    _BlockKernel[rank, block_params, Body](body, shape_il),
+                    _BlockKernel[rank, block_params, Body](body, shape_dc),
                     grid_dim=num_blocks,
                     block_dim=BS,
                     attributes=pdl_launch_attributes(_PDL_LEVEL),
