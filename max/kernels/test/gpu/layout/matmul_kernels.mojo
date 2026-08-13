@@ -52,12 +52,11 @@ def time_kernel[
     @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        bencher_iter_custom[kernel_launch](m, ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(kernel_name),
@@ -85,9 +84,8 @@ def run_cublas[
 
         @__parameter
         def bench_func(mut m: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 vendor_blas.matmul[use_tf32=enable_tc](
                     ctx,
                     c_device_ref,
@@ -97,7 +95,7 @@ def run_cublas[
                     transpose_b=False,
                 )
 
-            bencher_iter_custom[kernel_launch](m, ctx)
+            bencher_iter_custom(m, kernel_launch, ctx)
 
         @__parameter
         def get_bench_id() -> String:

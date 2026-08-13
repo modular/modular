@@ -364,9 +364,8 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
     @always_inline
     def bench_unfused(mut b: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             # Named vars bind the per-iter ring-window pointer's origin before
             # it flows into the cache collection / input lambdas.
             var main_kv_lt = LayoutTensor[dtype, kv_block_layout](
@@ -455,7 +454,7 @@ def bench_fused_qkv_index_rms_norm_rope[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_unfused](
         BenchId(
@@ -490,9 +489,8 @@ def bench_fused_qkv_index_rms_norm_rope[
     )
     @always_inline
     def bench_fused(mut b: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var main_kv_lt = LayoutTensor[dtype, kv_block_layout](
                 cb_main_kv_fused.offset_ptr(iteration), main_kv_rt
             )
@@ -572,7 +570,7 @@ def bench_fused_qkv_index_rms_norm_rope[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_fused](
         BenchId(

@@ -427,9 +427,8 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func_nvfp4(mut bench: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -460,7 +459,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bencher_iter_custom[kernel_launch](bench, ctx)
+            bencher_iter_custom(bench, kernel_launch, ctx)
 
         bench.bench_function[bench_func_nvfp4](
             BenchId(
@@ -728,9 +727,8 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func_fp8_1d2d(mut bench: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -765,7 +763,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bencher_iter_custom[kernel_launch](bench, ctx)
+            bencher_iter_custom(bench, kernel_launch, ctx)
 
         bench.bench_function[bench_func_fp8_1d2d](
             BenchId(
@@ -804,9 +802,8 @@ def bench_grouped_matmul[
         )
         @always_inline
         def bench_func(mut bench: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
@@ -827,7 +824,7 @@ def bench_grouped_matmul[
                         ctx,
                     )
 
-            bencher_iter_custom[kernel_launch](bench, ctx)
+            bencher_iter_custom(bench, kernel_launch, ctx)
 
         bench.bench_function[bench_func](
             BenchId(

@@ -303,9 +303,8 @@ def execute_kv_cache_ragged_flash_attention[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             flash_attention[ragged=True](
                 output_device_tensor.to_layout_tensor().as_unsafe_any_origin(),
                 q_tensor.to_layout_tensor(),
@@ -317,7 +316,7 @@ def execute_kv_cache_ragged_flash_attention[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

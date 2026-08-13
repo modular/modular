@@ -51,9 +51,8 @@ def bench_pad_gpu[
     @__parameter
     @always_inline
     def bench_fn(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
             pad_constant(
                 out_device.unsafe_ptr(),
                 output_shape,
@@ -64,7 +63,7 @@ def bench_pad_gpu[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     # Total memory traffic: read input + write output.
     var total_bytes = (input_size + output_size) * size_of[dtype]()

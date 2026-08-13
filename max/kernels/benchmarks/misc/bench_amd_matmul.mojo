@@ -273,9 +273,8 @@ def _bench_one_kernel[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -324,7 +323,7 @@ def _bench_one_kernel[
                     transpose_b=transpose_b,
                 )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

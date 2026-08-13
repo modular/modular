@@ -133,24 +133,23 @@ def bench_flash[
         )
         flash_attention(output, q, k, v, NullMask(), scale, ctx)
 
+    def _kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, imm}:
+        _run_flash(
+            cb_q.offset_ptr(iteration),
+            cb_k.offset_ptr(iteration),
+            cb_v.offset_ptr(iteration),
+            cb_o.offset_ptr(iteration),
+            ctx,
+        )
+
     if bench:
 
         @__parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o, scale)
-        def bench_func(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                _run_flash(
-                    cb_q.offset_ptr(iteration),
-                    cb_k.offset_ptr(iteration),
-                    cb_v.offset_ptr(iteration),
-                    cb_o.offset_ptr(iteration),
-                    ctx,
-                )
-
-            bencher_iter_custom[_kernel_launch](b, ctx)
+        def bench_func(mut b: Bencher) raises:
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -285,24 +284,23 @@ def bench_naive[
             ctx,
         )
 
+    def _kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, imm}:
+        _run_naive(
+            cb_q.offset_ptr(iteration),
+            cb_k.offset_ptr(iteration),
+            cb_v.offset_ptr(iteration),
+            cb_o.offset_ptr(iteration),
+            ctx,
+        )
+
     if bench:
 
         @__parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o, scale)
-        def bench_func(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                _run_naive(
-                    cb_q.offset_ptr(iteration),
-                    cb_k.offset_ptr(iteration),
-                    cb_v.offset_ptr(iteration),
-                    cb_o.offset_ptr(iteration),
-                    ctx,
-                )
-
-            bencher_iter_custom[_kernel_launch](b, ctx)
+        def bench_func(mut b: Bencher) raises:
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -474,27 +472,24 @@ def bench_manual[
             )
             matmul[target="gpu"](o_2d, s_2d, v_2d, ctx)
 
+    def _kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_q, mut cb_k, mut cb_v, mut cb_o, mut score_device, imm,}:
+        _run_manual(
+            cb_q.offset_ptr(iteration),
+            cb_k.offset_ptr(iteration),
+            cb_v.offset_ptr(iteration),
+            cb_o.offset_ptr(iteration),
+            score_device.unsafe_ptr(),
+            ctx,
+        )
+
     if bench:
 
         @__parameter
         @always_inline
-        @__copy_capture(cb_q, cb_k, cb_v, cb_o, score_device)
-        def bench_func(mut b: Bencher):
-            @__parameter
-            @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                _run_manual(
-                    cb_q.offset_ptr(iteration),
-                    cb_k.offset_ptr(iteration),
-                    cb_v.offset_ptr(iteration),
-                    cb_o.offset_ptr(iteration),
-                    score_device.unsafe_ptr()
-                    .unsafe_mut_cast[True]()
-                    .unsafe_origin_cast[MutUntrackedOrigin](),
-                    ctx,
-                )
-
-            bencher_iter_custom[_kernel_launch](b, ctx)
+        def bench_func(mut b: Bencher) raises:
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             return 4 * batch_size * num_heads * seq_len * num_keys * depth

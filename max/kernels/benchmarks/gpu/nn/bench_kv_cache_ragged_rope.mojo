@@ -208,9 +208,8 @@ def execute_kv_cache_ragged_rope[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             fused_qk_rope_ragged[
                 kv_collection_device.CacheType,
                 interleaved=False,
@@ -226,7 +225,7 @@ def execute_kv_cache_ragged_rope[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

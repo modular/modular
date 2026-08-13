@@ -232,9 +232,8 @@ def main() raises:
         @__parameter
         @always_inline
         def bench_func(mut b: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[
                     bulk_memcpy_kernel[NUM_THREADS, BYTES_PER_COPY, S, PREFETCH]
                 ](
@@ -246,7 +245,7 @@ def main() raises:
                     shared_mem_bytes=smem_bytes,
                 )
 
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         m.bench_function[bench_func](
             BenchId(

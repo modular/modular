@@ -230,9 +230,10 @@ def bench_reduce[
     @__parameter
     @always_inline
     def bench_iter(mut b: Bencher, ctx: DeviceContext, ctx_idx: Int) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime if not use_multimem:
                 comptime for i in range(ngpus):
                     in_tensors[i] = TileTensor(
@@ -274,7 +275,7 @@ def bench_reduce[
                     max_num_blocks,
                 )
 
-        bencher_iter_custom[call_fn](b, ctx)
+        bencher_iter_custom(b, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

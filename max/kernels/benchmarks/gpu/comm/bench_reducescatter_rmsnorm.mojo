@@ -692,9 +692,10 @@ def bench_reducescatter_rmsnorm[
     def bench_rs_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -706,7 +707,7 @@ def bench_reducescatter_rmsnorm[
                 in_bufs, out_shards[ctx_idx], rank_sigs, ctx_inner
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_rs_iter](
         b,
@@ -723,9 +724,8 @@ def bench_reducescatter_rmsnorm[
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             if local_rows > 0:
                 _launch_norm[in_dtype, num_cols](
                     cold_ptrs[ctx_idx],
@@ -737,7 +737,7 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_norm_cold_iter](
         b,
@@ -754,9 +754,10 @@ def bench_reducescatter_rmsnorm[
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -778,7 +779,7 @@ def bench_reducescatter_rmsnorm[
                     ctx_inner,
                 )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_chained_iter](
         b,
@@ -795,9 +796,10 @@ def bench_reducescatter_rmsnorm[
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -816,7 +818,7 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fused_iter](
         b,
@@ -836,9 +838,10 @@ def bench_reducescatter_rmsnorm[
     ) raises:
         var local_rows = config.rank_units(ctx_idx)
 
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_bufs, imm}:
             comptime for _j in range(ngpus):
                 in_bufs[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -875,7 +878,7 @@ def bench_reducescatter_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_dispatch_iter](
         b,

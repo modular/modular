@@ -300,12 +300,11 @@ def bench_dispatch[
         @__parameter
         @always_inline
         def bench_func(mut b: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 run_func()
 
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         var input_id_parts = String(
             "n_tokens_per_rank=",

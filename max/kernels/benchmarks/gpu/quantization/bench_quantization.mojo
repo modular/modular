@@ -126,9 +126,8 @@ def bench_1d1d_quantization[
     @__copy_capture(input_tensor, output_tensor, scales_tensor)
     @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             # Run the quantization kernel
             comptime if use_async:
                 quantize_dynamic_scaled_fp4_async[
@@ -149,7 +148,7 @@ def bench_1d1d_quantization[
                     num_cols_padded=cols,
                 )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var bytes = ThroughputMeasure(
         BenchMetric.bytes,

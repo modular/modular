@@ -166,9 +166,10 @@ def bench_p2p[
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut buf0_write, mut buf1_write, imm}:
             # In unidir mode only GPU 0 does work; GPU 1 is idle.
             comptime if not is_bidir:
                 if ctx_idx != 0:
@@ -211,7 +212,7 @@ def bench_p2p[
                 block_dim=BLOCK_SIZE,
             )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

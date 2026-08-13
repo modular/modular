@@ -966,12 +966,11 @@ def time_kernel[
     @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        bencher_iter_custom[kernel_launch](m, ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

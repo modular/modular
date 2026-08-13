@@ -131,9 +131,8 @@ def execute_fp8_index[
         )
         @always_inline
         def bench_func(mut b: Bencher):
-            @__parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 fp8_index[num_heads, depth](
                     o_device,
                     q_device,
@@ -148,7 +147,7 @@ def execute_fp8_index[
                     ctx,
                 )
 
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         m.bench_function[bench_func](
             BenchId(

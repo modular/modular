@@ -64,14 +64,13 @@ def bench_argsort[
     @__copy_capture(device_input_tensor, device_indices_tensor)
     @__parameter
     def bench_ascending(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             argsort[ascending=True, target="gpu"](
                 device_indices_tensor, device_input_tensor, ctx
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var num_bytes = N * (size_of[dtype]() + size_of[DType.int64]())
     m.bench_function[bench_ascending](

@@ -775,9 +775,10 @@ def bench_allreduce_rmsnorm_fp8[
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -792,7 +793,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_allreduce_iter](
         b,
@@ -809,9 +810,10 @@ def bench_allreduce_rmsnorm_fp8[
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @__parameter
             @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_tensors, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
                         rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -863,7 +865,7 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+            bencher_iter_custom(bench, call_fn, ctx)
 
         bench_multicontext[bench_ar_fused_iter](
             b,
@@ -882,9 +884,10 @@ def bench_allreduce_rmsnorm_fp8[
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -911,7 +914,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fully_fused_iter](
         b,
@@ -930,9 +933,10 @@ def bench_allreduce_rmsnorm_fp8[
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @__parameter
             @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_tensors, mut ar_out_dev, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
                         rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -1011,7 +1015,7 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+            bencher_iter_custom(bench, call_fn, ctx)
 
         bench_multicontext[bench_ar_add_fused_iter](
             b,
@@ -1030,9 +1034,10 @@ def bench_allreduce_rmsnorm_fp8[
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -1067,7 +1072,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fused_add_iter](
         b,
