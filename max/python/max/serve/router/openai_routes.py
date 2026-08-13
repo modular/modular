@@ -160,8 +160,6 @@ _T = TypeVar("_T")
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
 
-_CLIENT_DISCONNECTED_STATUS_CODE = 499
-
 # Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
 _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -239,10 +237,6 @@ def _merge_tool_call_deltas(
         if delta.arguments is not None:
             acc.arguments.append(delta.arguments)
     return [acc.to_chunk() for acc in merged.values()]
-
-
-class _ClientDisconnectedError(RuntimeError):
-    """Raised when a non-streaming request disconnects before completion."""
 
 
 def record_request_start() -> None:
@@ -2054,9 +2048,6 @@ async def openai_create_chat_completion(
 
         response = await response_generator.complete([token_request])
         return response
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -2305,9 +2296,6 @@ async def openai_create_embeddings(
             )
             for idx, input_text in enumerate(embedding_inputs)
         ]
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.warning("JSONDecodeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -2335,9 +2323,6 @@ async def openai_create_embeddings(
     try:
         response = await response_generator.encode(embedding_requests)
         return response
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except RequestQueueFull:
         # Admission was rejected (full worker queue); let the central handler
         # map it to HTTP 429 rather than the generic 500 below.
@@ -2934,9 +2919,6 @@ async def openai_create_completion(
         # the wrong id.  Overwrite with the http id.
         resp.id = http_req_id
         return resp
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", http_req_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
