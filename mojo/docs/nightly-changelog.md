@@ -107,6 +107,18 @@ This version is still a work in progress.
 
 ## Tooling changes
 
+- `mojo format` now supports a `--check` mode that reports which files
+  would be reformatted and returns a non-zero exit code without modifying
+  any source files. Use `--diff` alongside `--check` to display a unified
+  diff. This enables race-free CI formatting checks:
+
+  ```bash
+  mojo format --check src/ tests/
+  # exit 0 → all files already formatted
+  # exit 1 → formatting changes required (files not modified)
+  # exit 123 → internal formatter error
+  ```
+
 - `mojo doc` now reports the condition of a conditional trait conformance, and
   the generated API docs show it alongside the trait. Previously the condition
   was dropped, making a conditional conformance indistinguishable from an

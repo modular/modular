@@ -21,3 +21,11 @@ repos:
         files: '\.(mojo|py|mdx?)$'
         stages: [pre-commit]
         pass_filenames: false
+
+      - id: format-check
+        name: format-check
+        entry: ./bazelw run lint
+        language: system
+        files: '\.(mojo|py|mdx?)$'
+        stages: [pre-push]
+        pass_filenames: false

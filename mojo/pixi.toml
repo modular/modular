@@ -7,6 +7,7 @@ platforms = ["linux-64", "linux-aarch64", "osx-arm64"]
 [tasks]
 tests = "./stdlib/scripts/run-tests.sh"
 format = "mojo format ./stdlib"
+format-check = "mojo format --check ./stdlib"
 
 [dependencies]
 mojo = "*"
