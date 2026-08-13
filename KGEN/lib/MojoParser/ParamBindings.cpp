@@ -236,12 +236,34 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
                  name ? ArgUnpackStyle::kKeyword : ArgUnpackStyle::kPositional);
 }
 
+static bool isReferenceFromOwnFnBody(ASTDecl &fnDecl, ASTDecl &useScope) {
+  auto funcOp = dyn_cast_or_null<FnOp>(fnDecl.getIfOperation());
+  if (!funcOp || !isa_and_nonnull<FnOp>(funcOp->getParentOp()))
+    return false;
+
+  for (ASTDecl *scope = &useScope; scope; scope = scope->getParentDecl()) {
+    if (scope == &fnDecl)
+      return true;
+  }
+  return false;
+}
+
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
 /// SymbolConstantAttr or produces an error message and returns null.
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                      const VerifiedParamBindings &verified) {
+                                      const VerifiedParamBindings &verified,
+                                      ASTDecl &useScope, SMLoc useLoc) {
   auto funcOp = cast<FnOp>(fnDecl.getIfOperation());
+  if (isReferenceFromOwnFnBody(fnDecl, useScope)) {
+    StringRef name = funcOp.getDeclName().getValue();
+    auto diag =
+        shared.emitError(useLoc, "recursive references to nested functions are "
+                                 "not supported; define '")
+        << name << "' at file scope";
+    diag.attachNote(fnDecl) << "nested function declared here";
+    return {};
+  }
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
   if (!parentTrait) {
@@ -302,7 +324,8 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl,
     if (!verifiedBindings)
       return {};
   }
-  return getBoundConstAttrForFn(fnDecl, unverified.shared, verifiedBindings);
+  return getBoundConstAttrForFn(fnDecl, unverified.shared, verifiedBindings,
+                                unverified.declScope, unverified.getExprLoc());
 }
 
 void ParamBindings::dump() const { llvm::errs() << parameters << "\n"; }

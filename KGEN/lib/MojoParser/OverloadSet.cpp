@@ -104,9 +104,11 @@ static PValue getCallee(ASTDecl *fnDecl, const ParamBindings &paramBindings,
 
   // Take the fast path to avoid verify binding again if a verified binding has
   // been provided.
-  if (verifiedBindings)
+  if (verifiedBindings) {
     return getBoundConstAttrForFn(*fnDecl, paramBindings.shared,
-                                  verifiedBindings);
+                                  verifiedBindings, paramBindings.declScope,
+                                  paramBindings.getExprLoc());
+  }
   return getBoundConstAttrForFn(*fnDecl, paramBindings);
 }
 

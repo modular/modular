@@ -162,7 +162,8 @@ void emitUnprovableConstraintsFromFitness(
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
                                  const ParamBindings &unverifiedBindings);
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                 const VerifiedParamBindings &verifiedBindings);
+                                 const VerifiedParamBindings &verifiedBindings,
+                                 ASTDecl &useScope, SMLoc useLoc);
 
 FnTypeGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl &traitDecl, FnOp candidateFunc,
