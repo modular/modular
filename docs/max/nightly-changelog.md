@@ -168,6 +168,11 @@ This version is still a work in progress.
   this variable to any non-empty value calls `malloc_trim(0)` at that point.
   On Gemma 4 31B this returns ~24 GiB of anonymous RSS per model worker in
   ~1.4s. Unset by default, and a no-op on platforms without `malloc_trim`.
+- Setting the `MODULAR_MAX_RELEASE_HOST_WEIGHTS` environment variable to
+  `1` frees the host copies of checkpoint weights once the GPU holds
+  them, returning the full checkpoint size in host RSS. GPU deployments
+  of graph-API architectures only; weights that execute on CPU must not
+  be released.
 - `--num-speculative-tokens` is now unset by default, and each speculative
   method resolves its own default: `eagle` and `mtp` keep drafting 2 tokens
   per step, while `dflash`-style block drafters (DFlash, DSpark) derive the
