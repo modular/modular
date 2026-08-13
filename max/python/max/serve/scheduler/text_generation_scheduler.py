@@ -16,6 +16,7 @@ import logging
 import os
 import time
 
+import opentelemetry.trace as otel_trace
 from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
@@ -41,6 +42,8 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
+from opentelemetry import propagate as otel_propagate
+from opentelemetry.context import Context as OtelContext
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -50,6 +53,32 @@ from .dp_padding import DPBatchPadder
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
+_tracer = otel_trace.get_tracer("max.serve")
+
+
+def _tracing_enabled() -> bool:
+    """Whether a real TracerProvider is configured, vs. the OTel no-op default.
+
+    The spans created below are cheap no-ops when tracing is disabled, but the
+    bookkeeping around them (set construction/diffing every batch) is not.
+    Callers use this to skip that bookkeeping entirely on the hot path.
+    """
+    return not isinstance(
+        otel_trace.get_tracer_provider(), otel_trace.ProxyTracerProvider
+    )
+
+
+def _parent_trace_context(context: TextContext) -> OtelContext | None:
+    """Re-extract the caller's OTel context from ``context.trace_carrier``.
+
+    ``trace_carrier`` was serialized by the API process (see
+    ``llm._inject_trace_carrier``) since a live ``Context`` can't cross the
+    process boundary. Returns None (a root span) when the request carried no
+    inbound traceparent, or arrived before this propagation existed.
+    """
+    if context.trace_carrier is None:
+        return None
+    return otel_propagate.extract(context.trace_carrier)
 
 
 class TokenGenerationScheduler(Scheduler):
@@ -114,6 +143,8 @@ class TokenGenerationScheduler(Scheduler):
             * scheduler_config.data_parallel_degree
             * 2
         )
+        self._prefill_spans: dict[RequestID, otel_trace.Span] = {}
+        self._decode_spans: dict[RequestID, otel_trace.Span] = {}
 
     @traced
     def _retrieve_pending_requests(self) -> None:
@@ -145,8 +176,19 @@ class TokenGenerationScheduler(Scheduler):
             )
 
         with Tracer(f"adding_to_batch_constructor: {len(items)} items"):
+            tracing_enabled = _tracing_enabled()
             for context in items:
                 self.batch_constructor.enqueue_new_request(context)
+                if tracing_enabled:
+                    self._prefill_spans[context.request_id] = (
+                        _tracer.start_span(
+                            "max.phase.prefill",
+                            context=_parent_trace_context(context),
+                            attributes={
+                                "max.request_id": str(context.request_id)
+                            },
+                        )
+                    )
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -170,6 +212,8 @@ class TokenGenerationScheduler(Scheduler):
             self.response_queue.put_nowait(
                 {failed_id: SchedulerResult.failed(error)}
             )
+            if failed_id in self._prefill_spans:
+                self._prefill_spans.pop(failed_id).end()
 
         # Skip if there is no work to do.
         has_pending_outputs = (
@@ -234,11 +278,27 @@ class TokenGenerationScheduler(Scheduler):
                 self.response_queue.put_nowait(
                     {cancelled_id: SchedulerResult.cancelled()}
                 )
+            if cancelled_id in self._prefill_spans:
+                self._prefill_spans.pop(cancelled_id).end()
+            if cancelled_id in self._decode_spans:
+                self._decode_spans.pop(cancelled_id).end()
 
         return SchedulerProgress.MADE_PROGRESS
 
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
+        tracing_enabled = _tracing_enabled()
+
+        # Capture which requests are currently in the CE (prefill) phase so we
+        # can detect the CE→TG transition and end their prefill spans below.
+        # Skipped when tracing is disabled: computing this set costs real
+        # CPU every batch even though the spans it feeds would be no-ops.
+        ce_ids_before = (
+            set(self.batch_constructor.all_ce_reqs.keys())
+            if tracing_enabled
+            else None
+        )
+
         # Execute the batch.
         responses = self.pipeline.execute(inputs)
 
@@ -252,8 +312,28 @@ class TokenGenerationScheduler(Scheduler):
             if self.batch_constructor.contains(req_id)
         }
 
-        # Advance the requests and collect the invalid request IDs
+        # Advance the requests: moves completed CE requests into TG.
         self.batch_constructor.advance_requests(inputs)
+
+        # Any request that was CE before and is now TG just completed prefill.
+        if tracing_enabled:
+            assert ce_ids_before is not None
+            tg_ids_after = set(self.batch_constructor.all_tg_reqs.keys())
+            for req_id in ce_ids_before & tg_ids_after:
+                if req_id in self._prefill_spans:
+                    self._prefill_spans.pop(req_id).end()
+                if req_id in self._decode_spans:
+                    # Preempted back to CE and now decoding again: the prior
+                    # decode span was never closed on preemption, so close it
+                    # here instead of leaking it via overwrite below.
+                    self._decode_spans.pop(req_id).end()
+                self._decode_spans[req_id] = _tracer.start_span(
+                    "max.phase.decode",
+                    context=_parent_trace_context(
+                        self.batch_constructor.all_tg_reqs[req_id]
+                    ),
+                    attributes={"max.request_id": str(req_id)},
+                )
 
         # Release terminated requests from the batch
         num_terminated_requests = 0
@@ -261,6 +341,8 @@ class TokenGenerationScheduler(Scheduler):
             if response.is_done:
                 self.batch_constructor.release_request(request_id)
                 num_terminated_requests += 1
+                if request_id in self._decode_spans:
+                    self._decode_spans.pop(request_id).end()
 
         # send the responses to the API process
         if responses:

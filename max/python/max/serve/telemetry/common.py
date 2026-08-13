@@ -21,6 +21,7 @@ import os
 import platform
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from time import time
 
 import numpy as np
@@ -31,6 +32,7 @@ from max.serve.telemetry.metrics import (
     configure_histogram_shadow_emission,
 )
 from opentelemetry._logs import set_logger_provider
+from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
@@ -68,6 +70,16 @@ from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
+
+request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
+    "max.serve.request_trace_ctx", default=None
+)
+"""The OTel context extracted from the current request's inbound W3C
+traceparent/tracestate headers (or None). Set once per request by the route
+handler in openai_routes.py before it calls into the pipeline, so it is
+already populated by the time TextContext is constructed in llm.py — even
+though route handlers and the pipeline live in different modules, ContextVar
+values propagate through the whole async call chain within the same task."""
 
 
 def _getCloudProvider() -> str:

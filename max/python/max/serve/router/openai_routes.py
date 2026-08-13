@@ -131,6 +131,7 @@ from max.serve.schemas.openai import (
     TopLogprob,
     UnloadLoraRequest,
 )
+from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 from max.serve.worker_interface import RequestQueueFull
@@ -151,6 +152,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
+from opentelemetry import propagate as otel_propagate
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -561,6 +563,7 @@ class OpenAIChatResponseGenerator(
         record_request_start()
         request_span = _tracer.start_span(
             "max.request",
+            context=request_trace_ctx.get(),
             attributes={
                 "gen_ai.request.model": request.model_name,
                 "max.request_id": str(request.request_id),
@@ -957,6 +960,7 @@ class OpenAIChatResponseGenerator(
         record_request_start()
         request_span = _tracer.start_span(
             "max.request",
+            context=request_trace_ctx.get(),
             attributes={
                 "gen_ai.request.model": request.model_name,
                 "max.request_id": str(request.request_id),
@@ -1266,6 +1270,7 @@ class OpenAIEmbeddingsResponseGenerator:
         metrics_req = requests[0]
         request_span = _tracer.start_span(
             "max.request",
+            context=request_trace_ctx.get(),
             attributes={
                 "gen_ai.request.model": self.pipeline.model_name,
                 "max.request_id": str(metrics_req.request_id),
@@ -1772,6 +1777,7 @@ async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
@@ -2298,6 +2304,7 @@ async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # First try-catch: request parsing (client fault → 400)
     try:
@@ -2570,6 +2577,7 @@ class OpenAICompletionResponseGenerator(
         record_request_start()
         request_span = _tracer.start_span(
             "max.request",
+            context=request_trace_ctx.get(),
             attributes={
                 "gen_ai.request.model": request.model_name,
                 "max.request_id": str(request.request_id),
@@ -2734,6 +2742,7 @@ class OpenAICompletionResponseGenerator(
         record_request_start()
         request_span = _tracer.start_span(
             "max.request",
+            context=request_trace_ctx.get(),
             attributes={
                 "gen_ai.request.model": requests[0].model_name,
                 "max.request_id": str(requests[0].request_id),
@@ -2870,6 +2879,7 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, http_req_id, CreateCompletionRequest
