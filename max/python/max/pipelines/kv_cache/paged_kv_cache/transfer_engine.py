@@ -25,7 +25,7 @@ from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
@@ -34,17 +34,17 @@ if TYPE_CHECKING:
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
 from ._ucx_env import configure_ucx_env
 from .cache_manager import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
-
-NixlBackendType = Literal["ucx", "libfabric", "uccl"]
-
-_NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
-_SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric", "uccl"}
 
 
 def _plugin_load_error(upstream_backend_type: str) -> str | None:
@@ -74,16 +74,11 @@ def _plugin_load_error(upstream_backend_type: str) -> str | None:
 def _get_nixl_backend_type() -> NixlBackendType:
     """Returns the NIXL backend type from the environment.
 
-    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``).
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` (default ``"ucx"``). The default
+    is this engine's, not the validator's: the dKV connector reads the same
+    variable through the same validator but auto-selects when it is unset.
     """
-    raw = os.environ.get(_NIXL_BACKEND_ENV_VAR, "ucx").strip().lower()
-    if raw not in _SUPPORTED_BACKENDS:
-        raise ValueError(
-            f"Unsupported NIXL transfer backend {raw!r} "
-            f"(set via {_NIXL_BACKEND_ENV_VAR}). "
-            f"Supported backends: {sorted(_SUPPORTED_BACKENDS)}"
-        )
-    return raw  # type: ignore[return-value]
+    return validate_nixl_backend(os.environ.get(NIXL_BACKEND_ENV_VAR, "ucx"))
 
 
 def _default_uccl_socket_ifname_if_unset() -> None:
