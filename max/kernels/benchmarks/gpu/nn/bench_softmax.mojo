@@ -44,7 +44,7 @@ def bench_softmax_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](total)
     var out_d = ctx.enqueue_create_buffer[dtype](total)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_immut()
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
 
     ctx.enqueue_copy(data_d, data_h)
@@ -56,26 +56,24 @@ def bench_softmax_gpu[
         return data_buf.load[width=_simd_width, alignment=1](coords)
 
     @always_inline
-    @__copy_capture(shape, out_buf)
+    def kernel_launch(ctx: DeviceContext) raises {mut out_buf, mut data_d, imm}:
+        softmax_inline[
+            dtype,
+            simd_width_of[dtype, target=get_gpu_target()](),
+            rank,
+            input_fn,
+            target="gpu",
+        ](
+            Coord(shape),
+            out_buf,
+            rank - 1,
+            ctx,
+        )
+
+    @always_inline
     @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            softmax_inline[
-                dtype,
-                simd_width_of[dtype, target=get_gpu_target()](),
-                rank,
-                input_fn,
-                target="gpu",
-            ](
-                Coord(shape),
-                out_buf,
-                rank - 1,
-                ctx,
-            )
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId("softmax", input_id=String(fn_name, "/", dtype, "/", shape))
@@ -84,32 +82,28 @@ def bench_softmax_gpu[
     # The `algorithm.rowwise` overload — what `mo.reduce.softmax` launches.
     # Benched in the same process so both arms see identical clocks.
     @always_inline
-    @__copy_capture(shape, out_buf, data_buf)
-    @__parameter
-    def bench_fn_rowwise(mut b: Bencher) raises:
-        @__parameter
+    def kernel_launch_rowwise(ctx: DeviceContext) raises {mut out_buf, imm}:
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            @always_inline
-            def rowwise_input_fn[
-                width: Int, alignment: Int, coord_rank: Int
-            ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[
-                dtype, width
-            ]:
-                return data_buf.load_linear[width=width](
-                    rebind[IndexList[rank]](coords)
-                )
-
-            softmax[dtype, rank, target="gpu", reduce_dim=rank - 1](
-                rowwise_input_fn,
-                Coord(shape),
-                ComptimeInt[cols](),
-                out_buf,
-                rank - 1,
-                context=ctx,
+        def rowwise_input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var data_buf} -> SIMD[dtype, width]:
+            return data_buf.load_linear[width=width](
+                rebind[IndexList[rank]](coords)
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        softmax[dtype, rank, target="gpu", reduce_dim=rank - 1](
+            rowwise_input_fn,
+            Coord(shape),
+            ComptimeInt[cols](),
+            out_buf,
+            rank - 1,
+            context=ctx,
+        )
+
+    @always_inline
+    @__parameter
+    def bench_fn_rowwise(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch_rowwise, ctx)
 
     b.bench_function[bench_fn_rowwise](
         BenchId(
@@ -142,7 +136,7 @@ def bench_softmax_with_temperature_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](total)
     var out_d = ctx.enqueue_create_buffer[dtype](total)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(Coord(shape))).as_immut()
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
 
     ctx.enqueue_copy(data_d, data_h)
@@ -150,15 +144,13 @@ def bench_softmax_with_temperature_gpu[
     var temp = temperature
 
     @always_inline
-    @__copy_capture(data_buf, out_buf, temp)
+    def kernel_launch(ctx: DeviceContext) raises {mut out_buf, imm}:
+        softmax_with_temperature(ctx, data_buf, out_buf, temp)
+
+    @always_inline
     @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @__parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            softmax_with_temperature(ctx, data_buf, out_buf, temp)
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
