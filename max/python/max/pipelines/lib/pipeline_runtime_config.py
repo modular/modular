@@ -505,6 +505,20 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    max_video_preprocess_cache_bytes: int = Field(
+        default=5 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed video "
+            "tensors in the tokenizer. Unlike images, videos are not decoded "
+            "at admission, so a hit skips the whole decode -- sampling, "
+            "resize and patchify of every sampled frame. Budgeted "
+            "separately from ``max_vision_preprocess_cache_bytes`` because a "
+            "video entry is an order of magnitude larger than an image one, "
+            "so a shared budget would let a single video evict many images. "
+            "Set to ``0`` to disable. Only used by VLMs that accept video."
+        ),
+    )
+
     _vision_cache_plan: VisionCachePlan | None = PrivateAttr(default=None)
     """Resolved block-mode vision cache reservation.
 
