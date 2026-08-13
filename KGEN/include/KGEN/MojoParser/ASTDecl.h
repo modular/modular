@@ -202,8 +202,8 @@ public:
   /// conditional trait conformances. If callerAssumptions is non-empty, those
   /// where-clause assumptions are used to prove unfoldable constraints.
   ///
-  /// When `failure` is non-null, it receives the verdict and any
-  /// failed/unproven provider `where` constraints.
+  /// When `failure` is non-null, it receives any failed/unproven provider
+  /// `where` constraints.
   TriState doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
                                     ArrayRef<ConstraintAttr> callerAssumptions,
                                     ConstraintFailure *failure = nullptr);

@@ -1051,12 +1051,9 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
       std::optional<bool> conforms =
           shared.getCachedNominalConformance(this, trait, concreteType);
       if (conforms.has_value() && (!details || *conforms)) {
-        TriState cached = TriState::fromBool(*conforms);
-        if (details) {
+        if (details)
           details->clear();
-          details->verdict = cached;
-        }
-        return cached;
+        return TriState::fromBool(*conforms);
       }
     }
 
@@ -1086,8 +1083,6 @@ ASTDecl::doesNominalTypeConformTo(TraitType trait, ASTType concreteType,
                                      result.isTrue());
   }
 
-  if (details)
-    details->verdict = result;
   return result;
 }
 
@@ -1737,7 +1732,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();
-    details.attachNotes(diag, "conditional conformance");
+    details.attachNotes(diag);
     return {};
   }
 

@@ -42,12 +42,9 @@ class DeclResolver;
 class MojoInflightDiag;
 class SharedState;
 
-/// Failed and/or unproven constraints from a check, for diagnostic notes.
-/// `subject` in `attachNotes` supplies the note noun (e.g. "conditional
-/// conformance", "constraint").
+/// Failed and/or unproven conditional-conformance constraints from a check, for
+/// diagnostic notes. Populated today by nominal conformance queries.
 struct ConstraintFailure {
-  TriState verdict = TriState::no();
-
   /// Constraints that evaluated to false.
   SmallVector<ConstraintAttr, 2> failedConstraints;
 
@@ -55,18 +52,13 @@ struct ConstraintFailure {
   SmallVector<ConstraintAttr, 2> unprovenConstraints;
 
   void clear() {
-    verdict = TriState::no();
     failedConstraints.clear();
     unprovenConstraints.clear();
   }
 
-  bool empty() const {
-    return failedConstraints.empty() && unprovenConstraints.empty();
-  }
-
-  /// Note per captured constraint ("failed" / "unproven" + `subject`),
-  /// appending the user message when present. No-op if empty.
-  void attachNotes(MojoInflightDiag &diag, llvm::StringRef subject) const;
+  /// Note per captured constraint ("failed"/"unproven conditional
+  /// conformance"). No-op if empty.
+  void attachNotes(MojoInflightDiag &diag) const;
 };
 
 /// Emit a note explaining why a constraint is inconclusive. The incoming

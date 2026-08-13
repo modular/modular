@@ -96,7 +96,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
       ASTType argType(anyStruct.getType());
       diag << ", argument type " << argType << " does not conform to trait "
            << failure.paramType;
-      failure.constraintFailure.attachNotes(diag, "conditional conformance");
+      failure.constraintFailure.attachNotes(diag);
       return;
     }
     if (sugarIsa<TraitType>(failure.argParamType)) {
