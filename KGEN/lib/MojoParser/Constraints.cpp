@@ -31,10 +31,9 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-void ConstraintFailure::attachNotes(MojoInflightDiag &diag,
-                                    StringRef subject) const {
+void ConstraintFailure::attachNotes(MojoInflightDiag &diag) const {
   auto emitNote = [&](ConstraintAttr constraint, StringRef kind) {
-    diag.attachNote(constraint.getLoc()) << kind << " " << subject;
+    diag.attachNote(constraint.getLoc()) << kind << " conditional conformance";
     if (StringAttr message = constraint.getMessage())
       diag << ": " << message.getValue();
   };

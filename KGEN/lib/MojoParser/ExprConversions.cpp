@@ -1865,6 +1865,11 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
   return false;
 }
 
+void ConversionFailure::addExplanation(MojoInflightDiag &diag) && {
+  if (auto *conformance = std::get_if<UnsatisfiedConformance>(&reason))
+    conformance->constraints.attachNotes(diag);
+}
+
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
@@ -1873,13 +1878,13 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
 bool IREmitter::canImplicitlyConvertToType(
     ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
     ArrayRef<ConstraintAttr> additionalAssumptions,
-    DeferredTypingContext *deferralCtx, ConstraintFailure *details) {
+    DeferredTypingContext *deferralCtx, ConversionFailure *failure) {
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
-  // Clear so a non-conformance early return leaves no stale details.
-  if (details)
-    details->clear();
+  // Clear so an early return leaves no stale reason behind.
+  if (failure)
+    failure->clear();
 
   // If it already matches, then we're done.
   if (rvType.isEqualCanon(requiredType))
@@ -1899,19 +1904,23 @@ bool IREmitter::canImplicitlyConvertToType(
   // requested failure details, we use the cached only if the verdict was true.
   std::optional<bool> cache =
       shared.getCachedImplicitConvertibility(rvType, requiredType);
-  if (cache.has_value() && (!details || cache.value()))
+  if (cache.has_value() && (!failure || cache.value()))
     return cache.value();
 
   // Cache and return a convertibility verdict. When `scopeDependent` is true
   // the verdict was derived from this scope's assumptions rather than being a
   // stable function of the (from, to) pair, so it is returned without caching:
   // the cache is keyed only on the type pair and would otherwise poison queries
-  // from scopes with a different assumption set.
-  auto cacheAndReturnVal = [&shared](ASTType from, ASTType to,
-                                     bool isConvertible,
-                                     bool scopeDependent = false) -> bool {
+  // from scopes with a different assumption set. `reason` is recorded on a
+  // false verdict; `None` (the default) is a no-op.
+  auto cacheAndReturnVal =
+      [&shared, failure](ASTType from, ASTType to, bool isConvertible,
+                         bool scopeDependent = false,
+                         ConversionFailure::Reason reason = {}) -> bool {
     if (!scopeDependent)
       shared.cacheImplicitConvertibility(from, to, isConvertible);
+    if (!isConvertible && failure)
+      failure->recordIfEmpty(std::move(reason));
     return isConvertible;
   };
 
@@ -1928,14 +1937,17 @@ bool IREmitter::canImplicitlyConvertToType(
   };
 
   // Resolve a tri-state conformance verdict into a boolean result that is
-  // potentially cached. Returns the boolean result.
-  auto resolveTriStateVerdict = [&](TriState verdict,
-                                    bool scopeDependent) -> bool {
+  // potentially cached. Returns the boolean result. `reason` is recorded on a
+  // definitive false.
+  auto resolveTriStateVerdict =
+      [&](TriState verdict, bool scopeDependent,
+          ConversionFailure::Reason reason = {}) -> bool {
     if (verdict.isTrue())
       return cacheAndReturnVal(rvType, requiredType, true, scopeDependent);
     if (verdict.isUnknown())
       return deferralCtx != nullptr;
-    return cacheAndReturnVal(rvType, requiredType, false, scopeDependent);
+    return cacheAndReturnVal(rvType, requiredType, false, scopeDependent,
+                             std::move(reason));
   };
 
   // Empty generators are zero-cost convertible to their body type when the
@@ -1948,11 +1960,14 @@ bool IREmitter::canImplicitlyConvertToType(
     return *resolved;
 
   bool upCastScopeDependent = false;
-  FailureOr<TriState> canUpCast =
-      canMetaTypeUpCastTo(shared, value.expr->getLoc(), rvType, requiredType,
-                          &declScope, &upCastScopeDependent, details);
+  ConstraintFailure upCastConstraints;
+  FailureOr<TriState> canUpCast = canMetaTypeUpCastTo(
+      shared, value.expr->getLoc(), rvType, requiredType, &declScope,
+      &upCastScopeDependent, failure ? &upCastConstraints : nullptr);
   if (succeeded(canUpCast))
-    return resolveTriStateVerdict(*canUpCast, upCastScopeDependent);
+    return resolveTriStateVerdict(*canUpCast, upCastScopeDependent,
+                                  ConversionFailure::UnsatisfiedConformance{
+                                      std::move(upCastConstraints)});
 
   if (sugarIsa<ParamListType>(rvType) &&
       sugarIsa<ParamListType>(requiredType)) {
@@ -1968,11 +1983,14 @@ bool IREmitter::canImplicitlyConvertToType(
     ASTType fromEltTp = sugarCast<ParamListType>(rvType).getElementType();
     // Reuse assumptions from above for variadic element upcast.
     bool eltUpCastScopeDependent = false;
-    FailureOr<TriState> canUpCast =
-        canMetaTypeUpCastTo(shared, value.expr->getLoc(), fromEltTp, toEltTp,
-                            &declScope, &eltUpCastScopeDependent, details);
+    ConstraintFailure eltUpCastConstraints;
+    FailureOr<TriState> canUpCast = canMetaTypeUpCastTo(
+        shared, value.expr->getLoc(), fromEltTp, toEltTp, &declScope,
+        &eltUpCastScopeDependent, failure ? &eltUpCastConstraints : nullptr);
     if (succeeded(canUpCast))
-      return resolveTriStateVerdict(*canUpCast, eltUpCastScopeDependent);
+      return resolveTriStateVerdict(*canUpCast, eltUpCastScopeDependent,
+                                    ConversionFailure::UnsatisfiedConformance{
+                                        std::move(eltUpCastConstraints)});
   }
 
   // Support implicit conversions of generator types, including dropping

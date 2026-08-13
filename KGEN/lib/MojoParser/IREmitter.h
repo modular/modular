@@ -22,6 +22,7 @@
 #include "KGEN/MojoParser/ExprDest.h"
 
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/Support/TriState.h"
@@ -29,13 +30,54 @@
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
 
+#include <variant>
+
 namespace M::KGEN::LIT {
 template <typename ValueType>
 struct ASTExprAnd;
 class IREmitter;
 class CallOperands;
 class TraitType;
-struct ConstraintFailure;
+
+//===----------------------------------------------------------------------===//
+// ConversionFailure
+//===----------------------------------------------------------------------===//
+
+/// Why an implicit conversion was rejected. `canImplicitlyConvertToType` tries
+/// a sequence of unrelated conversion strategies, and each one fails for its
+/// own kind of reason, so each gets its own alternative here.
+class ConversionFailure {
+public:
+  /// Rejected without recording a reason.
+  struct None {};
+
+  /// A conditional trait conformance was refuted or could not be proven.
+  struct UnsatisfiedConformance {
+    ConstraintFailure constraints;
+  };
+
+  using Reason = std::variant<None, UnsatisfiedConformance>;
+
+  ConversionFailure() = default;
+  ConversionFailure(ConversionFailure &&) = default;
+  ConversionFailure &operator=(ConversionFailure &&) = default;
+
+  bool empty() const { return std::holds_alternative<None>(reason); }
+  void clear() { reason = None{}; }
+
+  /// Record `newReason`, unless a reason is already recorded. `None` is a
+  /// no-op.
+  void recordIfEmpty(Reason newReason) {
+    if (empty() && !std::holds_alternative<None>(newReason))
+      reason = std::move(newReason);
+  }
+
+  /// Attach a note per captured reason, consuming it. No-op when empty.
+  void addExplanation(MojoInflightDiag &diag) &&;
+
+private:
+  Reason reason;
+};
 
 //===----------------------------------------------------------------------===//
 // IREmitter
@@ -318,14 +360,14 @@ public:
   // an unprovable (`unknown`) trait conformance, the conversion is
   // reported as convertible (and not cached since it's context-dependent).
   //
-  // When `failure` is non-null, it is filled only for a nominal conformance
-  // decision (cleared otherwise) with the raw pre-deferral verdict and any
-  // failed/unproven provider `where` constraints.
+  // When `failure` is non-null it receives why the conversion was rejected.
+  // Only the strategies that know a reason record one, so it can come back
+  // empty even for a rejection.
   static bool canImplicitlyConvertToType(
       ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
       ArrayRef<ConstraintAttr> additionalAssumptions = {},
       DeferredTypingContext *deferralCtx = nullptr,
-      ConstraintFailure *failure = nullptr);
+      ConversionFailure *failure = nullptr);
 
   /// This emits an implicit conversion to the specified type if the types
   /// differ, including emitting any implicit constructor calls as well as

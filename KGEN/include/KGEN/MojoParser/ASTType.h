@@ -201,8 +201,8 @@ public:
   /// - `unknown` if conformance depends on constraints that cannot be
   ///   evaluated statically
   ///
-  /// When `failure` is non-null, it receives the verdict and any
-  /// failed/unproven provider `where` constraints.
+  /// When `failure` is non-null, it receives any failed/unproven provider
+  /// `where` constraints.
   TriState doesConformTo(TraitType trait, SharedState &shared,
                          ArrayRef<ConstraintAttr> callerAssumptions,
                          ConstraintFailure *failure = nullptr) const;
