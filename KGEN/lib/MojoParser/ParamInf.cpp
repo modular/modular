@@ -121,7 +121,7 @@ void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag);
 void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
                        ASTType expectedType, size_t argIdx,
                        PogListAttr argListAttr, CallSyntax syntax,
-                       SharedState &shared, const ASTDecl *scope);
+                       SharedState &shared);
 } // namespace M::KGEN::LIT
 
 /// Attempt to resolve the specified operand to a CValue using the provided
@@ -143,7 +143,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared(), &getDeclScope());
+                        argIdx, argPogs, syntax, getShared());
     return diag;
   };
 
@@ -209,7 +209,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
     }
     // TODO: Could improve this to talk about initializers.
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag, &getDeclScope());
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -272,7 +272,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, evaluator.getReboundType(expectedType),
-                        argIdx, argPogs, syntax, getShared(), &getDeclScope());
+                        argIdx, argPogs, syntax, getShared());
     return diag;
   };
 
@@ -346,7 +346,7 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     // diagnostic.
     ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag, &getDeclScope());
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -357,16 +357,18 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // conversions using the normal type machinery.  This will handle things like
   // function pointer conversions that the code below doesn't.
   if (!paramFinder.hasReferences(expectedType)) {
-    if (IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                              expectedType, getDeclScope())) {
+    ConstraintFailure details;
+    if (IREmitter::canImplicitlyConvertToType(
+            {argVal, operand.expr}, expectedType, getDeclScope(),
+            /*additionalAssumptions=*/{}, /*deferralCtx=*/nullptr, &details)) {
       return success();
     }
 
-    // Restore the information from the original failure so we have a simple
-    // diagnostic.
+    // Restore the original failure so the diagnostic stays simple.
     ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    matcher.failureReason->addExplanation(diag, &getDeclScope());
+    details.attachNotes(diag, "conditional conformance");
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -508,12 +510,12 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     // Be more specific about this case.
     auto &diag = getMojoDiag(operand.expr->getLoc());
     diag << "failed to infer from type " << argType;
-    matcher.failureReason->addExplanation(diag, &getDeclScope());
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
   auto &diag = emitWrongTypeDiag(expectedType);
-  matcher.failureReason->addExplanation(diag, &getDeclScope());
+  matcher.failureReason->addExplanation(diag);
   return failure();
 }
 
@@ -1399,7 +1401,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag & {
     auto &diag = getMojoDiag(operand.expr->getLoc());
     ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argPogs,
-                        callOperands.syntax, getShared(), &getDeclScope());
+                        callOperands.syntax, getShared());
     return diag;
   };
 
@@ -1451,7 +1453,7 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
       diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
            << " cannot be converted to reference of type " << expectedRVType
            << operand.expr->getRange();
-      matcher.failureReason->addExplanation(diag, &getDeclScope());
+      matcher.failureReason->addExplanation(diag);
       return failure();
     }
     break;
@@ -2168,7 +2170,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
           failed(matcher.matchParams(actualRefPackType.getOrigin(),
                                      expectedRefPackType.getOrigin()))) {
         auto &diag = emitPackMismatchDiag();
-        matcher.failureReason->addExplanation(diag, &getDeclScope());
+        matcher.failureReason->addExplanation(diag);
         return {};
       }
 
@@ -2266,9 +2268,11 @@ VerifiedParamBindings CallParamInf::inferForCall() {
         // Make sure the value is compatible with the expected trait, this
         // produces better error messages.  It would be great to sink this
         // into matchType at some point!
-        if (!IREmitter::canImplicitlyConvertToType({eltTypeValue, operand.expr},
-                                                   elementType,
-                                                   emitter.getDeclScope())) {
+        ConstraintFailure details;
+        if (!IREmitter::canImplicitlyConvertToType(
+                {eltTypeValue, operand.expr}, elementType,
+                emitter.getDeclScope(), /*additionalAssumptions=*/{},
+                /*deferralCtx=*/nullptr, &details)) {
           // Packs cannot be constrained by concrete types so elementType is
           // always a trait and reporting non-conformance instead of a type
           // mismatch is safe. This path is only reachable for packs (isPack
@@ -2280,9 +2284,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
                << elementType
                << "; either prove the conformance with 'conforms_to'"
                   ", or add conformance";
-          // Surface any conditional-conformance `where` message that failed.
-          attachFailedConformanceNotes(diag, toPush, elementType, getShared(),
-                                       &emitter.getDeclScope());
+          details.attachNotes(diag, "conditional conformance");
           return {};
         }
 

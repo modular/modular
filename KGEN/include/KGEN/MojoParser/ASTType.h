@@ -44,6 +44,7 @@ class RefType;
 class RefPackType;
 class SharedState;
 class TraitType;
+struct ConstraintFailure;
 
 /// Context threaded through the recursive ASTType printer.
 struct ASTTypePrinterContext;
@@ -199,8 +200,12 @@ public:
   /// - `no` if the type definitely does not conform
   /// - `unknown` if conformance depends on constraints that cannot be
   ///   evaluated statically
+  ///
+  /// When `failure` is non-null, it receives the verdict and any
+  /// failed/unproven provider `where` constraints.
   TriState doesConformTo(TraitType trait, SharedState &shared,
-                         ArrayRef<ConstraintAttr> callerAssumptions) const;
+                         ArrayRef<ConstraintAttr> callerAssumptions,
+                         ConstraintFailure *failure = nullptr) const;
 
   /// Given a standard trait like Copyable, look up the conformance.  On
   /// success, the ASTDecl of the trait itself is returned, it is otherwise

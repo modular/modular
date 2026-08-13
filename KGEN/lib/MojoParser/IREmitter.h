@@ -35,6 +35,7 @@ struct ASTExprAnd;
 class IREmitter;
 class CallOperands;
 class TraitType;
+struct ConstraintFailure;
 
 //===----------------------------------------------------------------------===//
 // IREmitter
@@ -142,10 +143,14 @@ public:
   // scope-dependent: the same type pair can yield a different verdict in a
   // scope with a different assumption set, so callers that memoize keyed on the
   // type pair must not cache a scope-dependent verdict.
+  //
+  // When `failure` is non-null, it receives the verdict plus any
+  // failed/unproven provider `where` constraints.
   static FailureOr<TriState>
   canMetaTypeUpCastTo(SharedState &shared, SMLoc loc, ASTType fromType,
                       ASTType toType, ASTDecl *declScope,
-                      bool *scopeDependent = nullptr);
+                      bool *scopeDependent = nullptr,
+                      ConstraintFailure *failure = nullptr);
 
   /// Given a value of a type that can be zero cost converted to another type,
   /// emit a rebind or other operation to get it in the right type.
@@ -312,10 +317,15 @@ public:
   // When `deferralCtx` is non-null and the only obstacle to the conversion is
   // an unprovable (`unknown`) trait conformance, the conversion is
   // reported as convertible (and not cached since it's context-dependent).
+  //
+  // When `failure` is non-null, it is filled only for a nominal conformance
+  // decision (cleared otherwise) with the raw pre-deferral verdict and any
+  // failed/unproven provider `where` constraints.
   static bool canImplicitlyConvertToType(
       ASTExprAnd<CValue> value, ASTType requiredType, ASTDecl &declScope,
       ArrayRef<ConstraintAttr> additionalAssumptions = {},
-      DeferredTypingContext *deferralCtx = nullptr);
+      DeferredTypingContext *deferralCtx = nullptr,
+      ConstraintFailure *failure = nullptr);
 
   /// This emits an implicit conversion to the specified type if the types
   /// differ, including emitting any implicit constructor calls as well as

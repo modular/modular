@@ -985,13 +985,14 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
                                       ASTDecl::getAssumptionsFromScope(&scope));
 }
 
-TriState
-ASTType::doesConformTo(TraitType trait, SharedState &shared,
-                       ArrayRef<ConstraintAttr> callerAssumptions) const {
+TriState ASTType::doesConformTo(TraitType trait, SharedState &shared,
+                                ArrayRef<ConstraintAttr> callerAssumptions,
+                                ConstraintFailure *details) const {
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return TriState::no();
-  return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions);
+  return typeDecl->doesNominalTypeConformTo(trait, *this, callerAssumptions,
+                                            details);
 }
 
 /// Given a standard trait like Copyable, look up the conformance.  On

@@ -1696,10 +1696,6 @@ CValue IREmitter::emitConstructorCall(ASTType type,
       if (isConvertingTypeValue)
         diag << "; did you mean to instantiate " << type << "?";
       diag << expr->getRange();
-      // If the target is a trait and the source is a struct that fails a
-      // conditional conformance carrying a user message, surface it.
-      LIT::attachFailedConformanceNotes(diag, singleOperandType, type.mlirType,
-                                        shared, &getDeclScope());
       callOperands.dest.resetForError(*this);
       return {};
     }

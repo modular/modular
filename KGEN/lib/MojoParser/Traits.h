@@ -77,28 +77,6 @@ ConstraintAttr fuseConstraints(SharedState &shared,
 /// a trait type or a struct meta type.
 Type mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA, ASTType typeB);
 
-/// If `concreteType` fails to conform to `trait` because of one or more
-/// conditional-conformance `where (cond, "message")` clauses, return the
-/// failing constraints that carry a user message (so the caller can surface
-/// the message). `callerAssumptions` are the enclosing scope's known
-/// assumptions, so that a conformance the caller proved via its own `where`
-/// clause is not reported as failing. Cold path: intended only to enrich the
-/// "does not conform to trait" diagnostic, never for conformance decisions.
-SmallVector<ConstraintAttr>
-getFailedConformanceMessages(ASTType concreteType, TraitType trait,
-                             SharedState &shared,
-                             ArrayRef<ConstraintAttr> callerAssumptions);
-
-/// Attach a note to `diag` for each conditional-conformance `where` message on
-/// `srcType`'s struct that was not satisfied when converting to trait-typed
-/// `targetType`. No-op if `targetType` is not a trait or `srcType` is null.
-/// `scope` supplies the caller assumptions used to evaluate the constraints
-/// (null means no assumptions). Centralizes the "unsatisfied conditional
-/// conformance" note used at the value-conversion diagnostic sites.
-void attachFailedConformanceNotes(MojoInflightDiag &diag, ASTType srcType,
-                                  Type targetType, SharedState &shared,
-                                  const ASTDecl *scope);
-
 FnTypeGeneratorType specializeSignature(FnOp traitFn, ASTType newSelfType,
                                         DeclResolver &declResolver);
 
