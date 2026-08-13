@@ -47,14 +47,13 @@ def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
     @__parameter
     @always_inline
     def bench_empty_launch(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def launch(ctx: DeviceContext) raises:
+        def launch(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
-        bencher_iter_custom[launch](b, ctx)
+        bencher_iter_custom(b, launch, ctx)
 
     m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
 

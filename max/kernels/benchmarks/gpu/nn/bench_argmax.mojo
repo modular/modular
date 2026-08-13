@@ -68,12 +68,11 @@ def bench_argmax[
     @__parameter
     @always_inline
     def bench_streaming(mut b: Bencher):
-        @__parameter
         @always_inline
-        def launch(ctx: DeviceContext) raises:
+        def launch(ctx: DeviceContext) raises {imm}:
             argmax_gpu(ctx, in_tensor, out_tensor)
 
-        bencher_iter_custom[launch](b, ctx)
+        bencher_iter_custom(b, launch, ctx)
 
     m.bench_function[bench_streaming](
         BenchId(String("argmax-streaming", suffix)),
@@ -83,14 +82,13 @@ def bench_argmax[
     @__parameter
     @always_inline
     def bench_topk_k1(mut b: Bencher):
-        @__parameter
         @always_inline
-        def launch(ctx: DeviceContext) raises:
+        def launch(ctx: DeviceContext) raises {imm}:
             topk_gpu[sampling=False, largest=True](
                 ctx, 1, in_tensor, vals_tensor, out_tensor
             )
 
-        bencher_iter_custom[launch](b, ctx)
+        bencher_iter_custom(b, launch, ctx)
 
     m.bench_function[bench_topk_k1](
         BenchId(String("argmax-topk-k1", suffix)),

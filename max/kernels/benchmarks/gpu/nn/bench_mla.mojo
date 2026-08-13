@@ -110,9 +110,8 @@ def bench_decode[
     @always_inline
     @__copy_capture(cb_q, cb_k, cb_o, scalar_args_buf_lt)
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -164,7 +163,7 @@ def bench_decode[
                 num_partitions=num_partitions,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -292,9 +291,8 @@ def bench_prefill[
         cache_row_offsets_device,
     )
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -361,7 +359,7 @@ def bench_prefill[
                 q_max_seq_len=seq_len,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
@@ -546,9 +544,8 @@ def bench_prefill_sparse[
     @always_inline
     @__copy_capture(cb_q, cb_o, kv_cache, indices_tt, topk_lengths_tt, scale)
     def bench_func(mut b: Bencher):
-        @__parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_tt = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major((s_q, Idx[num_heads], Idx[qk_depth])),
@@ -573,7 +570,7 @@ def bench_prefill_sparse[
                 ctx,
             )
 
-        bencher_iter_custom[_kernel_launch](b, ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
     def compute_flops() {imm} -> Int:
         return 2 * s_q * topk * num_heads * (qk_depth + v_depth)

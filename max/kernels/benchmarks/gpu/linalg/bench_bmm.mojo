@@ -189,9 +189,8 @@ def bench_bmm[
     @__copy_capture(a_device, b_device, c_device)
     @always_inline
     def bench_func(mut bench: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
                 comptime if has_amd_gpu_accelerator():
                     var c_buffer = TileTensor(
@@ -288,7 +287,7 @@ def bench_bmm[
                         ctx,
                     )
 
-        bencher_iter_custom[kernel_launch](bench, ctx)
+        bencher_iter_custom(bench, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

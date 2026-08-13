@@ -118,9 +118,8 @@ def bench_rms_norm_fused_residual_add_gpu[
     )
     @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             rms_norm_fused_residual_add[
                 dtype,
                 rank,
@@ -142,7 +141,7 @@ def bench_rms_norm_fused_residual_add_gpu[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

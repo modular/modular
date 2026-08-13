@@ -583,9 +583,8 @@ def main() raises:
             num_threads=num_threads,
         ]
 
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut sink, imm}:
             ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,
@@ -601,7 +600,7 @@ def main() raises:
         @__parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
-            bencher_iter_custom[kernel_launch](bencher, ctx)
+            bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var bench = Bench()
 

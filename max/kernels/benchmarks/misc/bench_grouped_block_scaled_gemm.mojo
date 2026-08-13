@@ -358,9 +358,8 @@ def bench_grouped_block_scaled_gemm[
     )
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @__parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -382,7 +381,7 @@ def bench_grouped_block_scaled_gemm[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

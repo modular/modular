@@ -420,9 +420,10 @@ def bench_rs_norm_gemm_pdl[
         ) raises:
             var local_rows = config.rank_units(ctx_idx)
 
-            @__parameter
             @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_bufs, imm}:
                 comptime if not consumer_only:
                     comptime for _j in range(ngpus):
                         in_bufs[_j] = InTensorType(
@@ -473,7 +474,7 @@ def bench_rs_norm_gemm_pdl[
                             ctx_inner,
                         )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+            bencher_iter_custom(bench, call_fn, ctx)
 
         bench_multicontext[bench_pair_iter](
             b,

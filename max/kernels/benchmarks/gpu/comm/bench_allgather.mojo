@@ -228,9 +228,10 @@ def bench_allgather[
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut tt_in, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for i in range(ngpus):
                 tt_in[i] = TileTensor(
@@ -251,7 +252,7 @@ def bench_allgather[
                 max_num_blocks,
             )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

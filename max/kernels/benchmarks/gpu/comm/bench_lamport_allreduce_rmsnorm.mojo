@@ -406,9 +406,8 @@ def bench_fused_lamport_allreduce_rmsnorm[
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 ctx_idx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -427,7 +426,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fused_iter](
         b,
@@ -442,9 +441,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
     def bench_unfused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @__parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -475,7 +475,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_unfused_iter](
         b,
