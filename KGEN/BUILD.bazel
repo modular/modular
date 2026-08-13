@@ -998,7 +998,6 @@ modular_shared_library(
         "//Support:Threading",
         "//Support:TimeProfiler",
         "@llvm-project//llvm:Support",
-        "@llvm-project//llvm:llvm-symbolizer",
     ],
 )
 
