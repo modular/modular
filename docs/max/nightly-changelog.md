@@ -25,6 +25,13 @@ This version is still a work in progress.
     support to GLM-5.1 / GLM-5.2, enabled with `--tool-parser glm45
     --reasoning-parser glm45 --enable-structured-output`.
   - Fixed a GLM-5.1-FP8 crash caused by a shared-experts dtype mismatch.
+  - The GLM-5.2 B200 recipe now serves the checkpoint's full 1M-token
+    context window (`max_length: 1048576`, previously pinned to 163840).
+    The pin existed because the wider window cost ~33% decode throughput on
+    long-context workloads; the sparse-attention indexer now does work
+    proportional to actual sequence lengths (per-layer kernel cost measured
+    flat across frozen bounds), and a weekly long-context serving benchmark
+    tracks the end-to-end throughput at this configuration.
 - Added Laguna (`LagunaForCausalLM`) support for
   `poolside/Laguna-M.1-NVFP4`, including tool calling.
 - Added DiffusionGemma (`DiffusionGemmaForBlockDiffusion`) support for
