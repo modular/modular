@@ -276,7 +276,7 @@ documentation output.
 
 ```mojo
 @doc_hidden
-def _internal_helper(data: UnsafePointer[UInt8]) -> Int:
+def _internal_helper(data: Pointer[UInt8, MutAnyOrigin]) -> Int:
     pass
 ```
 

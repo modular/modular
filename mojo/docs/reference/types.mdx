@@ -155,27 +155,30 @@ print(v[String])             # text
 ## Memory types
 
 Mojo memory types are pointers and views that provide non-owning access to
-memory. They come in safe and unsafe forms, distinguished by the guarantees
-the compiler enforces. A `Pointer` is non-nullable and refers to
-initialized memory. `UnsafePointer` drops those guarantees, can refer to
-uninitialized memory, and leaves allocation and deallocation to you.
+memory. A single `Pointer` type covers both safe and unsafe use: rather than
+splitting the guarantees across two types, Mojo marks unsafety on the individual
+*operation*. Dereferencing a pointer is safe, while operations with requirements
+the compiler can't check for you, such as unchecked offsets, aliasing casts, and
+overwriting memory, carry an `unsafe_` prefix. Every `Pointer` is non-nullable;
+use `Optional[Pointer]` to model a pointer that may be absent.
 
 <!-- markdownlint-disable MD013 -->
 
-| Type                                                              | What it is                                                                  |
-|-------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| [`Pointer`](/docs/std/memory/pointer/Pointer/)                    | Non-nullable safe pointer to a single value.                                |
-| [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Raw pointer. No nullability or safety guarantees. Manual memory management. |
-| [`Span`](/docs/std/collections/span/Span/)                        | Non-owning view of contiguous data.                                         |
-| [`AddressSpace`](/docs/std/memory/address_space/AddressSpace/)    | Identifies where memory lives, such as CPU or GPU.                          |
+| Type                                                           | What it is                                         |
+|----------------------------------------------------------------|----------------------------------------------------|
+| [`Pointer`](/docs/std/memory/pointer/Pointer/)                 | Non-nullable pointer to one or more values.        |
+| [`Span`](/docs/std/collections/span/Span/)                     | Non-owning view of contiguous data.                |
+| [`AddressSpace`](/docs/std/memory/address_space/AddressSpace/) | Identifies where memory lives, such as CPU or GPU. |
 
 <!-- markdownlint-enable MD013 -->
 
 `OpaquePointer`, `OptionalPointer`, and the `MutX` and `ImmX` forms are
-aliases of `Pointer`.
+aliases of `Pointer`. `UnsafePointer` is a deprecated alias for `Pointer`, kept
+for code written before the two types were unified.
 
-For allocation, pointer arithmetic, and lifetimes, see
-[Pointers](/docs/manual/pointers/).
+For an overview of pointer types, see
+[Intro to pointers](/docs/manual/pointers/). For memory allocation and pointer
+usage, see [Using pointers](/docs/manual/pointers/using_pointers).
 
 ## Other built-in types
 

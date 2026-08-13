@@ -86,3 +86,4 @@ def main() raises:
     inline_allocation()
     use_counter()
     allocating_function()
+    leaky_function()

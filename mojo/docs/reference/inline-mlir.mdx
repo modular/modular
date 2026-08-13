@@ -89,7 +89,7 @@ construction.
 The `__mlir_type` built-in lets you define MLIR types directly
 in Mojo. You can use these types in variable declarations,
 parameter lists, and `comptime` aliases, just as you'd use
-built-in types like `Float64` or `UnsafePointer[Int]`.
+built-in types like `Float64` or `Pointer`.
 
 ### Dot and backtick syntax
 
@@ -172,7 +172,7 @@ comptime _mlir_type = __mlir_type[
     Self.dtype._mlir_value, `>`
 ]
 
-# From UnsafePointer: produces, for example, !kgen.pointer<MyStruct>
+# From Pointer: produces, for example, !kgen.pointer<MyStruct>
 comptime _mlir_type = __mlir_type[`!kgen.pointer<`, Self.T, `>`]
 
 # From Optional: produces, for example, !kgen.variant<MyStruct, i1>
@@ -296,7 +296,7 @@ __mlir_attr[
 ]
 
 # Null pointer constant for a parameterized type.
-# For UnsafePointer[Int], produces:
+# For Pointer[Int, MutAnyOrigin], produces:
 #   #interp.pointer<0> : !kgen.pointer<Int>
 __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
@@ -709,7 +709,7 @@ struct SIMD[dtype: DType, size: Int]:
     var _mlir_value: Self._mlir_type  # Parameterized SIMD vector
 ```
 
-This pattern appears in `SIMD`, `UnsafePointer`, `Tuple`,
+This pattern appears in `SIMD`, `Pointer`, `Tuple`,
 `Variant`, and `Optional`'s internal storage.
 
 Here's a complete, runnable wrapper struct. `Counter` wraps

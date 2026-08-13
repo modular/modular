@@ -14,7 +14,13 @@
 from std import random
 from std.collections import Optional
 
-from std.memory import unsafe_memcpy, unsafe_memset_zero
+from std.memory import (
+    ThinAllocation,
+    alloc,
+    dealloc,
+    unsafe_memcpy,
+    unsafe_memset_zero,
+)
 
 
 struct Grid[rows: Int, cols: Int](Copyable, Writable):
@@ -23,23 +29,27 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     comptime num_cells = Self.rows * Self.cols
-    var data: Pointer[Int8, MutUntrackedOrigin]
+    var data: ThinAllocation[Int8]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     def __init__(out self):
-        self.data = alloc[Int8]({count = self.num_cells}).unsafe_leak()
-        unsafe_memset_zero(self.data, self.num_cells)
+        self.data = alloc[Int8]({count = self.num_cells}).into_thin()
+        unsafe_memset_zero(self.data.unsafe_ptr(), self.num_cells)
 
     def __init__(out self, *, copy: Self):
-        self.data = alloc[Int8]({count = self.num_cells}).unsafe_leak()
-        unsafe_memcpy(dest=self.data, src=copy.data, count=self.num_cells)
+        self.data = alloc[Int8]({count = self.num_cells}).into_thin()
+        unsafe_memcpy(
+            dest=self.data.unsafe_ptr(),
+            src=copy.data.unsafe_ptr(),
+            count=self.num_cells,
+        )
         # The lifetime of `existing` continues unchanged
 
     def __deinit__(deinit self):
-        self.data.unsafe_free()
+        dealloc(self.data^.unsafe_with_layout({count = Self.num_cells}))
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -53,7 +63,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
             random.seed()
 
         var grid = Self()
-        random.randint(grid.data, grid.num_cells, 0, 1)
+        random.randint(grid.data.unsafe_ptr(), grid.num_cells, 0, 1)
 
         return grid^
 
@@ -62,10 +72,10 @@ struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __getitem__(self, row: Int, col: Int) -> Int8:
-        return self.data.unsafe_offset(row * Self.cols + col)[]
+        return self.data.unsafe_ptr().unsafe_offset(row * Self.cols + col)[]
 
     def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
-        self.data.unsafe_offset(row * Self.cols + col)[] = value
+        self.data.unsafe_ptr().unsafe_offset(row * Self.cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations

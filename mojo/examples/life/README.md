@@ -16,7 +16,7 @@ This directory contains the following files:
 
 - The source files `lifev2.mojo` and `gridv2.mojo` provide a subsequent version
   of the project, with a `Grid` struct representing the grid of cells as a block
-  of memory managed by `UnsafePointer`.
+  of memory managed by `ThinAllocation`.
 
 - The `benchmark.mojo` file performs a simple performance benchmark of the two
   versions by running 1,000 evolutions of each `Grid` implementation using a

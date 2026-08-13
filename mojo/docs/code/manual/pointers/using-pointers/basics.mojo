@@ -24,13 +24,13 @@ def test_intro():
 
 
 def test_basics():
-    # start-basics-1
     # Allocate memory to hold a value
+    # start-basics-alloc
     var allocation = alloc(Layout[Int].single())
     var ptr = allocation.unsafe_ptr()
+    # end-basics-alloc
     # Initialize the allocated memory
     ptr.unsafe_write(100)
-    # end-basics-1
 
     # start-dereference
     # Update an initialized value
@@ -90,6 +90,7 @@ def test_pointer_to_string():
 
 
 def main():
+    test_intro()
     test_basics()
     test_pointer_to_value()
     test_alloc_string()
