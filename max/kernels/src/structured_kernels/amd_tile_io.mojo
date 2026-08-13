@@ -1302,7 +1302,9 @@ struct TileLoaderLDS[
     # `warp_id < active_warps_this_iter` (computed per-iter from
     # `total_warp_rows`) so warps mapped past the sub-tile boundary
     # skip the load (vmcnt unaffected for them — s_waitcnt is a no-op).
-    comptime num_iterations = ceildiv(Self.tile_rows, Self.rows_per_iteration)
+    comptime num_iterations = ceildiv(
+        Self.total_warp_rows, Self.num_loading_warps
+    )
     # Total warp-rows of work across all iterations; clamped against
     # `num_iterations * num_loading_warps` from above. The per-iter
     # `active_warps_this_iter` derives from this.
@@ -1398,8 +1400,8 @@ struct TileLoaderLDS[
             " 4-wave coverage."
         )
         comptime assert Self.num_iterations >= 1, (
-            "num_iterations = ceildiv(tile_rows, rows_per_iteration) == 0"
-            " — tile_rows must be >= 1."
+            "num_iterations = ceildiv(total_warp_rows, num_loading_warps)"
+            " == 0 — tile_rows must be >= 1."
         )
         comptime assert Self.total_warp_rows >= 1, (
             "total_warp_rows = ceildiv(tile_rows, rows_per_warp) == 0"
@@ -1455,6 +1457,21 @@ struct TileLoaderLDS[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ]
+
+        comptime if not Self._needs_per_iter_swizzle:
+            comptime assert (
+                Self.rows_per_iteration
+                == Self.num_loading_warps * Self.rows_per_warp
+            ), (
+                "rows_per_iteration must equal num_loading_warps *"
+                " rows_per_warp on the non-swizzled path; a mismatch means the"
+                " iteration stride and the rows actually issued disagree,"
+                " silently under-covering the tile."
+            )
+        comptime assert Self.tile_rows % Self.rows_per_warp == 0, (
+            "rows_per_warp must divide tile_rows, else the last warp-tile runs"
+            " past the destination."
+        )
 
         var m_eff = self.m_anchor + m_offset
         var k_eff = self.k_anchor + k_offset

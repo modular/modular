@@ -70,7 +70,7 @@ from max.gpu.sync import (
     schedule_barrier,
     schedule_group_barrier,
 )
-from layout import Idx, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
@@ -174,7 +174,7 @@ struct BlockScaledMmaOp[
     num_n_mmas: Int,
     num_k_tiles: Int,
     num_b_slots: Int = 1,
-    lane_bytes: Int = 16,
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
 ]:
     """Register ownership + block-scaled MFMA execution.
 
@@ -205,43 +205,58 @@ struct BlockScaledMmaOp[
             (`BK_BYTES // packed_k_per_mma`).
         num_b_slots: Number of B register slots for depth-2 prefetch
             (defaults to 1).
-        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4) or 32
-            (MXFP8). A lane covers 32 K-elements either way.
+        matrix_format: `f8f6f4` operand encoding for A and B. A lane covers
+            32 K-elements in every format; what changes is the bytes that
+            occupies -- 16 (FP4), 24 (FP6), 32 (FP8) -- which `lane_bytes`
+            below derives.
     """
 
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
     comptime MMA_K = Self.mma_shape[2]
 
-    # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one e4m3 byte per element).
-    # A lane always covers 32 K-elements either way.
-    comptime elems_per_byte = 32 // Self.lane_bytes
-    comptime packed_k_per_mma = (
-        Self.MMA_K // Self.elems_per_byte
-    )  # bytes consumed per MFMA
+    comptime a_bits = Self.matrix_format.bits_per_element()
+    comptime b_bits = Self.matrix_format.bits_per_element()
+    comptime bits_per_element = Self.a_bits
+    comptime a_packed_k_per_mma = (Self.MMA_K * Self.a_bits) // 8
+    comptime b_packed_k_per_mma = (Self.MMA_K * Self.b_bits) // 8
+    comptime packed_k_per_mma = Self.a_packed_k_per_mma
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
 
-    # Per-lane operand width: `lane_bytes` of MX data (16 at MXFP4, 32 at
-    # MXFP8), zero-extended into the MFMA operand VGPR.
-    #
-    # NOTE assumes the 16x16x128 MFMA, where 16 threads cover a 1x32-element
-    # tile (16x32 total) and each thread owns one row of `lane_bytes` bytes.
-    comptime mma_frag_width_bytes: Int = Self.lane_bytes
+    comptime lanes_per_row = WARP_SIZE // Self.MMA_M
+
+    comptime a_frag_width_bytes: Int = (
+        Self.a_packed_k_per_mma // Self.lanes_per_row
+    )
+    comptime b_frag_width_bytes: Int = (
+        Self.b_packed_k_per_mma // Self.lanes_per_row
+    )
+    comptime mma_frag_width_bytes: Int = Self.a_frag_width_bytes
+    comptime lane_bytes: Int = Self.mma_frag_width_bytes
+    comptime a_reg_frag_bytes: Int = Self.matrix_format.simd_width()
+    comptime b_reg_frag_bytes: Int = Self.matrix_format.simd_width()
+    comptime reg_frag_bytes: Int = Self.a_reg_frag_bytes
     # At MXFP8 a lane's two 16-byte halves sit K_HALF_STRIDE apart in K, not
     # contiguous; treating them as contiguous mis-pairs the scale blocks.
     comptime FRAG_HALF_BYTES = 16
-    comptime num_frag_halves = (
-        Self.mma_frag_width_bytes // Self.FRAG_HALF_BYTES
+    comptime a_num_frag_halves = (
+        Self.a_frag_width_bytes // Self.FRAG_HALF_BYTES
     )
-    comptime K_HALF_STRIDE = Self.packed_k_per_mma // Self.num_frag_halves
-    comptime mx_format = (
-        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if Self.lane_bytes
-        == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    comptime b_num_frag_halves = (
+        Self.b_frag_width_bytes // Self.FRAG_HALF_BYTES
     )
+    comptime num_frag_halves = Self.a_num_frag_halves
+    comptime A_K_HALF_STRIDE = (
+        Self.a_packed_k_per_mma // Self.a_num_frag_halves
+    )
+    comptime B_K_HALF_STRIDE = (
+        Self.b_packed_k_per_mma // Self.b_num_frag_halves
+    )
+    comptime K_HALF_STRIDE = Self.A_K_HALF_STRIDE
 
-    # Full A/B SMEM tile width in bytes (one full row): `num_k_tiles` K-tiles
-    # of `packed_k_per_mma` bytes each — 64B at MXFP4, 128B at MXFP8.
-    comptime BK_BYTES = Self.num_k_tiles * Self.packed_k_per_mma
+    comptime A_BK_BYTES = Self.num_k_tiles * Self.a_packed_k_per_mma
+    comptime B_BK_BYTES = Self.num_k_tiles * Self.b_packed_k_per_mma
+    comptime BK_BYTES = Self.A_BK_BYTES
 
     # XOR swizzle removing LDS bank conflicts on the A/B fragment SMEM
     # read/write, computed on the full flat offset (see
@@ -249,8 +264,11 @@ struct BlockScaledMmaOp[
     # config this formula was derived and tested against.
     comptime use_smem_swizzle = (
         Self.num_k_tiles == 1
-        and Self.K_HALF_STRIDE == 64
+        and Self.A_K_HALF_STRIDE == 64
+        and Self.B_K_HALF_STRIDE == 64
         and Self.FRAG_HALF_BYTES == 16
+        and Self.a_frag_width_bytes == 16
+        and Self.b_frag_width_bytes == 16
         and Self.MMA_M == 16
     )
     comptime smem_swizzle = Optional[Swizzle](
@@ -262,11 +280,11 @@ struct BlockScaledMmaOp[
 
     comptime _a_reg_layout = row_major[
         Self.num_m_mmas * Self.num_k_tiles,
-        Self.mma_frag_width_bytes,
+        Self.a_reg_frag_bytes,
     ]()
     comptime _b_reg_layout = row_major[
         Self.num_b_slots * Self.num_n_mmas * Self.num_k_tiles,
-        Self.mma_frag_width_bytes,
+        Self.b_reg_frag_bytes,
     ]()
     comptime _b_slot_stride = Self.num_n_mmas * Self.num_k_tiles
     comptime _c_reg_layout = row_major[
@@ -347,7 +365,7 @@ struct BlockScaledMmaOp[
     def load_frag_from_smem[
         k_tile_idx: Int
     ](
-        self,
+        mut self,
         a_smem_warp: TileTensor[
             DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
         ],
@@ -355,11 +373,67 @@ struct BlockScaledMmaOp[
             DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
         ],
     ):
-        """Load MXFP4/MXFP8 A/B fragments from row-major SMEM for k-tile k_tile_idx.
+        """Loads A/B fragments from row-major SMEM for k-tile `k_tile_idx`.
 
-        Computes each lane's flat `row*BK_BYTES + col_byte` in-tile byte
-        offset explicitly (XOR-swizzled when `use_smem_swizzle`) and reads
-        it directly, matching the write side's identical formula in
+        Dispatches on the operand format at compile time. The dispatch lives
+        here rather than at the call sites so a new call site cannot forget it
+        and silently instantiate the power-of-two loader for FP6, whose 24-byte
+        fragment `vectorize`/`distribute` cannot express.
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+
+        Args:
+            a_smem_warp: SMEM view of the A tile for this warp.
+            b_smem_warp: SMEM view of the B tile for this warp.
+        """
+        comptime if Self.b_bits == 6:
+            comptime for i in range(Self.num_n_mmas):
+                var b_idx = k_tile_idx * Self.num_n_mmas + i
+                self._b_reg.vectorize[1, Self.b_reg_frag_bytes]()[
+                    b_idx, 0
+                ] = self._load_fp6_lane_fragment[
+                    Self.b_packed_k_per_mma,
+                    Self.b_frag_width_bytes,
+                    Self.b_reg_frag_bytes,
+                ](
+                    b_smem_warp, i, k_tile_idx
+                )
+        else:
+            self._load_b_frag_vectorized[k_tile_idx](b_smem_warp)
+
+        comptime if Self.a_bits == 6:
+            comptime for i in range(Self.num_m_mmas):
+                var a_idx = k_tile_idx * Self.num_m_mmas + i
+                self._a_reg.vectorize[1, Self.a_reg_frag_bytes]()[
+                    a_idx, 0
+                ] = self._load_fp6_lane_fragment[
+                    Self.a_packed_k_per_mma,
+                    Self.a_frag_width_bytes,
+                    Self.a_reg_frag_bytes,
+                ](
+                    a_smem_warp, i, k_tile_idx
+                )
+        else:
+            self._load_a_frag_vectorized[k_tile_idx](a_smem_warp)
+
+    @always_inline
+    def _load_b_frag_vectorized[
+        k_tile_idx: Int
+    ](
+        mut self,
+        b_smem_warp: TileTensor[
+            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+    ):
+        """Loads B fragments for a power-of-two encoding (FP4 or FP8).
+
+        One lane's operand is `b_num_frag_halves` 16-byte halves, each in its
+        own k-window (`B_K_HALF_STRIDE` apart). At FP4 that is a single half.
+
+        Computes each lane's flat `row*B_BK_BYTES + col_byte` in-tile byte
+        offset explicitly (XOR-swizzled when `use_smem_swizzle`) and reads it
+        directly, matching the write side's identical formula in
         `copy_tiles_to_smem`. col_major[MMA_M, WARP_SIZE/MMA_M] gives each
         lane's (row, k_vec) position, matching the MFMA native lane mapping.
 
@@ -367,14 +441,8 @@ struct BlockScaledMmaOp[
             k_tile_idx: K-tile index within the current BK iteration.
 
         Args:
-            a_smem_warp: SMEM view of the A tile for this warp, shape
-                `[WM, BK_BYTES]` uint8.
-            b_smem_warp: SMEM view of the B tile for this warp, shape
-                `[WN, BK_BYTES]` uint8.
+            b_smem_warp: SMEM view of the B tile for this warp.
         """
-        # One lane's operand is `num_frag_halves` 16-byte halves, each in its
-        # own 64-byte k-window (`K_HALF_STRIDE` apart). At MXFP4 that is a
-        # single half, so this is bit-identical to the pre-MXFP8 path.
         comptime half_w = Self.FRAG_HALF_BYTES
 
         # groups of 16 threads are responsible for 16 rows, i.e threads 0, 16, 32, 48 handle row 0 ...
@@ -384,36 +452,97 @@ struct BlockScaledMmaOp[
         var lane_k_vec = Int(lane_crd[1])
 
         var b_reg_v = self._b_reg.vectorize[1, half_w]()
-        # B fragments first (for ds_read scheduling).
         comptime for i in range(Self.num_n_mmas):
             var b_idx = k_tile_idx * Self.num_n_mmas + i
             var row = i * Self.MMA_N + lane_row
-            comptime for h in range(Self.num_frag_halves):
+            comptime for h in range(Self.b_num_frag_halves):
                 var col_byte = (
-                    k_tile_idx * Self.packed_k_per_mma
-                    + h * Self.K_HALF_STRIDE
+                    k_tile_idx * Self.b_packed_k_per_mma
+                    + h * Self.B_K_HALF_STRIDE
                     + lane_k_vec * half_w
                 )
-                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
-                    row, col_byte
-                )
+                var off = _swizzled_smem_off[
+                    Self.B_BK_BYTES, Self.smem_swizzle
+                ](row, col_byte)
                 b_reg_v[b_idx, h] = b_smem_warp.raw_load[width=half_w](off)
 
+    @always_inline
+    def _load_a_frag_vectorized[
+        k_tile_idx: Int
+    ](
+        mut self,
+        a_smem_warp: TileTensor[
+            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+    ):
+        """A-side counterpart of `_load_b_frag_vectorized`.
+
+        Parameters:
+            k_tile_idx: K-tile index within the current BK iteration.
+
+        Args:
+            a_smem_warp: SMEM view of the A tile for this warp.
+        """
+        comptime half_w = Self.FRAG_HALF_BYTES
+        comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
+        var lane_crd = lane_layout.idx2crd(Int(lane_id()))
+        var lane_row = Int(lane_crd[0])
+        var lane_k_vec = Int(lane_crd[1])
+
         var a_reg_v = self._a_reg.vectorize[1, half_w]()
-        # A fragments.
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
             var row = i * Self.MMA_M + lane_row
-            comptime for h in range(Self.num_frag_halves):
+            comptime for h in range(Self.a_num_frag_halves):
                 var col_byte = (
-                    k_tile_idx * Self.packed_k_per_mma
-                    + h * Self.K_HALF_STRIDE
+                    k_tile_idx * Self.a_packed_k_per_mma
+                    + h * Self.A_K_HALF_STRIDE
                     + lane_k_vec * half_w
                 )
-                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
-                    row, col_byte
-                )
+                var off = _swizzled_smem_off[
+                    Self.A_BK_BYTES, Self.smem_swizzle
+                ](row, col_byte)
                 a_reg_v[a_idx, h] = a_smem_warp.raw_load[width=half_w](off)
+
+    @always_inline
+    def _load_fp6_lane_fragment[
+        packed_k: Int, frag_w: Int, reg_w: Int
+    ](
+        self,
+        smem_warp: TileTensor[
+            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+        mma_idx: Int,
+        k_tile_idx: Int,
+    ) -> SIMD[DType.uint8, reg_w]:
+        """Reads one lane's 24 FP6 payload bytes out of row-major SMEM.
+
+        `vectorize`/`distribute` cannot express a 24-byte element, so this
+        indexes SMEM directly. The lane mapping is deliberately identical to
+        the power-of-two path's `col_major[MMA_M, lanes_per_row]`: lane `l`
+        owns row `l % MMA_M` and K-group `l // MMA_M`.
+
+        Three 8-byte reads rather than 16+8: a lane's byte offset is a multiple
+        of 24, which is 8-byte but not 16-byte aligned, so a 16-byte read would
+        be misaligned for odd K-groups.
+
+        Returns:
+            The lane's fragment, payload in bytes 0..23 and zeros above.
+        """
+        comptime assert frag_w % 8 == 0, "FP6 fragment must be 8-byte aligned"
+
+        var lane = Int(lane_id())
+        var row = mma_idx * Self.MMA_M + (lane % Self.MMA_M)
+        var byte_base = k_tile_idx * packed_k + (lane // Self.MMA_M) * frag_w
+
+        var fragment = SIMD[DType.uint8, reg_w](0)
+        comptime for chunk in range(frag_w // 8):
+            fragment = fragment.insert[offset=chunk * 8](
+                rebind[SIMD[DType.uint8, 8]](
+                    smem_warp.load[8](Coord(row, byte_base + chunk * 8))
+                )
+            )
+        return fragment
 
     @always_inline
     def load_a_frag_from_smem[
@@ -443,15 +572,15 @@ struct BlockScaledMmaOp[
         comptime for i in range(Self.num_m_mmas):
             var a_idx = k_tile_idx * Self.num_m_mmas + i
             var row = i * Self.MMA_M + lane_row
-            comptime for h in range(Self.num_frag_halves):
+            comptime for h in range(Self.a_num_frag_halves):
                 var col_byte = (
-                    k_tile_idx * Self.packed_k_per_mma
-                    + h * Self.K_HALF_STRIDE
+                    k_tile_idx * Self.a_packed_k_per_mma
+                    + h * Self.A_K_HALF_STRIDE
                     + lane_k_vec * half_w
                 )
-                var off = _swizzled_smem_off[Self.BK_BYTES, Self.smem_swizzle](
-                    row, col_byte
-                )
+                var off = _swizzled_smem_off[
+                    Self.A_BK_BYTES, Self.smem_swizzle
+                ](row, col_byte)
                 a_reg_v[a_idx, h] = a_smem_warp.raw_load[width=half_w](off)
 
     @always_inline
@@ -607,19 +736,19 @@ struct BlockScaledMmaOp[
                     + k_tile_idx * Self.num_n_mmas
                     + n
                 )
-                comptime a_off = a_row * Self.mma_frag_width_bytes
-                comptime b_off = b_row * Self.mma_frag_width_bytes
+                comptime a_off = a_row * Self.a_reg_frag_bytes
+                comptime b_off = b_row * Self.b_reg_frag_bytes
                 comptime c_off = (
                     m * Self.num_n_mmas * Self.c_frag_size
                     + n * Self.c_frag_size
                 )
 
-                var a_frag = self._a_reg.raw_load[
-                    width=Self.mma_frag_width_bytes
-                ](a_off)
-                var b_frag = self._b_reg.raw_load[
-                    width=Self.mma_frag_width_bytes
-                ](b_off)
+                var a_frag = self._a_reg.raw_load[width=Self.a_reg_frag_bytes](
+                    a_off
+                )
+                var b_frag = self._b_reg.raw_load[width=Self.b_reg_frag_bytes](
+                    b_off
+                )
 
                 var c_frag = self._c_reg.raw_load[width=Self.c_frag_size](c_off)
 
@@ -632,8 +761,8 @@ struct BlockScaledMmaOp[
                 cdna4_block_scaled_mfma[
                     Int32(n),
                     Int32(m),
-                    Self.mx_format,
-                    Self.mx_format,
+                    Self.matrix_format,
+                    Self.matrix_format,
                 ](
                     c_frag,
                     b_frag,
@@ -659,7 +788,7 @@ struct BlockScaledMatmulAMD[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
-    lane_bytes: Int = 16,
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """Native MXFP4 block-scaled matmul for AMD CDNA4.
@@ -679,9 +808,9 @@ struct BlockScaledMatmulAMD[
         MMA_M: MFMA tile rows. WM must be divisible by MMA_M. Default 16.
         MMA_N: MFMA tile cols. WN must be divisible by MMA_N. Default 16.
         MMA_K: MFMA K-depth in logical FP4 elements. Default 128.
-        lane_bytes: Operand bytes per lane per MFMA: 16 (MXFP4, default) or
-            32 (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS`
-            costs twice the registers and LDS at MXFP8.
+        matrix_format: `f8f6f4` operand encoding for A and B (FP4 E2M1 by
+            default). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS` costs
+            1.5x the registers and LDS at MXFP6 and 2x at MXFP8.
         elementwise_lambda_fn: Optional fused epilogue. When set, each
             output fragment is handed to the lambda with its global
             `(m, n)` instead of being stored to `c`, which lets a caller
@@ -689,9 +818,13 @@ struct BlockScaledMatmulAMD[
             paged KV cache). Requires `MMA_M == 16` and `num_splits == 1`.
     """
 
-    # 2 for MXFP4 (nibble-packed), 1 for MXFP8 (one byte per element).
-    comptime elems_per_byte = 32 // Self.lane_bytes
-    comptime BK_BYTES = Self.BK_ELEMS // Self.elems_per_byte
+    comptime a_bits = Self.matrix_format.bits_per_element()
+    comptime b_bits = Self.matrix_format.bits_per_element()
+    comptime bits_per_element = Self.a_bits
+    comptime A_BK_BYTES = (Self.BK_ELEMS * Self.a_bits) // 8
+    comptime B_BK_BYTES = (Self.BK_ELEMS * Self.b_bits) // 8
+    comptime BK_BYTES = Self.A_BK_BYTES
+    comptime lane_bytes = (32 * Self.a_bits) // 8
 
     comptime num_warps_m = Self.BM // Self.WM
     comptime num_warps_n = Self.BN // Self.WN
@@ -702,10 +835,10 @@ struct BlockScaledMatmulAMD[
     comptime num_n_mmas = Self.WN // Self.MMA_N
 
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
-    comptime packed_k_per_mma = (
-        Self.MMA_K // Self.elems_per_byte
-    )  # bytes per MFMA
-    comptime num_k_tiles = Self.BK_BYTES // Self.packed_k_per_mma
+    comptime a_packed_k_per_mma = (Self.MMA_K * Self.a_bits) // 8
+    comptime b_packed_k_per_mma = (Self.MMA_K * Self.b_bits) // 8
+    comptime packed_k_per_mma = Self.a_packed_k_per_mma
+    comptime num_k_tiles = Self.A_BK_BYTES // Self.a_packed_k_per_mma
 
     # DRAM→regs loading constants.
     comptime simd_width = simd_width_of[DType.uint8]()  # 16
@@ -772,7 +905,9 @@ struct BlockScaledMatmulAMD[
             sfb: B block scales `[N, K//32]` as `float8_e8m0fnu`, one
                 scale per 32 MXFP4 elements.
         """
-        comptime BK_BYTES = Self.BK_BYTES
+        comptime A_BK_BYTES = Self.A_BK_BYTES
+        comptime B_BK_BYTES = Self.B_BK_BYTES
+        comptime BK_BYTES = A_BK_BYTES
         comptime num_m_mmas = Self.num_m_mmas
         comptime num_n_mmas = Self.num_n_mmas
         comptime c_frag_size = Self.c_frag_size
@@ -780,7 +915,9 @@ struct BlockScaledMatmulAMD[
         comptime simd_width = Self.simd_width
         comptime num_threads = Self.num_threads
 
-        comptime K_BYTES = type_of(a).static_shape[1]  # K//2
+        comptime A_K_BYTES = type_of(a).static_shape[1]
+        comptime B_K_BYTES = type_of(b).static_shape[1]
+        comptime K_BYTES = A_K_BYTES
         comptime N = type_of(b).static_shape[0]
         comptime assert N > 0, "N must be known at compile time"
         comptime assert K_BYTES > 0, "K (packed) must be known at compile time"
@@ -831,10 +968,10 @@ struct BlockScaledMatmulAMD[
         # === SMEM tiles (row-major allocation; access is conditionally
         # XOR-swizzled per BlockScaledMmaOp.use_smem_swizzle) ===
         var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
-            row_major[Self.BM, BK_BYTES]()
+            row_major[Self.BM, A_BK_BYTES]()
         )
         var b_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
-            row_major[Self.BN, BK_BYTES]()
+            row_major[Self.BN, B_BK_BYTES]()
         )
 
         comptime scales_per_mma = Self.scales_per_mma
@@ -853,19 +990,28 @@ struct BlockScaledMatmulAMD[
         # Thread distribution: row_major[load_rows, load_cols] maps each
         # thread to a (row, col) position. Each thread loads loads_per_tile
         # vector-width chunks, covering the full [Self.BM, BK_BYTES] tile.
-        comptime load_thread_cols = BK_BYTES // simd_width
-        comptime load_thread_rows = num_threads // load_thread_cols
-        comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
-        # A and B can have different row counts (BM vs BN). Each matrix
-        # needs its own loads_per_tile and register buffer size.
-        comptime a_loads_per_tile = Self.BM // load_thread_rows
-        comptime b_loads_per_tile = Self.BN // load_thread_rows
-        comptime a_reg_elems = Self.BM * BK_BYTES // num_threads
-        comptime b_reg_elems = Self.BN * BK_BYTES // num_threads
+        comptime a_load_cols = A_BK_BYTES // simd_width
+        comptime b_load_cols = B_BK_BYTES // simd_width
+        comptime a_load_rows = _largest_divisor_at_most[Self.BM](
+            num_threads // a_load_cols
+        )
+        comptime b_load_rows = _largest_divisor_at_most[Self.BN](
+            num_threads // b_load_cols
+        )
+        comptime a_active_threads = a_load_rows * a_load_cols
+        comptime b_active_threads = b_load_rows * b_load_cols
+        comptime a_load_layout = row_major[a_load_rows, a_load_cols]()
+        comptime b_load_layout = row_major[b_load_rows, b_load_cols]()
+        comptime load_thread_rows = a_load_rows
+        comptime load_layout = a_load_layout
+        comptime a_loads_per_tile = Self.BM // a_load_rows
+        comptime b_loads_per_tile = Self.BN // b_load_rows
+        comptime a_reg_elems = Self.BM * A_BK_BYTES // a_active_threads
+        comptime b_reg_elems = Self.BN * B_BK_BYTES // b_active_threads
 
         # Block-row tiles spanning the full K dimension for tile-based indexing.
-        var a_blockrow = a_gmem.tile[Self.BM, K_BYTES](block_idx.y, 0)
-        var b_blockrow = b_gmem.tile[Self.BN, K_BYTES](block_idx.x, 0)
+        var a_blockrow = a_gmem.tile[Self.BM, A_K_BYTES](block_idx.y, 0)
+        var b_blockrow = b_gmem.tile[Self.BN, B_K_BYTES](block_idx.x, 0)
 
         # Register buffers for DRAM loads (one per matrix). Sized per
         # matrix so BM != BN works.
@@ -883,7 +1029,7 @@ struct BlockScaledMatmulAMD[
             a_blockrow,
             bounds_from=a_gmem,
         )
-        var b_loader = RegTileLoader[DType.uint8, load_layout](
+        var b_loader = RegTileLoader[DType.uint8, b_load_layout](
             b_blockrow,
             bounds_from=b_gmem,
         )
@@ -894,7 +1040,7 @@ struct BlockScaledMatmulAMD[
             num_m_mmas=num_m_mmas,
             num_n_mmas=num_n_mmas,
             num_k_tiles=num_k_tiles,
-            lane_bytes=Self.lane_bytes,
+            matrix_format=Self.matrix_format,
         ]()
 
         # === Output writer ===
@@ -947,8 +1093,8 @@ struct BlockScaledMatmulAMD[
         @__parameter
         def load_tiles_from_dram():
             """Load one BK-wide tile from DRAM to register buffers."""
-            var a_block = a_blockrow.tile[Self.BM, BK_BYTES](0, k_counter)
-            var b_block = b_blockrow.tile[Self.BN, BK_BYTES](0, k_counter)
+            var a_block = a_blockrow.tile[Self.BM, A_BK_BYTES](0, k_counter)
+            var b_block = b_blockrow.tile[Self.BN, B_BK_BYTES](0, k_counter)
             a_loader.load(a_load_reg, a_block.vectorize[1, simd_width]())
             b_loader.load(b_load_reg, b_block.vectorize[1, simd_width]())
             k_counter += 1
@@ -960,31 +1106,58 @@ struct BlockScaledMatmulAMD[
 
             Computes each thread's flat `row*BK_BYTES + col_byte` in-tile
             byte offset explicitly (XOR-swizzled when `use_smem_swizzle`),
-            matching `load_frag_from_smem`'s identical formula on the read
-            side byte-for-byte — see `_swizzled_smem_off`.
+            matching the fragment read side's identical formula byte-for-byte
+            — see `_swizzled_smem_off`. A and B derive theirs from their own
+            grid and row width, which diverge once the two operands carry
+            different encodings.
+
+            A thread outside an operand's grid holds undefined register
+            contents, since its `RegTileLoader` never wrote them; the grids
+            only fall short of `num_threads` when a row count had to be
+            snapped down to divide the tile height.
             """
             comptime MmaOpT = type_of(mma_op)
             var tid = Int(thread_idx.x)
-            var base_row = tid // load_thread_cols
-            var col_byte = (tid % load_thread_cols) * simd_width
-            comptime for v in range(a_loads_per_tile):
-                var row = base_row + v * load_thread_rows
-                var off = _swizzled_smem_off[BK_BYTES, MmaOpT.smem_swizzle](
-                    row, col_byte
-                )
-                a_smem.raw_store[width=simd_width](
-                    off,
-                    a_load_reg.raw_load[width=simd_width](v * simd_width),
-                )
-            comptime for v in range(b_loads_per_tile):
-                var row = base_row + v * load_thread_rows
-                var off = _swizzled_smem_off[BK_BYTES, MmaOpT.smem_swizzle](
-                    row, col_byte
-                )
-                b_smem.raw_store[width=simd_width](
-                    off,
-                    b_load_reg.raw_load[width=simd_width](v * simd_width),
-                )
+
+            @always_inline
+            @__parameter
+            def store_a():
+                var a_row = tid // a_load_cols
+                var a_col_byte = (tid % a_load_cols) * simd_width
+                comptime for v in range(a_loads_per_tile):
+                    var off = _swizzled_smem_off[
+                        A_BK_BYTES, MmaOpT.smem_swizzle
+                    ](a_row + v * a_load_rows, a_col_byte)
+                    a_smem.raw_store[width=simd_width](
+                        off,
+                        a_load_reg.raw_load[width=simd_width](v * simd_width),
+                    )
+
+            @always_inline
+            @__parameter
+            def store_b():
+                var b_row = tid // b_load_cols
+                var b_col_byte = (tid % b_load_cols) * simd_width
+                comptime for v in range(b_loads_per_tile):
+                    var off = _swizzled_smem_off[
+                        B_BK_BYTES, MmaOpT.smem_swizzle
+                    ](b_row + v * b_load_rows, b_col_byte)
+                    b_smem.raw_store[width=simd_width](
+                        off,
+                        b_load_reg.raw_load[width=simd_width](v * simd_width),
+                    )
+
+            comptime if a_active_threads == num_threads:
+                store_a()
+            else:
+                if tid < a_active_threads:
+                    store_a()
+
+            comptime if b_active_threads == num_threads:
+                store_b()
+            else:
+                if tid < b_active_threads:
+                    store_b()
 
         @always_inline
         @__parameter
@@ -1043,8 +1216,8 @@ struct BlockScaledMatmulAMD[
         # === Schedule-driven pipeline ===
         # The schedule prologue pre-loads 2 tiles, so we need at least 2
         # K-iterations. For K with only 1 tile, fall back to a simple loop.
-        comptime a_loads_per_thread = Self.BM // load_thread_rows
-        comptime b_loads_per_thread = Self.BN // load_thread_rows
+        comptime a_loads_per_thread = Self.BM // a_load_rows
+        comptime b_loads_per_thread = Self.BN // b_load_rows
 
         @always_inline
         @__parameter
@@ -1056,8 +1229,8 @@ struct BlockScaledMatmulAMD[
                 copy_tiles_to_smem()
                 barrier()
 
-                var a_warp = a_smem.tile[Self.WM, BK_BYTES](warp_m, 0)
-                var b_warp = b_smem.tile[Self.WN, BK_BYTES](warp_n, 0)
+                var a_warp = a_smem.tile[Self.WM, A_BK_BYTES](warp_m, 0)
+                var b_warp = b_smem.tile[Self.WN, B_BK_BYTES](warp_n, 0)
 
                 comptime for k in range(num_k_tiles):
                     mma_op.load_frag_from_smem[k](a_warp, b_warp)
@@ -1100,8 +1273,8 @@ struct BlockScaledMatmulAMD[
                     load_scales_to_smem()
                 elif entry.op.tag == LOAD_FRAG:
                     comptime k = entry.op.subtile
-                    var a_warp = a_smem.tile[Self.WM, BK_BYTES](warp_m, 0)
-                    var b_warp = b_smem.tile[Self.WN, BK_BYTES](warp_n, 0)
+                    var a_warp = a_smem.tile[Self.WM, A_BK_BYTES](warp_m, 0)
+                    var b_warp = b_smem.tile[Self.WN, B_BK_BYTES](warp_n, 0)
                     mma_op.load_frag_from_smem[k](a_warp, b_warp)
                     # k_tiles interleaved along the column axis.
                     var sfa_k = sfa_smem.tile[Self.WM, scales_per_mma](
@@ -1225,7 +1398,7 @@ def _launch_block_scaled[
     MMA_M: Int = 16,
     MMA_N: Int = 16,
     MMA_K: Int = 128,
-    lane_bytes: Int = 16,
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
@@ -1246,7 +1419,7 @@ def _launch_block_scaled[
         MMA_M=MMA_M,
         MMA_N=MMA_N,
         MMA_K=MMA_K,
-        lane_bytes=lane_bytes,
+        matrix_format=matrix_format,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ]
     comptime N = type_of(c).static_shape[1]
@@ -1284,6 +1457,10 @@ def _launch_block_scaled_split_k[
     MMA_N: Int = 16,
     MMA_K: Int = 128,
     lane_bytes: Int = 16,
+    matrix_format: CDNA4F8F6F4MatrixFormat = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if lane_bytes
+        == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    ),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: TileTensor[mut=True, ...],
@@ -1307,9 +1484,6 @@ def _launch_block_scaled_split_k[
     fused QKV+index consumer's KV-cache scatter. The reduce then routes every
     element through the lambda and never stores to `c`.
     """
-    comptime assert (
-        lane_bytes == 16 or lane_bytes == 32
-    ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8)"
     # The kernel below is instantiated at the default MFMA shape; refuse any
     # other request rather than silently downgrading it to 16x16x128.
     comptime assert MMA_M == 16 and MMA_N == 16 and MMA_K == 128, (
@@ -1317,7 +1491,12 @@ def _launch_block_scaled_split_k[
         " shape to the non-split launch instead"
     )
     comptime Kernel = BlockScaledMatmulAMD[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN, lane_bytes=lane_bytes
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        matrix_format=matrix_format,
     ]
     comptime N = type_of(c).static_shape[1]
     comptime c_dtype = type_of(c).dtype
@@ -1483,6 +1662,13 @@ def block_scaled_matmul_amd[
     # The buckets are named in ELEMENTS but the divisibility they need is in
     # BYTES, and the two only coincide at MXFP4. Convert, or the gate is off by
     # 2x at MXFP8 and admits a K it cannot tile.
+    comptime assert (
+        lane_bytes == 16 or lane_bytes == 32
+    ), "lane_bytes must be 16 (MXFP4) or 32 (MXFP8); FP6 has its own entry"
+    comptime _fmt = (
+        CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if lane_bytes
+        == 16 else CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
+    )
     comptime _elems_per_byte = 32 // lane_bytes
     comptime _bk_256_bytes = 256 // _elems_per_byte
     comptime _bk_512_bytes = 512 // _elems_per_byte
@@ -1596,7 +1782,7 @@ def block_scaled_matmul_amd[
                 BK_ELEMS=512,
                 WM=16,
                 WN=16,
-                lane_bytes=lane_bytes,
+                matrix_format=_fmt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif (
@@ -1615,7 +1801,7 @@ def block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
-                lane_bytes=lane_bytes,
+                matrix_format=_fmt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
@@ -1628,7 +1814,7 @@ def block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
-                lane_bytes=lane_bytes,
+                matrix_format=_fmt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
         else:
@@ -1641,7 +1827,7 @@ def block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
-                lane_bytes=lane_bytes,
+                matrix_format=_fmt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
     else:
@@ -1664,7 +1850,7 @@ def block_scaled_matmul_amd[
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
-                    lane_bytes=lane_bytes,
+                    matrix_format=_fmt,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
             else:
@@ -1677,7 +1863,7 @@ def block_scaled_matmul_amd[
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
-                    lane_bytes=lane_bytes,
+                    matrix_format=_fmt,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
         elif can_use_bk_512:
@@ -1709,7 +1895,7 @@ def block_scaled_matmul_amd[
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
-                    lane_bytes=lane_bytes,
+                    matrix_format=_fmt,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
             else:
@@ -1722,7 +1908,7 @@ def block_scaled_matmul_amd[
                     MMA_M=MMA_M,
                     MMA_N=MMA_N,
                     MMA_K=MMA_K,
-                    lane_bytes=lane_bytes,
+                    matrix_format=_fmt,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ](c, a, b, a_scales, b_scales, M, ctx)
         else:
@@ -1735,6 +1921,128 @@ def block_scaled_matmul_amd[
                 MMA_M=MMA_M,
                 MMA_N=MMA_N,
                 MMA_K=MMA_K,
-                lane_bytes=lane_bytes,
+                matrix_format=_fmt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b, a_scales, b_scales, M, ctx)
+
+
+@always_inline
+def _largest_divisor_at_most[n: Int](cap: Int) -> Int:
+    """Returns the largest divisor of `n` that is at most `cap`.
+
+    Parameters:
+        n: The value to divide, positive.
+
+    Args:
+        cap: Upper bound on the returned divisor, positive.
+
+    Returns:
+        The largest `d` with `n % d == 0` and `d <= cap`.
+    """
+    var d = min(cap, n)
+    while n % d != 0:
+        d -= 1
+    return d
+
+
+def mxfp6_block_scaled_matmul_amd[
+    fp6_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3,
+    num_splits: Int = 1,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, DType.uint8, ...],
+    b: TileTensor[mut=False, DType.uint8, ...],
+    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    ctx: DeviceContext,
+) raises:
+    """Launch native MXFP6 block-scaled matmul on AMD CDNA4.
+
+    Feeds FP6 operands straight to `cdna4_block_scaled_mfma` with no
+    dequantization, reusing `BlockScaledMatmulAMD`'s pipeline via its
+    `matrix_format` parameter. Accumulates in float32 and casts to `c.dtype`
+    in the store epilogue.
+
+    Single tile shape for now, chosen by arithmetic rather than tuning. FP6's
+    `BK_BYTES` is a multiple of 3 (96 bytes at `BK_ELEMS=128`), so the
+    DRAM->SMEM thread grid needs a thread count divisible by 3 -- hence the
+    3-warp `BM=96, WM=32` shape rather than the usual power-of-two tile. A
+    tuned (N, K)-keyed dispatch, the preshuffle path, and split-K are all
+    follow-up work.
+
+    Parameters:
+        fp6_format: FP6 encoding of both operands (E2M3 or E3M2).
+        num_splits: Inter-block split-K factor. `1` (default) is the plain
+            launch; `> 1` partitions K into that many disjoint bands, each
+            accumulating into its own float32 workspace slice, then reduces.
+            Requires `K_BYTES % num_splits == 0` and
+            `(K_BYTES / num_splits) % BK_BYTES == 0`; `BlockScaledMatmulAMD.run`
+            asserts both.
+
+    Args:
+        c: Output `[M, N]` (any float dtype).
+        a: Packed A `[M, K * 6 // 8]` uint8, four FP6 codes per three bytes.
+        b: Packed B `[N, K * 6 // 8]` uint8, transposed, same packing.
+        a_scales: A scales `[M, K // 32]` float8_e8m0fnu.
+        b_scales: B scales `[N, K // 32]` float8_e8m0fnu.
+        ctx: Device context for kernel launch.
+    """
+    comptime assert (
+        fp6_format.bits_per_element() == 6
+    ), "mxfp6_block_scaled_matmul_amd requires an FP6 matrix format"
+    comptime BM = 96
+    comptime BN = 64
+    comptime BK_ELEMS = 128
+    comptime WM = 32
+    comptime WN = 64
+
+    comptime assert type_of(c).static_shape[1] % BN == 0, (
+        "N must be a multiple of BN=64 for the MXFP6 block-scaled matmul; a"
+        " column overhang wraps into the next row and corrupts it"
+    )
+
+    comptime Kernel = BlockScaledMatmulAMD[
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        matrix_format=fp6_format,
+    ]
+
+    var M = Int(c.dim[0]())
+    comptime N = type_of(c).static_shape[1]
+
+    if M == 0 or N == 0:
+        return
+
+    comptime if num_splits > 1:
+        _launch_block_scaled_split_k[
+            BM=BM,
+            BN=BN,
+            BK_ELEMS=BK_ELEMS,
+            WM=WM,
+            WN=WN,
+            num_splits=num_splits,
+            matrix_format=fp6_format,
+        ](c, a, b, a_scales, b_scales, M, ctx)
+        return
+
+    comptime kernel = Kernel.run[
+        type_of(c).dtype,
+        type_of(c).LayoutType,
+        type_of(a).LayoutType,
+        type_of(b).LayoutType,
+        type_of(a_scales).LayoutType,
+        type_of(b_scales).LayoutType,
+    ]
+
+    ctx.enqueue_function[kernel](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+        block_dim=Kernel.num_threads,
+    )

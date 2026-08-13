@@ -41,6 +41,8 @@ from linalg.matmul.gpu.amd.block_scaled_matmul_amd import (
     block_scaled_matmul_amd,
 )
 
+from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
+
 comptime FP8_LANE_BYTES = 32
 
 
@@ -170,7 +172,7 @@ def _test_case[
         BK_ELEMS=BK_ELEMS,
         WM=WM,
         WN=WN,
-        lane_bytes=FP8_LANE_BYTES,
+        matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ]
     comptime kernel = Kernel.run[
         DType.float32,
@@ -315,7 +317,7 @@ def test_mxfp8_matmul_split_k[
         WM=WM,
         WN=WN,
         num_splits=num_splits,
-        lane_bytes=FP8_LANE_BYTES,
+        matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3,
     ](c_tt, a_tt, b_tt, sfa_tt, sfb_tt, M_static, ctx)
 
     comptime BLOCK_DIM = 32
