@@ -731,7 +731,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
 
     Constraints:
         `size_of[T]()` must be greater than zero. `layout.count()` must be
-        greater than zero.
+        `>= 0`.
 
     Example:
 
@@ -747,8 +747,8 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     """
     comptime size_of_t = size_of[T]()
 
-    # TODO: Cannot use t-string as is causes a recursive reference to `alloc`
-    debug_assert(layout.count() > 0, "alloc(", layout, "): count must be > 0")
+    if unlikely(layout.count() < 0):
+        abort("alloc: `Layout.count()` must be > 0")
 
     comptime if size_of_t == 0:
         return ThinAllocation(
