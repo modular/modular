@@ -144,7 +144,10 @@ private:
     for (ParamDeclAttr decl : oldFunction.getInputParams())
       unusedParamsAttr.insert(decl.getName());
 
-    unusedParamsIndex = llvm::BitVector(unusedParamsAttr.size(), true);
+    // Size to the declared param list, not the unique-name set: duplicate
+    // names would otherwise undersize the bitvector and OOB on index access.
+    unusedParamsIndex =
+        llvm::BitVector(oldFunction.getInputParams().size(), true);
     // Walk over all parameter uses.
     mlir::AttrTypeWalker walker;
     walker.addWalk(

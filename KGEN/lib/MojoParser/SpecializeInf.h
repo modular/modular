@@ -39,6 +39,12 @@ public:
   FailureOr<SmallVector<TypedAttr>>
   inferSpecialization(FnTypeGeneratorType target, FnOp actualFn);
 
+  /// Like the `FnOp` overload, but with an already-substituted actual
+  /// signature (e.g. leading `__call__` aux rebound to storage aliases).
+  FailureOr<SmallVector<TypedAttr>>
+  inferSpecialization(FnTypeGeneratorType target, FnTypeGeneratorType actualSig,
+                      ArrayRef<ParamDeclAttr> actualParams);
+
 private:
   bool isExplicitlyUnbound(size_t) const override { return false; }
 

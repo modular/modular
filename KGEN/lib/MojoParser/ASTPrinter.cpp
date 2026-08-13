@@ -1675,10 +1675,10 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
-/// If `decl` is a closure wrapper (struct or trait), print its readable source
-/// name and return true. A closure may have no source name (it is only set when
-/// the signature is available; see ClosureEmitter::createStructWrapper), in
-/// which case this returns false and the caller prints the mangled form.
+/// If `decl` is a closure (struct or trait), print its readable source name and
+/// return true. A closure may have no source name (it is only set when the
+/// signature is available), in which case this returns false and the caller
+/// prints the mangled form.
 static bool tryPrintClosureSourceName(raw_ostream &os, ASTDecl *decl) {
   if (!decl)
     return false;

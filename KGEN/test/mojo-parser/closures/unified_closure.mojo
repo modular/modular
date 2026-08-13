@@ -40,38 +40,23 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S20 < %t.mlir
-# COM: Verify generated trait and struct structure.
+# COM: Verify generated trait and storage-struct structure (no parametric wrapper).
 # S0-DAG: [[S0_PARENT:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_IMPL_PARENT:!Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
 # S0-DAG: [[S0_INT:!.*]] = !lit.struct<#SIMD <{{.*}}>>
 # S0-DAG: lit.trait.decl @"def(y: Int) -> Int"<?, *"_Self`{{.*}}": [[S0_PARENT]]>([[S0_PARENT]])
 # S0-DAG: lit.fn @"__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"[mut *"self`"](%{{.*}}: !lit.ref<:{{.*}}, mut *"self`"> read_mem, |, %y: {{.*}}) capturing -> {{.*}} attributes {sourceName = "__call__", specialFnKind = 0 : i8, synthetic} {
 
-# S0: lit.struct.decl @"{{.*}}s0_make_closure{{.*}}::my_closure::__storage"([[S0_IMPL_PARENT]]) attributes {synthetic}
+# S0: lit.struct.decl @"{{.*}}s0_make_closure{{.*}}::my_closure::__storage"([[S0_IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
 # S0-NEXT: move :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
 # S0-NEXT: copy :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(copy:
 # S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> read_mem, |, %y: {{.*}}) capturing -> {{.*}}
 # S0: lit.fn @"__init__(move:{{.*}}::my_closure::__storage$)"
 # S0: lit.fn @"__deinit__({{.*}}::my_closure::__storage$)"
-# S0: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"my_closure{{.*}}"
+# S0: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__call__{{.*}}"
 # S0: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
 # S0: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__deinit__(
-# S0: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl: [[S0_IMPL_PARENT]], origin_set: origin.set, |>([[S0_IMPL_PARENT]]) attributes {definesClosure,{{.*}}synthetic}
-# S0-NEXT: move :
-# S0-NEXT: copy :
-# S0:  lit.struct.field field0 : !kgen.param<:[[S0_IMPL_PARENT]] impl>
-# S0: lit.fn @"__call__({{.*}})"[mut *"[[S0_L0:.*]]`"](%0[*""]: !lit.ref<!lit.struct<[[S0_T:#.*]] <:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L0]]`"> read_mem, |, %y: [[S0_INT]]) capturing -> [[S0_INT]]
-# S0-SAME: kgen.transparent_thunk_callee_expr = #kgen.get_witness<{{.*}}, "def(y: Int) -> Int", "__call__{{.*}}">
-# S0-NEXT:  [[S0_FIELD:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
-# S0-NEXT:  [[S0_CLOSURE:%.*]] = lit.ref.immut [[S0_FIELD]]
-# S0-NEXT:  [[S0_RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[S0_IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[S0_INT]]) capturing -> [[S0_INT]]>: #kgen.get_witness<:[[S0_IMPL_PARENT]] impl, "def(y: Int) -> Int", "__call__{{.*}}">][muttoimm *"[[S0_L0]]`"->field0]([[S0_CLOSURE]], %y)
-# S0-NEXT:  lit.return [[S0_RES]]
-# S0-NEXT:  lit.end_fn
-# S0-NEXT: }
-# S0: lit.fn @"__init__{{.*}}"[mut *"[[S0_L2:.*]]`", mut *"[[S0_L3:.*]]`"](*, %move: !lit.ref<{{.*}}<:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L2]]`"> deinit_mem, ?, %self: !lit.ref<{{.*}} <:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L3]]`"> byref_result) -> !kgen.none
-# S0: lit.ownership.mark_destroyed %move
-# S0: lit.fn @"__deinit__({{.*}})"[mut *"[[S0_L1:.*]]`"](%self: !lit.ref<{{.*}}<:[[S0_IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[S0_L1]]`"> deinit_mem, |) -> !kgen.none
-# S0: lit.ownership.mark_destroyed %self
+# S0-NOT: lit.struct.decl @"def(y: Int) -> Int_{{[^"]*}}"<impl:
 
 
 
@@ -103,9 +88,9 @@ def s1_make_closure(x: Int, mem: String):
 
         return x + y
 
-# COM: Ensure identical closure traits are reused
+# COM: Ensure identical closure traits are reused; no parametric wrapper is emitted.
 # S2-COUNT-1: lit.trait.decl @"def(y: Int) {{.*}} -> Int"
-# S2-COUNT-1: lit.struct.decl @"def(y: Int) {{.*}} -> Int
+# S2-NOT: lit.struct.decl @"def(y: Int) {{.*}} -> Int_{{.*}}"<impl:
 
 
 
@@ -144,29 +129,12 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-# COM: Test that explicit origins are handled correctly alongside implicit origins.
+# COM: Explicit origins are handled on the storage struct (no parametric wrapper).
 # S4: [[S4_TRAIT:!None_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def[{{.*}}](a: ref[lt] String, b: String) -> None",
-# S4: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl: {{.*}}, origin_set: origin.set, |>({{.*}}) attributes {definesClosure,{{.*}}synthetic}
-# S4: lit.struct.field field0 : !kgen.param<:[[S4_TRAIT]] impl>
-# S4-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *"lt._mlir_origin`2x">>>[
-# S4-NEXT: [[S4_FIELD:%.*]] = lit.ref.struct.ger %0[field0]
-# S4-NEXT: [[S4_V1:%.*]] = lit.ref.immut [[S4_FIELD]]
-# S4-NEXT: [[S4_V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[S4_TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
-# S4-SAME: bind_params(:!lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *(0,0)>>>[2](!lit.ref<:[[S4_TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# S4-SAME:> #kgen.get_witness<:[[S4_TRAIT]] impl, "def[{{.*}}](a: ref[lt] String, b: String) -> None", "__call__{{.*}}">{{.*}}][muttoimm *{{.*}}->field0, {{.*}}]([[S4_V1]], %a, %b)
-# S4-NEXT: lit.return [[S4_V2]] : !kgen.none
-# S4-NEXT: lit.end_fn
+# S4: lit.struct.decl @"{{.*}}s4_make_closure{{.*}}::mutate::__storage"([[S4_TRAIT]]) attributes {definesClosure,{{.*}}synthetic}
 # S4: kgen.conformance @"def[{{.*}}](a: ref[lt] String, b: String) -> None" {
-# S4-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:scalar<bool> true}, :origin<true> *(0,0)>>>[2](!lit.ref<!lit.struct<[[S4_T:#.*]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__call__{{.*}}"<:[[S4_TRAIT]] impl, :origin.set origin_set,
-# S4: kgen.conformance @{{.*}}::Movable" {
-# S4-NEXT: kgen.witness "__init__{{.*}}" : !lit.generator<[2](*, "move": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,1]> byref_result) -> !kgen.none
-# S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__init__(move:
-# S4: kgen.conformance @"{{.*}}::Deinitable" {
-# S4-NEXT:  kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<[[S4_T]] <:[[S4_TRAIT]] impl, :origin.set origin_set>>, mut *[0,0]> deinit_mem, |) -> !kgen.none
-# S4-SAME: > = @{{.*}}::@"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{.*}}"::@"__deinit__{{.*}}"<{{.*}}>
-# S4: kgen.conformance @"{{.*}}::AnyType" {
-# S4-NEXT: }
+# S4-DAG: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::mutate::__storage"::@"__call__{{.*}}"
+# S4-NOT: lit.struct.decl @"def[{{.*}}](a: ref[lt] String, b: String) -> None_{{[^"]*}}"<impl:
 
 
 
@@ -186,14 +154,11 @@ def s4_make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-# COM: Verify that the constructor is assembled correctly
+# COM: Verify storage constructor takes the captured value (no wrapper impl arg).
 # S5: [[S5_TRAIT:!None_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def[T: s5_MyInterface](a: T) -> None", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
-# S5: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"](%impl: !lit.ref<:[[S5_TRAIT]] impl, mut *"impl`"> owned_in_mem, |, ?, %self: !lit.ref<!lit.struct<[[S5_T:#.*]] <:[[S5_TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> byref_result)
-# S5-NEXT: [[S5_V0:%.*]] = lit.ref.struct.ger %self[field0] : <!lit.struct<[[S5_T]] <:[[S5_TRAIT]] impl, :origin.set origin_set>>, mut *"self`"> -> :[[S5_TRAIT]] impl
-# S5-NEXT: [[S5_V1:%.*]] = lit.call[!lit.generator<[2](*, "move": !lit.ref<:[[S5_TRAIT]] impl, mut *[0,0]> deinit_mem, ?, "self": !lit.ref<:[[S5_TRAIT]] impl, mut *[0,1]> byref_result) -> !kgen.none>: #kgen.get_witness<:[[S5_TRAIT]] impl, "{{.*}}::Movable", "__init__(move:$0$)">][mut *"impl`", mut *"self`"->field0](%impl, [[S5_V0]])
-# S5-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-# S5-NEXT: lit.return %none : !kgen.none
-# S5-NEXT: lit.end_fn
+# S5: lit.struct.decl @"{{.*}}s5_make_closure{{.*}}::parametric::__storage"([[S5_TRAIT]]) attributes {definesClosure,{{.*}}synthetic}
+# S5: lit.fn @"__init__(::String)"[imm *"mem`", mut *"self`"]
+# S5-NOT: lit.fn @"__init__($0$)"[mut *"impl`", mut *"self`"]
 
 
 
@@ -212,13 +177,12 @@ def s5_make_closure(x: Int, mem: String) -> Int:
 
     return x
 
-# COM: Verify the closure instance is created correctly: the captured values are
-# COM: copied into the closure storage struct, then the closure wrapper is
-# COM: constructed from that storage.
-# S6-DAG: lit.var.decl "my_closure.storage" var
-# S6-DAG: lit.call {{.*}}s6_make_closure{{.*}}::my_closure::__storage"::@"__init__
+# COM: Verify the closure instance is created as the storage struct alone
+# COM: (no parametric wrapper around it).
 # S6-DAG: lit.var.decl "my_closure" var
-# S6-DAG: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}::@"__init__($0$)"
+# S6-DAG: lit.call {{.*}}s6_make_closure{{.*}}::my_closure::__storage"::@"__init__
+# S6-NOT: lit.var.decl "my_closure.storage" var
+# S6-NOT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}::@"__init__($0$)"
 
 
 
@@ -232,8 +196,8 @@ def s6_make_closure(x: Int, mem: String):
 # COM: Check that the argument is augmented at the definition site.
 # S7-DAG: [[S7_TRAIT:!Int_AnyType_Deinitable_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>
 
-# S7: lit.fn @"s7_take_closure{{.*}}"<f: [[S7_TRAIT]]>[imm *"myFunc`"](%myFunc: !lit.ref<:[[S7_TRAIT]] f, imm *"myFunc`"> read_mem, %x: !Int1) capturing -> !kgen.none
-# S7-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:[[S7_TRAIT]] f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:[[S7_TRAIT]] f, "def(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
+# S7: lit.fn @"s7_take_closure{{.*}}"<f: [[S7_TRAIT]]>[imm *"myFunc`"](%myFunc: !lit.ref<:[[S7_TRAIT]] f, imm *"myFunc`"> read_mem, %x: !Int{{.*}}) capturing -> !kgen.none
+# S7-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:[[S7_TRAIT]] f, mut *[0,0]> read_mem, |, "y": !Int{{.*}}) capturing -> !Int{{.*}}>: #kgen.get_witness<:[[S7_TRAIT]] f, "def(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
 # S7-NEXT: lit.ownership.use %0
 # S7-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 
@@ -262,10 +226,10 @@ def s8_take_closure[closure1: def(y: Int) -> Int](x: Int):
 
 # COM: ensure many closure parameters are handled.
 # S9: lit.fn @"take_closures{{.*}})"
-# S9-SAME: <closure1: !Int_AnyType_Deinitable_Movable{{.*}}, T: !Int1, closure2: !Int_AnyType_Deinitable_Movable{{.*}}, U: !Int1>
+# S9-SAME: <closure1: !Int_AnyType_Deinitable_Movable{{[0-9]*}}, T: !Int{{[0-9]*}}, closure2: !Int_AnyType_Deinitable_Movable{{[0-9]*}}, U: !Int{{[0-9]*}}>
 # S9-SAME: [imm *"[[S9_L0:.*]]`", imm *"[[S9_L1:.*]]`1"]
-# S9-SAME: (%impl1: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} closure1, imm *"[[S9_L0]]`"> read_mem
-# S9-SAME: , %impl2: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} closure2, imm *"[[S9_L1]]`1"> read_mem, %x: !Int1) capturing -> !kgen.none
+# S9-SAME: (%impl1: !lit.ref<:!Int_AnyType_Deinitable_Movable{{[0-9]*}} closure1, imm *"[[S9_L0]]`"> read_mem
+# S9-SAME: , %impl2: !lit.ref<:!Int_AnyType_Deinitable_Movable{{[0-9]*}} closure2, imm *"[[S9_L1]]`1"> read_mem, %x: !Int{{[0-9]*}}) capturing -> !kgen.none
 
 
 
@@ -284,7 +248,7 @@ def take_closures[
 # S10-DAG: lit.fn @"__call__[def(z: Int) -> Int{{.*}}"<y: [[S10_INNER]]>
 # S10-DAG: lit.fn @"nested[def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # S10-DAG: %impl: !lit.ref<:!Int_AnyType_Deinitable_Movable{{.*}} x, imm *{{.*}} read_mem
-# S10-DAG: %do_not_dce_int: !Int1) capturing -> !kgen.none attributes {{.*}}sourceName = "nested"
+# S10-DAG: %do_not_dce_int: !Int{{.*}}) capturing -> !kgen.none attributes {{.*}}sourceName = "nested"
 
 
 
@@ -305,7 +269,7 @@ def nested[
 # S11-DAG: kgen.conformance @"{{.*}}::Movable" {
 # S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
 # S11-DAG: kgen.conformance @"def(z: Int) -> Int" {
-# S11-DAG: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"myclosure
+# S11-DAG: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
 
@@ -319,8 +283,8 @@ def s11_bindIt(x: Int, y: Int, mem: String) -> Int:
 
 # S12: lit.struct.decl @"s12_bindIt({{.*}})::myclosure::__storage"
 # S12: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
-# S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> read_mem, |, "z": !Int1) capturing -> !kgen.none>
-# S12-SAME: = @{{.*}}::@"s12_bindIt({{.*}})::myclosure::__storage"::@"myclosure{{.*}}"
+# S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> read_mem, |, "z": !Int{{.*}}) capturing -> !kgen.none>
+# S12-SAME: = @{{.*}}::@"s12_bindIt({{.*}})::myclosure::__storage"::@"__call__{{.*}}"
 
 # S12-DAG: lit.file_module
 
@@ -333,15 +297,11 @@ def s12_bindIt(mem: String) -> Int:
     def myclosure[my_param: AnyType](z: Int) {var}:
         _ = mem
 
-# COM: Check that the origin set is bound to the wrapper
+# COM: Captured mutable reference contributes byRefMut's origin to storage.
 # S13-LABEL: lit.fn @"nonemptyOriginSet(::String)"
-# COM: The captured mutable reference contributes byRefMut's origin to the
-# COM: closure storage struct.
 # S13: lit.call {{.*}}::myclosure::__storage"::@"__init__
 # S13-SAME: <:origin<true> *"byRefMut
-# COM: The origin set is bound to the wrapper.
-# S13: lit.call @unified_closure::@"def() -> None_{{.*}}"::@"__init__({{.*}})"
-# S13-SAME: :origin.set {}
+# S13-NOT: lit.call @unified_closure::@"def() -> None_{{.*}}"::@"__init__
 
 
 
@@ -353,8 +313,8 @@ def nonemptyOriginSet(mut byRefMut: String):
 # COM: Verify that closures can be rebound to compatible traits
 # S14-DAG: lit.struct.decl @"s14_bindIt{{.*}}::myclosure::__storage"
 # S14-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
-# S14-DAG: read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int1) capturing -> !Int1>
-# S14-DAG: @{{.*}}::@"def(x: Int) -> Int_3"::@"__call__(unified_closure::def(x: Int) -> Int_3
+# S14-DAG: read_mem, !Int{{.*}}, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int{{.*}}) capturing -> !{{.*}}>
+# S14-DAG: @{{.*}}::@"s14_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
 
@@ -375,8 +335,8 @@ def s14_bindIt(z: Int, mem: String):
 # COM: Verify that closures can be rebound even when traits are combined
 # S15-DAG: lit.struct.decl @"s15_bindIt{{.*}}::myclosure::__storage"
 # S15-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
-# S15-DAG: read_mem, |, "y": !Int1) capturing -> !Int1> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int1) capturing -> !Int1>
-# S15-DAG: @{{.*}}::@"def(x: Int) -> Int_3"::@"__call__(unified_closure::def(x: Int) -> Int_3
+# S15-DAG: read_mem, |, "y": !Int{{.*}}) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]({{.*}}read_mem, |, "x": !Int{{.*}}) capturing -> !{{.*}}>
+# S15-DAG: @{{.*}}::@"s15_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
 
@@ -399,11 +359,11 @@ def s15_bindIt(z: Int, mem: String):
 # S16-DAG: lit.struct.decl @MultipleClosure
 # S16-DAG: kgen.conformance @"def(Bool) -> Int"
 # S16-DAG: kgen.witness "__call__($0,::Bool)"
-# S16-DAG: read_mem, !Bool, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Bool) capturing -> !alias_Int1>
+# S16-DAG: read_mem, !Bool, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Bool) capturing -> !alias_Int{{.*}}>
 # S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::Bool)"
 # S16-DAG: kgen.conformance @"def(Int) -> Int"
 # S16-DAG: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
-# S16-DAG: read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !alias_Int1>
+# S16-DAG: read_mem, !Int{{.*}}, |) capturing -> !Int{{.*}}> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int{{.*}}) capturing -> !alias_Int{{.*}}>
 # S16-DAG: @{{.*}}::@MultipleClosure::@"__call__(unified_closure::MultipleClosure,::SIMD[::DType(int), ::SIMDLength(1)])"
 
 
@@ -440,8 +400,8 @@ def s16_bindIt(z: Int):
 # S17-DAG: lit.struct.decl @"s17_bindIt{{.*}}::myclosure::__storage"
 # S17-DAG: kgen.conformance @"def[x: Int](y: Int) -> Int"
 # S17-DAG: kgen.witness "__call__[::SIMD[::DType(int), ::SIMDLength(1)]]($0,::SIMD[::DType(int), ::SIMDLength(1)])"
-# S17-DAG: read_mem, |, "y": !Int1) capturing -> !Int1> = rebind(:!lit.generator<<"a": !Int1>[1]({{.*}}read_mem, |, "b": !Int1) capturing -> !Int1>
-# S17-DAG: @{{.*}}::@"def[a: Int](b: Int) -> Int_3"::@"__call__[::SIMD[::DType(int), ::SIMDLength(1)]](unified_closure::def[a: Int](b: Int) -> Int_3
+# S17-DAG: read_mem, |, "y": !Int{{.*}}) capturing -> !Int{{.*}}> = rebind(:!lit.generator<<"a": !Int{{.*}}>[1]({{.*}}read_mem, |, "b": !Int{{.*}}) capturing -> !{{.*}}>
+# S17-DAG: @{{.*}}::@"s17_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
 
@@ -471,9 +431,9 @@ struct custom(def(x: Int) -> Int):
     def __call__(self, x: Int) capturing -> Int:
         return x
 
-# COM: The wrapper conforms to copyable
+# COM: Storage conforms to Copyable (no parametric wrapper).
 # S19-DAG: !lit.trait<@"def(x: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
-# S19-DAG: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl: !Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable{{.*}}, origin_set: origin.set, |>
+# S19-NOT: lit.struct.decl @"def(x: Int) -> Int_{{.*}}"<impl:
 
 
 
@@ -518,15 +478,15 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
         return x
 
 
-# COM: KWARGS: a `**kwargs` argument forwards through the closure
-# COM: wrapper's `__call__` as a `**` splat, the dict passed whole. The
-# COM: wrapper is synthesized when the closure's signature is resolved.
+# COM: KWARGS: a `**kwargs` argument is accepted directly on the storage
+# COM: struct's `__call__` (no parametric wrapper hop). The packed dict is
+# COM: passed as a single `**` operand at the call site.
 
-# The wrapper's __call__ takes the dict `kw_vararg`...
-# KWARGS: lit.fn @"__call__({{.*}}def(var **kwargs: Int) -> Int{{.*}},kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
-# ...and forwards it to the impl as a single `**` dict operand.
-# KWARGS: lit.call{{.*}}(%{{.*}}, %kwargs)
+# Storage promoted method / canonical __call__ takes the dict kwargs...
+# KWARGS: lit.fn @"g(kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)`"
 # KWARGS: lit.fn @"kwargs_throughWrapper()"
+# ...and the call site invokes the canonical `__call__` with the packed dict.
+# KWARGS: lit.call{{.*}}::g::__storage"::@"__call__{{.*}}({{.*}}kwargs:::SIMD{{.*}}(%{{.*}}, %__call_result_tmp__)
 
 
 def kwargs_throughWrapper() -> Int:
@@ -538,12 +498,12 @@ def kwargs_throughWrapper() -> Int:
     return g(a=1, b=2)
 
 
-# COM: STAR_ARGS: `*args` forwards as a `*` unpack through the same wrapper
-# COM: hop.
+# COM: STAR_ARGS: `*args` is accepted directly on the storage struct's
+# COM: `__call__` (no parametric wrapper hop).
 
-# STAR_ARGS: lit.fn @"__call__{{.*}}def(*args: Int) -> Int{{.*}},::SIMD[::DType(int), ::SIMDLength(1)]*)"
-# STAR_ARGS: lit.call{{.*}}(%{{.*}}, %args)
+# STAR_ARGS: lit.fn @"h[{{.*}}(::SIMD[::DType(int), ::SIMDLength(1)]*)`"
 # STAR_ARGS: lit.fn @"star_args_throughWrapper()"
+# STAR_ARGS: lit.call{{.*}}::h::__storage"::@"__call__{{.*}}({{.*}}(%{{.*}}, %{{.*}})
 
 
 def star_args_throughWrapper() -> Int:
@@ -576,17 +536,12 @@ def kwargs_fn_ptr_useFnWrapper() -> Int:
     return kwargs_fn_ptr_takeClosure(kwargs_fn_ptr_top)
 
 
-# COM: STAR_ARGS_KWARGS: `*args` and `**kwargs` together forward through the
-# COM: same wrapper hop -- the packed list as a `*` unpack and the packed dict
-# COM: as a `**` splat in one forwarding call. Depends on the call machinery
-# COM: accepting a `*` unpack followed by a `**` splat.
+# COM: STAR_ARGS_KWARGS: `*args` and `**kwargs` together are accepted
+# COM: directly on the storage struct's `__call__`.
 
-# The wrapper's __call__ takes both the list `pos_vararg` and the dict
-# `kw_vararg`...
-# STAR_ARGS_KWARGS: lit.fn @"__call__{{.*}}def(*args: Int, var **kwargs: Int) -> Int{{.*}}*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
-# ...and forwards both packed values in one call.
-# STAR_ARGS_KWARGS: lit.call{{.*}}(%{{.*}}, %args, %kwargs)
+# STAR_ARGS_KWARGS: lit.fn @"b[{{.*}}(::SIMD[::DType(int), ::SIMDLength(1)]*,kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)`"
 # STAR_ARGS_KWARGS: lit.fn @"star_args_kwargs_throughWrapper()"
+# STAR_ARGS_KWARGS: lit.call{{.*}}::b::__storage"::@"__call__{{.*}}({{.*}}(%{{.*}}, %{{.*}}, %__call_result_tmp__)
 
 
 def star_args_kwargs_throughWrapper() -> Int:
@@ -598,13 +553,12 @@ def star_args_kwargs_throughWrapper() -> Int:
     return b(1, 2, a=3)
 
 
-# COM: MIXED_KWARGS: a named keyword-only argument forwards alongside the
-# COM: `**kwargs` splat through the wrapper -- the literal keyword operand
-# COM: binds its own parameter, the dict its `**kwargs`, in one call.
+# COM: MIXED_KWARGS: a named keyword-only argument is accepted alongside
+# COM: `**kwargs` directly on the storage struct's `__call__`.
 
-# MIXED_KWARGS: lit.fn @"__call__{{.*}}def(x: Int, *, named: Int, var **kwargs: Int) -> Int{{.*}},named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)"
-# MIXED_KWARGS: lit.call{{.*}}(%{{.*}}, %x, %named, %kwargs)
+# MIXED_KWARGS: lit.fn @"m(::SIMD[::DType(int), ::SIMDLength(1)],named:::SIMD[::DType(int), ::SIMDLength(1)],kwargs:::SIMD[::DType(int), ::SIMDLength(1)]**)`"
 # MIXED_KWARGS: lit.fn @"mixed_kwargs_throughWrapper()"
+# MIXED_KWARGS: lit.call{{.*}}::m::__storage"::@"__call__{{.*}}({{.*}}(%{{.*}}, %{{.*}}, %{{.*}}, %__call_result_tmp__)
 
 
 def mixed_kwargs_throughWrapper() -> Int:
@@ -616,10 +570,10 @@ def mixed_kwargs_throughWrapper() -> Int:
     return m(1, named=2, a=3, b=4)
 
 
-# A defaulted keyword-only argument forwards the same way (the wrapper always
-# passes its own `named` argument through, defaulted or not). The extra `y`
-# keeps this closure's trait name distinct from mixed_kwargs_throughWrapper's --
-# the trait name omits defaults, and a collision is an "invalid redefinition".
+# A defaulted keyword-only argument is accepted the same way on storage
+# `__call__`. The extra `y` keeps this closure's trait name distinct from
+# mixed_kwargs_throughWrapper's -- the trait name omits defaults, and a
+# collision is an "invalid redefinition".
 def mixed_kwargs_defaultedThroughWrapper() -> Int:
     var z = 1
 
@@ -629,7 +583,8 @@ def mixed_kwargs_defaultedThroughWrapper() -> Int:
     return m(1, 2, a=3)
 
 
-# A second closure with the same signature reuses the cached wrapper.
+# A second closure with the same signature reuses the cached trait /
+# storage shape (no parametric wrapper).
 def mixed_kwargs_duplicateSignature() -> Int:
     var z = 2
 

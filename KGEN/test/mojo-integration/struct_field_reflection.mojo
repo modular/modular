@@ -59,12 +59,12 @@ def closure_fields():
         return a + b
 
     # COM: reset `b` value to be 31
-    __struct_field_ref(1, __struct_field_ref(0, test)) = Int32(31)
+    __struct_field_ref(1, test) = Int32(31)
 
     print("closure_fields: ", test())
 
     # COM: reset `b` value to be 100
-    __struct_field_ref(1, __struct_field_ref(0, test)) = Int32(100)
+    __struct_field_ref(1, test) = Int32(100)
 
     print("closure_fields: ", test())
 

@@ -99,9 +99,10 @@ def outer[dtype: DType, valid: Bool](a: LayoutTensor[dtype, ...]) raises:
 
     var x = inner(a)
 
-# COM: Verify Captures Are Prepended
-# S2-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, C: Copyable, //](a: A, b: B, c: C) -> None{2}_{{.*}}"
-# S2-DAG: lit.fn @"__call__{{.*}}"<_A: !AnyType_Copyable_Movable, _B: !AnyType_Copyable_Movable, C: !AnyType_Copyable_Movable, +>
+# COM: Captured type params live on the storage struct; only free param C
+# COM: remains on the promoted call method.
+# S2-LABEL: lit.struct.decl @"{{.*}}s2_top{{.*}}::closure::__storage"
+# S2-DAG: lit.fn @"closure{{.*}}"<C: !AnyType_Copyable_Movable, +>
 
 
 
@@ -120,8 +121,8 @@ def s2_top[A: Copyable, B: Copyable](aa: A, bb: B):
     closure(aa, bb, 3)
     s2_bind[A, B, type_of(closure)](closure)
 
-# COM: Verify Lazy Conformance
-# S3-LABEL: lit.struct.decl @"def[{{.*}}C: Copyable, //](a: {{.*}}, b: {{.*}}, c: C) -> None_{{.*}}"
+# COM: Verify Lazy Conformance (adaptor on storage, not parametric wrapper).
+# S3-LABEL: lit.struct.decl @"{{.*}}s3_top{{.*}}::closureConcrete::__storage"
 # S3: lit.fn @"__call__$def
 # S3-NEXT: kgen.rebind %a : !lit.ref<:!AnyType_Copyable_Movable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
 # S3-NEXT: kgen.rebind %b : !lit.ref<:!AnyType_Copyable_Movable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">

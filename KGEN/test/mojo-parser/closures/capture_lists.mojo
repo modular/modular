@@ -64,7 +64,7 @@ def make_closure(x: Int, str:String):
     # CHECK-DAG: lit.var.decl "anonymous*"
     # CHECK-DAG: lit.call {{.*}}my_closure::__storage"::@"__init__
     # COM: The nested closure copies the outer copies again into its storage.
-    # CHECK-DAG: lit.var.decl "my_nested_closure.storage"
+    # CHECK-DAG: lit.var.decl "my_nested_closure"
     # CHECK-DAG: lit.call {{.*}}my_nested_closure::__storage"::@"__init__
     def my_closure(y: Int) {var x, var str} -> Int:
         def my_nested_closure(z: Int) {var x, var str} -> Int:

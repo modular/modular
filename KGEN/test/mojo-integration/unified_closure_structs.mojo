@@ -228,6 +228,43 @@ def testNestedClosureParamCapture():
     print(nestedClosureParamCapture[DType.int32, type_of(impl)](impl))
 
 
+# COM: Nested `load_fn[simd_width, dtype]` shadows enclosing `dtype`, by-value-
+# COM: captures a value whose type names that outer `dtype`, and is consumed via
+# COM: `type_of` so the capture stays live. Storage publishes the capture under
+# COM: the unmangled name; the trait thunk must uniquify its Pog-sourced decls.
+@fieldwise_init
+struct ShadowingLoadBuf[dtype: DType]:
+    var data: SIMD[Self.dtype, 1]
+
+    def raw_load[width: Int](self, i: Int) -> SIMD[Self.dtype, width]:
+        return SIMD[Self.dtype, width](Int(self.data[0]) + i)
+
+
+def takeShadowingLoader[
+    dtype: DType,
+    load_fn: def[simd_width: Int, dtype: DType](Int) -> SIMD[dtype, simd_width],
+](loader: load_fn) -> SIMD[dtype, 1]:
+    return loader[1, dtype](0)
+
+
+def outerShadowingLoad[
+    dtype: DType
+](input: ShadowingLoadBuf[dtype],) -> SIMD[dtype, 1]:
+    def load_fn[
+        simd_width: Int, dtype: DType
+    ](point: Int) {input,} -> SIMD[dtype, simd_width]:
+        return rebind[SIMD[dtype, simd_width]](
+            input.raw_load[width=simd_width](point)
+        )
+
+    return takeShadowingLoader[dtype, type_of(load_fn)](load_fn)
+
+
+def testShadowingNestedClosureParam():
+    var buf = ShadowingLoadBuf[DType.int32](SIMD[DType.int32, 1](13))
+    print(outerShadowingLoad(buf)[0])
+
+
 def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
@@ -271,3 +308,8 @@ def main() raises:
     # COM: seeding a captured parameter from an ancestor function scope.
     # CHECK: 12
     testNestedClosureParamCapture()
+
+    # COM: Nested closure param shadows enclosing capture param used in the
+    # COM: captured value's type (pool.mojo load_fn motif).
+    # CHECK: 13
+    testShadowingNestedClosureParam()

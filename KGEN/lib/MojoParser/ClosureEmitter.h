@@ -158,28 +158,8 @@ public:
   getClosureTraitKey(FnTypeGeneratorType rawSignature);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
-  /// Given a name and a trait decl, generate a struct that conforms to the
-  /// trait and has a single field that also conforms to that same trait. For
-  /// example, if the trait is:
-  /// trait MyTrait:
-  ///    def doSomething(self, x:Int):
-  ///       ...
-  /// This method will generate a struct:
-  /// struct MyTraitWrapper[T: MyTraitWrapper](MyTraitWrapper):
-  ///    var field: T
-  ///    def doSomething(self, x:Int):
-  ///       self.field.doSomething(x)
-  /// This is useful in the context of emitting closures because in the case of
-  /// closures "T" is an storage type. TODO: remove wrapper. It was only needed
-  /// for historical purposes
-  ASTDecl *createStructWrapper(ASTDecl &moduleDecl, StringRef name,
-                               ASTDecl &traitDecl, SMLoc location,
-                               TypeConvention typeConvention, bool isCopyable,
-                               bool isStateless, bool capturesEncodable,
-                               FnTypeGeneratorType sig = {});
-
   /// Given a trait decl and a function signature, generate a struct that can
-  /// wrap a function pointer to be used as a closure.
+  /// wrap a function pointer to be used as a closure (`_PtrWrapper`).
   ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                  FnTypeGeneratorType signatureType,
                                  SMLoc location);
@@ -268,15 +248,6 @@ public:
     ClosureMethod closureMethod;
   };
 
-  TraitType getWrapperTraitType(ASTDecl &traitDecl, ASTDecl &moduleDecl,
-                                bool isCopyable, TypeConvention typeConvention,
-                                bool capturesEncodable);
-
-  /// Append a deterministic suffix encoding the conformance traits present in
-  /// \p wrapperTraitType.
-  void enumerateWrapperTraits(SmallVectorImpl<char> &out,
-                              TraitType wrapperTraitType, ASTDecl &moduleDecl);
-
   /// This is `isEqualCanon` with one relaxation: parameters
   /// in the leading "before-`+`" region of the pog list (i.e.
   /// `PassingKind::Inferred`) are not user-bindable, so their names are
@@ -350,12 +321,6 @@ private:
   addStorageConformanceToDevicePassable(ASTDecl &structDecl,
                                         ArrayRef<Type> deviceCaptureFieldTypes,
                                         StringRef name);
-  /// Forward DevicePassable from the wrapper to its impl parameter via
-  /// GetWitness lookups.
-  void addWrapperConformanceToDevicePassable(ASTDecl &structDecl,
-                                             StructFieldOp implField,
-                                             ParamDeclAttr implType,
-                                             ParamDeclAttr originSet);
 
   /// AnyType is the base metatype for all types.
   ClosureParent anyParent;
@@ -376,10 +341,6 @@ private:
   /// Closure traits live in the top level module. This cache guards against
   /// emitting duplicates.
   DenseMap<Type, ASTDecl *> closureTraitCache;
-
-  /// Mapping from each known parent trait's SymbolRefAttr to
-  /// a fixed ordinal used for readable mangling
-  std::optional<DenseMap<SymbolRefAttr, unsigned>> parentOrdinals;
 };
 
 } // namespace M::KGEN::LIT

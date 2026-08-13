@@ -295,22 +295,14 @@ static StructFieldOp addFieldOpAndDecl(StringAttr name, Type type,
   return field;
 }
 
-static void addFieldsToStruct(StructDeclOp structOp, ASTDecl &structDecl,
-                              ArrayRef<Type> fields,
-                              DeclResolver &declResolver) {
-  OpBuilder b(structOp.getRegion());
-  b.setInsertionPointToStart(&structOp.getFields().front());
-  for (auto [i, type] : llvm::enumerate(fields)) {
-    addFieldOpAndDecl(StringAttr::get(b.getContext(), "field" + Twine(i)), type,
-                      structOp, structDecl, b, declResolver);
-  }
-}
-
 static std::pair<ASTDecl &, StructDeclOp>
 createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
-             ArrayRef<ParamDeclAttr> params, SMLoc loc) {
+             ArrayRef<ParamDeclAttr> params, SMLoc loc,
+             ArrayRef<PassingKind> passingKinds) {
   auto module = cast_or_null<FileModuleOp>(moduleDecl.getIfOperation());
   assert(module && "extension/wrapper structs require a FileModuleOp parent");
+  assert(passingKinds.size() == params.size() &&
+         "passing kind per struct parameter");
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames;
 #ifndef NDEBUG // Only used for assertion checks below.
@@ -325,7 +317,6 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
            "duplicate parameter name");
   }
   // TODO: The type may contain decl references that need to be remapped.
-  SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
   auto paramListAttr =
       PogListAttr::get(b.getContext(), paramNames, passingKinds);
 
@@ -401,9 +392,10 @@ createDeviceTypeStruct(SharedState &shared, ASTDecl &moduleDecl,
   ArrayRef<ParamDeclAttr> structParams = storageStruct.getInputParams();
   StringAttr deviceStructName = StringAttr::get(
       ctx, Twine(storageStruct.getSymName()).concat("::__device_type"));
-  auto [deviceStructDecl, deviceStructOp] =
-      createStruct(shared, moduleDecl, deviceStructName, structParams,
-                   storageStructDecl.getLoc());
+  auto [deviceStructDecl, deviceStructOp] = createStruct(
+      shared, moduleDecl, deviceStructName, structParams,
+      storageStructDecl.getLoc(),
+      SmallVector<PassingKind>(structParams.size(), PassingKind::Inferred));
   OpBuilder b(deviceStructOp.getRegion());
   b.setInsertionPointToStart(&deviceStructOp.getFields().front());
   for (auto [field, image] :
@@ -536,38 +528,6 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
   return parameters;
 }
 
-/// Given a wrapper function, the wrapper type, and the wrapped field, populate
-/// the operands and implicit origins necessary to bind the arguments of the
-/// wrapped function.
-static void getUnwrappedOperands(
-    ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
-    StructFieldOp wrappedField,
-    llvm::SmallDenseSet<StringRef> const &explicitParameters,
-    SmallVector<Value> &operands,
-    std::optional<std::function<Value(Value)>> transform = {}) {
-  for (Value arg : op.getBodyRegion().front().getArguments()) {
-    // replace wrapper type with impl type
-    RefType refType = dyn_cast<RefType>(arg.getType());
-    if (!refType) {
-      if (transform.has_value())
-        operands.push_back((*transform)(arg));
-      else
-        operands.push_back(arg);
-      continue;
-    }
-
-    if (refType.getElementType() == wrapperType) {
-      operands.push_back(
-          RefStructGEROp::create(b, arg, wrappedField)->getResults().front());
-    } else {
-      if (transform.has_value())
-        operands.push_back((*transform)(arg));
-      else
-        operands.push_back(arg);
-    }
-  }
-}
-
 static TraitType
 getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
              ASTDecl &moduleDecl) {
@@ -579,6 +539,22 @@ getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
                                    }));
   canonicalizeTraitCompositionSymbols(moduleDecl.getShared(), symbols);
   return TraitType::get(moduleDecl.getContext(), symbols);
+}
+
+/// If a parameter is captured in a signature it
+/// becomes an inferred parameter on the struct. Collect such parameters.
+static SmallVector<TypedAttr> getCaptureBindings(StructDeclOp structDeclOp) {
+  ArrayRef<ParamDeclAttr> params = structDeclOp.getInputParams();
+  ArrayRef<PogMetadataAttr> pogs =
+      structDeclOp.getSignature().getParamListAttrs().getPogs();
+  assert(params.size() == pogs.size() &&
+         "struct params and POGs must agree in arity");
+  SmallVector<TypedAttr> bindings;
+  for (auto [param, pog] : llvm::zip_equal(params, pogs)) {
+    if (pog.getPassingKind() == PassingKind::Inferred)
+      bindings.push_back(ParamDeclRefAttr::get(param));
+  }
+  return bindings;
 }
 
 /// Replace GetWitnessAttr lookups on a specific type with lookups on the impl
@@ -627,15 +603,6 @@ buildSymbol(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams) {
 }
 
 static SymbolConstantAttr
-buildSymbol(FnOp impl, ParamDeclAttr implType,
-            std::optional<ParamDeclAttr> originSetParam) {
-  SmallVector<ParamDeclAttr> structLevelParams{implType};
-  if (originSetParam)
-    structLevelParams.push_back(*originSetParam);
-  return buildSymbol(impl, structLevelParams);
-}
-
-static SymbolConstantAttr
 buildSymbolWithBindings(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams,
                         ArrayRef<TypedAttr> fnLevelBindings) {
   MLIRContext *ctx = impl.getContext();
@@ -656,6 +623,173 @@ buildSymbolWithBindings(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams,
   SymbolConstantAttr symbolConstant =
       SymbolConstantAttr::get(ctx, implSymbol, params, specializedSigGen);
   return symbolConstant;
+}
+
+static size_t explicitParamCount(FnOp fn) {
+  return fn.getInputParams().size() -
+         fn.getFuncTypeGenerator().getNumImplicitOriginDecls();
+}
+
+/// Count leading `PassingKind::Inferred` params on `fn`.
+static size_t leadingInferredParamCount(FnOp fn) {
+  size_t explicitCount = explicitParamCount(fn);
+  ArrayRef<PogMetadataAttr> pogs =
+      fn.getFuncTypeGenerator().getParamListAttrs().getPogs();
+  size_t count = 0;
+  for (size_t i = 0; i < explicitCount && i < pogs.size(); ++i) {
+    if (pogs[i].getPassingKind() != PassingKind::Inferred)
+      break;
+    ++count;
+  }
+  return count;
+}
+
+/// Populate `wrapperFn` with a forwarding call to `callee`, rebinding each
+/// block argument to the corresponding `expectedOperandTypes` entry when
+/// needed.
+static LogicalResult
+emitCallForwarderBody(SharedState &shared, FnOp wrapperFn, ASTDecl &wrapperDecl,
+                      TypedAttr callee, FnTypeGeneratorType calleeSig,
+                      Type resultType, ArrayRef<Type> expectedOperandTypes) {
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(wrapperFn.getLocScope());
+  ImplicitLocOpBuilder bodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
+      wrapperFn.getLoc(), wrapperFn.getBody());
+
+  Block &block = wrapperFn.getBodyRegion().front();
+  assert(block.getNumArguments() == expectedOperandTypes.size() &&
+         "forwarder arity must match expected operand types");
+  SmallVector<Value> operands;
+  operands.reserve(block.getNumArguments());
+  for (auto [arg, ty] :
+       llvm::zip_equal(block.getArguments(), expectedOperandTypes))
+    operands.push_back(arg.getType() != ty
+                           ? Value(RebindOp::create(bodyBuilder, ty, arg))
+                           : Value(arg));
+
+  return emitForwardingCall(bodyBuilder, wrapperDecl, callee, calleeSig,
+                            resultType, operands);
+}
+
+/// Synthesize the trait-shaped always-inline `__call__$trait` forwarder and
+/// publish it as storage `__call__`.
+static FnOp emitStorageCallWitness(
+    ASTDecl &structDecl, StructDeclOp structOp, FnOp promotedCall,
+    FnOp traitCallFn, SMLoc smLoc,
+    llvm::function_ref<std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>(
+        FnOp, ASTDecl &, bool, StringAttr)>
+        pushBackTraitFn) {
+  SharedState &shared = structDecl.getShared();
+  MLIRContext *ctx = shared.getContext();
+  const size_t traitParams = explicitParamCount(traitCallFn);
+  const size_t promotedParams = explicitParamCount(promotedCall);
+  assert(
+      traitParams >= promotedParams &&
+      "trait-shaped witness cannot have fewer params than the promoted body");
+  const size_t extraAux = traitParams - promotedParams;
+
+  ImplicitLocOpBuilder b(structOp.getLoc(), structOp);
+  b.setInsertionPointToEnd(&structOp.getFields().front());
+  StringAttr witnessName = StringAttr::get(ctx, "__call__$trait");
+  auto [callWitness, callParameters, callResult] =
+      pushBackTraitFn(traitCallFn, structDecl, /*synthetic=*/true, witnessName);
+  ASTDecl *callWitnessDecl = shared.declResolver->getDeclForFuncSymbol(
+      getFullyResolvedSymbolRef(callWitness));
+  callWitnessDecl->resolvedness = DeclResolvedness::body;
+  callWitness.setInlineLevel(InlineLevel::Always);
+
+  // Map trait auxiliary parameters to the capture bindings of the storage
+  // struct.
+  SmallVector<TypedAttr> captureBindings = getCaptureBindings(structOp);
+  assert(extraAux <= captureBindings.size() &&
+         "trait aux must not exceed storage capture bindings");
+  DenseMap<StringRef, TypedAttr> paramToAliasValue;
+  for (auto [param, binding] :
+       llvm::zip_equal(callParameters.take_front(extraAux),
+                       ArrayRef(captureBindings).take_front(extraAux)))
+    paramToAliasValue.insert({param.getName().getValue(), binding});
+
+  mlir::AttrTypeReplacer aliasReplacer;
+  aliasReplacer.addReplacement([&](ParamDeclRefAttr paramRef) -> TypedAttr {
+    auto it = paramToAliasValue.find(paramRef.getName().getValue());
+    if (it != paramToAliasValue.end())
+      return it->second;
+    return paramRef;
+  });
+
+  TypedAttr calleeSymbol = buildSymbol(promotedCall, structOp.getInputParams());
+  SmallVector<TypedAttr> paramArgs;
+  for (ParamDeclAttr param : callParameters.drop_front(extraAux)) {
+    Type paramType = cast<Type>(aliasReplacer.replace(param.getType()));
+    paramArgs.push_back(
+        ParamOperatorAttr::getRebind(ParamDeclRefAttr::get(param), paramType));
+  }
+  if (!paramArgs.empty())
+    calleeSymbol = BindParamsAttr::get(ctx, calleeSymbol, paramArgs,
+                                       &shared.getEvaluationContext());
+
+  // Linkage / compile-offload see the promoted body through this thunk.
+  callWitness->setAttr(kTransparentThunkCalleeExprAttr, calleeSymbol);
+  auto calleeSig = cast<FnTypeGeneratorType>(calleeSymbol.getType());
+  if (failed(emitCallForwarderBody(shared, callWitness, *callWitnessDecl,
+                                   calleeSymbol, calleeSig, callResult,
+                                   calleeSig.getArguments()))) {
+    shared.emitError(smLoc, "failed to emit trait-shaped __call__ forwarder");
+    return {};
+  }
+
+  return callWitness;
+}
+
+// Given something like this:
+// trait Closure:
+//    def __call__[X:dtype](self):
+//        ...
+// struct ClosureImpl[X:dtype](Closure):
+//    def __call__[X:dtype](self):
+//        pass
+// mangle the parameters of the method on the struct while preserving the POGs
+// to avoid duplicate declarations.
+static SmallVector<ParamDeclAttr>
+getUniquedParams(ASTDecl &structDecl, ArrayRef<ParamDeclAttr> params) {
+  auto structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
+  SmallPtrSet<StringAttr, 8> usedNames;
+  for (ParamDeclAttr param : structDeclOp.getInputParams())
+    usedNames.insert(param.getName());
+
+  DenseMap<StringAttr, StringAttr> renamedParams;
+  SmallVector<ParamDeclAttr> uniqued;
+  uniqued.reserve(params.size());
+  for (ParamDeclAttr param : params) {
+    StringAttr name = param.getName();
+    if (!usedNames.insert(name).second) {
+      StringAttr unique =
+          structDecl.mangleParamName(demangleParameterName(name.getValue()));
+      while (!usedNames.insert(unique).second)
+        unique = structDecl.mangleParamName(unique.getValue());
+      renamedParams[name] = unique;
+      name = unique;
+    }
+    uniqued.push_back(ParamDeclAttr::get(name, param.getType()));
+  }
+
+  if (renamedParams.empty())
+    return uniqued;
+
+  mlir::AttrTypeReplacer renameRefs;
+  renameRefs.addReplacement([&](TypedAttr attr) -> std::optional<TypedAttr> {
+    auto ref = dyn_cast<ParamDeclRefAttr>(attr);
+    if (!ref)
+      return std::nullopt;
+    auto it = renamedParams.find(ref.getName());
+    if (it == renamedParams.end())
+      return std::nullopt;
+    return ParamDeclRefAttr::get(it->second, ref.getType());
+  });
+  for (ParamDeclAttr &param : uniqued)
+    param = cast<ParamDeclAttr>(renameRefs.replace(param));
+  return uniqued;
 }
 
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
@@ -682,17 +816,16 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
   }
 
   // Calculate the argument types and result types in terms of the named
-  // parameters. Since the name of the parameters have not changed from the
-  // trait definition, we can avoid another remap of the indexed types in
-  // parameters and instead reuse the trait function's input parameters.
+  // parameters.
   size_t traitParamCount = traitFnOp.getInputParams().size();
   size_t implicitOrigins = wrapperSignature.getNumImplicitOriginDecls();
   assert(implicitOrigins <= traitParamCount &&
          "implicit origins cannot exceed total param count");
   size_t explicitParamCount = traitParamCount - implicitOrigins;
-  ArrayRef<ParamDeclAttr> parameters =
-      ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
-          .take_front(explicitParamCount);
+  SmallVector<ParamDeclAttr> parameters = getUniquedParams(
+      structDecl, ArrayRef<ParamDeclAttr>(traitFnOp.getInputParams())
+                      .take_front(explicitParamCount));
+
   ParamRefRemapper replacer(parameters);
   SmallVector<Type> argumentTypes;
   llvm::append_range(
@@ -709,7 +842,9 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
       wrapperSignature.getFnEffects(), "", synthetic,
       traitFnOp.getInlineLevel());
-  return {op, parameters, result};
+  size_t synthesizedOrigins =
+      op.getFuncTypeGenerator().getNumImplicitOriginDecls();
+  return {op, op.getInputParams().drop_back(synthesizedOrigins), result};
 }
 
 static SymbolConstantAttr getSymbolNoParamValues(StructDeclOp declOp,
@@ -883,332 +1018,6 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
   return result;
 }
 
-ASTDecl *ClosureEmitter::createStructWrapper(
-    ASTDecl &moduleDecl, StringRef name, ASTDecl &traitDecl, SMLoc smLocation,
-    TypeConvention typeConvention, bool isCopyable, bool isStateless,
-    bool capturesEncodable, FnTypeGeneratorType sig) {
-  StringRef implName = "impl";
-  StringRef originSet = "origin_set";
-  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
-
-  auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
-  Location location = shared.diags.translateLocation(smLocation);
-  ImplicitLocOpBuilder b =
-      ImplicitLocOpBuilder::atBlockBegin(location, module->getBlock());
-  b.setInsertionPointAfter(trait);
-  MLIRContext *ctx = b.getContext();
-
-  FnOp callFn = getFnOpNamed(trait, "__call__");
-  if (!callFn) {
-    shared.diags.emitError(smLocation,
-                           "internal error: closure trait missing __call__");
-    return nullptr;
-  }
-  SmallVector<ClosureParent> closureParents{
-      ClosureParent(trait, callFn, ClosureMethod::CALL), moveParent,
-      deinitableParent, anyParent};
-  if (isCopyable) {
-    closureParents.push_back(copyParent);
-    closureParents.push_back(implicitlyCopyableParent);
-  }
-  if (typeConvention == TypeConvention::RegisterPassableTrivial) {
-    closureParents.push_back(trivialRegisterTypeParent);
-    closureParents.push_back(registerPassableParent);
-  } else if (typeConvention == TypeConvention::RegisterPassable)
-    closureParents.push_back(registerPassableParent);
-
-  TraitType traitType = getTraitType(closureParents, moduleDecl);
-
-  // Give the struct a parameter "impl" of metatype trait.
-  SmallVector<ParamDeclAttr> implParameters;
-  ParamDeclAttr implType = ParamDeclAttr::get(implName, traitType);
-  ParamDeclAttr originSetParam =
-      ParamDeclAttr::get(originSet, OriginSetType::get(ctx));
-  Type paramType = ParamType::get(ParamDeclRefAttr::get(implType));
-  implParameters.push_back(implType);
-  implParameters.push_back(originSetParam);
-  ASTType selfType(paramType);
-
-  // For each aliasOp of the trait, create a GetWitnessAttr lookup on the impl
-  // parameter. The alias value is Self.impl.AliasName (lookup on wrapped type).
-  llvm::MapVector<StringAttr, std::pair<Type, TypedAttr>> aliases;
-  StringAttr traitName =
-      b.getStringAttr(getFlattenedSymbolName(getFullyResolvedSymbolRef(
-          cast<mlir::SymbolOpInterface>(trait.getOperation()))));
-  // Only collect closure-specific aliases. Inherited AliasDeclOps (e.g.
-  // `__del__is_trivial`) are cloned into the trait's fields by lazy body
-  // resolution and are marked with `inheritedFrom`; skip them.
-  for (auto alias : trait.getFields().getOps<AliasDeclOp>()) {
-    if (alias.getInheritedFrom())
-      continue;
-    StringAttr aliasName = alias.getParamDecl().getName();
-    Type aliasType = alias.getType();
-    TypedAttr aliasValue = GetWitnessAttr::get(ParamDeclRefAttr::get(implType),
-                                               traitName, aliasName, aliasType);
-    aliases.insert({aliasName, {aliasType, aliasValue}});
-  }
-
-  // Create a struct with a single field of type "impl".
-  std::pair<ASTDecl &, StructDeclOp> pair =
-      createStruct(shared, moduleDecl, StringAttr::get(b.getContext(), name),
-                   implParameters, smLocation);
-  ASTDecl &structDecl = pair.first;
-  StructDeclOp declOp = pair.second;
-  declOp.setConvention(typeConvention);
-  addFieldsToStruct(declOp, structDecl,
-                    KGEN::ParamType::get(ParamDeclRefAttr::get(implType)),
-                    *shared.declResolver);
-  StructFieldOp wrappedField = *declOp.getFieldDecls().begin();
-
-  b.setInsertionPointToEnd(&declOp.getFields().front());
-  for (auto [name, value] : aliases)
-    AliasDeclOp::create(b, ParamDeclAttr::get(name, value.first), value.second);
-
-  // Populate the wrapper methods with a call to the result of a witness lookup.
-  auto populateTraitFn = [&](ClosureParent &closureParent) -> FnOp {
-    FnOp traitFnOp = closureParent.getDefiningOp(moduleDecl);
-    b.setInsertionPointToEnd(&declOp.getFields().front());
-    FnTypeGeneratorType implCallSig =
-        specializeSignature(traitFnOp, selfType, *shared.declResolver);
-    auto [op, parameters, result] =
-        pushBackTraitFunctionImpl(traitFnOp, structDecl);
-
-    // Generate the call op by collecting the operands and rebinding the
-    // signature.
-    b.setInsertionPointToEnd(&op.getBodyRegion().front());
-    Value selfArgument = op.getBodyRegion().front().getArgument(0);
-    SmallVector<Value> operands;
-    operands.reserve(op.getNumArguments());
-    Type wrapperType = cast<RefType>(selfArgument.getType()).getElementType();
-
-    // Since this is a wrapper we know all the origins of the function must be
-    // bound to the single call op in the body.
-    SmallVector<TypedAttr> origins;
-    llvm::SmallDenseSet<StringRef> explicitParameters;
-    for (auto explicitParam : parameters)
-      explicitParameters.insert(explicitParam.getName().getValue());
-
-    // For __call__ methods with captured parameters (aliases), we need to
-    // rebind non-self arguments from the wrapper's parameter types to the
-    // impl's expected types (using GetWitnessAttr lookups).
-    bool needsRebinding =
-        closureParent.getClosureMethod() == ClosureMethod::CALL &&
-        !aliases.empty();
-
-    // Create rebinding transform to cast call operands.
-    DenseMap<StringRef, TypedAttr> paramToAliasValue;
-    for (auto [paramName, aliasPair] :
-         llvm::zip(parameters.take_front(aliases.size()), aliases))
-      paramToAliasValue.insert({paramName.getName(), aliasPair.second.second});
-    mlir::AttrTypeReplacer aliasReplacer;
-    aliasReplacer.addReplacement([&](ParamDeclRefAttr paramRef) -> TypedAttr {
-      auto it = paramToAliasValue.find(paramRef.getName().getValue());
-      if (it != paramToAliasValue.end())
-        return it->second;
-      return paramRef;
-    });
-    std::function<Value(Value)> rebindToSelfTypes =
-        [&](Value valueOverSelf) -> Value {
-      Type implArgType =
-          cast<Type>(aliasReplacer.replace(valueOverSelf.getType()));
-      if (implArgType != valueOverSelf.getType())
-        return RebindOp::create(b, implArgType, valueOverSelf);
-      return valueOverSelf;
-    };
-    SmallVector<TypedAttr> paramArgs;
-    if (needsRebinding) {
-      // Bind the alias parameters to the auxiliary parameters
-      SmallVector<TypedAttr> auxiliary = llvm::to_vector(
-          llvm::map_range(parameters, [&](ParamDeclAttr p) -> TypedAttr {
-            auto ptr = paramToAliasValue.find(p.getName());
-            if (ptr != paramToAliasValue.end())
-              return ptr->getSecond();
-            Type paramType = cast<Type>(aliasReplacer.replace(p.getType()));
-            TypedAttr argument = ParamOperatorAttr::getRebind(
-                ParamDeclRefAttr::get(p), paramType);
-            paramArgs.push_back(argument);
-            return UnboundAttr::get(ctx, argument.getType());
-          }));
-      // remove the auxiliary parameters from the impl call function type by
-      // specializing on aliases.
-      implCallSig = implCallSig.getSpecializedGenerator(
-          auxiliary, &shared.getEvaluationContext(), op.getLoc());
-    } else {
-      llvm::append_range(
-          paramArgs,
-          llvm::map_range(parameters, [&](ParamDeclAttr p) -> TypedAttr {
-            return ParamDeclRefAttr::get(p);
-          }));
-    }
-    StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
-    getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
-                         operands, rebindToSelfTypes);
-
-    TypedAttr symbol = GetWitnessAttr::get(
-        ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-        parentName, traitFnOp.getSymNameAttr(), implCallSig);
-    TypedAttr boundSymbol = BindParamsAttr::get(
-        symbol.getContext(), symbol, paramArgs, &shared.getEvaluationContext());
-    // Mark `__call__` as a transparent thunk so its identity delegates to the
-    // wrapped impl (only `__call__` needs this; the other forwarders don't).
-    if (closureParent.getClosureMethod() == ClosureMethod::CALL)
-      op->setAttr(kTransparentThunkCalleeExprAttr, boundSymbol);
-    auto calleeSig = cast<FnTypeGeneratorType>(boundSymbol.getType());
-    if (failed(emitForwardingCall(b, structDecl, boundSymbol, calleeSig, result,
-                                  operands)))
-      return {};
-    return op;
-  };
-  DenseMap<StringRef, FnOp> nameToImpl;
-  for (ClosureParent &closureParent : closureParents) {
-    if (!closureParent.isEmpty()) {
-      FnOp impl = populateTraitFn(closureParent);
-      if (!impl)
-        return nullptr;
-      if (closureParent.getClosureMethod() == ClosureMethod::CALL)
-        impl.setInlineLevel(InlineLevel::Always);
-      switch (closureParent.getClosureMethod()) {
-      case ClosureMethod::COPY:
-        declOp.setCopyInitAttr(getSymbolNoParamValues(declOp, impl));
-        break;
-      case ClosureMethod::MOVE:
-        declOp.setMoveInitAttr(getSymbolNoParamValues(declOp, impl));
-        break;
-      case ClosureMethod::DEL:
-      default:
-        break;
-      }
-      nameToImpl.insert(
-          {*closureParent.getDefiningOp(moduleDecl).getSymName(), impl});
-    }
-  }
-
-  // Emit conformance tables
-  StringAttr moveParentStrAttr;
-  auto addWitnessEntry = [&](TraitDeclOp traitParent, FnOp fnOp) {
-    StringRef name = *fnOp.getSourceName();
-    StringRef symName = *fnOp.getSymName();
-    b.setInsertionPointToEnd(&declOp.getBodyRegion().front());
-    SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
-    SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
-        cast<mlir::SymbolOpInterface>(traitParent.getOperation()));
-    StringAttr parentName =
-        b.getStringAttr(getFlattenedSymbolName(parentSymbol));
-    if (fnOp.getSpecialFunctionKind() == SpecialFunctionKind::kMoveCtor)
-      moveParentStrAttr = parentName;
-
-    ConformanceOp witnessTable =
-        ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
-    Block &block = witnessTable.getBody().emplaceBlock();
-    b.setInsertionPointToStart(&block);
-    assert(nameToImpl.contains(symName) &&
-           "expected all trait ops to be implemented");
-    FnOp impl = nameToImpl[symName];
-    SymbolConstantAttr symbolConstant =
-        buildSymbol(impl, implType, originSetParam);
-    WitnessOp::create(b, fnOp.getSymNameAttr(), symbolConstant);
-    if (name == "__call__") {
-      for (auto [name, value] : aliases)
-        WitnessOp::create(b, name, value.second);
-    }
-    ASTDecl &conformDecl = shared.getDeclResolver().addDecl(
-        witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
-    conformDecl.resolvedness = DeclResolvedness::signature;
-  };
-
-  for (ClosureParent &closureParent : closureParents) {
-    if (!closureParent.isEmpty()) {
-      addWitnessEntry(closureParent.getTrait(moduleDecl),
-                      closureParent.getDefiningOp(moduleDecl));
-    } else {
-      // Marker parents (AnyType, ImplicitlyCopyable, RegisterPassable,
-      // TrivialRegisterPassable) declare no requirements of their own; their
-      // inherited requirements (e.g. Copyable's copy init for
-      // ImplicitlyCopyable) are witnessed in the declaring parent's
-      // ConformanceOp. An empty ConformanceOp per claimed trait is still
-      // required for TypeConformsToTraitAttr::simplify() to verify
-      // conformance on concrete closure types.
-      addConformanceTable(structDecl, closureParent, {}, moduleDecl);
-    }
-  }
-
-  assert(moveParentStrAttr && "closures are expected to conform to Movable");
-  auto initName = StringAttr::get(ctx, "__init__");
-  SmallVector<Type> initArgumentTypes;
-  SmallVector<StringAttr> argNames;
-  SmallVector<PassingKind> argPassingKinds;
-  SmallVector<ArgConvention> argConventions;
-
-  initArgumentTypes.reserve(2);
-  argNames.reserve(2);
-  argPassingKinds.reserve(2);
-  argConventions.reserve(2);
-
-  // the constructor takes an instance of type "impl" and an instance of type
-  // "self"
-  Type refInitImplType = ASTType((paramType)).getRefForArgument(implName, true);
-  argConventions.push_back(ArgConvention::OwnedMem);
-  initArgumentTypes.push_back(refInitImplType);
-  argNames.push_back(StringAttr::get(ctx, implName));
-  argPassingKinds.push_back(PassingKind::PosOnly);
-
-  RefType refSelfType = ASTType(structDecl.getTypeDeclSelf())
-                            .getRefForArgument(selfName.getValue(), true);
-  argConventions.push_back(ArgConvention::ByRefResult);
-  initArgumentTypes.push_back(refSelfType);
-  argNames.push_back(selfName);
-  argPassingKinds.push_back(PassingKind::Implicit);
-  b.setInsertionPointToEnd(&declOp.getFields().front());
-  auto [initFnOp, initDecl] = synthesizeFunction(
-      structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
-      argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
-      NoneType::get(ctx), SpecialFunctionKind::kInit, smLocation, b,
-      /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Automatic);
-
-  // Generate the body of the constructor, which should contain a call to the
-  // move constructor.
-  FnOp moveFn = moveParent.getDefiningOp(moduleDecl);
-  FnTypeGeneratorType moveSignature =
-      specializeSignature(moveFn, paramType, *shared.declResolver);
-  b.setInsertionPointToStart(&initFnOp.getBodyRegion().front());
-
-  TypedAttr moveSymbol = GetWitnessAttr::get(
-      ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
-      moveParentStrAttr, moveFn.getSymNameAttr(), moveSignature);
-  SmallVector<Value> operands;
-  llvm::SmallDenseSet<StringRef> explicitParameters;
-  getUnwrappedOperands(b, initFnOp, refSelfType.getElementType(), wrappedField,
-                       explicitParameters, operands);
-  if (failed(emitForwardingCall(b, structDecl, moveSymbol, moveSignature,
-                                moveSignature.getResultType(), operands)))
-    return nullptr;
-  declOp.setCanonicalTrait(traitType);
-
-  if (capturesEncodable)
-    addWrapperConformanceToDevicePassable(structDecl, wrappedField, implType,
-                                          originSetParam);
-  // Generate is-trivial special aliases
-  bool trivialValue = typeConvention == TypeConvention::RegisterPassableTrivial;
-  generateIsTrivialSpecialAlias("__del__is_trivial", trivialValue, shared,
-                                structDecl, deinitableParent, moduleDecl);
-  generateIsTrivialSpecialAlias("__move_ctor_is_trivial", trivialValue, shared,
-                                structDecl, moveParent, moduleDecl);
-  if (isCopyable)
-    generateIsTrivialSpecialAlias("__copy_ctor_is_trivial", trivialValue,
-                                  shared, structDecl, copyParent, moduleDecl);
-
-  // Populate a readable source name for diagnostics.
-  declOp.setDefinesClosure(true);
-  if (sig) {
-    std::string prettyName = formatClosureSignature(sig, shared);
-    declOp.setSourceNameAttr(DebugInfo::SourceNameAttr::get(
-        StringAttr::get(shared.getContext(), prettyName)));
-  }
-
-  return &structDecl;
-}
-
 ASTDecl *
 ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                       FnTypeGeneratorType rawSignatureType,
@@ -1278,10 +1087,14 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   ParamDeclAttr implType = ParamDeclAttr::get(implName, selfContainedSignature);
   implParameters.push_back(implType);
 
+  SmallVector<PassingKind> wrapperPassingKinds(captureParams.size(),
+                                               PassingKind::Inferred);
+  wrapperPassingKinds.push_back(PassingKind::PosOnly);
+
   // Create a zero-size struct with the Impl parameter.
   std::pair<ASTDecl &, StructDeclOp> pair =
       createStruct(shared, moduleDecl, StringAttr::get(b.getContext(), name),
-                   implParameters, smLocation);
+                   implParameters, smLocation, wrapperPassingKinds);
   ASTDecl &structDecl = pair.first;
   StructDeclOp declOp = pair.second;
   declOp.setDefinesClosure(true);
@@ -1746,9 +1559,7 @@ TraitType
 ClosureEmitter::getSpecializedClosureTrait(GeneratorType aliasGenerator,
                                            ArrayRef<TypedAttr> paramValues,
                                            ASTDecl &moduleDecl, SMLoc loc) {
-  // The generator body must be the meta type of a trait. The alias right-hand
-  // side is typically a conjunction; but only the closure-defining one is
-  // substituted. Locate the closure defining trait.
+  // Locate the closure defining trait.
   auto anyTrait = sugarDynCastIfPresent<AnyTraitType>(aliasGenerator.getBody());
   if (!anyTrait)
     return {};
@@ -2411,6 +2222,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   Location location = shared.translateLocation(smLoc);
   MLIRContext *ctx = shared.getContext();
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
+
   SmallPtrSet<StringAttr, 8> promotedOriginNames = collectPromotedOrigins(
       ctx, concreteFieldDecls, concreteParams, concreteStructBindings);
 
@@ -2470,25 +2282,13 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                                .concat("::")
                                .concat(name.getValue())
                                .concat("::__storage"));
-  auto [structDecl, structOp] =
-      createStruct(shared, moduleDecl, structName, concreteParams, smLoc);
+  auto [structDecl, structOp] = createStruct(
+      shared, moduleDecl, structName, concreteParams, smLoc,
+      SmallVector<PassingKind>(concreteParams.size(), PassingKind::Inferred));
   structOp.setConvention(convention);
-  if (convention != TypeConvention::MemoryOnly) {
-    SmallVector<SymbolRefAttr> symbols;
-    llvm::append_range(symbols, structOp.getCanonicalTrait().getSymbols());
-    auto appendParent = [&](ClosureParent &parent) {
-      SymbolRefAttr symbol = parent.getSymbolRef(moduleDecl);
-      if (!llvm::is_contained(symbols, symbol))
-        symbols.push_back(symbol);
-    };
-    if (convention == TypeConvention::RegisterPassableTrivial)
-      appendParent(trivialRegisterTypeParent);
-    else if (convention == TypeConvention::RegisterPassable)
-      appendParent(registerPassableParent);
-
-    canonicalizeTraitCompositionSymbols(shared, symbols);
-    structOp.setCanonicalTrait(TraitType::get(ctx, symbols));
-  }
+  structOp.setDefinesClosure(true);
+  TraitType traitType = getTraitType(closureParents, moduleDecl);
+  structOp.setCanonicalTrait(traitType);
   OpBuilder structBuilder(structOp.getRegion());
   structBuilder.setInsertionPointToStart(&structOp.getFields().front());
   for (auto [index, fieldDecl] : llvm::enumerate(concreteFieldDecls))
@@ -2674,8 +2474,41 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     emitter.emitNormalReturn(initFnOp.getLoc(), /*returnVal=*/Value());
   }
 
-  TraitType traitType = getTraitType(closureParents, moduleDecl);
-  structOp.setCanonicalTrait(traitType);
+  auto callParentIt = llvm::find_if(closureParents, [](const ClosureParent &p) {
+    return p.getClosureMethod() == ClosureMethod::CALL;
+  });
+  assert(callParentIt != closureParents.end() &&
+         "closure parents must include the call trait");
+  ClosureParent &callParent = *callParentIt;
+  FnOp traitCallFn = callParent.getDefiningOp(moduleDecl);
+  FnOp callWitness = emitStorageCallWitness(
+      structDecl, structOp, promotedCallFunction, traitCallFn, smLoc,
+      [&](FnOp traitFn, ASTDecl &decl, bool synthetic, StringAttr name) {
+        // Storage has no `impl` param — do not redirect Self witnesses to it.
+        return pushBackTraitFunctionImpl(traitFn, decl, synthetic, name,
+                                         /*redirectWitnessToImplParam=*/false);
+      });
+  if (!callWitness)
+    return {};
+  methodImpls[ClosureMethod::CALL] = callWitness;
+
+  StringAttr callName = StringAttr::get(ctx, "__call__");
+
+  ASTDecl *callWitnessDecl = shared.declResolver->getDeclForFuncSymbol(
+      getFullyResolvedSymbolRef(callWitness));
+  assert(callWitnessDecl && "call witness must be registered");
+  shared.declResolver->attachDeclToParentNameTable(callWitnessDecl, callName);
+  callWitness.setSourceNameAttr(callName);
+
+  // Give storage a pretty closure-signature name.
+  {
+    TraitDeclOp callTrait = callParent.getTrait(moduleDecl);
+    if (auto keyOr = callTrait.getClosureSignature()) {
+      std::string prettyName = formatClosureSignature(*keyOr, shared);
+      structOp.setSourceNameAttr(
+          DebugInfo::SourceNameAttr::get(StringAttr::get(ctx, prettyName)));
+    }
+  }
 
   // Emit the conformance ops into the storage struct by finding the closure
   // method and FnOp associated with each parent trait.
@@ -2717,20 +2550,14 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
           traitAliases.push_back(alias);
       assert(traitAliases.size() == aliases.size() &&
              "trait capture aliases must mirror closure captures");
-      for (auto [alias, param] : llvm::zip_equal(traitAliases, aliases)) {
-        StringAttr paramName = StringAttr::get(ctx, param.first);
-        Type paramType = param.second;
-        if (!promotedOriginNames.empty()) {
-          // Remap promoted origins.
-          if (isa<OriginType>(paramType) &&
-              promotedOriginNames.contains(paramName))
-            paramType = OriginType::get(ctx, false);
-          else
-            paramType = promoteOriginRefs.replace(paramType);
-        }
+      SmallVector<TypedAttr> captureBindings = getCaptureBindings(structOp);
+      assert(traitAliases.size() <= captureBindings.size() &&
+             "storage must publish a binding per CALL-trait capture alias");
+      for (auto [alias, witnessValue] : llvm::zip_equal(
+               traitAliases,
+               ArrayRef(captureBindings).take_front(traitAliases.size())))
         WitnessOp::create(builder, alias.getParamDecl().getName(),
-                          ParamDeclRefAttr::get(paramName, paramType));
-      }
+                          witnessValue);
     }
   };
 
@@ -2935,23 +2762,15 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   if (allCapturesEncodable &&
       highestCaptureConvention == TypeConvention::MemoryOnly)
     allCapturesEncodable = false;
-  FnTypeGeneratorType wrapperSig = FnTypeGeneratorType::get(
+  FnTypeGeneratorType traitSig = FnTypeGeneratorType::get(
       closureSig.getInputParamTypes(), closureSig.getValues(),
       closureSig.getArgConventions(), closureSig.getFnEffects(),
       closureSig.getFnMetaOriginData(), closureSig.getParamListAttrs(),
       closureSig.getArgListAttrs());
-  trait = cast<TraitDeclOp>(shared
-                                .getOrCreateClosureTrait(nestedFnDecl.getLoc(),
-                                                         moduleDecl, wrapperSig)
-                                ->getIfOperation());
-  ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
-      nestedFnDecl.getLoc(), wrapperSig, &moduleDecl, isCopyable,
-      highestCaptureConvention, captures.empty(), allCapturesEncodable);
-
-  if (!closureWrapperDecl)
-    return {};
-  StructDeclOp wrapper =
-      cast<StructDeclOp>(closureWrapperDecl->getIfOperation());
+  trait = cast<TraitDeclOp>(
+      shared
+          .getOrCreateClosureTrait(nestedFnDecl.getLoc(), moduleDecl, traitSig)
+          ->getIfOperation());
 
   SmallVector<ClosureParent> closureParents{
       ClosureParent(trait, getFnOpNamed(trait, "__call__"),
@@ -3012,7 +2831,8 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       std::move(captureConventions), std::move(allStructParams),
       std::move(structParamBindings), fnName, highestCaptureConvention,
       std::move(deviceCaptureFieldTypes), allCapturesEncodable, nestedFnDecl);
-  TypedAttr witnessTable = liftedClosure.typeAttr;
+  if (!liftedClosure.structDecl)
+    return {};
 
   // The nested closure function is moved into the storage struct as a method.
   // Emit closure materialization ops back in the original parent function body.
@@ -3022,46 +2842,15 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   else
     builder.setInsertionPointToEnd(closureInsertBlock);
 
-  // TODO: remove closure type from op
-  Type concreteStructType = witnessTable.getType();
-  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable)) {
-    concreteStructType = typeParam.getMlirType();
-    if (highestCaptureConvention != TypeConvention::MemoryOnly &&
-        captures.size() == 1) {
-      if (auto structType = dyn_cast<KGEN::StructType>(concreteStructType)) {
-        auto elementTypes = structType.getElementTypes();
-        if (elementTypes && elementTypes->size() == 1)
-          concreteStructType = elementTypes->front();
-      }
-    }
-  }
-
   // Instantiate the storage struct directly through its synthesized `__init__`,
   // passing the captured values as the positional arguments.
   StructDeclOp storageStructOp =
       cast<StructDeclOp>(liftedClosure.structDecl->getIfOperation());
-  std::string storageName = (Twine(fnName.getValue()) + ".storage").str();
   VarDeclOp storageVar = emitInitializerCall(
       *nestedFnDecl.getParentDecl(), builder, location, storageStructOp,
-      storageParamBindings, /*args=*/constructorArgs, storageName);
+      storageParamBindings, /*args=*/constructorArgs, fnName.getValue());
 
-  // (2) Wrap the storage struct in the parametric closure wrapper.
-  auto originSet = OriginSetAttr::get(ctx, ArrayRef<TypedAttr>{});
-  Type storageStructType =
-      cast<RefType>(storageVar.getResult().getType()).getElementType();
-  TypedAttr implBinding = witnessTable;
-  if (auto typeParam = dyn_cast<TypeParamAttr>(witnessTable))
-    implBinding = TypeParamAttr::get(storageStructType, storageStructType,
-                                     typeParam.getType());
-  SmallVector<TypedAttr> paramArgs({implBinding, originSet});
-
-  // Inject the storage into the wrapper.
-  CValue closureArg = MRValue(storageVar);
-  VarDeclOp var = emitInitializerCall(*nestedFnDecl.getParentDecl(), builder,
-                                      location, wrapper, paramArgs,
-                                      /*args=*/closureArg, fnName.getValue());
-
-  return MLValue(var);
+  return MLValue(storageVar);
 }
 
 static CValue ASTDeclToCValue(ASTDecl *decl, OpBuilder &builder, Location loc) {
@@ -3498,9 +3287,8 @@ struct ConformanceTableEntryMapper {
     return {mappedBinding, pendingEscapedParamName};
   }
   // The only parameter references allowed to remain in a conformance table
-  // entry are parameters from the enclosing closure struct itself. For closure
-  // structs this is typically "impl" or "origin_set"; for top-level closure
-  // structs it may also be "symbol".
+  // entry are parameters from the enclosing closure struct itself (storage
+  // capture params / fn-pointer `Impl`).
   bool isAllowedConformanceScopeRef(TypedAttr attr) const {
     TypedAttr paramRef = getUnderlyingParamRef(attr);
     auto declRef = dyn_cast_if_present<ParamDeclRefAttr>(paramRef);
@@ -3555,8 +3343,31 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
         index + targetAuxCount,
         ParamDeclRefAttr::get(actualParamName, actualParam));
   }
+  // Bind leading aux (`_A`) to storage aliases before matching args so the
+  // trait-shaped `__call__` compares like the residual promoted layout.
+  FnTypeGeneratorType actualSigForMatch = actualSig;
+  if (actualAuxCount != 0) {
+    mlir::AttrTypeReplacer auxToAlias;
+    ArrayRef<ParamDeclAttr> actualParams = actualFn.getInputParams().drop_back(
+        actualSig.getNumImplicitOriginDecls());
+    for (auto [offset, auxParam] :
+         llvm::enumerate(actualParams.take_front(actualAuxCount))) {
+      TypedAttr aliasValue = ctx.getAliasRef(ctx.startingIndex + offset);
+      if (!aliasValue)
+        return false;
+      StringAttr auxName = auxParam.getName();
+      auxToAlias.addReplacement([=](ParamDeclRefAttr ref) -> TypedAttr {
+        if (ref.getName() == auxName)
+          return aliasValue;
+        return ref;
+      });
+    }
+    actualSigForMatch =
+        cast<FnTypeGeneratorType>(auxToAlias.replace(actualSig));
+  }
   FailureOr<SmallVector<TypedAttr>> specialization =
-      inference.inferSpecialization(target, actualFn);
+      inference.inferSpecialization(target, actualSigForMatch,
+                                    actualFn.getInputParams());
   if (failed(specialization))
     return false;
 
@@ -3597,9 +3408,7 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
         mappedBinding.binding;
   }
 
-  // The wrapper's __call__ has one type-level aux per struct alias (1:1 by
-  // construction in createFnStructWrapper). Bind each one to its struct
-  // alias value
+  // Leading adaptee aux bind to storage params/aliases.
   adapteeParts.fnLevelBindings.reserve(ctx.numStructAuxiliaryParams +
                                        targetExplicitParams.size());
   for (size_t offset = 0; offset < ctx.numStructAuxiliaryParams; ++offset) {
@@ -3759,15 +3568,16 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
   SharedState &shared = structDecl.getShared();
   MLIRContext *ctx = shared.getContext();
   ArrayRef<ParamDeclAttr> structParams = structDeclOp.getInputParams();
-  assert(!structParams.empty() && "closure wrapper should have impl param");
+  bool redirectWitnessToImplParam =
+      !structParams.empty() && structParams.front().getName() == "impl";
 
   SymbolRefAttr traitSymbol = getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
   StringAttr adaptorNameAttr =
       StringAttr::get(ctx, "__call__$" + getFlattenedSymbolName(traitSymbol));
-  auto [adaptorFnOp, adaptorParams, adaptorResult] = pushBackTraitFunctionImpl(
-      traitCallFn, structDecl, true, adaptorNameAttr,
-      /*redirectWitnessToImplParam=*/true, selfTypeOverride);
+  auto [adaptorFnOp, adaptorParams, adaptorResult] =
+      pushBackTraitFunctionImpl(traitCallFn, structDecl, true, adaptorNameAttr,
+                                redirectWitnessToImplParam, selfTypeOverride);
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
     auto ptr = adapteeParts.adapteeTypeMap.find(ref.getName());
@@ -3795,8 +3605,8 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
       operand = RebindOp::create(b, targetType, operand);
 
     // Handle convention mismatches between the adaptor (trait signature) and
-    // the callee (wrapper's __call__). Generic trait parameters use ReadMem
-    // (ref), but concrete RegisterPassable types use ReadReg (value).
+    // the callee (storage/wrapper `__call__`). Generic trait parameters use
+    // ReadMem (ref), but concrete RegisterPassable types use ReadReg (value).
     if (!hasImplicitOrigin(conv) && isa<RefType>(operand.getType()))
       operand = RefLoadOp::create(b, operand);
 
@@ -3880,14 +3690,14 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   }
   StringRef name = "__call__";
   auto callDecls = structDecl.lookupInCurrentScope(name);
-  // Resolve signatures for all __call__ declarations before creating the
+  // Resolve signatures for all call declarations before creating the
   // OverloadSet, which requires DeclResolvedness::signature.
   for (ASTDecl *callDecl : callDecls) {
     if (failed(shared.declResolver->resolveSignature(*callDecl,
                                                      structDecl.getLoc())))
       return failure();
   }
-  FnOp callFunction = getFnOpNamed(traitDeclOp, name);
+  FnOp callFunction = getFnOpNamed(traitDeclOp, "__call__");
   // get the call function in terms of the struct wrapper
   SyntheticNode syntheticNode(structDecl.getLoc());
   ASTType structSelfType = structDecl.getTypeDeclSelf();
@@ -3907,26 +3717,32 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   auto [newWitness, _] =
       ov.filterOverloadSetForValueType(traitSignature, nullptr);
   if (newWitness) {
-    if (rebind) {
-      ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
-      // Build witnesses including alias mappings.
-      SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
-      witnesses.emplace_back(callFunction.getSymNameAttr(), newWitness.get());
-      auto traitAliases = traitDeclOp.getFields().getOps<AliasDeclOp>();
-      auto structAliases = structDeclOp.getFields().getOps<AliasDeclOp>();
-      for (auto [traitAlias, structAlias] :
-           llvm::zip(traitAliases, structAliases)) {
-        StringRef aliasName = traitAlias.getParamDecl().getName().getValue();
-        TypedAttr aliasValue = *structAlias.getValue();
-        witnesses.emplace_back(aliasName, aliasValue);
-      }
-      addConformanceTable(structDecl,
-                          ClosureEmitter::ClosureParent(
-                              traitDeclOp, callFunction, ClosureMethod::CALL),
-                          witnesses, fileModule);
+    SmallVector<StringRef> traitAliasNames;
+    for (AliasDeclOp traitAlias :
+         traitDeclOp.getFields().getOps<AliasDeclOp>()) {
+      if (traitAlias.getInheritedFrom())
+        continue;
+      traitAliasNames.push_back(traitAlias.getParamDecl().getName().getValue());
     }
-
-    return success();
+    SmallVector<TypedAttr> captureBindings = getCaptureBindings(structDeclOp);
+    bool aliasesOk = traitAliasNames.size() <= captureBindings.size();
+    if (aliasesOk) {
+      if (rebind) {
+        ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+        SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
+        witnesses.emplace_back(callFunction.getSymNameAttr(), newWitness.get());
+        for (auto [aliasName, aliasValue] : llvm::zip_equal(
+                 traitAliasNames,
+                 ArrayRef(captureBindings).take_front(traitAliasNames.size())))
+          witnesses.emplace_back(aliasName, aliasValue);
+        addConformanceTable(structDecl,
+                            ClosureEmitter::ClosureParent(
+                                traitDeclOp, callFunction, ClosureMethod::CALL),
+                            witnesses, fileModule);
+      }
+      return success();
+    }
+    // Fall through to param-inf when capture arity does not line up.
   }
 
   // Exact Matching Failed. Check if we can conform to a trait by declaring
@@ -3948,21 +3764,10 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   for (ParamDeclAttr auxiliaryParam :
        callFunction.getInputParams().take_front(traitAliasCount))
     auxiliaryParams.push_back(auxiliaryParam);
-  unsigned startingIndex = 0;
-  SmallVector<TypedAttr> structAliasOps;
-  llvm::DenseSet<TypedAttr> uniqueNonInheritedAliasValues;
-  for (AliasDeclOp aliasOp : structDeclOp.getFields().getOps<AliasDeclOp>()) {
-    TypedAttr value = *aliasOp.getValue();
-    structAliasOps.push_back(value);
-    if (aliasOp.getInheritedFrom())
-      continue;
-    uniqueNonInheritedAliasValues.insert(value);
-  }
+  // Storage publishes captured types as inferred struct params.
+  size_t targetPayloadParams =
+      explicitParamCount(callFunction) - traitAliasCount;
 
-  AuxiliaryParameters auxCtx{
-      startingIndex, uniqueNonInheritedAliasValues.size(),
-      std::move(auxiliaryParams), std::move(structAliasOps),
-      std::move(traitAliasOps)};
   for (ASTDecl *callDecl : callDecls) {
     auto structCallFn = dyn_cast_or_null<FnOp>(callDecl->getIfOperation());
     if (!structCallFn)
@@ -3971,6 +3776,23 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
                                                      structDecl.getLoc())))
       continue;
 
+    size_t actualExplicit = explicitParamCount(structCallFn);
+    if (actualExplicit < targetPayloadParams)
+      continue;
+    size_t inferredPrefix = leadingInferredParamCount(structCallFn);
+    size_t actualAuxCount = actualExplicit - targetPayloadParams;
+    if (actualAuxCount > inferredPrefix)
+      continue;
+
+    SmallVector<TypedAttr> captureBindings = getCaptureBindings(structDeclOp);
+    if (actualAuxCount > captureBindings.size())
+      continue;
+    SmallVector<TypedAttr> actualAuxBindings(
+        captureBindings.begin(), captureBindings.begin() + actualAuxCount);
+
+    AuxiliaryParameters auxCtx{/*startingIndex=*/0, actualAuxCount,
+                               auxiliaryParams, actualAuxBindings,
+                               traitAliasOps};
     AdapteeParts adapteeParts;
     if (canFunctionSignatureMatchTraitParamInf(structCallFn, traitSignature,
                                                auxCtx, shared, adapteeParts)) {
@@ -4064,7 +3886,8 @@ ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
   name += "$extension$";
   name += sourceTrait.getSymName();
   auto [structDecl, declOp] = createStruct(
-      shared, moduleDecl, StringAttr::get(ctx, name), {paramAnchor}, location);
+      shared, moduleDecl, StringAttr::get(ctx, name), {paramAnchor}, location,
+      /*passingKinds=*/{PassingKind::PosOnly});
 
   // A stateless extension carries no storage
   declOp.setConvention(TypeConvention::RegisterPassable);
@@ -4369,159 +4192,6 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
                                       populateToDeviceType, populateTypeName,
                                       populateDeviceType};
   addConformanceToDevicePassable(structDecl, populators);
-}
-
-void ClosureEmitter::addWrapperConformanceToDevicePassable(
-    ASTDecl &structDecl, StructFieldOp implField, ParamDeclAttr implType,
-    ParamDeclAttr originSet) {
-  MLIRContext *ctx = structDecl.getContext();
-  StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp);
-  TypedAttr implDeviceType;
-  ASTDecl *devicePassableTrait =
-      shared.getBuiltinDevicePassableTrait(structDecl.getLoc());
-  assert(devicePassableTrait && "DevicePassable trait should be present");
-  StringAttr traitName = StringAttr::get(
-      ctx, getFlattenedSymbolName(devicePassableTrait->getSymbolRef()));
-
-  auto populateIsConvertible =
-      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
-    auto [implementation, parameters, result] =
-        pushBackTraitFunctionImpl(function, structDecl);
-    emitIsConvertibleToDeviceTypeBody(implementation, parameters, b,
-                                      implDeviceType);
-    return buildSymbol(implementation, implType, originSet);
-  };
-  auto populateToDeviceType =
-      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
-    auto [toDevice, params, result] =
-        pushBackTraitFunctionImpl(function, structDecl);
-    b.setInsertionPointToStart(&toDevice.getBodyRegion().front());
-    assert(toDevice.getBodyRegion().getNumArguments() == 3);
-
-    Value selfArgument = toDevice.getBodyRegion().front().getArgument(0);
-    Value encoderRef = toDevice.getBodyRegion().front().getArgument(1);
-    Value targetArgument = toDevice.getBodyRegion().front().getArgument(2);
-    Value implMemberRef = RefStructGEROp::create(b, selfArgument, implField)
-                              ->getResults()
-                              .front();
-
-    IREmitter emitter(structDecl, b);
-    SyntheticNode syntheticNode(structDecl.getLoc());
-    ExprDest dest(EC_ReturnValue);
-    CallOperands callOperands(CallSyntax::kMethodCall, &syntheticNode,
-                              std::move(dest));
-    CValue encoderValue = CValue::getMValueForRef(encoderRef);
-    callOperands.add({encoderValue, &syntheticNode});
-    callOperands.add({CValue::getMValueForRef(implMemberRef), &syntheticNode});
-    callOperands.add({SRValue(targetArgument), &syntheticNode});
-    OverloadSet overloads = OverloadSet::lookup(
-        structDecl, encoderValue.getRValueType(), "encode_closure_state",
-        &syntheticNode, CallSyntax::kMethodCall);
-    overloads.paramBindings.add(&syntheticNode, PValue(implDeviceType),
-                                StringAttr::get(ctx, "DeviceStructType"));
-    PValue callee = overloads.filterOverloadSet(
-        callOperands, /*emitDiagnosticOnFailure=*/true, emitter);
-    if (!callee)
-      return failure();
-    CValue callResult =
-        emitter.emitIndirectCall(callee, std::move(callOperands));
-    if (!callResult)
-      return failure();
-    auto noneAttr =
-        KGEN::ParamConstantOp::create(b, KGEN::NoneAttr::get(b.getContext()));
-    IREmitter::emitNormalReturn(b, noneAttr);
-
-    return buildSymbol(toDevice, implType, originSet);
-  };
-  auto populateTypeName = [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
-    auto [implementation, parameters, result] =
-        pushBackTraitFunctionImpl(function, structDecl);
-    b.setInsertionPointToStart(&implementation.getBodyRegion().front());
-    TypedAttr symbol = GetWitnessAttr::get(
-        ParamDeclRefAttr::get(implType), traitName, function.getSymNameAttr(),
-        implementation.getFuncTypeGenerator());
-    SmallVector<Value> operands(
-        implementation.getBodyRegion().front().getArguments());
-    if (failed(emitForwardingCall(b, structDecl, symbol,
-                                  implementation.getFuncTypeGenerator(), result,
-                                  operands)))
-      return failure();
-    return buildSymbol(implementation, implType, originSet);
-  };
-  auto populateDeviceType = [&]() {
-    implDeviceType = GetWitnessAttr::get(
-        ParamDeclRefAttr::get(implType), traitName,
-        StringAttr::get(ctx, kDeviceType),
-        getDeviceTypeAlias(shared, structDecl.getLoc()).getType());
-    return implDeviceType;
-  };
-  DevicePassablePopulators populators{populateIsConvertible,
-                                      populateToDeviceType, populateTypeName,
-                                      populateDeviceType};
-  addConformanceToDevicePassable(structDecl, populators);
-}
-
-TraitType ClosureEmitter::getWrapperTraitType(ASTDecl &traitDecl,
-                                              ASTDecl &moduleDecl,
-                                              bool isCopyable,
-                                              TypeConvention typeConvention,
-                                              bool capturesEncodable) {
-  SmallVector<SymbolRefAttr> symbols;
-  symbols.push_back(traitDecl.getSymbolRef());
-  symbols.push_back(moveParent.getSymbolRef(moduleDecl));
-  symbols.push_back(deinitableParent.getSymbolRef(moduleDecl));
-  if (isCopyable) {
-    symbols.push_back(copyParent.getSymbolRef(moduleDecl));
-    symbols.push_back(implicitlyCopyableParent.getSymbolRef(moduleDecl));
-  }
-
-  if (typeConvention == TypeConvention::RegisterPassableTrivial) {
-    symbols.push_back(trivialRegisterTypeParent.getSymbolRef(moduleDecl));
-    symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
-  } else if (typeConvention == TypeConvention::RegisterPassable) {
-    symbols.push_back(registerPassableParent.getSymbolRef(moduleDecl));
-  }
-  if (capturesEncodable) {
-    ASTDecl *devicePassableTrait =
-        shared.getBuiltinDevicePassableTrait(traitDecl.getLoc());
-    if (devicePassableTrait)
-      symbols.push_back(devicePassableTrait->getSymbolRef());
-  }
-  canonicalizeTraitCompositionSymbols(shared, symbols);
-  return TraitType::get(moduleDecl.getContext(), symbols);
-}
-
-void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
-                                            TraitType wrapperTraitType,
-                                            ASTDecl &moduleDecl) {
-  StringRef traitName(out.data(), out.size());
-  if (!parentOrdinals) {
-    parentOrdinals.emplace();
-    (*parentOrdinals)[moveParent.getSymbolRef(moduleDecl)] = 0;
-    (*parentOrdinals)[deinitableParent.getSymbolRef(moduleDecl)] = 1;
-    (*parentOrdinals)[copyParent.getSymbolRef(moduleDecl)] = 2;
-    (*parentOrdinals)[implicitlyCopyableParent.getSymbolRef(moduleDecl)] = 3;
-    (*parentOrdinals)[trivialRegisterTypeParent.getSymbolRef(moduleDecl)] = 4;
-    (*parentOrdinals)[registerPassableParent.getSymbolRef(moduleDecl)] = 6;
-    ASTDecl *devicePassableTrait =
-        shared.getBuiltinDevicePassableTrait(moduleDecl.getLoc());
-    if (devicePassableTrait)
-      (*parentOrdinals)[devicePassableTrait->getSymbolRef()] = 5;
-  }
-  llvm::raw_svector_ostream os(out);
-  SmallVector<SymbolRefAttr> reducedSymbols =
-      reduceTraitCompositionSymbols(shared, wrapperTraitType.getSymbols());
-  for (SymbolRefAttr symbol : reducedSymbols) {
-    auto it = parentOrdinals->find(symbol);
-    if (it != parentOrdinals->end()) {
-      os << "_" << it->second;
-      continue;
-    }
-    // Else this gotta be the base trait for closure.
-    assert(traitName == symbol.getLeafReference().strref() &&
-           "wrapper trait symbol missing from parent ordinals");
-  }
 }
 
 bool ClosureEmitter::isTypeRebindableTo(FuncTypeGeneratorType from,
