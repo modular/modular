@@ -306,11 +306,18 @@ def configure_logging(
     logging_handlers: list[logging.Handler] = []
 
     # Set up log filtering
+    # ``uvicorn`` owns the HTTP error log: an exception escaping the ASGI app,
+    # a malformed request, and the cancellation of in-flight requests when the
+    # graceful-shutdown drain expires are all reported there and nowhere else.
+    # Dropping them left connection-level failures with no server-side trace at
+    # all. The ``uvicorn`` logger is pinned to WARNING below, so this admits
+    # warnings and errors without the per-request ``uvicorn.access`` stream.
     components_to_log = [
         "root",
         "max._entrypoints",
         "max.pipelines",
         "max.serve",
+        "uvicorn",
     ]
     try:
         if settings.logs_enable_components is not None:
