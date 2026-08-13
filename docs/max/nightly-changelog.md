@@ -266,6 +266,14 @@ This version is still a work in progress.
   instead of retrying. Keep this above the idle-connection timeout of every
   client that pools connections to MAX Serve.
 
+- An unhandled server error now returns the standard OpenAI `error` envelope as
+  JSON rather than a bare `text/plain` `Internal Server Error`. The
+  request-session middleware runs outside Starlette's exception middleware, so
+  raising from it bypassed the app's exception handler and reached
+  `ServerErrorMiddleware`, which replies in plain text and then re-raises,
+  prompting uvicorn to close the connection under a client that was owed a
+  response.
+
 ### Server metrics
 
 - Fixed the speculative-decoding per-position acceptance-rate histogram
