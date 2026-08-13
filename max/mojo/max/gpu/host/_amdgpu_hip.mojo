@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import _CPointer, external_call
+from std.ffi import external_call
 
 from max.gpu.host import DeviceContext, DeviceFunction, DeviceStream
 from max.gpu.host.device_context import (
@@ -35,9 +35,9 @@ struct _ihipModule_t:
     pass
 
 
-comptime hipDevice_t = _CPointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
-comptime hipStream_t = _CPointer[_ihipStream_t, UntrackedOrigin[mut=True]]
-comptime hipModule_t = _CPointer[_ihipModule_t, UntrackedOrigin[mut=True]]
+comptime hipDevice_t = OptionalPointer[_ihipDevice_t, UntrackedOrigin[mut=True]]
+comptime hipStream_t = OptionalPointer[_ihipStream_t, UntrackedOrigin[mut=True]]
+comptime hipModule_t = OptionalPointer[_ihipModule_t, UntrackedOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.

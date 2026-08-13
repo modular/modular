@@ -39,7 +39,6 @@ from std.ffi import (
     c_size_t,
     external_call,
     CStringSlice,
-    _CPointer,
 )
 from std.sys import (
     bit_width_of,
@@ -141,55 +140,55 @@ comptime _DeviceContextPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceContextCpp, origin]
+] = OptionalPointer[_DeviceContextCpp, origin]
 
 comptime _DeviceBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceBufferCpp, origin]
+] = OptionalPointer[_DeviceBufferCpp, origin]
 
 comptime _DeviceFunctionPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceFunctionCpp, origin]
+] = OptionalPointer[_DeviceFunctionCpp, origin]
 
 comptime _DeviceMulticastBufferPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceMulticastBufferCpp, origin]
+] = OptionalPointer[_DeviceMulticastBufferCpp, origin]
 
 comptime _DeviceStreamPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceStreamCpp, origin]
+] = OptionalPointer[_DeviceStreamCpp, origin]
 
 comptime _DeviceEventPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceEventCpp, origin]
+] = OptionalPointer[_DeviceEventCpp, origin]
 
 comptime _DeviceTimerPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceTimerCpp, origin]
+] = OptionalPointer[_DeviceTimerCpp, origin]
 
 comptime _CompletionFlagPtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_CompletionFlagCpp, origin]
+] = OptionalPointer[_CompletionFlagCpp, origin]
 
 comptime _DeviceContextScopePtr[
     mut: Bool,
     //,
     origin: Origin[mut=mut] = UntrackedOrigin[mut=mut],
-] = _CPointer[_DeviceContextScopeCpp, origin]
+] = OptionalPointer[_DeviceContextScopeCpp, origin]
 
 comptime _CString[origin: ImmOrigin = ImmUntrackedOrigin] = Optional[
     CStringSlice[origin]
@@ -5939,7 +5938,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         return DeviceStream(result)
 
     def create_external_stream(
-        self, external_stream: _CPointer[mut=True, NoneType, _]
+        self, external_stream: OptionalPointer[mut=True, NoneType, _]
     ) raises -> DeviceStream:
         """Creates a non-owning stream wrapper around an externally managed GPU stream.
 

@@ -25,7 +25,7 @@ from std.collections import Array, List
 from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
 from std.io import FileDescriptor
-from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
+from std.ffi import c_char, c_int, external_call, get_errno
 from std.reflection import SourceLocation, call_location
 from std.gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu, is_apple_gpu
@@ -101,7 +101,7 @@ struct _DirHandle:
             raise Error("the directory '", path, "' does not exist")
 
         var handle = external_call[
-            "opendir", _CPointer[NoneType, UntrackedOrigin[mut=True]]
+            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
         ](path.as_c_string_slice().unsafe_ptr())
 
         if not handle:
@@ -142,7 +142,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_linux, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break
@@ -172,7 +172,7 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", _CPointer[_dirent_macos, MutUntrackedOrigin]
+                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
             ](self._handle)
             if not ep:
                 break

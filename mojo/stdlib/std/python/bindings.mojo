@@ -21,7 +21,7 @@ and Python code.
 """
 
 from . import ConvertibleFromPython
-from std.ffi import _Global, _CPointer, c_int, c_char
+from std.ffi import _Global, c_int, c_char
 from std.sys.info import size_of
 from std.collections import StringDict
 
@@ -564,7 +564,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutUntrackedOrigin]]
+    var _slots: Dict[Int, OptionalPointer[NoneType, MutUntrackedOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]

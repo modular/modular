@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.os
-from std.ffi import CStringSlice, _CPointer, c_char, c_int, external_call
+from std.ffi import CStringSlice, c_char, c_int, external_call
 from std.memory import alloc
 from std.os import remove
 from std.pathlib import Path
@@ -22,7 +22,7 @@ from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 struct RegisterPassablePointer(RegisterPassable):
-    var pointer: _CPointer[NoneType, UntrackedOrigin[mut=True]]
+    var pointer: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 def test_external_call_handles_rp_return_types() raises:

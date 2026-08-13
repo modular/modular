@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.pathlib import Path
-from std.ffi import _CPointer, _find_dylib
+from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
@@ -1549,12 +1549,12 @@ def cublasLtMatmul(
     alpha: OpaquePointer[ImmutAnyOrigin],
     _a: OpaquePointer[ImmutAnyOrigin],
     _adesc: cublasLtMatrixLayout_t,
-    _b: _CPointer[NoneType, ImmutAnyOrigin],
+    _b: OptionalPointer[NoneType, ImmutAnyOrigin],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: _CPointer[NoneType, ImmutAnyOrigin],
+    _c: OptionalPointer[NoneType, ImmutAnyOrigin],
     _cdesc: cublasLtMatrixLayout_t,
-    _d: _CPointer[NoneType, MutAnyOrigin],
+    _d: OptionalPointer[NoneType, MutAnyOrigin],
     _ddesc: cublasLtMatrixLayout_t,
     algo: UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
     workspace: OpaquePointer[MutAnyOrigin],

@@ -25,7 +25,6 @@ from std.ffi import (
     external_call,
     get_errno,
     CStringSlice,
-    _CPointer,
 )
 from std.sys import CompilationTarget
 
@@ -72,7 +71,7 @@ def exit(status: c_int):
 # stdio.h — input/output operations
 # ===-----------------------------------------------------------------------===#
 
-comptime FILE_ptr = _CPointer[NoneType, UntrackedOrigin[mut=True]]
+comptime FILE_ptr = OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
@@ -139,7 +138,9 @@ def posix_spawnp[
     pid: Pointer[mut=True, c_pid_t, _],
     file: CStringSlice[_],
     argv: Pointer[Optional[CStringSlice[argv_origin]], _],
-    envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
+    envp: OptionalPointer[
+        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+    ],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
     — function creates a new process (child process) from the specified process image.
@@ -155,8 +156,8 @@ def posix_spawnp[
     return external_call["posix_spawnp", c_int](
         pid,
         file,
-        _CPointer[NoneType, ImmUntrackedOrigin](),
-        _CPointer[NoneType, ImmUntrackedOrigin](),
+        OptionalPointer[NoneType, ImmUntrackedOrigin](),
+        OptionalPointer[NoneType, ImmUntrackedOrigin](),
         argv,
         envp,
     )
@@ -164,7 +165,7 @@ def posix_spawnp[
 
 @always_inline
 def _get_environ() -> (
-    _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
+    OptionalPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
 ):
     """Returns the process environment pointer (POSIX `environ`).
 
@@ -172,7 +173,7 @@ def _get_environ() -> (
         A pointer to the null-terminated array of environment strings,
         suitable for passing as the `envp` argument to `posix_spawnp`.
     """
-    comptime _EnvpType = _CPointer[
+    comptime _EnvpType = OptionalPointer[
         Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
     ]
     comptime if CompilationTarget.is_macos():
@@ -180,13 +181,13 @@ def _get_environ() -> (
         # a pointer to the `environ` variable.
         return external_call[
             "_NSGetEnviron",
-            _CPointer[_EnvpType, ImmUntrackedOrigin],
+            OptionalPointer[_EnvpType, ImmUntrackedOrigin],
         ]().value()[]
     elif CompilationTarget.is_linux():
         # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
         # RTLD_DEFAULT is ((void *)0) on Linux.
         return dlsym[_EnvpType](
-            _CPointer[NoneType, MutUntrackedOrigin](),
+            OptionalPointer[NoneType, MutUntrackedOrigin](),
             "environ".as_c_string_slice().unsafe_ptr(),
         ).value()[]
     else:
@@ -209,7 +210,7 @@ def execvp[
     //,
 ](
     file: Pointer[mut=False, c_char, _],
-    argv: Pointer[mut=False, _CPointer[mut=False, c_char, origin], _],
+    argv: Pointer[mut=False, OptionalPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -326,7 +327,7 @@ def fcntl[*types: Intable](fd: c_int, cmd: c_int, *args: *types) -> c_int:
 
 
 @always_inline
-def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
+def dlerror(out result: OptionalPointer[c_char, MutUntrackedOrigin]):
     result = external_call["dlerror", type_of(result)]()
 
 
@@ -334,14 +335,14 @@ def dlerror(out result: _CPointer[c_char, MutUntrackedOrigin]):
 def dlopen(
     filename: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin],
     flags: c_int,
-) -> _CPointer[NoneType, MutUntrackedOrigin]:
-    return external_call["dlopen", _CPointer[NoneType, MutUntrackedOrigin]](
-        filename, flags
-    )
+) -> OptionalPointer[NoneType, MutUntrackedOrigin]:
+    return external_call[
+        "dlopen", OptionalPointer[NoneType, MutUntrackedOrigin]
+    ](filename, flags)
 
 
 @always_inline
-def dlclose(handle: _CPointer[mut=True, NoneType, _]) -> c_int:
+def dlclose(handle: OptionalPointer[mut=True, NoneType, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -350,9 +351,9 @@ def dlsym[
     # Default `dlsym` result is an OpaquePointer.
     result_type: AnyType = NoneType
 ](
-    handle: _CPointer[NoneType, _],
+    handle: OptionalPointer[NoneType, _],
     name: Pointer[mut=False, c_char, _],
-    out result: _CPointer[result_type, MutUntrackedOrigin],
+    out result: OptionalPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
 
@@ -360,7 +361,7 @@ def dlsym[
 def realpath(
     path: CStringSlice[_],
     resolved_path: Pointer[mut=True, c_char, _],
-    out result: _CPointer[c_char, MutUntrackedOrigin],
+    out result: OptionalPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a

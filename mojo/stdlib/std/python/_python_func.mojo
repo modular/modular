@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import _CPointer
 from std.os import abort
 
 from std.python import PythonObject as PO  # for brevity of signatures below
