@@ -10,16 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Benchmarks `argmax_gpu` against the top-k K=1 path it replaced.
+"""Benchmarks `argmax_gpu`, the top-k K=1 path it replaced, and the
+`algorithm.rowwise` reduction `ops.argmax` actually launches.
 
-Both variants run in the same process so they see identical clocks, which
+All variants run in the same process so they see identical clocks, which
 matters on hosts where the SM clock cannot be pinned.
 """
 
 from std.random import random_float64, seed
-from std.sys import size_of
+from std.sys import get_defined_dtype, size_of
 from std.sys.info import size_of as _size_of
 
+from algorithm.reductions import reduce_argmax
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -95,6 +97,43 @@ def bench_argmax[
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
+    var in_shape = Coord(IndexList[2](batch, num_elements))
+
+    @__parameter
+    @always_inline
+    def bench_rowwise(mut b: Bencher):
+        @__parameter
+        @always_inline
+        def launch(ctx: DeviceContext) raises:
+            @always_inline
+            def input_fn[
+                width: Int, alignment: Int, _rank: Int
+            ](coords: IndexList[_rank]) {var in_tensor} -> SIMD[dtype, width]:
+                return in_tensor.load_linear[width=width](
+                    rebind[IndexList[2]](coords)
+                )
+
+            @always_inline
+            def output_fn[
+                width: SIMDLength, _rank: Int
+            ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {
+                var out_tensor
+            }:
+                out_tensor.store_linear[width=Int(width)](
+                    rebind[IndexList[2]](coords), val.cast[out_idx_type]()
+                )
+
+            reduce_argmax[dtype, target="gpu", reduce_dim=1](
+                input_fn, output_fn, in_shape, ctx
+            )
+
+        bencher_iter_custom[launch](b, ctx)
+
+    m.bench_function[bench_rowwise](
+        BenchId(String("argmax-rowwise", suffix)),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+    )
+
     _ = in_dev^
     _ = out_dev^
     _ = vals_dev^
@@ -105,7 +144,9 @@ def main() raises:
     var batch = Int(arg_parse("batch", 1))
     var num_elements = Int(arg_parse("N", 262144))
 
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+
     var m = Bench()
     with DeviceContext() as ctx:
-        bench_argmax[DType.bfloat16, DType.int64](ctx, m, batch, num_elements)
+        bench_argmax[dtype, DType.int64](ctx, m, batch, num_elements)
     m.dump_report()
