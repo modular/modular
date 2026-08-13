@@ -74,22 +74,24 @@ std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
   return baseName;
 }
 
-std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef baseName,
-                              llvm::StringRef ext) {
-  return (prefix + "_" + baseName + ext).str();
+std::string offloadOutputPath(llvm::StringRef prefix,
+                              llvm::StringRef fileName) {
+  return (prefix + "_" + fileName).str();
 }
 
 //===----------------------------------------------------------------------===//
 // Pending offload writes
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module) {
+ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module,
+                                  llvm::StringRef outputPrefix) {
   auto attr =
       module->getAttrOfType<mlir::DictionaryAttr>(kOffloadWritesAttrName);
   if (!attr)
     return success();
   for (auto entry : attr) {
-    llvm::StringRef path = entry.getName().strref();
+    std::string path =
+        offloadOutputPath(outputPrefix, entry.getName().strref());
     llvm::StringRef content =
         mlir::cast<mlir::StringAttr>(entry.getValue()).strref();
     auto outFile = mlir::openOutputFile(path);
