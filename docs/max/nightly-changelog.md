@@ -195,7 +195,7 @@ This version is still a work in progress.
   `--max-media-preprocess-cache-idle-seconds` (default 300, `0` disables) are
   dropped on the next cache lookup or insert, so a burst of distinct media does
   not hold host memory for the life of the process. Enabled for Gemma 4 images
-  and video.
+  and video, Kimi K2.5 images, and Qwen2.5-VL and Qwen3-VL-MoE images.
 - Added `max.driver.begin_launch_trace()` and
   `max.driver.take_launch_trace()`, exposing the launch trace recorded by the
   runtime on CUDA and HIP devices. The trace lists the operations enqueued
