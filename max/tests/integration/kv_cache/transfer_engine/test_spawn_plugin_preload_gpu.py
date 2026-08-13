@@ -22,7 +22,7 @@ The test conftest pre-loads those libraries, but only in the MAIN pytest
 process. A ``spawn``-ed child re-imports everything fresh and does NOT inherit
 the parent's ``RTLD_GLOBAL`` handles, so the child must perform the preload
 itself. ``KVTransferEngine`` does this in-library via
-``_preload_nixl_plugin_deps`` (transfer_engine.py). This test stands up a
+``preload_nixl_plugin_deps`` (``_nixl_plugin_deps.py``). This test stands up a
 ``KVTransferEngine`` inside a ``spawn`` child to prove that path works WITHOUT
 relying on the conftest preload.
 
