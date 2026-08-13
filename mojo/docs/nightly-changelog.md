@@ -225,6 +225,11 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 
 ## Fixed
 
+- `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
+  files next to the host output file. Building a kernel that an earlier build
+  had already compiled could write them into the earlier build's output
+  directory, or skip them with no diagnostic.
+
 - Parametric `raises` now accepts any primary expression as the thrown type in
   a function signature, matching the syntax positions where types otherwise
   appear. This most notably fixes `raises Self.SomeAssocType` on trait and
