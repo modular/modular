@@ -158,6 +158,13 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added `MODULAR_MAX_RELEASE_FREE_HOST_MEMORY`, an opt-in serving knob that
+  returns free host-allocator pages to the OS once model compilation finishes,
+  before graph capture. Graph compilation leaves tens of GiB free-but-unreturned
+  in glibc's per-thread arenas, which glibc never reclaims on its own; setting
+  this variable to any non-empty value calls `malloc_trim(0)` at that point.
+  On Gemma 4 31B this returns ~24 GiB of anonymous RSS per model worker in
+  ~1.4s. Unset by default, and a no-op on platforms without `malloc_trim`.
 - `--num-speculative-tokens` is now unset by default, and each speculative
   method resolves its own default: `eagle` and `mtp` keep drafting 2 tokens
   per step, while `dflash`-style block drafters (DFlash, DSpark) derive the
