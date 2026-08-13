@@ -273,6 +273,9 @@ class DeepseekV3_2NextN(Module):
             for i in range(n_devs)
         ]
         h = forward_sharded_layers(self.eh_proj_shards, concat_inputs)
+        h_norm = forward_sharded_layers(
+            self.decoder_layer.input_layernorm_shards, h
+        )
 
         # Create MLA prefill metadata if not in decode mode.
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -301,6 +304,7 @@ class DeepseekV3_2NextN(Module):
         layer_outs = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
+            h_norm,
             signal_buffers,
             mla_kv_collections,
             indexer_kv_collections,
