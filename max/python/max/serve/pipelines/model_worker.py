@@ -53,7 +53,11 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
-from max.serve.telemetry.common import configure_logging, configure_metrics
+from max.serve.telemetry.common import (
+    configure_logging,
+    configure_metrics,
+    configure_tracing,
+)
 from max.serve.telemetry.gc_utils import (
     _release_free_host_memory,
     freeze_gc_heap,
@@ -238,6 +242,7 @@ class ModelWorker:
                 can dominate first-run startup on cold filesystem caches.
         """
         configure_logging(settings)
+        configure_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
