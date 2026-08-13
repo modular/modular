@@ -29,7 +29,7 @@ from max.pipelines.context import (
     TextGenerationResponseFormat,
 )
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, VisionPreprocessCache
 from max.pipelines.modeling.types import (
     ImageContentPart,
     ReasoningPipelineTokenizer,
@@ -77,6 +77,7 @@ def mock_pipeline_config() -> MagicMock:
     runtime_config.max_vision_cache_entries = 0
     runtime_config.max_vision_preprocess_cache_bytes = 0
     runtime_config.max_video_preprocess_cache_bytes = 0
+    runtime_config.max_media_preprocess_cache_idle_seconds = 0.0
 
     pipeline_config = MagicMock()
     pipeline_config.model = model_config
@@ -1042,6 +1043,58 @@ def test_eviction_under_budget_forces_reprocessing(
     tokenizer._preprocess_image(_image_key(tokenizer, first_image), first_image)
 
     assert processor.call_count == 3
+
+
+def test_both_caches_take_the_configured_idle_timeout(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """Reclaim-on-idle is configured once and reaches both media kinds."""
+    mock_pipeline_config.runtime.max_vision_preprocess_cache_bytes = 1 << 20
+    mock_pipeline_config.runtime.max_video_preprocess_cache_bytes = 1 << 20
+    mock_pipeline_config.runtime.max_media_preprocess_cache_idle_seconds = 60.0
+    tokenizer = _tokenizer_with_processor(
+        mocker, mock_pipeline_config, _counting_image_processor()
+    )
+
+    assert tokenizer._preprocess_cache.idle_seconds == 60.0
+    assert tokenizer._video_preprocess_cache.idle_seconds == 60.0
+
+
+def test_an_idle_image_is_reclaimed_and_reprocessed(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """A conversation that stops resending an image stops costing host memory.
+
+    The budget is a ceiling on size, not a bound on how long an entry lives, so
+    without this a burst of distinct images holds its whole resident set for
+    the rest of the process's life.
+    """
+    mock_pipeline_config.runtime.max_vision_preprocess_cache_bytes = 1 << 20
+    processor = _counting_image_processor()
+    tokenizer = _tokenizer_with_processor(
+        mocker, mock_pipeline_config, processor
+    )
+    # A hand-advanced clock, so the entry can age a minute without the test
+    # waiting one.
+    now = 1000.0
+    tokenizer._preprocess_cache = VisionPreprocessCache(
+        1 << 20, idle_seconds=60.0, clock=lambda: now
+    )
+    image = _make_image_bytes()
+    key = _image_key(tokenizer, image)
+
+    tokenizer._preprocess_image(key, image)
+    assert tokenizer._preprocess_cache.total_bytes > 0
+
+    now += 61.0
+    assert tokenizer._preprocess_cache.collect() > 0
+    assert tokenizer._preprocess_cache.total_bytes == 0
+
+    tokenizer._preprocess_image(key, image)
+
+    assert processor.call_count == 2
 
 
 # ---------------------------------------------------------------------------

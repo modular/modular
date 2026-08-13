@@ -181,6 +181,21 @@ This version is still a work in progress.
   drafters overrode it at load time with a warning; a bare DFlash run now
   also sizes its KV cache draft headroom at the trained width instead of the
   old default.
+- VLM tokenizers can now cache preprocessed media, so an image or video resent
+  on a later conversation turn skips the resize, rescale and patchify (and for
+  video, the whole decode) instead of redoing it. Keyed on the same
+  raw-encoded-bytes digest the vision encoder cache uses, and bounded by host
+  bytes rather than entry count: `--max-vision-preprocess-cache-bytes` and
+  `--max-video-preprocess-cache-bytes` each default to 10 GiB, their combined
+  size is capped at a quarter of the memory the process may use (a cgroup grant
+  where there is one), and `0` disables either. The budget is a ceiling rather
+  than a reservation -- the cache grows into it and evicts to stay under it --
+  and on a host with less than 80 GiB the cap scales both down proportionally
+  rather than overcommitting. Entries unused for
+  `--max-media-preprocess-cache-idle-seconds` (default 300, `0` disables) are
+  dropped on the next cache lookup or insert, so a burst of distinct media does
+  not hold host memory for the life of the process. Enabled for Gemma 4 images
+  and video.
 - Added `max.driver.begin_launch_trace()` and
   `max.driver.take_launch_trace()`, exposing the launch trace recorded by the
   runtime on CUDA and HIP devices. The trace lists the operations enqueued

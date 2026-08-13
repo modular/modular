@@ -490,7 +490,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     max_vision_preprocess_cache_bytes: int = Field(
-        default=5 * 1024**3,
+        default=10 * 1024**3,
         description=(
             "Host-memory budget, in bytes, for caching preprocessed image "
             "tensors in the tokenizer. A hit skips the resize, rescale and "
@@ -506,7 +506,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     max_video_preprocess_cache_bytes: int = Field(
-        default=5 * 1024**3,
+        default=10 * 1024**3,
         description=(
             "Host-memory budget, in bytes, for caching preprocessed video "
             "tensors in the tokenizer. Unlike images, videos are not decoded "
@@ -516,6 +516,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "video entry is an order of magnitude larger than an image one, "
             "so a shared budget would let a single video evict many images. "
             "Set to ``0`` to disable. Only used by VLMs that accept video."
+        ),
+    )
+
+    max_media_preprocess_cache_idle_seconds: float = Field(
+        default=300.0,
+        description=(
+            "How long a preprocessed image or video may go unused before it "
+            "becomes eligible to be dropped from the tokenizer's cache. This "
+            "is a reclaim policy rather than a lifetime: sweeps are periodic, "
+            "so an entry can outlive its deadline, and a request that arrives "
+            "meanwhile is served from it and resets the clock -- an entry is "
+            "keyed on media content, so it never goes stale. Without this, the "
+            "byte budget is the only bound, so a burst of distinct media holds "
+            "its whole "
+            "resident set for the rest of the process's life -- host memory "
+            "the model worker's own allocations compete for. An entry is only "
+            "worth keeping while the conversation that sent it might send the "
+            "next turn, which is seconds to minutes, and re-preprocessing a "
+            "wrongly dropped image costs a few milliseconds. Set to ``0`` to "
+            "keep entries until the budget evicts them. Only used by VLMs."
         ),
     )
 
