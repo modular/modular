@@ -2246,7 +2246,11 @@ struct TileTensor[
         """
         comptime assert (
             Self.Storage == PointerStorage[element_width=1]
-        ), "TileTensor.vectorize requires PointerStorage"
+            or Self.Storage == DevicePointerStorage[element_width=1]
+        ), (
+            "TileTensor.vectorize requires PointerStorage or"
+            " DevicePointerStorage"
+        )
 
         return _vectorize(self, coord[*vector_shape])
 
@@ -2530,21 +2534,26 @@ struct TileTensor[
 
         This is a utility to help with porting LayoutTensor methods to this type.
 
+        Supports `PointerStorage` and `DevicePointerStorage`-backed tiles. For a
+        `DevicePointerStorage`-backed tile the raw device pointer is recovered
+        from the handle (via `Storage.unsafe_ptr`), so the resulting
+        `LayoutTensor` no longer carries the owning `DevicePointer`. This is a
+        temporary workaround until `LayoutTensor` support is removed as part of
+        GPUA-6.
+
         Returns:
             A LayoutTensor with the same shape, stride, and address space of
             this tensor.
         """
         comptime assert (
             Self.Storage == PointerStorage[element_width=1]
-        ), "TileTensor.to_layout_tensor requires PointerStorage"
+            or Self.Storage == DevicePointerStorage[element_width=1]
+        ), (
+            "TileTensor.to_layout_tensor requires PointerStorage or"
+            " DevicePointerStorage"
+        )
         return {
-            rebind[
-                UnsafePointer[
-                    Scalar[Self.dtype],
-                    Self.origin,
-                    address_space=Self.address_space,
-                ]
-            ](self._storage),
+            self.ptr,
             type_of(result.runtime_layout)(
                 # A `RuntimeTuple` stores one entry per leaf, so a nested mode
                 # has to be flattened to supply them in the order it expects.
@@ -2675,6 +2684,12 @@ struct TileTensor[
     def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         """Convert the tensor to a `DeviceBuffer`.
 
+        Works for tensors backed by either `PointerStorage` or
+        `DevicePointerStorage`. In both cases the base pointer is recovered
+        through the storage policy (`self.ptr`), so the resulting non-owning
+        `DeviceBuffer` covers exactly this tensor's elements, honoring any
+        offset baked into the storage handle.
+
         Args:
             ctx: The device context to use.
 
@@ -2683,19 +2698,17 @@ struct TileTensor[
         """
         comptime assert (
             Self.Storage == PointerStorage[element_width=1]
-        ), "TileTensor.to_device_buffer requires PointerStorage"
+            or Self.Storage == DevicePointerStorage[element_width=1]
+        ), (
+            "TileTensor.to_device_buffer requires PointerStorage or"
+            " DevicePointerStorage"
+        )
         comptime assert (
             Self.address_space == Self.address_space.GENERIC
         ), "DeviceBuffer is only used on GENERIC address space"
         return DeviceBuffer[Self.dtype](
             ctx,
-            rebind[
-                UnsafePointer[
-                    Scalar[Self.dtype],
-                    Self.origin,
-                    address_space=Self.address_space,
-                ]
-            ](self._storage),
+            self.ptr,
             self.num_elements(),
             owning=False,
         )
