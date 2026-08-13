@@ -62,6 +62,9 @@ This version is still a work in progress.
     a small draft transformer drafts a 7-token block per step. Enabled with
     `--draft-model-path deepseek-ai/dspark_gemma4_12b_block7
     --speculative-method dflash --num-speculative-tokens 7`.
+    - Fixed the draft applying full rope instead of the checkpoint's
+      partial rotary factor (0.25), which was costing roughly 10% of the
+      draft acceptance rate.
   - Added DSpark speculative decoding for Gemma 4 31B
     (`UnifiedDSparkGemma4_31BForCausalLM`), serving `google/gemma-4-31B-it`
     with the vLLM speculators-format draft

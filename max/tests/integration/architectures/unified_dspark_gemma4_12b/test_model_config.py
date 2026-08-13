@@ -48,6 +48,96 @@ from max.pipelines.lib.model_manifest import ModelManifest
 
 BLOCK_SIZE = 7
 
+# Verbatim config.json of deepseek-ai/dspark_gemma4_12b_block7 at revision
+# 2fa72e765eec2965fc4d86a8663ce6769eba6218 (the checkpoint of record).
+_DRAFT_CHECKPOINT_CONFIG: dict[str, object] = {
+    "architectures": ["Gemma4DSparkModel"],
+    "attention_bias": False,
+    "attention_dropout": 0.0,
+    "attention_k_eq_v": True,
+    "block_size": 7,
+    "bos_token_id": 2,
+    "confidence_head_with_markov": True,
+    "dtype": "bfloat16",
+    "enable_confidence_head": True,
+    "enable_moe_block": False,
+    "eos_token_id": 1,
+    "final_logit_softcapping": 30.0,
+    "global_head_dim": 512,
+    "head_dim": 256,
+    "hidden_activation": "gelu_pytorch_tanh",
+    "hidden_size": 3840,
+    "hidden_size_per_layer_input": 0,
+    "initializer_range": 0.02,
+    "intermediate_size": 15360,
+    "layer_types": ["full_attention"] * 5,
+    "markov_head_type": "vanilla",
+    "markov_rank": 256,
+    "mask_token_id": 4,
+    "max_position_embeddings": 262144,
+    "model_type": "gemma4_text",
+    "moe_intermediate_size": None,
+    "num_anchors": 512,
+    "num_attention_heads": 16,
+    "num_experts": None,
+    "num_global_key_value_heads": 1,
+    "num_hidden_layers": 5,
+    "num_key_value_heads": 8,
+    "num_kv_shared_layers": 0,
+    "num_target_layers": 48,
+    "pad_token_id": 0,
+    "rms_norm_eps": 1e-06,
+    "rope_parameters": {
+        "full_attention": {
+            "partial_rotary_factor": 0.25,
+            "rope_theta": 1000000.0,
+            "rope_type": "proportional",
+        },
+        "rope_theta": None,
+        "rope_type": "default",
+        "sliding_attention": {"rope_theta": 10000.0, "rope_type": "default"},
+    },
+    "sliding_window": 1024,
+    "target_layer_ids": [5, 17, 29, 41, 46],
+    "target_model_type": "gemma4_unified",
+    "target_text_model_type": "gemma4_unified_text",
+    "tie_word_embeddings": False,
+    "top_k_experts": None,
+    "transformers_version": "5.10.2",
+    "use_bidirectional_attention": "vision",
+    "use_cache": True,
+    "use_double_wide_mlp": False,
+    "vocab_size": 262144,
+    "vocab_size_per_layer_input": 262144,
+}
+
+
+def test_draft_config_partial_rope_from_real_checkpoint_object() -> None:
+    # The production shape: top-level fields are attributes on the HF config
+    # object while rope_parameters stays a plain nested dict. An
+    # attribute-only read of the nested dict silently fell back to the 1.0
+    # default (full rope on all 256 head-dim pairs instead of partial-0.25's
+    # 64), costing ~10% draft acceptance.
+    cfg = SimpleNamespace(**_DRAFT_CHECKPOINT_CONFIG)
+
+    draft = DSparkGemma4DraftConfig.from_huggingface_config(cfg)
+
+    assert draft.partial_rotary_factor == 0.25
+    assert draft.rope_theta == 1000000.0
+    assert draft.block_size == BLOCK_SIZE
+    assert draft.head_dim == 512
+    assert draft.num_key_value_heads == 1
+    assert draft.target_layer_ids == (5, 17, 29, 41, 46)
+
+
+def test_draft_config_parses_plain_dict_config() -> None:
+    draft = DSparkGemma4DraftConfig.from_huggingface_config(
+        _DRAFT_CHECKPOINT_CONFIG
+    )
+
+    assert draft.partial_rotary_factor == 0.25
+    assert draft.rope_theta == 1000000.0
+
 
 def _make_pipeline_config(
     num_speculative_tokens: int | None,
