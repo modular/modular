@@ -234,6 +234,22 @@ cc_library(
 )
 
 cc_library(
+    name = "ucx_plugin_lib_cpu_verbs",
+    srcs = [":ucx_plugin_srcs"],
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":nixl",
+        ":nixl_api_headers",
+        ":nixl_common",
+        ":nixl_serdes",
+        "@abseil-cpp//absl/strings",
+        "@asio",
+        "@ucx_prebuilt//:ucx_cpu_verbs",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "ucx_plugin_lib_cuda",
     srcs = [":ucx_plugin_srcs"],
     target_compatible_with = _LINUX_X86,
@@ -472,9 +488,10 @@ cc_binary(
 # TCP/IPoIB on IB hosts; the CUDA inter-node path historically went through
 # libfabric/EFA on AWS, so verbs was never needed there. On a pure-IB fabric
 # (no EFA) this flavor is what makes NIXL transfer RDMA. Like the rocm-verbs
-# flavor, the verbs libs make libibverbs.so.1 and libmlx5.so.1 hard load-time
-# dependencies, so max._core selects this flavor only when those resolve
-# (rdma-core present) and otherwise falls back to the plain cuda flavor.
+# flavor it links libibverbs.so.1 alone, so its mlx5dv_* symbols rest on the
+# RTLD_GLOBAL preload in _nixl_plugin_deps.py rather than on a DT_NEEDED;
+# max._core selects this flavor only when both libibverbs.so.1 and
+# libmlx5.so.1 resolve, and otherwise falls back to the plain cuda flavor.
 cc_binary(
     name = "cuda-verbs/libplugin_UCX.so",
     linkopts = [
@@ -516,6 +533,40 @@ cc_binary(
     deps = [":ucx_plugin_lib_cpu"],
 )
 
+# CPU + verbs flavor: the cpu flavor plus the uct_ib RDMA transports, for a
+# CPU-only process on an InfiniBand fabric — dKV, which runs on GPU hosts but
+# registers host DRAM only and so must never pull in the CUDA stack. It carries
+# the IB/mlx5 verbs transports only: the prebuilt's libuct_ib_efa.a is imported
+# by no flavor, so this does not stand in for libplugin_LIBFABRIC_cpu.so on an
+# EFA fabric, only on InfiniBand. It is the only UCX flavor the CPU-only
+# nixl_prefix stages, so it needs no flavor subdirectory of its own at install
+# time; the subdir here only keeps its filename distinct from cpu/.
+cc_binary(
+    name = "cpu-verbs/libplugin_UCX.so",
+    linkopts = [
+        "-Wl,-z,undefs",
+        # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib. The two
+        # rdma-core libs below are DT_NEEDED, so without this the prefix is
+        # self-contained only for a consumer that exports LD_LIBRARY_PATH.
+        "-Wl,-rpath,$$ORIGIN/..",
+    ],
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = _LINUX_X86,
+    deps = [
+        ":ucx_plugin_lib_cpu_verbs",
+        # Link a real libibverbs.so.1 so the ibv_* undefined symbols are
+        # recorded with version info; see cuda-verbs above for why leaving them
+        # unversioned makes UCX silently enumerate zero RDMA devices.
+        "@efa_libfabric_prebuilt//:libibverbs_import",
+        # uct_ib_mlx5 calls the mlx5dv API. Linking it records a DT_NEEDED so
+        # the loader resolves those symbols; NIXL dlopens plugins RTLD_NOW and
+        # RTLD_LOCAL, so otherwise they would have to be preloaded RTLD_GLOBAL
+        # by every process that creates an agent.
+        "@efa_libfabric_prebuilt//:libmlx5_import",
+    ],
+)
+
 # ROCm flavor for AMD-GPU hosts: carries the rocm_copy/rocm_ipc transports
 # (libuct_rocm.a resolves against libhsa-runtime64.so.1 at load time). The
 # non-verbs flavor keeps the plugin loadable on hosts without rdma-core
@@ -536,10 +587,11 @@ cc_binary(
 
 # ROCm + verbs flavor: a strict superset of the rocm flavor that adds the
 # uct_ib RDMA transports for internode transfers (UCX picks transports per
-# connection at runtime — same-node peers still use rocm_ipc/shm). The verbs
-# libs make libibverbs.so.1 and libmlx5.so.1 hard load-time dependencies, so
-# max._core selects this flavor only when those resolve (rdma-core present)
-# and otherwise falls back to the plain rocm flavor above.
+# connection at runtime — same-node peers still use rocm_ipc/shm). It links
+# libibverbs.so.1 alone, so its mlx5dv_* symbols rest on the RTLD_GLOBAL
+# preload in _nixl_plugin_deps.py rather than on a DT_NEEDED; max._core
+# selects this flavor only when both libibverbs.so.1 and libmlx5.so.1
+# resolve, and otherwise falls back to the plain rocm flavor above.
 cc_binary(
     name = "rocm-verbs/libplugin_UCX.so",
     linkopts = [
@@ -588,6 +640,9 @@ cc_binary(
     name = "libplugin_LIBFABRIC_cpu.so",
     linkopts = [
         "-Wl,-z,undefs",
+        # Installed layout: <prefix>/lib/plugins/ → <prefix>/lib, where the
+        # libfabric and rdma-core stack it needs is staged flat.
+        "-Wl,-rpath,$$ORIGIN/..",
     ],
     linkshared = True,
     linkstatic = True,
@@ -694,7 +749,8 @@ filegroup(
 # libnixl dynamically (e.g. the nixl-sys Rust crate via NIXL_PREFIX). Layout:
 #   include/                              public headers (api/cpp tree)
 #   lib/libnixl{,_build,_common}.so       the three shared objects nixl-sys links
-#   lib/plugins/libplugin_LIBFABRIC.so    default (CPU) libfabric backend plugin
+#   lib/plugins/libplugin_LIBFABRIC.so    CPU libfabric backend plugin (EFA)
+#   lib/plugins/libplugin_UCX.so          CPU UCX backend plugin, verbs (IB)
 #   lib/<efa runtime>.so                  CPU EFA libfabric stack, flat in lib/
 # The EFA runtime libs are bundled so the prefix is self-contained and Bazel
 # materializes the prebuilt .so files even on a full remote-cache hit.
@@ -716,12 +772,23 @@ pkg_files(
     strip_prefix = strip_prefix.files_only(),
 )
 
-# Always the CPU plugin (see libplugin_LIBFABRIC_cpu.so): the prefix is CPU-only
-# regardless of the build host's GPU config. Renamed to the name NIXL's loader
-# discovers (libplugin_LIBFABRIC.so).
+# Always the CPU flavors (see libplugin_LIBFABRIC_cpu.so): the prefix is
+# CPU-only regardless of the build host's GPU config. Both backends ship
+# because the fabric is a property of the deployment, not of the build: consumers
+# pick libfabric on EFA and UCX on InfiniBand at runtime. Renamed to the names
+# NIXL's loader discovers (libplugin_<NAME>.so in a single flat directory).
+#
+# A second plugin here makes the consumer's choice load-bearing. NIXL returns
+# discovered plugins from a std::set, so a consumer taking the first available
+# one now gets LIBFABRIC by name ordering — right on EFA, and the one backend
+# that cannot reach the fabric on InfiniBand. Deployments there must name the
+# backend rather than rely on that ordering (CLIN-1730).
 pkg_files(
     name = "nixl_prefix_plugin",
-    srcs = [":libplugin_LIBFABRIC_cpu.so"],
+    srcs = [
+        ":cpu-verbs/libplugin_UCX.so",
+        ":libplugin_LIBFABRIC_cpu.so",
+    ],
     prefix = "lib/plugins",
     renames = {":libplugin_LIBFABRIC_cpu.so": "libplugin_LIBFABRIC.so"},
     strip_prefix = strip_prefix.files_only(),
