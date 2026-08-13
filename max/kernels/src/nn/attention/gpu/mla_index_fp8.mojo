@@ -36,7 +36,7 @@ from nn.attention.gpu.sparse_index_fp8_sm100 import (
 )
 from nn.attention.mha_mask import MHAMask, MaskName
 from nn.attention.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
-from nn.attention.mha_utils import dispatch_mask
+from nn.attention.mha_utils import dispatch_mask, indexer_key_bound
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     persistent_topk_block_split,
@@ -199,14 +199,9 @@ def fill_invalid_topk_kernel[
     var cache_len = Int(cache_lengths[batch_idx])
 
     # Compute num_keys based on mask type
-    var num_keys: Int
-
-    comptime if use_causal_mask:
-        # Causal: only keys up to current position are valid
-        num_keys = cache_len + local_seq_idx + 1
-    else:
-        # No causal mask: all keys in the batch are valid
-        num_keys = cache_len + seq_len
+    var num_keys = indexer_key_bound(
+        cache_len + seq_len, seq_len, local_seq_idx, Int(use_causal_mask)
+    )
 
     # Cover ALL _top_k output columns. The launch caps block_dim at 1024, which
     # is smaller than _top_k when _top_k > 1024 (e.g. the indexer's _top_k=2048),
@@ -255,15 +250,15 @@ def topk_row_bounds_kernel[
 ):
     """Compute each token row's live-key count for the bounded top-k.
 
-    Writes `row_bounds[token] = min(num_keys, max_num_keys)` with the same
-    `num_keys` definition as `fill_invalid_topk_kernel`:
-        causal:     num_keys = cache_len + local_seq_idx + 1
-        non-causal: num_keys = cache_len + seq_len
+    Writes `row_bounds[token] = min(num_keys, max_num_keys)` with `num_keys`
+    from the shared `indexer_key_bound` helper (causal:
+    `cache_len + local_seq_idx + 1`; non-causal: `cache_len + seq_len`).
 
-    This is exactly the range the scorers write for that row, so a top-k
-    clamped to it reads only written score slots. `max_num_keys` may be a
-    capture-time upper bound far above the batch's real lengths; the clamp
-    keeps every bound within the row stride.
+    This is exactly the range the scorers write for that row (they compute
+    the same helper's bound), so a top-k clamped to it reads only written
+    score slots. `max_num_keys` may be a capture-time upper bound far above
+    the batch's real lengths; the clamp keeps every bound within the row
+    stride.
 
     Parameters:
         IROLayoutType: Layout of the `input_row_offsets` tensor.
@@ -301,12 +296,9 @@ def topk_row_bounds_kernel[
     var local_seq_idx = token_idx - q_start
 
     var cache_len = Int(cache_lengths[batch_idx])
-    var num_keys: Int
-    comptime if use_causal_mask:
-        num_keys = cache_len + local_seq_idx + 1
-    else:
-        num_keys = cache_len + seq_len
-
+    var num_keys = indexer_key_bound(
+        cache_len + seq_len, seq_len, local_seq_idx, Int(use_causal_mask)
+    )
     row_bounds[token_idx] = Int32(min(num_keys, Int(max_num_keys)))
 
 

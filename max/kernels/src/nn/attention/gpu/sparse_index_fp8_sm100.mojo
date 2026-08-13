@@ -532,8 +532,9 @@ def _fp8_index_body[
                         var tok_local = tok0 + t
                         # Fused causal mask: token tok_local sees keys up to
                         # cache_len + tok_local (cache_len = num_keys -
-                        # seq_len), so forbidden slots keep the caller's -inf
-                        # fill and the separate mask pass over the whole score
+                        # seq_len), so forbidden slots are never written --
+                        # the bounded top-k reads only `[0, key_bound)` --
+                        # and the separate mask pass over the whole score
                         # buffer is skipped. Branchless (causal is 0 or 1): a
                         # branch here in the unrolled token loop measured +4-9%
                         # on the non-causal path from codegen alone.
@@ -772,8 +773,8 @@ def fp8_index_score_sm100[
             prefix (Q buffer 1 is unreachable).
         max_num_keys: Row stride of `output` (>= every per-batch key count).
         causal: Apply the causal mask in the epilogue store guard (token t
-            sees keys up to cache_len + t); forbidden slots keep the caller's
-            `-inf` fill, replacing a separate mask pass over the buffer.
+            sees keys up to cache_len + t); forbidden slots are never
+            written, and the bounded top-k never reads them.
         ctx: Device context.
     """
     # The N-tile packs N_TOKENS = 128 // num_heads whole query tokens, so any
@@ -835,17 +836,23 @@ def fp8_index_score_sm100[
     #
     # TODO(cme): the kernel now targets 2 CTAs/SM, halving that deficit, so BOTH
     # thresholds are stale in the conservative direction -- re-measure them. Left as-is
-    # so a routing change cannot be confused with the kernel change. nh in {4, 8} never
-    # route.
-    comptime if num_heads == 64 or num_heads == 32:
-        comptime min_tiles = (
-            _PREFILL_MIN_TOKEN_TILES if num_heads
-            == 64 else _PREFILL_MIN_TOKEN_TILES_NH32
-        )
+    # so a routing change cannot be confused with the kernel change. nh in {4, 8}
+    # reach only the key-split arm below.
+    comptime if (
+        num_heads == 64 or num_heads == 32 or num_heads == 8 or num_heads == 4
+    ):
         var token_tiles = ceildiv(max_seq_len, N_TOKENS)
-        var to_prefill = token_tiles >= min_tiles
-        comptime if num_heads == 32:
-            to_prefill = to_prefill and causal and max_num_keys <= max_seq_len
+        var to_prefill = False
+        comptime if num_heads == 64 or num_heads == 32:
+            comptime min_tiles = (
+                _PREFILL_MIN_TOKEN_TILES if num_heads
+                == 64 else _PREFILL_MIN_TOKEN_TILES_NH32
+            )
+            to_prefill = token_tiles >= min_tiles
+            comptime if num_heads == 32:
+                to_prefill = (
+                    to_prefill and causal and max_num_keys <= max_seq_len
+                )
         # ... and the opposite corner, which the thresholds above exclude but
         # the key split reopens: too few token blocks to fill the grid, with a
         # cache deep enough that splitting the key range fills it instead

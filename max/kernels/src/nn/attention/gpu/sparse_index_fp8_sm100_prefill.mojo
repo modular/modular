@@ -350,6 +350,10 @@ def _hoist_q_scales[MMA_N: Int]() -> Bool:
 # many tiles per CTA would not fill a wave.
 comptime _KEY_TILES_PER_CTA = 16
 
+# Ceiling, in waves at `_ctas_per_sm`, on the part count the amortized arm of
+# the `num_key_parts` derivation may request -- see the launcher for why.
+comptime _MAX_KEY_PART_WAVES = 4
+
 # Floor on the key tiles a single grid.z part may own, applied INSIDE the kernel
 # against the CTA's own per-entry tile count. The launcher can only size the part
 # count from `max_num_keys` (the batch maximum), so on a ragged batch every entry
@@ -1150,6 +1154,14 @@ def fp8_index_score_sm100_prefill[
     # The wave-fill arm FLOORS: it wants the largest part count whose grid still fits
     # one wave, and `ceildiv` overshoots by construction (at base_ctas=64 it gave
     # 5 -> 320 CTAs = 2 waves where 4 -> 256 = 1 wave delivers the same tiles per CTA).
+    #
+    # The amortized arm is CAPPED at `_MAX_KEY_PART_WAVES` waves: `max_num_keys` is
+    # METADATA, and a captured decode graph freezes it at its capture-time bound (1M
+    # for a full-context GLM graph) while the live keys stay orders of magnitude
+    # smaller, so a part count proportional to `key_tiles` turns that gap into empty
+    # CTAs. Past a few waves the extra parts buy no parallelism even when the
+    # bound matches the runtime key range -- capped parts just stream more tiles each, which the
+    # K-ring amortizes better than more prologues would.
     comptime sm_count = ctx.default_device_info.sm_count
     comptime MMA_N = N_TOKENS * num_heads
     comptime CTAS_PER_SM = _ctas_per_sm[MMA_N]()
@@ -1157,12 +1169,16 @@ def fp8_index_score_sm100_prefill[
     var key_tiles = ceildiv(max_num_keys, BM_key)
     var num_key_parts = 1
     if base_ctas < sm_count:
+        var wave_parts = (CTAS_PER_SM * sm_count) // base_ctas
         num_key_parts = max(
             1,
             min(
                 max(
-                    ceildiv(key_tiles, _KEY_TILES_PER_CTA),
-                    (CTAS_PER_SM * sm_count) // base_ctas,
+                    min(
+                        ceildiv(key_tiles, _KEY_TILES_PER_CTA),
+                        _MAX_KEY_PART_WAVES * max(wave_parts, 1),
+                    ),
+                    wave_parts,
                 ),
                 key_tiles,
             ),

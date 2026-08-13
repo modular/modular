@@ -433,6 +433,30 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
 
 
 @always_inline
+def indexer_key_bound(
+    num_keys: Int, seq_len: Int, tok_local: Int, causal: Int
+) -> Int:
+    """Keys the sparse indexer defines for token `tok_local` of a row.
+
+    `num_keys` is the row's total key count (`cache_len + seq_len`); the
+    result is all of them without a causal mask, `cache_len + tok_local + 1`
+    with one. Branchless multiply form: a branch in the scorer
+    epilogues' unrolled token loop measured +4-9% on the non-causal path from
+    codegen alone.
+
+    Read side of the indexer's write/read contract: the SM100 scorers
+    (`sparse_index_fp8_sm100[_prefill].mojo`) write score slots `[0, bound)`
+    for each token and nothing else, computing this same bound inline in
+    their store guards (their operands are `Int32`), and the bounded top-k
+    (`topk_row_bounds_kernel` in `mla_index_fp8.mojo` feeding
+    `persistent_topk_block_split`) reads exactly that range with no `-inf`
+    prefill between them. If either side drifts, the top-k reads score slots
+    the scorer never wrote.
+    """
+    return num_keys - (seq_len - 1 - tok_local) * causal
+
+
+@always_inline
 def _kernel_mask[
     dtype: DType, width: SIMDLength
 ](

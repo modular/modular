@@ -287,18 +287,25 @@ This version is still a work in progress.
 
 ## MAX kernels
 
-- The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does top-k
-  work proportional to each row's actual key count instead of the batch's
+- The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does work
+  proportional to each row's actual key count instead of the batch's
   `max_cache_length` metadata. Inside captured decode device graphs that
   metadata is baked at capture time — with a 1M-token maximum sequence length
   it sits orders of magnitude above the tokens a batch actually holds — and
-  the indexer paid a full-width `-inf` score fill plus a full-width top-k
-  scan per layer per step at that frozen bound. The bitonic top-k kernels
-  now clamp each row's scan to its live causal range and the score buffer
-  fill is skipped on the SM100 scorer path, which writes every live slot
-  itself. At the GLM 5.2 MTP decode shape (batch 8, width 6, 76k-token
-  context) with metadata frozen at 1M, one indexer layer drops from 0.89 ms
-  to 0.39 ms on B200; shapes without a metadata gap are unchanged.
+  the indexer paid a full-width `-inf` score fill, a full-width top-k scan,
+  and a key-tile-per-CTA scorer grid per layer per step at that frozen
+  bound. The bitonic top-k kernels now clamp each row's scan to its live
+  causal range, the score-buffer fill is skipped on the SM100 scorer path
+  (which writes every live slot itself), and the SM100 scorer's key-split
+  route now covers the tensor-parallel head counts (4 and 8) with its part
+  count capped at a fixed number of waves, so the grid is sized to the
+  hardware rather than to the metadata bound while per-CTA loop bounds come
+  from the runtime cache lengths. At the GLM 5.2 MTP decode shape (batch 8,
+  width 6, 76k-token context, 4 heads per rank) with metadata frozen at 1M,
+  one indexer layer drops from 0.89 ms to 0.10 ms on B200, matching its
+  cost at a bound sized to the runtime lengths; shapes without a metadata
+  gap are unchanged except a small fixed per-call cost for the row-bounds
+  clamp (~4% on a batch-256, 4k-context decode).
 
 - Fixed expert-parallel dispatch dropping half of every token belonging to an
   expert that only one communication SM serves, which surfaced as NaN logits.
