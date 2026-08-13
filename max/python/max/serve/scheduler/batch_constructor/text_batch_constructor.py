@@ -959,11 +959,23 @@ class TextBatchConstructor:
                 + f" Total Preemption Count: {self.total_preemption_count}"
             )
 
-    def _identify_priority(self, replica_idx: int) -> RequestType:
+    def _identify_priority(self, replica_idx: int) -> RequestType | None:
         # DP CE balancing deferred this replica's CE work for this iteration;
         # run TG instead (the planner only defers replicas that have TG work).
         if replica_idx in self._ce_deferred_replicas:
             return RequestType.TG
+
+        # A replica with no CE and no TG requests has no preference at all --
+        # returning TG here (as the fallback below would) is indistinguishable
+        # from a genuine TG preference to any caller that aggregates priority
+        # across replicas (SERVOPT-1560: a spurious TG "vote" from an idle
+        # replica broadcast as a batch-wide override, starving a sibling
+        # replica's real, ready CE request forever).
+        if (
+            not self.replicas[replica_idx].ce_reqs
+            and not self.replicas[replica_idx].tg_reqs
+        ):
+            return None
 
         # If there are no CE requests, prioritize TG
         if len(self.replicas[replica_idx].ce_reqs) == 0:
@@ -1260,6 +1272,11 @@ class TextBatchConstructor:
                 ):
                     self._add_ce_requests(batch, replica_idx)
 
+            case None:
+                # Genuinely idle replica (no CE, no TG requests): nothing to
+                # add either way.
+                pass
+
         return batch
 
     def _plan_ce_step(self) -> None:
@@ -1490,7 +1507,12 @@ class TextBatchConstructor:
         self._plan_ce_step()
 
         priority_override = None
-        replica_priorities: set[RequestType] | list[RequestType]
+        # None entries (replicas with no CE and no TG requests -- see
+        # _identify_priority) fail every membership/count check below on
+        # their own, so an idle replica never casts a vote: SERVOPT-1560 was
+        # exactly this default being indistinguishable from a genuine TG
+        # preference once aggregated across replicas.
+        replica_priorities: set[RequestType | None] | list[RequestType | None]
         match self.batch_scheduling_strategy:
             case BatchSchedulingStrategy.DECODE_FIRST:
                 replica_priorities = set(
