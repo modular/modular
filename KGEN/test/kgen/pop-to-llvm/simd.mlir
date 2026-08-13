@@ -148,9 +148,25 @@ kgen.func @fmul_simd_with_reassoc(%a: !kgen.simd<4, f32>, %b: !kgen.simd<4, f32>
 
 // CHECK-LABEL: @div_simd
 kgen.func @div_simd(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
-  // CHECK: llvm.sdiv
+  // The operand match keeps this from also accepting `llvm.sdiv exact`, so an
+  // unconditionally-forwarded flag would fail here.
+  // CHECK: llvm.sdiv {{%.*}}
   %0 = pop.div %arg0, %arg1: !kgen.simd<4, si32>
   kgen.return %0 : !kgen.simd<4, si32>
+}
+
+// CHECK-LABEL: @div_simd_exact
+kgen.func @div_simd_exact(%arg0: !kgen.simd<4, si32>, %arg1: !kgen.simd<4, si32>) -> !kgen.simd<4, si32> {
+  // CHECK: llvm.sdiv exact
+  %0 = pop.div %arg0, %arg1 {isExact} : !kgen.simd<4, si32>
+  kgen.return %0 : !kgen.simd<4, si32>
+}
+
+// CHECK-LABEL: @udiv_exact
+kgen.func @udiv_exact(%arg0: !kgen.scalar<uindex>, %arg1: !kgen.scalar<uindex>) -> !kgen.scalar<uindex> {
+  // CHECK: llvm.udiv exact
+  %0 = pop.div %arg0, %arg1 {isExact} : !kgen.scalar<uindex>
+  kgen.return %0 : !kgen.scalar<uindex>
 }
 
 // CHECK-LABEL: @fdiv_simd

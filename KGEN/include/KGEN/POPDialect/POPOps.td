@@ -315,6 +315,9 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
     %c = pop.div %a, %b : !kgen.simd<size, type>
     ```
   }];
+  let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
+                       UnboundOrIndexOrArithmeticSIMD:$rhs,
+                       UnitAttr:$isExact);
   let hasCanonicalizeMethod = 1;
 }
 
