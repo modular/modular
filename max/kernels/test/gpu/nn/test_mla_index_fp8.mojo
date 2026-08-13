@@ -100,7 +100,12 @@ def test_mla_index_fp8_paged_variable_lengths[
     mask_name: StaticString = MaskName.NULL.name,
     strict_complete: Bool = False,
     check_scores: Bool = False,
-](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext,) raises:
+](
+    seq_lens: List[Int],
+    cache_lens: List[Int],
+    ctx: DeviceContext,
+    metadata_cache_len: Int = 0,
+) raises:
     """Test mla_indexer_ragged_float8_paged with variable-length sequences.
 
     Parameters:
@@ -130,6 +135,12 @@ def test_mla_index_fp8_paged_variable_lengths[
         seq_lens: Length of each sequence (new tokens) per batch item.
         cache_lens: Length of cached tokens per batch item.
         ctx: Device context.
+        metadata_cache_len: When nonzero, the `max_cache_length` metadata the
+            collection reports, in place of the batch's real maximum. Captured
+            decode device graphs bake this at capture time, where it can sit
+            far above every row's real length; the op must produce identical
+            indices while touching only live score slots. Must be at least
+            the real maximum. Incompatible with `check_scores`.
     """
     comptime use_causal_mask = mask_name != MaskName.NULL.name
     var batch_size = len(seq_lens)
@@ -167,6 +178,14 @@ def test_mla_index_fp8_paged_variable_lengths[
         "top_k:",
         top_k,
     )
+
+    assert (
+        metadata_cache_len == 0 or metadata_cache_len >= max_cache_len
+    ), "metadata_cache_len must be 0 or >= the batch's real maximum"
+    comptime if check_scores:
+        assert (
+            metadata_cache_len == 0
+        ), "check_scores assumes the metadata equals the real maximum"
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1,  # MLA uses single head for K
@@ -305,7 +324,9 @@ def test_mla_index_fp8_paged_variable_lengths[
             paged_lut_runtime_layout,
         ),
         UInt32(max_seq_len),  # max_seq_length (new tokens)
-        UInt32(max_cache_len),  # max_cache_length (cached tokens)
+        # max_cache_length (cached tokens), optionally frozen far above the
+        # real maximum as a captured decode graph would bake it.
+        UInt32(metadata_cache_len if metadata_cache_len > 0 else max_cache_len),
         LayoutTensor[DType.float32, ks_block_layout](
             ks_block_device,
             ks_block_runtime_layout,
@@ -1068,5 +1089,92 @@ def main() raises:
             cache_lens=[300, 500, 100],
             ctx=ctx,
         )
+
+        # ===== Capture-frozen metadata (max_cache_length >> real lengths) ====
+        # Captured decode graphs bake `max_cache_length` at capture time, far
+        # above every row's real length at replay; the op must produce the
+        # same indices while touching only live score slots.
+        print("\n--- capture-frozen metadata tests ---")
+
+        # Decode/MTP shape, causal, strict: every token must still select its
+        # complete causal key set with the stride frozen at 65536. Covers both
+        # bounded-histsel select rows (num_keys > 2048 impossible here — all
+        # <= 2048, so every row takes the select-all path) and the -1 tails.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[500, 2000, 128, 64],
+            ctx=ctx,
+            metadata_cache_len=65536,
+        )
+
+        # Same shape under NULL mask (bounds = cache + seq for every row).
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.NULL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 1, 4, 1],
+            cache_lens=[500, 2000, 128, 64],
+            ctx=ctx,
+            metadata_cache_len=65536,
+        )
+
+        # Rows above and below K with a frozen stride: long rows exercise the
+        # bounded threshold rounds, the 50-token row the select-all + -1 tail.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=2048,
+            mask_name=MaskName.CAUSAL.name,
+        ](
+            seq_lens=[1, 1, 1, 1],
+            cache_lens=[4000, 2500, 1500, 50],
+            ctx=ctx,
+            metadata_cache_len=65536,
+        )
+
+        # Small frozen stride (4102) lands in the register-resident histsel;
+        # top_k=256 keeps strict_complete applicable.
+        test_mla_index_fp8_paged_variable_lengths[
+            num_heads=64,
+            depth=128,
+            page_size=64,
+            top_k=256,
+            mask_name=MaskName.CAUSAL.name,
+            strict_complete=True,
+        ](
+            seq_lens=[6, 4, 2, 1],
+            cache_lens=[64, 128, 32, 96],
+            ctx=ctx,
+            metadata_cache_len=4096,
+        )
+
+        # GLM 5.2 TP8 decode geometry (4 local heads) with the frozen stride;
+        # Blackwell-only, as the scalar fallback does not compile at 4 heads.
+        comptime if _has_blackwell_tcgen05():
+            test_mla_index_fp8_paged_variable_lengths[
+                num_heads=4,
+                depth=128,
+                page_size=128,
+                top_k=2048,
+                mask_name=MaskName.CAUSAL.name,
+                strict_complete=True,
+            ](
+                seq_lens=[6, 6, 6, 1],
+                cache_lens=[500, 2000, 128, 64],
+                ctx=ctx,
+                metadata_cache_len=65536,
+            )
 
         print("\nAll tests passed!")

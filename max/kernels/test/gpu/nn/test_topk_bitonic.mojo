@@ -1530,6 +1530,192 @@ def test_unordered_small_n(ctx: DeviceContext) raises:
 # ===----------------------------------------------------------------------=== #
 
 
+# ===----------------------------------------------------------------------=== #
+# Bounded rows (`row_bounds`) — per-row live-column clamps, as driven by the
+# MLA indexer under capture-frozen metadata where the row stride `N` is a
+# worst-case bound far above any row's real length.
+# ===----------------------------------------------------------------------=== #
+
+
+def _run_and_check_bounded(
+    ctx: DeviceContext,
+    scores_host: List[Float32],  # B * N flat, poisoned at/past each bound
+    N: Int,
+    K: Int,
+    B: Int,
+    bounds: List[Int],
+    label: String,
+) raises:
+    """Run the bounded split launcher and validate each row against its bound.
+
+    The caller poisons columns at or past each row's bound with values larger
+    than any live score, so a kernel that reads past a bound cannot pass: a
+    poisoned column would displace a live selection and surface as an
+    out-of-bound index.
+
+    Verifies per row, with `E = min(K, bound)` expected live selections:
+    1. Slots `[0, E)` hold the exact top-`E` of the row's first `bound`
+       columns (distinct, in-bounds, non-increasing score order, tie-robust).
+    2. Slots `[E, K)` are `-1`.
+    """
+    assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
+    assert len(scores_host) == B * N, "scores_host length mismatch"
+    assert len(bounds) == B, "bounds length mismatch"
+
+    var scores_dev = ctx.enqueue_create_buffer[DType.float32](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[DType.int32](B * K)
+    idxs_dev.enqueue_fill(Int32(-2))  # sentinel to catch unwritten slots
+    var bounds_dev = ctx.enqueue_create_buffer[DType.int32](B)
+
+    with scores_dev.map_to_host() as buf:
+        for i in range(B * N):
+            buf[i] = Scalar[DType.float32](scores_host[i])
+    with bounds_dev.map_to_host() as buf:
+        for b in range(B):
+            buf[b] = Int32(bounds[b])
+
+    persistent_topk_block_split(
+        ctx,
+        rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
+        rebind[UnsafePointer[Scalar[DType.int32], MutAnyOrigin]](
+            idxs_dev.unsafe_ptr()
+        ),
+        N,
+        K,
+        total_seq_len=B,
+        row_bounds=Optional(
+            rebind[UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin]](
+                bounds_dev.unsafe_ptr()
+            )
+        ),
+    )
+    ctx.synchronize()
+
+    var idxs_host = ctx.enqueue_create_host_buffer[DType.int32](B * K)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.synchronize()
+
+    for b in range(B):
+        var bound = bounds[b]
+        var live = min(K, bound)
+
+        for k in range(live, K):
+            var idx = Int(idxs_host[b * K + k])
+            assert_true(
+                idx == -1,
+                String(
+                    "[",
+                    label,
+                    "] row ",
+                    b,
+                    " tail slot ",
+                    k,
+                    " = ",
+                    idx,
+                    " (expected -1 past bound ",
+                    bound,
+                    ")",
+                ),
+            )
+
+        if live == 0:
+            continue
+        var row_scores = List[Float32](capacity=bound)
+        for i in range(bound):
+            row_scores.append(scores_host[b * N + i])
+        var row_idxs = List[Int](capacity=live)
+        for k in range(live):
+            row_idxs.append(Int(idxs_host[b * K + k]))
+        _check_topk_row(row_scores, row_idxs, bound, live, label, b)
+
+    _ = scores_dev
+    _ = idxs_dev
+    _ = bounds_dev
+    _ = idxs_host
+
+
+def _poisoned_bounded_scores(
+    B: Int, N: Int, bounds: List[Int], sd: UInt32
+) -> List[Float32]:
+    """LCG scores with columns at/past each row's bound poisoned to +1e30."""
+    var scores = _lcg_scores(B, N, sd, 100.0)
+    for b in range(B):
+        for i in range(bounds[b], N):
+            scores[b * N + i] = Float32(1.0e30)
+    return scores^
+
+
+def test_bounded_2048_kernel(ctx: DeviceContext) raises:
+    """N=K=2048 — the single-block bitonic kernel with per-row bounds."""
+    comptime N = 2048
+    comptime K = 2048
+    var bounds: List[Int] = [2048, 1024, 100, 1, 0]
+    var B = len(bounds)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DE2048)
+    _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_2048")
+    print("PASS test_bounded_2048_kernel")
+
+
+def test_bounded_resident(ctx: DeviceContext) raises:
+    """N=4096 (register-resident histsel, plain digit) with per-row bounds."""
+    comptime N = 4096
+    comptime K = 2048
+    var bounds: List[Int] = [4096, 3000, 2048, 500, 1, 0]
+    var B = len(bounds)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DE4096)
+    _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_resident")
+    print("PASS test_bounded_resident")
+
+
+def test_bounded_resident_bin_digit(ctx: DeviceContext) raises:
+    """N=2560 < K + K//2 — the bin-digit resident instantiation, bounded."""
+    comptime N = 2560
+    comptime K = 2048
+    var bounds: List[Int] = [2560, 2100, 800, 1, 0]
+    var B = len(bounds)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DE2560)
+    _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_bin_digit")
+    print("PASS test_bounded_resident_bin_digit")
+
+
+def test_bounded_histsel_prefetch(ctx: DeviceContext) raises:
+    """N=32769, few rows — the prefetching streaming histsel, bounded.
+
+    This is the capture-frozen decode shape: the stride is far above every
+    bound, including bounds below K (select-all rows) and at exactly K.
+    """
+    comptime N = 32769
+    comptime K = 2048
+    var bounds: List[Int] = [32769, 20000, 8192, 2048, 2047, 1000, 1, 0]
+    var B = len(bounds)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DE7E7C)
+    _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_prefetch")
+    print("PASS test_bounded_histsel_prefetch")
+
+
+def test_bounded_histsel_fills_gpu(ctx: DeviceContext) raises:
+    """Rows above the SM count — the non-prefetch histsel, bounded."""
+    comptime N = 8193
+    comptime K = 2048
+    comptime B = 192
+    var bounds = List[Int](capacity=B)
+    for b in range(B):
+        var m = b % 4
+        if m == 0:
+            bounds.append(N)
+        elif m == 1:
+            bounds.append(4096)
+        elif m == 2:
+            bounds.append(1500)
+        else:
+            bounds.append(0)
+    var scores = _poisoned_bounded_scores(B, N, bounds, 0xB0DEF111)
+    _run_and_check_bounded(ctx, scores, N, K, B, bounds, "bounded_fills_gpu")
+    print("PASS test_bounded_histsel_fills_gpu")
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_full_sort_n2048(ctx)
@@ -1576,4 +1762,9 @@ def main() raises:
         test_unordered_sorted_inputs(ctx)
         test_unordered_beyond_resident(ctx)
         test_unordered_small_n(ctx)
+        test_bounded_2048_kernel(ctx)
+        test_bounded_resident(ctx)
+        test_bounded_resident_bin_digit(ctx)
+        test_bounded_histsel_prefetch(ctx)
+        test_bounded_histsel_fills_gpu(ctx)
     print("ALL TESTS PASSED")

@@ -287,6 +287,19 @@ This version is still a work in progress.
 
 ## MAX kernels
 
+- The MLA sparse-attention indexer (DeepSeek V3.2, GLM 5.x) now does top-k
+  work proportional to each row's actual key count instead of the batch's
+  `max_cache_length` metadata. Inside captured decode device graphs that
+  metadata is baked at capture time — with a 1M-token maximum sequence length
+  it sits orders of magnitude above the tokens a batch actually holds — and
+  the indexer paid a full-width `-inf` score fill plus a full-width top-k
+  scan per layer per step at that frozen bound. The bitonic top-k kernels
+  now clamp each row's scan to its live causal range and the score buffer
+  fill is skipped on the SM100 scorer path, which writes every live slot
+  itself. At the GLM 5.2 MTP decode shape (batch 8, width 6, 76k-token
+  context) with metadata frozen at 1M, one indexer layer drops from 0.89 ms
+  to 0.39 ms on B200; shapes without a metadata gap are unchanged.
+
 - Fixed expert-parallel dispatch dropping half of every token belonging to an
   expert that only one communication SM serves, which surfaced as NaN logits.
   The block-scaled wire formats (NVFP4 and MXFP8) copy a token tile as two
