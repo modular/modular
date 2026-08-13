@@ -25,10 +25,12 @@ from ..kernels import (
     block_scales_interleave,
     grouped_dynamic_block_scaled_matmul_amd,
     grouped_dynamic_scaled_fp8_matmul,
+    grouped_dynamic_scaled_mxfp6_matmul,
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
+    quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
 )
 from ..quant_config import QuantConfig
@@ -574,6 +576,146 @@ class BlockScaledStrategy:
         swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
         """Applies SiLU (or clamped SwiGLU-OAI) gate then MXFP4 quantizes."""
+        _, _, expert_start_indices, _, _ = expert_inputs
+        return fused_silu_quantized(
+            gate_up_projs,
+            expert_start_indices,
+            self.config,
+            self.dtype,
+            input_scales,
+            max_padded_M=max_padded_M,
+            clamp_activation=clamp_activation,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
+        )
+
+
+class Mxfp6Strategy:
+    """MXFP6 quantization for MoE (A6W6).
+
+    Preshuffled-B only: an FP6 lane fragment is 24 bytes, which the kernel
+    reads plane-split, and the dense row-major grouped kernel has no path for
+    that layout. The weight loader must apply
+    ``preshuffle_mxfp4_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+
+    Unlike :class:`Mxfp4Strategy` there is no fused activation kernel, so the
+    down-projection input is produced as bf16 SwiGLU followed by a standalone
+    MXFP6 quantize. That is a real extra pass over the activations; it is
+    correct, and the fusion is a performance item, not a correctness one.
+    """
+
+    def __init__(self, config: QuantConfig, dtype: DType) -> None:
+        self.config = config
+        self.dtype = dtype
+        self.fp6_format = config.mxfp6_format
+
+    def quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Quantizes activations to MXFP6 and returns (quantized, scales)."""
+        return quantize_dynamic_block_scaled_mxfp6(
+            tensor,
+            fp6_format=self.fp6_format,
+            scales_type=self.config.weight_scale.dtype,
+            out_type=DType.uint8,
+        )
+
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Falls back to ungrouped MXFP6 quantization."""
+        return self.quantize(tensor, group_size)
+
+    def grouped_matmul(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        expert_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
+        decode_grid_m_cap: int = 0,
+        decode_grid_m_rows: int = 0,
+    ) -> TensorValue:
+        """Runs the grouped MXFP6 matmul with per-expert scales."""
+        if a_scales_preshuffled:
+            # No FP6 producer writes A-scales in slot layout, so honouring the
+            # flag would mean skipping the only preshuffle there is.
+            raise ValueError(
+                "MXFP6 has no fused A-scale slot producer; "
+                "a_scales_preshuffled must be False"
+            )
+
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        return grouped_dynamic_scaled_mxfp6_matmul(
+            hidden,
+            weight,
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            expert_ids,
+            usage_stats.to(DeviceRef.CPU()),
+            fp6_format=self.fp6_format,
+            estimated_total_m=estimated_total_m,
+            decode_grid_m_cap=decode_grid_m_cap,
+            decode_grid_m_rows=decode_grid_m_rows,
+        )
+
+    def prepare_weight_scales(
+        self,
+        gate_up: TensorValue,
+        down: TensorValue,
+        device: DeviceRef,
+    ) -> tuple[TensorValue, TensorValue]:
+        return gate_up, down
+
+    def fused_silu_quantize(
+        self,
+        gate_up_projs: TensorValue,
+        input_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        max_padded_M: int = 0,
+        clamp_activation: bool = False,
+        swiglu_alpha: float = 0.0,
+        swiglu_limit: float = 0.0,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Applies SiLU gating and MXFP6-quantizes, in one fused kernel.
+
+        Emits ``ep.fused_silu.mxfp6`` (``fused_silu_mxfp6_kernel``), matching
+        how MXFP4 and MXFP8 drive this step. It replaces a bf16 SwiGLU built
+        from graph primitives plus a standalone quantize -- an IR diff against
+        MXFP8 showed that costing an extra ``split``/``sigmoid``/``mul``/``max``
+        per MoE layer per device (456 of each at dp=2/ep=8) and an extra
+        ``mo.quantize.dynamic.block.scaled.mxfp6``.
+
+        ``max_padded_M`` is still refused: writing the A-scale in the grouped
+        matmul's slot layout is unimplemented in the FP6 kernel (both the kernel
+        body and its registration assert on ``fuse_a_scale_preshuffle``), so the
+        standalone preshuffle still runs for both projections.
+        """
+        if max_padded_M:
+            raise ValueError(
+                "MXFP6 cannot write slot-layout A-scales yet: "
+                "fused_silu_mxfp6_kernel asserts on fuse_a_scale_preshuffle. "
+                "max_padded_M must be 0"
+            )
+
         _, _, expert_start_indices, _, _ = expert_inputs
         return fused_silu_quantized(
             gate_up_projs,

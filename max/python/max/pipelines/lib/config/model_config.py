@@ -221,6 +221,8 @@ def _infer_quantization_encoding(
             # GPU preference: most-specific quantized format first.
             if "float4_e2m1fnx2" in supported:
                 encoding = "float4_e2m1fnx2"
+            elif "float6_e2m3fn" in supported:
+                encoding = "float6_e2m3fn"
             elif "float8_e4m3fn" in supported:
                 encoding = "float8_e4m3fn"
             elif "bfloat16" in supported:

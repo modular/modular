@@ -23,6 +23,7 @@ from .moe_fp8 import MoEQuantized
 from .quant_strategy import (
     BlockScaledStrategy,
     Fp8Strategy,
+    Mxfp6Strategy,
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
