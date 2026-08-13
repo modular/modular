@@ -43,12 +43,15 @@ Layout reference (canonical):
 
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
+    block_dim,
     block_idx,
+    global_idx,
+    grid_dim,
     thread_idx,
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, HostBuffer
-from std.math import align_up
+from std.math import align_up, ceildiv
 from std.math.uutils import udivmod, uceildiv
 from std.memory import bitcast
 
@@ -89,6 +92,62 @@ struct Shuffler[E: Int]:
         Self.MFMA_MN_LANES * Self.MFMA_LANE_BYTES
     )  # 256
     comptime B_STRIDE_K0: Int = Self.MFMA_K_LANES * Self.B_STRIDE_K_LANE  # 1024
+
+    @staticmethod
+    @always_inline
+    def num_planes[lane_bytes: Int]() -> Int:
+        """Number of power-of-two planes a lane fragment splits into."""
+        return ceildiv(lane_bytes, Self.MFMA_LANE_BYTES)
+
+    @staticmethod
+    @always_inline
+    def plane_bytes[lane_bytes: Int, plane: Int]() -> Int:
+        """Width in bytes of `plane`, at most `MFMA_LANE_BYTES`."""
+        return min(
+            Self.MFMA_LANE_BYTES, lane_bytes - plane * Self.MFMA_LANE_BYTES
+        )
+
+    @staticmethod
+    @always_inline
+    def b_plane_byte_off[
+        N: Int, K_BYTES: Int, lane_bytes: Int, plane: Int
+    ](e: Int, n: Int, k_byte: Int) -> Int:
+        """Byte offset of one lane's `plane` slice in the preshuffled B buffer.
+
+        Parameters:
+            N: Per-expert N dimension.
+            K_BYTES: Per-expert packed K dimension in bytes.
+            lane_bytes: Bytes one lane feeds the MFMA (16 / 24 / 32).
+            plane: Which plane of the lane fragment to address.
+
+        Args:
+            e: Group (expert) index.
+            n: Logical N row.
+            k_byte: Logical K byte index; must be a multiple of `lane_bytes`.
+
+        Returns:
+            The byte offset to load this plane from.
+        """
+        comptime mfma_k_bytes = Self.MFMA_K_LANES * lane_bytes
+        comptime tile_bytes = Self.MFMA_MN_LANES * mfma_k_bytes
+        comptime pb = Self.plane_bytes[lane_bytes, plane]()
+        comptime plane_base = Self.MFMA_MN_LANES * Self.MFMA_K_LANES * (
+            lane_bytes - max(0, lane_bytes - plane * Self.MFMA_LANE_BYTES)
+        )
+        comptime k0_count = K_BYTES // mfma_k_bytes
+
+        var n0, nlane = divmod(n, Self.MFMA_MN_LANES)
+        var k0, k_in_tile = divmod(k_byte, mfma_k_bytes)
+        var klane = k_in_tile // lane_bytes
+
+        return (
+            e * (N * K_BYTES)
+            + n0 * (k0_count * tile_bytes)
+            + k0 * tile_bytes
+            + plane_base
+            + klane * (Self.MFMA_MN_LANES * pb)
+            + nlane * pb
+        )
 
     # ---- Scale 4D layout (FP4-specific) ----
     # Each i32 cell = 2x2 = 4 E8M0 bytes. Lane counts come from MFMA
@@ -405,6 +464,105 @@ struct Shuffler[E: Int]:
         ]()
         var w = smem_atoms.distribute[col_major_thread_layout_2d](tid)[0, 0]
         dst_tile.distribute[col_major_thread_layout_3d](tid)[0, 0, 0] = w
+
+    @staticmethod
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+    )
+    @__name("mxfp6_preshuffle_b_planes_kernel")
+    def _preshuffle_b_planes_kernel[
+        N: Int,
+        K_BYTES: Int,
+        lane_bytes: Int,
+    ](
+        raw: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
+        dst: UnsafePointer[Scalar[DType.uint8], MutAnyOrigin],
+        num_frags: Int32,
+    ):
+        """Scatters each lane fragment into its planes.
+
+        One thread owns one `lane_bytes` fragment: it reads the fragment from
+        the row-major source and writes each plane to the offset
+        `b_plane_byte_off` will later read it back from, so the write path and
+        the read path share one definition of the layout.
+        """
+        comptime assert (
+            lane_bytes % 8 == 0
+        ), "lane fragment must be a whole number of 8-byte chunks"
+        comptime frags_per_row = K_BYTES // lane_bytes
+        comptime num_planes = Self.num_planes[lane_bytes]()
+
+        var total = Int(num_frags)
+        for gid in range(
+            Int(global_idx.x), total, Int(grid_dim.x * block_dim.x)
+        ):
+            var e_n, frag = divmod(gid, frags_per_row)
+            var e, n = divmod(e_n, N)
+            var k_byte = frag * lane_bytes
+
+            var src = raw + (e * N * K_BYTES + n * K_BYTES + k_byte)
+
+            comptime for pl in range(num_planes):
+                comptime pb = Self.plane_bytes[lane_bytes, pl]()
+                var off = Self.b_plane_byte_off[
+                    N=N, K_BYTES=K_BYTES, lane_bytes=lane_bytes, plane=pl
+                ](e, n, k_byte)
+                comptime for chunk in range(pb // 8):
+                    var byte_in_frag = pl * Self.MFMA_LANE_BYTES + chunk * 8
+                    dst.store(
+                        off + chunk * 8,
+                        src.load[width=8](byte_in_frag),
+                    )
+
+    @staticmethod
+    def preshuffle_b_planes[
+        N: Int,
+        K_BYTES: Int,
+        lane_bytes: Int,
+    ](
+        raw: TileTensor[
+            mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        ],
+        dst: TileTensor[
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
+        ],
+        ctx: DeviceContext,
+    ) raises:
+        """Launches the plane-split B preshuffle.
+
+        Parameters:
+            N: Per-expert N; must be a multiple of 16.
+            K_BYTES: Per-expert packed K in bytes; must be a whole number of
+                MFMA K tiles.
+            lane_bytes: Bytes one lane feeds the MFMA (16 / 24 / 32).
+
+        Args:
+            raw: Row-major source weights `[E, N, K_BYTES]`.
+            dst: Destination buffer, same byte footprint.
+            ctx: AMD device context.
+        """
+        comptime assert (
+            N % Self.MFMA_MN_LANES == 0
+        ), "preshuffle_b_planes: N must be a multiple of 16"
+        comptime assert (
+            K_BYTES % (Self.MFMA_K_LANES * lane_bytes) == 0
+        ), "preshuffle_b_planes: K_BYTES must be a whole number of MFMA K tiles"
+
+        var num_frags = Self.E * N * (K_BYTES // lane_bytes)
+        comptime BLOCK = 256
+        var grid = min(ceildiv(num_frags, BLOCK), 65535)
+
+        ctx.enqueue_function[
+            Self._preshuffle_b_planes_kernel[
+                N=N, K_BYTES=K_BYTES, lane_bytes=lane_bytes
+            ]
+        ](
+            raw.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+            dst.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            Int32(num_frags),
+            grid_dim=grid,
+            block_dim=BLOCK,
+        )
 
     @staticmethod
     def preshuffle_b_5d[

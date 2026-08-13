@@ -34,6 +34,7 @@ from layout.tile_layout import row_major
 
 from std.utils import StaticTuple
 
+from ....arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from .block_scaled_matmul_amd import BlockScaledMatmulAMD
 from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
 
@@ -64,7 +65,7 @@ def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
 struct PreShuffledBGroupedGEMM[
     cu_count: Int,
     wg_per_cu: Int = 2,
-    lane_bytes: Int = 16,
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
     xcd_stripe: Int = 8,
 ]:
     """Grouped GEMM for MXFP4 on AMD CDNA4 with pre-shuffled weights.
@@ -79,9 +80,11 @@ struct PreShuffledBGroupedGEMM[
     Parameters:
         cu_count: Number of compute units on the target device.
         wg_per_cu: Work groups per compute unit (default 2).
-        lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
-            (MXFP8). `BK_ELEMS` counts ELEMENTS, so a given `BK_ELEMS` costs
-            twice the registers and LDS at MXFP8.
+        matrix_format: `f8f6f4` operand encoding for A and B (FP4 E2M1 by
+            default). Both kernels below derive their fragment widths from
+            it, so it must reach every `BlockScaledMatmulAMD_PreB` instantiation
+            -- including the ones inside `MAX_THREADS_PER_BLOCK_METADATA`,
+            or the launch bounds disagree with the body about num_threads.
         xcd_stripe: Size of the contiguous per-XCD run in `to_swizzled_idx`'s
             logical-index space (default 8). `0` is the escape hatch: it
             resolves to `wg_per_xcd`, recovering the fully-contiguous
@@ -89,7 +92,19 @@ struct PreShuffledBGroupedGEMM[
             persistent grid's remainder-tile imbalance across XCDs.
     """
 
-    comptime elems_per_byte = 32 // Self.lane_bytes
+    comptime a_bits = Self.matrix_format.bits_per_element()
+    comptime b_bits = Self.matrix_format.bits_per_element()
+    comptime bits_per_element = Self.a_bits
+    comptime lane_bytes = (32 * Self.a_bits) // 8
+    comptime fmt_suffix: StaticString = (
+        "e2m3" if (
+            Self.matrix_format == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3
+        ) else (
+            "e3m2" if (
+                Self.matrix_format == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2
+            ) else ""
+        )
+    )
 
     comptime num_xcd = 8
     comptime total_wg = Self.cu_count * Self.wg_per_cu
@@ -152,17 +167,17 @@ struct PreShuffledBGroupedGEMM[
             Int32(
                 BlockScaledMatmulAMD_PreB[
                     BM=BM,
+                    matrix_format=Self.matrix_format,
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
                     b_prefetch=True,
-                    lane_bytes=Self.lane_bytes,
                 ].num_threads
             )
         )
     )
     @__name(
-        t"mx_preb_pers_lb{Self.lane_bytes}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+        t"mx_preb_pers_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -211,6 +226,7 @@ struct PreShuffledBGroupedGEMM[
 
         comptime Kernel = BlockScaledMatmulAMD_PreB[
             BM=BM,
+            matrix_format=Self.matrix_format,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
@@ -221,14 +237,13 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
-            lane_bytes=Self.lane_bytes,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
         # vs uint8-byte views differ); A is canonically 2D so this is stable.
-        comptime K_SCALES = (
-            a_tensor.static_shape[1] * Self.elems_per_byte
-        ) // 32
+        comptime K_SCALES = a_tensor.static_shape[1] // (
+            4 * Self.bits_per_element
+        )
         comptime gx_n = ceildiv(N, BN)
 
         if N == 0 or _num_active_experts == 0:
@@ -292,7 +307,8 @@ struct PreShuffledBGroupedGEMM[
             var sfa_padded_M = align_up(Int(M), 32)
 
             var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
-            var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
+            comptime A_K_BYTES = a_tensor.static_shape[1]
+            var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
             var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(
                 K_BYTES
             )
@@ -308,7 +324,7 @@ struct PreShuffledBGroupedGEMM[
             # they would feed are OOB-clamped and discarded.
             var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
             var a_tile = TileTensor(
-                a_ptr, row_major(Coord(Int(M), Idx[K_BYTES]))
+                a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES]))
             )
             var b_pre_tile = TileTensor(
                 b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
@@ -364,17 +380,17 @@ struct PreShuffledBGroupedGEMM[
             Int32(
                 BlockScaledMatmulAMD_PreB[
                     BM=BM,
+                    matrix_format=Self.matrix_format,
                     BN=BN,
                     BK_ELEMS=BK_ELEMS,
                     WN=WN,
                     b_prefetch=True,
-                    lane_bytes=Self.lane_bytes,
                 ].num_threads
             )
         )
     )
     @__name(
-        t"mx_preb_lb{Self.lane_bytes}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
+        t"mx_preb_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -422,6 +438,7 @@ struct PreShuffledBGroupedGEMM[
 
         comptime Kernel = BlockScaledMatmulAMD_PreB[
             BM=BM,
+            matrix_format=Self.matrix_format,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
@@ -432,14 +449,13 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
-            lane_bytes=Self.lane_bytes,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
         # vs uint8-byte views differ); A is canonically 2D so this is stable.
-        comptime K_SCALES = (
-            a_tensor.static_shape[1] * Self.elems_per_byte
-        ) // 32
+        comptime K_SCALES = a_tensor.static_shape[1] // (
+            4 * Self.bits_per_element
+        )
 
         var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
         if M == 0 or N == 0:
@@ -457,13 +473,14 @@ struct PreShuffledBGroupedGEMM[
         var sfa_padded_M = align_up(Int(M), 32)
 
         var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
-        var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
+        comptime A_K_BYTES = a_tensor.static_shape[1]
+        var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
         var b_pre_ptr = b_pre_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
         var sfa_ptr = sfa_tensor.ptr + sfa_start_row * UInt32(K_SCALES)
         var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
 
         var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K_BYTES])))
+        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
         var b_pre_tile = TileTensor(
             b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
         )
@@ -531,6 +548,7 @@ struct PreShuffledBGroupedGEMM[
     ) raises:
         comptime MatmulDeviceFunctionType = BlockScaledMatmulAMD_PreB[
             BM=BM,
+            matrix_format=Self.matrix_format,
             BN=BN,
             BK_ELEMS=BK_ELEMS,
             WN=WN,
@@ -541,11 +559,13 @@ struct PreShuffledBGroupedGEMM[
             mfma_cluster=mfma_cluster,
             deep_prime=deep_prime,
             pipeline_depth=pipeline_depth,
-            lane_bytes=Self.lane_bytes,
         ]
 
         comptime N = c.static_shape[1]
-        comptime K_BYTES = a.static_shape[1]
+        comptime K_BYTES = (
+            b_pre.static_shape[1] // N if b_pre.flat_rank
+            == 2 else b_pre.static_shape[2]
+        )
 
         var a_i = TileTensor(
             a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
@@ -677,7 +697,12 @@ struct PreShuffledBGroupedGEMM[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(
             BlockScaledMatmulAMD[
-                BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+                BM=BM,
+                BN=BN,
+                BK_ELEMS=BK_ELEMS,
+                WM=WM,
+                WN=WN,
+                matrix_format=matrix_format,
             ].num_threads
         )
     )
@@ -689,6 +714,7 @@ def block_scaled_grouped_matmul_amd_kernel[
     BK_ELEMS: Int,
     WM: Int,
     WN: Int,
+    matrix_format: CDNA4F8F6F4MatrixFormat,
     out_dtype: DType,
     LayoutC: TensorLayout,
     LayoutA: TensorLayout,
@@ -722,6 +748,8 @@ def block_scaled_grouped_matmul_amd_kernel[
         BK_ELEMS: Block tile K in logical FP4 elements.
         WM: Warp tile rows; `BM` must be divisible by `WM`.
         WN: Warp tile cols; `BN` must be divisible by `WN`.
+        matrix_format: `f8f6f4` operand encoding for A and B; the tile byte
+            widths are derived from it.
         out_dtype: Element type of the output tensor `c_tensor`.
         LayoutC: Compile-time layout of the output tensor `c_tensor`.
         LayoutA: Compile-time layout of the A operand `a_tensor`.
@@ -757,7 +785,12 @@ def block_scaled_grouped_matmul_amd_kernel[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
     comptime Kernel = BlockScaledMatmulAMD[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        matrix_format=matrix_format,
     ]
     comptime N = c_tensor.static_shape[1]
     comptime K_BYTES = b_tensor.static_shape[1]  # K//2
@@ -778,13 +811,14 @@ def block_scaled_grouped_matmul_amd_kernel[
         return
 
     var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
-    var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
+    comptime A_K_BYTES = a_tensor.static_shape[1]
+    var a_ptr = a_tensor.ptr + a_start_row * UInt32(A_K_BYTES)
     var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
     var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
     var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
 
     var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K_BYTES])))
+    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
     var b_tile = TileTensor(b_ptr, row_major[N, K_BYTES]())
     var sfa_tile = TileTensor(sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES])))
     var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
@@ -804,7 +838,9 @@ def block_scaled_grouped_matmul_amd_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
-def block_scaled_grouped_matmul_amd(
+def block_scaled_grouped_matmul_amd[
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+](
     c: TileTensor[mut=True, ...],
     a: TileTensor[DType.uint8, ...],
     b: TileTensor[DType.uint8, ...],
@@ -842,13 +878,29 @@ def block_scaled_grouped_matmul_amd(
     comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    comptime K_BYTES = b.static_shape[2]  # K//2
-    comptime can_use_bk_512 = K_BYTES >= 256 and K_BYTES % 256 == 0
+    comptime K_BYTES = b.static_shape[2]
+    comptime bk_512_bytes = (512 * matrix_format.bits_per_element()) // 8
+    comptime can_use_bk_512 = (
+        K_BYTES >= bk_512_bytes and K_BYTES % bk_512_bytes == 0
+    )
+
+    comptime is_fp6 = matrix_format.bits_per_element() == 6
+    comptime BM_wide = 96 if is_fp6 else 64
+    comptime BN_wide = 64 if is_fp6 else 128
+    comptime WM_wide = 32 if is_fp6 else 64
+    comptime BM_deep = 96 if is_fp6 else 128
+    comptime BN_deep = 64 if is_fp6 else 128
+    comptime WM_deep = 32 if is_fp6 else 64
 
     if max_num_tokens_per_expert <= 64:
         comptime if can_use_bk_512:
             _launch_block_scaled_grouped[
-                BM=64, BN=128, BK_ELEMS=512, WM=64, WN=64
+                BM=BM_wide,
+                BN=BN_wide,
+                BK_ELEMS=512,
+                WM=WM_wide,
+                WN=64,
+                matrix_format=matrix_format,
             ](
                 c,
                 a,
@@ -863,7 +915,14 @@ def block_scaled_grouped_matmul_amd(
             )
             return
 
-    _launch_block_scaled_grouped[BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64](
+    _launch_block_scaled_grouped[
+        BM=BM_deep,
+        BN=BN_deep,
+        BK_ELEMS=128,
+        WM=WM_deep,
+        WN=64,
+        matrix_format=matrix_format,
+    ](
         c,
         a,
         b,
@@ -878,7 +937,12 @@ def block_scaled_grouped_matmul_amd(
 
 
 def _launch_block_scaled_grouped[
-    BM: Int, BN: Int, BK_ELEMS: Int, WM: Int, WN: Int
+    BM: Int,
+    BN: Int,
+    BK_ELEMS: Int,
+    WM: Int,
+    WN: Int,
+    matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[DType.uint8, ...],
@@ -897,7 +961,12 @@ def _launch_block_scaled_grouped[
 ) raises:
     """Instantiates and launches the grouped MXFP4 kernel."""
     comptime Kernel = BlockScaledMatmulAMD[
-        BM=BM, BN=BN, BK_ELEMS=BK_ELEMS, WM=WM, WN=WN
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+        matrix_format=matrix_format,
     ]
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
@@ -942,6 +1011,7 @@ def _launch_block_scaled_grouped[
         BK_ELEMS,
         WM,
         WN,
+        matrix_format,
         out_dtype,
         type_of(c).LayoutType,
         type_of(a_i).LayoutType,
@@ -971,7 +1041,7 @@ def _launch_block_scaled_grouped[
 
 
 def block_scaled_grouped_matmul_amd_preb[
-    lane_bytes: Int = 0
+    lane_bytes: Int = 0, fp6_format: Int = 0
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[DType.uint8, ...],
@@ -1000,11 +1070,14 @@ def block_scaled_grouped_matmul_amd_preb[
     256; smaller K should use `block_scaled_grouped_matmul_amd` instead.
 
     Parameters:
-        lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4) or 32
-            (MXFP8). 0 (default) infers it from the tensors, since both
-            formats present as `uint8` and a wrong value silently corrupts
+        lane_bytes: Operand bytes per lane per MFMA — 16 (MXFP4), 24 (MXFP6)
+            or 32 (MXFP8). 0 (default) infers it from the tensors, since every
+            format presents as `uint8` and a wrong value silently corrupts
             `K_SCALES`. Also part of the band dispatch key: `(N, packed_K)`
             alone does not identify a shape across formats.
+        fp6_format: 0 selects E2M3, 1 selects E3M2. Ignored unless
+            `lane_bytes` resolves to 24 — both FP6 encodings put 24 bytes in a
+            lane, so the byte count cannot choose between them.
 
     Args:
         c: Output tensor [total_tokens, N].
@@ -1041,21 +1114,30 @@ def block_scaled_grouped_matmul_amd_preb[
     comptime N = c.static_shape[1]
     comptime packed_K = a.static_shape[1]
 
-    # a_scales holds one E8M0 per 32 elements, so K == its K-extent * 32.
-    # Assert the ratio before dividing by it: a mismatched pair truncates to 0
-    # and would raise a comptime divide-by-zero instead of this message.
-    comptime _epb = (a_scales.static_shape[1] * 32) // packed_K
-    comptime assert _epb == 1 or _epb == 2, (
-        "a_scales' K extent must be K/32 and a's must be K (MXFP8) or K/2"
-        " (MXFP4); their ratio is what identifies the format"
+    comptime K_LOGICAL = a_scales.static_shape[1] * 32
+    comptime _INFERRED_LB = (
+        32 if packed_K
+        == K_LOGICAL else (
+            24 if packed_K * 4
+            == K_LOGICAL * 3 else (16 if packed_K * 2 == K_LOGICAL else 0)
+        )
     )
-    comptime LB = (32 // _epb) if lane_bytes == 0 else lane_bytes
+    comptime assert _INFERRED_LB != 0, (
+        "a's K byte extent must be K (MXFP8), K*3/4 (MXFP6) or K/2 (MXFP4)"
+        " where K is a_scales' K extent * 32; the pair is what identifies the"
+        " format"
+    )
+    comptime LB = _INFERRED_LB if lane_bytes == 0 else lane_bytes
+    comptime assert LB == 16 or LB == 24 or LB == 32, (
+        "lane_bytes (inferred or explicit) must be 16 (MXFP4), 24 (MXFP6) or"
+        " 32 (MXFP8)"
+    )
     comptime assert (
-        LB == 16 or LB == 32
-    ), "lane_bytes (inferred or explicit) must be 16 (MXFP4) or 32 (MXFP8)"
-    comptime assert (
-        lane_bytes == 0 or lane_bytes == 32 // _epb
+        lane_bytes == 0 or lane_bytes == _INFERRED_LB
     ), "explicit lane_bytes disagrees with the shapes of a / a_scales"
+    comptime assert (
+        fp6_format == 0 or fp6_format == 1
+    ), "fp6_format must be 0 (E2M3) or 1 (E3M2)"
 
     comptime assert (
         b_per_expert_bytes == N * packed_K
@@ -1067,12 +1149,12 @@ def block_scaled_grouped_matmul_amd_preb[
         ctx.default_device_info == MI355X
     ), "preb path currently only supports MI355X"
 
-    # Preshuffled-scales requires num_k_mmas % 2 == 0, which
-    # forces BK_ELEMS >= 256 (i.e. packed_K >= 256 and packed_K % 256 == 0).
-    comptime assert packed_K >= 256 and packed_K % 256 == 0, (
-        "block_scaled_grouped_matmul_amd_preb requires A's K byte extent >= 256"
-        " and divisible by 256; smaller K should use the non-preb path"
-        " (block_scaled_grouped_matmul_amd) instead."
+    comptime _K_GRANULE = 256 if LB == 32 else 512
+    comptime assert K_LOGICAL >= _K_GRANULE and K_LOGICAL % _K_GRANULE == 0, (
+        "block_scaled_grouped_matmul_amd_preb requires a logical K that is a"
+        " nonzero multiple of 512 (MXFP4/MXFP6) or 256 (MXFP8); smaller K"
+        " should use the non-preb path (block_scaled_grouped_matmul_amd)"
+        " instead."
     )
 
     # One launch per band; only the comptime config differs, so capture the
@@ -1099,7 +1181,16 @@ def block_scaled_grouped_matmul_amd_preb[
         PreShuffledBGroupedGEMM[
             cu_count=ctx.default_device_info.sm_count,
             wg_per_cu=wg_per_cu,
-            lane_bytes=LB,
+            matrix_format=(
+                CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1 if LB
+                == 16 else (
+                    CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3 if LB
+                    == 32 else (
+                        CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3 if fp6_format
+                        == 0 else CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2
+                    )
+                )
+            ),
         ].launch[
             BM=BM,
             BN=BN,
@@ -1286,10 +1377,54 @@ def block_scaled_grouped_matmul_amd_preb[
         else:
             return run_kernel[128, 128, 256, 64, True, waves_per_eu=2]()
 
+    comptime if LB == 24 and N == 6144 and K_LOGICAL == 6144:  # M3 gate+up
+        if etm <= 256:
+            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+                return run_kernel[
+                    16,
+                    64,
+                    512,
+                    16,
+                    False,
+                    STREAM,
+                    use_decode_cap=True,
+                    pipeline_depth=3,
+                ]()
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 512:
+            return run_kernel[32, 128, 512, 32, True, STREAM]()
+        elif etm <= 2100:
+            return run_kernel[64, 128, 512, 32, True]()
+        elif etm <= 4095:
+            return run_kernel[128, 128, 512, 64, True]()
+        else:
+            return run_kernel[64, 128, 512, 64, False]()
+
+    comptime if LB == 24 and N == 6144 and K_LOGICAL == 3072:  # M3 down
+        if etm <= 256:
+            if decode_grid_m_cap > 0 and etm <= decode_grid_m_cap:
+                return run_kernel[
+                    16,
+                    64,
+                    512,
+                    16,
+                    False,
+                    STREAM,
+                    use_decode_cap=True,
+                    pipeline_depth=3,
+                ]()
+            return run_kernel[16, 128, 512, 32, True, STREAM]()
+        elif etm <= 512:
+            return run_kernel[32, 128, 512, 32, True, STREAM]()
+        elif etm <= 2100:
+            return run_kernel[64, 128, 512, 32, True]()
+        else:
+            return run_kernel[128, 128, 512, 64, True]()
+
     # Other shapes: persistent below the threshold, direct at/above it.
     # Not a typo: BK counts ELEMENTS, so 256 at MXFP8 is the same LDS/register
     # footprint as 512 at MXFP4.
-    comptime FALLBACK_BK = 512 if LB == 16 else 256
+    comptime FALLBACK_BK = 256 if LB == 32 else 512
     if etm >= m_threshold:
         return run_kernel[64, 128, FALLBACK_BK, 64, False]()
     return run_kernel[64, 128, FALLBACK_BK, 64, True]()

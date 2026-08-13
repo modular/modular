@@ -23,6 +23,8 @@ from std.os import abort
 from std.sys import llvm_intrinsic, size_of
 from std.sys.info import _cdna_4_or_newer
 
+from linalg.mx_format import MXFormat
+
 
 @fieldwise_init
 struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
@@ -39,8 +41,52 @@ struct CDNA4F8F6F4MatrixFormat(Equatable, TrivialRegisterPassable):
     def __init__(out self, value: Int):
         self._value = Int32(value)
 
+    def __init__(out self, mx_format: MXFormat):
+        """Maps a vendor-neutral MX element format onto this CDNA4 selector.
+
+        Written out rather than passing the value through, so the neutral type's
+        numbering stays independent of what the hardware happens to encode.
+
+        Args:
+            mx_format: The MX element format to select.
+        """
+        if mx_format == MXFormat.FP8_E4M3:
+            self = Self.FLOAT8_E4M3
+        elif mx_format == MXFormat.FP8_E5M2:
+            self = Self.FLOAT8_E5M2
+        elif mx_format == MXFormat.FP6_E2M3:
+            self = Self.FLOAT6_E2M3
+        elif mx_format == MXFormat.FP6_E3M2:
+            self = Self.FLOAT6_E3M2
+        elif mx_format == MXFormat.FP4_E2M1:
+            self = Self.FLOAT4_E2M1
+        else:
+            abort("invalid MX format")
+
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
+
+    def bits_per_element(self) -> Int:
+        """Returns how many bits one operand element occupies.
+
+        Note this is the *payload* width, not the fragment width: 32 FP6
+        elements occupy 24 bytes but travel in a 32-byte fragment. Use
+        `simd_width` for the fragment.
+
+        Returns:
+            The element width in bits.
+        """
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3:
+            return 8
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT8_E5M2:
+            return 8
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E2M3:
+            return 6
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT6_E3M2:
+            return 6
+        if self == CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1:
+            return 4
+        abort("invalid matrix format")
 
     def simd_width(self) -> SIMDLength:
         """Returns the operand fragment width, in bytes, this format expects.
