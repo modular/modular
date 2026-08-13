@@ -28,6 +28,8 @@ modular_py_test(
             "test_mojo_runtime_foreign_thread.py",
         ],
     ),
+    # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     ignore_extra_deps = [
         # Unsure why, test_tensor slows down if this doesn't exist.
         "//max/python/max/_interpreter_ops",
