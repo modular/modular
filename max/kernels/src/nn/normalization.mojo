@@ -382,6 +382,7 @@ def rms_norm_gpu_warp_tiling_128[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -410,7 +411,7 @@ def rms_norm_gpu_warp_tiling_128[
     var local_tid = umod(tid, half_warp_size)
     var idx = local_tid * simd_width
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         var gamma_val = SIMD[dtype, simd_width](0)
         if row < _num_rows and idx < _num_cols:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
@@ -467,6 +468,7 @@ def rms_norm_gpu_warp_per_row[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -499,7 +501,7 @@ def rms_norm_gpu_warp_per_row[
             fill=SIMD[accum_type, simd_width](0)
         )
 
-        with PDL():
+        with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Single load pass: cache each chunk and accumulate mean-of-squares.
             var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
@@ -536,7 +538,7 @@ def rms_norm_gpu_warp_per_row[
                         )
                     output_fn[simd_width, align](row, col, norm_val)
     else:
-        with PDL():
+        with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Pass 1: accumulate the per-thread mean-of-squares scalar only.
             var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
@@ -642,6 +644,7 @@ def rms_norm_gpu_warp_tiling[
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     shape: IndexList[rank],
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
@@ -675,7 +678,7 @@ def rms_norm_gpu_warp_tiling[
         fill=SIMD[dtype, simd_width](0)
     )
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         var thread_m2 = Scalar[accum_type](0)
 
         comptime for c in range(chunks_per_thread):
@@ -820,6 +823,7 @@ def rms_norm_gpu_block[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
 ](
     gamma: TileTensor[dtype, LayoutType, origin, Storage=Storage],
     epsilon: Float32,
@@ -829,7 +833,7 @@ def rms_norm_gpu_block[
     var _num_cols = Int(num_cols)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         _rms_norm_gpu_block_subkernel[
             simd_width,
             max_warps_per_block,
@@ -848,7 +852,7 @@ def rms_norm_gpu[
         Coord, SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     shape: Coord,
     gamma: TileTensor[mut=False, dtype, ...],
@@ -1062,6 +1066,7 @@ def rms_norm_gpu[
                 input_fn_il,
                 output_fn_il,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 shape_il.canonicalize(),
@@ -1102,6 +1107,7 @@ def rms_norm_gpu[
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
@@ -1150,6 +1156,7 @@ def rms_norm_gpu[
                             input_fn_2d,
                             output_fn_2d,
                             multiply_before_cast=multiply_before_cast,
+                            pdl_level=pdl_level,
                         ]
                         ctx.enqueue_function[kernel](
                             gamma,
@@ -1174,6 +1181,7 @@ def rms_norm_gpu[
                     input_fn_2d,
                     output_fn_2d,
                     multiply_before_cast=multiply_before_cast,
+                    pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel](
                     gamma,
@@ -1233,6 +1241,7 @@ def rms_norm_gpu[
                 input_fn_2d,
                 output_fn_2d,
                 multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 gamma,
@@ -1254,6 +1263,7 @@ def rms_norm_gpu[
             input_fn_2d,
             output_fn_2d,
             multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ]
         ctx.enqueue_function[kernel](
             gamma,

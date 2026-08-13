@@ -994,7 +994,7 @@ def choose_config[
     # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
-    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+    var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
             mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
         ),
@@ -1009,6 +1009,17 @@ def choose_config[
         use_tma_epilogue_load=has_epilogue_tensor,
         epilogue_is_1d=epilogue_is_1d,
     )
+
+    # At decode M the producer releases its dependents early, so this kernel is
+    # resident while the producer still runs and can spend that window on
+    # weights. It stops paying once M fills the device. The depth is capped by
+    # the ring: a deeper prefetch would fill it before any barrier can fire.
+    if M < 128:
+        config.prefetch_tiles_n = min(
+            4, config.num_pipeline_stages // config.k_group_size
+        )
+
+    return config
 
 
 def build_sm100_matmul_configs[

@@ -229,12 +229,25 @@ struct PDLLevel(Defaultable, TrivialRegisterPassable):
         return self._level >= other._level
 
 
-struct PDL(Defaultable):
+struct PDL[overlap_at_beginning: Bool = False](Defaultable):
     """Programmatic Dependency Launch (PDL) control structure.
 
     This struct provides a way to manage programmatic stream serialization on
-    NVIDIA GPUs. It includes functions for launching dependent grids and waiting
-    for them to complete.
+    NVIDIA GPUs. It waits on the predecessor grids on entry and releases the
+    dependent grids on exit.
+
+    `overlap_at_beginning` (`PDLLevel.OVERLAP_AT_BEGINNING`) releases the
+    dependents on *entry* instead, so they turn resident while this kernel is
+    still running and overlap it with their predecessor-independent work (weight
+    loads, descriptor setup). Releasing early cannot expose unwritten output: a
+    dependent's own `wait_on_dependent_grids` blocks until the predecessor grids
+    have completed and their stores are visible, so the release only decides
+    when the dependent is scheduled. It is unsafe only for a dependent that
+    writes memory this grid still reads, before its own wait.
+
+    Parameters:
+        overlap_at_beginning: Release the dependent grids on entry rather than
+            on exit.
 
     Note:
         - Only supported on NVIDIA SM90+ (Hopper architecture and newer) GPUs.
@@ -247,12 +260,13 @@ struct PDL(Defaultable):
 
     @always_inline
     def __enter__(self):
-        """Launch dependent grids that were previously configured to depend on the
-        current grid."""
+        """Wait for the predecessor grids to complete."""
         wait_on_dependent_grids()
+        comptime if Self.overlap_at_beginning:
+            launch_dependent_grids()
 
     @always_inline
     def __exit__(self):
-        """Wait for all dependent grids launched by this grid to complete execution.
-        """
-        launch_dependent_grids()
+        """Release the grids that depend on this one."""
+        comptime if not Self.overlap_at_beginning:
+            launch_dependent_grids()
