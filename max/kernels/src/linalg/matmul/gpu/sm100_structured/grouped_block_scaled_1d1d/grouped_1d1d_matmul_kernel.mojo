@@ -110,6 +110,8 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     SF_ATOM_M,
     SF_MN_GROUP_SIZE,
+    _is_packed_fp4,
+    block_scaled_operands_compatible,
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
 )
@@ -962,8 +964,22 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.BM * Self.BK * size_of[Self.a_type]()
-    comptime b_expected_bytes = Self.BN * Self.BK * size_of[Self.b_type]()
+    # TMA transaction sizes count the bytes the copy engine READS from global
+    # memory. An unpacked-FP4 operand occupies BK shared-memory bytes but is
+    # sourced from half as many packed ones, and a barrier told to expect the
+    # shared-memory figure never completes.
+    comptime a_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.a_type, Self.b_type
+    ]() else 1
+    comptime b_gmem_bytes_per_elem_recip = 2 if _is_packed_fp4[
+        Self.b_type, Self.a_type
+    ]() else 1
+    comptime a_expected_bytes = Self.BM * Self.BK * size_of[
+        Self.a_type
+    ]() // Self.a_gmem_bytes_per_elem_recip
+    comptime b_expected_bytes = Self.BN * Self.BK * size_of[
+        Self.b_type
+    ]() // Self.b_gmem_bytes_per_elem_recip
     comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
@@ -1098,9 +1114,9 @@ struct Grouped1D1DMatmulKernel[
     @staticmethod
     def validate_config():
         """Compile-time validation of kernel configuration."""
-        comptime assert (
-            Self.a_type == Self.b_type
-        ), "A and B types must match for block-scaled GEMM"
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "A and B types must match for block-scaled GEMM, or be the W4A8 pair"
         comptime assert (
             Self.sfa_dtype == Self.sfb_dtype
         ), "SFA and SFB types must match"

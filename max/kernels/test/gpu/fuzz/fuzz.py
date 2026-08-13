@@ -204,6 +204,24 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "grouped_matmul_sm100_w4a8": FuzzTarget(
+        name="grouped_matmul_sm100_w4a8",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:"
+            "fuzz_grouped_matmul_sm100_w4a8.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_grouped_matmul_sm100_w4a8.mojo.test"
+        ),
+        description=(
+            "grouped block-scaled W4A8 SM100 matmul (E4M3 activations against"
+            " nibble-packed E2M1 weights): ragged per-expert token distribution"
+            " fuzz vs an exact host FP32 ref at one BF16 ulp."
+            " ref/determinism/memcheck"
+        ),
+        default_oracle="ref",
+    ),
     "moe_router": FuzzTarget(
         name="moe_router",
         bazel_target=("//max/kernels/test/gpu/fuzz:fuzz_moe_router.mojo.test"),

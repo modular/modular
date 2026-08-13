@@ -5741,27 +5741,47 @@ def grouped_matmul_block_scaled(
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorValueLike | None = None,
 ) -> TensorValue:
-    """Performs grouped NVFP4 matmul for MoE layers.
+    """Performs a grouped block-scaled matmul for MoE layers.
 
-    Performs a grouped matmul with NVFP4 (4-bit) quantized inputs and weights.
-    The inputs are packed as uint8 (2 NVFP4 values per byte) with float8_e4m3fn
-    scaling factors. NVFP4 uses fixed 1D block scaling with 16 elements per
-    scale factor along the K dimension.
+    Supports four operand/scale combinations, which the op tells apart from the
+    operand and scale dtypes alone. Every one uses fixed 1D block scaling along
+    the K dimension:
+
+    - NVFP4: both operands packed ``uint8``, ``float8_e4m3fn`` scales over
+      16-element K groups.
+    - MXFP4: both operands packed ``uint8``, ``float8_e8m0fnu`` scales over
+      32-element K groups.
+    - MXFP8: both operands ``float8_e4m3fn``, ``float8_e8m0fnu`` scales over
+      32-element K groups.
+    - W4A8: ``float8_e4m3fn`` activations against packed ``uint8`` weights,
+      ``float8_e8m0fnu`` scales over 32-element K groups.
+
+    Packed ``uint8`` carries 2 4-bit E2M1 values per byte, so a packed operand's
+    row is ``K/2`` wide. W4A8 is the one combination whose two operands differ,
+    and it pairs an unpacked activation row with a packed weight row. It also
+    requires ``K`` to be a multiple of 128, which the padded FP4 TMA copy that
+    feeds the weights into shared memory imposes.
 
     ``hidden_states`` and ``expert_start_indices`` together implement the ragged
     tensor representation for variable-length expert inputs.
 
     Args:
         hidden_states: The input activations with shape ``[total_tokens, K/2]``
-            where K is the unpacked hidden dimension. Dtype must be uint8
-            (packed NVFP4).
-        weight: The expert weights with shape ``[num_experts, N, K/2]``.
-            Dtype must be uint8 (packed NVFP4).
+            for packed ``uint8`` or ``[total_tokens, K]`` for
+            ``float8_e4m3fn``, where K is the unpacked hidden dimension.
+        weight: The expert weights with shape ``[num_experts, N, K/2]`` for
+            packed ``uint8`` or ``[num_experts, N, K]`` for
+            ``float8_e4m3fn``. Sized independently of ``hidden_states``, so
+            W4A8 combines a ``[total_tokens, K]`` activation with a
+            ``[num_experts, N, K/2]`` weight.
         a_scales: Scaling factors for inputs with shape
-            ``[num_scale_rows, K_groups, 32, 4, 4]``. Dtype must be float8_e4m3fn.
+            ``[num_scale_rows, K_groups, 32, 4, 4]``, where ``K_groups`` is
+            ``ceildiv(K, 4 * group_size)`` for the combination's K group size.
+            Dtype must be float8_e4m3fn (NVFP4) or float8_e8m0fnu
+            (MXFP4/MXFP8/W4A8).
         b_scales: Scaling factors for weights with shape
-            ``[num_experts, N_groups, K_groups, 32, 4, 4]``. Dtype must be
-            float8_e4m3fn.
+            ``[num_experts, N_groups, K_groups, 32, 4, 4]``. Dtype must match
+            ``a_scales``.
         expert_start_indices: Indices indicating where each expert's tokens
             start in ``hidden_states``.
         a_scale_offsets: The offsets of the input scale tiles for each expert.
@@ -5800,7 +5820,19 @@ def grouped_matmul_block_scaled(
     _check_dtype(DType.int32, expert_ids=expert_ids)
     _check_dtype(DType.uint32, expert_start_indices=expert_start_indices)
 
-    _check_same_dtype(hidden_states=hidden_states, weight=weight)
+    # W4A8 is the one pair whose operands differ: E4M3 activations against
+    # nibble-packed E2M1 weights, which the FP4 TMA copy pads into shared
+    # memory. The scale dtype is part of the pair, not incidental: the kernel
+    # only implements it on E8M0 group-32 scales, so admitting the mixed pair
+    # under NVFP4 scales would trade this graph-build error for a Mojo
+    # comptime failure partway through graph compilation.
+    is_w4a8 = (
+        hidden_states.dtype == DType.float8_e4m3fn
+        and weight.dtype == DType.uint8
+        and a_scales.dtype == DType.float8_e8m0fnu
+    )
+    if not is_w4a8:
+        _check_same_dtype(hidden_states=hidden_states, weight=weight)
     _check_same_dtype(a_scales=a_scales, b_scales=b_scales)
 
     _check_same_device(
@@ -5826,12 +5858,15 @@ def grouped_matmul_block_scaled(
             f"float8_e8m0fnu (MXFP4/MXFP8), but got {a_scales.dtype}"
         )
 
-    weight_k = weight.shape[2]
+    # Row lengths are in storage bytes, so a nibble-packed weight row is half
+    # the activations'. Compare in elements.
+    weight_k_factor = 2 if is_w4a8 else 1
+    weight_k = weight.shape[2] * weight_k_factor
     hidden_k = hidden_states.shape[1]
     if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
         raise ValueError(
             "expected weight is of shape [num_experts, *, "
-            f"{hidden_k}] but got {weight.shape}"
+            f"{hidden_k // weight_k_factor}] but got {weight.shape}"
         )
 
     SF_ATOM_M = [32, 4]
@@ -5857,7 +5892,8 @@ def grouped_matmul_block_scaled(
 
     b_scales_dim_1 = ceildiv(weight.shape[1], Dim(SF_MN_GROUP_SIZE))
     b_scales_dim_2 = ceildiv(
-        weight.shape[2] * packed_k_factor, Dim(SF_K_GROUP_SIZE)
+        weight.shape[2] * weight_k_factor * packed_k_factor,
+        Dim(SF_K_GROUP_SIZE),
     )
     if (
         b_scales.shape[0] != weight.shape[0]

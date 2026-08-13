@@ -128,7 +128,7 @@ def heuristic_and_outliers_dispatch[
     var m = Int(c.dim[0]())
 
     comptime scaling_kind = get_scaling_kind[
-        a_type, scales_dtype, SF_VECTOR_SIZE
+        a_type, scales_dtype, SF_VECTOR_SIZE, b_type
     ]()
     comptime is_fp4 = (
         scaling_kind == UMMAKind.KIND_MXF4NVF4

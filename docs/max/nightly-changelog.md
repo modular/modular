@@ -359,6 +359,17 @@ This version is still a work in progress.
   experts than half that count — 74 per device on a B200, so a 896-expert MoE
   over eight devices returned NaN while 512 experts stayed correct.
 
+- The SM100 grouped block-scaled matmul accepts MXFP4 weights against MXFP8
+  activations (W4A8), so a quantized MoE can feed its packed 4-bit experts
+  straight to the tensor cores rather than dequantizing them to bfloat16
+  first. This removes MAX's per-forward `mxfp4_dequant` over the routed expert
+  stack, and it keeps the weights at their 4-bit footprint in global memory,
+  which matters most at expert counts where a bfloat16 copy of the stack does
+  not fit. A new `unpack_fp4` option on the NVIDIA TMA descriptor helpers,
+  backed by the `TensorMapDataType.PACKED_FP4_ALIGN16B` tensor-map type, pads
+  the weights into the byte-addressed form the tensor cores read as the copy
+  engine lands them in shared memory.
+
 ## Breaking changes
 
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction
