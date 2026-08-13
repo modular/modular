@@ -54,8 +54,8 @@ struct MyPair:
     var second: Int
 ```
 
-However, you can't instantiate this struct because it has no constructor
-method. So here it is with a constructor to initialize the two fields:
+However, you can't instantiate this struct because it has no initializer
+method. So here it is with an initializer to initialize the two fields:
 
 ```mojo
 struct MyPair:
@@ -70,7 +70,7 @@ struct MyPair:
 Notice that the first argument in the `__init__()` method is `out self`.
 You'll have a `self` argument as the first argument on all struct methods.
 It references the current struct instance (it allows code in the method to
-refer to "itself"). _When you call the constructor, you never pass a value
+refer to "itself"). _When you call the initializer, you never pass a value
 for `self`—Mojo passes it in automatically._
 
 The `out` portion of `out self` is an [argument
@@ -78,11 +78,11 @@ convention](/docs/manual/values/ownership#argument-conventions) that declares
 `self` as a mutable reference that starts out as uninitialized and must be
 initialized before the function returns.
 
-Many types use a field-wise constructor like the one shown for `MyPair` above:
+Many types use a field-wise initializer like the one shown for `MyPair` above:
 it takes an argument for each field, and initializes the fields directly from
 the arguments. To save typing, Mojo provides a
 [`@fieldwise_init`](/docs/reference/decorators/fieldwise-init/) decorator, which
-generates a field-wise constructor for the struct. So you can rewrite the
+generates a field-wise initializer for the struct. So you can rewrite the
 `MyPair` example above like this:
 
 ```mojo
@@ -99,14 +99,14 @@ pre-determined names.
 :::note
 
 You can't assign values when you declare fields. You must initialize
-all of the struct's fields in the constructor. (If you try to leave a field
+all of the struct's fields in the initializer. (If you try to leave a field
 uninitialized, the code won't compile.)
 
 :::
 
 ## Constructing a struct type
 
-Once you have a constructor, with `__init__` or using `@fieldwise_init`,
+Once you have a initializer, with `__init__()` or using `@fieldwise_init`,
 you can create an instance of `MyPair` and set the fields:
 
 ```mojo title="Construct an instance"
@@ -121,7 +121,7 @@ print(mine.first)
 :::note Initializer lists
 Mojo initializer lists let you construct instances without spelling
 out the full type name and parameters. If the full type can be inferred
-from context, pass the constructor arguments directly between braces,
+from context, pass the initializer arguments directly between braces,
 with or without keywords. For example `{0.5, fish="salmon"}` calls
 `__init__(0.5, fish="salmon")` on the appropriate struct type. This
 is equivalent to `MyStruct(0.5, fish="salmon")` if the type is inferred
@@ -196,10 +196,10 @@ To make a struct move-only, add the `Movable` trait:
   ...
   ```
 
-Mojo will generate a move constructor for you. You rarely need to
-write your own custom move constructor. For more information,
+Mojo will generate a move initializer for you. You rarely need to
+write your own custom move initializer. For more information,
 see the section on
-[move constructors](/docs/manual/lifecycle/life/#move-constructor).
+[move initializers](/docs/manual/lifecycle/life/#move-initializer).
 
 ### Copyability
 
@@ -210,11 +210,11 @@ To make a struct copyable, add the `Copyable` trait:
     ...
   ```
 
-In most cases, that's all you need to do. Mojo will generate a copy constructor
+In most cases, that's all you need to do. Mojo will generate a copy initializer
 (`__init__(out self, *, copy: Self)` method) for you. You don't need to write
-your own unless you need custom logic in the copy constructor; for example, if
+your own unless you need custom logic in the copy initializer; for example, if
 your struct dynamically allocates memory. For more information, see the section
-on [copy constructors](/docs/manual/lifecycle/life/#copy-constructor).
+on [copy initializers](/docs/manual/lifecycle/life/#copy-constructor).
 
 The `Copyable` trait provides two ways to copy a value: the `copy()`
 instance method and the copy initializer.
@@ -302,7 +302,7 @@ struct MyStruct:
         self.foo = new_value
 ```
 
-**You must** initialize fields within constructors, and not
+**You must** initialize fields within initializers, and not
 at the point of declaration.
 
 ```mojo
