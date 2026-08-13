@@ -32,10 +32,13 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.context import GrammarEnforcementState
 from max.pipelines.context.exceptions import PromptTooLongError
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    VisionPreprocessCache,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import open_image, resolve_single_special_token
-from max.pipelines.lib.vision_preprocess_cache import VisionPreprocessCache
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -189,9 +192,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
 
         self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
-            VisionPreprocessCache(
-                pipeline_config.runtime.max_vision_preprocess_cache_bytes
-            )
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
         )
 
         # Video token — the upstream tokenizer_config.json doesn't include
@@ -219,9 +220,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         )
         self._video_preprocess_cache: VisionPreprocessCache[
             _PreprocessedVideo
-        ] = VisionPreprocessCache(
-            pipeline_config.runtime.max_video_preprocess_cache_bytes
-        )
+        ] = VisionPreprocessCache.for_videos(pipeline_config.runtime)
 
         self._patch_chat_template_for_video()
 
@@ -414,28 +413,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         Returns:
             The image's ``(pixel_values, position_ids, num_soft_tokens)``.
         """
-        if image_hash is None or not self._preprocess_cache.enabled:
+
+        def preprocess() -> _PreprocessedImage:
             pixels, pos_ids, softs = self.img_processor(
                 [to_rgb(open_image(image))]
             )
             return pixels[0], pos_ids[0], softs[0]
 
-        cached = self._preprocess_cache.get(image_hash)
-        if cached is not None:
-            return cached
-
-        pixels, pos_ids, softs = self.img_processor([to_rgb(open_image(image))])
-        entry = (pixels[0], pos_ids[0], softs[0])
-        # Cached arrays are handed to every request that reuses the image, so
-        # freeze them: an in-place write would otherwise corrupt a later
-        # request's pixels silently. Freeze on the miss path too, so a hit and
-        # a miss return arrays that behave identically.
-        entry[0].flags.writeable = False
-        entry[1].flags.writeable = False
-        self._preprocess_cache.put(
-            image_hash, entry, entry[0].nbytes + entry[1].nbytes
-        )
-        return entry
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
 
     def _preprocess_video(
         self, video_hash: int | None, raw_bytes: bytes
@@ -462,25 +447,14 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
             The video's ``(pixel_values, position_ids, num_soft_tokens,
             metadata)``.
         """
-        if video_hash is None or not self._video_preprocess_cache.enabled:
+
+        def preprocess() -> _PreprocessedVideo:
             pvs, poss, softs, metadata = self.video_processor([raw_bytes])
             return pvs[0], poss[0], softs[0], metadata[0]
 
-        cached = self._video_preprocess_cache.get(video_hash)
-        if cached is not None:
-            return cached
-
-        pvs, poss, softs, metadata = self.video_processor([raw_bytes])
-        entry = (pvs[0], poss[0], softs[0], metadata[0])
-        # See _preprocess_image: one array is handed to every request that
-        # reuses the video, so freeze it on both paths. The metadata's
-        # timestamps are only ever read downstream.
-        entry[0].flags.writeable = False
-        entry[1].flags.writeable = False
-        self._video_preprocess_cache.put(
-            video_hash, entry, entry[0].nbytes + entry[1].nbytes
+        return self._video_preprocess_cache.get_or_preprocess(
+            video_hash, preprocess
         )
-        return entry
 
     def _preprocess_videos(
         self, video_hashes: Sequence[int | None], videos: Sequence[bytes]
