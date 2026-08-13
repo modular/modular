@@ -1,14 +1,29 @@
 # Mojo documentation code examples
 
-This directory includes code examples used in the Mojo Manual and stdlib
-docstrings to ensure those code snippets are tested.
+This directory includes code examples used in the Mojo Manual, the language
+reference, and the tools documentation, to ensure those code snippets are
+tested. Each subdirectory corresponds to a documentation page, and each example
+has a Bazel test that runs it in CI.
 
 ## Running with Bazel
 
-Example command to run from the Modular internal repo:
+Run a single example's test from the Modular internal repo:
 
 ```sh
-br //oss/modular/mojo/docs/code/stdlib/algorithm:map_sample
+bt //oss/modular/mojo/docs/code/manual/basics:hello_world_test
+```
+
+Or run every example under a topic (or the whole tree):
+
+```sh
+bt //oss/modular/mojo/docs/code/manual/basics/...
+bt //oss/modular/mojo/docs/code/...
+```
+
+Use `br` to run an example directly instead of as a test:
+
+```sh
+br //oss/modular/mojo/docs/code/manual/basics:hello_world
 ```
 
 ## Contributing
