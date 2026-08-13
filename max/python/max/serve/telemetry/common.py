@@ -35,6 +35,9 @@ from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
 )
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter,
+)
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -59,6 +62,9 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
@@ -613,6 +619,33 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics disabled.")
     else:
         logger.info("Metrics initialized.")
+
+
+def configure_tracing(settings: Settings) -> None:
+    if not settings.disable_telemetry:
+        # If the user set either standard OTel env var (e.g. for an
+        # in-cluster DD agent), let OTLPSpanExporter resolve the endpoint
+        # itself: its own env-var handling appends the signal-specific
+        # "/v1/traces" path to OTEL_EXPORTER_OTLP_ENDPOINT, which a plain
+        # os.environ.get() read here would not. Only fall back to the shared
+        # Modular telemetry endpoint when neither var is set.
+        user_configured_endpoint = os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+        ) or os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        exporter = (
+            OTLPSpanExporter()
+            if user_configured_endpoint
+            else OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+        )
+        provider = TracerProvider(resource=logs_resource)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        set_tracer_provider(provider)
+
+    logger = logging.getLogger()
+    if settings.disable_telemetry:
+        logger.info("Tracing disabled.")
+    else:
+        logger.info("Tracing initialized.")
 
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK

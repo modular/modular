@@ -36,6 +36,7 @@ from typing import (
     overload,
 )
 
+import opentelemetry.trace as otel_trace
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from jinja2.exceptions import UndefinedError
@@ -159,6 +160,7 @@ _T = TypeVar("_T")
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
+_tracer = otel_trace.get_tracer("max.serve")
 
 # Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
 _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -557,6 +559,13 @@ class OpenAIChatResponseGenerator(
     ) -> AsyncGenerator[str | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
@@ -918,6 +927,17 @@ class OpenAIChatResponseGenerator(
             )
             yield error_response.model_dump_json()
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            if final_finish_reason is not None:
+                request_span.set_attribute(
+                    "gen_ai.response.finish_reasons", [final_finish_reason]
+                )
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -935,6 +955,13 @@ class OpenAIChatResponseGenerator(
             )
         request = requests[0]
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -1124,6 +1151,13 @@ class OpenAIChatResponseGenerator(
 
             return response
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -1230,6 +1264,13 @@ class OpenAIEmbeddingsResponseGenerator:
 
         record_request_start()
         metrics_req = requests[0]
+        request_span = _tracer.start_span(
+            "max.request",
+            attributes={
+                "gen_ai.request.model": self.pipeline.model_name,
+                "max.request_id": str(metrics_req.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=metrics_req.timestamp_ns)
 
         try:
@@ -1257,6 +1298,7 @@ class OpenAIEmbeddingsResponseGenerator:
             )
             return response
         finally:
+            request_span.end()
             record_request_end(
                 metrics_req.request_path,
                 request_timer.elapsed_ms,
@@ -2526,11 +2568,19 @@ class OpenAICompletionResponseGenerator(
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
+        final_finish_reason: str | None = None
         try:
             async for chunk in token_generator:
                 chunk_total_tokens = (
@@ -2568,13 +2618,14 @@ class OpenAICompletionResponseGenerator(
                         )
                     ]
                 elif chunk.status.is_done:
+                    final_finish_reason = get_finish_reason_from_status(
+                        chunk.status, allow_none=False
+                    )
                     choices = [
                         CompletionResponseStreamChoice(
                             index=0,
                             text="",
-                            finish_reason=get_finish_reason_from_status(
-                                chunk.status, allow_none=False
-                            ),
+                            finish_reason=final_finish_reason,
                         )
                     ]
                 else:
@@ -2657,6 +2708,17 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            if final_finish_reason is not None:
+                request_span.set_attribute(
+                    "gen_ai.response.finish_reasons", [final_finish_reason]
+                )
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -2670,6 +2732,13 @@ class OpenAICompletionResponseGenerator(
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            attributes={
+                "gen_ai.request.model": requests[0].model_name,
+                "max.request_id": str(requests[0].request_id),
+            },
+        )
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -2736,6 +2805,13 @@ class OpenAICompletionResponseGenerator(
             )
             return response
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            request_span.end()
             record_request_end(
                 requests[0].request_path,
                 request_timer.elapsed_ms,
