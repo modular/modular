@@ -76,6 +76,7 @@ def mock_pipeline_config() -> MagicMock:
     runtime_config = MagicMock()
     runtime_config.max_vision_cache_entries = 0
     runtime_config.max_vision_preprocess_cache_bytes = 0
+    runtime_config.max_video_preprocess_cache_bytes = 0
 
     pipeline_config = MagicMock()
     pipeline_config.model = model_config
@@ -132,6 +133,11 @@ def _patch_tokenizer_deps(mocker: MockerFixture, delegate: MagicMock) -> None:
 def _image_key(tokenizer: Gemma4Tokenizer, raw_bytes: bytes) -> int:
     """The digest new_context computes for an image."""
     return hash_image(raw_bytes, tokenizer.img_processor.max_soft_tokens)
+
+
+def _video_key(tokenizer: Gemma4Tokenizer, raw_bytes: bytes) -> int:
+    """The digest new_context computes for a video."""
+    return hash_image(raw_bytes, tokenizer._video_size_tier)
 
 
 def _make_image_bytes(size: tuple[int, int] = (64, 64)) -> bytes:
@@ -1036,6 +1042,151 @@ def test_eviction_under_budget_forces_reprocessing(
     tokenizer._preprocess_image(_image_key(tokenizer, first_image), first_image)
 
     assert processor.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Preprocessed-video cache
+# ---------------------------------------------------------------------------
+
+
+def _counting_video_processor() -> MagicMock:
+    """A ``Gemma4VideoProcessor`` stand-in that counts preprocessing calls."""
+    calls = 0
+
+    def process(
+        videos: list[bytes],
+    ) -> tuple[
+        list[npt.NDArray[np.float32]],
+        list[npt.NDArray[np.int32]],
+        list[int],
+        list[VideoMetadata],
+    ]:
+        nonlocal calls
+        calls += 1
+        return (
+            [
+                np.full((2, 6, 3), float(calls), dtype=np.float32)
+                for _ in videos
+            ],
+            [np.zeros((2, 6, 2), dtype=np.int32) for _ in videos],
+            [2] * len(videos),
+            [VideoMetadata(fps=30.0, timestamps=[0.0, 1.0])] * len(videos),
+        )
+
+    processor = MagicMock(side_effect=process)
+    processor.max_soft_tokens = 70
+    processor.num_frames = 32
+    processor.pooling_kernel_size = 3
+    return processor
+
+
+def _tokenizer_with_video_processor(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+    processor: MagicMock,
+) -> Gemma4Tokenizer:
+    _patch_tokenizer_deps(mocker, _make_mock_delegate())
+    mocker.patch(
+        "max.pipelines.architectures.gemma4.tokenizer.Gemma4VideoProcessor",
+        return_value=processor,
+    )
+    return Gemma4Tokenizer("test-model", mock_pipeline_config)
+
+
+def test_video_preprocessing_repeats_when_the_cache_is_disabled(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    processor = _counting_video_processor()
+    tokenizer = _tokenizer_with_video_processor(
+        mocker, mock_pipeline_config, processor
+    )
+    video = b"fake-video-bytes"
+
+    key = _video_key(tokenizer, video)
+    first = tokenizer._preprocess_video(key, video)
+    second = tokenizer._preprocess_video(key, video)
+
+    assert processor.call_count == 2
+    assert first[0][0][0][0] == 1.0
+    assert second[0][0][0][0] == 2.0
+
+
+def test_repeated_video_is_preprocessed_once(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    mock_pipeline_config.runtime.max_video_preprocess_cache_bytes = 1 << 20
+    processor = _counting_video_processor()
+    tokenizer = _tokenizer_with_video_processor(
+        mocker, mock_pipeline_config, processor
+    )
+    video = b"fake-video-bytes"
+
+    key = _video_key(tokenizer, video)
+    first = tokenizer._preprocess_video(key, video)
+    second = tokenizer._preprocess_video(key, video)
+
+    assert processor.call_count == 1
+    np.testing.assert_array_equal(first[0], second[0])
+    assert first[2] == second[2] == 2
+    assert first[3].timestamps == [0.0, 1.0]
+
+
+def test_distinct_videos_do_not_share_a_cache_entry(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    mock_pipeline_config.runtime.max_video_preprocess_cache_bytes = 1 << 20
+    processor = _counting_video_processor()
+    tokenizer = _tokenizer_with_video_processor(
+        mocker, mock_pipeline_config, processor
+    )
+
+    tokenizer._preprocess_video(
+        _video_key(tokenizer, b"video-one"), b"video-one"
+    )
+    tokenizer._preprocess_video(
+        _video_key(tokenizer, b"video-two"), b"video-two"
+    )
+
+    assert processor.call_count == 2
+
+
+def test_cached_video_arrays_are_frozen(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    mock_pipeline_config.runtime.max_video_preprocess_cache_bytes = 1 << 20
+    processor = _counting_video_processor()
+    tokenizer = _tokenizer_with_video_processor(
+        mocker, mock_pipeline_config, processor
+    )
+
+    pixels, position_ids, _, _ = tokenizer._preprocess_video(
+        _video_key(tokenizer, b"a-video"), b"a-video"
+    )
+
+    with pytest.raises(ValueError):
+        pixels[0][0][0] = 1.0
+    with pytest.raises(ValueError):
+        position_ids[0][0][0] = 1
+
+
+def test_video_and_image_caches_have_separate_budgets(
+    mocker: MockerFixture,
+    mock_pipeline_config: MagicMock,
+) -> None:
+    """A video must not be able to evict images, or vice versa."""
+    mock_pipeline_config.runtime.max_vision_preprocess_cache_bytes = 1 << 20
+    mock_pipeline_config.runtime.max_video_preprocess_cache_bytes = 0
+    processor = _counting_video_processor()
+    tokenizer = _tokenizer_with_video_processor(
+        mocker, mock_pipeline_config, processor
+    )
+
+    assert tokenizer._preprocess_cache.enabled
+    assert not tokenizer._video_preprocess_cache.enabled
 
 
 @pytest.mark.asyncio
