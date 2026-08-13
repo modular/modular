@@ -105,15 +105,41 @@ def padded_depth[
 
 
 @always_inline
+def _kv_cache_out_slot[
+    drop_list: Tuple, kv_cache_rank: Int, flat_rank: Int, i: Int
+]() -> Int:
+    """Returns the output slot that source dimension `i` maps to.
+
+    Source dimensions are visited innermost-first, so `i` lands one slot
+    below every kept dimension outside it. `Coord` is heterogeneous and only
+    accepts compile-time indices, so this slot has to be a parameter rather
+    than a counter carried across loop iterations.
+
+    Parameters:
+        drop_list: Source dimensions that are not represented in the output.
+        kv_cache_rank: Rank of the output shape.
+        flat_rank: Rank of the source tensor.
+        i: The source dimension being placed.
+
+    Returns:
+        The index into the output shape and strides.
+    """
+    var kept_outside = 0
+    comptime for j in range(i + 1, flat_rank):
+        comptime if j not in drop_list:
+            kept_outside += 1
+    return kv_cache_rank - 1 - kept_outside
+
+
+@always_inline
 def _compute_kv_cache_dynamic_shape_strides[
     dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
 ](blocks: TileTensor[dtype, ...]) -> Tuple[
-    IndexList[kv_cache_rank],
-    IndexList[kv_cache_rank],
+    DynamicCoord[DType.int64, kv_cache_rank],
+    DynamicCoord[DType.int64, kv_cache_rank],
 ]:
-    var kv_cache_shape = IndexList[kv_cache_rank]()
-    var kv_cache_strides = IndexList[kv_cache_rank]()
-    var out_index = kv_cache_rank - 1
+    var kv_cache_shape = DynamicCoord[DType.int64, kv_cache_rank]()
+    var kv_cache_strides = DynamicCoord[DType.int64, kv_cache_rank]()
     var stride = 1
 
     comptime for i in reversed(range(blocks.flat_rank)):
@@ -121,9 +147,15 @@ def _compute_kv_cache_dynamic_shape_strides[
 
         # Skip dimensions in the drop list (kv_idx and layer_idx).
         comptime if i not in drop_list:
-            kv_cache_shape[out_index] = dim
-            kv_cache_strides[out_index] = stride
-            out_index = out_index - 1
+            comptime out_index = _kv_cache_out_slot[
+                drop_list, kv_cache_rank, blocks.flat_rank, i
+            ]()
+            kv_cache_shape[out_index] = rebind[
+                kv_cache_shape.element_types[out_index]
+            ](Scalar[DType.int64](dim))
+            kv_cache_strides[out_index] = rebind[
+                kv_cache_strides.element_types[out_index]
+            ](Scalar[DType.int64](stride))
 
         stride *= dim
 
@@ -137,8 +169,8 @@ def _make_cache_tt[
     rank: Int,
 ](
     ptr: UnsafePointer[mut=_, Scalar[dtype], _],
-    shape: IndexList[rank],
-    strides: IndexList[rank],
+    shape: DynamicCoord[DType.int64, rank],
+    strides: DynamicCoord[DType.int64, rank],
 ) -> TileTensor[
     dtype,
     InternalLayout[
@@ -147,10 +179,10 @@ def _make_cache_tt[
     ],
     ptr.origin,
 ]:
-    """Construct a TileTensor from a pointer and IndexList shape/strides.
+    """Construct a TileTensor from a pointer and `Coord` shape/strides.
 
     Static dims in ResultLayout are left at their compile-time values;
-    dynamic dims are filled from the IndexList arguments.
+    dynamic dims are filled from the `Coord` arguments.
     """
     comptime ConcLayout = InternalLayout[
         shape_types=ResultLayout._shape_types,
@@ -161,11 +193,11 @@ def _make_cache_tt[
     comptime for i in range(rank):
         comptime if not shape_c.element_types[i].is_static_value:
             shape_c[i] = rebind[shape_c.element_types[i]](
-                Scalar[DType.int64](shape[i])
+                rebind[Scalar[DType.int64]](shape[i])
             )
         comptime if not stride_c.element_types[i].is_static_value:
             stride_c[i] = rebind[stride_c.element_types[i]](
-                Scalar[DType.int64](strides[i])
+                rebind[Scalar[DType.int64]](strides[i])
             )
     return TileTensor[dtype, ConcLayout](
         ptr=ptr, layout=ConcLayout(shape_c, stride_c)
@@ -3081,8 +3113,8 @@ struct ContinuousBatchingKVCacheCollection[
     var lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
-    var kv_cache_dynamic_shape: IndexList[4]
-    var kv_cache_dynamic_strides: IndexList[4]
+    var kv_cache_dynamic_shape: DynamicCoord[DType.int64, 4]
+    var kv_cache_dynamic_strides: DynamicCoord[DType.int64, 4]
 
     def __init__(
         out self,
@@ -3300,8 +3332,8 @@ struct PagedKVCacheCollection[
     ]
 
     var scales: OptionalReg[Self.scales_tt_type]
-    var kv_cache_scales_dynamic_shape: IndexList[4]
-    var kv_cache_scales_dynamic_strides: IndexList[4]
+    var kv_cache_scales_dynamic_shape: DynamicCoord[DType.int64, 4]
+    var kv_cache_scales_dynamic_strides: DynamicCoord[DType.int64, 4]
     var blocks: Self.blocks_tt_type
     var cache_lengths: Self.CacheType.cache_lengths_tt_type
     var lookup_table: Self.CacheType.lookup_table_tt_type
@@ -3311,8 +3343,8 @@ struct PagedKVCacheCollection[
     var scales_lookup_table: Self.CacheType.lookup_table_tt_type
     var max_seq_length: UInt32
     var max_cache_length: UInt32
-    var kv_cache_dynamic_shape: IndexList[4]
-    var kv_cache_dynamic_strides: IndexList[4]
+    var kv_cache_dynamic_shape: DynamicCoord[DType.int64, 4]
+    var kv_cache_dynamic_strides: DynamicCoord[DType.int64, 4]
 
     def __init__[
         scales_dtype: DType = Self.scale_dtype
@@ -3396,8 +3428,10 @@ struct PagedKVCacheCollection[
             )
         else:
             self.scales = None
-            self.kv_cache_scales_dynamic_shape = IndexList[4](0, 0, 0, 0)
-            self.kv_cache_scales_dynamic_strides = IndexList[4](0, 0, 0, 0)
+            self.kv_cache_scales_dynamic_shape = DynamicCoord[DType.int64, 4]()
+            self.kv_cache_scales_dynamic_strides = DynamicCoord[
+                DType.int64, 4
+            ]()
 
     def __init__(
         out self,
@@ -3434,8 +3468,10 @@ struct PagedKVCacheCollection[
             )
         else:
             self.scales = None
-            self.kv_cache_scales_dynamic_shape = IndexList[4](0, 0, 0, 0)
-            self.kv_cache_scales_dynamic_strides = IndexList[4](0, 0, 0, 0)
+            self.kv_cache_scales_dynamic_shape = DynamicCoord[DType.int64, 4]()
+            self.kv_cache_scales_dynamic_strides = DynamicCoord[
+                DType.int64, 4
+            ]()
 
     @always_inline
     def get_key_cache(self, layer_idx: Int) -> Self.CacheType:
