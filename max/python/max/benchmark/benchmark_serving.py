@@ -1241,7 +1241,10 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            revision=resolve_revision(tokenizer_id),
+            # An explicit revision wins: ``resolve_revision`` asks the Hub and
+            # returns None for a repo it cannot see, which loads ``main``.
+            revision=args.tokenizer_revision or resolve_revision(tokenizer_id),
+            local_files_only=args.tokenizer_local_files_only,
             model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
         )

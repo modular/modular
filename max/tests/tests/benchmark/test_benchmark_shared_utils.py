@@ -60,6 +60,7 @@ def test_get_tokenizer_passes_model_max_length_when_provided(
         model_max_length=4096,
         trust_remote_code=True,
         revision="abc123",
+        local_files_only=False,
     )
 
 
@@ -84,6 +85,40 @@ def test_get_tokenizer_omits_model_max_length_when_unspecified(
         "repo/model",
         trust_remote_code=False,
         revision=None,
+        local_files_only=False,
+    )
+
+
+def test_get_tokenizer_forwards_local_files_only(
+    mocker: MockerFixture,
+) -> None:
+    """A cache-only load keeps the Hub out of both transformers lookups."""
+    from_pretrained = mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+    )
+    autoconfig = mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        return_value=MagicMock(architectures=[]),
+    )
+
+    get_tokenizer(
+        "repo/model",
+        revision="abc123",
+        trust_remote_code=False,
+        local_files_only=True,
+    )
+
+    from_pretrained.assert_called_once_with(
+        "repo/model",
+        trust_remote_code=False,
+        revision="abc123",
+        local_files_only=True,
+    )
+    autoconfig.assert_called_once_with(
+        "repo/model",
+        trust_remote_code=False,
+        revision="abc123",
+        local_files_only=True,
     )
 
 

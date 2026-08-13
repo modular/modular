@@ -190,6 +190,7 @@ def _resolve_architectures(
     *,
     revision: str | None,
     trust_remote_code: bool,
+    local_files_only: bool = False,
 ) -> list[str]:
     """Best-effort probe of a model's ``architectures`` via ``AutoConfig``.
 
@@ -206,6 +207,7 @@ def _resolve_architectures(
                 pretrained_model_name_or_path,
                 trust_remote_code=trust_remote_code,
                 revision=revision,
+                local_files_only=local_files_only,
             )
         return getattr(config, "architectures", None) or []
     except (ValueError, OSError) as exc:
@@ -227,6 +229,7 @@ def get_tokenizer(
     model_max_length: int | None = None,
     trust_remote_code: bool = False,
     architectures: list[str] | None = None,
+    local_files_only: bool = False,
 ) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
     """Load a tokenizer for a benchmark model.
 
@@ -238,10 +241,19 @@ def get_tokenizer(
     list (e.g. the parent process passing its result to spawned tokenizer-pool
     workers) so the redundant per-worker ``AutoConfig`` Hub lookup — and its
     warning — is skipped. When ``None`` the list is resolved here once.
+
+    ``local_files_only`` resolves everything from the local cache. Set it for a
+    checkpoint the Hub will not serve this caller: transformers lists the repo's
+    ``additional_chat_templates/`` folder via ``list_repo_tree``, and re-raises
+    ``RepositoryNotFoundError`` / ``GatedRepoError`` rather than falling back to
+    the cache — which is what a 401/404 on an invisible repo produces. (A plain
+    ``HfHubHTTPError`` *is* caught there and does fall back, so an unreachable
+    Hub degrades gracefully while an invisible repo does not.)
     """
     tokenizer_kwargs: dict[str, bool | int | str | None] = {
         "trust_remote_code": trust_remote_code,
         "revision": revision,
+        "local_files_only": local_files_only,
     }
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
@@ -259,6 +271,7 @@ def get_tokenizer(
             pretrained_model_name_or_path,
             revision=revision,
             trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
         )
     # Stash the resolved architectures alongside the revision so the tokenizer
     # pool can forward them to workers and avoid re-probing the Hub per worker.
