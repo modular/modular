@@ -798,7 +798,7 @@ class ExtensionAttr(max._core.Attribute):
     @property
     def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
-class FnMetaDataAttr(max._core.Attribute):
+class FnMetadataAttr(max._core.Attribute):
     """
     The `#kgen.fn_metadata` attribute aggregates everything a `!kgen.func` type
     describes on top of its value signature: the calling convention of each
@@ -4703,7 +4703,7 @@ class FuncType(max._core.Type):
     def __init__(
         self,
         values: max._core.dialects.builtin.FunctionType,
-        meta_data_attr: FnMetaDataAttr,
+        metadata_attr: FnMetadataAttr,
         arg_list_attrs: PogListAttr,
     ) -> None: ...
     @overload
@@ -4718,7 +4718,7 @@ class FuncType(max._core.Type):
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
     @property
-    def meta_data_attr(self) -> FnMetaDataAttr: ...
+    def metadata_attr(self) -> FnMetadataAttr: ...
     @property
     def arg_list_attrs(self) -> PogListAttr: ...
 
