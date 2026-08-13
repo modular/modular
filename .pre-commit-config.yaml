@@ -24,8 +24,8 @@ repos:
 
       - id: format-check
         name: format-check
-        entry: ./bazelw run lint
+        entry: python3 utils/mojo-format-check.py
         language: system
-        files: '\.(mojo|py|mdx?)$'
+        files: '\.(mojo|🔥)$'
         stages: [pre-push]
-        pass_filenames: false
+        pass_filenames: true
