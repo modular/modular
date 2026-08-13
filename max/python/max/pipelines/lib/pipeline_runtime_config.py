@@ -489,6 +489,22 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    max_vision_preprocess_cache_bytes: int = Field(
+        default=5 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed image "
+            "tensors in the tokenizer. A hit skips the resize, rescale and "
+            "patchify for a repeated image -- for example the same image "
+            "resent on every turn of a conversation -- which the vision "
+            "encoder cache cannot avoid, because it is consulted only after "
+            "preprocessing has already run. This is a ceiling on resident "
+            "host memory in the API server process, not a reservation: the "
+            "cache grows to it under load and evicts least-recently-used "
+            "entries to stay within it. Set to ``0`` to disable. Only used "
+            "by VLMs."
+        ),
+    )
+
     _vision_cache_plan: VisionCachePlan | None = PrivateAttr(default=None)
     """Resolved block-mode vision cache reservation.
 
