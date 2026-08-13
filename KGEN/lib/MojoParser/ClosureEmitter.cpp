@@ -2798,7 +2798,7 @@ static TypeConvention typeConventionOf(SharedState &shared, ParamType paramType,
     return TypeConvention::Unspecified;
   }
 
-  if (!isa<TraitType>(paramRef.getType())) {
+  if (!sugarIsa<TraitType>(paramRef.getType())) {
     shared.emitError(nestedFnDecl.getLoc(),
                      "cannot capture " + capture.getSpelling() +
                          " because its type constraint is not a trait.");

@@ -22,6 +22,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S10 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S11 < %t.mlir
 # COM: Verify ParamOperatorAttr and LITStructAttr matching: Pair(tag, 0) lowers
 # COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
 # COM: requires recursive matching through both composite attr types.
@@ -336,3 +337,22 @@ def s10_forward[
     T: Movable & Deinitable, //, G: def() -> T
 ](*, call: G) -> T:
     return s10_sink(call=call)
+
+
+# COM: `{var}` copy-capture of a generic whose bound is a comptime alias of a
+# COM: function-type composition, not an inline trait. Related to MOCO-4640.
+# S11: lit.struct.decl @"{{.*}}s11_dispatch::__storage"
+# S11-SAME: register_passable
+# S11: lit.struct.field body : !kgen.param
+
+
+comptime s11_RowBody = ImplicitlyCopyable & RegisterPassable & def(Int) -> None
+
+
+def s11_launch[Body: s11_RowBody](body: Body, num_blocks: Int):
+    def s11_dispatch[BS: Int]() {var}:
+        _ = body
+        _ = num_blocks
+
+    s11_dispatch[1024]()
+
