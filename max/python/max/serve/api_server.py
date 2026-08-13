@@ -467,6 +467,10 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         host=server_settings.host,
         port=server_settings.port,
         timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
+        # uvicorn defaults to closing idle connections after 5s, far below the
+        # idle timeout of a pooling client, which makes the server the side
+        # that closes and turns the race into client-visible TCP resets.
+        timeout_keep_alive=server_settings.http_keepalive_timeout_s,
         # The serving lifespan (model worker, pipeline, telemetry) is entered
         # explicitly by the entrypoint around `server.serve()` so that a worker
         # crash cancels the serving task directly. Keep uvicorn out of the

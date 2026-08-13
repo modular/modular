@@ -257,6 +257,15 @@ This version is still a work in progress.
   logger stays at `WARNING`, so the per-request access log remains
   suppressed.
 
+- Added `MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S` to control how long an idle HTTP
+  connection is held open, defaulting to 120 seconds (previously hard-coded to
+  5 seconds). A server that retires idle connections sooner than its clients do
+  always wins the close race, and a close landing just as a pooled client
+  writes its next request reaches that client as a TCP reset rather than a
+  response. A client cannot replay a POST body, so it surfaces the reset
+  instead of retrying. Keep this above the idle-connection timeout of every
+  client that pools connections to MAX Serve.
+
 ### Server metrics
 
 - Fixed the speculative-decoding per-position acceptance-rate histogram
