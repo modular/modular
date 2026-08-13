@@ -56,6 +56,7 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
+    PointerStorage,
     RowMajorLayout,
     TensorLayout,
     TensorStorage,
@@ -1742,13 +1743,16 @@ def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[Int64],
+    TempStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
     ctx: DeviceContext,
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
     temperature: Scalar[temp_dtype] = Float32(1.0),
     temperature_arr: Optional[
-        TileTensor[temp_dtype, TempLayoutType, ImmutAnyOrigin]
+        TileTensor[
+            temp_dtype, TempLayoutType, ImmutAnyOrigin, Storage=TempStorageType
+        ]
     ] = None,
 ) raises:
     """GPU softmax with per-row temperature scaling.
@@ -1761,6 +1765,7 @@ def softmax_with_temperature[
         dtype: The data type of the input and output tensors.
         temp_dtype: The data type for temperature values (default float32).
         TempLayoutType: The layout type for the optional temperature array.
+        TempStorageType: The storage type for the optional temperature array.
 
     Args:
         ctx: Device context for kernel execution.

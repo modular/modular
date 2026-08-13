@@ -126,7 +126,10 @@ def test_blackwell_matmul_with_1d_bias[
     )
 
     comptime EpilogueType = TileTensor[
-        matmul_config.c_type, type_of(bias_shape), ImmutAnyOrigin
+        matmul_config.c_type,
+        type_of(bias_shape),
+        ImmutAnyOrigin,
+        Storage=bias_tile.Storage,
     ]
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
