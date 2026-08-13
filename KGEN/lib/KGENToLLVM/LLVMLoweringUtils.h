@@ -477,12 +477,21 @@ struct OneToOneFloatOrIntConversion : public ConvertPOPToLLVMPattern<Op> {
 
     if (dtype.isBool() || dtype.isInt() || dtype.isIndex() ||
         dtype.isUIndex()) {
-      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex())
-        rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
-                                            adaptor.getRhs());
-      else
-        rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
-                                            adaptor.getRhs());
+      if (std::is_same_v<SIntOp, UIntOp> || dtype.isSInt() || dtype.isIndex()) {
+        if constexpr (std::is_same_v<SIntOp, mlir::LLVM::SDivOp>)
+          rewriter.replaceOpWithNewOp<SIntOp>(
+              op, type, adaptor.getLhs(), adaptor.getRhs(), op.getIsExact());
+        else
+          rewriter.replaceOpWithNewOp<SIntOp>(op, type, adaptor.getLhs(),
+                                              adaptor.getRhs());
+      } else {
+        if constexpr (std::is_same_v<UIntOp, mlir::LLVM::UDivOp>)
+          rewriter.replaceOpWithNewOp<UIntOp>(
+              op, type, adaptor.getLhs(), adaptor.getRhs(), op.getIsExact());
+        else
+          rewriter.replaceOpWithNewOp<UIntOp>(op, type, adaptor.getLhs(),
+                                              adaptor.getRhs());
+      }
     } else {
       // Take flags from a `getFastmathFlags()` accessor if present, else none.
       mlir::LLVM::FastmathFlags fastmathFlags = fastmathFlagsOrDefault(op);
