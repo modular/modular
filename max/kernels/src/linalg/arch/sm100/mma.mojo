@@ -32,7 +32,12 @@ from layout.tensor_core_async import (
 )
 
 from std.utils.index import Index, IndexList, product
-from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
+from linalg.fp4_utils import (
+    SF_MN_GROUP_SIZE,
+    SF_ATOM_M,
+    SF_ATOM_K,
+    block_scaled_operands_compatible,
+)
 
 
 def _create_mma_desc_k_major[
@@ -463,9 +468,9 @@ struct MmaOpSM100_BlockScaled_SS[
             1,
             2,
         ), "MmaOpSM100 only supports cta_group 1 or 2"
-        comptime assert (
-            Self.a_type == Self.b_type
-        ), "a_type and b_type must be the same"
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "a_type and b_type must be the same, or the W4A8 pair"
         comptime assert Self.a_type in (
             DType.float8_e4m3fn,
             DType.uint8,  # TODO: (KERN-2238) replace with FP4-E2M1
@@ -599,6 +604,9 @@ struct MmaOpSM100_BlockScaled_SS[
                     ](sfb_smem, sfb_tmem + UInt32(sfb_k_offset))
 
         # K-iteration: offset = k * sizeof (contiguous within swizzle tile).
+        # Both operands span one byte per element here: the FP4 TMA copy pads
+        # an E2M1 operand into shared memory (8 packed bytes then an 8-byte
+        # gap per 16 values), so a K offset scales the same for either dtype.
         comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = k * size_of[Self.a_type]()
             comptime b_offset = k * size_of[Self.b_type]()

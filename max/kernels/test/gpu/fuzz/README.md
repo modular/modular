@@ -56,6 +56,15 @@ python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --timeout 30
 Confirmed failures and their shrunk specs are recorded under `corpus/<target>/`
 with their expected verdict, and the replay gate re-runs them deterministically.
 
+The orchestrator only writes an entry for a non-PASS verdict, so a `_pass_`
+entry is always hand-written: an anchor asserting a representative boundary
+shape still runs clean, which is what lets the gate catch a regression rather
+than only a change in a known failure. Keep them when pruning stale failures.
+Note the corpus is exempted from the unreferenced-files lint by a pattern in
+`bazel/internal/find_unreferenced_files.py`, and that lint also rejects an
+unused pattern — so emptying the corpus entirely means dropping the exemption
+in the same change.
+
 ## Oracles
 
 Select with `--oracle`:

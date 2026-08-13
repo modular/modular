@@ -350,8 +350,12 @@ def _get_fp4_input_types(
             _SF_ATOM_K,
         )
 
+    # Only a uint8 activation row is nibble-packed. W4A8 hands the kernel E4M3
+    # activations, one byte per element, against still-packed weights.
+    hidden_k = K // 2 if hidden_dtype == DType.uint8 else K
+
     return [
-        TensorType(hidden_dtype, shape=(total_tokens, K // 2), device=device),
+        TensorType(hidden_dtype, shape=(total_tokens, hidden_k), device=device),
         TensorType(DType.uint8, shape=(num_experts, N, K // 2), device=device),
         TensorType(a_scales_dtype, shape=a_scales_shape, device=device),
         TensorType(
@@ -456,6 +460,68 @@ def test_grouped_matmul_block_scaled_invalid(
     """Tests grouped_matmul_block_scaled rejects invalid inputs."""
     input_types = _get_fp4_input_types(DeviceRef.CPU(), **kwargs)
     with pytest.raises(error_type, match=error_match):
+        _call_fp4_matmul(input_types)
+
+
+def test_grouped_matmul_block_scaled_w4a8_valid() -> None:
+    """Tests grouped_matmul_block_scaled accepts the mixed W4A8 operand pair.
+
+    E4M3 activations against nibble-packed E2M1 weights is the one pair whose
+    operands differ, so it must clear the same-dtype check, and its weight rows
+    must be compared against the activations in elements rather than in bytes.
+    """
+    input_types = _get_fp4_input_types(
+        DeviceRef.CPU(),
+        hidden_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float8_e8m0fnu,
+        sf_vector_size=32,
+    )
+    output = _call_fp4_matmul(input_types)
+    assert output.shape == [99, 256]
+    assert output.dtype == DType.bfloat16
+
+
+def test_grouped_matmul_block_scaled_w4a8_rejects_nvfp4_scales() -> None:
+    """Tests the W4A8 dtype relaxation is gated on the scale dtype too.
+
+    The kernel implements the mixed operand pair only on E8M0 group-32 scales.
+    Admitting it under NVFP4 scales here would defer the error to a Mojo
+    comptime assert partway through graph compilation.
+    """
+    input_types = _get_fp4_input_types(
+        DeviceRef.CPU(),
+        hidden_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float8_e4m3fn,
+        sf_vector_size=16,
+    )
+    with pytest.raises(
+        ValueError,
+        match="expected hidden_states and weight to have the same dtype",
+    ):
+        _call_fp4_matmul(input_types)
+
+
+def test_grouped_matmul_block_scaled_w4a8_rejects_k_mismatch() -> None:
+    """Tests W4A8 weights are still held to the activations' K extent.
+
+    The reported expectation is in packed bytes, since that is the shape the
+    caller has to supply.
+    """
+    input_types = _get_fp4_input_types(
+        DeviceRef.CPU(),
+        hidden_dtype=DType.float8_e4m3fn,
+        scales_dtype=DType.float8_e8m0fnu,
+        sf_vector_size=32,
+    )
+    # Halve the weights' packed row: 128 bytes covers 256 elements, not 512.
+    input_types[1] = TensorType(
+        DType.uint8, shape=(3, 256, 128), device=DeviceRef.CPU()
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"expected weight is of shape \[num_experts, \*, 256\]",
+    ):
         _call_fp4_matmul(input_types)
 
 

@@ -539,20 +539,30 @@ struct Struct_grouped_matmul_block_scaled:
         """Executes grouped block-scaled matrix multiplication.
 
         Computes C = A @ B^T for multiple expert groups where A and B are
-        block-scaled (e.g. NVFP4: 4-bit floating point packed as uint8).
+        block-scaled. `uint8` operands are nibble-packed 4-bit E2M1, so their
+        rows are `K // 2` wide; `float8_e4m3fn` operands are unpacked. The
+        operand and scale dtypes together select the UMMA kind (see
+        `block_scaled_umma_kind`): NVFP4, MXFP4, MXFP8, or the mixed W4A8 pair.
 
         Parameters:
             c_type: The output tensor data type.
-            a_type: The input A data type. Constraints: Must be `uint8`.
-            b_type: The input B data type. Constraints: Must be `uint8`.
+            a_type: The input A data type.
+                Constraints: Must be `uint8` (NVFP4/MXFP4) or `float8_e4m3fn`
+                (MXFP8/W4A8).
+            b_type: The input B data type.
+                Constraints: Must equal `a_type`, except for W4A8, which pairs
+                a `float8_e4m3fn` A with a `uint8` B.
             scales_type: The scale factor data type.
-                Constraints: Must be `float8_e4m3fn`.
+                Constraints: Must be `float8_e4m3fn` (NVFP4) or
+                `float8_e8m0fnu` (MXFP4/MXFP8/W4A8).
             target: The target GPU device.
 
         Args:
             c: The output tensor of shape (total_tokens, N).
-            a: The input tensor of shape (total_tokens, K // 2).
-            b: The weight tensor of shape (num_experts, N, K // 2).
+            a: The input tensor of shape (total_tokens, K) for `float8_e4m3fn`
+                or (total_tokens, K // 2) for packed `uint8`.
+            b: The weight tensor of shape (num_experts, N, K) for
+                `float8_e4m3fn` or (num_experts, N, K // 2) for packed `uint8`.
             a_scales: The A scale factors in tcgen05 5D layout.
             b_scales: The B scale factors in tcgen05 6D layout.
             expert_start_indices: The starting token index for each expert.

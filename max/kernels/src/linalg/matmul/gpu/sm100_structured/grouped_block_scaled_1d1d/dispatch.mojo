@@ -51,10 +51,10 @@ from std.utils.index import Index
 from layout import TileTensor
 
 from linalg.fp4_utils import (
-    MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
-    NVFP4_SF_DTYPE,
+    block_scaled_umma_kind,
+    is_w4a8_operand_pair,
 )
 from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
@@ -71,19 +71,6 @@ from .grouped_1d1d_matmul_kernel import (
 # prefill. Tuned on B200 NVFP4 traffic; don't change without a new ablation.
 comptime DECODE_AVG_M = 8
 comptime SMALL_PREFILL_AVG_M = 64
-
-
-def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
-    """Infer UMMAKind from input and scale dtypes."""
-    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE:
-        return UMMAKind.KIND_MXF4
-    else:
-        comptime assert (
-            a_type == DType.float8_e4m3fn and scales_dtype == MXFP8_SF_DTYPE
-        ), "unsupported a_type/scales_dtype for grouped block-scaled matmul"
-        return UMMAKind.KIND_MXF8F6F4
 
 
 def _launch_grouped_block_scaled[
@@ -146,8 +133,11 @@ def _launch_grouped_block_scaled[
             in-place register path (no SMEM scratch) on decode shapes.
             Default False keeps the cooperative path.
     """
-    comptime a_type = a.dtype
-    comptime b_type = b.dtype
+    # `grouped_matmul_block_scaled` feeds the weights into the kernel's A slot
+    # when `AB_swapped`, so the config's per-operand dtypes have to follow the
+    # tensors. Invisible until the two dtypes differ, which is W4A8.
+    comptime a_type = b.dtype if AB_swapped else a.dtype
+    comptime b_type = a.dtype if AB_swapped else b.dtype
     comptime c_type = c.dtype
     comptime sfa_dtype = a_scales.dtype
     comptime sfb_dtype = b_scales.dtype
@@ -747,9 +737,29 @@ def grouped_matmul_block_scaled_sm100_dispatch[
         estimated_total_m: Estimated number of total non-padded tokens.
         ctx: Device context.
     """
-    comptime scaling_kind = _scaling_kind[a.dtype, a_scales.dtype]()
+    comptime scaling_kind = block_scaled_umma_kind[
+        a.dtype, b.dtype, a_scales.dtype
+    ]()
 
-    comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
+    # W4A8 lands in shared memory with the same byte geometry as MXFP8 -- the
+    # FP4 TMA copy pads the weights on the way in -- so it takes the same
+    # regime-tuned launcher.
+    comptime if is_w4a8_operand_pair[a.dtype, b.dtype]():
+        grouped_matmul_mxfp8_dispatch[transpose_b, target, pdl_level=pdl_level](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            a_scale_offsets,
+            expert_ids,
+            expert_scales,
+            num_active_experts,
+            estimated_total_m,
+            ctx,
+        )
+    elif scaling_kind == UMMAKind.KIND_MXF4NVF4:
         grouped_matmul_nvfp4_dispatch[transpose_b, target, pdl_level=pdl_level](
             c,
             a,

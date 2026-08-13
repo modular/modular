@@ -4663,6 +4663,7 @@ def create_tensor_tile[
     __desc_shape: IndexList[rank] = _default_desc_shape[
         rank, dtype, tile_shape, swizzle_mode
     ](),
+    unpack_fp4: Bool = False,
 ](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) raises -> TMATensorTile[
     dtype,
     rank,
@@ -4684,6 +4685,12 @@ def create_tensor_tile[
         swizzle_mode: The swizzling mode for memory access optimization.
         __tile_shape: Internal parameter for the tile shape.
         __desc_shape: Internal parameter for the descriptor shape.
+        unpack_fp4: When True, `tensor` holds nibble-packed E2M1 as `uint8`
+            and the copy pads it into shared memory so a K extent spans one
+            byte per element (the values themselves stay nibble-packed; see
+            `PACKED_FP4_ALIGN16B`). The tile and descriptor shapes are then
+            counted in FP4 elements, so they are twice the tensor's innermost
+            extent per tile.
 
     Args:
         ctx: The CUDA device context.
@@ -4708,19 +4715,30 @@ def create_tensor_tile[
             " multiple TMA copies."
         )
 
-    # Swizzle constraint applies to all ranks - check once here
+    # Swizzle constraint applies to all ranks - check once here. A padded FP4
+    # tile spans one shared-memory byte per element, so its shape already
+    # counts shared-memory bytes and needs no element-size scaling.
     comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        comptime assert (
-            tile_shape[rank - 1] * size_of[dtype]()
-        ) % swizzle_mode.bytes() == 0, (
+        comptime tile_smem_bytes = tile_shape[rank - 1] * (
+            1 if unpack_fp4 else size_of[dtype]()
+        )
+        comptime assert tile_smem_bytes % swizzle_mode.bytes() == 0, (
             String(swizzle_mode)
             + " mode requires K dim multiple of "
             + String(swizzle_mode.bytes())
             + "B."
         )
 
+    comptime assert (
+        rank == 2 or not unpack_fp4
+    ), "packed FP4 TMA is only wired for rank 2"
+
     comptime if rank == 2:
-        return create_tma_descriptor[dtype, 2, swizzle_mode](
+        # The innermost extent reaches the descriptor in FP4 elements, which
+        # is twice what the `uint8` view spells. Strides stay in `uint8`.
+        return create_tma_descriptor[
+            dtype, 2, swizzle_mode, unpack_fp4=unpack_fp4
+        ](
             DeviceBuffer(
                 ctx,
                 tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
@@ -4729,7 +4747,8 @@ def create_tensor_tile[
             ),
             (
                 Int(tensor.layout.shape[0]().value()),
-                Int(tensor.layout.shape[1]().value()),
+                Int(tensor.layout.shape[1]().value())
+                * (2 if unpack_fp4 else 1),
             ),
             (
                 Int(tensor.layout.stride[0]().value()),

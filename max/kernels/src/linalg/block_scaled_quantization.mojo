@@ -2210,7 +2210,7 @@ def block_scaled_matmul[
             a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
         ](
             scaling_kind=get_scaling_kind[
-                a_type, scales_dtype, SF_VECTOR_SIZE
+                a_type, scales_dtype, SF_VECTOR_SIZE, b_type
             ](),
             mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
