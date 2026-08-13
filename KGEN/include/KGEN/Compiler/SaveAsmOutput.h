@@ -73,9 +73,8 @@ std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
                                          llvm::StringMap<int> &nameCountMap);
 
 /// Return the output path for an offload kernel file.
-/// Format: <prefix>_<baseName><ext>
-std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef baseName,
-                              llvm::StringRef ext);
+/// Format: <prefix>_<fileName>, where fileName is "<baseName><ext>".
+std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef fileName);
 
 //===----------------------------------------------------------------------===//
 // Pending offload writes
@@ -83,18 +82,22 @@ std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef baseName,
 
 /// Module attribute that holds pending offload writes past cachedTransform.
 /// compileOffloads() encodes the files it wants to save (.asm or .ll)
-/// as a dictionary (path → content) on the module;
+/// as a dictionary (file name → content) on the module;
 /// cachedTransform serializes it into the cache alongside the IR.
 /// flushOffloadWrites() reads this attribute after cachedTransform returns,
 /// writing files on both the cache-hit path (deserialized module)
 /// and the cache-miss path.
+/// The keys are file names, not paths, so a cache entry stays valid when the
+/// output directory changes.
 inline constexpr llvm::StringLiteral kOffloadWritesAttrName =
     "kgen.offload_debug_files";
 
 /// Flush all pending offload writes on \p module and remove the attribute.
+/// Each file is written to \p outputPrefix joined with its recorded name.
 /// Must be called after cachedTransform so files are written on both hit and
 /// miss paths.
-ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module);
+ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module,
+                                  llvm::StringRef outputPrefix);
 
 } // namespace M::KGEN
 

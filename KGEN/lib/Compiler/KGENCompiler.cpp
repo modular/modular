@@ -452,7 +452,7 @@ static ElaboratorCompileOffloadRetType compileOffloads(
   // extension, to avoid collisions across targets. Keyed by "<name><ext>".
   llvm::StringMap<int> kernelNameCounts;
 
-  // Pending offload writes: {filePath, content} pairs collected during
+  // Pending offload writes: {fileName, content} pairs collected during
   // compilation and flushed to disk by flushOffloadWrites() after
   // cachedTransform.
   SmallVector<NamedAttribute> offloadPendingWrites;
@@ -754,12 +754,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                 compilationOptions.offloadOutputKind == EmitAs::LLVM
                     ? traits->getLLVMExtension()
                     : traits->getAsmExtension();
-            std::string baseName =
-                reserveOffloadOutputBaseName(rawName, ext, kernelNameCounts);
-            std::string path = offloadOutputPath(
-                compilationOptions.offloadOutputPrefix, baseName, ext);
+            std::string fileName =
+                reserveOffloadOutputBaseName(rawName, ext, kernelNameCounts) +
+                ext.str();
             offloadPendingWrites.push_back(
-                {mlir::StringAttr::get(theModule->getContext(), path),
+                {mlir::StringAttr::get(theModule->getContext(), fileName),
                  mlir::StringAttr::get(theModule->getContext(),
                                        kindAndContent.second->getBuffer())});
           }
@@ -927,6 +926,12 @@ createPassManager(const std::optional<std::string> &operationName,
   return {context};
 }
 
+/// Name of the module attribute recording which offload output files were
+/// requested using the `--emit` flag on mojo build. Only the kind is recorded,
+/// not the output prefix.
+static constexpr llvm::StringLiteral kOffloadRequestAttrName =
+    "kgen.offload_output_request";
+
 ErrorOrSuccess
 KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
                               RCRef<Cache::TransformCache> transformCache,
@@ -934,6 +939,15 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   // Set the target now, so it's included in the cache key.
   if (!getTargetInfo(theModule))
     setTargetInfo(theModule, target);
+
+  // Elaboration only records the offload files when the build asked for them.
+  // Put the request in the cache key too, so an `--emit asm` build does not
+  // reuse an entry from a build that skipped the files.
+  if (!options.offloadOutputPrefix.empty())
+    theModule->setAttr(
+        kOffloadRequestAttrName,
+        mlir::StringAttr::get(&context,
+                              stringifyEmitAs(options.offloadOutputKind)));
 
   mlir::PassManager pm =
       createPassManager(pmConfigOptions.operationName, &context);
@@ -958,8 +972,12 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   // Flush pending offload writes.  Runs after cachedTransform on both hit and
   // miss paths, so files are always produced.
   if (!options.offloadOutputPrefix.empty()) {
-    if (auto err = flushOffloadWrites(theModule))
+    if (auto err = flushOffloadWrites(theModule, options.offloadOutputPrefix))
       return err;
+    // This attribute changes the elaborator behavior only.
+    // The back-end does not use it, so remove the attribute
+    // here, to avoid polluting the back end cache.
+    theModule->removeAttr(kOffloadRequestAttrName);
   }
 
   return success();
