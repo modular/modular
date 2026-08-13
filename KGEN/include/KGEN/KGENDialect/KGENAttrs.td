@@ -95,7 +95,7 @@ def KGEN_ParamDeclAttr : KGENAttr<"ParamDecl", "param.decl"> {
 /// An array of ParamDeclAttr's typically used on a kgen.generator and other
 /// ops that define parameters.
 def KGEN_ParamDeclArrayAttr : ArrayOfAttr<KGENDialect, "ParamDeclArray",
-    "param.decls", "ParamDeclAttr"> {
+    "param.decls", "ParamDeclAttr", [DeclareAttrInterfaceMethods<TypedAttrInterface>]> {
   let builders = [
     AttrBuilderWithInferredContext<(ins "ParamDeclAttr":$paramDecl), [{
       return get(paramDecl.getContext(), paramDecl);
@@ -2517,7 +2517,6 @@ def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
     `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
   }];
 }
-
 
 //===----------------------------------------------------------------------===//
 // DeferredAttr

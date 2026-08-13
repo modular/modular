@@ -116,7 +116,9 @@ struct ParamRefRemapper : public IndexParameterReplacer<ParamRefRemapper> {
 /// for why this is needed.
 class IndexDepthAdjuster : public IndexParameterReplacer<IndexDepthAdjuster> {
 public:
-  explicit IndexDepthAdjuster(int64_t adjustDepth) : adjustDepth(adjustDepth) {}
+  explicit IndexDepthAdjuster(int64_t adjustDepth,
+                              bool onlyAdjustIndexRef = false)
+      : adjustDepth(adjustDepth), onlyAdjustIndexRef(onlyAdjustIndexRef) {}
 
 private:
   // CRTP methods.
@@ -126,6 +128,9 @@ private:
 
   /// Adjust the depth of index references when remapping.
   int64_t adjustDepth;
+
+  /// Only adjust the index.ref attr, not a general index ref interface.
+  bool onlyAdjustIndexRef;
 };
 
 //===----------------------------------------------------------------------===//

@@ -147,6 +147,17 @@ EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
 EmitAs EmitAsAttr::getValue() const { return (EmitAs)getInt(); }
 
 //===----------------------------------------------------------------------===//
+// ParamDeclArrayAttr
+//===----------------------------------------------------------------------===//
+
+Type ParamDeclArrayAttr::getType() const {
+  // TODO: `non_struct_type` is not accurate, but we only need a type in order
+  // to use the attribute in a parameter expression. A dedicated type would make
+  // more sense here.
+  return NonStructTypeType::get(getContext());
+}
+
+//===----------------------------------------------------------------------===//
 // ParamListAttr
 //===----------------------------------------------------------------------===//
 

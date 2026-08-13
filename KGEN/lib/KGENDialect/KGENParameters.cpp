@@ -90,7 +90,8 @@ Attribute IndexDepthAdjuster::tryReplace(Attribute attr, size_t depth) {
     return ParamIndexRefAttr::get(ref.getDepth() + adjustDepth, ref.getIndex(),
                                   replaceImpl(ref.getType(), depth));
   }
-  if (auto itf = dyn_cast<IndexRefAttrInterface>(attr)) {
+  if (auto itf = dyn_cast<IndexRefAttrInterface>(attr);
+      itf && !onlyAdjustIndexRef) {
     if (itf.getDepth() < depth)
       return itf;
     // Replace subelements and then replace the whole reference with the
