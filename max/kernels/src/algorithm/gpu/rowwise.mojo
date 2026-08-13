@@ -60,7 +60,11 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
-from std.sys.info import has_amd_gpu_accelerator, has_apple_gpu_accelerator
+from std.sys.info import (
+    has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    is_apple_gpu,
+)
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -814,9 +818,14 @@ def pjoin[
         # Release-only, not seq_cst: only the last arriver reads the partials,
         # so the acquire rides a fence in that branch instead of costing a
         # `buffer_inv` per CTA. Off the tuned path the counter stays seq_cst,
-        # which subsumes both halves.
+        # which subsumes both halves — except on Apple GPU, which rejects
+        # `seq_cst` at lowering, so it keeps the relaxed ordering the stdlib
+        # defaults to there. The tier never launches on Metal (gated in
+        # `launch`), but the phased split-K params still instantiate this.
         comptime _finish_ordering = (
-            Ordering.RELEASE if _SPLITK_ROW_TIER_TUNED else Ordering.SEQUENTIAL
+            Ordering.RELEASE if _SPLITK_ROW_TIER_TUNED else (
+                Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+            )
         )
         # The partials buffer uses fixed `_SPLITK_STATE_BYTES` slots
         # (independent of State's size), so address each slot via byte
