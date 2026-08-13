@@ -95,9 +95,24 @@ def _init_encoder(
     global _WORKER_ARCHITECTURES
     _WORKER_ARCHITECTURES = architectures
     global _WORKER_TOK
-    _WORKER_TOK = loader(
-        name_or_path, model_max_length, trust_remote_code, revision
-    )
+    try:
+        _WORKER_TOK = loader(
+            name_or_path, model_max_length, trust_remote_code, revision
+        )
+    except Exception as exc:
+        # A worker's tokenizer load can fail under HF_HUB_OFFLINE (e.g. a
+        # remote-code file this worker's cache race didn't pick up in time).
+        # The pool's worker-handler thread already tolerates a dead worker
+        # by spawning a replacement while survivors drain the task queue, so
+        # let this worker exit -- but via `SystemExit`, which
+        # `BaseProcess._bootstrap` handles without dumping a raw traceback
+        # to stderr, unlike a plain exception escaping the initializer.
+        logging.getLogger(__name__).warning(
+            "Worker failed to load tokenizer %r, exiting worker: %s",
+            name_or_path,
+            exc,
+        )
+        raise SystemExit(1) from None
 
 
 def _encode_len(text: str) -> int:
