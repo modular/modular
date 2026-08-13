@@ -584,6 +584,40 @@ _FA4_WS_DEPS = [
     ]
 ]
 
+# Row-wise softmax at MiniMax-M3's logits shapes: fp32 rows of 200,064 (full
+# vocab, post-all-gather) against 50,016 (one TP4 vocab shard), at the decode
+# row counts. Sizes the `algorithm.rowwise` split-K tier the sampling tail hits.
+[
+    mojo_test(
+        name = "gpu/nn/bench_softmax.mojo.run_m3_logits_%dx%d" % (rows, cols),
+        size = "enormous",
+        srcs = ["gpu/nn/bench_softmax.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "dtype=DType.float32",
+            "-D",
+            "shape=%dx%d" % (rows, cols),
+        ],
+        enable_assertions = False,
+        exec_properties = {
+            "test.resources:gpu-memory": "16",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        deps = _FA4_WS_DEPS,
+    )
+    for rows in [
+        16,
+        64,
+    ]
+    for cols in [
+        50016,
+        200064,
+    ]
+]
+
 # Just for mentioning unreferenced files
 filegroup(
     name = "yaml_files",

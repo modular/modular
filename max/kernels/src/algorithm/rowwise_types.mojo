@@ -57,9 +57,9 @@ def tile_alignment[dtype: DType, ws: Int, target: StaticString]() -> Int:
     tiles is guaranteed SIMD-aligned). `ws` on GPU (SIMD-natural —
     `ws * align_of[dtype]()` bytes: folds the access into one vector
     transaction (`LDG.128`/`STG.128`), safe because a body only ever gets
-    a `ws > 1` tile on a SIMD-aligned offset (block tier requires
-    `row_size % simd == 0`; the warp tier matches via the same guard, else
-    falls through to the block tier)). The two coincide at `ws == 1`.
+    a `ws > 1` tile on a SIMD-aligned offset: the block, warp and per-row
+    split-K tiers all gate a wide tile on `row_size % simd == 0`, and fall
+    back to a narrower path when it fails). The two coincide at `ws == 1`.
 
     Both `Context.element_alignment` (the store) and the public-op
     wrappers' synthesized `input_fn` (the load) call this, so the rule

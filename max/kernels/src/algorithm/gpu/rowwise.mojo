@@ -35,7 +35,7 @@ No GPU primitives leak into the body: it sees `ctx`, lambdas, and
 the helpers above.
 """
 
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering, fence
 from std.bit import log2_floor, next_power_of_two
 from std.gpu import (
     WARP_SIZE,
@@ -60,7 +60,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
-from std.sys.info import has_apple_gpu_accelerator
+from std.sys.info import has_amd_gpu_accelerator, has_apple_gpu_accelerator
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -129,11 +129,34 @@ comptime _SPLITK_MIN_ROW = 32768
 comptime _SPLITK_MIN_ROW_BYTES = 224 * 1024
 comptime _SPLITK_MAX_SIMD = 4
 
-# Threads per block for the split-K tier. Matches the legacy
-# `twophase_reduce_kernel`'s `unsaturated_block_size`. Smaller than
+# Threads per block for the PER-ELEMENT-OUTPUT split-K tier. Matches the
+# legacy `twophase_reduce_kernel`'s `unsaturated_block_size`. Smaller than
 # `BLOCK_SIZE = 256` so more blocks fit per SM under the scattered
 # global-load atomic-finish pattern.
 comptime _SPLITK_BLOCK_SIZE = 128
+
+# The per-row split-K tuning below — finish ordering, block size, blocks per
+# row, wide stripe — was measured on MI355X only. Other targets keep the
+# pre-tuning path until swept there; the sibling per-element tier's own B200
+# A/B (see `_SPLITK_TOTAL_BLOCKS_TARGET`) changes sign past ~20 rows, so the
+# direction does not transfer for free.
+comptime _SPLITK_ROW_TIER_TUNED = has_amd_gpu_accelerator()
+
+# Threads per block for the PER-ROW split-K tier — each block pays a fixed
+# cross-block-finish toll, so it wants few wide blocks. Kept separate from
+# `_SPLITK_BLOCK_SIZE`, whose 128 was tuned against its own B200 A/B.
+comptime _SPLITK_ROW_BLOCK_SIZE = (
+    256 if _SPLITK_ROW_TIER_TUNED else _SPLITK_BLOCK_SIZE
+)
+
+# Blocks per row once the rows alone saturate the device: past a handful, extra
+# blocks buy only more cross-block finishes (at 16-128 rows, 128/row -> 8 is
+# 2.4-4.1x). Rows still get more when too few of them to fill the device.
+comptime _SPLITK_TARGET_BLOCKS_PER_ROW = 8
+
+# Damping on the device-fill term above: 1-row and 16-row shapes want opposite
+# block counts. 2 costs ~6% at 16 rows, against the 20% undamped costs at 1 row.
+comptime _SPLITK_FILL_DIVISOR = 2
 
 # Total-block target for the PER-ELEMENT-OUTPUT split-K tier
 # (normalize-shaped bodies' `num_splits`, below), independent of the per-row
@@ -610,18 +633,22 @@ def reduce[
             coords[ctx.axis] = k
             tile_fn[W, rank](coords)
     elif ctx._tier == ReduceTier.Splitk:
-        # Split-K iteration: threads scalar-stripe across
-        # `blocks_per_row * BLOCK_SIZE` lanes so adjacent threads load
-        # adjacent elements (coalesced per-warp transactions on
-        # narrow-SIMD dtypes — matches legacy `twophase_reduce_kernel`).
+        # Split-K iteration: threads stripe `sw`-wide tiles across
+        # `blocks_per_row * BLOCK_SIZE` lanes, so adjacent threads load
+        # adjacent tiles (coalesced per-warp transactions).
+        comptime sw = ctx.simd_width
         var blocks_per_row = Int(ctx._blocks_per_row)
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
         var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
-        for elem_idx in range(row_tid, axis_size, row_total_threads):
+
+        # `sw > 1` is dispatched only when `sw` divides the row, so the stripe
+        # needs no ragged tail: every in-range `elem_idx` has a full tile behind
+        # it.
+        for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
             coords[ctx.axis] = elem_idx
-            tile_fn[1, rank](coords)
+            tile_fn[sw, rank](coords)
     else:
         # Block tier (cooperative, simd along axis).
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
@@ -701,14 +728,16 @@ def reduce[
             coords[ctx.axis] = k
             tile_fn[W, rank](state, coords)
     elif ctx._tier == ReduceTier.Splitk:
+        comptime sw = ctx.simd_width
         var blocks_per_row = Int(ctx._blocks_per_row)
         var block_in_row = Int(ctx._block_in_row)
         var tid = thread_idx.x
         var row_tid = block_in_row * ctx.BLOCK_SIZE + Int(tid)
         var row_total_threads = blocks_per_row * ctx.BLOCK_SIZE
-        for elem_idx in range(row_tid, axis_size, row_total_threads):
+
+        for elem_idx in range(row_tid * sw, axis_size, row_total_threads * sw):
             coords[ctx.axis] = elem_idx
-            tile_fn[1, rank](state, coords)
+            tile_fn[sw, rank](state, coords)
     else:
         comptime BLOCK_SPAN = ctx.BLOCK_SIZE * ctx.simd_width
         var tid = thread_idx.x
@@ -782,10 +811,24 @@ def pjoin[
         # atomically increments the per-row counter; the atomic's
         # release semantics make the partial write visible to the
         # block whose increment last reaches `blocks_per_row`.
+        # Release-only, not seq_cst: only the last arriver reads the partials,
+        # so the acquire rides a fence in that branch instead of costing a
+        # `buffer_inv` per CTA. Off the tuned path the counter stays seq_cst,
+        # which subsumes both halves.
+        comptime _finish_ordering = (
+            Ordering.RELEASE if _SPLITK_ROW_TIER_TUNED else Ordering.SEQUENTIAL
+        )
         # The partials buffer uses fixed `_SPLITK_STATE_BYTES` slots
         # (independent of State's size), so address each slot via byte
         # arithmetic + bitcast — `UnsafePointer[State]` indexing would
         # stride by `size_of[State]()` and walk off the slot bounds.
+        #
+        # The slot holds `State.Single`, not the `W`-lane broadcast: the block's
+        # result is a scalar, which holds the second `BlockReducer` tree's shmem
+        # at width-1 whatever `simd_width` the tier runs at.
+        comptime assert (
+            size_of[State.Single]() <= _SPLITK_STATE_BYTES
+        ), "split-K partial slot too small for this monoid's width-1 state"
         var blocks_per_row_ = Int(ctx._blocks_per_row)
         var row_idx_ = Int(ctx._row_idx)
         var block_in_row_ = Int(ctx._block_in_row)
@@ -801,14 +844,22 @@ def pjoin[
         if tid_ == 0:
             var slot_ptr = (
                 row_base_bytes + block_in_row_ * _SPLITK_STATE_BYTES
-            ).bitcast[State]()
-            slot_ptr[0] = state
-            var prev = Atomic[Int32].fetch_add(counter_ptr, Int32(1))
+            ).bitcast[State.Single]()
+            slot_ptr[0] = s
+            var prev = Atomic[Int32].fetch_add[ordering=_finish_ordering](
+                counter_ptr, Int32(1)
+            )
             last_shmem[0] = Int(prev) + 1 == blocks_per_row_
         barrier()
         ctx._is_last_block = last_shmem[0]
 
         if ctx._is_last_block:
+            # Acquire half of the `fetch_add`'s RELEASE — must cover every
+            # thread that loads a partial below, so it cannot be narrowed to
+            # thread 0. On gfx9 `barrier()` invalidates no cache, so it is no
+            # substitute. Redundant when the counter is seq_cst.
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                fence[Ordering.ACQUIRE]()
             # Cross-block join: the first `blocks_per_row` threads each
             # load one partial, the rest pad with the monoid identity,
             # then one block-wide combine folds them.
@@ -823,17 +874,15 @@ def pjoin[
             # the SIMD acc that `join` compares. Calling `generic` here
             # skipped that publish and left every partial's acc tied at
             # the identity, so the lowest per-block index won the
-            # tie-break instead of the row's argmax. The split-K tier
-            # runs at `simd_width == 1`, so `State` is already its own
-            # `Single` and `join_parallel`'s post-`reduce` contract holds.
-            var local = State()
+            # tie-break instead of the row's argmax.
+            var local = State.Single()
             if Int(tid_) < blocks_per_row_:
                 var slot_ptr = (
                     row_base_bytes + Int(tid_) * _SPLITK_STATE_BYTES
-                ).bitcast[State]()
+                ).bitcast[State.Single]()
                 local = slot_ptr[0]
             local.join_parallel(BlockReducer[ctx.BLOCK_SIZE]())
-            state = local
+            state = State(local)
     else:
         # Block tier: collapse to width-1, block-join the small scalar (register
         # shuffle instead of a W-wide shmem tree), broadcast back.
@@ -1588,17 +1637,25 @@ def launch[
         and not has_apple_gpu_accelerator()
     ):
         if num_rows < sm_count and row_size >= _SPLITK_MIN_ROW:
-            # Cap `blocks_per_row` at `_SPLITK_BLOCK_SIZE`: the
-            # last-arriving block's cross-block join loads one partial
-            # per thread, so it can fold at most `BLOCK_SIZE` partials.
-            # Without the cap, an under-saturated grid (e.g.
-            # `num_rows = 1`, large sm_count) sets `blocks_per_row` to
-            # thousands and the reduce silently drops every partial
-            # past index 127.
-            var blocks_per_row = min(
-                _SPLITK_BLOCK_SIZE,
-                max(1, (sm_count * _SM_OVERPROVISION) // num_rows),
-            )
+            # Cap `blocks_per_row` at `_SPLITK_ROW_BLOCK_SIZE`: the
+            # last-arriving block folds one partial per thread, so past
+            # `BLOCK_SIZE` the reduce silently drops partials. Below the cap,
+            # keep splitting while the rows alone cannot fill the device — a
+            # single huge row needs every block it can get.
+            var blocks_per_row: Int
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                blocks_per_row = min(
+                    _SPLITK_ROW_BLOCK_SIZE,
+                    max(
+                        _SPLITK_TARGET_BLOCKS_PER_ROW,
+                        ceildiv(sm_count, num_rows * _SPLITK_FILL_DIVISOR),
+                    ),
+                )
+            else:
+                blocks_per_row = min(
+                    _SPLITK_ROW_BLOCK_SIZE,
+                    max(1, (sm_count * _SM_OVERPROVISION) // num_rows),
+                )
             var total_blocks = num_rows * blocks_per_row
 
             var partials_buf = ctx.enqueue_create_buffer[DType.uint8](
@@ -1607,33 +1664,61 @@ def launch[
             var counters_buf = ctx.enqueue_create_buffer[DType.int32](num_rows)
             ctx.enqueue_memset(counters_buf, Int32(0))
 
-            # Split-K uses scalar (simd=1) thread-striped loads (see
-            # the `is_splitk_tier` branch of `rowwise.reduce`), so no
-            # alignment-based unswitch is needed.
-            comptime splitk_params = ContextParams(
-                axis=axis,
-                emit_tile_width=1,
-                BLOCK_SIZE=_SPLITK_BLOCK_SIZE,
-                tier=ReduceTier.Splitk,
-                simd_width=1,
-                target="gpu",
+            var partials_ptr = partials_buf.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+            var counters_ptr = counters_buf.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+
+            @__parameter
+            @__copy_capture(
+                shape_il,
+                body,
+                partials_ptr,
+                counters_ptr,
+                blocks_per_row,
+                total_blocks,
             )
-            ctx.enqueue_function(
-                _SplitkKernel[rank, splitk_params, Body](
-                    body,
-                    shape_il,
-                    partials_buf.unsafe_ptr().unsafe_origin_cast[
-                        MutUntrackedOrigin
-                    ](),
-                    counters_buf.unsafe_ptr().unsafe_origin_cast[
-                        MutUntrackedOrigin
-                    ](),
-                    Int32(blocks_per_row),
-                ),
-                grid_dim=total_blocks,
-                block_dim=_SPLITK_BLOCK_SIZE,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+            def dispatch_splitk[use_simd: Bool]() raises:
+                comptime sw = effective_simd if use_simd else 1
+                comptime splitk_params = ContextParams(
+                    axis=axis,
+                    emit_tile_width=1,
+                    BLOCK_SIZE=_SPLITK_ROW_BLOCK_SIZE,
+                    tier=ReduceTier.Splitk,
+                    simd_width=sw,
+                    target="gpu",
+                )
+                ctx.enqueue_function(
+                    _SplitkKernel[rank, splitk_params, Body](
+                        body,
+                        shape_il,
+                        partials_ptr,
+                        counters_ptr,
+                        Int32(blocks_per_row),
+                    ),
+                    grid_dim=total_blocks,
+                    block_dim=_SPLITK_ROW_BLOCK_SIZE,
+                    attributes=pdl_launch_attributes(_PDL_LEVEL),
+                )
+
+            # Same two conditions as the block tier's `use_simd_full`: the width
+            # must divide the row (the alignment a body's `ws > 1` load is
+            # promised), and one full stripe pass must fit the row.
+            var use_simd_full = (
+                effective_simd > 1
+                and row_size % effective_simd == 0
+                and row_size
+                >= blocks_per_row * _SPLITK_ROW_BLOCK_SIZE * effective_simd
             )
+            # `unswitch` instantiates both arms, so gate it comptime rather than
+            # folding the tier flag into the predicate: off the tuned path the
+            # wide-stripe kernel could never launch but would still be compiled.
+            comptime if _SPLITK_ROW_TIER_TUNED:
+                unswitch[dispatch_splitk](use_simd_full)
+            else:
+                dispatch_splitk[False]()
 
             _ = partials_buf
             _ = counters_buf
