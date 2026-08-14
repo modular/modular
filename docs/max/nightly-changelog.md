@@ -414,6 +414,14 @@ This version is still a work in progress.
   the weights into the byte-addressed form the tensor cores read as the copy
   engine lands them in shared memory.
 
+- The joint top-k/top-p sampling kernel can now also return the masked,
+  renormalized distribution it drew from, exposed as
+  `max.nn.kernels.topk_fused_sampling_with_dist`. Speculative decoding needs
+  that distribution to build a rejection residual, and reads the sampled
+  token's own probability out of it -- a value that has to agree with the
+  sampler's accept decision, so it comes from the sampling kernel rather than
+  a separate softmax. The existing single-output path is unchanged.
+
 ## Breaking changes
 
 - Reworked `max.pipelines.PipelineArgs` and `PipelineConfig` construction

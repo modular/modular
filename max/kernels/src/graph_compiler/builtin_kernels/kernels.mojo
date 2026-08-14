@@ -102,6 +102,7 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk_fi import topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
@@ -2568,6 +2569,64 @@ struct Struct_fused_token_sampling:
                 .as_unsafe_any_origin()
                 .as_immut(),
             )
+
+
+@extensibility.register("sampler.fused_token_sampling_with_dist")
+struct Struct_fused_token_sampling_with_dist:
+    """Registers the `sampler.fused_token_sampling_with_dist` graph op.
+
+    Samples one token per row under joint top-k/top-p with temperature, and
+    also returns the masked, renormalized distribution it drew from.
+    Speculative decoding subtracts that distribution to build its rejection
+    residual, and reads the sampled token's probability out of it. Op arity
+    is fixed, so this is a second registration over the same kernel as
+    `sampler.fused_token_sampling` rather than an optional output on it.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        dist_dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        max_k: Scalar,
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.fused_token_sampling_with_dist is GPU-only"
+        topk_topp_sampling_from_prob[
+            from_logits=True, emit_dist=True, dist_dtype=dist_dtype
+        ](
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            Int(max_k),
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            rng_seed=seed.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            out_dist=out_dist.to_tile_tensor[
+                DType.int64
+            ]().as_unsafe_any_origin(),
+        )
 
 
 @extensibility.register("min_p_sampling")

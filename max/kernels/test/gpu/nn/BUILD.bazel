@@ -11,6 +11,11 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-3121 — topk_topp_sampling_from_prob samples out-of-top-K index on Metal
+    # `emit_dist` uses block collectives the Apple search path avoids.
+    "test_topk_topp_sampling_with_dist.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
     # is NVIDIA-specific and verified on B200 only.
     "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],

@@ -8993,6 +8993,88 @@ def topk_fused_sampling(
     )[0].tensor
 
 
+def topk_fused_sampling_with_dist(
+    logits: TensorValue,
+    *,
+    top_k: TensorValue,
+    temperature: TensorValue,
+    top_p: TensorValue,
+    seed: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Samples a token per row and returns the distribution it came from.
+
+    Applies per-row temperature, top-k and top-p to ``logits``, samples one
+    token per row, and also returns the masked, renormalized distribution the
+    token was drawn from. Speculative decoding subtracts that distribution to
+    build its rejection residual, and reads the sampled token's own
+    probability out of it -- a value the sampler must agree with, so it comes
+    from the sampling kernel rather than a separate softmax.
+
+    This is the same kernel and the same code path as
+    :func:`topk_fused_sampling`, with the distribution write enabled.
+    GPU-only.
+
+    Args:
+        logits: Raw logits ``[rows, vocab_size]``. Softmax is fused in.
+        top_k: Per-row top-k ``[rows]``, int64. ``-1`` disables top-k, which
+            is the production sentinel (``SamplingParams`` normalizes ``0``
+            to ``-1``).
+        temperature: Per-row temperature ``[rows]``, float32. ``0`` is
+            clamped, collapsing the row to its argmax.
+        top_p: Per-row nucleus threshold ``[rows]``, float32.
+        seed: Per-row RNG seed ``[rows]``, uint64.
+
+    Returns:
+        ``(token_ids, distribution)``: int64 ``[rows]`` and float32
+        ``[rows, vocab_size]``.
+
+    Raises:
+        ValueError: If the logits are not rank-2 on GPU, or a per-row
+            parameter does not carry exactly one entry per logits row.
+    """
+    if logits.rank != 2:
+        raise ValueError(
+            "topk_fused_sampling_with_dist requires rank-2 logits, got "
+            f"{logits.rank}"
+        )
+    if logits.device == DeviceRef.CPU():
+        raise ValueError("topk_fused_sampling_with_dist is GPU-only")
+
+    rows = logits.shape[0]
+    device = logits.device
+
+    # The kernel indexes all four per row, so a short one is an out-of-bounds
+    # device read rather than a graph-construction error.
+    for name, param in (
+        ("top_k", top_k),
+        ("temperature", temperature),
+        ("top_p", top_p),
+        ("seed", seed),
+    ):
+        if param.rank != 1 or param.shape[0] != rows:
+            raise ValueError(
+                f"{name} must be rank-1 with shape [{rows}] to match the"
+                f" logits rows, got {param.shape}"
+            )
+
+    # The kernel resolves a per-row ``-1`` against this default and then
+    # clamps a non-positive k to the vocabulary, so forwarding the sentinel
+    # keeps every token for the rows that asked for no top-k. Passing the
+    # vocabulary size instead would work but requires a static dimension.
+    max_k = ops.constant(-1, DType.int64, DeviceRef.CPU())
+
+    results = ops.custom(
+        "sampler.fused_token_sampling_with_dist",
+        device=device,
+        values=[top_k, max_k, temperature, top_p, seed, logits],
+        out_types=[
+            TensorType(dtype=DType.int64, shape=[rows], device=device),
+            TensorType(dtype=DType.float32, shape=logits.shape, device=device),
+        ],
+    )
+    return results[0].tensor, results[1].tensor
+
+
 def sgmv_kernel(  # noqa: ANN201
     input: TensorValue,
     lora: TensorValue,
