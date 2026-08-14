@@ -543,7 +543,7 @@ def test_stochastic_acceptance_bonus_token_honors_top_p(
     session = InferenceSession(devices=[device])
     model = session.load(
         build_stochastic_acceptance_sampler_graph(
-            device=DeviceRef.from_device(device)
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
         )
     )
     batch_size = 64
@@ -569,7 +569,7 @@ def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
     session = InferenceSession(devices=[device])
     model = session.load(
         build_stochastic_acceptance_sampler_graph(
-            device=DeviceRef.from_device(device)
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
         )
     )
     batch_size = 64
@@ -599,7 +599,7 @@ def test_stochastic_acceptance_honors_top_p_for_recovered_tokens(
     session = InferenceSession(devices=[device])
     model = session.load(
         build_stochastic_acceptance_sampler_graph(
-            device=DeviceRef.from_device(device)
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
         )
     )
     batch_size = 64

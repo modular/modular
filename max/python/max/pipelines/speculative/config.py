@@ -181,7 +181,8 @@ class SpeculativeConfig(ConfigFileModel):
             "threshold ``top1_prob - relaxed_delta``) are compared "
             "against the draft token; matching any candidate accepts "
             "the draft. Outside the thinking span, the existing strict "
-            "acceptance rule still applies."
+            "acceptance rule still applies. Requires "
+            "``draft_proposal='argmax'``."
         ),
     )
 
@@ -216,6 +217,33 @@ class SpeculativeConfig(ConfigFileModel):
             "relaxed and synthetic acceptance."
         ),
     )
+
+    draft_proposal: Literal["argmax", "sampled"] = Field(
+        default="argmax",
+        description=(
+            "How the draft model proposes tokens. 'argmax' (default) "
+            "proposes deterministically. 'sampled' makes the draft sample "
+            "its own proposal and keep the distribution it drew from, so "
+            "verification runs true speculative sampling instead of "
+            "typical acceptance. Incompatible with "
+            "``use_relaxed_acceptance_for_thinking``. Inert unless the "
+            "serving architecture supports it."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_draft_proposal(self) -> Self:
+        if (
+            self.draft_proposal == "sampled"
+            and self.use_relaxed_acceptance_for_thinking
+        ):
+            raise ValueError(
+                "draft_proposal='sampled' cannot be combined with"
+                " use_relaxed_acceptance_for_thinking: relaxed acceptance"
+                " takes the drafted token to be the draft's argmax, which a"
+                " sampled proposal does not guarantee"
+            )
+        return self
 
     @field_validator("relaxed_topk")
     @classmethod

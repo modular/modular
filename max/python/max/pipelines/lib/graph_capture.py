@@ -81,6 +81,7 @@ def _release_graph_capture_outputs_to_borrowed(
         "num_accepted_draft_tokens",
         "next_tokens",
         "next_draft_tokens",
+        "next_draft_probs_full",
     ):
         value = getattr(outputs, field_name, None)
         if isinstance(value, Buffer):
@@ -266,11 +267,22 @@ class ServeGraphCaptureRunner:
                         )
                         outputs.sampled_tokens = sampled_tokens
                     else:
-                        assert len(output_buffers) == 3, "Expected 3 outputs"
+                        if len(output_buffers) not in (3, 4):
+                            raise RuntimeError(
+                                "spec-decode graph capture returned "
+                                f"{len(output_buffers)} outputs; expected 3 "
+                                "(num_accepted_draft_tokens, next_tokens, "
+                                "next_draft_tokens) or 4 (+ "
+                                "next_draft_probs_full, under "
+                                "draft_proposal='sampled')."
+                            )
                         outputs = UnifiedEagleOutputs(
                             num_accepted_draft_tokens=output_buffers[0],
                             next_tokens=output_buffers[1],
                             next_draft_tokens=output_buffers[2],
+                            next_draft_probs_full=output_buffers[3]
+                            if len(output_buffers) == 4
+                            else None,
                         )
                     # Graph-capture warmup keeps many output handles alive. Drop
                     # Python-side ownership so later captures can reuse the same

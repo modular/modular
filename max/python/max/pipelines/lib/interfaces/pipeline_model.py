@@ -247,6 +247,10 @@ class UnifiedEagleOutputs(ModelOutputs):
     num_accepted_draft_tokens: Buffer
     next_tokens: Buffer
     next_draft_tokens: Buffer
+    next_draft_probs_full: Buffer | None = None
+    """The distribution each next-step draft token was sampled from,
+    ``[batch_size, num_speculative_tokens, vocab_size]``. Only populated when
+    the graph was built with ``draft_proposal="sampled"``."""
 
     # HACK: These are required to inherit from ModelOutputs but are unused
     # for UnifiedEagleOutputs!
@@ -265,6 +269,10 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     """
 
     draft_tokens: Buffer | None = None
+    draft_probs_full: Buffer | None = None
+    """The distribution each ``draft_tokens`` entry was sampled from,
+    ``[batch_size, num_speculative_tokens, vocab_size]``. Only set when
+    ``draft_proposal="sampled"``."""
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -283,11 +291,17 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     so the buffer tail and the graph signature derive the decision from one
     place. Set by each capable module's ``prepare_initial_token_inputs``."""
 
+    sampled_draft_proposal: bool = False
+    """Whether this graph was compiled with ``draft_proposal="sampled"``,
+    which gates the ``draft_probs_full`` buffer in the tail. Only
+    ``UnifiedEagleLlama3`` and ``Eagle3MHAMiniMaxM3Unified`` set this today."""
+
     def _spec_decode_tail_buffers(
         self,
         *,
         include_in_thinking_phase: bool,
         supports_structured_output: bool = True,
+        include_draft_probs_full: bool = False,
     ) -> tuple[Buffer, ...]:
         # draft_tokens, seed, and the five sampling params are unconditional in
         # build_spec_decode_input_types; assert them so a missing one is a loud
@@ -295,6 +309,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         # {"target", "draft"} tree, packed by super().buffers.)
         assert self.draft_tokens is not None
         tail: tuple[Buffer, ...] = (self.draft_tokens,)
+        if include_draft_probs_full:
+            assert self.draft_probs_full is not None
+            tail += (self.draft_probs_full,)
         assert self.seed is not None
         tail += (self.seed,)
         assert self.temperature is not None
