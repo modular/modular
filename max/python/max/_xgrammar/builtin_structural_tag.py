@@ -1546,6 +1546,7 @@ def get_glm_4_7_structural_tag(
         "strict_mode": False,
         "require_object_root": True,
         "reject_unsupported": True,
+        "max_whitespace_cnt": 1,
     }
 
     tools = tools or []
