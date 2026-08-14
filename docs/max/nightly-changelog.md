@@ -183,6 +183,10 @@ This version is still a work in progress.
   them, returning the full checkpoint size in host RSS. GPU deployments
   of graph-API architectures only; weights that execute on CPU must not
   be released.
+- Chat completions now honor `reasoning_effort`; previously only an explicit
+  `chat_template_kwargs.reasoning_effort` had any effect and the standard
+  fields were silently ignored. An effort of `none` disables thinking, and
+  values set directly in `chat_template_kwargs` still win.
 - `--num-speculative-tokens` is now unset by default, and each speculative
   method resolves its own default: `eagle` and `mtp` keep drafting 2 tokens
   per step, while `dflash`-style block drafters (DFlash, DSpark) derive the

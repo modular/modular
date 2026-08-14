@@ -470,6 +470,53 @@ class CreateChatCompletionRequest(
             self.max_tokens = self.max_completion_tokens
         return self
 
+    @property
+    def resolved_chat_template_kwargs(self) -> dict[str, Any] | None:
+        """The kwargs to render the chat template with.
+
+        ``chat_template_kwargs`` is the only channel that reaches the Jinja
+        template, so OpenAI's top-level ``reasoning_effort`` and OpenRouter's
+        ``reasoning`` object are folded into it here (OpenRouter sends both).
+
+        The effort is taken from ``chat_template_kwargs`` first, then the
+        top-level field, then the ``reasoning`` object; whichever wins also
+        decides whether the model thinks at all, unless the client set the
+        toggle itself. Templates disagree on the name of that toggle, so both
+        ``enable_thinking`` and ``thinking`` are set.
+
+        Returns:
+            The chat-template kwargs, or ``None`` when the request carries
+            none at all.
+        """
+        kwargs = dict(self.chat_template_kwargs or {})
+        effort = (
+            kwargs.get("reasoning_effort")
+            or self.reasoning_effort
+            or (self.reasoning.effort if self.reasoning is not None else None)
+        )
+        if self.reasoning is None and effort is None:
+            return self.chat_template_kwargs
+
+        if self.reasoning is not None and self.reasoning.enabled is not None:
+            enable_thinking = self.reasoning.enabled
+        else:
+            # ``none`` is OpenAI's "don't reason" effort, and a bare
+            # ``reasoning`` object carrying neither field asks for no
+            # reasoning either.
+            enable_thinking = effort is not None and effort != "none"
+
+        # Client may set either spelling of the thinking toggle, here we merge
+        # both.
+        for key in ("enable_thinking", "thinking"):
+            if key in kwargs:
+                enable_thinking = bool(kwargs[key])
+                break
+        kwargs["enable_thinking"] = enable_thinking
+        kwargs["thinking"] = enable_thinking
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
+        return kwargs
+
 
 class CreateCompletionRequest(
     _MaxRequestExtensions,

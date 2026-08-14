@@ -2139,30 +2139,13 @@ async def openai_create_chat_completion(
                     " field."
                 )
 
-        # Map OpenRouter's ``reasoning`` toggle onto the chat-template thinking
-        # flags. Templates are inconsistent about the key name, so set both
-        # ``enable_thinking`` and ``thinking``.
-        if completion_request.reasoning is not None:
-            reasoning = completion_request.reasoning
-            enable_thinking = (
-                reasoning.enabled
-                if reasoning.enabled is not None
-                else reasoning.effort is not None
-            )
-            chat_template_kwargs = dict(
-                completion_request.chat_template_kwargs or {}
-            )
-            chat_template_kwargs.setdefault("enable_thinking", enable_thinking)
-            chat_template_kwargs.setdefault("thinking", enable_thinking)
-            completion_request.chat_template_kwargs = chat_template_kwargs
-
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
         # skips re-tokenization. ``messages`` and ``prompt`` are mutually
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
-        chat_template_options = completion_request.chat_template_kwargs
+        chat_template_options = completion_request.resolved_chat_template_kwargs
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
