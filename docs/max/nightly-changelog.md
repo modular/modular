@@ -364,6 +364,18 @@ This version is still a work in progress.
   by its `dtype`, `shape`, and `device`. `repr(buffer)` still returns the
   metadata-only representation.
 
+- `max.nn.sampling.AcceptanceSampler` and
+  `max.nn.sampling.stochastic_acceptance_sampler` take a `draft_proposal`
+  argument. The default, `"argmax"`, is unchanged: the draft proposes
+  deterministically and verification runs typical acceptance. With
+  `"sampled"`, the caller passes the distribution the draft sampled from, so
+  verification runs the real `p_target / q_draft` ratio test and recovers
+  rejected positions from `max(p_target - q_draft, 0)`; temperature, top-k and
+  top-p then all apply to the draft-verification distribution, where
+  `"argmax"` applies only temperature. Sampled mode is GPU-only, needs a
+  static `vocab_size`, and cannot be combined with relaxed thinking-phase
+  acceptance, whose rule assumes the drafted token is the draft's argmax.
+
 ### C API
 
 ## MAX kernels
