@@ -2367,12 +2367,13 @@ def apply_gumbel_noise_kernel[
 # block reduce keeping the first maximum).
 
 
-@__name(t"gumbel_argmax_fused_{dtype}_{out_idx_type}")
+@__name(t"gumbel_argmax_fused_{dtype}_{out_idx_type}_{from_probs}")
 def _gumbel_argmax_fused_kernel[
     dtype: DType,
     out_idx_type: DType,
     InputLayoutType: TensorLayout,
     OutIdxLayoutType: TensorLayout,
+    from_probs: Bool = False,
     InputStorageType: TensorStorage = PointerStorage[element_width=1],
     OutIdxStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -2397,11 +2398,19 @@ def _gumbel_argmax_fused_kernel[
     `TopK_2`, and the block reduces to the global argmax which is written to
     `out_idxs[batch_id]`.
 
+    With `from_probs` the input rows are unnormalized probabilities instead of
+    logits: each value enters the race as `ln(p) + g`, so the winner is a
+    categorical draw proportional to `p`. A zero probability maps to `-inf`
+    and cannot win while the row has any positive mass. Row normalization does
+    not matter, because a per-row constant shifts every `ln(p)` equally.
+    `temperature` is ignored in this mode.
+
     Parameters:
         dtype: Element type of the input logits.
         out_idx_type: Output index dtype.
         InputLayoutType: Layout of the `[batch, vocab]` input.
         OutIdxLayoutType: Layout of the `[batch, 1]` output indices.
+        from_probs: Treat the input as unnormalized probabilities.
         InputStorageType: Storage policy of the `[batch, vocab]` input.
         OutIdxStorageType: Storage policy of the `[batch, 1]` output indices.
 
@@ -2411,6 +2420,14 @@ def _gumbel_argmax_fused_kernel[
         temperature: Optional per-row temperature scaling `[batch]`.
         seed: Optional per-row random seeds `[batch]`.
     """
+    # `_block_reduce_topk` caps its shared storage at WARP_SIZE on Apple while
+    # this kernel launches `max_thread_block_size` threads, so the reduction
+    # would not cover the block. The logits path predates that mismatch; the
+    # from-probs path is new surface and refuses to build on it.
+    comptime assert (
+        not from_probs or not is_apple_gpu()
+    ), "from_probs is not supported on Apple GPUs"
+
     comptime EPS = Float32(1e-20)
     comptime LOG2 = Float32(0.6931471806)
     comptime MIN_TEMP = Float32(1e-6)
@@ -2455,7 +2472,11 @@ def _gumbel_argmax_fused_kernel[
                 )
             else:
                 input_val = ld_ptr.load[width=simd_width](i * simd_width)
-            var noised_logits = input_val.cast[DType.float32]() / temp_val
+            var noised_logits: SIMD[DType.float32, simd_width]
+            comptime if from_probs:
+                noised_logits = LOG2 * log2(input_val.cast[DType.float32]())
+            else:
+                noised_logits = input_val.cast[DType.float32]() / temp_val
 
             comptime for loop_i in range(simd_width // 4):
                 var rnd_val = rng_state.step_uniform()
@@ -2482,7 +2503,11 @@ def _gumbel_argmax_fused_kernel[
                 var input_val = ld_ptr.load((N - N_res) + tid).cast[
                     DType.float32
                 ]()
-                var noised_logit = input_val / temp_val
+                var noised_logit: Float32
+                comptime if from_probs:
+                    noised_logit = LOG2 * log2(input_val)
+                else:
+                    noised_logit = input_val / temp_val
                 var rnd_val = rng_state.step_uniform()[0]
                 rnd_val = -LOG2 * log2(-log2(rnd_val + EPS) + EPS)
                 noised_logit += rnd_val
@@ -2507,6 +2532,7 @@ def gumbel_sampling_fused_gpu[
     //,
     TemperatureLayoutType: TensorLayout = RowMajorLayout[Int64],
     SeedLayoutType: TensorLayout = RowMajorLayout[Int64],
+    from_probs: Bool = False,
     TemperatureStorageType: TensorStorage = PointerStorage[element_width=1],
     SeedStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -2538,6 +2564,9 @@ def gumbel_sampling_fused_gpu[
     results for the same seed, but saves one full `[batch, vocab]` HBM
     round-trip by fusing noise generation and argmax.
 
+    With `from_probs` the input rows are unnormalized probabilities and the
+    draw is proportional to them; see `_gumbel_argmax_fused_kernel`.
+
     Args:
         ctx: Device context for GPU operations.
         input: Input logits tensor [batch, vocab_size].
@@ -2545,6 +2574,10 @@ def gumbel_sampling_fused_gpu[
         temperature: Optional per-token temperature scaling [batch].
         seed: Optional per-token random seeds [batch] for reproducibility.
     """
+    # Mirrors the kernel's guard so a host caller fails at its own call site.
+    comptime assert (
+        not from_probs or not is_apple_gpu()
+    ), "from_probs is not supported on Apple GPUs"
 
     var input_shape = rebind[IndexList[input.rank]](
         coord_to_index_list(input.layout.shape_coord())
@@ -2560,6 +2593,10 @@ def gumbel_sampling_fused_gpu[
         task_id=Int(ctx.id()),
     ):
         var batch_size = Int(input.dim(0))
+        # Speculative decoding can ask for zero rows, and a grid of 0 is not
+        # a legal launch.
+        if batch_size == 0:
+            return
 
         comptime hw_info = ctx.default_device_info
         comptime block_size = hw_info.max_thread_block_size
@@ -2569,6 +2606,7 @@ def gumbel_sampling_fused_gpu[
             out_idx_type,
             input.LayoutType,
             out_idxs.LayoutType,
+            from_probs=from_probs,
             InputStorageType=input.Storage,
             OutIdxStorageType=out_idxs.Storage,
         ]
