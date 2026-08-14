@@ -118,6 +118,28 @@ def test_synthetic_acceptance_rate_invalid() -> None:
         SpeculativeConfig(synthetic_acceptance_rate=1.5)
 
 
+def test_sampled_draft_proposal_rejects_relaxed_acceptance() -> None:
+    """Relaxed acceptance reads the drafted token as the draft's argmax.
+
+    A sampled proposal can draw from anywhere in the draft's distribution, so
+    the two modes are mutually exclusive and the config refuses the pair
+    rather than letting a run silently accept tail draws.
+    """
+    with pytest.raises(ValueError, match="use_relaxed_acceptance_for_thinking"):
+        SpeculativeConfig(
+            draft_proposal="sampled",
+            use_relaxed_acceptance_for_thinking=True,
+        )
+
+    # Each alone is fine, and argmax is unaffected.
+    assert SpeculativeConfig(draft_proposal="sampled").draft_proposal == (
+        "sampled"
+    )
+    assert SpeculativeConfig(
+        use_relaxed_acceptance_for_thinking=True
+    ).use_relaxed_acceptance_for_thinking
+
+
 @pytest.mark.parametrize("num_steps", [1, 2, 3, 5, 7, 10])
 @pytest.mark.parametrize("rate", [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99])
 def test_compute_synthetic_acceptance_base_rate(

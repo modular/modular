@@ -42,6 +42,13 @@ class SpecDecodeInputTypeSpec:
     """Declare signal-buffer inputs even when not distributed, for targets
     whose layers unconditionally use collectives (e.g. Gemma4's
     VocabParallelEmbedding on a single device). Implied by ``distributed``."""
+    enable_sampled_draft_proposal: bool = False
+    """Declare the ``draft_probs_full`` input: the distribution the draft
+    sampled its token from, which the acceptance test's residual subtracts and
+    reads ``q`` out of. Requires ``vocab_size``. Only the MiniMax-M3 unified
+    pipelines set this today."""
+    vocab_size: int | None = None
+    """Static vocabulary size, required by ``enable_sampled_draft_proposal``."""
 
 
 def build_spec_decode_input_types(
@@ -55,7 +62,8 @@ def build_spec_decode_input_types(
 
     Order: tokens, [vision], device_offsets, [host_offsets], return_n_logits,
     [data_parallel_splits], [signals], kv_cache_tree,
-    [batch_context_lengths, ep], draft_tokens, seed, temperature, top_k,
+    [batch_context_lengths, ep], draft_tokens, [draft_probs_full], seed,
+    temperature, top_k,
     max_k, top_p, min_top_p, [in_thinking_phase], [bitmask triple]. Bracketed
     groups are gated by the spec flags; the tail mirrors
     ``UnifiedSpecDecodeInputs._spec_decode_tail_buffers``.
@@ -133,6 +141,20 @@ def build_spec_decode_input_types(
     all_input_types.append(
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref)
     )
+
+    if spec.enable_sampled_draft_proposal:
+        if spec.vocab_size is None:
+            raise ValueError(
+                "vocab_size is required when enable_sampled_draft_proposal is"
+                " set"
+            )
+        all_input_types.append(
+            TensorType(
+                DType.float32,
+                ["batch_size", "num_steps", spec.vocab_size],
+                device=device_ref,
+            )
+        )
 
     all_input_types.append(
         TensorType(DType.uint64, shape=["batch_size"], device=device_ref)

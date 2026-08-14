@@ -311,6 +311,14 @@ This version is still a work in progress.
   prompting uvicorn to close the connection under a client that was owed a
   response.
 
+- Speculative decoding takes `--draft-proposal sampled` (default `argmax`,
+  unchanged). The draft model samples its proposal under the request's
+  temperature/top-k/top-p and keeps the distribution it drew from, so
+  verification runs true speculative sampling — accept on the
+  `p_target/q_draft` ratio, recover from `max(p_target - q_draft, 0)` — rather
+  than the typical-acceptance approximation, and the emitted tokens follow the
+  target model's distribution.
+
 ### Server metrics
 
 - Fixed the speculative-decoding per-position acceptance-rate histogram
