@@ -1410,9 +1410,6 @@ modular_cc_library(
     name = "ExecutionEngine",
     srcs = glob(["lib/ExecutionEngine/*.cpp"]),
     hdrs = glob(["include/KGEN/ExecutionEngine/*.h"]),
-    data = [
-        ":CompilerRT",
-    ],
     deps = [
         ":JIT",
         "//Cache",
