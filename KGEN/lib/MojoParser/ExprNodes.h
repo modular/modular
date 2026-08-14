@@ -37,6 +37,7 @@ class FuncTypeGeneratorType;
 
 namespace M::KGEN::LIT {
 struct ParsedArgument;
+struct ParsedConstraint;
 enum class CaptureConvention : uint8_t;
 class SRValue;
 
@@ -683,11 +684,12 @@ struct FunctionTypeNode final : public ExprNode {
                    ArrayRef<ParsedArgument> parsedArgs,
                    const ParsedArgument &resultArg, FnEffects effects,
                    bool isThin, const ExprNode *thrownTypeExpr,
-                   const ExprNode *originExpr, SMLoc endLoc)
+                   const ExprNode *originExpr,
+                   ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
         isThin(isThin), thrownTypeExpr(thrownTypeExpr), originExpr(originExpr),
-        endLoc(endLoc) {}
+        parsedConstraints(parsedConstraints), endLoc(endLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
@@ -697,6 +699,7 @@ struct FunctionTypeNode final : public ExprNode {
   bool isThin;
   const ExprNode *thrownTypeExpr;
   const ExprNode *originExpr;
+  ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints
   SMLoc endLoc;
 
   static bool classof(const ExprNode *node) {

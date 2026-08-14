@@ -1354,6 +1354,8 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
   return success();
 }
 
+/// function_type ::= ["async"] "def" [parameter_list] argument_list [effects]
+///                   [origin_set] ["->" result_type] [constraint_clauses]
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
   ParsedParamList paramList;
@@ -1389,12 +1391,24 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(*this, stmtIndent);
 
+  // Parse trailing body constraints if present (only supported for thin
+  // functions for now).
+  if (paramList.parseTrailingConstraintsIfPresent(*this))
+    return failure();
+
+  if (!paramList.bodyConstraints.empty() && !fnSignature.isThin) {
+    emitError(getToken().getLoc(),
+              "trailing constraints are only supported for thin functions");
+    return failure();
+  }
+
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
       copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
       fnSignature.effects, fnSignature.isThin, fnSignature.thrownTypeExpr,
-      originExpr, endLoc);
+      originExpr, copyArrayRef<ParsedConstraint>(paramList.bodyConstraints),
+      endLoc);
   return success();
 }
 

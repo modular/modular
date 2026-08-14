@@ -259,7 +259,12 @@ classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
 typeconv: (['*'|VAR|READ|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
-functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test]
+# A `thin` function type may carry trailing `where` clauses constraining its own
+# parameters. The clauses bind to the innermost function type, so a declaration
+# whose result type is a function type must parenthesize it to keep a trailing
+# `where` of its own; the grammar accepts them on any function type and leaves
+# the `thin` restriction to the compiler.
+functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test] (where_clause)*
 # `__generator_type[Idx: Int] ToT` — Mojo generator type literal (`!lit.generator`).
 generatortype: GENERATOR_TYPE [metaparams] type_test
 

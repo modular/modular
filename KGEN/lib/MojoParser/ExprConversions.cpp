@@ -123,37 +123,40 @@ static bool canConvertFunctionTypes(FnTypeGeneratorType actualGen,
 // Generator body-constraint discharge
 //===----------------------------------------------------------------------===//
 
-/// Return true if every body constraint on `actual` can be fully dropped to
-/// reach `expected`: `expected` must carry no body constraints, the parameters
-/// and body must match, and all of `actual`'s constraints must be provable in
-/// this scope.
+/// Return true if every body constraint on `actual` can be dropped to reach
+/// `expected`: the parameters and body must match, and all of `actual`'s
+/// constraints must be provable in this scope, assuming `expected`'s own body
+/// constraints.
 ///
-/// Only *full* dropping is supported. Partial dropping (retaining a subset) is
-/// sound but would leave retained constraints whose source locations differ
-/// from `expected`'s, forcing a `rebind` of the discharged value that
-/// `bind_params` folding does not yet look through. TODO: support partial
-/// dropping then.
+/// The converted value is rebound to `expected` wholesale, so it never retains
+/// one of `actual`'s constraint attributes. This is necessary to bridge the
+/// source location differences for now.
 static bool canFullyDischargeBodyConstraints(
     GeneratorType actual, GeneratorType expected, ASTDecl &declScope, SMLoc loc,
     ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
-  // Only allow a full drop: `expected` must retain no body constraints.
-  if (!expected.getBodyConstraints().empty())
+  // Conservatively require the types to be equal everywhere else for now.
+  if (!ASTType(actual.getWithoutBodyConstraints())
+           .isEqualCanon(expected.getWithoutBodyConstraints()))
     return false;
 
-  // Conservatively require the types to be equal everywhere else for now.
-  if (!ASTType(actual.getWithoutBodyConstraints()).isEqualCanon(expected))
-    return false;
+  ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
+  if (actualConstraints.empty())
+    return true;
 
   // Prove every body constraint so it can be dropped. `additionalAssumptions`
   // lets callers (e.g. conditional trait-conformance checking) supply facts
-  // that hold in their context but are not in `declScope`'s known assumptions.
-  ArrayRef<ConstraintAttr> actualConstraints = actual.getBodyConstraints();
+  // that hold in their context but are not in `declScope`'s known assumptions;
+  // `expected`'s constraints join them because a value of that type is only
+  // ever reached where they hold.
+  SmallVector<ConstraintAttr> assumptions(additionalAssumptions);
+  llvm::append_range(assumptions, expected.getBodyConstraints());
+
   auto actualParamList = cast<PogListAttr>(actual.getParamListAttrs());
   OptionalDiag diag(declScope.getShared(), loc, /*discardError=*/true);
   return canDischargeConstraintsInScope(
              declScope, actualParamList, actualConstraints, actualConstraints,
              diag.getDiag(), /*unprovableConstraints=*/nullptr,
-             /*evaluator=*/nullptr, additionalAssumptions)
+             /*evaluator=*/nullptr, assumptions)
       .isTrue();
 }
 
@@ -162,8 +165,9 @@ static bool canFullyDischargeBodyConstraints(
 static bool canDischargeGeneratorConstraints(
     GeneratorType actual, GeneratorType expected, ASTDecl &declScope, SMLoc loc,
     ArrayRef<ConstraintAttr> additionalAssumptions = {}) {
+  // An unconstrained value is usable wherever a constrained one is.
   if (actual.getBodyConstraints().empty())
-    return expected.getBodyConstraints().empty();
+    return true;
   return canFullyDischargeBodyConstraints(actual, expected, declScope, loc,
                                           additionalAssumptions);
 }

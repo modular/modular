@@ -431,11 +431,11 @@ def test_param_constraints():
 def inline_where_is_error[x: Int where x > 0]():
   pass
 
-# Function types don't support trailing 'where' clauses (yet), so the note
-# points that out instead of suggesting the trailing syntax.
+# A function type carries its constraints after the result type, so the note
+# points there rather than at the enclosing signature.
 def fn_type_inline_where[
   # expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
-  # expected-note @below {{trailing 'where' clauses on function types are not yet supported}}
+  # expected-note @below {{use a trailing 'where' clause after the result type of a 'thin' function type instead}}
   f: def[a: Int where a > 0]() thin -> None
 ]():
     pass

@@ -723,6 +723,17 @@ def is_docstring(leaf: Leaf) -> bool:
     return False
 
 
+def contains_functype(node: LN) -> bool:
+    """Return True if `node` holds a function type literal anywhere within it.
+
+    Used to spot return annotations whose parentheses are load-bearing: a
+    trailing `where` clause binds to the innermost function type, so unwrapping
+    such an annotation would move a declaration's constraint onto the type it
+    returns.
+    """
+    return any(n.type == syms.functype for n in node.pre_order())
+
+
 def is_empty_tuple(node: LN) -> bool:
     """Return True if `node` holds an empty tuple."""
     return (

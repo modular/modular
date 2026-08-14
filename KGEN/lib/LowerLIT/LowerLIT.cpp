@@ -878,9 +878,11 @@ static LogicalResult lowerAttributesAndTypes(
         // metadata's body constraints.
         TypedAttr generator =
             cast<TypedAttr>(replacer.replace(attr.getGenerator()));
+        SmallVector<TypedAttr> paramValues;
+        for (TypedAttr value : attr.getParamValues())
+          paramValues.push_back(cast<TypedAttr>(replacer.replace(value)));
         return std::make_pair(
-            BindParamsAttr::get(generator.getContext(), generator,
-                                attr.getParamValues(),
+            BindParamsAttr::get(generator.getContext(), generator, paramValues,
                                 /*evaluationContext=*/nullptr),
             WalkResult::skip());
       });
