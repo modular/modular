@@ -45,15 +45,6 @@ struct MTuple[T: ImplicitlyCopyable & Deinitable](ImplicitlyCopyable, Writable):
         self._data.unsafe_write(value^)
         self._len = 1
 
-    @always_inline
-    def __init__(out self, *, deinit move: Self):
-        self._data = move._data
-        self._len = move._len
-        self._cap = move._cap
-        move._data = Pointer[Self.Element, MutUntrackedOrigin].unsafe_dangling()
-        move._len = 0
-        move._cap = 0
-
     def __init__(out self, *, copy: Self):
         self._len = copy._len
         self._cap = copy._len

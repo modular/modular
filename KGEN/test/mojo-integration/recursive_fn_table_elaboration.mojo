@@ -53,10 +53,6 @@ struct Value(Deinitable, Movable):
         self.kind = kind
         self.payload = payload^
 
-    def __init__(out self, *, deinit move: Self):
-        self.kind = move.kind
-        self.payload = move.payload^
-
     def __deinit__(deinit self):
         pass
 
