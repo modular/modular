@@ -623,6 +623,12 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
   else
     os << "<none>\n";
 
+  os << "constraints: [\n";
+  os.indent();
+  for (const ParsedConstraint &constraint : parsedConstraints)
+    constraint.print(os);
+  os.unindent() << "]\n";
+
   os.unindent() << "}\n";
 }
 

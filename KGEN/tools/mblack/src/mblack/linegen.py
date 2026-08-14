@@ -58,6 +58,7 @@ from mblack.nodes import (
     STATEMENT,
     WHITESPACE,
     Visitor,
+    contains_functype,
     ensure_visible,
     is_arith_like,
     is_atom_with_invisible_parens,
@@ -240,6 +241,13 @@ class LineGenerator(Visitor[Line]):
 
             # Remove redundant brackets around return type annotation.
             is_return_annotation = False
+            # A trailing `where` clause binds to the innermost function type, so
+            # parentheses around a function-type return annotation are what keep
+            # the clause on the declaration. Dropping them would silently move
+            # the constraint onto the returned type.
+            has_where_clause = any(
+                child.type == syms.where_clause for child in node.children
+            )
             for child in node.children:
                 if child.type == token.RARROW:
                     is_return_annotation = True
@@ -248,12 +256,13 @@ class LineGenerator(Visitor[Line]):
                         child.type == syms.atom
                         and child.children[0].type == token.LPAR
                     ):
-                        if maybe_make_parens_invisible_in_atom(
-                            child,
-                            parent=node,
-                            remove_brackets_around_comma=False,
-                        ):
-                            wrap_in_parentheses(node, child, visible=False)
+                        if not (has_where_clause and contains_functype(child)):
+                            if maybe_make_parens_invisible_in_atom(
+                                child,
+                                parent=node,
+                                remove_brackets_around_comma=False,
+                            ):
+                                wrap_in_parentheses(node, child, visible=False)
                     else:
                         wrap_in_parentheses(node, child, visible=False)
                     is_return_annotation = False

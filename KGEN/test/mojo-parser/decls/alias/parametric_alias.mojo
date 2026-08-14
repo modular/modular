@@ -372,3 +372,21 @@ struct Collection[Cond: Bool]:
     # CHECK: lit.call @parametric_alias::@Iter::@"__init__()"{{.*}}<:!Bool Cond>
     def iter(self) where Self.Cond:
         _ = Self.Alias()
+
+
+##===----------------------------------------------------------------------===##
+# Constrained alias generator in a mangled signature
+##===----------------------------------------------------------------------===##
+# Mangling prints types without a SharedState, so the constraint's reference to
+# the generator's own parameter has no name to substitute. Printing it used to
+# read past the (empty) parameter-index bindings and assert.
+
+def constrained_alias_in_mangled_name():
+    comptime Constrained[x: Int]: AnyType where x > 0 = Int
+
+    # CHECK-LABEL: lit.fn @"inner
+    # CHECK-SAME: __generator_type[{{.*}}] ::AnyType where (
+    def inner[G: type_of(Constrained)]():
+        pass
+
+    inner[Constrained]()

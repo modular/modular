@@ -56,27 +56,37 @@ def implicit_generator_constraint_drop_cross_scope[cond: Bool]() where cond:
     comptime dropped: __generator_type[x: Int] AnyType = constrained
 
 
-# Only *fully* dropping body constraints is supported for now. Dropping a strict
-# subset (keeping `condB`, dropping `condA`) is rejected even though `condA` is
-# provable here: a partial drop would leave `condB` with a mismatched source
-# location, requiring a `rebind` that `bind_params` folding cannot yet look
-# through. TODO: allow partial dropping once folding handles the rebind.
+# A target that keeps `condB` is reachable: the source's constraints are all
+# dropped and the value is rebound to the target type, so nothing retains a
+# mismatched source location. `condA` is provable in this scope, and `condB` is
+# assumed because the target promises it.
 def implicit_generator_constraint_drop_partial[
     condA: Bool, condB: Bool
 ]() where condA where condB:
     comptime keepsB[x: Int]: AnyType where condB = Int
     comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
-    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where condA, condB' value to '__generator_type[x: Int] AnyType where condB' in comptime initializer}}
     comptime r: type_of(keepsB) = bothConstraints
 
 
-# Adding a body constraint the source lacks is likewise rejected (it is a form of
-# partial relaxing -- `expected` retains constraints, so it is not a full drop).
+# Adding a body constraint the source lacks is fine: constraints are
+# contravariant, so a source that demands less satisfies a target that promises
+# more.
 def implicit_generator_constraint_add[condA: Bool, condB: Bool]() where condA where condB:
     comptime onlyA[x: Int]: AnyType where condA = Int
     comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
-    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where condA' value to '__generator_type[x: Int] AnyType where condA, condB' in comptime initializer}}
     comptime r: type_of(bothConstraints) = onlyA
+
+
+# The target's constraints are only assumptions, not a licence to ignore the
+# source's. `condB` is unprovable here, so the source's `where condA, condB`
+# cannot be discharged against a target that only promises `condA`.
+def implicit_generator_constraint_unprovable_error[
+    condA: Bool, condB: Bool
+]() where condA:
+    comptime onlyA[x: Int]: AnyType where condA = Int
+    comptime bothConstraints[x: Int]: AnyType where condA where condB = Int
+    # expected-error @below {{cannot implicitly convert '__generator_type[x: Int] AnyType where condA, condB' value to '__generator_type[x: Int] AnyType where condA' in comptime initializer}}
+    comptime r: type_of(onlyA) = bothConstraints
 
 comptime myCurriedIntAdd[x: Int] = myIntAdd[x, ...]
 

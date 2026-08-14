@@ -383,6 +383,10 @@ printGeneratorInterface(raw_ostream &os, ArrayRef<Type> inputParamTypes,
     auto printFn = [&](Type type) { ASTType(type).print(os, ctx); };
     llvm::interleaveComma(inputParamTypes, os, printFn);
     os << ']';
+    // Since we aren't printing param names, index references must not be
+    // remapped to names either.
+    for (auto _ : inputParamTypes)
+      evaluator.appendIndexBinding(TypedAttr());
     return body;
   }
 

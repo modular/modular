@@ -385,7 +385,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   // Parse optional where clauses.
   while (p.getToken().isIdentifier() && p.getToken().getSpelling() == "where") {
     SMLoc whereLoc = p.consumeIdentifier().getLoc();
-    if (kind == ArgListKind::kArgList) {
+    if (kind == ArgListKind::kArgList || kind == ArgListKind::kFnTypeArgList) {
       p.emitError(loc,
                   "'where' clauses must be used with parameters and cannot "
                   "be used with arguments");
@@ -397,11 +397,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
           whereLoc,
           "'where' clauses inside parameter lists are no longer supported");
       if (kind == ArgListKind::kFnTypeParamList) {
-        // Function types don't (yet) support trailing 'where' clauses, so we
-        // can't point users at that syntax.
         diag.attachNote(whereLoc)
-            << "trailing 'where' clauses on function types are not yet "
-               "supported";
+            << "use a trailing 'where' clause after the result type of a "
+               "'thin' function type instead";
       } else {
         diag.attachNote(whereLoc)
             << "use a trailing 'where' clause after the signature instead";
