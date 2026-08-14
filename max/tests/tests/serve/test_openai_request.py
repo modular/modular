@@ -1140,6 +1140,24 @@ async def test_openai_rejects_invalid_json_tool_call_arguments() -> None:
         )
 
 
+async def test_openai_rejects_text_content_part_without_text_field() -> None:
+    """``{'type': 'text'}`` parts must include ``text`` and error cleanly."""
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": [{"type": "text"}]}],
+        }
+    )
+
+    with pytest.raises(
+        InputError,
+        match=r"Content part of type 'text' must include a 'text' field\.",
+    ):
+        await openai_parse_chat_completion_request(
+            request, wrap_content=True, settings=Settings()
+        )
+
+
 async def test_openai_rejects_tool_call_id_mismatch() -> None:
     """A ``tool`` reply whose ``tool_call_id`` matches no tool_call -> 400 (verifier 16_08)."""
     from max.pipelines.context.exceptions import InputError

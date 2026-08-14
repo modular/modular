@@ -1605,10 +1605,14 @@ async def openai_parse_chat_completion_request(
                     else:
                         message_content.append(dict(content_part))
                 elif part_type == "text":
-                    if wrap_content:
-                        message_content.append(
-                            TextContentPart(text=content_part["text"])
+                    text = content_part.get("text")
+                    if text is None:
+                        raise InputError(
+                            "Content part of type 'text' must include a "
+                            "'text' field."
                         )
+                    if wrap_content:
+                        message_content.append(TextContentPart(text=text))
                     else:
                         message_content.append(dict(content_part))
             messages.append(
