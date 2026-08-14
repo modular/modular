@@ -49,7 +49,8 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from layout import Coord, TensorLayout, TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout.tile_tensor import _ComptimeConditionalTileTensor
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -66,6 +67,10 @@ from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 # (128 rows * 6144 * 2 B). H-specific; recalibrate before fusing another H.
 comptime RS_NORM_FUSE_THRESHOLD = 128 * 6144 * size_of[DType.bfloat16]()
 
+# Stand-in layout for a disengaged optional residual (mirrors
+# `allreduce_residual_rmsnorm.mojo`): never indexed, so it carries no storage.
+comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+
 
 # --- GPU Kernel ---
 
@@ -75,7 +80,7 @@ comptime RS_NORM_FUSE_THRESHOLD = 128 * 6144 * size_of[DType.bfloat16]()
         Int32(threads_per_block)
     )
 )
-@__name(t"reducescatter_rmsnorm_{in_dtype}_{ngpus}")
+@__name(t"reducescatter_rmsnorm_{in_dtype}_{ngpus}_{has_residual}")
 def _reducescatter_rmsnorm_kernel[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -84,11 +89,14 @@ def _reducescatter_rmsnorm_kernel[
     NormedLayoutType: TensorLayout,
     sum_origin: MutOrigin,
     SumLayoutType: TensorLayout,
+    residual_origin: Origin,
+    ResidualLayoutType: TensorLayout,
     in_dtype: DType,
     //,
     ngpus: Int,
     simd_width: Int,
     threads_per_block: Int,
+    has_residual: Bool,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -96,6 +104,12 @@ def _reducescatter_rmsnorm_kernel[
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype,
+        ResidualLayoutType,
+        residual_origin,
+        engaged=has_residual,
+    ],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
     rows_dev: Int32,
@@ -107,6 +121,14 @@ def _reducescatter_rmsnorm_kernel[
 
     Blocks stride over the ragged partition's local rows; `normed_out`/`sum_out`
     are this rank's `[rank_units, cols]` shards, indexed by local row.
+
+    When `has_residual`, `residual` is the FULL `[rows, cols]` pre-scatter
+    tensor and each rank adds only its own shard of it, indexed by the global
+    row. Callers fold a TP-replicated residual this way instead of adding it on
+    the group leader before the collective: the reduce-scatter sums across
+    ranks, so a leader-side add would otherwise be counted once for the whole
+    group. Both spellings give the same value only because the residual is
+    bit-identical on every rank of the group -- see `reducescatter_rmsnorm`.
     """
     var rows = Int(rows_dev)
     var cols = Int(cols_dev)
@@ -115,6 +137,9 @@ def _reducescatter_rmsnorm_kernel[
     # 2D stores below use Coord(local_row, col_idx).
     comptime assert normed_out.flat_rank >= 2
     comptime assert sum_out.flat_rank >= 2
+    # Residual load below uses Coord(global_row, col_idx). Unconditional:
+    # `_ZeroSizedLayout` is (0, 0), so the disengaged case is rank 2 too.
+    comptime assert residual.T.flat_rank >= 2
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
@@ -186,6 +211,20 @@ def _reducescatter_rmsnorm_kernel[
         # bf16 shard); norming the wider f32 sum silently shifts MXFP4 accuracy.
         # Invalid lanes hold 0.
         var reduced = accum.cast[in_dtype]()
+
+        # Folded AFTER that round, not into `accum`: the two-launch arm only
+        # ever sees a rounded shard, so f32 here would split the arms by 1 ULP
+        # and let the fuse threshold change model output.
+        comptime if has_residual:
+            if is_valid:
+                reduced = (
+                    reduced.cast[accum_type]()
+                    + residual[]
+                    .load[width=simd_width, alignment=align](
+                        Coord(row, col_idx)
+                    )
+                    .cast[accum_type]()
+                ).cast[in_dtype]()
         var reduced_f = reduced.cast[accum_type]()
         if is_valid:
             # `reduced` == the standalone reduce-scatter shard (residual stream).
@@ -230,6 +269,7 @@ def _reducescatter_rmsnorm_launch[
     in_dtype: DType,
     ngpus: Int,
     threads_per_block: Int,
+    has_residual: Bool = False,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -244,6 +284,14 @@ def _reducescatter_rmsnorm_launch[
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Launch the fused reduce-scatter + RMSNorm kernel."""
     # A DP replica can legitimately get an empty batch, and a zero grid is
@@ -274,10 +322,13 @@ def _reducescatter_rmsnorm_launch[
         NormedLayoutType=normed_out.LayoutType,
         sum_origin=sum_out.origin,
         SumLayoutType=sum_out.LayoutType,
+        residual_origin=residual.T.origin,
+        ResidualLayoutType=residual.T.LayoutType,
         in_dtype=in_dtype,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
+        has_residual=has_residual,
         domain_id=domain_id,
         pdl_level=pdl_level,
     ]
@@ -286,6 +337,7 @@ def _reducescatter_rmsnorm_launch[
         gamma,
         normed_out,
         sum_out,
+        residual,
         epsilon,
         weight_offset,
         Int32(rows),
@@ -301,12 +353,47 @@ def _reducescatter_rmsnorm_launch[
 # --- Public API ---
 
 
+@always_inline
+def _check_residual_extent[
+    in_dtype: DType,
+    //,
+    has_residual: Bool,
+](
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ],
+    rows: Int,
+    cols: Int,
+) raises:
+    """Reject a residual that is not the FULL pre-scatter `[rows, cols]` tensor.
+
+    Indexed by GLOBAL row, so a shard-shaped one runs past its own storage on
+    every rank whose shard does not start at row 0.
+    """
+    comptime if has_residual:
+        if residual[].num_elements() != rows * cols:
+            raise Error(
+                String(
+                    "reducescatter_rmsnorm: residual holds ",
+                    residual[].num_elements(),
+                    " elements, expected the FULL pre-scatter ",
+                    rows * cols,
+                    " (",
+                    rows,
+                    " x ",
+                    cols,
+                    "); it is indexed by global row, not by shard",
+                )
+            )
+
+
 def reducescatter_rmsnorm[
     in_dtype: DType,
     ngpus: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
     //,
+    has_residual: Bool = False,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -319,6 +406,14 @@ def reducescatter_rmsnorm[
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     local_rank: Optional[Int] = None,
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Fused reduce-scatter + RMSNorm across `ngpus` GPUs (bf16 in/out).
 
@@ -333,6 +428,7 @@ def reducescatter_rmsnorm[
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
+        has_residual: Fold `residual` into the reduce-scatter sum.
         domain_id: Barrier counter bank (0 for full-world, nonzero for a
             grouped collective so its counters never poison the full-world
             bank). Ops of the same width deliberately share a bank, which
@@ -358,6 +454,14 @@ def reducescatter_rmsnorm[
             Defaults to the physical device id for full-world collectives.
             Grouped collectives MUST pass it: `input_buffers`/`rank_sigs` are
             group-local, so a global device id indexes them out of range.
+        residual: Optional FULL `[rows, cols]` tensor added to the sum, in f32,
+            before the pre-norm round. Each rank adds only its own shard of it.
+            PRECONDITION: it must be bit-identical on every rank of the group.
+            Callers fold a TP-replicated residual stream here rather than adding
+            it on the group leader before the collective -- the reduce-scatter
+            sums across ranks, so a leader-side add lands once for the whole
+            group and a per-rank add of a NON-replicated residual would not
+            reproduce it.
 
     Note:
         An end barrier is issued, so the P2P-read input buffers are free to be
@@ -471,11 +575,14 @@ def reducescatter_rmsnorm[
             )
         )
 
+    _check_residual_extent[has_residual](residual, rows, cols)
+
     _reducescatter_rmsnorm_launch[
         simd_width,
         in_dtype,
         ngpus,
         threads_per_block,
+        has_residual=has_residual,
         domain_id=domain_id,
         pdl_level=pdl_level,
     ](
@@ -490,6 +597,7 @@ def reducescatter_rmsnorm[
         rank_sigs,
         my_rank,
         ctx,
+        residual=residual,
     )
 
 
@@ -503,6 +611,7 @@ def _dispatch_rs_norm[
     in_origin: Origin,
     //,
     two_launch: def() raises capturing -> None,
+    has_residual: Bool = False,
     domain_id: Int = 0,
     pdl_level: PDLLevel = PDLLevel(),
 ](
@@ -516,6 +625,14 @@ def _dispatch_rs_norm[
     ctx: DeviceContext,
     threshold: Int = RS_NORM_FUSE_THRESHOLD,
     local_rank: Optional[Int] = None,
+    residual: _ComptimeConditionalTileTensor[
+        in_dtype, engaged=has_residual, ...
+    ] = _ComptimeConditionalTileTensor[
+        in_dtype,
+        _ZeroSizedLayout,
+        ImmutAnyOrigin,
+        engaged=False,
+    ](),
 ) raises:
     """Runtime-select the fused kernel vs a caller-supplied two-launch path.
 
@@ -529,6 +646,9 @@ def _dispatch_rs_norm[
         in_layout: Layout of the input TileTensors.
         in_origin: Origin of the input TileTensors.
         two_launch: Caller-supplied standalone reduce-scatter + RMSNorm closure.
+            It must fold `residual` itself when `has_residual` -- this selector
+            only threads the residual into the FUSED arm.
+        has_residual: Fold `residual` into the fused arm's reduce-scatter sum.
         domain_id: Barrier counter bank for the fused kernel (0 for full-world;
             nonzero for grouped collectives, which deliberately share a bank per
             width). See `reducescatter_rmsnorm` for the invariant a shared bank
@@ -549,6 +669,8 @@ def _dispatch_rs_norm[
             `two_launch`. Defaults to `RS_NORM_FUSE_THRESHOLD`.
         local_rank: Optional rank of THIS GPU within the collective's group;
             defaults to the physical device id. Required when grouped.
+        residual: Optional FULL `[rows, cols]` residual for the fused arm; see
+            `reducescatter_rmsnorm` for the group-replication precondition.
     """
     # Threshold is a bf16 row-count crossover in bytes; another element size
     # maps to the wrong row count and could fuse a diverging shape. Fail loud.
@@ -571,8 +693,16 @@ def _dispatch_rs_norm[
     var per_rank_bytes = config.rank_units(0) * cols * size_of[in_dtype]()
     var use_fused = per_rank_bytes <= threshold
 
+    # Before branching: `two_launch` folds against the same global-row
+    # partition, so a bad residual is wrong on both arms, not just the fused.
+    _check_residual_extent[has_residual](residual, rows, cols)
+
     if use_fused:
-        reducescatter_rmsnorm[domain_id=domain_id, pdl_level=pdl_level](
+        reducescatter_rmsnorm[
+            has_residual=has_residual,
+            domain_id=domain_id,
+            pdl_level=pdl_level,
+        ](
             input_buffers,
             normed_out,
             sum_out,
@@ -582,6 +712,7 @@ def _dispatch_rs_norm[
             rank_sigs,
             ctx,
             local_rank,
+            residual=residual,
         )
     else:
         two_launch()
