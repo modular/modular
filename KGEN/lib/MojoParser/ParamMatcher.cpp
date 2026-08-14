@@ -408,14 +408,6 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         expectedArgVariadicPackType.getVariadicPackInfo(shared);
     ASTType variadicElType = refPackType.getParamListElementType();
 
-    // VariadicPack's element type is typically a `TraitType` (AnyType,
-    // Copyable, ...) but it can also be a parametric `StructMetaType`
-    // — for example `type_of(PythonObject)` for a variadic that takes
-    // metatypes of a specific struct. The covariant trait-conversion
-    // branch below only applies in the trait case; otherwise argument
-    // types must line up directly via `matchTypes`.
-    auto expectedTraitType = dyn_cast<TraitType>(variadicElType.mlirType);
-
     TypedAttr variadic = refPackType.getVariadic();
     // As we do our checks, we'll also be calculating the actual kgen.variadic
     // parameter value.
@@ -431,30 +423,20 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       Type actualValueAstType =
           RefType::stripRefConvention(actualAstType, actualConv);
 
-      FailableScope failableScope(*this);
-      // If the argument types line up, then we can skip the rest of this.
-      if (succeeded(matchTypes(actualValueAstType, variadicElType)))
-        continue;
-      failableScope.revert();
-
-      // We can convert a more general `actual` function (that takes in a trait
-      // argument) to a more specific `expected` function that takes in a struct
-      // argument, as long as that struct conforms to that trait.
-      // In other words, here we're handling function conversions with covariant
-      // arguments (see TTSMFS).
-      if (!expectedTraitType)
-        return error(MatchFailure::Unclassified{});
+      // TODO: this seems quite similar to how we match variadic in general,
+      // refactoring this out.
       IREmitter emitter(state.getDeclScope(), EC_TypeParamValue);
-      // Now, check if the actual arg can be converted to the expected trait.
-      PValue actualAstTypeAsVariadicElTrait =
-          emitter.emitMetaTypeToTraitConversion(
-              {CValue(actualValueAstType), expr}, expectedTraitType);
-      if (!actualAstTypeAsVariadicElTrait)
+      FailableScope failableScope(*this);
+      if (failed(matchTypes(ASTType(actualValueAstType).extractMetaType(),
+                            variadicElType))) {
+        failableScope.revert();
         return error(MatchFailure::Unclassified{});
-
-      // And since we have it, let's use it to build up a kgen.variadic
-      // parameter value.
-      elements.push_back(actualAstTypeAsVariadicElTrait);
+      }
+      // If the argument types line up, emit the type value.
+      PValue converted = emitter.emitPValue({PValue(actualValueAstType), expr},
+                                            EC_TypeParamValue, variadicElType);
+      assert(converted); // should have been checked by match types.
+      elements.push_back(converted);
     }
 
     // Now assemble the kgen.variadic parameter value and match it against the

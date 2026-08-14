@@ -93,7 +93,6 @@ def device_func(i: ZInt, j: ZInt):
 
 
 def test_infer_variadic():
-    # expected-error @below {{cannot bind type 'ZInt' to trait 'Sprongling'}}
     # expected-error @below {{converted from 'def device_func(i: ZInt, j: ZInt) thin -> None' to 'def(*args: *ArgTypes) thin -> None'}}
     infer_variadic[device_func]()
 
@@ -423,5 +422,5 @@ def plain_func(i: Int):
 
 
 def test_infer_meta_variadic():
-    # expected-error @below {{value passed to 'func' cannot be converted from 'def plain_func(i: Int) thin -> None'}}
+    # expected-error @below {{invalid call to 'infer_meta_variadic': value passed to 'func' cannot be converted from 'def plain_func(i: Int) thin -> None' to 'def(*args: *ArgTypes) thin -> None'}}
     infer_meta_variadic[plain_func]()

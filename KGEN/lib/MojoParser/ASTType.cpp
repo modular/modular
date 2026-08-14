@@ -986,6 +986,8 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared,
 TriState ASTType::doesConformTo(TraitType trait, SharedState &shared,
                                 ArrayRef<ConstraintAttr> callerAssumptions,
                                 ConstraintFailure *details) const {
+  // FIXME: this seems pretty wrong, `getDecl` is type depth insensitive,
+  // meaning that it is true for `meta<meta<!struct>> conforms_to AnyType`...
   ASTDecl *typeDecl = getDecl(shared);
   if (!typeDecl)
     return TriState::no();
