@@ -1899,7 +1899,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       bool anyDynamic = false;
       size_t numEmitted = 0;
       for (const Operand &operand : exprOperands) {
-        emitter.emitExpressionWithOutEvaluatingIt(
+        emitter.emitExpressionWithoutEvaluatingIt(
             operand.expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
               anyDynamic |= !result.getIfPValue();
               ++numEmitted;
@@ -5146,7 +5146,7 @@ AnyValue MagicFunctionNode::emitOriginOf(ExprDest &dest,
   CValue singleOrigin;
 
   for (ExprNode *subExpr : subExprs) {
-    emitter.emitExpressionWithOutEvaluatingIt(
+    emitter.emitExpressionWithoutEvaluatingIt(
         subExpr, EC_Origin, [&](CValue result, IREmitter &emitter) {
           // If this is a value of std.Origin type, remember it.
           if (auto origin = ASTType(result.getType()).isOriginStruct())
@@ -5173,7 +5173,7 @@ AnyValue MagicFunctionNode::emitTypeOf(ExprDest &dest,
                                        IREmitter &emitter) const {
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
-  emitter.emitExpressionWithOutEvaluatingIt(
+  emitter.emitExpressionWithoutEvaluatingIt(
       subExprs.front(), EC_Origin, [&](CValue result, IREmitter &emitter) {
         resultType = result.getRValueType();
       });
