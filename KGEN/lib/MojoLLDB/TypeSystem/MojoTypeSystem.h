@@ -220,6 +220,8 @@ public:
     return {};
   }
 
+  lldb_private::CompilerType GetSizeType() override { return {}; }
+
   unsigned GetPtrAuthKey(lldb::opaque_compiler_type_t type) override {
     // Unimplemented.
     return 0;

@@ -211,22 +211,12 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
     // Get the registrar for the GDB JIT loader interface.
     if (tt.isOSBinFormatMachO()) {
-      // We have to explicitly define these wrapper symbols on macOS because
-      // they're hidden visibility.
-      auto err =
-          toModularErrorOr(platformStdlib.define(llvm::orc::absoluteSymbols(
-              {{session.intern("_llvm_orc_registerJITLoaderGDBAllocAction"),
-                {llvm::orc::ExecutorAddr::fromPtr(
-                     &llvm_orc_registerJITLoaderGDBAllocAction),
-                 llvm::JITSymbolFlags::Exported |
-                     llvm::JITSymbolFlags::Absolute}}})));
-      if (err)
-        return err.takeError();
-
-      // Create and register the JIT DebugInfo plugin.
+      // Create and register the JIT DebugInfo plugin. The GDB alloc-action
+      // symbol is resolved from the session's bootstrap JITDylib, which the
+      // in-process executor populates automatically.
       auto plugin =
           toModularErrorOr(llvm::orc::GDBJITDebugInfoRegistrationPlugin::Create(
-              session, platformStdlib, tt));
+              session, session.getBootstrapJITDylib()));
       if (plugin.isError())
         return plugin.takeError();
 
@@ -235,7 +225,7 @@ ExecutionEngine::create(ExecutionEngineOptions options,
       // Register the ELFDebugObjectPlugin.
       llvm::Error error = llvm::Error::success();
       auto plugin = std::make_unique<llvm::orc::ELFDebugObjectPlugin>(
-          session, true, true, error);
+          session, /*RequireDebugSections=*/true, error);
       if (auto errOr = toModularErrorOr(std::move(error)); failed(errOr))
         return errOr.takeError();
       ee->objectLayer->addPlugin(std::move(plugin));

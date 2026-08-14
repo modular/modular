@@ -130,6 +130,8 @@ public:
 
   lldb_private::ArchSpec GetArchitecture() override;
 
+  lldb::TargetSP GetTargetSP() override { return GetTarget(); }
+
 private:
   //===--------------------------------------------------------------------===//
   // JIT Symbols
