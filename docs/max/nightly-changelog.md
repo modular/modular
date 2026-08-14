@@ -447,6 +447,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed tool-call requests failing with HTTP 400 (`anyOf branch and base
+  schema both set "description"`) on models whose grammar compiles in strict
+  mode (GLM-5.x, Gemma 4). The xgrammar JSON-schema converter's `anyOf`
+  base-merge now skips annotation-only keywords (`description`, `title`,
+  `default`, `examples`, `$comment`, `deprecated`, `readOnly`, `writeOnly`)
+  instead of rejecting them as branch/base conflicts; they carry no grammar
+  constraint.
+
 - Fixed structured output and constrained tool calling being silently ignored
   on the Kimi K2.5-family pipelines when serving with DFlash speculative
   decoding (`--speculative-method dflash`). The unified DFlash graph compiled

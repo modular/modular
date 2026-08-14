@@ -489,6 +489,18 @@ def test_anyof_boolean_branch_with_base_rejected() -> None:
         )
 
 
+def test_anyof_annotation_key_on_branch_and_base_compiles() -> None:
+    # Annotation-only keywords (description, title, ...) constrain nothing, so
+    # a branch and the base schema both carrying one is not a merge conflict
+    # even in strict mode.
+    compiled = _compiler().compile_json_schema(
+        '{"description": "base", "anyOf": ['
+        '{"type": "string", "description": "branch"}, {"type": "number"}]}',
+        reject_unsupported=True,
+    )
+    assert isinstance(compiled, xgr.CompiledGrammar)
+
+
 def test_anyof_base_merge_compiles() -> None:
     # The happy path of the base-merge: base keywords (type, required) are folded
     # into each object branch without conflict, so base AND (B1 OR B2) compiles.
