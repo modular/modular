@@ -21,9 +21,46 @@ never take effect.
 
 from __future__ import annotations
 
+import click
+from max._entrypoints.cli.config import pipeline_config_options
 from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_args import _FLAT_KWARG_SUBTREES
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+
+# Consumed by the CLI, or by ``from_flat_kwargs`` before its unmatched-kwargs
+# check, so they need no field to route to.
+_CLI_ONLY_FLAGS = frozenset(
+    {"devices", "draft_devices", "config_file", "models"}
+)
+
+
+def test_every_cli_flag_routes_to_a_known_destination() -> None:
+    """Every flag the CLI generates must have somewhere to land.
+
+    The CLI's list of flattened config models and ``_FLAT_KWARG_SUBTREES``
+    are both maintained by hand; drift leaves a flag with no destination.
+    """
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None: ...
+
+    flags = {param.name for param in cli.params if param.name}
+
+    destinations = set(PipelineArgs.model_fields)
+    for _path, config_class in _FLAT_KWARG_SUBTREES:
+        destinations |= set(config_class.model_fields)
+    destinations |= {f"draft_{field}" for field in MAXModelConfig.model_fields}
+
+    unroutable = flags - destinations - _CLI_ONLY_FLAGS
+    assert not unroutable, (
+        f"CLI flags with no routing destination: {sorted(unroutable)}. "
+        "Register the owning config model in _FLAT_KWARG_SUBTREES "
+        "(max/python/max/pipelines/lib/pipeline_args.py) so these flags "
+        "reconcile with a config file's nested section."
+    )
 
 
 def test_from_args_threads_fold_sampler_and_pending_futures() -> None:
