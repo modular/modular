@@ -80,6 +80,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
+from layout.coord import Coord, DynamicCoord
 from layout.runtime_tuple import (
     coalesce_nested_tuple,
     flatten,
@@ -5865,9 +5866,9 @@ struct RaggedTensorMap[
     """The TMA descriptor that will be used to store the ragged tensor."""
     var max_length: Int
     """The maximum length present in the sequences of the ragged tensor."""
-    var global_shape: IndexList[Self.global_rank]
+    var global_shape: DynamicCoord[DType.int64, Self.global_rank]
     """The shape of the global tensor."""
-    var global_stride: IndexList[Self.global_rank]
+    var global_stride: DynamicCoord[DType.int64, Self.global_rank]
     """The stride of the global tensor."""
 
     comptime global_rank = Self.remaining_global_dim_rank + 3
@@ -6067,8 +6068,8 @@ struct RaggedTensorMap[
         )
 
         self.max_length = max_length
-        self.global_shape = global_shape
-        self.global_stride = global_stride
+        self.global_shape = Coord(global_shape)
+        self.global_stride = Coord(global_stride)
 
     @always_inline
     def _get_descriptor_ptr(self) -> UnsafePointer[NoneType, MutAnyOrigin]:
