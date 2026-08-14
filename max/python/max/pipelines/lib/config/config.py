@@ -602,6 +602,17 @@ class PipelineConfig(ConfigFileModel):
                 # RedHatAI/gemma-4-31B-it-speculator.dspark) declare the
                 # generic architectures: ["DSparkDraftModel"].
                 target_archs[0] = "UnifiedDSparkGemma4_31BForCausalLM"
+            elif (
+                self.speculative.is_dflash()
+                and draft_archs
+                # z-lab DFlash drafters (e.g. z-lab/gemma-4-31B-it-DFlash)
+                # declare architectures: ["DFlashDraftModel"], which
+                # ``_create_speculative_config_if_needed`` rewrites to
+                # "LlamaForCausalLM" on the CLI-kwargs path (but not the
+                # recipe path) before this runs. Accept both spellings.
+                and draft_archs[0] in ("DFlashDraftModel", "LlamaForCausalLM")
+            ):
+                target_archs[0] = "UnifiedDflashGemma4_31BForCausalLM"
         # Gemma 4 12B ships as the "gemma4_unified" model line; its DSpark
         # block drafter declares architectures: ["Gemma4DSparkModel"].
         if target_archs[0] == "Gemma4UnifiedForConditionalGeneration":
