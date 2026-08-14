@@ -102,7 +102,7 @@ class ZmqModelWorkerProxy(
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+    ) -> AsyncGenerator[tuple[list[PipelineOutputType], int | None], None]:
         """Submit a request to the model worker and return a response generator.
 
         Awaiting this coroutine registers an output queue for ``req_id`` and
@@ -166,11 +166,15 @@ class ZmqModelWorkerProxy(
         self,
         req_id: RequestID,
         queue: asyncio.Queue[tuple[float, SchedulerResult[PipelineOutputType]]],
-    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+    ) -> AsyncGenerator[tuple[list[PipelineOutputType], int | None], None]:
         """Drain the output queue for a submitted request until it completes.
 
-        Cleans up the pending output queue on exit and cancels the request with
-        the worker if the stream is abandoned before completing normally.
+        Yields ``(outputs, batch_id)`` pairs. ``batch_id`` is the monotonic
+        forward-pass counter from the scheduler that produced the outputs, used
+        by upstream callers to correlate OTel spans across the API and model
+        worker processes. Cleans up the pending output queue on exit and cancels
+        the request with the worker if the stream is abandoned before completing
+        normally.
         """
         try:
             # queue.get() will wait until an item is available.
@@ -193,6 +197,7 @@ class ZmqModelWorkerProxy(
                     break
 
                 outputs = [item.result]
+                batch_id = item.batch_id
                 should_stop = item.is_done
                 while True:
                     try:
@@ -207,11 +212,13 @@ class ZmqModelWorkerProxy(
                         break
 
                     outputs.append(item.result)
+                    if item.batch_id is not None:
+                        batch_id = item.batch_id
                     if item.is_done:
                         should_stop = True
                         break
 
-                yield outputs
+                yield outputs, batch_id
 
                 if should_stop:
                     break

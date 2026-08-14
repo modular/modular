@@ -256,10 +256,12 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
@@ -334,15 +336,20 @@ async def _recorded_ttft_ms(timestamp_ns: int) -> float:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
-            yield [
-                TextGenerationOutput(
-                    request_id=test_request_id,
-                    tokens=[101],
-                    final_status=GenerationStatus.END_OF_SEQUENCE,
-                )
-            ]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[101],
+                        final_status=GenerationStatus.END_OF_SEQUENCE,
+                    )
+                ],
+                0,
+            )
 
         return _gen()
 
@@ -420,10 +427,12 @@ async def test_tpot_not_recorded_for_single_token() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
@@ -475,10 +484,12 @@ async def _run_reasoning_pipeline(
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
@@ -747,15 +758,20 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
-            yield [
-                TextGenerationOutput(
-                    request_id=test_request_id,
-                    tokens=[10],
-                    final_status=GenerationStatus.ACTIVE,
-                )
-            ]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[10],
+                        final_status=GenerationStatus.ACTIVE,
+                    )
+                ],
+                None,
+            )
 
         return _gen()
 

@@ -141,7 +141,9 @@ async def test_buffering() -> None:
         batches: list[list[FakeOutput]] = []
 
         async def collect_stream() -> list[list[FakeOutput]]:
-            async for batch in await proxy.stream(req_id, fake_context):
+            async for batch, _batch_id in await proxy.stream(
+                req_id, fake_context
+            ):
                 batches.append(batch)
             return batches
 

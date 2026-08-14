@@ -233,7 +233,7 @@ class MAXModelWorker(Worker):
         )
 
         response_stream = await self._proxy.stream(request_id, ctx)
-        async for outputs in response_stream:
+        async for outputs, _batch_id in response_stream:
             token_arrays = [
                 np.asarray(output.tokens, dtype=np.int32)
                 for output in outputs

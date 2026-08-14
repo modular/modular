@@ -101,15 +101,16 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
         self,
         req_id: RequestID,
         data: BaseContextType,
-    ) -> AsyncGenerator[list[PipelineOutputType], None]:
+    ) -> AsyncGenerator[tuple[list[PipelineOutputType], int | None], None]:
         """Submit ``data`` to the model worker and return a response generator.
 
         Awaiting this coroutine performs the handoff to the model worker (for
         example, the request-queue put). A submission failure — such as a dead
         worker — raises here, before any response has been streamed, so callers
         can surface it as an error before response headers are sent. The
-        returned async generator yields batches of pipeline outputs as they
-        arrive.
+        returned async generator yields ``(outputs, batch_id)`` pairs: a batch
+        of pipeline outputs and the monotonic batch counter from the scheduler
+        that produced them (``None`` for cancelled results).
         """
         ...
 

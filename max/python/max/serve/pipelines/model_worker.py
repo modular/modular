@@ -54,6 +54,7 @@ from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import (
+    configure_kernel_tracing,
     configure_logging,
     configure_metrics,
     configure_tracing,
@@ -243,6 +244,7 @@ class ModelWorker:
         """
         configure_logging(settings)
         configure_tracing(settings)
+        configure_kernel_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 

@@ -54,6 +54,29 @@ class MetricRecordingMethod(Enum):
     PROCESS = "PROCESS"
 
 
+class KernelTraceLevel(Enum):
+    """Controls GPU kernel-trace capture depth.
+
+    All levels above ``off`` add overhead to the model worker process.
+    Use the minimum level that satisfies your observability needs.
+    """
+
+    OFF = "off"
+    """No libkineto capture. Serving overhead is zero (default)."""
+
+    BATCH = "batch"
+    """Batch-level OTel spans only (``max.batch``, ``max.phase.*``).
+    No per-kernel GPU detail. Minimal overhead."""
+
+    OP = "op"
+    """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation
+    ranges around each model op. Moderate overhead."""
+
+    KERNEL = "kernel"
+    """Full GPU kernel timeline via libkineto. Records every CUDA kernel
+    launch and NVTX range. Highest overhead; use for deep profiling only."""
+
+
 class Settings(BaseSettings):
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
@@ -244,6 +267,17 @@ class Settings(BaseSettings):
             "unchanged."
         ),
         alias="MAX_SERVE_OTLP_METRICS_ENDPOINT",
+    )
+
+    kernel_trace_level: KernelTraceLevel = Field(
+        default=KernelTraceLevel.OFF,
+        description=(
+            "GPU kernel-trace capture depth. 'off' (default) adds zero "
+            "overhead. 'batch' enables OTel batch/phase spans with no GPU "
+            "capture. 'op' adds NVTX op-level ranges. 'kernel' enables full "
+            "libkineto GPU kernel timeline capture (highest overhead)."
+        ),
+        alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
     )
 
     # Model worker configuration
@@ -449,6 +483,9 @@ class Settings(BaseSettings):
             f"    metric_recording       : {self.metric_recording.value}"
         )
         logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
+        logger.info(
+            f"    kernel_trace_level     : {self.kernel_trace_level.value}"
+        )
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:
