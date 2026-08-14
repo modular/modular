@@ -28,7 +28,7 @@ from max.pipelines.context import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.modeling.types import (
     PipelineOutputsDict,
     PipelineTokenizer,
@@ -47,7 +47,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 

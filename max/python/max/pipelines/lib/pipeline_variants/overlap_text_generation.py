@@ -126,7 +126,7 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.context.tokens import TokenBuffer
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
     _contiguous_prefix_2d,
     cache_valid_length_for_context,
@@ -305,7 +305,7 @@ class SpecDecodeState:
     num_speculative_tokens: int
     """The number of speculative tokens to generate."""
 
-    kv_manager: PagedKVCacheManager
+    kv_manager: PagedKVCacheManagerInterface
     """The KVCache manager for model."""
 
     persistent_draft_tokens: Buffer
@@ -1884,10 +1884,14 @@ class OverlapTextGenerationPipeline(
         headroom, so capture never reserves more pages than were allocated.
         """
         params = self._kv_manager.params
-        return min(
-            self._pipeline_model.max_seq_len + spec_decode_cache_slack(params),
-            self._kv_manager._total_num_pages * params.page_size,
+        max_seq_len = (
+            self._pipeline_model.max_seq_len + spec_decode_cache_slack(params)
         )
+        kv_max_seq_len = self._kv_manager.effective_max_seq_length
+        if kv_max_seq_len is None:
+            return max_seq_len
+        else:
+            return min(max_seq_len, kv_max_seq_len)
 
     @property
     def overlap_active(self) -> bool:
@@ -3869,7 +3873,7 @@ class OverlapTextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 

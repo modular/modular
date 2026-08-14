@@ -53,7 +53,7 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     load_kv_manager,
 )
 from max.pipelines.lib.vision_encoder_cache import (
@@ -127,7 +127,7 @@ class TextGenerationPipelineInterface(
 
     @property
     @abstractmethod
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -672,7 +672,7 @@ class TextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 

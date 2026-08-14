@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from max.driver import Buffer
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib.vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
@@ -189,7 +189,7 @@ class BatchMetrics:
         cls,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        kv_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManagerInterface | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -930,7 +930,7 @@ class SchedulerLogger:
         self,
         sch_config: TokenGenerationSchedulerConfig,
         inputs: TextGenerationInputs[TextContext],
-        kv_cache: PagedKVCacheManager | None,
+        kv_cache: PagedKVCacheManagerInterface | None,
         batch_creation_time_s: float,
         batch_execution_time_s: float,
         num_pending_reqs: int,
@@ -947,7 +947,7 @@ class SchedulerLogger:
         Args:
             sch_config: The scheduler configuration.
             inputs: The pipeline input / batch.
-            kv_cache: The PagedKVCacheManager, if any.
+            kv_cache: The PagedKVCacheManagerInterface, if any.
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.

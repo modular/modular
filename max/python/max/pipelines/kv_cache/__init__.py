@@ -33,6 +33,7 @@ from .paged_kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
     PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
     available_port,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "ModelConfig",
     "ModelConfigWithKVCache",
     "PagedKVCacheManager",
+    "PagedKVCacheManagerInterface",
     "PagedMemoryPlanner",
     "TransferReqData",
     "available_port",

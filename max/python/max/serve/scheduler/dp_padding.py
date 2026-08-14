@@ -22,7 +22,7 @@ from max.pipelines.context import (
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.modeling.types import (
     BatchType,
     Pipeline,
@@ -67,7 +67,7 @@ class DPBatchPadder:
         self,
         *,
         dp_size: int,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_length: int,
         model_name: str,
         pipeline: Pipeline[

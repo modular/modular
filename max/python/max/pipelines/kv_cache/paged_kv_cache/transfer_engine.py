@@ -42,7 +42,7 @@ from max.pipelines.kv_cache._nixl_backend import (
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 
 from ._ucx_env import configure_ucx_env
-from .cache_manager import PagedKVCacheManager
+from .cache_manager import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
@@ -1959,7 +1959,7 @@ class KVTransferEngine(TransferEngine):
 
     @classmethod
     def from_paged_kv_cache(
-        cls, name: str, kv_cache: PagedKVCacheManager
+        cls, name: str, kv_cache: PagedKVCacheManagerInterface
     ) -> KVTransferEngine:
         """Construct an engine wired to a ``PagedKVCacheManager``.
 
