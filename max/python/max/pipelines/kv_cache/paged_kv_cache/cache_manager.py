@@ -680,9 +680,14 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         copy_pinned_to_destinations(cache_lengths_host, cache_lengths_by_device)
         copy_pinned_to_destinations(lut_table_host, lut_table_by_device)
 
+        lut_table_by_device_by_leaf = [
+            {leaf_id: b for leaf_id in self.params.leaves()}
+            for b in lut_table_by_device
+        ]
+
         return KVCacheAssignments(
             cache_lengths_by_device=cache_lengths_by_device,
-            lookup_table_by_device=lut_table_by_device,
+            lookup_table_by_device=lut_table_by_device_by_leaf,
             max_prompt_length=max_prompt_length_host,
             max_cache_length=max_cache_length_host,
             batch_characteristics=BatchCharacteristics(
