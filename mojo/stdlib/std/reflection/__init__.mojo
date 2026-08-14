@@ -32,7 +32,7 @@ struct Point:
 def print_fields[T: AnyType]():
     comptime names = reflect[T].field_names()
     comptime for i in range(reflect[T].field_count()):
-        print(names[i])
+        print(materialize[names[i]]())
 
 def main():
     print_fields[Point]()  # Prints: x, y
