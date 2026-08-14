@@ -2284,9 +2284,12 @@ struct RegTileLoader[
         var off = (Int(gmem_tile.ptr) - Int(bounds_from.ptr)) // size_of[
             Self.dtype
         ]()
+        # A tile based entirely past `bounds_from` makes the remaining extent
+        # negative, which `AMDBufferResource` narrows to a UInt32 byte count —
+        # wrapping to ~4 GiB and clamping nothing. Saturate so it reads as zero.
         self.bc = AMDBufferResource(
             readfirstlane(gmem_tile.ptr),
-            readfirstlane(_get_bounds(bounds_from) - off),
+            readfirstlane(max(0, _get_bounds(bounds_from) - off)),
         )
         self.base_ptr_as_int = Int(gmem_tile.ptr)
 

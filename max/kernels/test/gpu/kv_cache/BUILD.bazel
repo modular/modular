@@ -6,7 +6,6 @@ package(default_visibility = ["//max:consumers"])
 _GPU_MEMORY = {
     "test_batch_kv_cache_flash_attention.mojo": "6",
     "test_batch_kv_cache_flash_attention_causal_mask.mojo": "6",
-    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "9",
     "test_kv_cache_2m_iadd.mojo": "6",
     "test_kv_cache_matmul.mojo": "6",
     "test_kv_cache_radd.mojo": "5.5",
@@ -98,7 +97,6 @@ _EXTRA_DEPS = {
                 "test_kv_cache_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_fused_qkv_index_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions (AMD bf16 matmul tactics)
                 "test_mha_mixed_ce_tg.mojo",  # KERN-2339: accessing idx=4 in dimension of size 4
-                "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
@@ -126,6 +124,7 @@ _EXTRA_DEPS = {
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
             "test_kv_cache_ragged_matmul.mojo",  # Split by dtype x kernel below (KERN-3152 compile time)
+            "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # Split by dtype below; the fp8 fold arm is AMD-only
             "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test, split by page_size below
             "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
             "test_mha_gemma4_shapes.mojo",  # Split by (page_size, mask_kind) below
@@ -134,6 +133,55 @@ _EXTRA_DEPS = {
             "test_paged_kv_null_block_sentinel.mojo",  # Explicit B200-only target below (SERVOPT-1456 kernel regression)
         ],
     )
+]
+
+# test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo split by dtype via
+# -D FOLD_FP8. The AMD-only fp8 arm covers the decode fold's padded wide-MFMA
+# tile, which the portable cases cannot reach — the wide arm is gated on fp8.
+#
+# (suffix, copts, constraints, gpu_memory)
+_RAGGED_CAUSAL_MASK_DTYPES = [
+    ("", [], [], "9"),
+    (
+        "_fp8",
+        [
+            "-D",
+            "FOLD_FP8=True",
+        ],
+        ["//:amd_gpu"],
+        "5",
+    ),
+]
+
+[
+    mojo_test(
+        name = "test_batch_kv_cache_flash_attention_causal_mask_ragged{}.mojo.test".format(suffix),
+        size = "large",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + copts,
+        enable_assertions = select({
+            "//:b200_gpu": True,
+            "//conditions:default": False,  # KERN-2339: bounds check reveals flash attention kernel bug
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": gpu_memory,
+        },
+        main = "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + constraints,
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for suffix, copts, constraints, gpu_memory in _RAGGED_CAUSAL_MASK_DTYPES
 ]
 
 [

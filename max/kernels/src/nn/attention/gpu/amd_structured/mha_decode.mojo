@@ -332,10 +332,13 @@ __extension Attention:
                 self.online_softmax_step_0_fma[0]()
                 self.online_softmax_step_1_fma[0]()
 
-            # Write P to shared memory so all warps can read it for PV.
-            self.p_reg_buffer.copy_to_shared()
-            s_waitcnt[lgkmcnt=0]()
-            barrier()
+            # Write P to shared memory so all warps can read it for PV. The
+            # wide-MMA fold keeps P in registers, so it skips this and the
+            # barrier that ordered it; `shared_kv` re-syncs on its own below.
+            comptime if Self._p_shared_memory_backed:
+                self.p_reg_buffer.copy_to_shared()
+                s_waitcnt[lgkmcnt=0]()
+                barrier()
 
             comptime if shared_kv:
                 # K consumed + P synced.  Load V into shared SMEM
@@ -356,11 +359,11 @@ __extension Attention:
 
             # Iter-end drain + barrier.  The entry barrier at the next
             # iteration is not sufficient on its own: without this
-            # explicit full drain, mma_pv's pipelined P SMEM ds_reads (and
-            # prefetch_next's in-flight DMA) can overlap with iter N+1's
-            # copy_to_shared writes and K LDS reads.  Waitcnt-only and
-            # barrier-only are both empirically insufficient — both are
-            # required.
+            # explicit full drain, prefetch_next's in-flight DMA (and, on
+            # the SMEM-backed P path, mma_pv's pipelined P ds_reads) can
+            # overlap with iter N+1's K LDS reads and copy_to_shared
+            # writes.  Waitcnt-only and barrier-only are both empirically
+            # insufficient — both are required.
             s_waitcnt[vmcnt=0, lgkmcnt=0]()
             barrier()
 

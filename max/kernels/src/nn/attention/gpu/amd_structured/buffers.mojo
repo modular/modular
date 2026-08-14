@@ -83,6 +83,9 @@ struct QRegisterBuffer[
     thread_rows: Int,
     thread_cols: Int,
     zero_partial_tile_pad: Bool = True,
+    # See `Parameters:` below. Off by default because it is measurably not free:
+    # carried unconditionally it cost depth-512 prefill ~150 bytes of spill.
+    clamp_to_parent: Bool = False,
 ]:
     """Holds the Q query tile in register memory for gfx950 attention MMAs.
 
@@ -114,6 +117,13 @@ struct QRegisterBuffer[
             `RegTileLoader` col-major thread distribution.
         zero_partial_tile_pad: Whether to zero the invalid tail of a
             partial BK strip after loading it.
+        clamp_to_parent: Whether to bound the Q load's buffer descriptor by
+            the parent tile rather than this warp's own slab. `.tile[]`
+            yields comptime shapes, so a slab-built descriptor clamps
+            nothing and a warp entirely past the live rows reads past the
+            tensor. The decode fold turns it on because a padded width
+            reaches that state on every launch; prefill can too but pays
+            for the bound in address math, so it keeps the default.
     """
 
     comptime reg_dtype = Self.dtype
@@ -185,11 +195,17 @@ struct QRegisterBuffer[
         # `num_mmas`. (For M=1 cases — BM=32 FP8, BF16 multi-k — col_major
         # would coincide with row_major, but BM=64 with M=2 needs row_major.)
         comptime load_width = simd_width_of[Self.dtype]()
-        var reg_loader = RegTileLoader[
+        # `q_tile` carries the runtime live-row count while `.tile[]` yields
+        # comptime shapes never clipped to it, so a `warp_tile`-built loader
+        # describes only its own slab and clamps nothing — see `clamp_to_parent`.
+        comptime QLoaderT = RegTileLoader[
             Self.dtype,
             col_major[Self._q_thread_rows, Self._q_thread_cols](),
             warp_scope=True,
-        ](warp_tile)
+        ]
+        var reg_loader = QLoaderT(
+            warp_tile, bounds_from=q_tile
+        ) if Self.clamp_to_parent else QLoaderT(warp_tile)
         comptime for i in range(Self.num_tiles):
             var src = warp_tile.tile[Self.WM, Self.BK](0, i)
             var dst = self.reg_tile.tile[
@@ -694,6 +710,13 @@ struct PRegisterBuffer[
                     )
                 elif num_gather == 2:
                     # Gather 2 rows, cast each to mma_dtype, join to full frag.
+                    # Source rows `tile_idx*2 (+1)` are the (m=0, n) pair only
+                    # at one M-tile — the stage tile is col-major over (M, N),
+                    # so at two they become (m=0,n=0) and (m=1,n=0) and row 1's
+                    # operand is never written. Gated by `_p_register_chain_ok`.
+                    comptime assert (
+                        Self.shared_memory_backed or Self.num_m_mmas == 1
+                    ), "register-resident P gather handles one M tile per warp"
                     var lo: SIMD[Self.mma_dtype, Self.output_frag_size]
                     var hi: SIMD[Self.mma_dtype, Self.output_frag_size]
                     comptime if (
@@ -873,9 +896,10 @@ struct PRegisterBuffer[
     @always_inline
     def copy_to_shared(self):
         # When P is not SMEM-backed there is no P SMEM region and `mma_tile`
-        # reads P from registers, but the decode driver calls this
-        # unconditionally — so no-op the register-resident path. This fires only
-        # for a BN==WN config that is NOT warp-local. Warp-local also has
+        # reads P from registers. `mla_decode` and `mha_decode_streaming` still
+        # call unconditionally, so the no-op has to stay or they would write
+        # into a zero-sized region. Fires only for a BN==WN config that is NOT
+        # warp-local. Warp-local also has
         # BN==WN, but is deliberately forced SMEM-backed (see `_warp_local_p` in
         # attention.mojo) because the register-resident 16x16x128 P→PV path does
         # not compile, so warp-local does NOT take this no-op. Comptime-dead on
