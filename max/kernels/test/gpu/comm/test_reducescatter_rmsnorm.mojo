@@ -33,7 +33,7 @@ from std.sys import (
     size_of,
 )
 
-from std.math import rsqrt
+from std.math import align_down, rsqrt
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
@@ -892,6 +892,494 @@ def _run_prod_oracle_case[
     return normed_mismatch
 
 
+@always_inline
+def _bf16_ulp_key(bits: Int) -> Int:
+    """Map bf16's sign-magnitude bits to a monotonic key.
+
+    `|key(a) - key(b)|` is then the ULP distance for SIGNED data, which the raw
+    bit difference is not. `_run_case`'s outputs are all positive; these are
+    not.
+    """
+    return (0x8000 - (bits & 0x7FFF)) if bits >= 0x8000 else (bits + 0x8000)
+
+
+def _run_residual_case[
+    in_dtype: DType,
+    ngpus: Int,
+    num_cols: Int,
+    group_size: Int = ngpus,
+    wide_magnitudes: Bool = False,
+](num_rows: Int, list_of_ctx: List[DeviceContext]) raises:
+    """Gate the folded residual against an INDEPENDENT host oracle.
+
+    The fold replaces the caller's leader-only pre-add with a per-rank add of
+    the rank's own shard of the replicated `xs`. The two are value-equal only
+    because `xs` is bit-identical across the group, which this case reproduces.
+
+    They are NOT bit-identical: the leader rounds `xs + attn_0` before the
+    collective, the fold rounds the peer sum first. Neither ordering dominates,
+    so the leader-add arm is bounded rather than required to match.
+
+    Gate 1 (load-bearing, shares no code with the kernel): a host oracle
+    recomputes `sum_out` in the kernel's peer order and requires BIT-EXACTness;
+    f32 addition is not associative, so a reordering fails it.
+    Gate 2: the leader-add spelling, bounded to a small ULP shift.
+    Gate 3 (non-vacuity): the residual must actually change the result, else a
+    dropped residual would satisfy gates 1 and 2 vacuously at xs == 0.
+    Gate 4: `normed_out` vs a host RMSNorm of gate 1's sum -- the only gate that
+    sees the residual reach the norm rather than just `sum_out`.
+    Gate 5: the leader-add arm's `normed_out`, bounded by gate 2's sum gap.
+    """
+    comptime assert (
+        ngpus % group_size == 0
+    ), "group_size must evenly divide the device count"
+    comptime domain_id = 0 if group_size == ngpus else group_size
+
+    var config = ReduceScatterConfig[in_dtype, group_size](
+        axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
+    )
+    var length = num_rows * num_cols
+    var epsilon = Float32(1e-6)
+    var weight_offset = Scalar[in_dtype](1.0)
+
+    var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var pre_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var res_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var normed = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var sum_shard = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var normed_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var sum_b = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+
+    var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
+    for c in range(num_cols):
+        gamma_host[c] = (Float64(c + num_cols) / Float64(num_cols)).cast[
+            in_dtype
+        ]()
+
+    # `wide_magnitudes` spans 2^-6..2^14 to broaden exponent coverage. It does
+    # NOT gate the fold's position: `sum_out` is bf16, so an f32 reordering
+    # moves bits below the round (a fold-first control stayed at 0 mismatches).
+    var res_host = List[Scalar[in_dtype]](
+        length=length, fill=Scalar[in_dtype](0)
+    )
+    for j in range(length):
+        var scale = Float64(1 << (j % 21)) / 64.0 if wide_magnitudes else 1.0
+        var mag = Scalar[in_dtype]((Float64(j % 97) * 0.5 + 1.0) * scale)
+        res_host[j] = -mag if (j % 3 == 0) else mag
+
+    # Both outlive the loop: `enqueue_copy` is an ASYNC H2D off a raw host
+    # pointer, so dropping a source before a synchronize drains it is a UAF.
+    var attn_hosts = List[List[Scalar[in_dtype]]](capacity=ngpus)
+    var pre_hosts = List[List[Scalar[in_dtype]]](capacity=ngpus)
+    for i in range(ngpus):
+        var h = List[Scalar[in_dtype]](length=length, fill=Scalar[in_dtype](0))
+        for j in range(length):
+            # Offset the exponent per device so peers straddle each other's
+            # mantissa window; a same-magnitude peer set would cancel the point.
+            var scale = (
+                Float64(1 << ((j + 7 * i) % 21))
+                / 64.0 if wide_magnitudes else 1.0
+            )
+            var v = Scalar[in_dtype](
+                (Float64(i + 1) + Float64(j % 251)) * scale
+            )
+            h[j] = -v if (j % 5 == 0) else v
+        var pre = List[Scalar[in_dtype]](
+            length=length, fill=Scalar[in_dtype](0)
+        )
+        # Leader-add arm: only group-local rank 0 pre-adds, exactly as the
+        # caller's `i % tp_degree == 0` list comprehension does.
+        for j in range(length):
+            pre[j] = (h[j] + res_host[j]) if (i % group_size == 0) else h[j]
+
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
+        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        pre_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
+        list_of_ctx[i].enqueue_copy(pre_dev[i], pre)
+        res_dev.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](length))
+        list_of_ctx[i].enqueue_copy(res_dev[i], res_host)
+        attn_hosts.append(h^)
+        pre_hosts.append(pre^)
+
+        gamma_dev.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](num_cols)
+        )
+        list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_host)
+
+        var alloc_i = config.rank_num_elements(i % group_size)
+        if alloc_i < 1:
+            alloc_i = 1
+        normed.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
+        sum_shard.append(
+            list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i)
+        )
+        normed_b.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
+        sum_b.append(list_of_ctx[i].enqueue_create_buffer[in_dtype](alloc_i))
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+        )
+        rank_sigs[i] = (
+            signal_buffers[i]
+            .unsafe_ptr()
+            .bitcast[Signal]()
+            .as_unsafe_any_origin()
+        )
+
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    comptime InTensorType = TileTensor[
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        ImmutAnyOrigin,
+    ]
+    comptime OutShardType = TileTensor[
+        mut=True,
+        in_dtype,
+        type_of(row_major(Coord(Index(0, num_cols)))),
+        MutAnyOrigin,
+    ]
+    comptime GammaType = TileTensor[
+        in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
+    ]
+
+    # --- Arm A: the fold. inputs = bare attention partials, residual = xs. ---
+    group_start()
+    for i in range(ngpus):
+        var local = i % group_size
+        var base = align_down(i, group_size)
+        var bufs = Array[InTensorType, group_size](uninitialized=True)
+        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
+        for k in range(group_size):
+            sigs[k] = rank_sigs[base + k]
+            bufs[k] = InTensorType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    in_dev[base + k].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_rows, num_cols))),
+            )
+        var res_view = InTensorType(
+            rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                res_dev[i].unsafe_ptr()
+            ),
+            row_major(Coord(Index(num_rows, num_cols))),
+        )
+        reducescatter_rmsnorm[has_residual=True, domain_id=domain_id](
+            bufs,
+            OutShardType(
+                normed[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(config.rank_units(local), num_cols))),
+            ),
+            OutShardType(
+                sum_shard[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(config.rank_units(local), num_cols))),
+            ),
+            GammaType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    gamma_dev[i].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_cols))),
+            ),
+            epsilon,
+            weight_offset,
+            sigs,
+            list_of_ctx[i],
+            local,
+            residual=res_view,
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Arm B: the leader-add spelling this change replaces. ---
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    group_start()
+    for i in range(ngpus):
+        var local = i % group_size
+        var base = (i // group_size) * group_size
+        var bufs = Array[InTensorType, group_size](uninitialized=True)
+        var sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+            uninitialized=True
+        )
+        for k in range(group_size):
+            sigs[k] = rank_sigs[base + k]
+            bufs[k] = InTensorType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    pre_dev[base + k].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_rows, num_cols))),
+            )
+        reducescatter_rmsnorm[domain_id=domain_id](
+            bufs,
+            OutShardType(
+                normed_b[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(config.rank_units(local), num_cols))),
+            ),
+            OutShardType(
+                sum_b[i].unsafe_ptr().as_unsafe_any_origin(),
+                row_major(Coord(Index(config.rank_units(local), num_cols))),
+            ),
+            GammaType(
+                rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    gamma_dev[i].unsafe_ptr()
+                ),
+                row_major(Coord(Index(num_cols))),
+            ),
+            epsilon,
+            weight_offset,
+            sigs,
+            list_of_ctx[i],
+            local,
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Gates. ---
+    var oracle_mismatch = 0
+    var leader_mismatch = 0
+    var leader_max_ulp = 0
+    var changed_by_residual = 0
+    var nonzero = 0
+    var total = 0
+    # Gate 4: `normed_out` vs a host RMSNorm of the same oracle sum. Every other
+    # gate reads `sum_out` only, leaving the norm unchecked at ULP level.
+    var normed_max_ulp = 0
+    var normed_gt1_ulp = 0
+    # Gate 5 (non-load-bearing): the leader-add arm's norm tracks arm A's, whose
+    # only difference is the removed pre-add rounding in the sum.
+    var normed_arm_max_ulp = 0
+    var woff = weight_offset.cast[DType.float32]()
+    # One row's oracle sum, so the norm reference can take a second pass.
+    var want_row = List[Scalar[DType.float32]](
+        length=num_cols, fill=Scalar[DType.float32](0)
+    )
+
+    for i in range(ngpus):
+        var local = i % group_size
+        var base = (i // group_size) * group_size
+        var local_rows = config.rank_units(local)
+        if local_rows == 0:
+            continue
+        var n = local_rows * num_cols
+        var sum_h = List[Scalar[in_dtype]](length=n, fill=Scalar[in_dtype](0))
+        var sum_b_h = List[Scalar[in_dtype]](length=n, fill=Scalar[in_dtype](0))
+        var normed_h = List[Scalar[in_dtype]](
+            length=n, fill=Scalar[in_dtype](0)
+        )
+        var normed_b_h = List[Scalar[in_dtype]](
+            length=n, fill=Scalar[in_dtype](0)
+        )
+        list_of_ctx[i].enqueue_copy(sum_h, sum_shard[i])
+        list_of_ctx[i].enqueue_copy(sum_b_h, sum_b[i])
+        list_of_ctx[i].enqueue_copy(normed_h, normed[i])
+        list_of_ctx[i].enqueue_copy(normed_b_h, normed_b[i])
+        list_of_ctx[i].synchronize()
+        total += n
+
+        var my_start = config.rank_unit_start(local)
+        for lr in range(local_rows):
+            var row = my_start + lr
+
+            # Pass 1: the oracle sum, the gates reading it, and its mean-square.
+            var m2 = Float32(0)
+            for c in range(num_cols):
+                var e = lr * num_cols + c
+                var g = row * num_cols + c
+
+                # Kernel's round-robin peer order: peer sum rounded to the
+                # output dtype FIRST, then residual in f32, rounded once more.
+                var acc = Float32(0)
+                for k in range(group_size):
+                    var peer = (local + k) % group_size
+                    acc += attn_hosts[base + peer][g].cast[DType.float32]()
+                var without_res = acc.cast[in_dtype]()
+                var want = (
+                    without_res.cast[DType.float32]()
+                    + res_host[g].cast[DType.float32]()
+                ).cast[in_dtype]()
+                want_row[c] = want.cast[DType.float32]()
+                m2 += want_row[c] * want_row[c]
+                if (
+                    sum_h[e].cast[DType.bfloat16]().to_bits()
+                    != want.cast[DType.bfloat16]().to_bits()
+                ):
+                    oracle_mismatch += 1
+                if (
+                    without_res.cast[DType.bfloat16]().to_bits()
+                    != want.cast[DType.bfloat16]().to_bits()
+                ):
+                    changed_by_residual += 1
+                if want != Scalar[in_dtype](0):
+                    nonzero += 1
+
+                var a_bits = Int(sum_h[e].cast[DType.bfloat16]().to_bits())
+                var b_bits = Int(sum_b_h[e].cast[DType.bfloat16]().to_bits())
+                if a_bits != b_bits:
+                    leader_mismatch += 1
+                var ulp = abs(a_bits - b_bits)
+                if ulp > leader_max_ulp:
+                    leader_max_ulp = ulp
+
+            # Pass 2: RMSNorm it the way the kernel does -- full-H divisor,
+            # epsilon outside the division, gamma folded in f32, bf16 last.
+            var norm_factor = rsqrt(m2 / Float32(num_cols) + epsilon)
+            for c in range(num_cols):
+                var e = lr * num_cols + c
+                var g_f = gamma_host[c].cast[DType.float32]() + woff
+                var ref_key = _bf16_ulp_key(
+                    Int(
+                        ((want_row[c] * norm_factor) * g_f)
+                        .cast[DType.bfloat16]()
+                        .to_bits()
+                    )
+                )
+                var got_key = _bf16_ulp_key(
+                    Int(normed_h[e].cast[DType.bfloat16]().to_bits())
+                )
+                var arm_b_key = _bf16_ulp_key(
+                    Int(normed_b_h[e].cast[DType.bfloat16]().to_bits())
+                )
+                var n_ulp = abs(got_key - ref_key)
+                if n_ulp > normed_max_ulp:
+                    normed_max_ulp = n_ulp
+                if n_ulp > 1:
+                    normed_gt1_ulp += 1
+                var arm_ulp = abs(got_key - arm_b_key)
+                if arm_ulp > normed_arm_max_ulp:
+                    normed_arm_max_ulp = arm_ulp
+
+        _ = sum_h^
+        _ = sum_b_h^
+        _ = normed_h^
+        _ = normed_b_h^
+
+    var normed_frac_gt1 = Float32(normed_gt1_ulp) / Float32(total)
+    print(
+        String(
+            "  M=",
+            num_rows,
+            " (G=",
+            group_size,
+            "): residual-fold vs HOST ORACLE mismatch=",
+            oracle_mismatch,
+            "/",
+            total,
+            " | vs leader-add mismatch=",
+            leader_mismatch,
+            " max_ulp=",
+            leader_max_ulp,
+            " | residual-sensitive elems=",
+            changed_by_residual,
+            " | normed vs host frac>1ULP=",
+            normed_frac_gt1 * 100.0,
+            "% max_ulp=",
+            normed_max_ulp,
+            " (arm-vs-arm max_ulp=",
+            normed_arm_max_ulp,
+            ")",
+        )
+    )
+
+    if oracle_mismatch != 0:
+        raise Error(
+            String(
+                "residual fold does not match the host oracle at M=",
+                num_rows,
+                ": mismatches=",
+                oracle_mismatch,
+                "/",
+                total,
+            )
+        )
+    # Non-vacuity: a dropped residual reads 0 here, so a floor is needed. Only
+    # 10% because a large peer sum can absorb it below the bf16 round (43%).
+    if changed_by_residual * 10 < total:
+        raise Error(
+            String(
+                "residual barely changes the result (",
+                changed_by_residual,
+                "/",
+                total,
+                "); the oracle gate would be near-vacuous",
+            )
+        )
+    if nonzero * 2 < total:
+        raise Error(String("output is mostly zero (", nonzero, "/", total, ")"))
+    # One bf16 rounding apart, so a bigger gap means the fold landed somewhere
+    # other than the leader's contribution. Ungated under `wide_magnitudes`:
+    # cancellation across 2^20 makes that rounding ~120 ULP of a near-zero sum.
+    comptime if not wide_magnitudes:
+        if leader_max_ulp > 2:
+            raise Error(
+                String(
+                    "residual fold diverges from the leader-add spelling by ",
+                    leader_max_ulp,
+                    " ULP at M=",
+                    num_rows,
+                    " (expected <= 2 from the removed pre-add rounding)",
+                )
+            )
+
+    # The kernel norms the value gate 1 just proved bit-exact, so only
+    # mean-square associativity separates them: `_run_case`'s tight bound holds.
+    if normed_frac_gt1 > 0.01 or normed_max_ulp > 4:
+        raise Error(
+            String(
+                "normed_out gate failed at M=",
+                num_rows,
+                " (G=",
+                group_size,
+                "): frac>1ULP=",
+                normed_frac_gt1 * 100.0,
+                "% max_ulp=",
+                normed_max_ulp,
+            )
+        )
+    # Bound arm B's norm against the sum gap that causes it, not a constant --
+    # that holds under `wide_magnitudes` too, so it needs no exemption there.
+    if normed_arm_max_ulp > leader_max_ulp + 4:
+        raise Error(
+            String(
+                "normed_out diverges from the leader-add arm by ",
+                normed_arm_max_ulp,
+                " ULP at M=",
+                num_rows,
+                ", more than the ",
+                leader_max_ulp,
+                " ULP its sum differs by",
+            )
+        )
+
+    _ = in_dev^
+    _ = pre_dev^
+    _ = res_dev^
+    _ = attn_hosts^
+    _ = pre_hosts^
+    _ = res_host^
+    _ = gamma_dev^
+    _ = gamma_host^
+    _ = normed^
+    _ = sum_shard^
+    _ = normed_b^
+    _ = sum_b^
+    _ = signal_buffers^
+
+
 def _run_interleaved_barrier_case[
     in_dtype: DType,
     ngpus: Int,
@@ -1314,6 +1802,41 @@ def _run_rank_validation_case[
             local_rank=0,
         )
 
+    # 3. A shard-shaped residual on BOTH arms: indexed by global row either
+    #    way, so rejection must precede the arm choice. The marker proves it.
+    var res_shard = InTensorType(
+        rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            in_dev[0].unsafe_ptr()
+        ),
+        row_major(Coord(Index(rank0_rows, num_cols))),
+    )
+
+    @__parameter
+    @always_inline
+    def two_launch_marker() raises:
+        raise Error("two_launch ran with an unvalidated residual")
+
+    # threshold=0 forces the two-launch arm; the default fuses at this M.
+    for threshold in [0, RS_NORM_FUSE_THRESHOLD]:
+        with assert_raises(contains="residual holds"):
+            _dispatch_rs_norm[
+                two_launch=two_launch_marker,
+                has_residual=True,
+                domain_id=domain_id,
+            ](
+                bufs,
+                normed_ok,
+                sum_ok,
+                gamma_view,
+                epsilon,
+                weight_offset,
+                sigs,
+                list_of_ctx[0],
+                threshold=threshold,
+                local_rank=0,
+                residual=res_shard,
+            )
+
     print("rank / shard-shape validation passed.")
 
 
@@ -1371,6 +1894,23 @@ def _run_grouped_suite[
 
     _run_rank_validation_case[in_dtype, group_size, num_cols](list_of_ctx)
 
+    # Residual fold at the grouped topology, where the leader-add spelling it
+    # replaces is per-GROUP (`i % group_size == 0`), not per-world.
+    print("  residual fold:")
+    for num_rows in [group_size, 8, group_size + group_size // 2, 512]:
+        _run_residual_case[in_dtype, ngpus, num_cols, group_size=group_size](
+            num_rows, list_of_ctx
+        )
+    # Wide exponent range: the fold must hold across magnitudes even where the
+    # f32 peer sum drops low bits.
+    _run_residual_case[
+        in_dtype,
+        ngpus,
+        num_cols,
+        group_size=group_size,
+        wide_magnitudes=True,
+    ](8, list_of_ctx)
+
     print("grouped ", ngpus // group_size, "x TP", group_size, " passed.")
     _ = list_of_ctx^
 
@@ -1393,6 +1933,15 @@ def _run_suite[
     # 2/1 at TP2), exercising the extra-row / 0-row shard bookkeeping.
     for num_rows in [1, 8, 16, 32, 2048, ngpus + ngpus // 2]:
         _run_case[in_dtype, ngpus, num_cols](num_rows, list_of_ctx)
+
+    # Residual fold FULL-WORLD (so barrier domain 0). The grouped suite needs
+    # >= 4 GPUs; without this the fold is unrun on the common 2-GPU lane.
+    print("\nresidual fold (full-world, TP", ngpus, "):")
+    for num_rows in [ngpus, 8, ngpus + ngpus // 2, 512]:
+        _run_residual_case[in_dtype, ngpus, num_cols](num_rows, list_of_ctx)
+    _run_residual_case[in_dtype, ngpus, num_cols, wide_magnitudes=True](
+        8, list_of_ctx
+    )
 
     # --- Production bit-identity sweep (fused vs standalone RS + rms_norm_gpu,
     # M3 config wo=1.0 mbc=True): locates the crossover M* that calibrates

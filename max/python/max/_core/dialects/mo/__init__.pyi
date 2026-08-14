@@ -582,6 +582,16 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     inherently `multiply_before_cast=true`: gamma is folded in f32 and the value
     is cast to the input dtype once, last. bf16 in/out only (no quantization).
 
+    When `has_residual` is true, `residuals` is added to the sum in f32 before
+    the pre-norm round, each device adding only its own row shard. It must be
+    REPLICATED -- bit-identical on every rank of a group -- which is what lets
+    a per-rank add reproduce the leader-side pre-add it replaces.
+
+    When false it is ignored and the op is a plain reduce-scatter + norm. The
+    operands stay present and group-sized (the variadic groups must all match
+    in size), filled with the inputs and never indexed -- the same convention
+    as `has_residual` on `mo.composite.distributed.matmul_reduce_scatter.sum`.
+
     `group_size` matches `mo.distributed.reducescatter.sum`: the devices split
     into contiguous groups of that many, each reducing independently, so the op
     works under TP-within-DP topologies. It must be at least 2 and must divide
@@ -602,8 +612,10 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
         gamma: Sequence[max._core.Value[max._core.Type]],
         epsilon: Sequence[max._core.Value[max._core.Type]],
         weight_offset: Sequence[max._core.Value[max._core.Type]],
+        residuals: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         group_size: max._core.dialects.builtin.IntegerAttr,
+        has_residual: max._core.dialects.builtin.BoolAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -616,12 +628,20 @@ class CompositeDistributedReduceScatterRmsNormOp(max._core.Operation):
     @property
     def weight_offset(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
+    def residuals(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def group_size(self) -> int: ...
     @group_size.setter
     def group_size(
         self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def has_residual(self) -> bool: ...
+    @has_residual.setter
+    def has_residual(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
     ) -> None: ...
 
 class CompositeConcatSliceOp(max._core.Operation):

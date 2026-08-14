@@ -39,7 +39,7 @@ from linalg.block_scaled_quantization import (
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
 from comm.lamport import Lamport
 from std.gpu import WARP_SIZE
-from comm.reducescatter import reducescatter
+from comm.reducescatter import ReduceScatterConfig, reducescatter
 from comm.reducescatter_rmsnorm import _dispatch_rs_norm, reducescatter_rmsnorm
 from nn.normalization import rms_norm_gpu
 from comm.broadcast import broadcast
@@ -871,6 +871,7 @@ struct DistributedReduceScatterRMSNorm:
         target: StaticString,
         _trace_name: StaticString,
         group_size: Int = 0,
+        has_residual: Bool = False,
     ](
         outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         outputs_sum: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
@@ -881,14 +882,28 @@ struct DistributedReduceScatterRMSNorm:
         gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
         epsilons: InputVariadicTensors[dtype=DType.float32, ...],
         weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         dev_ctxs_input: DeviceContextArray,
     ) capturing raises:
-        """Fused reduce-scatter sum + RMSNorm (bf16 in/out, no quantization).
+        """Fused reduce-scatter sum + RMSNorm + residual add (bf16, no quant).
 
         Reduce-scatters `inputs` (one `[rows, cols]` tensor per device) along
-        rows and RMSNorm-normalizes each owned shard in the same launch, writing
-        the normed shard to `outputs_normed` and the reduce-scatter sum shard
-        (the residual stream) to `outputs_sum`.
+        rows, adds `residuals`, and RMSNorm-normalizes each owned shard in the
+        same launch, writing the normed shard to `outputs_normed` and the summed
+        shard (the residual stream) to `outputs_sum`.
+
+        Under `has_residual`, `residuals` carries the TP-replicated residual
+        stream. Each device adds only its own row shard of it, which is why
+        such callers must NOT pre-add it on the group leader: the
+        reduce-scatter sums across ranks, so a leader-side add lands once for
+        the whole group and this per-rank add reproduces it exactly -- but only
+        because the residual is bit-identical on every rank of the group.
+        Folding it here deletes a full-width elementwise add that ran on the
+        group leader alone.
+
+        Without `has_residual` the operands are still passed (the op's variadic
+        groups must match in size) but never read, and both arms are exactly
+        the reduce-scatter + norm this op was before the fold existed.
 
         Parameters:
             dtype: Element type of the input/output tensors.
@@ -900,6 +915,8 @@ struct DistributedReduceScatterRMSNorm:
                 the total number of devices. Equal to `num_devices` for a
                 full-world collective. The builder always sets it; the `0`
                 attribute default is not a usable value.
+            has_residual: Fold `residuals` into the reduce-scatter sum. Off
+                leaves both arms byte-for-byte the plain reduce-scatter + norm.
 
         Args:
             outputs_normed: Per-device normed output shards.
@@ -909,6 +926,9 @@ struct DistributedReduceScatterRMSNorm:
             gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
             epsilons: Per-device RMSNorm epsilon scalars (float32).
             weight_offsets: Per-device gamma offset scalars (in_dtype).
+            residuals: Per-device residual stream, same shape as `inputs` and
+                bit-identical across each group. Read only under
+                `has_residual`.
             dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
@@ -945,6 +965,7 @@ struct DistributedReduceScatterRMSNorm:
             imm gammas,
             imm epsilons,
             imm weight_offsets,
+            imm residuals,
             imm outputs_normed,
             imm outputs_sum,
         }:
@@ -986,27 +1007,74 @@ struct DistributedReduceScatterRMSNorm:
             var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
             var epsilon = epsilons[index].unsafe_ptr()[]
             var weight_offset = weight_offsets[index].unsafe_ptr()[]
+            var residual_buf = rebind[InputTensorType](
+                residuals[index].to_tile_tensor[DType.int64]().as_immut()
+            )
+            # Windowed from the INPUT, not `residual_buf`: `reducescatter` bins
+            # its rows from `in_tensors[0]`, so the residual cannot redefine it.
+            var res_cols = Int(in_tensors[0].dim[rank - 1]())
+            var res_config = ReduceScatterConfig[dtype, group_size](
+                axis_size=in_tensors[0].num_elements() // res_cols,
+                unit_numel=res_cols,
+                threads_per_gpu=0,
+            )
+            var res_row_start = res_config.rank_unit_start(local_rank)
 
-            # Two-launch fallback: standalone reduce-scatter into `sum_buf`,
-            # then `rms_norm_gpu` into `normed_buf`. The dispatcher runs this
-            # above the fuse threshold (prefill M); below it the fused kernel is
-            # bit-identical to this. `sum_buf` is the plain reduce-scatter either
-            # way, so the residual is bit-identical regardless. mbc=True.
+            # Fold in the reduce-scatter's OWN epilogue, not a third launch:
+            # the lambda is caller-supplied, so `reducescatter` is untouched.
+            # Both tensors are contiguous row-major over the same `cols`, so the
+            # global flat index is the local one plus a constant (no `Coord`).
+            var res_flat_offset = res_row_start * res_cols
+
+            @__copy_capture(residual_buf, sum_buf, res_flat_offset)
+            @__parameter
+            @always_inline
+            def rs_residual_lambda[
+                _dtype: DType, _width: SIMDLength, *, _alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+                var local_flat = Int(sum_buf.layout(coords))
+                var res = residual_buf.raw_load[width=_width](
+                    local_flat + res_flat_offset
+                )
+                # `val` arrives already rounded to `dtype` from `_load_reduce`,
+                # so add in f32 and round once -- the fused kernel's fold.
+                var summed = (
+                    val.cast[DType.float32]() + res.cast[DType.float32]()
+                ).cast[dtype]()
+                sum_buf.raw_store[width=_width, alignment=_alignment](
+                    sum_buf.layout(coords), summed
+                )
+
             @__parameter
             @always_inline
             def two_launch() raises:
-                reducescatter[
-                    dtype=dtype,
-                    ngpus=group_size,
-                    axis=0,
-                    domain_id=domain_id,
-                ](
-                    in_tensors,
-                    sum_buf,
-                    rank_sigs,
-                    dev_ctxs[index],
-                    local_rank=local_rank,
-                )
+                comptime if has_residual:
+                    reducescatter[
+                        dtype=dtype,
+                        ngpus=group_size,
+                        axis=0,
+                        output_lambda=rs_residual_lambda,
+                        domain_id=domain_id,
+                    ](
+                        in_tensors,
+                        sum_buf,
+                        rank_sigs,
+                        dev_ctxs[index],
+                        local_rank=local_rank,
+                    )
+                else:
+                    reducescatter[
+                        dtype=dtype,
+                        ngpus=group_size,
+                        axis=0,
+                        domain_id=domain_id,
+                    ](
+                        in_tensors,
+                        sum_buf,
+                        rank_sigs,
+                        dev_ctxs[index],
+                        local_rank=local_rank,
+                    )
 
                 # `@__copy_capture` is REQUIRED: embedded into the
                 # `rms_norm_gpu` device kernel, a captured local `var`
@@ -1046,21 +1114,43 @@ struct DistributedReduceScatterRMSNorm:
 
             # The unfused `reducescatter` this fusion replaced already used PDL,
             # so leaving it off here would regress the path.
-            _dispatch_rs_norm[
-                two_launch=two_launch,
-                domain_id=domain_id,
-                pdl_level=PDLLevel.ON,
-            ](
-                in_tensors,
-                normed_buf,
-                sum_buf,
-                gamma_tensor,
-                epsilon,
-                weight_offset,
-                rank_sigs,
-                dev_ctxs[index],
-                local_rank=local_rank,
-            )
+            # `residual`'s disengaged default is a distinct type, so it cannot
+            # be passed unconditionally -- hence the two call sites.
+            comptime if has_residual:
+                _dispatch_rs_norm[
+                    two_launch=two_launch,
+                    has_residual=True,
+                    domain_id=domain_id,
+                    pdl_level=PDLLevel.ON,
+                ](
+                    in_tensors,
+                    normed_buf,
+                    sum_buf,
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset,
+                    rank_sigs,
+                    dev_ctxs[index],
+                    local_rank=local_rank,
+                    residual=residual_buf,
+                )
+            else:
+                _dispatch_rs_norm[
+                    two_launch=two_launch,
+                    has_residual=False,
+                    domain_id=domain_id,
+                    pdl_level=PDLLevel.ON,
+                ](
+                    in_tensors,
+                    normed_buf,
+                    sum_buf,
+                    gamma_tensor,
+                    epsilon,
+                    weight_offset,
+                    rank_sigs,
+                    dev_ctxs[index],
+                    local_rank=local_rank,
+                )
 
         _launch_device_collective[num_devices](
             launch_fused_rs_norm, dev_ctxs.copy()
