@@ -62,7 +62,7 @@ def useIt[TT: DoIt, C: def(x: TT)](impl: C):
     pass
 
 
-# S3-DAG: kgen.conformance @"{{.*}}::RegisterPassable" {
+# S3-DAG: kgen.conformance {{.*}}@RegisterPassable {
 
 
 def takesRegisterPassable[T: RegisterPassable](impl: T):

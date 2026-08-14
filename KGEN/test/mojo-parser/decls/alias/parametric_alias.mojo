@@ -127,7 +127,7 @@ trait MyTrait:
 struct MyStruct[a: Int, b: Int](MyTrait, Movable where False):
     # CHECK: lit.alias.decl *"ParamType{{.*}}": !lit.generator<<"a1": !Int>meta<!Int>> = <#kgen.gen<#alias_Int>>
     comptime ParamType[a1: Int] = Int
-    # CHECK: kgen.conformance @"{{.*}}::MyTrait"
+    # CHECK: kgen.conformance @{{.*}}::@MyTrait {
     # CHECK-NEXT: kgen.witness "ParamType" : !lit.generator<<"a": !Int>!AnyType> = #kgen.gen<!Int>
 
 

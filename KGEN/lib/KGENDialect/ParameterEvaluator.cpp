@@ -162,6 +162,11 @@ bool ParameterEvaluationContext::isMaterializationContext() const {
   return false;
 }
 
+Operation *ParameterEvaluationContext::resolveConformanceForStruct(
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+  return resolved.decl.lookupConformance(traitSymbol);
+}
+
 FailureOr<TypedAttr> ParameterEvaluationContext::evaluateExpression(
     ContextuallyEvaluatedAttrInterface attr) {
   // First try context-specific evaluation (handles attrs that need special
@@ -207,12 +212,6 @@ void SymTabEvaluationContext::withEvaluator(
   ParameterEvaluator evaluator(paramDecls, paramValues);
   evaluator.setEvaluationContext(this);
   callback(evaluator);
-}
-
-Operation *SymTabEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
-  return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl,
-                                              traitSymbol.getFlattenedName());
 }
 
 FuncInterface

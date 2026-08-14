@@ -62,19 +62,16 @@ struct S1[X: Int](R1, R1Child, R2, TrivialRegisterPassable):
     # CHECK: kgen.conformance @{{.*}}Deinitable
     # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : {{.*}} = {{.*}}@S1::@"__deinit__{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "__del__is_trivial" : !Bool = {:scalar<bool> true}
-    # CHECK-NEXT: traitSymbol = #kgen.trait_symbol<[[ANYTYPE_NAME:(@[^:]+::)+@Deinitable]]>
 
     # CHECK: kgen.conformance @{{.*}}Movable
     # CHECK-NEXT: kgen.witness "__init__{{.*}}(*, "move":{{.*}} = {{.*}}@S1::@"__init__{{.*}}"{{.*}}<:!Int X>
     # CHECK-NEXT: kgen.witness "__move_ctor_is_trivial" : !Bool = {:scalar<bool> true}
-    # CHECK-NEXT: traitSymbol = #kgen.trait_symbol<@std::@builtin::@stubs::@Movable>
 
-    # CHECK: kgen.conformance @{{.*}}R1
+    # CHECK: kgen.conformance [[R1_REF:@[^ ]*R1]] {
     # CHECK-NEXT: kgen.witness "N" : !alias_Int1 = rebind(:!Int X)
     # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
     # CHECK-NEXT: kgen.witness "f1{{.*}}" : {{.*}} = {{.*}}@S1::@"f1{{.*}}"<:!Int X>
     # CHECK-NEXT: immediateParents = #kgen<trait_symbols[]>
-    # CHECK-SAME: traitSymbol = #kgen.trait_symbol<[[R1_REF:(@[^:]+::)+@R1]]>
 
     # CHECK: kgen.conformance @{{.*}}R1Child
     # CHECK-NEXT: immediateParents = #kgen<trait_symbols[<[[R1_REF]]>]>

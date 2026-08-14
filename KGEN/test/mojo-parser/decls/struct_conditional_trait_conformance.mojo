@@ -41,7 +41,7 @@ struct UnconditionalMovable[T: Movable & Deinitable](Movable):
 # ===========================================================================
 # Verify the ConformanceOp has the constraint attached:
 # CHECK: lit.struct.decl @ConditionalCopyable<T: !AnyType_Deinitable_Movable>
-# CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Copyable
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 struct ConditionalCopyable[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable), Movable
@@ -63,9 +63,9 @@ struct ConditionalCopyable[T: Movable & Deinitable](
 # ===========================================================================
 # Verify ConformanceOps have constraints for both Copyable and Intable:
 # CHECK: lit.struct.decl @MultipleConditionalConformances<T: !AnyType_Deinitable_Movable>
-# CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Copyable
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-# CHECK: kgen.conformance @"std::builtin::stubs::Intable"
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Intable
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Deinitable_Intable> !AnyType_Deinitable_Intable)
 struct MultipleConditionalConformances[T: Movable & Deinitable](
     Copyable where conforms_to(T, Copyable),
@@ -245,9 +245,9 @@ struct CompoundMethodConstraint[T: Movable & Deinitable](
 # should get the same constraint. Verify both conformance ops have constraints.
 #
 # CHECK: lit.struct.decl @CompositionConditional<T: !AnyType_Deinitable_Movable>
-# CHECK: kgen.conformance @"{{.*}}CompTraitA"
+# CHECK: kgen.conformance{{.*}}@CompTraitA
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-# CHECK: kgen.conformance @"{{.*}}CompTraitB"
+# CHECK: kgen.conformance{{.*}}@CompTraitB
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CompTraitA:
@@ -278,7 +278,7 @@ struct CompositionConditional[T: Movable & Deinitable](
 # Listing the same trait twice with the same constraint is redundant but valid.
 #
 # CHECK: lit.struct.decl @DuplicateSameConstraint<T: !AnyType_Deinitable_Movable>
-# CHECK: kgen.conformance @"{{.*}}DupSameTrait"
+# CHECK: kgen.conformance{{.*}}@DupSameTrait
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait DupSameTrait:
@@ -305,9 +305,9 @@ struct DuplicateSameConstraint[T: Movable & Deinitable](
 # constraint, which is valid.
 #
 # CHECK: lit.struct.decl @CompositionStandaloneSameConstraint<T: !AnyType_Deinitable_Movable>
-# CHECK: kgen.conformance @"{{.*}}CSTraitA"
+# CHECK: kgen.conformance{{.*}}@CSTraitA
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
-# CHECK: kgen.conformance @"{{.*}}CSTraitB"
+# CHECK: kgen.conformance{{.*}}@CSTraitB
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!AnyType_Deinitable_Movable T, :meta<!AnyType_Copyable_Movable> !AnyType_Copyable_Movable)
 
 trait CSTraitA:

@@ -1782,10 +1782,10 @@ Value RebindOp::strip(Value value) {
 //===----------------------------------------------------------------------===//
 
 ParseResult ConformanceOp::parse(OpAsmParser &parser, OperationState &result) {
-  StringAttr symName;
-  if (parser.parseSymbolName(symName))
+  TraitSymbolAttr traitSymbol;
+  if (parseTraitSymbol(parser, traitSymbol))
     return failure();
-  result.addAttribute(getSymNameAttrName(result.name), symName);
+  result.addAttribute(getTraitSymbolAttrName(result.name), traitSymbol);
 
   // Parse the body region.
   Region *body = result.addRegion();
@@ -1816,7 +1816,7 @@ ParseResult ConformanceOp::parse(OpAsmParser &parser, OperationState &result) {
 
 void ConformanceOp::print(OpAsmPrinter &p) {
   p << " ";
-  p.printSymbolName(getSymName());
+  printTraitSymbol(p, getTraitSymbol());
   p << " ";
   p.printRegion(getBody(), /*printEntryBlockArgs=*/false,
                 /*printBlockTerminators=*/true);
@@ -1829,19 +1829,10 @@ void ConformanceOp::print(OpAsmPrinter &p) {
     p.printAttribute(constraint);
   }
 
-  // Print the attribute dictionary, excluding the constraint and sym_name
+  // Print the attribute dictionary, excluding the constraint and trait symbol
   // since they're handled specially above.
   p.printOptionalAttrDictWithKeyword(
-      (*this)->getAttrs(), {getSymNameAttrName(), getConstraintAttrName()});
-}
-
-LogicalResult ConformanceOp::verify() {
-  TraitSymbolAttr traitSymbol = getTraitSymbolAttr();
-  if (traitSymbol && traitSymbol.getFlattenedName() != getSymNameAttr())
-    return emitOpError("trait symbol '")
-           << traitSymbol.getFlattenedName().getValue()
-           << "' does not match the symbol name '" << getSymName() << "'";
-  return success();
+      (*this)->getAttrs(), {getTraitSymbolAttrName(), getConstraintAttrName()});
 }
 
 ///===----------------------------------------------------------------------===//

@@ -1350,7 +1350,7 @@ struct Bound[T: AnyType](Movable where False):
 # CHECK: lit.struct.decl @Match
 struct Match[lt: __mlir_type.`!lit.origin<false>`](Movable where False):
     pass
-    # CHECK: kgen.conformance {{.*}}::Deinitable
+    # CHECK: kgen.conformance {{.*}}::@Deinitable
     # CHECK-NEXT: kgen.witness "__deinit__{{.*}}" : !lit.generator<[1]("self": !lit.ref<!lit.struct<#Match <:origin<false> lt>>, mut *[0,0]> deinit_mem,
 
 

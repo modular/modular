@@ -77,7 +77,8 @@ Operation *ParserEvaluationContext::resolveConformanceForStruct(
         astDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
     if (conformanceDecls.empty())
       return nullptr;
-
+    // TODO: we might need to allow multiple conformance ops for parametric
+    // traits, and we need to filter it here.
     assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
     ASTDecl &conformDecl = *conformanceDecls.front();
     if (failed(shared.declResolver->resolveBody(conformDecl,

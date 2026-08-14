@@ -66,9 +66,9 @@ struct Bar(D, Movable where False):
     # COM: a witness binding `T = Int`.
     # CHECK:      lit.alias.decl *"T`{{[0-9]+}}": !AnyType = <!Int>
     # CHECK-SAME:   {defaultedAssociatedAlias}
-    # CHECK:      kgen.conformance @"{{.*}}::C"
+    # CHECK:      kgen.conformance {{.*}}@C {
     # CHECK-NEXT:   kgen.witness "T" : !AnyType = !Int
-    # CHECK:      kgen.conformance @"{{.*}}::D"
+    # CHECK:      kgen.conformance {{.*}}@D {
     # CHECK-NEXT:   kgen.witness "T" : !AnyType = !Int
     pass
 

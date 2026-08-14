@@ -43,11 +43,11 @@ def use() -> Int:
 
 
 # CHECK: lit.struct.decl @"def() thin -> Int_PtrWrapper"
-# CHECK: kgen.conformance @"std::builtin::stubs::Deinitable"
-# CHECK: kgen.conformance @"std::builtin::stubs::Movable"
-# CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Deinitable
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Movable
+# CHECK: kgen.conformance @std::@builtin::@stubs::@Copyable
 # CHECK: kgen.conformance @"def() -> Int"
-# CHECK: kgen.conformance @"std::builtin::stubs::AnyType"
-# CHECK: kgen.conformance @"std::builtin::stubs::ImplicitlyCopyable"
-# CHECK: kgen.conformance @"std::builtin::stubs::TrivialRegisterPassable"
-# CHECK: kgen.conformance @"std::builtin::stubs::RegisterPassable"
+# CHECK: kgen.conformance @std::@builtin::@stubs::@AnyType
+# CHECK: kgen.conformance @std::@builtin::@stubs::@ImplicitlyCopyable
+# CHECK: kgen.conformance @std::@builtin::@stubs::@TrivialRegisterPassable
+# CHECK: kgen.conformance @std::@builtin::@stubs::@RegisterPassable

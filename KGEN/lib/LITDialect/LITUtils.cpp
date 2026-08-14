@@ -777,12 +777,6 @@ LITSymTabEvaluationContext::resolveStructOp(TypedAttr typeValue,
   return SymTabEvaluationContext::resolveStructOp(typeValue, acceptAsync);
 }
 
-Operation *LITSymTabEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
-  return SymTabEvaluationContext::resolveConformanceForStruct(resolved,
-                                                              traitSymbol);
-}
-
 FuncInterface
 LITSymTabEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
   // Functions in the LIT phase are `lit.fn` ops; if not yet lowered to a

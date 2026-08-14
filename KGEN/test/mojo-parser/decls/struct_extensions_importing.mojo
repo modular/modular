@@ -64,7 +64,7 @@ __extension PlainStruct(Flying):
     def fly_to(mut self: PlainStruct, new_location: Int):
         self.set_location(new_location)
 
-    # CHECK: kgen.conformance @"struct_extensions_importing::Flying" {
+    # CHECK: kgen.conformance @struct_extensions_importing::@Flying {
 
 
 def launch_flying[F: Flying](mut flying: F):
@@ -104,7 +104,7 @@ __extension Spaceship(ImportedFlying):
     def fly_to(mut self: Spaceship, new_location: Int):
         self.set_location(new_location)
 
-    # CHECK: kgen.conformance @"trait_package::plain_trait::Flying" {
+    # CHECK: kgen.conformance @trait_package::@plain_trait::@Flying {
 
 
 def launch_flying2[F: ImportedFlying](mut flying: F):

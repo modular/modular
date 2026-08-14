@@ -2952,9 +2952,9 @@ static LogicalResult verifyDerivedAncestorImplication(
 
       if (!isImplicationProven(ancestorProp, prop)) {
         shared.emitError(constraint.getLoc())
-            << "constraint for " << symbol.getLeafReference()
+            << "constraint for " << symbol.getSymbol().getLeafReference()
             << " does not imply constraint for ancestor trait "
-            << ancestor.getLeafReference()
+            << ancestor.getSymbol().getLeafReference()
             << "; strengthen the derived constraint by adding the ancestor's "
                "constraint with 'and'";
         hasErrors = true;
@@ -3017,7 +3017,7 @@ static LogicalResult resolvePropagatedConstraints(
 
     // Diamond: multiple paths disagree -- require explicit listing.
     shared.emitError(paths.front().getLoc())
-        << "ancestor trait " << symbol.getLeafReference()
+        << "ancestor trait " << symbol.getSymbol().getLeafReference()
         << " is reached via multiple inheritance paths with different "
            "constraints; it must be explicitly listed in the conformance "
            "list with the desired constraint";
@@ -3083,7 +3083,7 @@ static LogicalResult buildTraitConstraintsMap(
       if (!inserted && getCanonicalAttr(it->second.getProposition()) !=
                            getCanonicalAttr(prop)) {
         shared.emitError(pc.constraint.getLoc())
-            << "trait '" << pc.traitSymbol.getLeafReference()
+            << "trait '" << pc.traitSymbol.getSymbol().getLeafReference()
             << "' appears multiple times in the conformance list with "
                "different constraints";
         hasErrors = true;
@@ -3511,7 +3511,7 @@ getConformanceCondition(ASTDecl &structDecl, StringRef traitName) {
   IndexRefRemapper remapper(structOp.getParamsAttr());
 
   for (auto [i, symbol] : llvm::enumerate(symbols)) {
-    if (symbol.getLeafReference() != traitName)
+    if (symbol.getSymbol().getLeafReference() != traitName)
       continue;
 
     MLIRContext *ctx = structDecl.getShared().getContext();
@@ -4520,7 +4520,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   auto conformsToTrait = [&](StringRef traitName) {
     return traitOp.getSymName() == traitName ||
            llvm::any_of(parentTraits, [&](TraitSymbolAttr symbol) {
-             return symbol.getLeafReference().getValue() == traitName;
+             return symbol.getSymbol().getLeafReference().getValue() ==
+                    traitName;
            });
   };
 

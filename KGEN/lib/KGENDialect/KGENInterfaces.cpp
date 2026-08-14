@@ -46,6 +46,16 @@ LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
   return success();
 }
 
+Operation *impl::lookupConformance(Operation *op, TraitSymbolAttr traitSymbol) {
+  assert(op->getRegions().size() == 1 && "expected an one-region ops");
+  for (ConformanceOp conformance : op->getRegion(0).getOps<ConformanceOp>()) {
+    if (conformance.getTraitSymbol() == traitSymbol)
+      return conformance;
+  }
+  return nullptr;
+}
+Operation *lookupConformance(Operation *op, TraitSymbolAttr traitSymbol);
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

@@ -244,10 +244,6 @@ protected:
   /// lookup inherited from `SymTabEvaluationContext`.
   FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;
 
-  /// Resolve conformance using the struct's symbol table.
-  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         TraitSymbolAttr traitSymbol) override;
-
   /// Handle LIT-specific attributes (Downcast, TypeConformsToTrait).
   FailureOr<TypedAttr>
   evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) override;

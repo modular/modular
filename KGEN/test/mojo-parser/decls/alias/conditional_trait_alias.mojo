@@ -21,7 +21,7 @@ trait RequiresIntAlias:
 struct ConditionallyConforms[value: Int](RequiresIntAlias, Movable where False) where value > 0:
     # Ensure the generator constraint has been discharged in the witness.
     comptime Value: Int where Self.value > 0 = Self.value
-    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
@@ -31,7 +31,7 @@ struct ConditionallyConformsInferred[value: Int](RequiresIntAlias, Movable where
     # A 'where' clause must also work when the alias type is inferred from the
     # initializer (no explicit ': Int' type annotation).
     comptime Value where Self.value > 0 = Self.value
-    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
@@ -46,7 +46,7 @@ struct ConditionallyConformsParametric[value: Int](
     comptime Value[offset: Int]: Int where Self.value > 0 = (
         Self.value + offset
     )
-    # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresParametricIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!alias_Int1> = #kgen.gen<
     # CHECK-SAME: @"__add__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}, value, *(0,0)
     # CHECK-SAME: add(#lit.struct.extract<:!Int value, "_mlir_value">, #lit.struct.extract<:!Int *(0,0), "_mlir_value">)
@@ -61,7 +61,7 @@ struct ConditionallyConformsParametric[value: Int](
 
 struct ConfListConditional[value: Int = -1](RequiresIntAlias where value > 0, Movable where False):
     comptime Value: Int where Self.value > 0 = Self.value
-    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)
 
 
@@ -73,7 +73,7 @@ struct ConfListConditionalParametric[value: Int = -1](
     RequiresParametricIntAlias where value > 0, Movable where False
 ):
     comptime Value[offset: Int]: Int where Self.value > 0 = Self.value + offset
-    # CHECK: kgen.conformance @"{{.*}}RequiresParametricIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresParametricIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !lit.generator<<"offset": !Int>!alias_Int1> = #kgen.gen<
     # CHECK-SAME: @"__add__(::SIMD[$0, $1],::SIMD[$0, $1])"{{.*}}, value, *(0,0)
 
@@ -87,5 +87,5 @@ struct ConfListConditionalConjunction[value: Int = -1, other: Int = -1](
     RequiresIntAlias where value > 0 and other > 0, Movable where False
 ):
     comptime Value: Int where Self.value > 0 = Self.value
-    # CHECK: kgen.conformance @"{{.*}}RequiresIntAlias"
+    # CHECK: kgen.conformance {{.*}}@RequiresIntAlias {
     # CHECK-NEXT: kgen.witness "Value" : !alias_Int1 = rebind(:!Int value)

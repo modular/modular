@@ -164,11 +164,11 @@ __extension Spaceship(Flying):
         self.set_location(new_location)
 
 
-# CHECK: kgen.conformance @"struct_extensions::Flying" {
+# CHECK: kgen.conformance @struct_extensions::@Flying {
 # CHECK-NEXT: kgen.witness "fly_to
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>, traitSymbol = #kgen.trait_symbol<@struct_extensions::@Flying>}
+# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>}
 
 
 # // -----
@@ -259,11 +259,11 @@ __extension Spaceship(Flying):
         self.set_location(new_location)
 
 
-# CHECK: kgen.conformance @"struct_extensions::Flying" {
+# CHECK: kgen.conformance @struct_extensions::@Flying {
 # CHECK-NEXT: kgen.witness "fly_to($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>, traitSymbol = #kgen.trait_symbol<@struct_extensions::@Flying>}
+# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>}
 
 # // -----
 

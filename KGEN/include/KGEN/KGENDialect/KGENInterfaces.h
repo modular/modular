@@ -96,6 +96,7 @@ LogicalResult verifyGeneratorUser(GeneratorUserOpInterface op);
 LogicalResult verifyIfTopLevel(DeclInterface decl,
                                SymbolTableCollection &symtab);
 LogicalResult verifyExportInterface(Operation *op);
+Operation *lookupConformance(Operation *op, TraitSymbolAttr traitSymbol);
 } // namespace impl
 } // namespace M::KGEN
 

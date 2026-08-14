@@ -23,6 +23,7 @@
 #include "KGEN/KGENDialect/KGENAttrInterfaces.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/KGENDialect/KGENEnums.h"
+#include "Support/Compiler/OperationUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -46,6 +47,7 @@ class TargetType;
 class ParamListType;
 class ParamListAttr;
 class SIMDType;
+class StructDeclInterface;
 } // namespace KGEN
 } // namespace M
 

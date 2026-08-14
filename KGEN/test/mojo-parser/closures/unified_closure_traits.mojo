@@ -128,7 +128,7 @@ def repro_rebind_nonref_operand[
 
 
 # S3: lit.struct.decl @"{{.*}}thing(unified_closure_traits::s3_Foo)::thing::__storage"
-# S3: kgen.conformance @"std::builtin::{{.*}}::Copyable"
+# S3: kgen.conformance @std::@builtin::{{.*}}@Copyable {
 # S3-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
 
 
