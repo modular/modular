@@ -26,7 +26,7 @@ from time import time
 
 import numpy as np
 import requests
-from max.serve.config import Settings
+from max.serve.config import KernelTraceLevel, Settings
 from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
     configure_histogram_shadow_emission,
@@ -658,6 +658,42 @@ def configure_tracing(settings: Settings) -> None:
         logger.info("Tracing disabled.")
     else:
         logger.info("Tracing initialized.")
+
+
+def configure_kernel_tracing(settings: Settings) -> None:
+    """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
+
+    Must be called in the model worker process before ``InferenceSession``
+    is constructed so that the libkineto auto-start picks up the enabled flag.
+
+    Args:
+        settings: Server settings carrying ``kernel_trace_level``.
+    """
+    level = settings.kernel_trace_level
+    if level in (KernelTraceLevel.OFF, KernelTraceLevel.BATCH):
+        return
+
+    try:
+        from max.profiler import set_gpu_profiling_state
+    except ImportError:
+        logging.getLogger("max.serve").warning(
+            "GPU profiling unavailable; kernel_trace_level=%s has no effect",
+            level.value,
+        )
+        return
+
+    if level == KernelTraceLevel.KERNEL:
+        # Full libkineto kernel timeline: enable detailed NVTX tracing and
+        # the libkineto auto-start that fires on InferenceSession construction.
+        set_gpu_profiling_state("detailed")
+        os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+    else:
+        # OP level: op-level NVTX user-annotation ranges only.
+        set_gpu_profiling_state("on")
+
+    logging.getLogger("max.serve").info(
+        "Kernel tracing initialized: level=%s", level.value
+    )
 
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK

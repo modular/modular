@@ -164,6 +164,41 @@ router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
 _tracer = otel_trace.get_tracer("max.serve")
 
+
+def _batch_id(
+    chunks: Sequence[TokenGeneratorOutput], *, last: bool = False
+) -> int | None:
+    """Return the first -- or with ``last``, the last -- non-None batch_id.
+
+    Scans from whichever end is being asked for so ``next`` short-circuits on
+    the first hit, rather than walking every chunk of a long generation.
+    """
+    return next(
+        (
+            c.batch_id
+            for c in (reversed(chunks) if last else chunks)
+            if c.batch_id is not None
+        ),
+        None,
+    )
+
+
+def _set_batch_id_attributes(
+    span: otel_trace.Span, chunks: Sequence[TokenGeneratorOutput]
+) -> None:
+    """Tag ``span`` with the batch ids bounding ``chunks``, when known.
+
+    Only for handlers that retain the whole chunk list; the streaming
+    handlers track the two ids as they go rather than holding every chunk.
+    """
+    first_id = _batch_id(chunks)
+    last_id = _batch_id(chunks, last=True)
+    if first_id is not None:
+        span.set_attribute("max.first_batch_id", first_id)
+    if last_id is not None:
+        span.set_attribute("max.last_batch_id", last_id)
+
+
 # Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
 _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -595,8 +630,15 @@ class OpenAIChatResponseGenerator(
         self._think_opened = False
         self._think_closed = False
 
+        _first_batch_id: int | None = None
+        _last_batch_id: int | None = None
+
         try:
             async for chunk in token_generator:
+                if chunk.batch_id is not None:
+                    if _first_batch_id is None:
+                        _first_batch_id = chunk.batch_id
+                    _last_batch_id = chunk.batch_id
                 self.logger.debug(
                     "Streaming: %s, TOKENS: %d, %s%s",
                     request.request_id,
@@ -940,6 +982,12 @@ class OpenAIChatResponseGenerator(
                 request_span.set_attribute(
                     "gen_ai.response.finish_reasons", [final_finish_reason]
                 )
+            if _first_batch_id is not None:
+                request_span.set_attribute(
+                    "max.first_batch_id", _first_batch_id
+                )
+            if _last_batch_id is not None:
+                request_span.set_attribute("max.last_batch_id", _last_batch_id)
             request_span.end()
             record_request_end(
                 request.request_path,
@@ -971,6 +1019,7 @@ class OpenAIChatResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
+        completed_outputs: list[TokenGeneratorOutput] = []
 
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -1161,6 +1210,7 @@ class OpenAIChatResponseGenerator(
             request_span.set_attribute(
                 "gen_ai.usage.input_tokens", n_prompt_tokens
             )
+            _set_batch_id_attributes(request_span, completed_outputs)
             request_span.end()
             record_request_end(
                 request.request_path,
@@ -2589,8 +2639,14 @@ class OpenAICompletionResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         final_finish_reason: str | None = None
+        _first_batch_id: int | None = None
+        _last_batch_id: int | None = None
         try:
             async for chunk in token_generator:
+                if chunk.batch_id is not None:
+                    if _first_batch_id is None:
+                        _first_batch_id = chunk.batch_id
+                    _last_batch_id = chunk.batch_id
                 chunk_total_tokens = (
                     chunk.reasoning_token_count or 0
                 ) + chunk.token_count
@@ -2726,6 +2782,12 @@ class OpenAICompletionResponseGenerator(
                 request_span.set_attribute(
                     "gen_ai.response.finish_reasons", [final_finish_reason]
                 )
+            if _first_batch_id is not None:
+                request_span.set_attribute(
+                    "max.first_batch_id", _first_batch_id
+                )
+            if _last_batch_id is not None:
+                request_span.set_attribute("max.last_batch_id", _last_batch_id)
             request_span.end()
             record_request_end(
                 request.request_path,
@@ -2753,6 +2815,7 @@ class OpenAICompletionResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
+        req_output_list: list[list[TokenGeneratorOutput]] = []
 
         try:
             req_output_list = await asyncio.gather(
@@ -2820,6 +2883,8 @@ class OpenAICompletionResponseGenerator(
             request_span.set_attribute(
                 "gen_ai.usage.input_tokens", n_prompt_tokens
             )
+            all_outputs = [c for req in req_output_list for c in req]
+            _set_batch_id_attributes(request_span, all_outputs)
             request_span.end()
             record_request_end(
                 requests[0].request_path,

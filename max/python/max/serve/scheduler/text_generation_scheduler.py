@@ -145,6 +145,7 @@ class TokenGenerationScheduler(Scheduler):
         )
         self._prefill_spans: dict[RequestID, otel_trace.Span] = {}
         self._decode_spans: dict[RequestID, otel_trace.Span] = {}
+        self._batch_counter: int = 0
 
     @traced
     def _retrieve_pending_requests(self) -> None:
@@ -288,6 +289,8 @@ class TokenGenerationScheduler(Scheduler):
     def _schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
         """Returns the number of terminated requests."""
         tracing_enabled = _tracing_enabled()
+        batch_id = self._batch_counter
+        self._batch_counter += 1
 
         # Capture which requests are currently in the CE (prefill) phase so we
         # can detect the CE→TG transition and end their prefill spans below.
@@ -298,62 +301,83 @@ class TokenGenerationScheduler(Scheduler):
             if tracing_enabled
             else None
         )
+        batch_span = _tracer.start_span(
+            "max.batch",
+            attributes={
+                "max.batch_id": batch_id,
+                "max.ce_count": len(self.batch_constructor.all_ce_reqs),
+                "max.tg_count": len(self.batch_constructor.all_tg_reqs),
+            },
+        )
 
-        # Execute the batch.
-        responses = self.pipeline.execute(inputs)
+        try:
+            # Execute the batch.
+            responses = self.pipeline.execute(inputs)
 
-        # Filter out all responses for requests that are already released.
-        # We can get a response for a request that is already released due to
-        # the quirk of overlap scheduling where the pipeline may produce an extra
-        # token after EOS.
-        responses = {
-            req_id: response
-            for req_id, response in responses.items()
-            if self.batch_constructor.contains(req_id)
-        }
+            # Filter out all responses for requests that are already released.
+            # We can get a response for a request that is already released due to
+            # the quirk of overlap scheduling where the pipeline may produce an extra
+            # token after EOS.
+            responses = {
+                req_id: response
+                for req_id, response in responses.items()
+                if self.batch_constructor.contains(req_id)
+            }
 
-        # Advance the requests: moves completed CE requests into TG.
-        self.batch_constructor.advance_requests(inputs)
+            # Advance the requests: moves completed CE requests into TG.
+            self.batch_constructor.advance_requests(inputs)
 
-        # Any request that was CE before and is now TG just completed prefill.
-        if tracing_enabled:
-            assert ce_ids_before is not None
-            tg_ids_after = set(self.batch_constructor.all_tg_reqs.keys())
-            for req_id in ce_ids_before & tg_ids_after:
-                if req_id in self._prefill_spans:
-                    self._prefill_spans.pop(req_id).end()
-                if req_id in self._decode_spans:
-                    # Preempted back to CE and now decoding again: the prior
-                    # decode span was never closed on preemption, so close it
-                    # here instead of leaking it via overwrite below.
-                    self._decode_spans.pop(req_id).end()
-                self._decode_spans[req_id] = _tracer.start_span(
-                    "max.phase.decode",
-                    context=_parent_trace_context(
-                        self.batch_constructor.all_tg_reqs[req_id]
-                    ),
-                    attributes={"max.request_id": str(req_id)},
+            # Any request that was CE before and is now TG just completed
+            # prefill. Skipped when tracing is disabled: see ce_ids_before.
+            if tracing_enabled:
+                assert ce_ids_before is not None
+                tg_ids_after = set(self.batch_constructor.all_tg_reqs.keys())
+                for req_id in ce_ids_before & tg_ids_after:
+                    if req_id in self._prefill_spans:
+                        span = self._prefill_spans.pop(req_id)
+                        span.set_attribute("max.batch_id", batch_id)
+                        span.end()
+                    if req_id in self._decode_spans:
+                        # Preempted back to CE and now decoding again: the
+                        # prior decode span was never closed on preemption,
+                        # so close it here instead of leaking it via
+                        # overwrite below.
+                        self._decode_spans.pop(req_id).end()
+                    self._decode_spans[req_id] = _tracer.start_span(
+                        "max.phase.decode",
+                        context=_parent_trace_context(
+                            self.batch_constructor.all_tg_reqs[req_id]
+                        ),
+                        attributes={
+                            "max.request_id": str(req_id),
+                            "max.batch_id": batch_id,
+                        },
+                    )
+
+            # Release terminated requests from the batch
+            num_terminated_requests = 0
+            for request_id, response in responses.items():
+                if response.is_done:
+                    self.batch_constructor.release_request(request_id)
+                    num_terminated_requests += 1
+                    if request_id in self._decode_spans:
+                        self._decode_spans.pop(request_id).end()
+
+            # send the responses to the API process
+            if responses:
+                self.response_queue.put_nowait(
+                    {
+                        req_id: SchedulerResult.create(response, batch_id)
+                        for req_id, response in responses.items()
+                    }
                 )
 
-        # Release terminated requests from the batch
-        num_terminated_requests = 0
-        for request_id, response in responses.items():
-            if response.is_done:
-                self.batch_constructor.release_request(request_id)
-                num_terminated_requests += 1
-                if request_id in self._decode_spans:
-                    self._decode_spans.pop(request_id).end()
-
-        # send the responses to the API process
-        if responses:
-            self.response_queue.put_nowait(
-                {
-                    req_id: SchedulerResult.create(response)
-                    for req_id, response in responses.items()
-                }
+            batch_span.set_attribute(
+                "max.terminated_count", num_terminated_requests
             )
-
-        return num_terminated_requests
+            return num_terminated_requests
+        finally:
+            batch_span.end()
 
 
 def load_text_generation_scheduler(

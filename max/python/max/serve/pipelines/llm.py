@@ -76,6 +76,9 @@ class TokenGeneratorOutput:
     cached_token_count: int | None = None
     reasoning_token_count: int | None = None
     stop_sequence: str | None = None
+    batch_id: int | None = None
+    """Monotonic forward-pass counter from the scheduler that produced this
+    chunk. Used to correlate API-side OTel spans with model-worker spans."""
 
 
 def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
@@ -130,6 +133,7 @@ def _merge_outputs(chunks: list[TokenGeneratorOutput]) -> TokenGeneratorOutput:
         reasoning_token_count=sum(c.reasoning_token_count or 0 for c in chunks)
         or None,
         stop_sequence=stop_sequence,
+        batch_id=chunks[-1].batch_id,
     )
 
 
@@ -420,7 +424,7 @@ class TokenGeneratorPipeline(
                 is_still_reasoning
             try:
                 with record_ms(METRICS.output_time):
-                    async for responses in response_stream:
+                    async for responses, batch_id in response_stream:
                         assert isinstance(responses, list)
                         assert len(responses) > 0
                         assert isinstance(responses[0], TextGenerationOutput)
@@ -504,6 +508,7 @@ class TokenGeneratorPipeline(
                                     cached_token_count=response.num_cached_tokens
                                     if not first_chunk_yielded
                                     else None,
+                                    batch_id=batch_id,
                                 )
                             continue
 
@@ -598,6 +603,7 @@ class TokenGeneratorPipeline(
                             else None,
                             reasoning_token_count=reasoning_token_count,
                             stop_sequence=stop_sequence_match,
+                            batch_id=batch_id,
                         )
             finally:
                 if first_chunk_yielded and num_generated_tokens > 1:
@@ -645,7 +651,7 @@ class TokenGeneratorPipeline(
                 response_stream = await self.model_worker.stream(
                     request.request_id, context
                 )
-                async for responses in response_stream:
+                async for responses, _batch_id in response_stream:
                     for response in responses:
                         # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
                         # Cast to handle the generic type parameter mismatch
