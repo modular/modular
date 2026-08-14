@@ -701,6 +701,7 @@ def test_overlap_di_has_pending_outputs_prevents_no_progress() -> None:
     mock_pipeline.has_pending_outputs.return_value = True
     mock_pipeline.execute.return_value = {}
     mock_pipeline.batch_spec_decode_metrics.return_value = None
+    mock_pipeline.overlap_active = True
     mock_pipeline.take_completed_batch_stats.return_value = None
     decode.pipeline = mock_pipeline
 

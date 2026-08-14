@@ -227,8 +227,8 @@ class TokenGenerationScheduler(Scheduler):
 
         # When the overlap pipeline is actually overlapping, the wall-clock
         # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger emits "Previous Execution:"
-        # and defers execution telemetry to the completed-batch stats below.
+        # current batch. Flag it so the logger attributes execution time and
+        # throughput to the completed-batch stats collected below.
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -270,7 +270,7 @@ class TokenGenerationScheduler(Scheduler):
             batch_video_metrics=self.pipeline.batch_video_metrics()
             if hasattr(self.pipeline, "batch_video_metrics")
             else None,
-            batch_execution_time_is_previous=is_overlap_active,
+            overlap_active=is_overlap_active,
             completed_batch_stats=completed_batch_stats,
         )
 
