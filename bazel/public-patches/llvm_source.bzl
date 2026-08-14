@@ -4,9 +4,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "d280d7945f6986c53c3def59d31477857b5e18a7"
+LLVM_COMMIT = "ec26997e2e4606d97918a4a082c4f93ca38a6f46"
 
-LLVM_SHA = "180badf61522c92999dde633fac8a0bba58c89e81b1a661f33fa83a81df69580"
+LLVM_SHA = "7636ff70c60a2933a91362932127478b7b24a610ef1f01afa58fc2a4ecb125ed"
 # END_GENERATED
 
 PATCHES = [
@@ -44,23 +44,6 @@ PATCHES = [
     # header-only exposure, the .cpp only uses header-defined type aliases,
     # not anything requiring OrcJIT's/JITLink's .cpp-defined symbols.
     "//bazel/public-patches:llvm-orcshared-sps-rtbridge-headers.patch",
-    # ARM TableGen Update (llvm/llvm-project#208380) replaced
-    # BuiltinsARM.def with BuiltinsARM.td/BuiltinsARMBase.td, generating
-    # BuiltinsARM.inc via clang-tblgen (mirroring BuiltinsAArch64's existing
-    # gentbl_cc_library). The CMake build picked up the new tablegen rule
-    # (clang/include/clang/Basic/CMakeLists.txt) but the Bazel overlay
-    # wasn't updated, so BuiltinsARM.inc was never generated. Add the
-    # missing td_library + gentbl_cc_library and wire it into the `basic`
-    # cc_library's deps, mirroring the AArch64 pattern exactly.
-    "//bazel/public-patches:llvm-clang-builtins-arm-tablegen.patch",
-    # The libc Bazel overlay's __support_osutil_syscall target lists
-    # "src/__support/OSUtil/darwin/arm/syscall.h" for macOS, but the actual
-    # directory (and the #include in darwin/syscall.h itself) is
-    # darwin/aarch64/, not darwin/arm/ -- this mismatch predates our update
-    # range but was previously unreached on macOS; something in this range
-    # newly pulls this target into the macOS build graph, surfacing a
-    # "missing input file" error. Fix the path to match the real directory.
-    "//bazel/public-patches:llvm-libc-darwin-aarch64-syscall.patch",
 ]
 
 def _llvm_source_impl(module_ctx):

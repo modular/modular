@@ -60,7 +60,11 @@ def _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
 
     # Now make sure that we have something like this:
     #     st.param.b64 	[func_retval0], 42;
+    # PTX ISA 8.3+ spells the function-param state space explicitly, so newer
+    # targets emit `st.param::func.b64` for the same store.
     var instruction_start_loc = asm.find("st.param.b64")
+    if instruction_start_loc < 0:
+        instruction_start_loc = asm.find("st.param::func.b64")
     assert_true(instruction_start_loc >= 0)  # Assert it's present
     var instruction_end_loc = asm.find(";", instruction_start_loc)
     assert_true(instruction_end_loc >= 0)
