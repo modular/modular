@@ -16,8 +16,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -773,36 +772,6 @@ class PagedKVCacheManager:
     def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Pins a request to one replica, which owns it until it is released."""
         self._block_manager.claim(ctx, replica_idx)
-
-    @contextmanager
-    def reserve(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-    ) -> Iterator[None]:
-        """Claims, allocates, and releases contexts within a scope.
-
-        This helper is for ephemeral flows (for example, warmup capture) where
-        request IDs should be released when leaving the scope.
-
-        Args:
-            replica_batches: Per-replica lists of contexts to reserve.
-        """
-        claimed: list[TextContext] = []
-        try:
-            for replica_idx, contexts in enumerate(replica_batches):
-                for context in contexts:
-                    if self.contains(context):
-                        raise ValueError(
-                            "reserve() requires unclaimed request IDs, but "
-                            f"{context.request_id!r} is already claimed."
-                        )
-                    self.claim(context, replica_idx=replica_idx)
-                    claimed.append(context)
-                    self.alloc(context)
-            yield
-        finally:
-            for context in claimed:
-                self.release(context)
 
     def step(self, ctx: TextContext) -> None:
         """Commits the request's newly written tokens into the prefix cache."""
