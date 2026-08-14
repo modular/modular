@@ -323,6 +323,10 @@ def wrong(x: Int where x > 0):
     pass
 ```
 
+A [`thin`](#thin) function *type* can carry its own trailing `where` clauses,
+constraining the parameters that type declares. See
+[Constrained function types](#constrained-function-types).
+
 ## Argument conventions
 
 An *argument convention* controls how an argument value passes to a function. It
@@ -534,6 +538,39 @@ def main():
     var nums: List[Int] = [1, 2, 3]
     var squares = map(square, nums)
     print(squares)  # Output: [1, 4, 9]
+```
+
+#### Constrained function types {#constrained-function-types}
+
+A `thin` function type that declares parameters can constrain them with
+trailing `where` clauses, written after the result type. The constraint is part
+of the type: callers must prove it holds for the parameters they bind.
+
+```mojo
+comptime Kernel = def[w: Int](Int) thin -> None where (
+    w > 0, "width must be positive"
+)
+
+def apply[F: Kernel](x: Int):
+    F[4](x)     # ok
+    F[0](x)     # error: violated constraint
+```
+
+Constraints are contravariant. A function satisfies the type when its own
+`where` clause is implied by the type's, or when it has none — the type
+promises its callers more than the function demands. A function that demands
+more than the type promises is rejected.
+
+Only `thin` function types accept a `where` clause. The clause binds to the
+innermost function type, so a declaration-level `where` that follows a
+function-type result needs that result parenthesized:
+
+```mojo
+# The `where` clause constrains the returned function type.
+def inner_constraint[n: Int]() -> def() thin -> None where n > 0: ...
+
+# The `where` clause constrains `outer_constraint` itself.
+def outer_constraint[n: Int]() -> (def() thin -> None) where n > 0: ...
 ```
 
 ### `abi("C")` {#abi-c}
