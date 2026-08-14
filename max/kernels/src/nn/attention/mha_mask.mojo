@@ -468,7 +468,12 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
 # CausalMask
 # ===-----------------------------------------------------------------------===#
 
-comptime MASK_VALUE = -10_000
+# Finite mask sentinel. Must sit far below any physically reachable QK score
+# (raw or scale*log2e-scaled) so it can never win the online-softmax row max
+# and zero out a row's real columns, yet stay finite so a fully-masked row
+# computes MASK_VALUE - MASK_VALUE = 0 instead of -inf - -inf = NaN. A power of
+# two so float32 and bfloat16 hold it exactly and agree bit-for-bit.
+comptime MASK_VALUE = -FloatLiteral(2**100)
 
 
 @fieldwise_init
@@ -515,7 +520,7 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
-        # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
+        # TODO(KERN-782): MASK_VALUE should be -inf but softmax saturates with NaNs.
         var masked_score_vec = (
             SIMD[index_type, width](q_idx).ge(
                 iota[index_type, width](Scalar[index_type](k_idx))

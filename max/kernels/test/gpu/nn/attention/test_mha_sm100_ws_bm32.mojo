@@ -764,7 +764,7 @@ def main() raises:
         # log2e)) would divide by an all-`-inf` warpgroup max -- exp2(-inf - -inf)
         # = NaN -- IF a whole WG saw zero visible keys for a row. That NaN is
         # UNREACHABLE here, for two independent reasons:
-        #   (1) Masked scores are the FINITE MASK_VALUE (-10000), not -inf
+        #   (1) Masked scores are the FINITE MASK_VALUE, not -inf
         #       (attention_utils.mojo `.select(s, MASK_VALUE)`, with the -inf alt
         #       commented out at :2908). So a fully-masked-but-processed tile
         #       yields a finite m_wg that the combine's exp2((m_wg - M)*log2e)
