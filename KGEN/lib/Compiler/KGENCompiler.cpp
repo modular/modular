@@ -23,6 +23,7 @@
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Constants.h"
+#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
@@ -737,8 +738,11 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                 compilationOptions.offloadOutputKind == EmitAs::LLVM
                     ? traits->getLLVMExtension()
                     : traits->getAsmExtension();
+            constexpr size_t kFileNameMaxChars = 64;
             std::string fileName =
-                reserveOffloadOutputBaseName(rawName, ext, kernelNameCounts) +
+                reserveOffloadOutputBaseName(
+                    sanitizeSymbolToUnderscores(rawName, kFileNameMaxChars),
+                    ext, kernelNameCounts) +
                 ext.str();
             offloadPendingWrites.push_back(
                 {mlir::StringAttr::get(theModule->getContext(), fileName),
