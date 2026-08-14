@@ -356,9 +356,17 @@ def UpcastAttr : DialectAttribute<(attr
   TypedAttr:$inputTypeValue
 )>;
 
+def TraitSymbolAttr : DialectAttribute<(attr
+  ConcreteAttribute<"SymbolRefAttr">:$symbol
+)>;
+
+def TraitSymbolArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"TraitSymbolAttr">:$value
+)>;
+
 def GetWitnessAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
-  StringAttr:$traitName,
+  ConcreteAttribute<"TraitSymbolAttr">:$traitSymbol,
   StringAttr:$witnessName,
   Type:$type
 )>;
@@ -654,7 +662,9 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     FuncPtrBitcastAttr,
     ParamIdenticalAttr,
     SingletonAttr,
-    FnMetadataAttr
+    FnMetadataAttr,
+    TraitSymbolAttr,
+    TraitSymbolArrayAttr
   ];
 }
 

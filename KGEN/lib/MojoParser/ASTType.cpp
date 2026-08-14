@@ -861,15 +861,13 @@ TriState ASTType::isSpecialFunctionTrivial(llvm::SMLoc loc,
     return TriState::unknown();
 
   auto witnessName = StringAttr::get(shared.getContext(), isTrivialHook);
-  auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
+  auto traitSymbol = TraitSymbolAttr::get(traitDecl->getSymbolRef());
 
   ASTType boolType =
       shared.lookupBuiltinType("Bool", *typeDecl->getParentDecl(), loc);
   TypedAttr fieldIsTrivial =
       shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-          PValue(*this),
-          StringAttr::get(shared.getContext(), witnessSymbolName), witnessName,
-          boolType);
+          PValue(*this), traitSymbol, witnessName, boolType);
 
   auto structAttr = dyn_cast_if_present<LITStructAttr>(fieldIsTrivial);
   if (!structAttr)

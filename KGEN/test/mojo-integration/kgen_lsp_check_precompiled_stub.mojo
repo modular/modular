@@ -32,7 +32,7 @@ def main():
     pass
 
 
-# CHECK: lit.fn @"copy(::__MLIRType{{.*}}(%self: {{.*}}%__result__: {{.*}}attributes {external
-# CHECK-SAME: inheritedFrom = @std::@traits::@copyable::@Copyable::@"copy($0)"
+# CHECK: lit.fn @"copy(::__MLIRType{{.*}}(%self: {{.*}}%__result__: {{.*}}attributes {defaultFnRef = @std::@traits::@copyable::@Copyable::@"copy($0)"
+# CHECK-SAME: external
 # CHECK-NEXT: lit.end_fn unresolved
 # CHECK-NEXT: }

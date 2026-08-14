@@ -178,7 +178,7 @@ def TraitSymbolInterface : TypeInterface<"TraitSymbolInterface"> {
   let methods = [
     InterfaceMethod<[{
       Return the trait symbol references carried by this type.
-    }], "ArrayRef<SymbolRefAttr>", "getTraitSymbols">,
+    }], "ArrayRef<TraitSymbolAttr>", "getTraitSymbols">,
   ];
 }
 

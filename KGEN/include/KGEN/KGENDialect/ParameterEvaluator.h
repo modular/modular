@@ -136,10 +136,11 @@ public:
   virtual FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                           bool acceptAsync) = 0;
 
-  /// Resolve the conformance op for a struct and trait name in this context.
+  /// Resolve the conformance op for a struct and trait in this context.
   /// For now, this conformance op is always parametric (non-concrete).
-  virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                                 StringAttr traitName) = 0;
+  virtual Operation *
+  resolveConformanceForStruct(ResolvedStructHandle resolved,
+                              TraitSymbolAttr traitSymbol) = 0;
 
   /// Create an evaluator configured with the provided parameters.
   /// This callback style is necessary because we have derived evaluators that
@@ -201,7 +202,7 @@ protected:
 
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         StringAttr traitName) override;
+                                         TraitSymbolAttr traitSymbol) override;
 
   /// Resolve a function symbol via the symbol table.
   FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;

@@ -752,7 +752,7 @@ TypedAttr TypeConformsToTraitAttr::getChecked(
   return get(typeValue, traitType);
 }
 
-std::optional<ArrayRef<SymbolRefAttr>>
+std::optional<ArrayRef<TraitSymbolAttr>>
 TypeConformsToTraitAttr::getTraitSymbols() const {
   if (auto traitType = sugarDynCast<TypeParamAttr>(getTraitType())) {
     Type traitTypeValue = traitType.getTypeValue();
@@ -768,15 +768,15 @@ TypeConformsToTraitAttr::getTraitSymbols() const {
 FailureOr<TypedAttr>
 TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
                                   ParameterEvaluator &evaluator) const {
-  std::optional<ArrayRef<SymbolRefAttr>> traitSymbols = getTraitSymbols();
+  std::optional<ArrayRef<TraitSymbolAttr>> traitSymbols = getTraitSymbols();
   // Trait value is not yet concrete, don't fold.
   if (!traitSymbols)
     return failure();
 
   SmallVector<TypedAttr> props;
-  for (SymbolRefAttr traitSym : *traitSymbols) {
+  for (TraitSymbolAttr traitSym : *traitSymbols) {
     auto conformOp = cast_or_null<ConformanceOp>(
-        traitTableOp.lookup(getFlattenedSymbolName(traitSym)));
+        traitTableOp.lookup(traitSym.getFlattenedName()));
 
     if (!conformOp)
       return {SIMDAttr::getScalarBool(getContext(), false)};
@@ -808,21 +808,29 @@ FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
 }
 
 //===----------------------------------------------------------------------===//
+// TraitSymbolAttr
+//===----------------------------------------------------------------------===//
+
+StringAttr TraitSymbolAttr::getFlattenedName() const {
+  return StringAttr::get(getContext(), getFlattenedSymbolName(getSymbol()));
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 
 bool GetWitnessAttr::isConstant() const { return false; }
 
 GetWitnessAttr GetWitnessAttr::get(MLIRContext *ctx, TypedAttr typeValue,
-                                   StringAttr traitName, StringAttr witnessName,
-                                   Type type) {
+                                   TraitSymbolAttr traitSymbol,
+                                   StringAttr witnessName, Type type) {
   // Witness lookup is keyed by underlying type identity; upcast/downcast only
   // adjust trait-view sugar. Strip them here so get_witness matches across
   // refined vs unrefined type values (same as prior isImplicationProven
   // replacer).
   typeValue = UpcastAttr::strip(typeValue);
   typeValue = DowncastAttr::strip(typeValue);
-  return Base::get(ctx, typeValue, traitName, witnessName, type);
+  return Base::get(ctx, typeValue, traitSymbol, witnessName, type);
 }
 
 TypedAttr GetWitnessAttr::getTypeRefIfResolved() {

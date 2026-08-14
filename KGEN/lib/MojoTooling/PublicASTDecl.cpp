@@ -1221,7 +1221,7 @@ static void collectConformanceConditions(TraitType canonicalTrait,
                                          ParameterEvaluator &evaluator,
                                          SharedState &shared,
                                          ConformanceConditionMap &conditions) {
-  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<TraitSymbolAttr> symbols = canonicalTrait.getSymbols();
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
   if (constraints.empty())
     return;
@@ -1241,7 +1241,7 @@ static void collectConformanceConditions(TraitType canonicalTrait,
 /// null for decls that cannot conform conditionally (traits, extensions).
 static StringRef
 lookupConformanceCondition(const ConformanceConditionMap *conditions,
-                           SymbolRefAttr symbol) {
+                           TraitSymbolAttr symbol) {
   if (!conditions)
     return {};
   auto it = conditions->find(symbol);
@@ -1258,8 +1258,8 @@ static void collectParentTraits(MojoParserContext &ctx, MojoASTDeclRef self,
                                 SmallVectorImpl<std::string> &parentTraits,
                                 TraitType canonicalTrait,
                                 const ConformanceConditionMap *conditions) {
-  DenseSet<SymbolRefAttr> seenDecls;
-  for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
+  DenseSet<TraitSymbolAttr> seenDecls;
+  for (TraitSymbolAttr symbol : canonicalTrait.getSymbols()) {
     if (!seenDecls.insert(symbol).second)
       continue;
     MojoASTDeclRef decl = ctx.getDecl(TraitType::get(symbol));
@@ -1286,7 +1286,7 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
                                 TraitType canonicalTrait,
                                 const ConformanceConditionMap *conditions) {
   llvm::json::Array result;
-  DenseSet<SymbolRefAttr> seenDecls;
+  DenseSet<TraitSymbolAttr> seenDecls;
 
   struct TraitEntry {
     StringRef name;
@@ -1295,7 +1295,7 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
   };
   SmallVector<TraitEntry> traitData;
 
-  for (SymbolRefAttr symbol : canonicalTrait.getSymbols()) {
+  for (TraitSymbolAttr symbol : canonicalTrait.getSymbols()) {
     if (!seenDecls.insert(symbol).second)
       continue;
 
@@ -1314,10 +1314,11 @@ collectParentTraitsWithMetadata(MojoParserContext &ctx, MojoASTDeclRef self,
     }
 
     // Fallback: extract trait name from symbol
+    SymbolRefAttr symbolRef = symbol.getSymbol();
     StringRef traitName =
-        symbol.getNestedReferences().empty()
-            ? symbol.getRootReference().getValue()
-            : symbol.getNestedReferences().back().getAttr().getValue();
+        symbolRef.getNestedReferences().empty()
+            ? symbolRef.getRootReference().getValue()
+            : symbolRef.getNestedReferences().back().getAttr().getValue();
 
     if (!traitName.empty()) {
       // Check if this trait name matches the current trait (avoid

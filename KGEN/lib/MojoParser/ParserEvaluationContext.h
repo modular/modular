@@ -53,7 +53,7 @@ protected:
 
   /// Resolve conformance using ASTDecl lookup in the parser context.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         StringAttr traitName) override;
+                                         TraitSymbolAttr traitSymbol) override;
 
   /// Provide a ParameterEvaluator configured for the struct parameters.
   void withEvaluator(

@@ -63,9 +63,9 @@ protected:
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
 
-  /// Look up the conformance operation for a struct and trait name.
+  /// Look up the conformance operation for a struct and trait.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         StringAttr traitName) override;
+                                         TraitSymbolAttr traitSymbol) override;
 
   /// Create a nested evaluator with the provided parameter bindings.
   void withEvaluator(

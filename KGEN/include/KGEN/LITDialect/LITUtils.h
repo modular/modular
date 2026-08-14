@@ -211,9 +211,10 @@ LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
+// Trait symbols sorting and canonicalization.
+void sortAndDeduplicateTraitSymbols(SmallVectorImpl<TraitSymbolAttr> &symbols);
 void canonicalizeTraitCompositionSymbols(
-    SmallVectorImpl<SymbolRefAttr> &symbols,
+    SmallVectorImpl<TraitSymbolAttr> &symbols,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
 /// Simplify a conforms_to attr by checking if the type value's trait bounds
@@ -245,7 +246,7 @@ protected:
 
   /// Resolve conformance using the struct's symbol table.
   Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         StringAttr traitName) override;
+                                         TraitSymbolAttr traitSymbol) override;
 
   /// Handle LIT-specific attributes (Downcast, TypeConformsToTrait).
   FailureOr<TypedAttr>

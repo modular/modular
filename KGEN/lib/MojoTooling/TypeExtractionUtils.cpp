@@ -71,7 +71,7 @@ std::string extractBaseTypeName(const M::MojoASTTypeRef &astType,
     else if (auto traitType = sugarDynCast<LIT::TraitType>(mlirType)) {
       auto symbols = traitType.getSymbols();
       if (!symbols.empty()) {
-        return extractSymbolLeafName(symbols.front());
+        return extractSymbolLeafName(symbols.front().getSymbol());
       }
     }
     // Handle OriginSet type name

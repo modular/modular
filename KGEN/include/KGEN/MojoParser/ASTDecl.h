@@ -213,7 +213,7 @@ public:
   /// specific trait.
   void findExtensionsInScopeForStruct(
       SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
-      std::optional<SymbolRefAttr> filterTrait = std::nullopt);
+      std::optional<TraitSymbolAttr> filterTrait = std::nullopt);
 
   /// Collect all declarations that could contribute to a type's namespace.
   /// Examples:
@@ -314,7 +314,7 @@ public:
 
   /// Get the map of trait conformance lineage for this decl. This is lazily
   /// initialized because it is only needed for structs.
-  DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
+  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
   getTraitConformanceLineage(bool createIfMissing = false);
 
   /// Get the set of assumptions for this decl and all its parent decls.
@@ -461,7 +461,7 @@ private:
   /// when a struct does not conform to a trait. This is lazily initialized
   /// because it is only needed for structs.
   using TraitConformanceLineageType =
-      DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>>;
+      DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>>;
   std::unique_ptr<TraitConformanceLineageType> traitConformanceLineage;
 
   /// This is the set of constraints that can be assumed to be true inside

@@ -1835,6 +1835,15 @@ void ConformanceOp::print(OpAsmPrinter &p) {
       (*this)->getAttrs(), {getSymNameAttrName(), getConstraintAttrName()});
 }
 
+LogicalResult ConformanceOp::verify() {
+  TraitSymbolAttr traitSymbol = getTraitSymbolAttr();
+  if (traitSymbol && traitSymbol.getFlattenedName() != getSymNameAttr())
+    return emitOpError("trait symbol '")
+           << traitSymbol.getFlattenedName().getValue()
+           << "' does not match the symbol name '" << getSymName() << "'";
+  return success();
+}
+
 ///===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//

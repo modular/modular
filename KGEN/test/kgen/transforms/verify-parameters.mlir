@@ -43,8 +43,8 @@ lit.struct.decl @"Wrapper"<T: type> {
 }
 
 // CHECK-LABEL: lit.fn @expect_associated_alias
-// CHECK-SAME:    (%arg: !kgen.param<#kgen.get_witness<:trait<@Fooable> T, "Fooable", "MyType">>)
-lit.fn @expect_associated_alias<T: !Fooable>(%arg: !kgen.param<#kgen.get_witness<:!Fooable T, "Fooable", "MyType">>) -> !kgen.none {
+// CHECK-SAME:    (%arg: !kgen.param<#kgen.get_witness<:trait<@Fooable> T, @Fooable, "MyType">>)
+lit.fn @expect_associated_alias<T: !Fooable>(%arg: !kgen.param<#kgen.get_witness<:!Fooable T, @Fooable, "MyType">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_fn
@@ -71,8 +71,8 @@ kgen.struct.generator @Wrapper<T: type> = struct_inst<"Wrapper"[T]<:type T>(data
 #wrapper_index = #kgen.type<typevalue<#kgen.genref<@Wrapper<:type index>>>, struct<(index)>> : !kgen.type
 
 // CHECK-LABEL: kgen.generator @expect_associated_alias
-// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<T, "Fooable", "MyType">>)
-kgen.generator @expect_associated_alias<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<T, "Fooable", "MyType">>) -> !kgen.none {
+// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<T, @Fooable, "MyType">>)
+kgen.generator @expect_associated_alias<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<T, @Fooable, "MyType">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -102,7 +102,7 @@ kgen.generator @myfoo_foo<T: !kgen.type>(%arg: !kgen.param<:type T>) -> index {
 // CHECK-LABEL: kgen.generator @simplify_call_param
 kgen.generator @simplify_call_param(%arg: index) -> index {
   // CHECK-NEXT: kgen.call @myfoo_foo<:type index>(%arg0)
-  %result = kgen.call_param[(index) -> index: #kgen.get_witness<#MyFooIndex, "Fooable", "foo">](%arg)
+  %result = kgen.call_param[(index) -> index: #kgen.get_witness<#MyFooIndex, @Fooable, "foo">](%arg)
   kgen.return %result : index
 }
 
@@ -187,15 +187,15 @@ kgen.struct.generator @VariadicWrapper<T: type, V: !kgen.param_list<T>> = struct
 
 
 // CHECK-LABEL: kgen.generator @expect_field_types_kgen
-// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type type, :param_list<type> #kgen.struct_field_types<T>>>>, struct<()>], "HasType", "my_type">>
-kgen.generator @expect_field_types_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_types, "HasType", "my_type">>) -> !kgen.none {
+// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type type, :param_list<type> #kgen.struct_field_types<T>>>>, struct<()>], @HasType, "my_type">>
+kgen.generator @expect_field_types_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_types, @HasType, "my_type">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
 
 // CHECK-LABEL: kgen.generator @expect_field_names_kgen
-// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type string, :param_list<string> #kgen.struct_field_names<T>>>>, struct<()>], "HasType", "my_type">>
-kgen.generator @expect_field_names_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_names, "HasType", "my_type">>) -> !kgen.none {
+// CHECK-SAME:    (%arg0: !kgen.param<#kgen.get_witness<[typevalue<#kgen.genref<@VariadicWrapper<:type string, :param_list<string> #kgen.struct_field_names<T>>>>, struct<()>], @HasType, "my_type">>
+kgen.generator @expect_field_names_kgen<T: !kgen.type>(%arg: !kgen.param<#kgen.get_witness<#variadic_wrapper_names, @HasType, "my_type">>) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -255,8 +255,8 @@ kgen.struct.generator @make = struct_inst<"make"(data: index)> {
 // `def() -> T` witnesses.
 kgen.struct.generator @fwd_ext<A: type> = struct_inst<"fwd_ext"[A]<:type A>> {
   kgen.conformance @"def() -> V" {
-    kgen.witness "V" : type = #kgen.get_witness<A, "def() -> T", "T">
-    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = #kgen.get_witness<A, "def() -> T", "__call__">
+    kgen.witness "V" : type = #kgen.get_witness<A, @"def() -> T", "T">
+    kgen.witness "__call__" : (!kgen.struct<(index)>) -> index = #kgen.get_witness<A, @"def() -> T", "__call__">
   }
 }
 
@@ -274,7 +274,7 @@ kgen.struct.generator @const_ext<A: type> = struct_inst<"const_ext"[A]<:type A>>
 // CHECK-LABEL: kgen.generator @extension_concrete_anchor
 kgen.generator @extension_concrete_anchor(%arg: !kgen.struct<(index)>) -> index {
   // CHECK: kgen.call @call
-  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<#make, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type #make>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<#make, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type #make>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
   kgen.return %r : index
 }
 
@@ -283,7 +283,7 @@ kgen.generator @extension_concrete_anchor(%arg: !kgen.struct<(index)>) -> index 
 // CHECK-LABEL: kgen.generator @extension_param_anchor_independent
 kgen.generator @extension_param_anchor_independent<G: !kgen.type>(%arg: !kgen.struct<(index)>) -> index {
   // CHECK: kgen.call @call
-  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@const_ext<:type G>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@const_ext<:type G>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
   kgen.return %r : index
 }
 
@@ -292,7 +292,7 @@ kgen.generator @extension_param_anchor_independent<G: !kgen.type>(%arg: !kgen.st
 // CHECK-LABEL: kgen.generator @extension_param_anchor_forwarding
 kgen.generator @extension_param_anchor_forwarding<G: !kgen.type>(%arg: !kgen.struct<(index)>) -> index {
   // CHECK: kgen.call_param
-  // CHECK-SAME: #kgen.get_witness<G, "def() -> T", "__call__">
-  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type G>>>, struct<()>> : !kgen.type]>, "def() -> V", "__call__">](%arg)
+  // CHECK-SAME: #kgen.get_witness<G, @"def() -> T", "__call__">
+  %r = kgen.call_param[(!kgen.struct<(index)>) -> index: #kgen.get_witness<#kgen.extension<G, [#kgen.type<typevalue<:!kgen.type #kgen.genref<@fwd_ext<:type G>>>, struct<()>> : !kgen.type]>, @"def() -> V", "__call__">](%arg)
   kgen.return %r : index
 }

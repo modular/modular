@@ -296,7 +296,7 @@ def LIT_TraitType: LITType<"Trait", "trait",
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"SymbolRefAttr">:$symbols,
+    OptionalArrayRefParameter<"TraitSymbolAttr">:$symbols,
     // Optional parallel array of constraints. When present, constraints[i]
     // specifies the condition under which conformance to symbols[i] applies.
     // Used for conditional trait conformance on struct declarations.
@@ -312,17 +312,21 @@ def LIT_TraitType: LITType<"Trait", "trait",
 
   let builders = [
     // Builder for unconditional single trait.
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), ArrayRef<SymbolRefAttr>{symbol},
+    TypeBuilderWithInferredContext<(ins "TraitSymbolAttr":$symbol), [{
+      return get(symbol.getContext(), ArrayRef<TraitSymbolAttr>{symbol},
                  ArrayRef<ConstraintAttr>{});
     }]>,
+    // Convenience form that names the trait by its declaration's symbol.
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(TraitSymbolAttr::get(symbol));
+    }]>,
     // Builder for unconditional trait list (no constraints).
-    TypeBuilder<(ins "ArrayRef<SymbolRefAttr>":$symbols), [{
+    TypeBuilder<(ins "ArrayRef<TraitSymbolAttr>":$symbols), [{
       return canonicalizeAndGet($_ctxt, symbols, ArrayRef<ConstraintAttr>{});
     }]>,
     // Main builder with canonicalization logic for constraints.
     // This builder calls the canonicalization helper.
-    TypeBuilder<(ins "ArrayRef<SymbolRefAttr>":$symbols,
+    TypeBuilder<(ins "ArrayRef<TraitSymbolAttr>":$symbols,
                      "ArrayRef<ConstraintAttr>":$constraints), [{
       return canonicalizeAndGet($_ctxt, symbols, constraints);
     }]>
@@ -336,7 +340,7 @@ def LIT_TraitType: LITType<"Trait", "trait",
     // - False constraints (proposition = 0) remove the trait slot entirely
     // - When all constraints are trivially true, the constraints array is cleared
     static TraitType canonicalizeAndGet(MLIRContext *context,
-                                        ArrayRef<SymbolRefAttr> symbols,
+                                        ArrayRef<TraitSymbolAttr> symbols,
                                         ArrayRef<ConstraintAttr> constraints);
 
     // Sugar support: non-parameterized types get aliases.

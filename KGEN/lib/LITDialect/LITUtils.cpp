@@ -670,8 +670,12 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
-  llvm::sort(symbols, [&](SymbolRefAttr a, SymbolRefAttr b) {
+void LIT::sortAndDeduplicateTraitSymbols(
+    SmallVectorImpl<TraitSymbolAttr> &symbols) {
+  llvm::sort(symbols, [&](TraitSymbolAttr ta, TraitSymbolAttr tb) {
+    SymbolRefAttr a = ta.getSymbol();
+    SymbolRefAttr b = tb.getSymbol();
+
     if (a.getRootReference() != b.getRootReference())
       return a.getRootReference().getValue() < b.getRootReference().getValue();
     // Compare each segment of the symbols in dictionary order.
@@ -687,25 +691,25 @@ void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
 }
 
 void LIT::canonicalizeTraitCompositionSymbols(
-    SmallVectorImpl<SymbolRefAttr> &symbols,
+    SmallVectorImpl<TraitSymbolAttr> &symbols,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
 
   // Pull in the entire ancestor chain.
-  DenseSet<SymbolRefAttr> seen;
-  for (SymbolRefAttr symbol : symbols) {
+  DenseSet<TraitSymbolAttr> seen;
+  for (TraitSymbolAttr symbol : symbols) {
     if (!seen.insert(symbol).second)
       continue;
 
-    TraitDeclOp traitOp = traitDeclResolver(symbol);
+    TraitDeclOp traitOp = traitDeclResolver(symbol.getSymbol());
     // Only one level of parent lookup is needed because parentTypes always
     // include their entire ancestor chain.
-    ArrayRef<SymbolRefAttr> parentSymbols =
+    ArrayRef<TraitSymbolAttr> parentSymbols =
         traitOp.getCanonicalTrait().getSymbols();
     seen.insert(parentSymbols.begin(), parentSymbols.end());
   }
   symbols.assign(seen.begin(), seen.end());
 
-  sortAndDeduplicateSymbols(symbols);
+  sortAndDeduplicateTraitSymbols(symbols);
 }
 
 FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
@@ -728,9 +732,9 @@ FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
   if (!traitType)
     return failure();
 
-  DenseSet<SymbolRefAttr> symbolSet(traitType.getSymbols().begin(),
-                                    traitType.getSymbols().end());
-  for (SymbolRefAttr toCheck : *traitSymbolsOr) {
+  DenseSet<TraitSymbolAttr> symbolSet(traitType.getSymbols().begin(),
+                                      traitType.getSymbols().end());
+  for (TraitSymbolAttr toCheck : *traitSymbolsOr) {
     if (!symbolSet.contains(toCheck))
       return failure();
   }
@@ -774,9 +778,9 @@ LITSymTabEvaluationContext::resolveStructOp(TypedAttr typeValue,
 }
 
 Operation *LITSymTabEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, StringAttr traitName) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
   return SymTabEvaluationContext::resolveConformanceForStruct(resolved,
-                                                              traitName);
+                                                              traitSymbol);
 }
 
 FuncInterface
@@ -837,10 +841,10 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
     if (!toTrait || !fromTrait)
       return failure();
 
-    llvm::SmallPtrSet<SymbolRefAttr, 16> fromSymbols(
+    llvm::SmallDenseSet<TraitSymbolAttr, 16> fromSymbols(
         fromTrait.getSymbols().begin(), fromTrait.getSymbols().end());
     bool fromImpliesTo =
-        llvm::all_of(toTrait.getSymbols(), [&](SymbolRefAttr symbol) {
+        llvm::all_of(toTrait.getSymbols(), [&](TraitSymbolAttr symbol) {
           return fromSymbols.contains(symbol);
         });
     if (fromImpliesTo) {
@@ -848,9 +852,9 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
       // this is actually an upcast.
       return UpcastAttr::get(downcast.getType(), downcast.getInputTypeValue());
     } else {
-      SmallVector<SymbolRefAttr> allTraitSymbols(fromTrait.getSymbols());
+      SmallVector<TraitSymbolAttr> allTraitSymbols(fromTrait.getSymbols());
       llvm::append_range(allTraitSymbols, toTrait.getSymbols());
-      sortAndDeduplicateSymbols(allTraitSymbols);
+      sortAndDeduplicateTraitSymbols(allTraitSymbols);
 
       auto allTraits = TraitType::get(attr.getContext(), allTraitSymbols, {});
 
@@ -898,13 +902,13 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
 
   TypedAttr typeValue = stripIdentityWrappers(conformsTo.getTypeValue());
 
-  std::optional<ArrayRef<SymbolRefAttr>> traitSymbolsOr =
+  std::optional<ArrayRef<TraitSymbolAttr>> traitSymbolsOr =
       conformsTo.getTraitSymbols();
   // Not yet resolved.
   if (!traitSymbolsOr)
     return {};
 
-  ArrayRef<SymbolRefAttr> traitSymbols = *traitSymbolsOr;
+  ArrayRef<TraitSymbolAttr> traitSymbols = *traitSymbolsOr;
   auto concreteList = sugarDynCast<ParamListAttr>(typeValue);
   bool hasMultipleElements =
       concreteList && concreteList.getValues().size() > 1;
@@ -927,7 +931,7 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
     operands.reserve(concreteList.getValues().size() * traitSymbols.size());
     for (TypedAttr element : concreteList.getValues()) {
       element = stripIdentityWrappers(element);
-      for (SymbolRefAttr sym : traitSymbols) {
+      for (TraitSymbolAttr sym : traitSymbols) {
         auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
         operands.push_back(
             TypeConformsToTraitAttr::get(element, singleTrait.getPValue()));
@@ -935,7 +939,7 @@ static TypedAttr decomposeConformsTo(TypedAttr prop) {
     }
   } else {
     operands.reserve(traitSymbols.size());
-    for (SymbolRefAttr sym : traitSymbols) {
+    for (TraitSymbolAttr sym : traitSymbols) {
       auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
       operands.push_back(
           TypeConformsToTraitAttr::get(typeValue, singleTrait.getPValue()));
@@ -1029,14 +1033,14 @@ static TriState isPropositionImplied(TypedAttr proposition,
           dyn_cast<TypeConformsToTraitAttr>(assumption)) {
     if (auto propositionConformance =
             dyn_cast<TypeConformsToTraitAttr>(proposition)) {
-      std::optional<ArrayRef<SymbolRefAttr>> symbolsA =
+      std::optional<ArrayRef<TraitSymbolAttr>> symbolsA =
           assumptionConformance.getTraitSymbols();
-      std::optional<ArrayRef<SymbolRefAttr>> symbolsB =
+      std::optional<ArrayRef<TraitSymbolAttr>> symbolsB =
           propositionConformance.getTraitSymbols();
       bool traitsImply = false;
       if (symbolsA && symbolsB) {
-        DenseSet<SymbolRefAttr> symbols(symbolsA->begin(), symbolsA->end());
-        traitsImply = llvm::all_of(*symbolsB, [&](SymbolRefAttr symbol) {
+        DenseSet<TraitSymbolAttr> symbols(symbolsA->begin(), symbolsA->end());
+        traitsImply = llvm::all_of(*symbolsB, [&](TraitSymbolAttr symbol) {
           return symbols.contains(symbol);
         });
       }
@@ -1214,7 +1218,7 @@ TraitType LIT::getTraitBoundFromAssumptions(
         getCanonicalAttr(targetParamListGet.getParamList()));
 
   // Collect trait symbols from all relevant conforms_to constraints.
-  SmallVector<SymbolRefAttr> allTraits;
+  SmallVector<TraitSymbolAttr> allTraits;
   for (ConstraintAttr assumption : assumptions) {
     forEachConformsToInProposition(
         assumption.getProposition(), [&](TypeConformsToTraitAttr ct) {
@@ -1222,7 +1226,8 @@ TraitType LIT::getTraitBoundFromAssumptions(
               stripIdentityWrappers(getCanonicalAttr(ct.getTypeValue()));
           if (isEqualCanon(striped, targetStripped) ||
               (targetParamList && isEqualCanon(striped, targetParamList))) {
-            std::optional<ArrayRef<SymbolRefAttr>> symOr = ct.getTraitSymbols();
+            std::optional<ArrayRef<TraitSymbolAttr>> symOr =
+                ct.getTraitSymbols();
             if (!symOr)
               return;
             allTraits.append(symOr->begin(), symOr->end());
@@ -1234,7 +1239,7 @@ TraitType LIT::getTraitBoundFromAssumptions(
     return {};
 
   // Canonicalize to include ancestor traits.
-  sortAndDeduplicateSymbols(allTraits);
+  sortAndDeduplicateTraitSymbols(allTraits);
 
   return TraitType::get(typeAttr.getContext(), allTraits);
 }

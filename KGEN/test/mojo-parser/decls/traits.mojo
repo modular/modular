@@ -151,22 +151,22 @@ struct CFMStructParams[t1: TrivialRegisterPassable, t2: TrivialRegisterPassable]
 # CHECK-SAME: %x: !lit.ref<:!AnyType_Trait T, imm {{.*}}> read_mem
 def generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call tail[!lit.generator<[1]("self": {{.*}} read_mem) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, "traits::Trait", "f0{{.*}}">]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "f0{{.*}}">]{{.*}}(%x)
     x.f0()
 
     # CHECK: lit.call tail[!lit.generator<[1]("self": {{[^)]*}}) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x)
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "overloaded{{.*}}">]{{.*}}(%x)
     x.overloaded()
     # CHECK: lit.call tail[!lit.generator<[1]("self": {{.*}}, "x": !Int)
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(1)
     # CHECK: lit.call tail[!lit.generator<[1]("self": {{.*}}, "x": !kgen.string)
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, "traits::Trait", "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "overloaded{{.*}}">]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call tail[!lit.generator<[1]("self": {{[^)]*}} read_mem)
     # CHECK-SAME: bind_params(:!lit.generator<<"x": !Int>[1](
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, "traits::Trait", "parametric{{.*}}">, {{.*}}1{{.*}})
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait T, @traits::@Trait, "parametric{{.*}}">, {{.*}}1{{.*}})
     x.parametric[1]()
 
 
@@ -243,7 +243,7 @@ struct StaticMethodStruct(StaticMethodTrait, ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"trait_static_method{{.*}}<T: !AnyType_StaticMethodTrait
 def trait_static_method[T: StaticMethodTrait]():
-    # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: #kgen.get_witness<:!AnyType_StaticMethodTrait T, "traits::StaticMethodTrait", "foobar{{.*}}">]()
+    # CHECK: lit.call tail[!lit.generator<() -> !kgen.none>: #kgen.get_witness<:!AnyType_StaticMethodTrait T, @traits::@StaticMethodTrait, "foobar{{.*}}">]()
     T.foobar()
 
 
@@ -253,7 +253,7 @@ def trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, mut {{.*}}> byref_result
 def copy_me[T: ImplicitlyCopyable](value: T) -> T:
     # CHECK-NEXT: lit.call tail[!lit.generator<[2](*, "copy": {{.*}}T, {{.*}}> read_mem, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, "std::builtin::stubs::Copyable", "__init__(copy:$0)">]{{.*}}(%value, %__result__)
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable T, @std::@builtin::@stubs::@Copyable, "__init__(copy:$0)">]{{.*}}(%value, %__result__)
     return value
 
 
@@ -263,7 +263,7 @@ def copy_me[T: ImplicitlyCopyable](value: T) -> T:
 # CHECK-SAME: :!AnyType_Movable T, {{.*}}> byref_result
 def move_me[T: Movable](var value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!AnyType_Movable T, "std::builtin::stubs::Movable", "__init__(move:$0$)">]{{.*}}(%value, %__result__)
+    # CHECK-NEXT: lit.call tail[{{.*}}#kgen.get_witness<:!AnyType_Movable T, @std::@builtin::@stubs::@Movable, "__init__(move:$0$)">]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -310,9 +310,9 @@ struct RegTraitType(RegisterPassable, TraitForReg):
 
 # CHECK-LABEL: lit.fn @"raising_method
 def raising_method[T: TraitForReg](x: T) raises:
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!AnyType_TraitForReg T, "traits::TraitForReg", "may_throw{{.*}}">][{{.*}}](%__error__, %__call_result_tmp__
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!AnyType_TraitForReg T, @traits::@TraitForReg, "may_throw{{.*}}">][{{.*}}](%__error__, %__call_result_tmp__
     _ = T.may_throw()
-    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!AnyType_TraitForReg T, "traits::TraitForReg", "throwing_method{{.*}}">][{{.*}}](%{{.*}}, %__error__, %__call_result_tmp__
+    # CHECK: lit.call[{{.*}}: #kgen.get_witness<:!AnyType_TraitForReg T, @traits::@TraitForReg, "throwing_method{{.*}}">][{{.*}}](%{{.*}}, %__error__, %__call_result_tmp__
     x.throwing_method()
 
 
@@ -587,7 +587,7 @@ trait GreatGrandFather:
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: GreatGrandFather)
-# CHECK-SAME: immediateParents = #M<symbols[@traits::@GreatGrandFather]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GreatGrandFather>]>
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.fn @"bar
     def bar(self):
@@ -598,7 +598,7 @@ trait GrandFather(GreatGrandFather):
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: GrandFather_GreatGrandFather)
-# CHECK-SAME: immediateParents = #M<symbols[@traits::@GrandFather]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GrandFather>]>
 trait Father(GrandFather):
     # CHECK: lit.fn @"baz
     def baz(self):
@@ -610,7 +610,7 @@ trait Father(GrandFather):
 
 # CHECK-LABEL: lit.trait.decl @UnevenDiamond
 # CHECK-SAME: Father_GrandFather_GreatGrandFather_UnevenDiamond)
-# CHECK-SAME: immediateParents = #M<symbols[@traits::@Father]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@Father>]>
 trait UnevenDiamond(GreatGrandFather, Father):
     ...
 
@@ -795,13 +795,13 @@ struct KeysContainer[end: Int](KeysBuilder, Movable where False):
 
 # CHECK-LABEL: lit.fn @"param_trait
 def param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}} store_to_mem(value), {{.*}}1{{.*}})
+    # CHECK-NEXT: apply({{.*}} #kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait T, @traits::@SimpleTrait, "method{{.*}}">{{.*}} store_to_mem(value), {{.*}}1{{.*}})
     comptime param = value.method(1)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: lit.call[{{.*}}#kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait T, "traits::SimpleTrait", "method{{.*}}">{{.*}}([[IMM]],
+    # CHECK: lit.call[{{.*}}#kgen.get_witness<:!AnyType_Copyable_ImplicitlyCopyable_Movable_SimpleTrait T, @traits::@SimpleTrait, "method{{.*}}">{{.*}}([[IMM]],
     value.method(2)
 
 

@@ -897,8 +897,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     if (auto expectedGetWitness = dyn_cast<GetWitnessAttr>(expectedAttr)) {
       // The trait name and witness name are immediates, not parameters, so they
       // must match exactly.
-      if (actualGetWitness.getTraitName() ==
-              expectedGetWitness.getTraitName() &&
+      if (actualGetWitness.getTraitSymbol() ==
+              expectedGetWitness.getTraitSymbol() &&
           actualGetWitness.getWitnessName() ==
               expectedGetWitness.getWitnessName()) {
         return matchParams(actualGetWitness.getTypeValue(),

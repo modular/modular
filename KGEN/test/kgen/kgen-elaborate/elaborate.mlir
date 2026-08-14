@@ -1839,7 +1839,7 @@ kgen.generator @"NonParametric::__bool__(::NonParametric)"(%arg0: !kgen.struct<(
 // CHECK-LABEL: kgen.func @"use_boolable,T={{.*}}NonParametric
 // CHECK-NEXT:    kgen.call @"NonParametric::__bool__(::NonParametric)"
 kgen.generator @use_boolable<T: type>(%arg: !kgen.param<T>) -> i1 {
-  kgen.param.declare traitMethod: (!kgen.param<T>) -> i1  = <#kgen.get_witness<T, "Boolable", "__bool__">>
+  kgen.param.declare traitMethod: (!kgen.param<T>) -> i1  = <#kgen.get_witness<T, @Boolable, "__bool__">>
   %result = kgen.call_param[(!kgen.param<T>) -> i1 : traitMethod](%arg)
   kgen.return %result : i1
 }
@@ -1901,9 +1901,9 @@ kgen.generator @"Contrived::__foo__(::Int)"<n: index>(%arg0: !kgen.scalar<index>
 // CHECK:    kgen.call @"Contrived::__foo__(::Int),n=8"
 kgen.generator @use_fooable<T: type, n: index>(%arg: !kgen.param<T>) -> !kgen.simd<n, index> {
   %const = kgen.param.constant : !kgen.scalar<index> = <7>
-  kgen.param.declare traitMethod: (!kgen.scalar<index>) -> !kgen.simd<n, index>  = <#kgen.get_witness<T, "Fooable", "__foo__">>
+  kgen.param.declare traitMethod: (!kgen.scalar<index>) -> !kgen.simd<n, index>  = <#kgen.get_witness<T, @Fooable, "__foo__">>
   %result = kgen.call_param[(!kgen.scalar<index>) -> !kgen.simd<n, index> : traitMethod](%const)
-  kgen.param.declare traitMethod2: (!kgen.scalar<index>) -> !kgen.simd<n, index>  = <#kgen.get_witness<#AnotherContrivedN1, "Fooable", "__foo__">>
+  kgen.param.declare traitMethod2: (!kgen.scalar<index>) -> !kgen.simd<n, index>  = <#kgen.get_witness<#AnotherContrivedN1, @Fooable, "__foo__">>
   %result2 = kgen.call_param[(!kgen.scalar<index>) -> !kgen.simd<n, index> : traitMethod2](%const)
   %result3 = pop.add %result, %result2 : !kgen.simd<n, index>
   kgen.return %result3 : !kgen.simd<n, index>
@@ -2218,7 +2218,7 @@ kgen.struct.generator @S1 = struct_inst<"S1" memoryOnly>{}
 // CHECK-NEXT: "sink-does-not-conform-to"() : () -> ()
 // CHECK-NEXT: kgen.return
 kgen.generator @conformance_check<T: type>() always_inline {
-  kgen.param.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.type<typevalue<#kgen.trait_ref<@"A", @"B">>, type> : !kgen.type>> {
+  kgen.param.if <#kgen.type_conforms_to_trait<#kgen.param.decl.ref<"T"> : !kgen.type, #kgen.type<typevalue<#kgen.trait_ref<[@"A", @"B"]>>, type> : !kgen.type>> {
     "sink-conforms-to"() : () -> ()
     kgen.param.yield
   } else {

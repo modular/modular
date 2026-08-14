@@ -97,13 +97,11 @@ FnTypeGeneratorType LIT::substituteTraitAliasesIntoSignature(
         continue;
       StringAttr nameStringAttr =
           StringAttr::get(candidateFunc->getContext(), name.str());
-      auto traitName = StringAttr::get(
-          candidateFunc->getContext(),
-          getFlattenedSymbolName(candidateFunc.getInheritedFrom().value_or(
-              traitDecl.getSymbolRef())));
+      TraitSymbolAttr traitSymbol = candidateFunc.getInheritedFrom().value_or(
+          TraitSymbolAttr::get(traitDecl.getSymbolRef()));
       TypedAttr aliasRef =
           declResolver.shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-              selfPValue, traitName, nameStringAttr, traitAlias.getType());
+              selfPValue, traitSymbol, nameStringAttr, traitAlias.getType());
       traitAliasReplacer.setDeclBinding(traitAlias.getParamDecl(), aliasRef);
     }
   }
@@ -293,13 +291,11 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   signature = signature.getSpecializedGenerator(paramValues,
                                                 &shared.getEvaluationContext());
 
-  auto traitName =
-      StringAttr::get(funcOp.getContext(),
-                      getFlattenedSymbolName(funcOp.getInheritedFrom().value_or(
-                          traitDecl->getSymbolRef())));
+  TraitSymbolAttr traitSymbol = funcOp.getInheritedFrom().value_or(
+      TraitSymbolAttr::get(traitDecl->getSymbolRef()));
 
   TypedAttr fnRef = shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-      selfExpr, traitName, funcOp.getSymNameAttr(), signature);
+      selfExpr, traitSymbol, funcOp.getSymNameAttr(), signature);
 
   ArrayRef<TypedAttr> remainingParamValues = verifiedValues.drop_front();
   const llvm::BitVector &discharged = verified.getDischargedBodyConstraints();

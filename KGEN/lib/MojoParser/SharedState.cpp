@@ -254,9 +254,10 @@ private:
               resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
         })
         .Case<TraitType>([&](TraitType ref) {
-          return success(
-              llvm::all_of(ref.getSymbols(), [&](SymbolRefAttr symbol) -> bool {
-                return resolveBytecodeReferenceSignature(shared, symbol);
+          return success(llvm::all_of(
+              ref.getSymbols(), [&](TraitSymbolAttr symbol) -> bool {
+                return resolveBytecodeReferenceSignature(shared,
+                                                         symbol.getSymbol());
               }));
         })
         .Default(WalkResult::advance());

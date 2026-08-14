@@ -79,17 +79,14 @@ def LIT_FnOp : LITOp<"fn", [
     OptionalAttr<KGEN_LinkageNameAttr>:$linkageName,
     // The name of this function in the pre-elaborated IR stage.
     OptionalAttr<StrAttr>:$sourceName,
-    // For trait->trait inheritance the trait.decl this was inherited from.
-    //  -OR-
-    // For trait->struct inheritance the ~lit.fn~ this was inherited from.
-    //
-    // None if self declared in either case.
-    //
-    // TODO: Just use the lit.fn op symbol in either case for consistency.
-    // Most of the time mere presence of the attribute rather than its actual
-    // value is used, and the parent trait.decl symbol ref can always derived
-    // from having the lit.fn symbol ref.
-    OptionalAttr<SymbolRefAttr>:$inheritedFrom,
+    // The trait this function was inherited from, for both trait->trait and
+    // trait->struct inheritance. None if self declared.
+    OptionalAttr<KGEN_TraitSymbolAttr>:$inheritedFrom,
+    // For trait->struct inheritance, the `lit.fn` this was inherited from,
+    // which is the trait's default implementation the wrapper forwards to.
+    // `inheritedFrom` only names the trait, which is not enough to resolve
+    // that declaration.
+    OptionalAttr<SymbolRefAttr>:$defaultFnRef,
     OptionalAttr<StrAttr>:$namedResult,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
@@ -689,7 +686,8 @@ def LIT_ExtensionDeclOp : LITOp<"extension.decl", [
     OptionalAttr<SymbolRefAttr>:$targetStruct,
     // Direct parent traits this extension adds (first level only).
     // Used for extension trait conformance checking.
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
+    DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
+                      "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     // Canonical trait containing flattened hierarchy of all traits this extension adds.
     // Computed during extension signature resolution and used for conformance checking.
     OptionalAttr<TypeAttrOf<LIT_TraitType>>:$canonicalTrait
@@ -748,7 +746,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
+    DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
+                      "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
     // If definesClosure attribute is present,
     // then this is a compiler generated trait
@@ -958,8 +957,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
-    // The trait symbol this function is inherited from. None if self-declared.
-    OptionalAttr<SymbolRefAttr>:$inheritedFrom,
+    // The trait symbol this alias is inherited from. None if self-declared.
+    OptionalAttr<KGEN_TraitSymbolAttr>:$inheritedFrom,
     // Present for defaulted associated alias. This bit should be set before
     // parsing the alias declaration this allow use to probe whether the alias
     // decl is defaulted or not without body resolve it first.

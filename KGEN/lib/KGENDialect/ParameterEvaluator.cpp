@@ -210,8 +210,9 @@ void SymTabEvaluationContext::withEvaluator(
 }
 
 Operation *SymTabEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, StringAttr traitName) {
-  return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl, traitName);
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+  return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl,
+                                              traitSymbol.getFlattenedName());
 }
 
 FuncInterface
