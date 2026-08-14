@@ -1638,7 +1638,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
 
 
 @extensibility.register("mo.composite.rope.ragged")
-struct Struct_rope_ragged_paged[interleaved: Bool]:
+struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
     """Registers the `mo.composite.rope.ragged` graph op with the graph compiler.
 
     Parameters:
@@ -1646,6 +1646,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             components (real, imag, real, imag, ...) as in GGUF, rather
             than splitting them into halves (real, ..., real, imag, ...,
             imag) as in safetensors.
+        rope_first: Whether a partial RoPE rotates the leading columns of
+            each head, leaving the trailing ones to pass through, rather
+            than the other way around.
     """
 
     @always_inline
@@ -1678,6 +1681,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
                         trace_arg("start_pos", start_pos.shape()),
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         "interleaved=" + String(Self.interleaved),
+                        "rope_first=" + String(Self.rope_first),
                         "target=" + String(target),
                     ]
                 )
@@ -1703,6 +1707,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         rope_ragged[
             interleaved=Self.interleaved,
             target=target,
+            rope_first=Self.rope_first,
         ](
             x_tensor,
             row_offsets_tensor,
