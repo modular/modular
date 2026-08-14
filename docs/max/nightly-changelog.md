@@ -327,6 +327,11 @@ This version is still a work in progress.
   shape specialization optimizations even for eager code, beating PyTorch
   performance in eager in the common case.
 
+- `max.experimental.sharding.NamedMapping` takes its mesh from the enclosing
+  `mesh_context()` when none is passed, so a layer can name the axis it shards
+  along without being handed a mesh. Its `original_spec` and
+  `original_unreduced` properties are removed.
+
 - `max.graph.ops.reduce_scatter_rms_norm` takes an optional `group_size`
   argument, matching `max.graph.ops.reducescatter.sum`: the devices split into
   contiguous groups of that many, each reducing independently, so the fused op
