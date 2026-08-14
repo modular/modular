@@ -104,17 +104,18 @@ def _get_partition_bucket[half_sms: Int, i: Int]() -> Int:
     comptime _NUM_PARTITIONS = {
         0: 1,
         1: 2,
-        2: 4,
-        3: 8,
-        4: 9,
-        5: 16,
-        6: 18,
-        7: 20,
-        8: 32,
-        9: 37,
-        10: 64,
-        11: 72,
-        12: half_sms,
+        2: 3,
+        3: 4,
+        4: 8,
+        5: 9,
+        6: 16,
+        7: 18,
+        8: 20,
+        9: 32,
+        10: 37,
+        11: 64,
+        12: 72,
+        13: half_sms,
     }
     comptime _default = _NUM_PARTITIONS.get(len(_NUM_PARTITIONS) - 1, 0)
     comptime res = _NUM_PARTITIONS.get(i, _default)
@@ -130,17 +131,18 @@ def _bucket_num_partitions[half_sms: Int](num_partitions: Int) -> Int:
     comptime _NUM_PARTITIONS = {
         0: 1,
         1: 2,
-        2: 4,
-        3: 8,
-        4: 9,
-        5: 16,
-        6: 18,
-        7: 20,
-        8: 32,
-        9: 37,
-        10: 64,
-        11: 72,
-        12: half_sms,
+        2: 3,
+        3: 4,
+        4: 8,
+        5: 9,
+        6: 16,
+        7: 18,
+        8: 20,
+        9: 32,
+        10: 37,
+        11: 64,
+        12: 72,
+        13: half_sms,
     }
     comptime _default = _NUM_PARTITIONS.get(len(_NUM_PARTITIONS) - 1, 0)
     comptime for kv in _NUM_PARTITIONS.items():
@@ -150,8 +152,32 @@ def _bucket_num_partitions[half_sms: Int](num_partitions: Int) -> Int:
     return _default
 
 
-# Number of bucket entries in the partition table (fixed at 13).
-comptime _NUM_PARTITION_BUCKETS = 13
+# Number of bucket entries in the partition table (fixed at 14).
+comptime _NUM_PARTITION_BUCKETS = 14
+
+
+def _unbucketed_split_error(num_partitions: Int) -> Error:
+    """Builds the error for a split count with no compiled combine kernel.
+
+    Falling through instead would skip the split-K reduction and leave the
+    output at whatever it held, which is indistinguishable from a correct
+    result and faster than one.
+
+    Args:
+        num_partitions: The split count that matched no bucket.
+
+    Returns:
+        The error to raise.
+    """
+    return Error(
+        "MLA decode split-K: num_partitions=",
+        num_partitions,
+        (
+            " has no compiled combine kernel (not in the bucket table), so the"
+            " partial outputs would never be reduced. Route the split count"
+            " through `_bucket_num_partitions` or add the value to the table."
+        ),
+    )
 
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
@@ -207,6 +233,76 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_bf16 import (
 # ------------------------------------------------------------------------------
 
 
+# The part of a CTA's cost that does not scale with the tokens it gathers
+# (prologue, pipeline fill, drain, epilogue), in gathered-token equivalents so
+# that only its ratio to the per-token cost enters the choice below. Fitted;
+# the selected split is insensitive to the exact value.
+comptime _CTA_FIXED_COST_IN_TOKENS = 187
+
+# The model charges a partial wave as a whole one, so a difference below this
+# margin is noise. Splits it cannot tell apart go to the tie-break below
+# rather than the cost.
+comptime _COST_TIE_MARGIN_PERCENT = 2
+
+
+def _cost_optimal_partition_bucket[
+    half_sms: Int
+](
+    ctas_per_partition: Int,
+    split_len: Int,
+    sm_count: Int,
+    max_partitions: Int,
+) -> Int:
+    """Returns the cheapest split count the combine kernel can be launched for.
+
+    Wall time for a decode launch is
+    `ceil(total_ctas / sm_count) * (fixed_cost + work_per_split)`: splitting
+    divides the work per split but multiplies the CTA count, and every extra
+    wave re-pays the fixed cost. Sizing the split to fill one wave models
+    neither term — measured at batch 16, the largest one-wave split is the
+    worst reachable choice — so minimise the product directly over the (small)
+    candidate set.
+
+    The search runs over the partition buckets rather than over every integer
+    because `dispatch_combine` matches `num_partitions` against that set
+    exactly, with no fallback: a count outside it launches the decode and never
+    reduces its partial outputs. Rounding an unconstrained optimum up to the
+    next bucket is not the optimum of the reachable set — at the spec-decode
+    verify shape the unconstrained optimum is 3, which rounds to the value the
+    shipped policy already picks — so the constraint belongs inside the search.
+
+    Parameters:
+        half_sms: sm_count // 2 — the largest bucket value (compile-time).
+
+    Args:
+        ctas_per_partition: CTAs launched per split, i.e. `grid.x * grid.y *
+            batch_size`.
+        split_len: KV tokens each (batch, position) attends before splitting.
+        sm_count: Number of SMs on the target GPU.
+        max_partitions: Largest admissible split count.
+
+    Returns:
+        The cost-minimising number of split-K partitions.
+    """
+    var best_np = 1
+    var best_cost = -1
+    # Ascending, so taking a candidate only when it is materially cheaper keeps
+    # the smallest split among those the model cannot distinguish.
+    comptime for b in range(_NUM_PARTITION_BUCKETS):
+        var np = _get_partition_bucket[half_sms, b]()
+        if np <= max_partitions:
+            var waves = ceildiv(ctas_per_partition * np, sm_count)
+            var cost = waves * (
+                _CTA_FIXED_COST_IN_TOKENS + ceildiv(split_len, np)
+            )
+            if best_cost < 0 or cost * 100 < best_cost * (
+                100 - _COST_TIE_MARGIN_PERCENT
+            ):
+                best_cost = cost
+                best_np = np
+    return best_np
+
+
 def _compute_num_partitions_64[
     num_heads: Int,
     is_fp8_kv: Bool = False,
@@ -223,6 +319,7 @@ def _compute_num_partitions_64[
     split_page_size: Int,
     sm_count: Int,
     relax_split_floor: Bool = False,
+    cost_optimal_split: Bool = False,
 ) -> Int:
     """Wave-aligned split count for single head group (e.g. Kimi K2.5, 64 heads).
 
@@ -248,11 +345,28 @@ def _compute_num_partitions_64[
             q_len=1 sparse FP8 split-K tuning (KERN-3217); the gating predicate
             lives at the dispatch call site. Default False retains the previous
             partition-selection logic (the production floor of 4).
+        cost_optimal_split: When True, choose the split minimising modelled wall
+            time (`_cost_optimal_partition_bucket`) instead of the wave target,
+            page floor and bucket rounding below. Set only for the unfolded
+            sparse spec-decode verify; the gating predicate lives at the
+            dispatch call site, which alone sees whether the launch folds.
 
     Returns:
         The number of split-K partitions.
     """
     var num_kv_cache_pages = ceildiv(effective_max_cache_len, split_page_size)
+
+    if cost_optimal_split:
+        # The gate at the call site fires only for a launch that does not fold
+        # q into the M tile, so grid.y is q_max_seq_len and every q position
+        # costs its own CTA — which is exactly what the shape-keyed fold below
+        # gets wrong for this launch.
+        return _cost_optimal_partition_bucket[half_sms](
+            ceildiv(num_heads, 64) * q_max_seq_len * batch_size,
+            effective_max_cache_len,
+            sm_count,
+            min(half_sms, num_kv_cache_pages),
+        )
 
     # When fold is active (spec decoding with num_heads * q_max_seq_len <= 64),
     # the kernel packs all q_tokens into the M tile of a single CTA, so
@@ -492,6 +606,7 @@ def _compute_num_partitions[
     split_page_size: Int,
     sm_count: Int,
     relax_split_floor: Bool = False,
+    cost_optimal_split: Bool = False,
 ) -> Int:
     """Routing function that dispatches to head-count-specific heuristics.
 
@@ -518,6 +633,9 @@ def _compute_num_partitions[
             lives at the dispatch call site). Default False retains the previous
             partition-selection logic (the production floor); ignored by the
             multi-head-group (128-head) path.
+        cost_optimal_split: Choose the split minimising modelled wall time; see
+            `_compute_num_partitions_64`. Ignored by the multi-head-group
+            (128-head) path.
 
     Returns:
         The number of split-K partitions.
@@ -534,6 +652,7 @@ def _compute_num_partitions[
             split_page_size,
             sm_count,
             relax_split_floor=relax_split_floor,
+            cost_optimal_split=cost_optimal_split,
         )
     else:
         return _compute_num_partitions_128[num_heads, is_fp8_kv, half_sms](
@@ -906,6 +1025,22 @@ def mla_decode_sm100_dispatch[
     var _np_split_len = min(
         effective_split_len, effective_max_cache_len
     ) if _relax_q1_sparse_floor else effective_split_len
+    # Unfolded sparse spec-decode verify, where the shape-keyed fold below
+    # reports a fold that only `fold_shared_index` actually performs, so the
+    # split is sized for a grid `q_max_seq_len` times smaller than the one
+    # launched. Sound here because sparse np comes from the top-k stride
+    # rather than the cache length, so it stays a pure function of the shape
+    # the caller already specialises on; the rest is scope.
+    var _cost_optimal_split = (
+        sparse
+        and _is_fp8_kv
+        and not fold_shared_index
+        and not rope_aware_kv_sparse
+        and q_max_seq_len > 1
+        and q_max_seq_len <= MAX_FOLD_Q
+        and num_heads * q_max_seq_len <= 64
+        and extra_indices_stride == 0
+    )
     var num_partitions = _compute_num_partitions[
         num_heads, _is_fp8_kv, _half_sms, fold_shared_index
     ](
@@ -915,6 +1050,7 @@ def mla_decode_sm100_dispatch[
         split_page_size,
         sm_count,
         relax_split_floor=_relax_q1_sparse_floor,
+        cost_optimal_split=_cost_optimal_split,
     )
 
     if num_partitions_in:
@@ -1237,8 +1373,10 @@ def _mla_decode_sm100_dispatch_impl[
                 matching num_partitions to the correct compile-time bucket.
 
                 Raises:
-                    If the kernel dispatch fails.
+                    If the kernel dispatch fails, or if `num_partitions` is not
+                    a compiled bucket.
                 """
+                var launched = False
                 comptime for _b in range(_NUM_PARTITION_BUCKETS):
                     comptime if _get_partition_bucket[_half_sms, _b]() >= 2:
                         if (
@@ -1248,6 +1386,9 @@ def _mla_decode_sm100_dispatch_impl[
                             launch_combine[
                                 _get_partition_bucket[_half_sms, _b](), wph
                             ]()
+                            launched = True
+                if not launched:
+                    raise _unbucketed_split_error(num_partitions)
 
             @__parameter
             def dispatch_combine_split_parallel() raises:
@@ -1255,8 +1396,10 @@ def _mla_decode_sm100_dispatch_impl[
                 num_partitions to the correct compile-time bucket.
 
                 Raises:
-                    If the kernel dispatch fails.
+                    If the kernel dispatch fails, or if `num_partitions` is not
+                    a compiled bucket.
                 """
+                var launched = False
                 comptime for _b in range(_NUM_PARTITION_BUCKETS):
                     comptime if _get_partition_bucket[_half_sms, _b]() >= 2:
                         if (
@@ -1266,6 +1409,9 @@ def _mla_decode_sm100_dispatch_impl[
                             launch_combine_split_parallel[
                                 _get_partition_bucket[_half_sms, _b]()
                             ]()
+                            launched = True
+                if not launched:
+                    raise _unbucketed_split_error(num_partitions)
 
             # Choose combine strategy based on split count and batch size.
             #

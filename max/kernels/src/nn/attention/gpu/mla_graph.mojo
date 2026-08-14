@@ -393,7 +393,12 @@ def fused_rope_rmsnorm_quantization_kernel[
                 )
 
                 if head_idx < num_q_heads:
-                    rope_q_proj[interleaved=True](
+                    # One `alignment` covers both the load and the store, so it
+                    # must hold for the narrower of the two element types.
+                    rope_q_proj[
+                        interleaved=True,
+                        alignment=align_of[SIMD[out_rope_dtype, q_width]](),
+                    ](
                         q_rope,
                         q_rope_output,
                         Index(global_token_idx, head_idx, head_dim_idx),
@@ -932,6 +937,7 @@ def mla_prefill_branch_fp8[
 @always_inline
 def quantize_and_bmm_fp8_helper[
     dtype: DType,
+    c_dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
     m_scale_granularity: Int,
@@ -939,7 +945,7 @@ def quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, c_dtype, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     b_scales: TileTensor[
@@ -952,7 +958,10 @@ def quantize_and_bmm_fp8_helper[
     This function uses the transposed view of the input tensor `a`.
 
     Parameters:
-        dtype: Data type of the input tensor `a` and output tensor `c`.
+        dtype: Data type of the input tensor `a`.
+        c_dtype: Data type of the output tensor `c`. When this is an FP8 type
+            the matmul epilogue quantizes as it stores, so no separate
+            conversion pass is needed downstream.
         fp8_dtype: Data type of the FP8 quantized tensors.
         fp8_scale_dtype: Data type of the FP8 scale tensors.
         m_scale_granularity: Granularity of the scale for the M dimension of
@@ -1059,6 +1068,8 @@ def mla_decode_branch_fp8[
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
     # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
     fold_shared_index: Bool = False,
+    # Off keeps Q in `dtype`, so the two stagings can be compared.
+    fp8_q: Bool = True,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1133,6 +1144,10 @@ def mla_decode_branch_fp8[
             shared-index fold on the sparse FP8 decode path, which packs the
             folded MTP query positions into one CTA and gathers their single
             shared top-k list once.
+        fp8_q: Whether to stage Q in the FP8 cache dtype where the sparse
+            decode supports it, so the producers below quantize as they store.
+            Off stages Q in `dtype` and routes to the sparse kernel that reads
+            a wider Q.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1204,10 +1219,26 @@ def mla_decode_branch_fp8[
     if seq_len == 0:
         return
 
-    # First, create a input buffer for the mla decode kernel
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
-        seq_len * num_heads * k_cache_dim
+    # Sparse decode over a unit-scale FP8 latent cache on SM100 hands the
+    # kernel an FP8 Q so the dispatch routes to the native-FP8 sparse kernel
+    # (MLA_SM100_Decode_Sparse_QKV_FP8). Both producers below quantize as they
+    # store, so Q is staged in FP8 directly, matching the bf16-weights branch.
+    comptime native_fp8_sparse = (
+        fp8_q
+        and sparse_mla
+        and dtype == DType.bfloat16
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
     )
+    comptime mla_decode_input_dtype = (
+        collection_t.CacheType.dtype if native_fp8_sparse else dtype
+    )
+
+    # First, create a input buffer for the mla decode kernel
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[
+        mla_decode_input_dtype
+    ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
         row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
@@ -1297,86 +1328,32 @@ def mla_decode_branch_fp8[
         row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
     )
 
-    # Sparse decode over a unit-scale FP8 latent cache on SM100 hands the
-    # kernel an FP8 Q so the dispatch routes to the native-FP8 sparse kernel
-    # (MLA_SM100_Decode_Sparse_QKV_FP8). `quantize_and_bmm_fp8_helper` ties
-    # its output dtype to the bf16 input, so the bf16 staging buffer is
-    # converted with a saturating-cast pass instead of staged FP8 directly
-    # (unlike the bf16-weights branch).
-    comptime native_fp8_sparse = (
-        sparse_mla
-        and dtype == DType.bfloat16
-        and collection_t.CacheType.dtype == DType.float8_e4m3fn
-        and not collection_t.CacheType.quantization_enabled
-        and _is_sm10x_gpu(ctx.default_device_info)
+    generic_flare_mla_decode_kv_cache_ragged[
+        target=target,
+        mask_str=mask_str,
+        sparse_mla=sparse_mla,
+        fold_shared_index=fold_shared_index,
+    ](
+        mla_decode_input,
+        input_row_offsets,
+        kv_collection,
+        layer_idx,
+        scale,
+        raw_output,
+        scalar_args_buf,
+        ctx,
+        d_indices=d_indices,
+        indices_stride=indices_stride,
+        topk_lengths=topk_lengths,
+        attn_sink_ptr=attn_sink_ptr,
+        extra_k=extra_k,
+        extra_d_indices=extra_d_indices,
+        extra_indices_stride=extra_indices_stride,
+        extra_topk_lengths=extra_topk_lengths,
+        extra_scales_ptr=extra_scales_ptr,
+        num_partitions_in=num_partitions_in,
+        logical_indices=logical_indices,
     )
-    comptime if native_fp8_sparse:
-        var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
-            seq_len * num_heads * k_cache_dim
-        )
-        var q_fp8 = TileTensor(
-            q_fp8_buf,
-            row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
-        )
-        var mla_decode_input_bf16 = TileTensor(
-            mla_decode_input.ptr.bitcast[Scalar[DType.bfloat16]](),
-            row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
-        )
-        convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
-
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-            sparse_mla=sparse_mla,
-            fold_shared_index=fold_shared_index,
-        ](
-            q_fp8,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output,
-            scalar_args_buf,
-            ctx,
-            d_indices=d_indices,
-            indices_stride=indices_stride,
-            topk_lengths=topk_lengths,
-            attn_sink_ptr=attn_sink_ptr,
-            extra_k=extra_k,
-            extra_d_indices=extra_d_indices,
-            extra_indices_stride=extra_indices_stride,
-            extra_topk_lengths=extra_topk_lengths,
-            extra_scales_ptr=extra_scales_ptr,
-            num_partitions_in=num_partitions_in,
-            logical_indices=logical_indices,
-        )
-    else:
-        generic_flare_mla_decode_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-            sparse_mla=sparse_mla,
-            fold_shared_index=fold_shared_index,
-        ](
-            mla_decode_input,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            scale,
-            raw_output,
-            scalar_args_buf,
-            ctx,
-            d_indices=d_indices,
-            indices_stride=indices_stride,
-            topk_lengths=topk_lengths,
-            attn_sink_ptr=attn_sink_ptr,
-            extra_k=extra_k,
-            extra_d_indices=extra_d_indices,
-            extra_indices_stride=extra_indices_stride,
-            extra_topk_lengths=extra_topk_lengths,
-            extra_scales_ptr=extra_scales_ptr,
-            num_partitions_in=num_partitions_in,
-            logical_indices=logical_indices,
-        )
 
     # Create a view of the output tensor with logical shape
     # [num_heads, seq_len, v_head_dim], and map directly to
@@ -1717,6 +1694,9 @@ def mla_prefill_decode_graph_fp8[
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
     # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
     fold_shared_index: Bool = False,
+    # Stage Q in the FP8 cache dtype where the sparse decode supports it; see
+    # `mla_decode_branch_fp8`.
+    fp8_q: Bool = True,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1793,6 +1773,8 @@ def mla_prefill_decode_graph_fp8[
             (defaults to 0).
         fold_shared_index: Whether to use the read-once shared-index MTP
             fold threaded to `flare_mla_decoding` (defaults to False).
+        fp8_q: Whether to stage Q in the FP8 cache dtype on the sparse decode
+            path (defaults to True); see `mla_decode_branch_fp8`.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1868,6 +1850,7 @@ def mla_prefill_decode_graph_fp8[
             target=target,
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
+            fp8_q=fp8_q,
         ](
             output,
             q,
