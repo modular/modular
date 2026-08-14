@@ -469,6 +469,29 @@ def test_closure_capture_struct_reflection() raises:
     assert_equal(reflect[s_type].field_count(), 2)
 
 
+def test_imm_capture_field_type_name() raises:
+    """`{imm}`/`{mut}` capture fields are refs; `name()` prints the pointee."""
+    var a: Int = 0
+    var b: Int = 1
+    var s = String("x")
+
+    def closure() {imm a, imm b, mut s}:
+        _ = a
+        _ = b
+        s += "!"
+
+    closure()
+
+    comptime captures = reflect[type_of(closure)]
+    assert_equal(captures.field_count(), 3)
+    comptime a_type = captures.field_types()[0]
+    assert_false(reflect[a_type].is_struct())
+    assert_equal(reflect[a_type].name(), "ref[SIMD[DType.int, 1]]")
+    comptime s_type = captures.field_types()[2]
+    assert_false(reflect[s_type].is_struct())
+    assert_equal(reflect[s_type].name(), "ref[String]")
+
+
 def test_nested_closure_capture_reflection() raises:
     """A closure captured by another closure is reflectable as a struct."""
     var x = UInt32(1)
