@@ -887,6 +887,28 @@ struct _BufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
         )
 
 
+@fieldwise_init
+struct _InPlaceBufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A mutable graph input recorded at the caller's live address.
+
+    Models a buffer the graph writes in place (a KV cache): `allocate_stable`
+    registers an in-place marker and returns an alias of the caller's buffer,
+    and the buffer's address joins the cache key so a moved buffer forces a
+    rebuild instead of replaying stale addresses.
+    """
+
+    var buf: DeviceBuffer[DType.uint8]
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(
+            t"InPlaceBufferInput({len(self.buf)}, {Int(self.buf.unsafe_ptr())})"
+        )
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        builder.register_in_place_input()
+        return Self(copy=self)
+
+
 def test_add_input(ctx: DeviceContext) raises:
     print("Test add_input gives the graph a stable location to record against.")
     comptime length = 64
@@ -916,6 +938,53 @@ def test_add_input(ctx: DeviceContext) raises:
 
     for i in range(length):
         assert_equal(host_dst[i], UInt8(0x7E))
+
+
+def test_add_in_place_input(ctx: DeviceContext) raises:
+    print("Test in-place inputs alias the caller's buffer with no stable twin.")
+    comptime length = 64
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    var caller_buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    with caller_buf.map_to_host() as host_view:
+        for i in range(length):
+            host_view[i] = 0x7E
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        assert_equal(builder.num_inputs(), 0)
+        var in_place = builder.add_input(_InPlaceBufferInput(caller_buf.copy()))
+        # The marker occupies an input position like a stable buffer would,
+        # keeping the positional pairing with execute operands intact.
+        assert_equal(builder.num_inputs(), 1)
+
+        # The returned handle aliases the caller's buffer: the graph records
+        # the live address rather than a graph-private twin.
+        assert_true(in_place.buf.unsafe_ptr() == caller_buf.unsafe_ptr())
+
+        _ = builder.add_copy(host_dst, in_place.buf)
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x7E))
+
+    # Mutate the caller's buffer and replay: the graph reads through the live
+    # address, so the readback must see the new contents (a private snapshot
+    # would keep returning the old pattern).
+    with caller_buf.map_to_host() as host_view:
+        for i in range(length):
+            host_view[i] = 0x3C
+
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x3C))
 
 
 def test_cache_key_separates_inputs() raises:
@@ -1083,3 +1152,4 @@ def main() raises:
         test_cache_lookup_and_add(ctx)
         test_cache_key_separates_inputs()
         test_add_input(ctx)
+        test_add_in_place_input(ctx)

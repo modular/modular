@@ -284,11 +284,21 @@ trait DeviceGraphInput(ImplicitlyCopyable):
         storage: doing so pins the caller's memory for as long as the graph
         lives, which is exactly the coupling a stable location exists to remove.
 
+        A *mutable* input the graph writes in place (a KV cache, for example)
+        must instead call
+        [`DeviceGraphBuilder.register_in_place_input()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#register_in_place_input)
+        and return a value aliasing `self`: a private stable copy would
+        silently discard the graph's writes. Such an implementation must
+        include the input's address in `write_graph_key`, so a moved buffer
+        misses the cache and forces a rebuild instead of replaying stale
+        addresses.
+
         Args:
             builder: The builder for the graph under construction.
 
         Returns:
-            A value of the same type backed by the graph's memory pool.
+            A value of the same type backed by the graph's memory pool, or —
+            for a mutable in-place input — a value aliasing `self`.
 
         Raises:
             If allocating from the graph's memory pool fails.
@@ -1685,7 +1695,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """Returns the number of stable inputs registered on the device graph.
 
         Returns:
-            The number of inputs added via `add_input`.
+            The number of inputs added via `add_input`, including in-place
+            markers registered via `register_in_place_input`.
         """
         # int64_t AsyncRT_DeviceGraphBuilder_numInputs(
         #     DeviceGraphBuilder *builder)
@@ -1696,6 +1707,25 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
                 _DeviceGraphBuilderPtr[mut=True],
             ](self._handle)
         )
+
+    def register_in_place_input(mut self):
+        """Registers an in-place input marker at the current input position.
+
+        Used by `DeviceGraphInput.allocate_stable` implementations for mutable
+        inputs the graph writes in place (a KV cache, for example): the graph
+        records the caller's live address directly and replay must not copy
+        into that position, so no stable twin is allocated. Such an input must
+        contribute its address to the graph cache key, so a moved buffer
+        forces a rebuild instead of replaying stale addresses.
+
+        Like `add_input`, markers must be registered in graph-signature order.
+        """
+        # void AsyncRT_DeviceGraphBuilder_addInPlaceInput(
+        #     DeviceGraphBuilder *builder)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addInPlaceInput",
+            NoneType,
+        ](self._handle)
 
     @doc_hidden
     def instantiate(var self) raises -> DeviceGraph:
