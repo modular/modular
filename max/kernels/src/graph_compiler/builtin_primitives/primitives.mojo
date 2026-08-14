@@ -235,16 +235,19 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
     def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
         # An `mgp.buffer` graph input is a mutable buffer the graph writes in
         # place (a KV cache, say), so giving it a private stable location would
-        # silently discard those writes. Such inputs must instead contribute
-        # their address to the cache key, so a moved buffer forces a rebuild.
+        # silently discard those writes.
         #
-        # Reaching here means lowering routed a buffer through `add_input`,
-        # which it must not do until mutability survives synthesis and the two
-        # cases can be told apart.
-        abort("device graph inputs of buffer type are not supported yet")
+        # Mutability now survives lowering: `!mo.buffer` lowers to a
+        # mut-marked `!mgp.tensor`, and `OwnedTensor[.., mut=True]` handles
+        # the in-place registration (`register_in_place_input` +
+        # address-in-key). A raw `!mgp.buffer` reaching `add_input` therefore
+        # indicates a lowering bug, not a missing feature; if a legitimate
+        # buffer-typed graph input ever appears, implement it the same way
+        # the mutable OwnedTensor path does.
+        abort("device graph inputs of buffer type indicate a lowering bug")
 
 
-struct OwnedTensor[dtype: DType, rank: Int](
+struct OwnedTensor[dtype: DType, rank: Int, mut: Bool = False](
     DeviceGraphInput, ImplicitlyCopyable, Movable
 ):
     """Owning composite for an `mgp.tensor` value: a non-owning `DynamicTensor`
@@ -254,6 +257,14 @@ struct OwnedTensor[dtype: DType, rank: Int](
     The tensor-typed analogue of `OwnedByteBuffer`. Copying shares the backing
     memory (retains the storage); at the pack site the storage is surrendered
     net-zero into a real tensor `TensorBufferRef`.
+
+    Parameters:
+        dtype: The element dtype of the tensor view.
+        rank: The rank of the tensor view.
+        mut: Whether the tensor is mutable (the lowered form of `!mo.buffer`,
+            e.g. a KV cache the model writes in place). A mutable tensor used
+            as a device-graph input must not be copied to a graph-private
+            stable location; its address joins the graph cache key instead.
     """
 
     var tensor: DynamicTensor[Self.dtype, Self.rank]
@@ -345,27 +356,57 @@ struct OwnedTensor[dtype: DType, rank: Int](
         return AnyAsyncValueRef(handle)
 
     def write_graph_key(self, mut writer: Some[Writer]):
-        writer.write(t"Tensor({self.dtype}, {self.shape()})")
+        comptime if Self.mut:
+            # A mutable input is recorded at its live address (no stable twin),
+            # so the address is part of what distinguishes graphs: a moved
+            # buffer must miss the cache and rebuild rather than replay stale
+            # addresses.
+            writer.write(
+                t"MutTensor({self.dtype}, {self.shape()}, "
+                t"{Int(self.unsafe_ptr())})"
+            )
+        else:
+            writer.write(t"Tensor({self.dtype}, {self.shape()})")
 
     def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
-        var shape = self.shape()
+        comptime if Self.mut:
+            # A mutable tensor (the lowered form of !mo.buffer, e.g. a KV
+            # cache) is written in place by the graph: a graph-private stable
+            # copy would silently discard those writes. Register an in-place
+            # marker so the replay copy skips this position, and record
+            # against the caller's live buffer. `write_graph_key` puts the
+            # address in the cache key, which is what makes replaying the
+            # recorded address sound.
+            #
+            # This is not the storage-pinning trap the immutable path's
+            # comment warns about: the returned copy retains `self.storage`
+            # only for the build closure's lifetime -- the graph itself
+            # retains nothing. Address stability across replays is the
+            # buffer owner's property (e.g. the KV manager's block pool),
+            # policed by address-in-key.
+            builder.register_in_place_input()
+            return self
+        else:
+            var shape = self.shape()
 
-        # Device memory: a graph input is read by recorded kernels, so it lives
-        # where they run. The op verifiers reject host-placed inputs, so this
-        # cannot silently mismatch the input's declared placement.
-        # TODO(GEX-4051): take the placement from the input once a host/device
-        # flag reaches here.
-        var buffer = builder.create_input_buffer[Self.dtype](
-            shape.flattened_length(), is_host=False
-        )
+            # Device memory: a graph input is read by recorded kernels, so it
+            # lives where they run. The op verifiers reject host-placed
+            # inputs, so this cannot silently mismatch the input's declared
+            # placement.
+            # TODO(GEX-4051): take the placement from the input once a
+            # host/device flag reaches here.
+            var buffer = builder.create_input_buffer[Self.dtype](
+                shape.flattened_length(), is_host=False
+            )
 
-        var view = DynamicTensor[Self.dtype, Self.rank](
-            buffer.unsafe_ptr(), shape
-        )
+            var view = DynamicTensor[Self.dtype, Self.rank](
+                buffer.unsafe_ptr(), shape
+            )
 
-        # Storage is the pool buffer, never `self.storage` -- retaining the
-        # caller's handle would pin its memory for the graph's lifetime.
-        return Self(view, AnyAsyncValueRef(storage_buf=buffer^))
+            # Storage is the pool buffer, never `self.storage` -- retaining
+            # the caller's handle would pin its memory for the graph's
+            # lifetime.
+            return Self(view, AnyAsyncValueRef(storage_buf=buffer^))
 
 
 @no_inline
@@ -437,8 +478,9 @@ def unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
     dtype: DType,
+    mut: Bool = False,
 ](tensor_async_ptr: OpaquePointer[MutAnyOrigin]) -> OwnedTensor[
-    dtype, buffer_rank
+    dtype, buffer_rank, mut
 ]:
     # Tensor and the underlying buffer must have the same rank, unless it is a
     # scalar tensor stored with a DynamicTensor<[1]>
@@ -462,9 +504,7 @@ def unpack_tensor[
     )
     # Retain the backing storage of the source async value so this composite
     # keeps the memory alive if it (or a derivative) is re-packed as an output.
-    return OwnedTensor[dtype, buffer_rank](
-        view, AnyAsyncValueRef(retained_storage_of=tensor_async_ptr)
-    )
+    return {view, AnyAsyncValueRef(retained_storage_of=tensor_async_ptr)}
 
 
 @no_inline
@@ -502,11 +542,12 @@ def mgp_tensor_create[
     spec_rank: Int,
     buffer_rank: Int,
     dtype: DType,
+    mut: Bool = False,
 ](
     buffer: OwnedByteBuffer,
     spec: IndexList[spec_rank],
 ) -> OwnedTensor[
-    dtype, buffer_rank
+    dtype, buffer_rank, mut
 ]:
     # The tensor shares the buffer's backing memory, so it retains the buffer's
     # storage handle (copy) to keep it alive independently.
@@ -518,14 +559,14 @@ def mgp_tensor_create[
             buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
-        return OwnedTensor[dtype, buffer_rank](view, storage^)
+        return {view, storage^}
     else:
         comptime assert spec_rank == buffer_rank
         var view = DynamicTensor[dtype, buffer_rank](
             buffer.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](),
             rebind[IndexList[buffer_rank]](spec),
         )
-        return OwnedTensor[dtype, buffer_rank](view, storage^)
+        return {view, storage^}
 
 
 @register_internal("mgp.tensor.extract.tensor_spec")
@@ -534,7 +575,7 @@ def mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     dtype: DType,
-](tensor: OwnedTensor[dtype, buffer_rank]) -> IndexList[tensor_rank]:
+](tensor: OwnedTensor[dtype, buffer_rank, _]) -> IndexList[tensor_rank]:
     comptime if tensor_rank == 0:
         comptime assert buffer_rank == 1
         return rebind[IndexList[tensor_rank]](IndexList[0]())
@@ -548,7 +589,7 @@ def mgp_tensor_extract_tensor_spec[
 def mgp_tensor_extract_buffer[
     buffer_rank: Int,
     dtype: DType,
-](tensor: OwnedTensor[dtype, buffer_rank]) -> OwnedByteBuffer:
+](tensor: OwnedTensor[dtype, buffer_rank, _]) -> OwnedByteBuffer:
     # Unwrap the tensor into a size-less buffer view, retaining the tensor's
     # storage so the buffer keeps the backing memory alive independently.
     var view = MutByteBuffer(
@@ -564,11 +605,11 @@ def mgp_tensor_slice[
     rank: Int,
     dtype: DType,
 ](
-    input: OwnedTensor[dtype, rank],
+    input: OwnedTensor[dtype, rank, _],
     output_spec: IndexList[rank],
-    start: OwnedTensor[DType.int64, 1],
+    start: OwnedTensor[DType.int64, 1, _],
     dev_context: DeviceContext,
-) raises -> OwnedTensor[dtype, rank]:
+) raises -> OwnedTensor[dtype, rank, input.mut]:
     var input_shape = input.shape()
 
     # Find k: the first non-size-1 input dimension (the sliced dimension).
@@ -620,7 +661,7 @@ def mgp_tensor_slice[
     var view = DynamicTensor[dtype, rank](
         slice_bytes.unsafe_ptr().unsafe_bitcast[Scalar[dtype]](), output_spec
     )
-    return OwnedTensor[dtype, rank](view, slice_bytes.take_storage())
+    return {view, slice_bytes.take_storage()}
 
 
 # ===-----------------------------------------------------------------------===#
