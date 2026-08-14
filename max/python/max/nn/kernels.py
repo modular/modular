@@ -2301,9 +2301,16 @@ def rope_ragged(
     freqs_cis: TensorValue,
     *,
     interleaved: bool = True,
+    rope_first: bool = False,
     output_dtype: DType | None = None,
 ) -> TensorValue:
-    """Applies RoPE to ragged input using the standard rope kernel."""
+    """Applies RoPE to ragged input using the standard rope kernel.
+
+    When ``freqs_cis`` is narrower than ``input``'s head dimension, only that
+    many columns of each head are rotated and the rest pass through. Those
+    rotated columns are the trailing ones by default; set ``rope_first`` to
+    rotate the leading ones instead.
+    """
     _check_dtype(
         DType.uint32, input_row_offsets=input_row_offsets, start_pos=start_pos
     )
@@ -2335,6 +2342,7 @@ def rope_ragged(
         start_pos=start_pos,
         freqs_cis=freqs_cis,
         interleaved=builtin.BoolAttr(interleaved),
+        rope_first=builtin.BoolAttr(rope_first),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
