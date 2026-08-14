@@ -9075,6 +9075,60 @@ def topk_fused_sampling_with_dist(
     return results[0].tensor, results[1].tensor
 
 
+def topk_topp_masked_probs(
+    logits: TensorValue,
+    *,
+    top_k: TensorValue,
+    temperature: TensorValue,
+    top_p: TensorValue,
+) -> TensorValue:
+    """Computes each row's top-k/top-p masked softmax, without sampling.
+
+    A token survives the joint constraint iff
+    ``e_i = exp((logit_i - row_max) / temperature)`` exceeds the row's
+    cutoff, with masked probability ``e_i / kept_mass``; everything else is
+    zero. Each output row is that masked renormalized distribution -- the
+    same form :func:`topk_fused_sampling_with_dist` emits for the draft, so
+    speculative verification reads target probabilities and builds its
+    rejection residual from this one tensor with no in-graph rebuild.
+
+    GPU-only, with the same top-k sentinel and tie handling as
+    :func:`topk_fused_sampling_with_dist`.
+
+    Args:
+        logits: Raw logits ``[rows, vocab_size]``.
+        top_k: Per-row top-k ``[rows]``, int64.
+        temperature: Per-row temperature ``[rows]``, float32.
+        top_p: Per-row nucleus threshold ``[rows]``, float32.
+
+    Returns:
+        The masked distribution, float32 ``[rows, vocab_size]``.
+
+    Raises:
+        ValueError: If the logits are not rank-2 on GPU.
+    """
+    if logits.rank != 2:
+        raise ValueError(
+            f"topk_topp_masked_probs requires rank-2 logits, got {logits.rank}"
+        )
+    if logits.device == DeviceRef.CPU():
+        raise ValueError("topk_topp_masked_probs is GPU-only")
+
+    device = logits.device
+    return ops.custom(
+        "sampler.topk_topp_masked_probs",
+        device=device,
+        values=[top_k, temperature, top_p, logits],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=logits.shape,
+                device=device,
+            ),
+        ],
+    )[0].tensor
+
+
 def sgmv_kernel(  # noqa: ANN201
     input: TensorValue,
     lora: TensorValue,

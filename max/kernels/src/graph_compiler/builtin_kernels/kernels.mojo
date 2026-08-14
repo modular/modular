@@ -102,7 +102,7 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
-from nn.topk_fi import topk_topp_sampling_from_prob
+from nn.topk_fi import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
@@ -2626,6 +2626,50 @@ struct Struct_fused_token_sampling_with_dist:
             out_dist=out_dist.to_tile_tensor[
                 DType.int64
             ]().as_unsafe_any_origin(),
+        )
+
+
+@extensibility.register("sampler.topk_topp_masked_probs")
+struct Struct_topk_topp_masked_probs:
+    """Registers the `sampler.topk_topp_masked_probs` graph op.
+
+    Writes each row's top-k/top-p masked renormalized softmax, without
+    sampling. Speculative decoding verification reads the target's masked
+    probabilities and builds its rejection residual straight from this
+    tensor, so nothing is sorted and no distribution is rebuilt in-graph.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        probs: OutputTensor[dtype=DType.float32, rank=2, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.topk_topp_masked_probs is GPU-only"
+        topk_topp_masked_probs(
+            ctx,
+            input.to_tile_tensor[DType.int64](),
+            probs.to_tile_tensor[DType.int64]().as_unsafe_any_origin(),
+            top_k_val=-1,
+            top_k_arr=K.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            top_p_arr=top_p.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+            temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
         )
 
 
