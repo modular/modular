@@ -45,6 +45,7 @@ NON_XL = (set(RUNNERS) - XL) | {"8xB200_internal"}
 DISABLE = set(RUNNERS)
 # Runs only on the dedicated internal 8xB200 runner; everything else excluded.
 INTERNAL_ONLY = set(RUNNERS) - {"8xB200_internal"}
+B200_2X_ONLY = set(RUNNERS) - {"2xB200"}
 # The AMD members of XL. A B200-only model excludes the whole set rather than
 # naming one runner, so adding the next AMD runner is a change here and not a
 # sweep over every entry that forgot to mention it.
@@ -111,6 +112,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | AMD_XL | {"max"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL | {"8xMI355"},
     "openai/gpt-oss-20b": XL | {"2xMI355"},
+    "thinkingmachines/Inkling-Small-NVFP4": B200_2X_ONLY,
 }
 
 # Models tested with custom MAX recipe presets. MODEL_RECIPES in

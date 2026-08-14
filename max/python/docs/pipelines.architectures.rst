@@ -39,6 +39,7 @@ family.
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
    pipelines.architectures.ideogram4
+   pipelines.architectures.inkling
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
    pipelines.architectures.laguna
@@ -99,6 +100,7 @@ Text generation
    ~max.pipelines.architectures.granite
    ~max.pipelines.architectures.hy_v3
    ~max.pipelines.architectures.idefics3
+   ~max.pipelines.architectures.inkling
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
    ~max.pipelines.architectures.laguna

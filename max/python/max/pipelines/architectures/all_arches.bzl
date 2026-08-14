@@ -36,6 +36,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/idefics3",
     "//max/python/max/pipelines/architectures/idefics3_modulev3",
     "//max/python/max/pipelines/architectures/ideogram4",
+    "//max/python/max/pipelines/architectures/inkling",
     "//max/python/max/pipelines/architectures/internvl",
     "//max/python/max/pipelines/architectures/kimik2_5",
     "//max/python/max/pipelines/architectures/kimik2_5_modulev3",
