@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .mesh import DeviceMesh
+from .mesh import DeviceMesh, get_active_mesh
 from .placements import (
     Partial,
     Placement,
@@ -108,38 +108,40 @@ class NamedMapping(DeviceMapping):
     a regular :class:`DeviceMapping`; the spec is forgotten.
 
     Args:
-        mesh: The target device mesh.
+        mesh: The target device mesh, or :obj:`None` to take the one published
+            by :func:`~max.experimental.sharding.mesh_context`.
         spec: One entry per tensor dimension.
         unreduced: Mesh axes carrying pending reductions.
+
+    Raises:
+        ValueError: If ``mesh`` is :obj:`None` and no
+            :func:`~max.experimental.sharding.mesh_context` is active, leaving
+            the spec with nothing to resolve against.
     """
+
+    # Kept so :meth:`_resolve` can rebind the spec against another mesh.
+    _original_spec: tuple[SpecEntry, ...]
+    _original_unreduced: tuple[str, ...]
 
     def __init__(
         self,
-        mesh: DeviceMesh,
+        mesh: DeviceMesh | None = None,
         spec: tuple[SpecEntry, ...] = (),
         *,
         unreduced: Iterable[str] = (),
     ) -> None:
+        if mesh is None:
+            if (mesh := get_active_mesh()) is None:
+                raise ValueError(
+                    "NamedMapping needs a mesh to resolve its spec against: "
+                    "pass one, or construct inside a mesh_context()."
+                )
         unreduced_t = tuple(unreduced)
         placements = _spec_to_placements(mesh, spec, unreduced_t)
         object.__setattr__(self, "mesh", mesh)
         object.__setattr__(self, "placements", placements)
         object.__setattr__(self, "_original_spec", tuple(spec))
         object.__setattr__(self, "_original_unreduced", unreduced_t)
-
-    @property
-    def original_spec(self) -> tuple[SpecEntry, ...]:
-        """Returns the caller-supplied spec before mesh resolution.
-
-        Preserved so :meth:`_resolve` can rebind this mapping against
-        another mesh.
-        """
-        return self._original_spec  # type: ignore[attr-defined]
-
-    @property
-    def original_unreduced(self) -> tuple[str, ...]:
-        """The caller-supplied unreduced axes, preserved for re-resolution."""
-        return self._original_unreduced  # type: ignore[attr-defined]
 
     def _resolve(self, mesh: DeviceMesh) -> NamedMapping:
         """Rebinds this mapping's original spec against ``mesh``.
@@ -151,7 +153,7 @@ class NamedMapping(DeviceMapping):
         target mesh.
         """
         return NamedMapping(
-            mesh, self.original_spec, unreduced=self.original_unreduced
+            mesh, self._original_spec, unreduced=self._original_unreduced
         )
 
     def __repr__(self) -> str:

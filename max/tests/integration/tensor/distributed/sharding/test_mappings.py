@@ -35,6 +35,7 @@ from max.experimental.sharding import (
     PlacementMapping,
     Replicated,
     Sharded,
+    mesh_context,
 )
 from max.experimental.sharding.mappings import is_fully_replicated
 
@@ -260,3 +261,45 @@ class TestNamedMappingRepr:
 class TestConversionError:
     def test_is_exception(self) -> None:
         assert issubclass(ConversionError, Exception)
+
+
+class TestActiveMesh:
+    """``NamedMapping`` takes its mesh from ``mesh_context`` when given none.
+
+    This is what lets a spec be written once, where the layer is defined, and
+    resolved against whatever mesh the caller publishes -- so placement is a
+    property of the enclosing context rather than a constructor argument
+    threaded through every layer.
+    """
+
+    def test_takes_the_active_mesh(self) -> None:
+        mesh = mesh_1d(4)
+        with mesh_context(mesh):
+            mapping = NamedMapping(spec=("tp",))
+        assert mapping.mesh is mesh
+        assert mapping.placements == (Sharded(0),)
+
+    def test_explicit_mesh_wins(self) -> None:
+        with mesh_context(mesh_1d(4)):
+            mapping = NamedMapping(mesh_1d(2), ("tp",))
+        assert mapping.mesh.num_devices == 2
+
+    def test_same_spec_resolves_against_each_context(self) -> None:
+        spec = ("tp", None)
+        with mesh_context(mesh_1d(2)):
+            two = NamedMapping(spec=spec)
+        with mesh_context(mesh_1d(8)):
+            eight = NamedMapping(spec=spec)
+        assert two.mesh.num_devices == 2
+        assert eight.mesh.num_devices == 8
+        assert two.placements == eight.placements == (Sharded(0),)
+
+    def test_an_axis_the_context_mesh_lacks_replicates(self) -> None:
+        """The degradation that makes one source run on any topology."""
+        with mesh_context(mesh_1d(4, name="other")):
+            mapping = NamedMapping(spec=("tp", None))
+        assert mapping.placements == (Replicated(),)
+
+    def test_no_mesh_and_no_context_raises(self) -> None:
+        with pytest.raises(ValueError, match="needs a mesh"):
+            NamedMapping(spec=("tp",))
