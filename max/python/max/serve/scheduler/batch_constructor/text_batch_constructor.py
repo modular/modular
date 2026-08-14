@@ -23,7 +23,10 @@ from enum import Enum
 
 from max.pipelines.context import TextGenerationOutput
 from max.pipelines.context.context import TextContext
-from max.pipelines.kv_cache import InsufficientBlocksError, PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    InsufficientBlocksError,
+    PagedKVCacheManagerInterface,
+)
 from max.pipelines.kv_cache.kv_connector import KVConnectorTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
@@ -457,7 +460,7 @@ class TextBatchConstructor:
         pipeline: Pipeline[
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
         get_inflight_kv_transfer_count: Callable[[int], int] | None = None,

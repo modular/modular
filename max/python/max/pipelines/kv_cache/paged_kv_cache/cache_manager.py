@@ -59,6 +59,7 @@ from .block_manager import (
     _compute_seq_len,
     compute_block_hashes,
 )
+from .cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
@@ -72,6 +73,22 @@ KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 #: a multiple of 8 so the inner-dim stride stays 32-byte aligned for the
 #: ``ld.global.v{N}.u32`` vector loads.
 _LUT_TAIL_PAD = 16
+
+
+def _does_req_need_more_blocks(
+    ctx: TextContext,
+    num_blocks_allocated: int,
+    params: KVCacheParamInterface,
+    max_num_input_tokens: int | None = None,
+) -> bool:
+    """Determines if a request needs additional blocks."""
+    seq_len = _compute_seq_len(
+        ctx,
+        params.num_draft_tokens,
+        params.num_draft_tokens_per_step,
+        max_num_input_tokens,
+    )
+    return seq_len > num_blocks_allocated * params.page_size
 
 
 def prompt_tokens_for_context(ctx: TextContext) -> int:
@@ -200,7 +217,7 @@ class _ReplicaMetadata:
     """Devices for the replica."""
 
 
-class PagedKVCacheManager:
+class PagedKVCacheManager(PagedKVCacheManagerInterface):
     """Paged KVCache manager with data and tensor parallelism support.
 
     .. code-block:: python
@@ -442,17 +459,6 @@ class PagedKVCacheManager:
         )
         return load_event
 
-    def _does_req_need_more_blocks(self, ctx: TextContext) -> bool:
-        """Determines if a request needs additional blocks."""
-        block_manager = self._block_manager
-        seq_len = _compute_seq_len(
-            ctx,
-            self.params.num_draft_tokens,
-            self.params.num_draft_tokens_per_step,
-        )
-        num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
-        return seq_len > num_blocks * self.params.page_size
-
     @traced
     def _compute_kv_cache_assignments(
         self,
@@ -489,7 +495,11 @@ class PagedKVCacheManager:
         max_seq_len = 0
         for ctx in batch:
             # Allocate blocks for request if we need more.
-            if self._does_req_need_more_blocks(ctx):
+            if _does_req_need_more_blocks(
+                ctx,
+                len(self.get_req_blocks(ctx)),
+                self.params,
+            ):
                 raise ValueError(
                     f"Called runtime_inputs with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
                 )
@@ -846,3 +856,8 @@ class PagedKVCacheManager:
         :attr:`KVCacheBufferInterface.all_buffers`.
         """
         return self._kv_buffers[replica_idx]
+
+    @property
+    def effective_max_seq_length(self) -> int | None:
+        """Returns the effective maximum sequence length that can be served by the block manager."""
+        return self._total_num_pages * self.params.page_size

@@ -35,7 +35,10 @@ from max.pipelines.context import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
+)
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.modeling.types import (
     BatchType,
@@ -266,7 +269,7 @@ class FakeTokenGeneratorPipeline(
 ):
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 42,
         num_speculative_tokens: int = 0,
@@ -363,7 +366,7 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
 
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 99,  # test sentinel; no semantic meaning
         num_speculative_tokens: int = 0,
@@ -637,6 +640,10 @@ def run_until_completion(
         ):
             for onloading in list(batch_constructor._onloading_reqs.values()):
                 onloading.event.synchronize()
+            # KVConnector pending-transfer bookkeeping is legacy-manager-only
+            # (Jenga doesn't support KVConnector), so narrow before reaching
+            # into internals this helper's synchronization actually needs.
+            assert isinstance(kv_cache, PagedKVCacheManager)
             for pending_list in kv_cache._block_manager._pending_transfers:
                 for pending in list(pending_list):
                     pending.event.synchronize()

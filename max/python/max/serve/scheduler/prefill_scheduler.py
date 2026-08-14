@@ -22,7 +22,7 @@ from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
 )
 from max.pipelines.lib import (
@@ -78,7 +78,7 @@ class PrefillScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
         self.pipeline = pipeline

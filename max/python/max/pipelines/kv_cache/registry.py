@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
 )
 
 from .paged_kv_cache import PagedKVCacheManager
+from .paged_kv_cache.cache_manager_interface import PagedKVCacheManagerInterface
 
 logger = logging.getLogger("max.pipelines")
 
@@ -37,7 +38,7 @@ def _load_single_kv_manager(
     total_num_host_pages: int,
     session: InferenceSession,
     max_batch_size: int,
-) -> PagedKVCacheManager:
+) -> PagedKVCacheManagerInterface:
     # In compile-only mode (virtual device mode), use the null KV manager
     # to avoid GPU memory allocation
     if is_virtual_device_mode():
@@ -67,12 +68,12 @@ def load_kv_manager(
     max_seq_len: int,
     session: InferenceSession,
     available_cache_memory: int | None,
-) -> PagedKVCacheManager:
+) -> PagedKVCacheManagerInterface:
     """Loads a KV cache manager from the given params.
 
     Accepts both ``KVCacheParams`` (single cache) and ``MultiKVCacheParams``
-    (multiple caches).  The returned ``PagedKVCacheManager`` natively handles
-    all caches with a single ``BlockManager`` and ``KVConnector``.
+    (multiple caches).  The returned manager natively handles all caches
+    with a single ``BlockManager`` and ``KVConnector``.
     """
     if isinstance(params, MagicMock):
         return MagicMock()
