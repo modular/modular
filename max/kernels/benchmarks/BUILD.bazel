@@ -620,6 +620,37 @@ _FA4_WS_DEPS = [
     ]
 ]
 
+# MiniMax-M3 dense-attention decode cell on MI355: 64 q heads and 4 kv heads
+# over TP4 give num_heads=16 / group=16, depth 128, fp8_e4m3 KV, bf16 out.
+# `num_partitions` stays a runtime arg so one binary sweeps the split-K ladder.
+mojo_test(
+    name = "gpu/nn/bench_mha.mojo.run_m3_dense_fp8_amd",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_mha.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "qkv_type=DType.float8_e4m3fn",
+        "-D",
+        "mask_type=DType.bfloat16",
+        "-D",
+        "depth=128",
+        "-D",
+        "num_heads=16",
+        "-D",
+        "group=16",
+    ],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "64",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = _FA4_WS_DEPS,
+)
+
 # Just for mentioning unreferenced files
 filegroup(
     name = "yaml_files",
