@@ -636,12 +636,20 @@ class KVCacheParamInterface(Protocol):
     def num_draft_tokens_per_step(self) -> int:
         """Number of draft tokens written per draft forward.
 
-        One for autoregressive drafts (``eagle``, ``mtp``);
-        equal to ``num_draft_tokens`` for block drafts (``dflash``).
+        Zero when speculative decoding is disabled; one for autoregressive
+        drafts (``eagle``, ``mtp``); equal to ``num_draft_tokens`` for block
+        drafts (``dflash``).
         """
-        if self.speculative_method == "dflash":
+        if self.speculative_method is None:
+            return 0
+        elif self.speculative_method == "dflash":
             return self.num_draft_tokens
-        return 1
+        elif self.speculative_method in ("mtp", "eagle"):
+            return 1
+        else:
+            raise ValueError(
+                f"Unrecognized speculative_method: {self.speculative_method!r}"
+            )
 
     @property
     def bytes_per_block(self) -> int:

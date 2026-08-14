@@ -303,7 +303,7 @@ def _make_effective_cache_length_pipeline(
 @pytest.mark.parametrize(
     ("num_draft_tokens", "num_draft_tokens_per_step", "expected_slack"),
     [
-        (0, 1, 0),  # speculative decoding disabled: strict no-op
+        (0, 0, 0),  # speculative decoding disabled: strict no-op
         (3, 1, 10),  # eagle/mtp autoregressive drafts: 3*3 + 0 + 1
         (4, 4, 14),  # dflash block drafts: 3*4 + 1 + 1
     ],

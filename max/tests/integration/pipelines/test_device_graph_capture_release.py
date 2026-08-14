@@ -63,7 +63,7 @@ def _mock_kv_params() -> SimpleNamespace:
         num_q_heads_per_device=1,
         is_fp8_kv_dtype=False,
         data_parallel_degree=1,
-        num_draft_tokens_per_step=1,
+        num_draft_tokens_per_step=0,
         graph_capture_probe_cache_lengths=lambda max_cache_length, q: [1],
         resolve_attn_key=lambda batch_size, q, cache_length: MHAAttnKey(
             batch_size=batch_size, max_prompt_length=q, num_partitions=1

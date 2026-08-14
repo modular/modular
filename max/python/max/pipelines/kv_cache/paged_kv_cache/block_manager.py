@@ -172,7 +172,7 @@ class _PendingTransfer:
 def _compute_seq_len(
     ctx: TextContext,
     num_draft_tokens: int,
-    num_draft_tokens_per_step: int = 1,
+    num_draft_tokens_per_step: int = 0,
     max_num_input_tokens: int | None = None,
 ) -> int:
     # Each term accounts for one category of tokens that need a KV slot:
@@ -198,9 +198,14 @@ def _compute_seq_len(
     # bonus token — exactly the slot the ``- 1`` here was reclaiming under the
     # "last generated token has no KV entry" optimization. For block drafts
     # that bonus position *does* get a KV entry (forward_block writes it as
-    # part of the speculative tail), so we add it back.
+    # part of the speculative tail), so we add it back. Guard on
+    # ``num_draft_tokens > 0`` so a disabled request (0, 0) never matches this
+    # by coincidence.
     block_draft_extra = (
-        1 if num_draft_tokens_per_step == num_draft_tokens else 0
+        1
+        if num_draft_tokens > 0
+        and num_draft_tokens_per_step == num_draft_tokens
+        else 0
     )
     # Avoid allocating blocks for the entire sequence when chunked prefill is used.
     # This is critically important for SWA.
@@ -1120,7 +1125,7 @@ class BlockManager:
         self,
         ctx: TextContext,
         num_draft_tokens: int = 0,
-        num_draft_tokens_per_step: int = 1,
+        num_draft_tokens_per_step: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -1134,12 +1139,12 @@ class BlockManager:
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
-                per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``); equal to
-                ``num_draft_tokens`` for block drafts (``dflash``). Used by
-                ``_compute_seq_len`` to size the cache for block drafts,
-                whose ``forward_block`` writes one extra position past the
-                bonus token.
+                per draft forward. Zero when speculative decoding is
+                disabled; one for autoregressive drafts (``eagle``, ``mtp``);
+                equal to ``num_draft_tokens`` for block drafts (``dflash``).
+                Used by ``_compute_seq_len`` to size the cache for block
+                drafts, whose ``forward_block`` writes one extra position
+                past the bonus token.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -1207,7 +1212,7 @@ class BlockManager:
         self,
         ctx: TextContext,
         num_draft_tokens: int = 0,
-        num_draft_tokens_per_step: int = 1,
+        num_draft_tokens_per_step: int = 0,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
@@ -1216,12 +1221,12 @@ class BlockManager:
             num_draft_tokens: Total draft tokens generated per speculative
                 iteration. Zero for non-speculative decode.
             num_draft_tokens_per_step: Number of draft KV positions written
-                per draft forward. One for autoregressive drafts
-                (``eagle``, ``mtp``); equal to
-                ``num_draft_tokens`` for block drafts (``dflash``). Used by
-                ``_compute_seq_len`` to size the cache for block drafts,
-                whose ``forward_block`` writes one extra position past the
-                bonus token.
+                per draft forward. Zero when speculative decoding is
+                disabled; one for autoregressive drafts (``eagle``, ``mtp``);
+                equal to ``num_draft_tokens`` for block drafts (``dflash``).
+                Used by ``_compute_seq_len`` to size the cache for block
+                drafts, whose ``forward_block`` writes one extra position
+                past the bonus token.
 
         Returns:
             The number of new blocks to allocate.
