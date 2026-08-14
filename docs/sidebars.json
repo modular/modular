@@ -427,6 +427,7 @@
                 "api/python/pipelines.architectures.hy_v3",
                 "api/python/pipelines.architectures.idefics3",
                 "api/python/pipelines.architectures.ideogram4",
+                "api/python/pipelines.architectures.inkling",
                 "api/python/pipelines.architectures.internvl",
                 "api/python/pipelines.architectures.kimik2_5",
                 "api/python/pipelines.architectures.laguna",
