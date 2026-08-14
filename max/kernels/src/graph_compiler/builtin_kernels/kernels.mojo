@@ -102,6 +102,7 @@ from nn.sampling import apply_penalties_to_logits, update_frequency_data
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk import gumbel_sampling_fused_gpu
 from nn.topk_fi import topk_topp_masked_probs, topk_topp_sampling_from_prob
 from nn.toppminp import min_p_sampling as min_p_sampling_cpu
 from nn.toppminp_gpu import min_p_sampling_gpu
@@ -2668,6 +2669,41 @@ struct Struct_topk_topp_masked_probs:
             .as_unsafe_any_origin()
             .as_immut(),
             temperature=temperature.to_tile_tensor[DType.int64]()
+            .as_unsafe_any_origin()
+            .as_immut(),
+        )
+
+
+@extensibility.register("sampler.gumbel_argmax_from_probs")
+struct Struct_gumbel_argmax_from_probs:
+    """Registers the `sampler.gumbel_argmax_from_probs` graph op.
+
+    Draws one token per row proportionally to a row of unnormalized
+    probabilities, by Gumbel-max over `ln(p)`. The noise comes from the
+    per-row seed inside the kernel, so the caller passes no noise tensor.
+    Rows with equal seeds draw with equal noise, which is how a request's
+    draft positions share one noise row.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tokens: OutputTensor[dtype=DType.int64, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        probs: InputTensor[dtype=DType.float32, rank=2, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "sampler.gumbel_argmax_from_probs is GPU-only"
+        gumbel_sampling_fused_gpu[from_probs=True](
+            ctx,
+            probs.to_tile_tensor[DType.int64](),
+            out_tokens.to_tile_tensor[DType.int64](),
+            seed=seed.to_tile_tensor[DType.int64]()
             .as_unsafe_any_origin()
             .as_immut(),
         )

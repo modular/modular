@@ -20,6 +20,13 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # `from_probs` refuses to build on Apple (`_block_reduce_topk` caps its
+    # storage at WARP_SIZE there while the kernel launches full-sized blocks),
+    # so the test cannot run on that target either.
+    "test_gumbel_argmax_from_probs.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # Bounded masked DRAM->SRAM copy proof; the masked `cp.async` zero-fill
     # is NVIDIA-specific and verified on B200 only.
     "scout_tt_bounded_copy.mojo": ["//:nvidia_gpu"],

@@ -9129,6 +9129,48 @@ def topk_topp_masked_probs(
     )[0].tensor
 
 
+def gumbel_argmax_from_probs(
+    probs: TensorValue, *, seed: TensorValue
+) -> TensorValue:
+    """Draws one token per row, proportionally to unnormalized probabilities.
+
+    Gumbel-max over ``ln(p)``: a zero probability can never win while the row
+    has any positive mass, and row normalization does not matter. The Gumbel
+    noise is generated inside the kernel from the per-row ``seed``, so rows
+    with equal seeds draw with equal noise -- speculative decoding passes one
+    seed per request, repeated across its draft positions, to share one noise
+    row per request. GPU-only, and not supported on Apple GPUs, where the
+    kernel's block reduction cannot cover a full-sized block.
+
+    Args:
+        probs: Unnormalized probabilities ``[rows, vocab_size]``, float32.
+        seed: Per-row RNG seed ``[rows]``, uint64.
+
+    Returns:
+        The drawn token id per row, ``int64 [rows]``.
+
+    Raises:
+        ValueError: If the probabilities are not rank-2 on GPU.
+    """
+    if probs.rank != 2:
+        raise ValueError(
+            f"gumbel_argmax_from_probs requires rank-2 probs, got {probs.rank}"
+        )
+    if probs.device == DeviceRef.CPU():
+        raise ValueError("gumbel_argmax_from_probs is GPU-only")
+
+    return ops.custom(
+        "sampler.gumbel_argmax_from_probs",
+        device=probs.device,
+        values=[seed, probs],
+        out_types=[
+            TensorType(
+                dtype=DType.int64, shape=[probs.shape[0]], device=probs.device
+            )
+        ],
+    )[0].tensor
+
+
 def sgmv_kernel(  # noqa: ANN201
     input: TensorValue,
     lora: TensorValue,

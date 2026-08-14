@@ -427,6 +427,12 @@ This version is still a work in progress.
   probability of each drafted token and builds its rejection residual from
   this one tensor, in the same form the draft sampler emits its proposal
   distribution.
+- The fused gumbel-argmax sampling kernel takes a `from_probs` parameter,
+  exposed as `max.nn.kernels.gumbel_argmax_from_probs`: each row's score is
+  `ln(p) + gumbel` over unnormalized probabilities, drawn with noise the
+  kernel generates from a per-row seed. This enables sampling a speculative
+  decoding rejection residual `max(p_target - q_draft, 0)` that the caller
+  builds in graph ops. GPU-only, non-Apple.
 
 ## Breaking changes
 
