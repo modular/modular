@@ -45,6 +45,7 @@
 
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/RuntimeLibcallInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
@@ -167,20 +168,17 @@ ObjectCompiler::ObjectCompiler(RCRef<Cache::BlobCacheBackend> transformCache,
 // Time Trace Instrumentation
 //===----------------------------------------------------------------------===//
 
-/// Given an Any containing an LLVM IR unit, return a string representation of
+/// Given a reference to an LLVM IR unit, return a string representation of
 /// the name of the unit.
-static std::string getLLVMIRName(llvm::Any &ir) {
-  if (llvm::any_cast<const llvm::Module *>(&ir)) {
-    return ("[module](" +
-            (*llvm::any_cast<const llvm::Module *>(&ir))->getName() + ")")
-        .str();
-  }
-  if (const auto **fn = llvm::any_cast<const llvm::Function *>(&ir))
-    return (*fn)->getName().str();
-  if (const auto **scc = llvm::any_cast<const llvm::LazyCallGraph::SCC *>(&ir))
-    return (*scc)->getName();
-  if (const auto **loop = llvm::any_cast<const llvm::Loop *>(&ir))
-    return (*loop)->getName().str();
+static std::string getLLVMIRName(llvm::IRUnitRef ir) {
+  if (const auto *m = llvm::dyn_cast<llvm::Module>(ir))
+    return ("[module](" + m->getName() + ")").str();
+  if (const auto *fn = llvm::dyn_cast<llvm::Function>(ir))
+    return fn->getName().str();
+  if (const auto *scc = llvm::dyn_cast<llvm::LazyCallGraph::SCC>(ir))
+    return scc->getName();
+  if (const auto *loop = llvm::dyn_cast<llvm::Loop>(ir))
+    return loop->getName().str();
   llvm_unreachable("unknown wrapped IR type");
 }
 
@@ -189,9 +187,11 @@ class LLVMTimeTraceInstrumentation {
 public:
   LLVMTimeTraceInstrumentation(llvm::PassInstrumentationCallbacks &pic) {
     pic.registerBeforeNonSkippedPassCallback(
-        [=](StringRef passID, llvm::Any ir) { runBeforePass(passID, ir); });
+        [=](StringRef passID, llvm::IRUnitRef ir) {
+          runBeforePass(passID, ir);
+        });
     pic.registerAfterPassCallback(
-        [=](StringRef, llvm::Any, const llvm::PreservedAnalyses &) {
+        [=](StringRef, llvm::IRUnitRef, const llvm::PreservedAnalyses &) {
           runAfterPass();
         },
         /*ToFront=*/true);
@@ -199,13 +199,15 @@ public:
         [=](StringRef, const llvm::PreservedAnalyses &) { runAfterPass(); },
         true);
     pic.registerBeforeAnalysisCallback(
-        [=](StringRef passID, llvm::Any ir) { runBeforePass(passID, ir); });
+        [=](StringRef passID, llvm::IRUnitRef ir) {
+          runBeforePass(passID, ir);
+        });
     pic.registerAfterAnalysisCallback(
-        [=](StringRef, llvm::Any) { runAfterPass(); }, /*ToFront=*/true);
+        [=](StringRef, llvm::IRUnitRef) { runAfterPass(); }, /*ToFront=*/true);
   }
 
 private:
-  static void runBeforePass(StringRef passID, llvm::Any &ir) {
+  static void runBeforePass(StringRef passID, llvm::IRUnitRef ir) {
     VerboseCompilerProfilerEntry::createAndPush(passID, getLLVMIRName(ir));
   }
 

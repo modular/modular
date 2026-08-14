@@ -281,6 +281,21 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   if (!targetDataLayout.empty())
     compilationOptions.targetDataLayout = targetDataLayout;
 
+  // Pull `nvptx-short-ptr` out of the emission options: short pointers are
+  // the "shortptr" target ABI, not a global llvm cl option, so it must be
+  // applied to the compilation options before the target machine is created
+  // and kept out of the cl-parsed list.
+  compilationOptions.targetABI.clear();
+  if (std::optional<std::string> badItem = applyShortPtrEmissionOptions(
+          emissionOptions, compilationOptions.targetABI))
+    return Error(llvm::formatv("invalid value in emission option '{0}', "
+                               "expected 'nvptx-short-ptr=true' or "
+                               "'nvptx-short-ptr=false'",
+                               *badItem));
+  SmallVector<StringRef> clEmissionOptions;
+  llvm::copy_if(emissionOptions, std::back_inserter(clEmissionOptions),
+                [](StringRef item) { return !isShortPtrEmissionOption(item); });
+
   // Initialize the object compiler.
   PassManagerConfigOptions pmOptions;
   pmOptions.applyPassManagerCLOptions = true; // enable print options
@@ -364,7 +379,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
       writeCaptureArgs(*module, entryFunc, name);
 
   // Handle the emission options.
-  ErrorOrSuccess parseResult = parseEmissionOptions(emissionOptions);
+  ErrorOrSuccess parseResult = parseEmissionOptions(clEmissionOptions);
   if (parseResult.isError()) {
     return parseResult.takeError();
   }
@@ -497,6 +512,23 @@ static ElaboratorCompileOffloadRetType compileOffloads(
                                    "expected 'contract=fast' or 'contract=off'",
                                    *badItem));
       offloadInfo.emissionOptions = filteredEmissionOptions;
+
+      // Likewise pull `nvptx-short-ptr` (the "shortptr" target ABI, not a cl
+      // option) into the compilation options. It stays in the emission-option
+      // string, which identifies the offload in debug output and cache keys,
+      // and is skipped when the remaining options are applied as cl options.
+      compilationOptions.targetABI.clear();
+      {
+        SmallVector<StringRef> items;
+        StringRef(offloadInfo.emissionOptions)
+            .split(items, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+        if (std::optional<std::string> badItem = applyShortPtrEmissionOptions(
+                items, compilationOptions.targetABI))
+          return Error(llvm::formatv("invalid value in emission option '{0}', "
+                                     "expected 'nvptx-short-ptr=true' or "
+                                     "'nvptx-short-ptr=false'",
+                                     *badItem));
+      }
 
       compilationOptions.emissionOptions = offloadInfo.emissionOptions;
       compilationOptions.emissionLinkOptions = offloadInfo.emissionLinkOptions;
@@ -679,6 +711,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef(offloadInfo.emissionOptions)
           .split(emissionOptions, /*Separator=*/",",
                  /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+      // `nvptx-short-ptr` was already applied via the target ABI; it is not a
+      // registered cl option, so keep it out of the parse/reset lists.
+      llvm::erase_if(emissionOptions, isShortPtrEmissionOption);
 
       KGEN_DEBUG(0, {
         llvm::dbgs() << "Emit offloads with options: "

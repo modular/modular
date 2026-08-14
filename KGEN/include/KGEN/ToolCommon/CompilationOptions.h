@@ -78,6 +78,34 @@ splitFpModeEmissionOptions(llvm::StringRef options, FpMode &mode,
   return std::nullopt;
 }
 
+/// Returns true if `item` is a `nvptx-short-ptr=...` emission option. Since
+/// LLVM 40001fdcb26d the short-pointer mode is the "shortptr" target ABI, not
+/// a global cl option, so KGEN recognizes the option itself and forwards it
+/// to the TargetMachine as the ABI name.
+inline bool isShortPtrEmissionOption(llvm::StringRef item) {
+  return item.split('=').first == "nvptx-short-ptr";
+}
+
+/// Applies any `nvptx-short-ptr=true|false` items in `items` to `targetABI`
+/// ("shortptr" for true, cleared for false). Returns the offending item if
+/// one carries an invalid value; nullopt otherwise.
+inline std::optional<std::string>
+applyShortPtrEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
+                             std::string &targetABI) {
+  for (llvm::StringRef item : items) {
+    auto [key, value] = item.split('=');
+    if (key != "nvptx-short-ptr")
+      continue;
+    if (value.equals_insensitive("true") || value == "1")
+      targetABI = "shortptr";
+    else if (value.equals_insensitive("false") || value == "0")
+      targetABI.clear();
+    else
+      return item.str();
+  }
+  return std::nullopt;
+}
+
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
 class CompilationOptions {
@@ -165,6 +193,11 @@ public:
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
   std::string targetDataLayout;
+  /// Target ABI name forwarded to the TargetMachine (MCOptions.ABIName).
+  /// For NVPTX, "shortptr" selects 32-bit const/local/shared pointers to
+  /// match the shortptr data layout our GPU targets declare; it is set from
+  /// the `nvptx-short-ptr` emission option.
+  std::string targetABI;
   std::optional<llvm::CodeModel::Model> mcmodel;
   std::optional<uint64_t> largeDataThreshold;
   int64_t loopUnrollingWarnThreshold = 65536;
