@@ -21,13 +21,26 @@ never take effect.
 
 from __future__ import annotations
 
+from enum import Enum
+from pathlib import Path
+from types import UnionType
+from typing import Any, Literal, Union, get_args, get_origin
+
 import click
+import pytest
+import yaml
 from max._entrypoints.cli.config import pipeline_config_options
+from max.config import ConfigFileModel
 from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.lib.pipeline_args import _FLAT_KWARG_SUBTREES
+from max.pipelines.lib.pipeline_args import (
+    _FLAT_KWARG_SUBTREES,
+    _SHARED_CONFIG_FIELDS,
+)
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.speculative.config import SpeculativeConfig
+from pydantic import ValidationError
 
 # Consumed by the CLI, or by ``from_flat_kwargs`` before its unmatched-kwargs
 # check, so they need no field to route to.
@@ -95,3 +108,136 @@ def test_empty_models_kwarg_is_not_a_manifest_override() -> None:
     args = PipelineArgs.from_flat_kwargs(models={}, max_batch_size=2)
     assert args._manifest_override is None
     assert PipelineArgs(models=ModelManifest())._manifest_override is None
+
+
+# One case per generated flag, so new flags are covered the day they land: the
+# file value survives, an explicit CLI value wins, a sibling stays untouched.
+
+# Fields the matrix does not drive, and why.
+_MATRIX_SKIP = {
+    "kv_connector_config": "dict-valued: a merge policy, not precedence",
+    "denoising_cache": "a subtree, driven via its own dotted path",
+    "enable_lora": "enables its subtree; presence is the signal",
+    "speculative_method": "enables its subtree; presence is the signal",
+}
+
+
+def _values(annotation: Any) -> list[Any]:
+    """Two distinct scalar values, or ``[]`` if none can be derived."""
+    if get_origin(annotation) in (Union, UnionType):
+        inner = [a for a in get_args(annotation) if a is not type(None)]
+        annotation = inner[0] if len(inner) == 1 else annotation
+    if annotation is bool:
+        return [True, False]
+    if annotation is int:
+        return [3, 7]
+    if annotation is float:
+        return [0.25, 0.5]
+    if annotation is str:
+        return ["alpha", "beta"]
+    if get_origin(annotation) is Literal:
+        return list(get_args(annotation))[:2]
+    if isinstance(annotation, type) and issubclass(annotation, Enum):
+        return list(annotation)[:2]
+    return []
+
+
+# Subtrees PipelineArgs drops unless their enabling field is set.
+_ENABLERS: dict[str, dict[str, Any]] = {
+    "lora": {"enable_lora": True},
+    "speculative": {
+        "speculative_method": _values(
+            SpeculativeConfig.model_fields["speculative_method"].annotation
+        )[0]
+    },
+}
+
+
+def _cases() -> list[tuple[str, type[ConfigFileModel], str, Any, Any]]:
+    cases: list[tuple[str, type[ConfigFileModel], str, Any, Any]] = []
+    for path, config_class in _FLAT_KWARG_SUBTREES:
+        for field, info in config_class.model_fields.items():
+            if field in _SHARED_CONFIG_FIELDS or field in _MATRIX_SKIP:
+                continue
+            values = _values(info.annotation)
+            if len(values) < 2:
+                continue
+            if values[0] == info.get_default(call_default_factory=True):
+                # Else the config-file assertion just reads the default.
+                values.reverse()
+            try:  # Keep only values the owning model accepts.
+                for value in values:
+                    config_class(**{field: value})
+            except ValidationError:
+                continue
+            cases.append((path, config_class, field, *values))
+    return cases
+
+
+_CASES = _cases()
+
+
+# A neighbour per subtree, to prove an override leaves it alone.
+_SIBLINGS: dict[str, list[tuple[str, Any]]] = {}
+for _path, _cls, _field, _from_file, _ in _CASES:
+    _SIBLINGS.setdefault(_path, []).append((_field, _from_file))
+
+
+def test_precedence_matrix_covers_every_subtree() -> None:
+    """A subtree contributing no case would silently lose all its coverage."""
+    assert {path for path, *_ in _CASES} == {
+        path for path, _cls in _FLAT_KWARG_SUBTREES
+    }, (
+        "subtrees with no case: "
+        f"{sorted({p for p, _c in _FLAT_KWARG_SUBTREES} - {p for p, *_ in _CASES})}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "config_class", "field", "from_file", "from_cli"),
+    _CASES,
+    ids=[f"{path}.{field}" for path, _c, field, _a, _b in _CASES],
+)
+def test_config_file_value_survives_and_cli_overrides_it(
+    tmp_path: Path,
+    path: str,
+    config_class: type[ConfigFileModel],
+    field: str,
+    from_file: Any,
+    from_cli: Any,
+) -> None:
+    def as_yaml(value: Any) -> Any:
+        return value.value if isinstance(value, Enum) else value
+
+    sibling = next(((f, v) for f, v in _SIBLINGS[path] if f != field), None)
+    section: dict[str, Any] = dict(_ENABLERS.get(path, {}))
+    section[field] = as_yaml(from_file)
+    if sibling is not None:
+        section[sibling[0]] = as_yaml(sibling[1])
+    nested: Any = section
+    for part in reversed(path.split(".")):
+        nested = {part: nested}
+    recipe = tmp_path / "recipe.yaml"
+    recipe.write_text(yaml.safe_dump(nested), encoding="utf-8")
+
+    def routed(read: str, /, **cli: Any) -> Any:
+        target: Any = PipelineArgs.from_flat_kwargs(
+            config_file=str(recipe), **cli
+        )
+        for part in path.split("."):
+            target = getattr(target, part)
+        return getattr(target, read)
+
+    def stored(read: str, value: Any) -> Any:
+        return getattr(config_class(**{read: value}), read)
+
+    assert stored(field, from_file) != stored(field, from_cli), (
+        "candidates are indistinguishable once stored, so neither assertion "
+        "below can observe routing"
+    )
+    assert routed(field) == stored(field, from_file)
+    assert routed(field, **{field: from_cli}) == stored(field, from_cli)
+    if sibling is not None:
+        assert routed(sibling[0], **{field: from_cli}) == stored(
+            sibling[0], sibling[1]
+        ), "a CLI flag reset a sibling field set in the config file"
