@@ -1112,6 +1112,7 @@ def test_config__test_retrieve_factory_with_known_architecture(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__test_retrieve_factory_with_unsupported_model_path(
     gemma_3_1b_it_local_path: str,
 ) -> None:
@@ -1302,6 +1303,7 @@ def test_config__validates_lora_configuration(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__validates_lora_only_supported_for_llama(
     gemma_3_1b_it_local_path: str,
 ) -> None:
@@ -1368,6 +1370,7 @@ def test_config__validates_lora_works_for_llama(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 def test_config__validates_lora_incompatible_with_prefix_caching(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
@@ -1400,6 +1403,7 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
 
 @prepare_registry
 @mock_estimate_memory_footprint
+@requires_hf_network
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
