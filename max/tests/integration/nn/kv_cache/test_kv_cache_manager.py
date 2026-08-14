@@ -192,17 +192,19 @@ async def test_fetch_paged() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reserve_claims_and_releases() -> None:
+async def test_claim_alloc_and_release() -> None:
     kv_manager = _make_kv_manager()
     contexts = [
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
     ]
 
-    with kv_manager.reserve([contexts]):
-        for context in contexts:
-            assert kv_manager.contains(context)
+    for context in contexts:
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
+        assert kv_manager.contains(context)
 
     for context in contexts:
+        kv_manager.release(context)
         assert not kv_manager.contains(context)
 
 

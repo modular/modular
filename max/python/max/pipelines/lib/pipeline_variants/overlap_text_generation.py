@@ -2053,122 +2053,123 @@ class OverlapTextGenerationPipeline(
                     for idx in range(batch_size)
                 ]
             )
-        with self._kv_manager.reserve(replica_batches):
-            max_cache_length = self._effective_max_cache_length
-            # Prepare dispatch metadata for the probed characteristics so the
-            # captured graph matches what replay produces for the same aligned
-            # cache length.
-            kv_cache_inputs = self._kv_manager.runtime_inputs(
-                replica_batches,
-                max_cache_length=max_cache_length,
-                batch_characteristics=batch_characteristics,
+        for replica_idx, contexts in enumerate(replica_batches):
+            for context in contexts:
+                self._kv_manager.claim(context, replica_idx=replica_idx)
+                self._kv_manager.alloc(context)
+
+        max_cache_length = self._effective_max_cache_length
+        # Prepare dispatch metadata for the probed characteristics so the
+        # captured graph matches what replay produces for the same aligned
+        # cache length.
+        kv_cache_inputs = self._kv_manager.runtime_inputs(
+            replica_batches,
+            max_cache_length=max_cache_length,
+            batch_characteristics=batch_characteristics,
+        )
+
+        return_n_logits = (
+            num_speculative_tokens + 1
+            if self._spec_decode_state is not None
+            else 0
+        )
+
+        with Tracer("prepare_initial_token_inputs"):
+            model_inputs = self._pipeline_model.prepare_initial_token_inputs(
+                replica_batches=replica_batches,
+                kv_cache_inputs=kv_cache_inputs,
+                return_n_logits=return_n_logits,
             )
 
-            return_n_logits = (
-                num_speculative_tokens + 1
-                if self._spec_decode_state is not None
-                else 0
+        # Warmup packs ``.buffers`` without going through the prep phase's
+        # vision drive (or ``execute()``), so the vision-merge inputs the
+        # compiled graph unconditionally declares must be finalized here
+        # with the model's empties.
+        if self._encoder_cache is not None:
+            assert isinstance(self._pipeline_model, SupportsVisionEncoding)
+            self._encoder_cache.finalize_vision_inputs(
+                self._pipeline_model, model_inputs, self._devices, None
             )
 
-            with Tracer("prepare_initial_token_inputs"):
-                model_inputs = (
-                    self._pipeline_model.prepare_initial_token_inputs(
-                        replica_batches=replica_batches,
-                        kv_cache_inputs=kv_cache_inputs,
-                        return_n_logits=return_n_logits,
-                    )
+        if self._spec_decode_state is not None:
+            assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
+            draft_tokens = Buffer.from_numpy(
+                np.zeros(
+                    (batch_size * dp_size, num_speculative_tokens),
+                    dtype=np.int64,
                 )
+            )
+            persistent_draft_tokens = (
+                self._spec_decode_state.persistent_draft_tokens
+            )
+            persistent_draft_tokens = _contiguous_prefix_2d(
+                persistent_draft_tokens,
+                batch_size * dp_size,
+                num_speculative_tokens,
+            )
+            persistent_draft_tokens.inplace_copy_from(draft_tokens)
+            model_inputs.draft_tokens = persistent_draft_tokens
 
-            # Warmup packs ``.buffers`` without going through the prep phase's
-            # vision drive (or ``execute()``), so the vision-merge inputs the
-            # compiled graph unconditionally declares must be finalized here
-            # with the model's empties.
-            if self._encoder_cache is not None:
-                assert isinstance(self._pipeline_model, SupportsVisionEncoding)
-                self._encoder_cache.finalize_vision_inputs(
-                    self._pipeline_model, model_inputs, self._devices, None
-                )
-
-            if self._spec_decode_state is not None:
-                assert isinstance(model_inputs, _UnifiedSpecDecodeInputs)
-                draft_tokens = Buffer.from_numpy(
-                    np.zeros(
-                        (batch_size * dp_size, num_speculative_tokens),
-                        dtype=np.int64,
-                    )
-                )
-                persistent_draft_tokens = (
-                    self._spec_decode_state.persistent_draft_tokens
-                )
-                persistent_draft_tokens = _contiguous_prefix_2d(
-                    persistent_draft_tokens,
-                    batch_size * dp_size,
-                    num_speculative_tokens,
-                )
-                persistent_draft_tokens.inplace_copy_from(draft_tokens)
-                model_inputs.draft_tokens = persistent_draft_tokens
-
-                warmup_flat_batch = [
-                    ctx for replica in replica_batches for ctx in replica
-                ]
-                sampling_buffers = self._build_spec_decode_sampling_buffers(
-                    warmup_flat_batch
-                )
-                model_inputs.temperature = sampling_buffers.temperature
-                model_inputs.top_k = sampling_buffers.top_k
-                model_inputs.max_k = sampling_buffers.max_k
-                model_inputs.top_p = sampling_buffers.top_p
-                model_inputs.min_top_p = sampling_buffers.min_top_p
-                model_inputs.seed = sampling_buffers.seed
-                model_inputs.in_thinking_phase = (
-                    sampling_buffers.in_thinking_phase
-                )
-
-                # Set all-valid packed bitmask for warmup (unconstrained).
-                # Shape: [batch_size, num_speculative_tokens + 1,
-                # packed_vocab_size]; -1 = all bits set = all tokens valid.
-                # The overlap path binds a (pinned, wait_payload, scratch)
-                # triple and primes the completion flag so each warmup
-                # replay's in-graph wait passes immediately.
-                overlap_state = self._spec_decode_state.overlap_state
-                total_batch = batch_size * dp_size
-                if overlap_state is not None:
-                    num_positions = overlap_state.num_positions
-                    packed_vocab_dim = overlap_state.packed_vocab_size
-                    prime_np = np.full(
-                        (total_batch, num_positions, packed_vocab_dim),
-                        -1,
-                        dtype=np.int32,
-                    )
-                    overlap_state.prime(prime_np)
-                    # Bind via the cached-view helper: the same Buffer view
-                    # objects are returned at capture and every replay, so
-                    # GraphCaptureRunner.replay's preface inplace_copy_from
-                    # short-circuits via the self-is-src identity check.
-                    pinned_view, scratch_view = overlap_state.get_input_views(
-                        total_batch, num_positions
-                    )
-                    model_inputs.pinned_bitmask = pinned_view
-                    model_inputs.wait_payload = overlap_state.wait_payload
-                    model_inputs.device_bitmask_scratch = scratch_view
-
-            # Collect the warmup request IDs before yielding so they are
-            # available for state-pool release after the probe completes.
-            warmup_request_ids: list[RequestID] = [
-                ctx.request_id for replica in replica_batches for ctx in replica
+            warmup_flat_batch = [
+                ctx for replica in replica_batches for ctx in replica
             ]
+            sampling_buffers = self._build_spec_decode_sampling_buffers(
+                warmup_flat_batch
+            )
+            model_inputs.temperature = sampling_buffers.temperature
+            model_inputs.top_k = sampling_buffers.top_k
+            model_inputs.max_k = sampling_buffers.max_k
+            model_inputs.top_p = sampling_buffers.top_p
+            model_inputs.min_top_p = sampling_buffers.min_top_p
+            model_inputs.seed = sampling_buffers.seed
+            model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
 
-            try:
-                yield model_inputs
-            finally:
-                # Models that maintain per-request SSM / conv state pools
-                # outside the KV cache (e.g. Nemotron-H, Qwen3.5, LFM2) must
-                # release their warmup slots here; otherwise the pool is
-                # exhausted before serving begins.
-                if isinstance(self._pipeline_model, SupportsSSMStateWarmup):
-                    self._pipeline_model.release_warmup_state(
-                        warmup_request_ids
-                    )
+            # Set all-valid packed bitmask for warmup (unconstrained).
+            # Shape: [batch_size, num_speculative_tokens + 1,
+            # packed_vocab_size]; -1 = all bits set = all tokens valid.
+            # The overlap path binds a (pinned, wait_payload, scratch)
+            # triple and primes the completion flag so each warmup
+            # replay's in-graph wait passes immediately.
+            overlap_state = self._spec_decode_state.overlap_state
+            total_batch = batch_size * dp_size
+            if overlap_state is not None:
+                num_positions = overlap_state.num_positions
+                packed_vocab_dim = overlap_state.packed_vocab_size
+                prime_np = np.full(
+                    (total_batch, num_positions, packed_vocab_dim),
+                    -1,
+                    dtype=np.int32,
+                )
+                overlap_state.prime(prime_np)
+                # Bind via the cached-view helper: the same Buffer view
+                # objects are returned at capture and every replay, so
+                # GraphCaptureRunner.replay's preface inplace_copy_from
+                # short-circuits via the self-is-src identity check.
+                pinned_view, scratch_view = overlap_state.get_input_views(
+                    total_batch, num_positions
+                )
+                model_inputs.pinned_bitmask = pinned_view
+                model_inputs.wait_payload = overlap_state.wait_payload
+                model_inputs.device_bitmask_scratch = scratch_view
+
+        # Collect the warmup request IDs before yielding so they are
+        # available for state-pool release after the probe completes.
+        warmup_request_ids: list[RequestID] = [
+            ctx.request_id for replica in replica_batches for ctx in replica
+        ]
+
+        try:
+            yield model_inputs
+        finally:
+            # Models that maintain per-request SSM / conv state pools
+            # outside the KV cache (e.g. Nemotron-H, Qwen3.5, LFM2) must
+            # release their warmup slots here; otherwise the pool is
+            # exhausted before serving begins.
+            if isinstance(self._pipeline_model, SupportsSSMStateWarmup):
+                self._pipeline_model.release_warmup_state(warmup_request_ids)
+            for replica in replica_batches:
+                for context in replica:
+                    self._kv_manager.release(context)
 
     def warmup_graph_capture(self) -> None:
         """Initializes and runs overlap device graph capture warmup."""

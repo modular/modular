@@ -201,21 +201,25 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     context_3 = create_text_context(prompt)
 
     # Get cache hit of 0 tokens since the prefix cache is empty
-    with kv_manager.reserve([[context_1]]):
-        kv_manager.runtime_inputs([[context_1]])
-        context_1.update(15)
-        kv_manager.step(context_1)
+    kv_manager.claim(context_1)
+    kv_manager.alloc(context_1)
+    kv_manager.runtime_inputs([[context_1]])
+    context_1.update(15)
+    kv_manager.step(context_1)
+    kv_manager.release(context_1)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 0
 
     # Get cache hit of 4 tokens
-    with kv_manager.reserve([[context_2]]):
-        pass
+    kv_manager.claim(context_2)
+    kv_manager.alloc(context_2)
+    kv_manager.release(context_2)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
-    with kv_manager.reserve([[context_3]]):
-        pass
+    kv_manager.claim(context_3)
+    kv_manager.alloc(context_3)
+    kv_manager.release(context_3)
     assert kv_manager.get_metrics_aggregated().cache_tokens == 4
 
 
@@ -231,25 +235,27 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         prompt = np.array([100, 101, 102, 103, 104], dtype=np.int64)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        with kv_manager.reserve([[context]]):
-            _ = kv_manager.runtime_inputs([batch])
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
+        _ = kv_manager.runtime_inputs([batch])
 
-            if i == 0:
-                # During first fetch, we do not get a cache hit so we use 5 blocks.
-                available_blocks -= 5
-            else:
-                # During later fetches, we get a cache hit so we use 1 block.
-                available_blocks -= 1
-            assert available_blocks >= 0
+        if i == 0:
+            # During first fetch, we do not get a cache hit so we use 5 blocks.
+            available_blocks -= 5
+        else:
+            # During later fetches, we get a cache hit so we use 1 block.
+            available_blocks -= 1
+        assert available_blocks >= 0
 
-            context.update(42)
-            for ctx in batch:
-                kv_manager.step(ctx)
+        context.update(42)
+        for ctx in batch:
+            kv_manager.step(ctx)
 
-            if i != 0:
-                # During later fetches, we will just release the block we wrote to
-                # since a different block already exists for the same token.
-                available_blocks += 1
+        if i != 0:
+            # During later fetches, we will just release the block we wrote to
+            # since a different block already exists for the same token.
+            available_blocks += 1
+        kv_manager.release(context)
 
     # cache hit rate is ~= 4 / 5 tokens
     assert kv_manager.get_metrics_aggregated().cache_hit_rate > 0.79
