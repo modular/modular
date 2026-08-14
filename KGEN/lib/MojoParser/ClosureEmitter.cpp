@@ -2080,6 +2080,13 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
                                               scope.getLoc())))
     return failure();
 
+  for (auto [_, decls] : devicePassableDecl->getDeclsInScope()) {
+    for (ASTDecl *decl : decls) {
+      if (failed(shared.declResolver->resolveSignature(*decl, scope.getLoc())))
+        return failure();
+    }
+  }
+
   ArrayRef<ASTDecl *> aliasDecls = devicePassableDecl->lookupInCurrentScope(
       StringAttr::get(shared.getContext(), kDeviceType));
   if (aliasDecls.empty())

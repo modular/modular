@@ -27,7 +27,13 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 # CHECK-NEXT: lit.struct.field capture2 : !HostInt
 # CHECK-NEXT: lit.struct.field anotherClosure : !{{.*}}storage{{.*}}
 
+# CHECK-LABEL: lit.struct.decl @"{{.*}}anotherClosure{{.*}}__storage::__device_type"
+# CHECK-SAME: attributes {synthetic} {
+# CHECK-NEXT: lit.struct.field capture1 : {{.*}}SIMD{{.*}}
+# CHECK-NEXT: lit.struct.field capture3 : {{.*}}SIMD{{.*}}
+
 # CHECK-LABEL: lit.struct.decl @"{{.*}}anotherClosure{{.*}}__storage"
+# CHECK-SAME: !None_DevicePassable
 # CHECK-SAME: attributes {definesClosure,{{.*}}synthetic}
 # CHECK-NEXT: lit.struct.field capture1 : !HostString
 # CHECK-NEXT: lit.struct.field capture3 : !HostString
