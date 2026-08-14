@@ -76,6 +76,16 @@ This version is still a work in progress.
     honored: values below the trained 7 truncate the causal draft block
     prefix-stably, values above run as extrapolation with a warning and
     degrading acceptance; unset defaults to the trained 7.
+  - Added DFlash speculative decoding for Gemma 4 31B
+    (`UnifiedDflashGemma4_31BForCausalLM`), serving `google/gemma-4-31B-it`
+    with the z-lab block-diffusion drafter `z-lab/gemma-4-31B-it-DFlash`: a
+    5-layer noncausal draft block drafts 15 tokens per step from six target
+    hidden-state taps. Enabled with the `gemma4_31b_dflash.yaml` recipe or
+    `--draft-model-path z-lab/gemma-4-31B-it-DFlash --speculative-method
+    dflash`. The draft width is pinned to the drafter's trained
+    `block_size - 1`; a mismatching `--num-speculative-tokens` is overridden
+    with a warning. NVFP4 target checkpoints (`nvidia/Gemma-4-31B-IT-NVFP4`)
+    are supported via the `gemma4_31b_dflash_nvfp4.yaml` recipe.
   - Gemma 4 31B DSpark now supports structured output (JSON schemas and
     tool-call grammars, enforced on the target verify pass; a
     grammar-violating draft is rejected at its position) and Gemma 4

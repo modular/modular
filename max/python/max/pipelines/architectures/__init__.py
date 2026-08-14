@@ -294,6 +294,11 @@ def register_all_models() -> None:
             "unified_dflash_kimi_k25_arch",
         ),
         _LazyArch(
+            "UnifiedDflashGemma4_31BForCausalLM",
+            ".unified_dflash_gemma4_31b",
+            "unified_dflash_gemma4_31b_arch",
+        ),
+        _LazyArch(
             "UnifiedDflashLlama3ForCausalLM",
             ".unified_dflash_llama3",
             "unified_dflash_llama3_arch",

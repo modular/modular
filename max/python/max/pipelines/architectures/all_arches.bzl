@@ -75,6 +75,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/step3p5",
     "//max/python/max/pipelines/architectures/t5",
     "//max/python/max/pipelines/architectures/umt5",
+    "//max/python/max/pipelines/architectures/unified_dflash_gemma4_31b",
     "//max/python/max/pipelines/architectures/unified_dflash_kimi_k25",
     "//max/python/max/pipelines/architectures/unified_dflash_llama3",
     "//max/python/max/pipelines/architectures/unified_dspark_gemma4_12b",
