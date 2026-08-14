@@ -1247,7 +1247,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 ///
 /// This is used for evaluating expressions like `origin_of(x)` and
 /// `type_of(x)` and `ref [x] T`.
-void IREmitter::emitExpressionWithOutEvaluatingIt(
+void IREmitter::emitExpressionWithoutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,
     std::function<void(CValue, IREmitter &emitter)> callback) {
   SMLoc loc = expr->getLoc();

@@ -150,7 +150,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     // may be in a PValue expression.
     TypedAttr thisOrigin;
     bool isError = false;
-    emitter.emitExpressionWithOutEvaluatingIt(
+    emitter.emitExpressionWithoutEvaluatingIt(
         expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
