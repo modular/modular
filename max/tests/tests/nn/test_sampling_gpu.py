@@ -249,6 +249,52 @@ def test_typical_acceptance_sampler(device: Device) -> None:
         assert cast(Buffer, first_rejected).to_numpy()[0] == 0
 
 
+def test_stochastic_acceptance_graph_requires_vocab_size() -> None:
+    with pytest.raises(ValueError, match="vocab_size is required"):
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.CPU(), draft_proposal="sampled"
+        )
+
+
+def test_stochastic_acceptance_sampler_draft_dist_required_iff_sampled() -> (
+    None
+):
+    """``draft_probs_full`` is set iff sampled mode.
+
+    The checks fire before any graph op runs, so no active ``Graph`` context or
+    real tensors are needed.
+    """
+    with pytest.raises(
+        ValueError, match="draft_probs_full and vocab_size are required"
+    ):
+        stochastic_acceptance_sampler(
+            draft_tokens=cast(Any, None),
+            target_logits=cast(Any, None),
+            temperature=cast(Any, None),
+            top_k=cast(Any, None),
+            max_k=cast(Any, None),
+            top_p=cast(Any, None),
+            min_top_p=cast(Any, None),
+            seed=cast(Any, None),
+            draft_proposal="sampled",
+            vocab_size=4,
+        )
+
+    with pytest.raises(ValueError, match="draft_probs_full must be None"):
+        stochastic_acceptance_sampler(
+            draft_tokens=cast(Any, None),
+            target_logits=cast(Any, None),
+            temperature=cast(Any, None),
+            top_k=cast(Any, None),
+            max_k=cast(Any, None),
+            top_p=cast(Any, None),
+            min_top_p=cast(Any, None),
+            seed=cast(Any, None),
+            draft_proposal="argmax",
+            draft_probs_full=cast(Any, object()),
+        )
+
+
 @pytest.mark.parametrize(
     ("base_rate", "expected_first_rejected"),
     [(1.0, "num_steps"), (0.0, 0)],
@@ -573,6 +619,589 @@ def test_stochastic_acceptance_honors_top_p_for_recovered_tokens(
         f"{outside_nucleus}/{rejected_rows} recovered tokens landed outside "
         "the top_p nucleus"
     )
+
+
+def _sampled_stochastic_sampler_inputs(
+    device: Device,
+    batch_size: int,
+    vocab_size: int,
+    draft_tokens_np: npt.NDArray[np.int64],
+    logits: npt.NDArray[np.float32],
+    temperature_np: npt.NDArray[np.float32],
+    draft_probs_np: npt.NDArray[np.float32],
+    top_k_np: npt.NDArray[np.int64] | None = None,
+    top_p_np: npt.NDArray[np.float32] | None = None,
+    seed: int = 1,
+    draft_probs_full_np: npt.NDArray[np.float32] | None = None,
+) -> list[Buffer]:
+    """Builds the sampled-mode graph inputs.
+
+    ``draft_probs_full_np`` defaults to a one-hot distribution carrying
+    ``draft_probs_np`` at the drafted token -- the proposal a deterministic
+    draft would have made, which reduces the residual to ``p_target`` with the
+    drafted token's mass removed. ``q`` is read back out of this tensor, so
+    there is no separate scalar input.
+    """
+    if draft_probs_full_np is None:
+        draft_probs_full_np = np.zeros(
+            (*draft_tokens_np.shape, vocab_size), dtype=np.float32
+        )
+        np.put_along_axis(
+            draft_probs_full_np,
+            draft_tokens_np[..., None],
+            draft_probs_np[..., None],
+            axis=-1,
+        )
+    return _stochastic_sampler_inputs(
+        device,
+        batch_size,
+        vocab_size,
+        draft_tokens_np,
+        logits,
+        temperature_np,
+        top_k_np=top_k_np,
+        top_p_np=top_p_np,
+        seed=seed,
+    ) + [Buffer.from_numpy(draft_probs_full_np).to(device)]
+
+
+def test_full_residual_preserves_target_distribution() -> None:
+    """With the draft's whole distribution, speculative sampling is exact.
+
+    The textbook guarantee is that a draft proposing from ``q`` and a target
+    accepting with ``min(1, p/q)`` -- recovering from ``(p - q)^+`` on
+    rejection -- emits tokens distributed exactly as ``p``, for *any* ``q``.
+    The scalar-``q`` residual only approximates that, so this is the test
+    that separates the two: it uses a deliberately non-deterministic draft
+    whose distribution is far from the target's, where the approximation
+    visibly skews.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    vocab_size = 6
+    num_steps = 1
+    batch_size = 8192
+    n_executes = 8
+
+    target_logits_row = np.array(
+        [2.0, 1.0, 0.5, 0.0, -1.0, 1.5], dtype=np.float32
+    )
+    target_probs = np.exp(target_logits_row) / np.exp(target_logits_row).sum()
+    # A draft distribution deliberately unlike the target's, so a wrong
+    # residual shows up as a skew rather than washing out.
+    draft_dist = np.array([0.05, 0.05, 0.4, 0.3, 0.15, 0.05], dtype=np.float32)
+
+    per_seq = np.stack([target_logits_row, np.zeros(vocab_size, np.float32)])
+    logits = np.tile(per_seq, (batch_size, 1)).astype(np.float32)
+
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+
+    rng = np.random.default_rng(0)
+    committed: list[npt.NDArray[np.int64]] = []
+    for seed in range(1, n_executes + 1):
+        # Draw each row's draft token from `draft_dist` and pass the exact
+        # probability the draft used, mirroring what the draft model emits.
+        draft_tokens_np = rng.choice(
+            vocab_size, size=(batch_size, num_steps), p=draft_dist
+        ).astype(np.int64)
+        draft_probs_np = draft_dist[draft_tokens_np].astype(np.float32)
+        draft_probs_full_np = np.broadcast_to(
+            draft_dist, (batch_size, num_steps, vocab_size)
+        ).astype(np.float32)
+
+        _, recovered, _ = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                np.ones(batch_size, dtype=np.float32),
+                draft_probs_np,
+                seed=seed,
+                draft_probs_full_np=draft_probs_full_np,
+            )
+        )
+        committed.append(cast(Buffer, recovered).to_numpy()[:, 0])
+
+    counts = np.bincount(
+        np.concatenate(committed), minlength=vocab_size
+    ).astype(np.float64)
+    expected = target_probs * counts.sum()
+    chi2 = float(np.sum((counts - expected) ** 2 / expected))
+    # dof = vocab - 1 = 5; the 0.999 critical value is ~20.5.
+    assert chi2 < 20.5, (
+        f"emitted distribution is not the target's: chi2={chi2:.1f}, "
+        f"empirical={counts / counts.sum()}, target={target_probs}"
+    )
+
+
+def test_sampled_acceptance_output_distribution() -> None:
+    """Committed tokens must be ~ the top-p-masked target softmax.
+
+    Speculative decoding is lossless only if the committed token at each
+    draft position is marginally distributed as the *verification*
+    distribution -- here the target softmax masked and renormalized under
+    ``top_p=0.8`` -- for any draft proposal with full support. The draft here
+    proposes from a noisy full softmax of the target's logits (0-30%
+    perturbation), so accept, reject, and residual recovery all fire, and
+    the whole GPU stack is in the loop: ``topk_topp_masked_probs`` for the
+    target side, the drafted distribution for ``q``, and the gumbel residual
+    sampler for recovery. A kernel emitting an unnormalized or unmasked
+    distribution skews every bucket by many sigma at this sample size.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    vocab_size = 1024
+    num_steps = 4
+    batch_size = 512
+    n_trials = 32
+    top_p = 0.8
+    head_count = 5
+
+    rng = np.random.default_rng(0)
+
+    # LLM-shaped target: a sharp head over a lognormal tail (head mass 0.78,
+    # so the 0.8 nucleus keeps the whole head plus a sliver of tail).
+    head_probs = np.array([0.28, 0.20, 0.13, 0.10, 0.07])
+    top_idx = rng.choice(vocab_size, size=head_count, replace=False)
+    tail = np.exp(rng.normal(0.0, 1.0, vocab_size))
+    tail[top_idx] = 0.0
+    tail *= (1.0 - head_probs.sum()) / tail.sum()
+    target_probs = tail
+    target_probs[top_idx] = head_probs
+    target_logits_row = np.log(target_probs).astype(np.float32)
+
+    # The draft proposes from a noisy version of the target's logits --
+    # softmaxed with full support, so ``q`` is positive everywhere and the
+    # rejection-sampling identity applies for the exactness claim.
+    draft_logits_row = target_logits_row * (
+        1.0 + rng.uniform(-0.3, 0.3, vocab_size)
+    )
+    draft_e = np.exp(draft_logits_row - draft_logits_row.max())
+    draft_probs_row = draft_e / draft_e.sum()
+
+    # Reference: the top-p-masked renormalized target, by the kernel's own
+    # predicate (a token survives iff the mass strictly above it is <= 0.8).
+    order = np.argsort(-target_probs)
+    mass_above = np.zeros(vocab_size)
+    mass_above[order] = np.concatenate(
+        ([0.0], np.cumsum(target_probs[order])[:-1])
+    )
+    survives = mass_above <= top_p
+    masked_target = np.where(survives, target_probs, 0.0)
+    masked_target /= masked_target.sum()
+
+    logits_np = np.tile(
+        target_logits_row, (batch_size * (num_steps + 1), 1)
+    ).astype(np.float32)
+
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+
+    draft_probs_full_np = np.tile(
+        draft_probs_row.astype(np.float32), (batch_size, num_steps, 1)
+    )
+    committed: list[npt.NDArray[np.int64]] = []
+    for _ in range(n_trials):
+        seed = int(rng.integers(np.iinfo(np.int64).max))
+        draft_tokens_np = rng.choice(
+            vocab_size, size=(batch_size, num_steps), p=draft_probs_row
+        ).astype(np.int64)
+        draft_probs_np = draft_probs_row[draft_tokens_np].astype(np.float32)
+
+        _, recovered, _ = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits_np,
+                np.ones(batch_size, dtype=np.float32),
+                draft_probs_np,
+                top_k_np=np.full(batch_size, -1, dtype=np.int64),
+                top_p_np=np.full(batch_size, top_p, dtype=np.float32),
+                seed=seed,
+                draft_probs_full_np=draft_probs_full_np,
+            )
+        )
+        # In sampled mode ``recovered`` is the committed token per position:
+        # the draft token where accepted, the residual sample where rejected.
+        committed.append(cast(Buffer, recovered).to_numpy().reshape(-1))
+
+    all_tokens = np.concatenate(committed)
+    counts = np.bincount(all_tokens, minlength=vocab_size).astype(np.float64)
+    total = counts.sum()
+
+    # Tokens clearly outside the nucleus have zero masked probability and
+    # zero residual, so they can never be committed. The margin keeps a
+    # float32-vs-float64 boundary flip on the last admitted tail token from
+    # tripping an exact-zero assertion.
+    definitely_masked = mass_above > top_p + 0.005
+    assert counts[definitely_masked].sum() == 0, (
+        "committed a token outside the top-p nucleus: "
+        f"{np.nonzero(counts * definitely_masked)[0]}"
+    )
+
+    # Tail mass: the head holds 0.78/Z of the masked target; an unmasked or
+    # unnormalized verification distribution moves this by many sigma at
+    # ~65k samples (noise here is ~0.002).
+    tail_mass = 1.0 - masked_target[top_idx].sum()
+    tail_freq = 1.0 - counts[top_idx].sum() / total
+    assert abs(tail_freq - tail_mass) < 0.015, (
+        f"committed-token tail mass {tail_freq:.4f} deviates from masked "
+        f"target {tail_mass:.4f}"
+    )
+
+    # Chi-square over 6 buckets (each head token + aggregated tail).
+    # dof = 5; the 0.999 critical value is ~20.5. The threshold adds margin
+    # for the per-request shared residual noise rows, which correlate a few
+    # same-request positions without biasing any marginal.
+    observed = np.append(counts[top_idx], total - counts[top_idx].sum())
+    expected = np.append(masked_target[top_idx], tail_mass) * total
+    chi2 = float(np.sum((observed - expected) ** 2 / expected))
+    assert chi2 < 30.0, (
+        f"chi-square {chi2:.1f} over head + tail buckets exceeds 30: "
+        f"observed freq {observed / total}, expected {expected / total}"
+    )
+
+
+def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() -> (
+    None
+):
+    """``draft_proposal="sampled"`` with ``draft_probs=1`` must exactly
+    match ``draft_proposal="argmax"`` -- the accept test and residual both
+    reduce to the same formula when ``q_draft ≡ 1``. This is the load-bearing
+    check that every other pipeline's ("argmax") code path is unaffected by
+    this change: it exercises the identical machinery with the new
+    parameter wired to its identity value.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    vocab_size = 6
+    num_steps = 2
+    batch_size = 3
+
+    target_argmax = [2, 4, 1]
+    draft_tokens_np = np.array([[2, 2], [0, 0], [1, 1]], dtype=np.int64)
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -100.0, dtype=np.float32
+    )
+    for b, argmax_token in enumerate(target_argmax):
+        for s in range(num_steps + 1):
+            logits[b * (num_steps + 1) + s, argmax_token] = 100.0
+
+    temperature_np = np.array([0.5, 1.0, 2.5], dtype=np.float32)
+    draft_probs_np = np.ones((batch_size, num_steps), dtype=np.float32)
+
+    argmax_graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device), draft_proposal="argmax"
+    )
+    argmax_model = session.load(argmax_graph)
+    argmax_out = argmax_model.execute(
+        *_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            draft_tokens_np,
+            logits,
+            temperature_np,
+        )
+    )
+
+    sampled_graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=vocab_size,
+    )
+    sampled_model = session.load(sampled_graph)
+    sampled_out = sampled_model.execute(
+        *_sampled_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            draft_tokens_np,
+            logits,
+            temperature_np,
+            draft_probs_np,
+        )
+    )
+
+    for argmax_buf, sampled_buf in zip(argmax_out, sampled_out, strict=True):
+        np.testing.assert_array_equal(
+            cast(Buffer, argmax_buf).to_numpy(),
+            cast(Buffer, sampled_buf).to_numpy(),
+        )
+
+
+def test_sampled_zeroed_distribution_matches_argmax() -> None:
+    """A row with no draft distribution must behave exactly like argmax mode.
+
+    The overlap scheduler clears a slot it cannot refresh, so a request new to
+    the batch arrives with a zeroed row. Reading ``q`` out of that row gives 0,
+    which the sampler must treat as "no draft information" rather than as a
+    probability -- a literal 0 would make ``coin * q >= p_target`` false and
+    accept everything.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    vocab_size = 8
+    batch_size = 512
+    num_steps = 2
+
+    rng = np.random.default_rng(21)
+    logits = rng.standard_normal(
+        (batch_size * (num_steps + 1), vocab_size)
+    ).astype(np.float32)
+    draft_tokens_np = rng.integers(
+        0, vocab_size, size=(batch_size, num_steps)
+    ).astype(np.int64)
+    temperature_np = np.ones(batch_size, dtype=np.float32)
+
+    sampled = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+    argmax = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device), draft_proposal="argmax"
+        )
+    )
+
+    seed = 5
+    first_sampled, recovered_sampled, bonus_sampled = sampled.execute(
+        *_sampled_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            draft_tokens_np,
+            logits,
+            temperature_np,
+            np.zeros((batch_size, num_steps), dtype=np.float32),
+            seed=seed,
+            draft_probs_full_np=np.zeros(
+                (batch_size, num_steps, vocab_size), dtype=np.float32
+            ),
+        )
+    )
+    first_argmax, recovered_argmax, bonus_argmax = argmax.execute(
+        *_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            draft_tokens_np,
+            logits,
+            temperature_np,
+            seed=seed,
+        )
+    )
+
+    # Both arms draw from the same seeded stream, so the acceptance decisions
+    # must match exactly, not just in distribution.
+    np.testing.assert_array_equal(
+        cast(Buffer, first_sampled).to_numpy(),
+        cast(Buffer, first_argmax).to_numpy(),
+    )
+    np.testing.assert_array_equal(
+        cast(Buffer, bonus_sampled).to_numpy(),
+        cast(Buffer, bonus_argmax).to_numpy(),
+    )
+    # Recovery differs in its RNG stream, but must never re-emit the token the
+    # target just rejected -- the failure the zero fallback exists to prevent.
+    rejected = cast(Buffer, first_sampled).to_numpy()
+    recovered_np = cast(Buffer, recovered_sampled).to_numpy()
+    _ = recovered_argmax
+    for b in range(batch_size):
+        k = int(rejected[b])
+        if k < num_steps:
+            assert recovered_np[b, k] != draft_tokens_np[b, k]
+
+
+def test_stochastic_acceptance_sampler_sampled_zero_draft_tokens() -> None:
+    """A step with no drafts to verify must run, not fault.
+
+    Every prefill-only step hands the verification graph ``num_steps=0``, so
+    the sampled path has to survive an empty step axis: the per-step stats
+    have no rows at all, and the first-rejected index is 0 with nothing to
+    index. Both of these faulted before the residual was reworked to index
+    only tensors that are never empty.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    vocab_size = 8
+    batch_size = 3
+    num_steps = 0
+
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+
+    rng = np.random.default_rng(3)
+    logits = rng.standard_normal(
+        (batch_size * (num_steps + 1), vocab_size)
+    ).astype(np.float32)
+
+    first_rejected, recovered, bonus = model.execute(
+        *_sampled_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            np.zeros((batch_size, num_steps), dtype=np.int64),
+            logits,
+            np.ones(batch_size, dtype=np.float32),
+            np.zeros((batch_size, num_steps), dtype=np.float32),
+            draft_probs_full_np=np.zeros(
+                (batch_size, num_steps, vocab_size), dtype=np.float32
+            ),
+        )
+    )
+    assert cast(Buffer, recovered).to_numpy().shape == (batch_size, num_steps)
+    # Nothing was drafted, so nothing can be rejected and the bonus token is
+    # the only real output.
+    np.testing.assert_array_equal(
+        cast(Buffer, first_rejected).to_numpy(),
+        np.zeros(batch_size, dtype=np.int64),
+    )
+    bonus_np = cast(Buffer, bonus).to_numpy()
+    assert bonus_np.shape == (batch_size, 1)
+    assert np.all((bonus_np >= 0) & (bonus_np < vocab_size))
+
+
+def test_stochastic_acceptance_sampler_sampled_ratio_formula() -> None:
+    """Pins the reformulated accept test: ``reject iff coin*q_draft >= p_target``.
+
+    Uses a near-deterministic draft (heavy mass on the drafted token) so the
+    residual approximation is exact, isolating the ratio-test numerics.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=4,
+    )
+    model = session.load(graph)
+
+    vocab_size = 4
+    num_steps = 1
+    batch_size = 1
+    draft_token = 0
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -100.0, dtype=np.float32
+    )
+    # p_target(draft_token) = 0.5 after softmax over these two logits.
+    logits[:, draft_token] = 0.0
+    logits[:, draft_token + 1] = 0.0
+    draft_tokens_np = np.full((batch_size, num_steps), draft_token, np.int64)
+
+    # q_draft = 0.6 > p_target = 0.5: p_target/q_draft < 1, so this is a
+    # real (non-degenerate) ratio test, unlike the argmax q=1 case.
+    draft_probs_np = np.full((batch_size, num_steps), 0.6, dtype=np.float32)
+
+    saw_accept = saw_reject = False
+    for seed in range(1, 65):
+        first_rejected, _, _ = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                np.ones(batch_size, dtype=np.float32),
+                draft_probs_np,
+                seed=seed,
+            )
+        )
+        accepted = cast(Buffer, first_rejected).to_numpy()[0] == num_steps
+        saw_accept |= bool(accepted)
+        saw_reject |= not accepted
+    # p_target/q_draft = 0.5/0.6 ≈ 0.833: accept ~83% of draws, so both
+    # outcomes must appear across 64 seeds (P(never reject) ≈ 0.83^64 ≈ 6e-6).
+    assert saw_accept and saw_reject
+
+
+def test_stochastic_acceptance_sampler_sampled_degenerate_residual() -> None:
+    """A near-all-zero residual must not NaN/crash and must recover a valid
+    vocab id, matching vLLM's unguarded Gumbel-max behavior.
+
+    ``draft_token``'s logit dominates so heavily that every other vocab
+    entry's softmax mass underflows to ~0 (residual there is already
+    ~p_target~0), and ``q_draft`` is deliberately set above 1.0 -- an
+    out-of-spec value no real caller should pass, but one the ratio-test
+    reformulation must still handle safely (see the function's degrade-
+    toward-reject docstring note) -- to force frequent, reliable rejection
+    without needing top_k masking (which would make p_target exactly 1 and
+    rejection vanishingly rare instead). Exact argmax ties on an all-zero
+    row have GPU-nondeterministic tie-break (:func:`ops.argmax`'s
+    documented "GPU may return any" caveat), so this only pins finiteness
+    and a valid vocab id, not seed-to-seed equality.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=4,
+    )
+    model = session.load(graph)
+
+    vocab_size = 4
+    num_steps = 1
+    batch_size = 1
+    draft_token = 0
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -100.0, dtype=np.float32
+    )
+    logits[:, draft_token] = 100.0
+    draft_tokens_np = np.full((batch_size, num_steps), draft_token, np.int64)
+    draft_probs_np = np.full((batch_size, num_steps), 10.0, dtype=np.float32)
+
+    saw_reject = False
+    for seed in range(1, 9):
+        out = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                np.ones(batch_size, dtype=np.float32),
+                draft_probs_np,
+                seed=seed,
+            )
+        )
+        first_rejected, recovered, bonus = (
+            cast(Buffer, o).to_numpy() for o in out
+        )
+        assert np.isfinite(first_rejected).all()
+        assert np.isfinite(recovered).all()
+        assert np.isfinite(bonus).all()
+        assert ((recovered >= 0) & (recovered < vocab_size)).all()
+        saw_reject |= bool(first_rejected[0] == 0)
+    assert saw_reject
 
 
 def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
