@@ -71,6 +71,41 @@ def _dp_token_occupancy_pct(
     return 100.0 * sum(per_rank) / (num_replicas * max_rank_tokens)
 
 
+def _format_spec_decode_clause(
+    draft_tokens_generated: int,
+    draft_tokens_accepted: int,
+    avg_acceptance_length: float,
+    max_acceptance_length: int,
+    acceptance_rate_per_position: list[float],
+) -> str:
+    """Formats the "Draft Tokens: ..." log clause; empty when no drafts."""
+    if draft_tokens_generated <= 0:
+        return ""
+    acceptance_rate = draft_tokens_accepted / draft_tokens_generated
+    if acceptance_rate_per_position:
+        pos_rates_str = ", ".join(
+            f"p{i}={rate:.0%}"
+            for i, rate in enumerate(acceptance_rate_per_position)
+        )
+        per_pos_str = f", Per-Pos: [{pos_rates_str}]"
+    else:
+        per_pos_str = ""
+    # "Acceptance Len: <avg> / <max> toks" is parsed by
+    # analyze_batch_logs.py, so only append after "toks". The parenthetical
+    # names both conventions: <avg> counts accepted drafts per verify step,
+    # while "acceptance length" elsewhere often includes the bonus token (one
+    # per verification).
+    return (
+        f"Draft Tokens: {draft_tokens_accepted}/{draft_tokens_generated} "
+        f"({acceptance_rate:.2%}) accepted, "
+        f"Acceptance Len: {avg_acceptance_length:.2f} / "
+        f"{max_acceptance_length} toks "
+        f"(accepted drafts/step; {avg_acceptance_length + 1:.2f} toks/step "
+        f"incl bonus)"
+        f"{per_pos_str} | "
+    )
+
+
 @dataclass
 class BatchMetrics:
     batch_type: BatchType
@@ -129,9 +164,13 @@ class BatchMetrics:
     dkv_total_clients: int = 0
     dkv_reconnect_attempts: int = 0
 
-    # When True, ``batch_execution_time_s`` is the execution time of the
-    # previous batch (i.e. the overlap scheduler is active).
-    batch_execution_time_is_previous: bool = False
+    # When True, ``batch_execution_time_s`` and the throughputs describe the
+    # previously enqueued batch, so ``completed`` is reported instead.
+    overlap_active: bool = False
+
+    # The batch whose outputs were synchronized this iteration. ``None`` when
+    # nothing completed, or when overlap is off and this record covers both.
+    completed: CompletedBatchStats | None = None
 
     # Data-parallel balance of this batch's active-token load: mean/max of
     # per-rank active-token sums as a percentage (100 = perfectly balanced;
@@ -198,7 +237,8 @@ class BatchMetrics:
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_video_metrics: VideoEncoderMetrics | None = None,
-        batch_execution_time_is_previous: bool = False,
+        overlap_active: bool = False,
+        completed_batch_stats: CompletedBatchStats | None = None,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = inputs.batch_size
@@ -431,7 +471,8 @@ class BatchMetrics:
             dkv_connected_clients=dkv_connected_clients,
             dkv_total_clients=dkv_total_clients,
             dkv_reconnect_attempts=dkv_reconnect_attempts,
-            batch_execution_time_is_previous=batch_execution_time_is_previous,
+            overlap_active=overlap_active,
+            completed=completed_batch_stats,
             dp_active_token_occupancy_pct=dp_active_token_occupancy_pct,
             dp_context_token_occupancy_pct=dp_context_token_occupancy_pct,
             dp_active_tokens=dp_active_tokens,
@@ -484,32 +525,13 @@ class BatchMetrics:
                 f"Inflight Disk Ops: {self.inflight_disk_ops} | "
             )
 
-        if self.draft_tokens_generated > 0:
-            acceptance_rate = (
-                self.draft_tokens_accepted / self.draft_tokens_generated
-            )
-            # Format per-position acceptance rates
-            if self.acceptance_rate_per_position:
-                pos_rates_str = ", ".join(
-                    f"p{i}={rate:.0%}"
-                    for i, rate in enumerate(self.acceptance_rate_per_position)
-                )
-                per_pos_str = f", Per-Pos: [{pos_rates_str}]"
-            else:
-                per_pos_str = ""
-            # "Acceptance Len: <avg> / <max> toks" is parsed by
-            # analyze_batch_logs.py, so only append after "toks". The
-            # parenthetical names both conventions: <avg> counts accepted
-            # drafts per verify step, while "acceptance length" elsewhere
-            # often includes the bonus token (one per verification).
-            spec_decode_str = (
-                f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, "
-                f"Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks "
-                f"(accepted drafts/step; {self.avg_acceptance_length + 1:.2f} toks/step incl bonus)"
-                f"{per_pos_str} | "
-            )
-        else:
-            spec_decode_str = ""
+        spec_decode_str = _format_spec_decode_clause(
+            self.draft_tokens_generated,
+            self.draft_tokens_accepted,
+            self.avg_acceptance_length,
+            self.max_acceptance_length,
+            self.acceptance_rate_per_position,
+        )
 
         dkv_str = ""
         has_dkv = (
@@ -564,12 +586,6 @@ class BatchMetrics:
                 f"({vid.num_clips_cached} hit, {vid.num_clips_encoded} miss) | "
             )
 
-        exec_label = (
-            "Previous Execution"
-            if self.batch_execution_time_is_previous
-            else "Execution"
-        )
-
         # One occupancy clause, matched to the batch's dominant load: active
         # tokens for CE (compute) and context tokens for TG (KV / attention).
         # The published metrics keep the full active/context split.
@@ -582,25 +598,66 @@ class BatchMetrics:
         if dp_occupancy_pct is not None:
             dp_str = f"DP Occupancy: {dp_occupancy_pct:.1f}% | "
 
-        return (
-            f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
-            f"Terminated: {self.terminated_reqs} reqs, "
-            f"Pending: {self.num_pending_reqs} reqs | "
-            f"Input Tokens: {self.num_input_tokens}/{self.max_batch_input_tokens} toks | "
-            f"{context_tokens_str}"
-            f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
-            f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
-            f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
-            f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
-            f"{dp_str}"
-            f"{kv_str}"
-            f"{host_kv_str}"
-            f"{disk_kv_str}"
-            f"{dkv_str}"
+        # Scheduler/cache state rather than a specific batch's execution, so
+        # these stay valid under either path below.
+        state_str = (
+            f"{dp_str}{kv_str}{host_kv_str}{disk_kv_str}{dkv_str}"
             f"{dkv_health_str}"
-            f"{spec_decode_str}"
-            f"{vision_str}"
-            f"{video_str}"
+        )
+        encoder_str = f"{vision_str}{video_str}"
+
+        if not self.overlap_active:
+            return (
+                f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
+                f"Terminated: {self.terminated_reqs} reqs, "
+                f"Pending: {self.num_pending_reqs} reqs | "
+                f"Input Tokens: {self.num_input_tokens}/{self.max_batch_input_tokens} toks | "
+                f"{context_tokens_str}"
+                f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
+                f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
+                f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
+                f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
+                f"{state_str}"
+                f"{spec_decode_str}"
+                f"{encoder_str}"
+                f"All Preemptions: {self.total_preemption_count} reqs"
+            )
+
+        # The enqueued and completed batches are different, so each gets its
+        # own clause rather than sharing one misleading identity.
+        clauses = ""
+        if self.batch_size > 0 or self.completed is None:
+            clauses += (
+                f"Enqueued {self.batch_type.value} batch with {self.batch_size} reqs | "
+                f"Pending: {self.num_pending_reqs} reqs | "
+                f"Input Tokens: {self.num_input_tokens}/{self.max_batch_input_tokens} toks | "
+                f"{context_tokens_str}"
+                f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)} | "
+            )
+        if self.completed is not None:
+            c = self.completed
+            completed_spec_str = _format_spec_decode_clause(
+                c.draft_tokens_generated,
+                c.draft_tokens_accepted,
+                c.avg_acceptance_length,
+                c.max_acceptance_length,
+                c.acceptance_rate_per_position,
+            )
+            # "Completed Input Tokens" is deliberately distinct from the
+            # enqueued clause's "Input Tokens" so both stay parseable.
+            clauses += (
+                f"Completed {c.batch_type.value} batch with {c.batch_size} reqs | "
+                f"Terminated: {self.terminated_reqs} reqs | "
+                f"Completed Input Tokens: {c.num_input_tokens} toks | "
+                f"Prompt Tput: {_to_human_readable_throughput(c.prompt_throughput)}, "
+                f"Generation Tput: {_to_human_readable_throughput(c.generation_throughput)} | "
+                f"Execution: {to_human_readable_latency(c.execution_time_s)} | "
+                f"{completed_spec_str}"
+            )
+        return (
+            f"{clauses}"
+            f"{state_str}"
+            f"{encoder_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -624,16 +681,12 @@ class BatchMetrics:
             "batch_type": self.batch_type.value,
             "batch_size": self.batch_size,
             "max_batch_size": self.max_batch_size,
-            "terminated_reqs": self.terminated_reqs,
             "num_pending_reqs": self.num_pending_reqs,
             "num_input_tokens": self.num_input_tokens,
             "max_batch_input_tokens": self.max_batch_input_tokens,
             "num_context_tokens": self.num_context_tokens,
-            "prompt_throughput": self.prompt_throughput,
-            "generation_throughput": self.generation_throughput,
             "batch_creation_time_ms": self.batch_creation_time_s * 1000,
-            "batch_execution_time_ms": self.batch_execution_time_s * 1000,
-            "batch_execution_time_is_previous": self.batch_execution_time_is_previous,
+            "overlap_active": self.overlap_active,
             "total_preemption_count": self.total_preemption_count,
         }
 
@@ -662,6 +715,25 @@ class BatchMetrics:
                 self.cross_replica_bytes_copied
             )
 
+        if not self.overlap_active:
+            extra["terminated_reqs"] = self.terminated_reqs
+            extra["prompt_throughput"] = self.prompt_throughput
+            extra["generation_throughput"] = self.generation_throughput
+            extra["batch_execution_time_ms"] = (
+                self.batch_execution_time_s * 1000
+            )
+        elif self.completed is not None:
+            # completed_* names so consumers cannot mistake these for the
+            # enqueued batch. terminated_reqs already describes this batch.
+            c = self.completed
+            extra["completed_batch_type"] = c.batch_type.value
+            extra["completed_batch_size"] = c.batch_size
+            extra["completed_num_input_tokens"] = c.num_input_tokens
+            extra["completed_terminated_reqs"] = self.terminated_reqs
+            extra["completed_prompt_throughput"] = c.prompt_throughput
+            extra["completed_generation_throughput"] = c.generation_throughput
+            extra["completed_execution_time_ms"] = c.execution_time_s * 1000
+
         if self.total_kv_blocks != 0:
             extra["used_kv_pct"] = self.used_kv_pct
             extra["total_kv_blocks"] = self.total_kv_blocks
@@ -686,16 +758,35 @@ class BatchMetrics:
             extra["disk_blocks_written"] = self.disk_blocks_written
             extra["inflight_disk_ops"] = self.inflight_disk_ops
 
-        if self.draft_tokens_generated > 0:
-            extra["draft_tokens_generated"] = self.draft_tokens_generated
-            extra["draft_tokens_accepted"] = self.draft_tokens_accepted
-            extra["draft_token_acceptance_rate"] = (
-                self.draft_tokens_accepted / self.draft_tokens_generated
+        if not self.overlap_active:
+            if self.draft_tokens_generated > 0:
+                extra["draft_tokens_generated"] = self.draft_tokens_generated
+                extra["draft_tokens_accepted"] = self.draft_tokens_accepted
+                extra["draft_token_acceptance_rate"] = (
+                    self.draft_tokens_accepted / self.draft_tokens_generated
+                )
+                extra["avg_acceptance_length"] = self.avg_acceptance_length
+                extra["max_acceptance_length"] = self.max_acceptance_length
+                for position, rate in enumerate(
+                    self.acceptance_rate_per_position
+                ):
+                    extra[f"acceptance_rate_p{position}"] = rate
+        elif (
+            self.completed is not None
+            and self.completed.draft_tokens_generated > 0
+        ):
+            cs = self.completed
+            extra["completed_draft_tokens_generated"] = (
+                cs.draft_tokens_generated
             )
-            extra["avg_acceptance_length"] = self.avg_acceptance_length
-            extra["max_acceptance_length"] = self.max_acceptance_length
-            for position, rate in enumerate(self.acceptance_rate_per_position):
-                extra[f"acceptance_rate_p{position}"] = rate
+            extra["completed_draft_tokens_accepted"] = cs.draft_tokens_accepted
+            extra["completed_draft_token_acceptance_rate"] = (
+                cs.draft_tokens_accepted / cs.draft_tokens_generated
+            )
+            extra["completed_avg_acceptance_length"] = cs.avg_acceptance_length
+            extra["completed_max_acceptance_length"] = cs.max_acceptance_length
+            for position, rate in enumerate(cs.acceptance_rate_per_position):
+                extra[f"completed_acceptance_rate_p{position}"] = rate
 
         vm = self.vision_metrics
         if vm is not None and vm.num_images_total > 0:
@@ -745,10 +836,10 @@ class BatchMetrics:
 
         Args:
             defer_execution_metrics: When True (overlap scheduling), skip the
-                execution-time and throughput metrics: the wall-clock time
-                measured this iteration describes the previous batch, so those
-                metrics are instead published from the pipeline's
-                ``CompletedBatchStats`` via
+                execution-time, throughput and termination metrics: they
+                describe the batch synchronized this iteration rather than the
+                one enqueued, so they are instead published from the
+                pipeline's ``CompletedBatchStats`` via
                 :func:`publish_completed_batch_metrics`, labeled with the
                 completed batch's type.
         """
@@ -765,7 +856,10 @@ class BatchMetrics:
         METRICS.batch_input_tokens(self.num_input_tokens, batch_type=bt)
         METRICS.batch_context_tokens(self.num_context_tokens, batch_type=bt)
 
-        METRICS.batch_terminated_reqs(self.terminated_reqs, batch_type=bt)
+        # Terminations come from the synchronized outputs, so under overlap
+        # they belong to the completed batch and are published there.
+        if not defer_execution_metrics:
+            METRICS.batch_terminated_reqs(self.terminated_reqs, batch_type=bt)
         METRICS.batch_pending_reqs(self.num_pending_reqs, batch_type=bt)
         # Publish the current scheduler queue depth as a synchronous gauge
         # (mirrors the "Pending: N reqs" value emitted in scheduler logs).
@@ -880,17 +974,28 @@ class BatchMetrics:
                 METRICS.video_frames_per_clip(frame_count)
 
 
-def publish_completed_batch_metrics(stats: CompletedBatchStats) -> None:
-    """Publishes execution-time and throughput telemetry for a completed batch.
+def publish_completed_batch_metrics(
+    stats: CompletedBatchStats, terminated_reqs: int
+) -> None:
+    """Publishes execution-time, throughput and termination telemetry for a
+    completed batch.
 
     Used with the overlap pipeline, where a batch's completion is observed one
     scheduler iteration after it was enqueued: these metrics must be labeled
     with the completed batch's type and computed from that same batch's token
     counts, not the current iteration's.
+
+    Args:
+        stats: Stats for the batch whose outputs were synchronized this
+            iteration.
+        terminated_reqs: Requests the scheduler released this iteration.
+            Derived by the scheduler rather than the pipeline, but it
+            describes ``stats``' batch.
     """
     if stats.execution_time_s <= 0.0:
         return
     bt = stats.batch_type.value
+    METRICS.batch_terminated_reqs(terminated_reqs, batch_type=bt)
     prompt_throughput = stats.num_input_tokens / stats.execution_time_s
     if stats.num_output_tokens is not None and stats.batch_type == BatchType.TG:
         generation_throughput = stats.num_output_tokens / stats.execution_time_s
@@ -939,7 +1044,7 @@ class SchedulerLogger:
         batch_spec_decode_metrics: _SpeculativeDecodingMetrics | None = None,
         batch_vision_metrics: VisionEncoderMetrics | None = None,
         batch_video_metrics: VideoEncoderMetrics | None = None,
-        batch_execution_time_is_previous: bool = False,
+        overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
@@ -958,16 +1063,17 @@ class SchedulerLogger:
                 most recent batch, or None when no vision encoding ran.
             batch_video_metrics: Per-batch video encoder metrics for the
                 most recent batch, or None when no video encoding ran.
-            batch_execution_time_is_previous: When True, ``batch_execution_time_s``
-                is the execution time of the previous batch (the overlap
-                scheduler is active); the log line will read
-                ``Previous Execution:`` instead of ``Execution:``, and the
-                execution-time and throughput telemetry for ``inputs`` is
-                suppressed in favor of ``completed_batch_stats``.
+            overlap_active: When True, the overlap scheduler is active:
+                ``batch_execution_time_s`` measured this iteration belongs to
+                the previously enqueued batch, so execution-time, throughput
+                and termination telemetry for ``inputs`` is suppressed in
+                favor of ``completed_batch_stats``, and the log line describes
+                the enqueued and completed batches as separate clauses.
             completed_batch_stats: Stats for the batch whose outputs were
-                synchronized this iteration (overlap scheduling), used to
-                publish execution-time and throughput telemetry attributed to
-                the correct batch. ``None`` when no batch completed this
+                synchronized this iteration (overlap scheduling), used with
+                ``num_terminated_reqs`` to publish execution-time, throughput
+                and termination telemetry and to render the log line's
+                ``Completed`` clause. ``None`` when no batch completed this
                 iteration or overlap is inactive.
 
         Returns:
@@ -986,7 +1092,8 @@ class SchedulerLogger:
             batch_spec_decode_metrics=batch_spec_decode_metrics,
             batch_vision_metrics=batch_vision_metrics,
             batch_video_metrics=batch_video_metrics,
-            batch_execution_time_is_previous=batch_execution_time_is_previous,
+            overlap_active=overlap_active,
+            completed_batch_stats=completed_batch_stats,
         )
 
         # Always publish metrics. Under overlap scheduling the wall-clock
@@ -998,11 +1105,11 @@ class SchedulerLogger:
         # overlap metrics — coalesces into a single cross-process packet (the
         # inner transaction opened by ``publish_metrics`` nests harmlessly).
         with METRICS.transaction():
-            metrics.publish_metrics(
-                defer_execution_metrics=batch_execution_time_is_previous
-            )
+            metrics.publish_metrics(defer_execution_metrics=overlap_active)
             if completed_batch_stats is not None:
-                publish_completed_batch_metrics(completed_batch_stats)
+                publish_completed_batch_metrics(
+                    completed_batch_stats, num_terminated_reqs
+                )
 
         # Only periodically log batch info to the console to avoid log spam.
         now = time.monotonic()

@@ -2009,16 +2009,31 @@ class OverlapTextGenerationPipeline(
         if self._last_sync_monotonic is not None:
             start_bound = max(start_bound, self._last_sync_monotonic)
         inputs = batch.inputs
-        self._completed_batch_stats = CompletedBatchStats(
+        stats = CompletedBatchStats(
             batch_type=inputs.batch_type,
             batch_size=inputs.batch_size,
             num_input_tokens=inputs.input_tokens,
             num_context_tokens=inputs.context_tokens,
             execution_time_s=max(sync_monotonic - start_bound, 0.0),
-            num_output_tokens=spec_decode_metrics.output_tokens
-            if spec_decode_metrics is not None
-            else None,
         )
+        if spec_decode_metrics is not None:
+            stats.num_output_tokens = spec_decode_metrics.output_tokens
+            stats.draft_tokens_generated = (
+                spec_decode_metrics.draft_tokens_generated
+            )
+            stats.draft_tokens_accepted = (
+                spec_decode_metrics.draft_tokens_accepted
+            )
+            stats.avg_acceptance_length = (
+                spec_decode_metrics.avg_acceptance_length
+            )
+            stats.max_acceptance_length = (
+                spec_decode_metrics.num_speculative_tokens
+            )
+            stats.acceptance_rate_per_position = (
+                spec_decode_metrics.acceptance_rate_per_position
+            )
+        self._completed_batch_stats = stats
         self._last_sync_monotonic = sync_monotonic
 
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
