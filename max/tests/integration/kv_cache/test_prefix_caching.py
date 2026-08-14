@@ -344,7 +344,7 @@ async def test_prefix_caching_with_random_prompts(page_size: int) -> None:
 
         kv_manager.release(context)
 
-    assert kv_manager.get_num_used_pages(replica_idx=0) == 0
+    assert kv_manager.block_count(replica_idx=0).used == 0
 
 
 @pytest.mark.asyncio
@@ -409,7 +409,7 @@ class FakeModel:
 
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
         self.page_size = kv_manager.params.page_size
-        self.total_num_pages = kv_manager.get_num_pages(replica_idx=0)
+        self.total_num_pages = kv_manager.block_count(replica_idx=0).total
         # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(
             dict

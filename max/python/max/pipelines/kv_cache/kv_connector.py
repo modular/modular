@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
@@ -28,6 +29,36 @@ class TransferDirection(str, Enum):
 
     LOAD = "load"
     OFFLOAD = "offload"
+
+
+@dataclass(frozen=True, slots=True)
+class BlockCount:
+    """A point-in-time snapshot of a block pool's occupancy."""
+
+    free: int
+    total: int
+
+    @property
+    def used(self) -> int:
+        """Returns the number of blocks currently in use."""
+        return self.total - self.free
+
+    @property
+    def used_pct(self) -> float:
+        """Returns the percentage of blocks currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        capacity), rather than dividing by zero.
+        """
+        return 100 * self.used / self.total if self.total else 0.0
+
+    @property
+    def free_pct(self) -> float:
+        """Returns the percentage of blocks not currently in use, in ``[0, 100]``.
+
+        ``0`` when ``total`` is ``0``, rather than dividing by zero.
+        """
+        return 100 * self.free / self.total if self.total else 0.0
 
 
 @runtime_checkable
@@ -313,24 +344,14 @@ class KVConnector(Protocol):
 
     # Optional properties with default implementations
     @property
-    def num_host_blocks(self) -> int:
-        """Number of host blocks. Returns 0 if not applicable."""
-        return 0
+    def host_block_count(self) -> BlockCount:
+        """Host block occupancy. Empty (0 of 0) if not applicable."""
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        """Number of used host blocks. Returns 0 if not applicable."""
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        """Number of disk blocks. Returns 0 if not applicable."""
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        """Number of used disk blocks. Returns 0 if not applicable."""
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        """Disk block occupancy. Empty (0 of 0) if not applicable."""
+        return BlockCount(free=0, total=0)
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""

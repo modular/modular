@@ -277,9 +277,7 @@ class DecodeScheduler(Scheduler):
             and (
                 self.kv_cache is None
                 or any(
-                    self.kv_cache.get_num_used_pages(replica_idx)
-                    / self.kv_cache.get_num_pages(replica_idx)
-                    < 0.9
+                    self.kv_cache.block_count(replica_idx).used_pct < 90
                     for replica_idx in range(
                         self.scheduler_config.data_parallel_degree
                     )

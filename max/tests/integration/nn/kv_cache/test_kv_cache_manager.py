@@ -161,14 +161,14 @@ async def test_release_returns_pages_to_the_claiming_replica_once() -> None:
     ctx = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(ctx, replica_idx=1)
     kv_manager.alloc(ctx)
-    assert kv_manager.get_num_used_pages(1) > 0
+    assert kv_manager.block_count(replica_idx=1).used > 0
 
     kv_manager.release(ctx)
 
     # The pages went back to the replica that lent them, and replica 0 -- the
     # index a claim-less release would fall back to -- was never touched.
-    assert kv_manager.get_num_used_pages(1) == 0
-    assert kv_manager.get_num_used_pages(0) == 0
+    assert kv_manager.block_count(replica_idx=1).used == 0
+    assert kv_manager.block_count(replica_idx=0).used == 0
 
     with pytest.raises(ValueError, match="not claimed"):
         kv_manager.release(ctx)

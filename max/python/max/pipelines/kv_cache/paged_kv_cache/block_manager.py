@@ -760,7 +760,7 @@ class BlockManager:
         """
         connector = self.connector
         pool = self.device_block_pools[replica_idx]
-        if connector.num_host_blocks == 0 or not desired_hashes:
+        if connector.host_block_count.total == 0 or not desired_hashes:
             return [], CompletedTransfer(TransferDirection.LOAD)
 
         # Limit by available device blocks.
@@ -852,7 +852,7 @@ class BlockManager:
         remaining = block_hashes[num_device_hits:]
         num_host_hits = 0
         num_disk_hits = 0
-        if len(remaining) > 0 and self.connector.num_host_blocks > 0:
+        if len(remaining) > 0 and self.connector.host_block_count.total > 0:
             num_host_hits, num_disk_hits = self.connector.count_cached_prefix(
                 remaining
             )
@@ -891,7 +891,7 @@ class BlockManager:
             uncommitted_hashes, replica_idx
         )
 
-        if self.connector.num_host_blocks == 0:
+        if self.connector.host_block_count.total == 0:
             return device_blocks, CompletedTransfer(TransferDirection.LOAD)
 
         # remove the hashes that were found in the device prefix cache
@@ -924,7 +924,7 @@ class BlockManager:
         # loads it. Refreshing it would require touching the full `req_hashes`
         # on every admission -- the contended behavior this change removes.
         # dKV touches the resident subset and tolerates
-        # missing keys. The num_host_blocks early-return above gates on "has
+        # missing keys. The host_block_count early-return above gates on "has
         # host blocks," NOT "has an external tier": it skips only a connector
         # with no host blocks (NullConnector); the host/disk tiered connector
         # passes the gate and calls its no-op touch -- only DKVConnector does

@@ -46,6 +46,7 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensors
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     KVConnector,
     KVConnectorTransfer,
 )
@@ -295,7 +296,6 @@ class PagedKVCacheManager:
 
         devices = [d.to_device() for d in params.devices]
         self._total_num_pages = total_num_pages
-        self._total_num_host_pages = total_num_host_pages
         self._max_batch_size = max_batch_size
 
         num_replicas = params.data_parallel_degree
@@ -755,15 +755,12 @@ class PagedKVCacheManager:
         self.claim(ctx, replica_idx)
         self._block_manager.register_dummy_request(ctx)
 
-    def num_free_blocks(self, replica_idx: int = 0) -> int:
-        """Returns the number of free KV cache blocks on the given replica."""
-        return len(
+    def block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns the device KV cache block occupancy for the given replica."""
+        free = len(
             self._block_manager.device_block_pools[replica_idx].free_block_queue
         )
-
-    def total_num_blocks(self, replica_idx: int = 0) -> int:
-        """Returns the total number of KV cache blocks on the given replica."""
-        return self._block_manager.total_num_blocks
+        return BlockCount(free=free, total=self._block_manager.total_num_blocks)
 
     def release(self, ctx: TextContext) -> None:
         """Releases the blocks the request holds on the replica it was claimed on."""
@@ -865,35 +862,13 @@ class PagedKVCacheManager:
         """Returns block IDs the request holds on the replica it was claimed on."""
         return self._block_manager.get_req_blocks(ctx)
 
-    def get_num_pages(self, replica_idx: int) -> int:
-        """Returns total number of pages for the replica."""
-        return self._total_num_pages
+    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns the host KV cache block occupancy for the given replica."""
+        return self._replica[replica_idx].connector.host_block_count
 
-    def get_num_used_pages(self, replica_idx: int) -> int:
-        """Returns number of used pages for the replica."""
-        free_blocks = self._block_manager.device_block_pools[
-            replica_idx
-        ].free_blocks
-        return self._total_num_pages - len(free_blocks)
-
-    def get_num_host_pages(self, replica_idx: int) -> int:
-        """Returns number of host pages for the replica."""
-        return self._total_num_host_pages
-
-    def get_num_used_host_pages(self, replica_idx: int) -> int:
-        """Returns number of used host pages for the replica."""
-        replica = self._replica[replica_idx]
-        return replica.connector.num_used_host_blocks
-
-    def get_num_disk_pages(self, replica_idx: int) -> int:
-        """Returns number of disk pages for the replica."""
-        replica = self._replica[replica_idx]
-        return replica.connector.num_disk_blocks
-
-    def get_num_used_disk_pages(self, replica_idx: int) -> int:
-        """Returns number of used disk pages for the replica."""
-        replica = self._replica[replica_idx]
-        return replica.connector.num_used_disk_blocks
+    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns the disk KV cache block occupancy for the given replica."""
+        return self._replica[replica_idx].connector.disk_block_count
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the replica's KV buffer (single leaf or tree).
