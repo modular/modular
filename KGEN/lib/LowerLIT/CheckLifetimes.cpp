@@ -221,7 +221,10 @@ WholeProgramState::WholeProgramState(Operation *module,
       // Find the conformance to Deinitable if it exists.
       ConformanceOp deinitableConformance;
       for (auto conformance : structOp.getFields().getOps<ConformanceOp>()) {
-        if (conformance.getSymName().ends_with("::Deinitable")) {
+        if (conformance.getTraitSymbol()
+                .getSymbol()
+                .getLeafReference()
+                .getValue() == "Deinitable") {
           deinitableConformance = conformance;
           break;
         }

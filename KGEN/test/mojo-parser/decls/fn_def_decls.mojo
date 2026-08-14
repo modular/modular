@@ -343,7 +343,7 @@ trait PluginHooks:
 # INLINE: lit.alias.decl *"print_emit_fn{{[`0-9]*}}":
 # INLINE-SAME: !lit.generator<<"[[OMUT]]": !Bool,
 # INLINE-SAME: "[[OORIGIN]]": origin<
-# INLINE: kgen.conformance @"{{.*}}PluginHooks"
+# INLINE: kgen.conformance{{.*}}@PluginHooks
 # INLINE: kgen.witness "print_emit_fn"
 struct DefaultPlugin(PluginHooks, Movable where False):
     comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin] = (

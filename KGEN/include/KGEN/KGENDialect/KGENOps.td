@@ -405,7 +405,7 @@ def KGEN_StructInstanceOp : KGENOp<"struct.instance", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_ConformanceOp : KGENOp<"conformance", [
-    Symbol, SymbolTable, SingleBlock, NoTerminator]> {
+    SymbolTable, SingleBlock, NoTerminator]> {
   let summary = "Conformance table of a struct type.";
   let description = [{
     The `kgen.conformance` operation defines the conformance table of a struct
@@ -461,8 +461,7 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
   }];
 
   let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    OptionalAttr<KGEN_TraitSymbolAttr>:$traitSymbol,
+    KGEN_TraitSymbolAttr:$traitSymbol,
     DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
                       "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     KGEN_ConstraintAttr:$constraint
@@ -483,8 +482,6 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     OpBuilder<(ins "TraitSymbolAttr":$traitSymbol,
                    "TraitSymbolArrayAttr":$immediateParents,
                    "ConstraintAttr":$constraint), [{
-      $_state.addAttribute(getSymNameAttrName($_state.name),
-                           traitSymbol.getFlattenedName());
       $_state.addAttribute(getTraitSymbolAttrName($_state.name), traitSymbol);
       $_state.addAttribute(getImmediateParentsAttrName($_state.name),
                            immediateParents);
@@ -501,8 +498,6 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
             /*constraint=*/ConstraintAttr());
     }]>
   ];
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

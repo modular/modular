@@ -593,7 +593,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     /// Fold the attribute given the operations that holds a symbol table for
     /// the trait it implemented, it should either be a `kgen.struct.generator`
     /// or a `lit.struct.decl` which contains symbol table for `conformance_op`.
-    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp,
+    FailureOr<TypedAttr> simplify(StructDeclInterface traitTableOp,
                                   ParameterEvaluator &evaluator) const;
   }];
 
@@ -830,14 +830,12 @@ def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
   ];
 
   let extraClassDeclaration = [{
-    /// Return the name that keys this trait's conformance tables in a
-    /// conforming struct's symbol table: the flattened form of the symbol,
-    /// e.g. `"pkg::mod::Trait"` for `@pkg::@mod::@Trait`.
-    StringAttr getFlattenedName() const;
-
-    /// Return the trait's own name, without any enclosing scopes.
-    StringAttr getLeafReference() const {
-      return getSymbol().getLeafReference();
+    /// Return the name that keys this trait's conformance tables
+    ///
+    /// TODO: the flattened name is still used for ASTDecls, what should we use
+    /// there for potentially parametric traits?
+    StringAttr getFlattenedName() const {
+      return StringAttr::get(getContext(), getFlattenedSymbolName(getSymbol()));
     }
   }];
 }

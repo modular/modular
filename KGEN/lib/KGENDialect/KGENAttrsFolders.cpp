@@ -242,11 +242,10 @@ FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
 
   ResolvedStructHandle resolved = *resolvedOr;
   FailureOr<TypedAttr> result = failure();
-  context.withEvaluator(
-      resolved.decl.getInputParams(), resolved.paramValues,
-      [&](ParameterEvaluator &evaluator) {
-        result = simplify(SymbolTable(resolved.decl.getOperation()), evaluator);
-      });
+  context.withEvaluator(resolved.decl.getInputParams(), resolved.paramValues,
+                        [&](ParameterEvaluator &evaluator) {
+                          result = simplify(resolved.decl, evaluator);
+                        });
   return result;
 }
 

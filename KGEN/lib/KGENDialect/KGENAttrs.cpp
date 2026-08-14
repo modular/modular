@@ -766,7 +766,7 @@ TypeConformsToTraitAttr::getTraitSymbols() const {
 }
 
 FailureOr<TypedAttr>
-TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
+TypeConformsToTraitAttr::simplify(StructDeclInterface traitTableOp,
                                   ParameterEvaluator &evaluator) const {
   std::optional<ArrayRef<TraitSymbolAttr>> traitSymbols = getTraitSymbols();
   // Trait value is not yet concrete, don't fold.
@@ -775,8 +775,8 @@ TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp,
 
   SmallVector<TypedAttr> props;
   for (TraitSymbolAttr traitSym : *traitSymbols) {
-    auto conformOp = cast_or_null<ConformanceOp>(
-        traitTableOp.lookup(traitSym.getFlattenedName()));
+    auto conformOp =
+        cast_or_null<ConformanceOp>(traitTableOp.lookupConformance(traitSym));
 
     if (!conformOp)
       return {SIMDAttr::getScalarBool(getContext(), false)};
@@ -805,14 +805,6 @@ TypeConformsToTraitAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
   return Base::get(ctx, typeValue, getResultType(ctx));
-}
-
-//===----------------------------------------------------------------------===//
-// TraitSymbolAttr
-//===----------------------------------------------------------------------===//
-
-StringAttr TraitSymbolAttr::getFlattenedName() const {
-  return StringAttr::get(getContext(), getFlattenedSymbolName(getSymbol()));
 }
 
 //===----------------------------------------------------------------------===//

@@ -474,9 +474,6 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       continue;
     }
     if (auto conformance = dyn_cast<ConformanceOp>(member)) {
-      // The trait decl is going away, so nothing can resolve the reference
-      // anymore. The flattened `sym_name` remains as the trait's identity.
-      conformance.removeTraitSymbolAttr();
       conformance->moveBefore(structGenBody, structGenBody->end());
       continue;
     }
@@ -534,9 +531,6 @@ LITLowerer::lowerExtensionDecl(ExtensionDeclOp extensionDecl,
       continue;
     }
     if (auto conformance = dyn_cast<ConformanceOp>(member)) {
-      // The trait decl is going away, so nothing can resolve the reference
-      // anymore. The flattened `sym_name` remains as the trait's identity.
-      conformance.removeTraitSymbolAttr();
       Block *structGenBody = &kgenStructGenOp.getRegion().front();
       // Extension conformances need to be moved to the target struct's
       // generator, because that's what the elaborator expects.

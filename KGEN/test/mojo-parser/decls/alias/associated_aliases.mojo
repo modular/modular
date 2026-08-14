@@ -29,7 +29,7 @@ trait TraitWithAlias:
 
 # CHECK-LABEL: lit.struct.decl @StructWithMatchingAlias
 struct StructWithMatchingAlias(TraitWithAlias):
-    # CHECK: kgen.conformance {{.*}}::TraitWithAlias
+    # CHECK: kgen.conformance {{.*}}::@TraitWithAlias
     # CHECK: kgen.witness "N" : !ZInt = apply{{.*}}ZInt::@"__init__()"
     comptime N: ZInt = ZInt()
 
@@ -146,7 +146,7 @@ trait TraitWithAliasArgMethod:
 
 @fieldwise_init
 struct StructWithAliasArgMethod(TraitWithAliasArgMethod):
-    # CHECK: kgen.conformance {{.*}}::TraitWithAliasArgMethod
+    # CHECK: kgen.conformance {{.*}}::@TraitWithAliasArgMethod
     # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "lork{{.*}}" : {{.*}} = {{.*}}::@StructWithAliasArgMethod::@"lork{{.*}}"
     comptime T: ATrait = ZInt
@@ -315,7 +315,7 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @ExplicitStructWithAliasMethod
 @fieldwise_init
 struct ExplicitStructWithAliasMethod(TraitWithAliasReturnMethod):
-    # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
+    # CHECK: kgen.conformance {{.*}}::@TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@ExplicitStructWithAliasMethod::@"bork{{.*}}"
     comptime T: ATrait = ZInt
@@ -473,7 +473,7 @@ trait TraitWithAliasReturnMethod:
 # CHECK-LABEL: lit.struct.decl @GenericStructWithAliasMethod<Z: !ATrait_AnyType>
 @fieldwise_init
 struct GenericStructWithAliasMethod[Z: ATrait](TraitWithAliasReturnMethod):
-    # CHECK: kgen.conformance {{.*}}::TraitWithAliasReturnMethod
+    # CHECK: kgen.conformance {{.*}}::@TraitWithAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait_AnyType = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithAliasMethod::@"bork{{.*}}"
     comptime T: ATrait = Self.Z
@@ -572,7 +572,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 
 # CHECK-LABEL: lit.struct.decl @StructWithSelfDotAliasReturnMethod
 struct StructWithSelfDotAliasReturnMethod(TraitWithSelfDotAliasReturnMethod):
-    # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
+    # CHECK: kgen.conformance {{.*}}::@TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait_AnyType = !ZInt
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@StructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     comptime T: ATrait = ZInt
@@ -681,7 +681,7 @@ trait TraitWithSelfDotAliasReturnMethod:
 struct GenericStructWithSelfDotAliasReturnMethod[Z: ATrait](
     TraitWithSelfDotAliasReturnMethod
 ):
-    # CHECK: kgen.conformance {{.*}}::TraitWithSelfDotAliasReturnMethod
+    # CHECK: kgen.conformance {{.*}}::@TraitWithSelfDotAliasReturnMethod
     # CHECK: kgen.witness "T" : !ATrait_AnyType = Z
     # CHECK: kgen.witness "bork{{.*}}" : {{.*}} = {{.*}}::@GenericStructWithSelfDotAliasReturnMethod::@"bork{{.*}}"
     comptime T: ATrait = Self.Z

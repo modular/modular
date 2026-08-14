@@ -138,9 +138,13 @@ public:
 
   /// Resolve the conformance op for a struct and trait in this context.
   /// For now, this conformance op is always parametric (non-concrete).
-  virtual Operation *
-  resolveConformanceForStruct(ResolvedStructHandle resolved,
-                              TraitSymbolAttr traitSymbol) = 0;
+  ///
+  /// The default implementation always looks up the conformance in the
+  /// resolved struct's generator.This is correct for every context except the
+  /// parser, where conformances are instead resolved via `ASTDecl` lookup
+  /// (might need a lazy resolution).
+  virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
+                                                 TraitSymbolAttr traitSymbol);
 
   /// Create an evaluator configured with the provided parameters.
   /// This callback style is necessary because we have derived evaluators that
@@ -199,10 +203,6 @@ protected:
   /// Resolve struct info for KGEN dialect structs.
   FailureOr<ResolvedStructHandle> resolveStructOp(TypedAttr typeValue,
                                                   bool acceptAsync) override;
-
-  /// Resolve conformance using the struct's symbol table.
-  Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         TraitSymbolAttr traitSymbol) override;
 
   /// Resolve a function symbol via the symbol table.
   FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) override;

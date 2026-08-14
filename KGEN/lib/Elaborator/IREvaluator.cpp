@@ -413,15 +413,6 @@ IREvaluator::resolveStructOp(TypedAttr typeValue, bool acceptAsync) {
   return failure();
 }
 
-Operation *
-IREvaluator::resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                         TraitSymbolAttr traitSymbol) {
-  // Always look up the conformance in the generator since we don't concretize
-  // conformance tables yet.
-  SymbolTable symtab(resolved.decl.getOperation());
-  return symtab.lookup<ConformanceOp>(traitSymbol.getFlattenedName());
-}
-
 void IREvaluator::withEvaluator(
     ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
     llvm::function_ref<void(ParameterEvaluator &)> callback) {

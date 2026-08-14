@@ -26,7 +26,7 @@
 # CHECK: kgen.conformance @"def(x: Int) -> Int"
 # CHECK: kgen.witness "__call__($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 
-# CHECK: kgen.conformance @"{{.*}}::AnyType" {
+# CHECK: kgen.conformance @{{.*}}::@AnyType {
 # CHECK-NEXT: }
 
 # CHECK: lit.fn @"wrap_fn()"

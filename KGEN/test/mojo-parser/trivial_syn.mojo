@@ -41,22 +41,22 @@ struct C[X: ImplicitlyCopyable & Deinitable, Y: ImplicitlyCopyable & Deinitable]
     var x: Self.X
     var y: Self.Y
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::AnyType" {
+    # CHECK-LABEL:  kgen.conformance @{{.*}}::@AnyType {
     # CHECK-NEXT:   }
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::Copyable" {
+    # CHECK-LABEL:  kgen.conformance @{{.*}}::@Copyable {
     # CHECK-NEXT:      kgen.witness "__init__{{.*}}(*, "copy":{{.*}}"
     # CHECK-NEXT:      kgen.witness "copy{{.*}}"
     # CHECK: kgen.witness "__copy_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::Deinitable" {
+    # CHECK-LABEL:  kgen.conformance @{{.*}}::@Deinitable {
     # CHECK-NEXT:    kgen.witness "__deinit__{{.*}}"
     # CHECK: kgen.witness "__del__is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
+    # CHECK-LABEL:  kgen.conformance @{{.*}}::@ImplicitlyCopyable {
     # CHECK-NEXT:   }
 
-    # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
+    # CHECK-LABEL:  kgen.conformance @{{.*}}::@Movable {
     # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "move":{{.*}}"
     # CHECK: kgen.witness "__move_ctor_is_trivial" : !Bool = sugar_builtin(apply({{.*}})
 

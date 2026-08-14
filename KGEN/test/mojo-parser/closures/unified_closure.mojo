@@ -231,10 +231,10 @@ def nested[
 # COM: Check that the closure storage struct is generated correctly.
 # S11-DAG: [[S11_TRAIT:!Int_AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable.*]] = !lit.trait<@"def(z: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>
 # S11-DAG: lit.struct.decl @"s11_bindIt(::SIMD[::DType(int), ::SIMDLength(1)],::SIMD[::DType(int), ::SIMDLength(1)],::String)::myclosure::__storage"
-# S11-DAG: kgen.conformance @"{{.*}}::AnyType" {
-# S11-DAG: kgen.conformance @"{{.*}}::Deinitable" {
+# S11-DAG: kgen.conformance @{{.*}}::@AnyType {
+# S11-DAG: kgen.conformance @{{.*}}::@Deinitable {
 # S11-DAG: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__deinit__
-# S11-DAG: kgen.conformance @"{{.*}}::Movable" {
+# S11-DAG: kgen.conformance @{{.*}}::@Movable {
 # S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
 # S11-DAG: kgen.conformance @"def(z: Int) -> Int" {
 # S11-DAG: kgen.witness "__call__{{.*}}" : {{.*}} = @{{.*}}::@"s11_bindIt{{.*}}::myclosure::__storage"::@"__call__

@@ -29,7 +29,7 @@ struct MyType(PackageTrait):
     def method(self):
         pass
 
-    # CHECK: kgen.conformance {{.*}}::PackageTrait
+    # CHECK: kgen.conformance {{.*}}::@PackageTrait
     # CHECK: kgen.witness "method{{.*}}" {{.*}} = {{.*}}::@MyType::@"method
 
 
@@ -38,7 +38,7 @@ struct MyRegType(PackageTrait, RegisterPassable):
     def method(self):
         pass
 
-    # CHECK: kgen.conformance {{.*}}::PackageTrait
+    # CHECK: kgen.conformance {{.*}}::@PackageTrait
     # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!MyRegType, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@MyRegType::@"method
 
 
@@ -88,9 +88,9 @@ def my_test():
 # CHECK: lit.trait.decl @UsedInPackageTrait
 
 # CHECK-LABEL: lit.struct.decl @UseTrait
-# CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
+# CHECK: kgen.conformance {{.*}}::@UsedInPackageTrait
 # CHECK: kgen.witness "method{{.*}}" {{.*}} = {{.*}}::@UseTrait::@"method
 
 # CHECK-LABEL: lit.struct.decl @UseTraitReg
-# CHECK: kgen.conformance {{.*}}::UsedInPackageTrait
+# CHECK: kgen.conformance {{.*}}::@UsedInPackageTrait
 # CHECK: kgen.witness "method{{.*}}" : !lit.generator<[1]("self": !lit.ref<!UseTraitReg, imm *[0,0]> read_mem) -> !kgen.none> = {{.*}}::@UseTraitReg::@"method

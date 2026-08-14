@@ -124,6 +124,15 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
       "Get the input parameter declarations for this struct.",
       "ArrayRef<ParamDeclAttr>", "getInputParams"
     >,
+    InterfaceMethod< [{
+      Lookup a conformance by trait symbol, when returning non-null, the type
+      of the returned Operation must be a ConformanceOp, we declare it as
+      `Operation *` here due to build dependencies issues.
+    }], "Operation *", "lookupConformance", (ins "TraitSymbolAttr":$traitSymbol),
+    [{}], [{
+      return impl::lookupConformance($_op, traitSymbol);
+    }]
+    >,
   ];
 }
 

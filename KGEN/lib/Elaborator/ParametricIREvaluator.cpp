@@ -754,12 +754,6 @@ ParametricIREvaluator::resolveStructOp(TypedAttr typeValue,
                               /*instance=*/nullptr};
 }
 
-Operation *ParametricIREvaluator::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
-  SymbolTable symtab(resolved.decl.getOperation());
-  return symtab.lookup<ConformanceOp>(traitSymbol.getFlattenedName());
-}
-
 void ParametricIREvaluator::withEvaluator(
     ArrayRef<ParamDeclAttr> paramDecls, ArrayRef<TypedAttr> paramValues,
     llvm::function_ref<void(ParameterEvaluator &)> callback) {

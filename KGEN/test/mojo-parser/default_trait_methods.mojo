@@ -55,7 +55,7 @@ struct Bar(Foo, Movable where False):
     # CHECK: lit.fn @"always_inline
     # CHECK-SAME: always_inline
 
-    # CHECK: kgen.conformance{{.*}}:Foo
+    # CHECK: kgen.conformance{{.*}}@Foo
     # CHECK-DAG: kgen.witness "rp{{.*}}"
     # CHECK-DAG: kgen.witness "non_rp{{.*}}"
     # CHECK-DAG: kgen.witness "no_inline{{.*}}"
@@ -83,7 +83,7 @@ struct TAA(AA1, Movable where False):
     # CHECK: lit.fn @"zork(default_trait_methods::TAA,default_trait_methods::Zork)AA1"{{.*}}([[SELF:%[^:]+]]: {{.*}}, [[X:%[^:]+]]: {{.*}}, {{.*}}, [[RESULT:%[^:]+]]: {{.*}}) -> !kgen.none
     # CHECK: lit.call @default_trait_methods::@AA1::@"zork($0,$0.X)"{{.*}}([[SELF]], [[X]], [[RESULT]])
 
-    # CHECK: kgen.conformance{{.*}}:AA1
+    # CHECK: kgen.conformance{{.*}}@AA1
     # CHECK-DAG: kgen.witness "zork{{.*}}"
 
 
@@ -118,7 +118,7 @@ struct SimpleTestStruct(ParamInputTrait, Movable where False):
     # CHECK: lit.fn @"return_parameterized
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
 
-    # CHECK: kgen.conformance{{.*}}:ParamInputTrait
+    # CHECK: kgen.conformance{{.*}}@ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"
     # CHECK-DAG: kgen.witness "return_parameterized{{.*}}"
     pass
@@ -143,7 +143,7 @@ struct ParamTestStruct[T1: Int, x1: Bool](ParamInputTrait, Movable where False):
     # CHECK: lit.call @default_trait_methods::@ParamInputTrait::@"return_parameterized
     # CHECK-SAME: <:!ParamInputTrait_AnyType @default_trait_methods::@ParamTestStruct<:!Int T1, :!Bool x1>, :!Int x, :!Int y>
 
-    # CHECK: kgen.conformance{{.*}}:ParamInputTrait
+    # CHECK: kgen.conformance{{.*}}@ParamInputTrait
     # CHECK-DAG: kgen.witness "process_parameterized{{.*}}"
     # CHECK-DAG: kgen.witness "return_parameterized{{.*}}"
     pass
@@ -188,12 +188,12 @@ struct FooA_FooB_Struct(FooB, Movable where False):
         return RP()
 
 
-# CHECK: kgen.conformance @"{{.*}}::FooA" {
+# CHECK: kgen.conformance @{{.*}}::@FooA {
 # CHECK-DAG:   kgen.witness "foo($0)"
 # CHECK-DAG:   kgen.witness "bar($0)"
 # CHECK: }
 
-# CHECK: kgen.conformance @"{{.*}}::FooB" {
+# CHECK: kgen.conformance @{{.*}}::@FooB {
 # CHECK-DAG:   kgen.witness "foo($0)"
 # CHECK-DAG:   kgen.witness "bar($0)"
 # CHECK: }
