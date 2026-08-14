@@ -71,7 +71,7 @@ enum class PublicDeclKind;
 /// absent. The key is the symbol rather than the trait's short name because
 /// distinct symbols can share one name.
 using ConformanceConditionMap =
-    llvm::DenseMap<mlir::SymbolRefAttr, std::string>;
+    llvm::DenseMap<KGEN::TraitSymbolAttr, std::string>;
 
 //===----------------------------------------------------------------------===//
 // MojoASTDeclRef

@@ -397,8 +397,8 @@ void DeclResolver::aliasDeclInParent(ASTDecl *decl, StringAttr aliasName) {
 TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
   if (TraitType canonical = traitCanonicalizationCache.lookup(trait))
     return canonical;
-  SmallVector<SymbolRefAttr> symbols(trait.getSymbols());
-  DenseMap<SymbolRefAttr, ConstraintAttr> constraintMap;
+  SmallVector<TraitSymbolAttr> symbols(trait.getSymbols());
+  DenseMap<TraitSymbolAttr, ConstraintAttr> constraintMap;
   if (trait.hasConstraints())
     for (auto [symbol, constraint] :
          llvm::zip_equal(symbols, trait.getConstraints()))
@@ -409,8 +409,8 @@ TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
 }
 
 TraitType DeclResolver::getCanonicalTrait(
-    SmallVectorImpl<SymbolRefAttr> &symbols,
-    const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap) {
+    SmallVectorImpl<TraitSymbolAttr> &symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap) {
   SmallVector<ConstraintAttr> constraints = {};
   if (!symbols.empty()) {
     constraints =
@@ -1949,10 +1949,10 @@ Operation *DeclResolver::finalizeFuncSignature(FnOp funcOp, ASTDecl &decl) {
 }
 
 ASTDecl *DeclResolver::getTraitDecl(TraitType trait) {
-  SmallVector<SymbolRefAttr> symbols =
+  SmallVector<TraitSymbolAttr> symbols =
       LIT::reduceTraitCompositionSymbols(shared, trait.getSymbols());
   if (symbols.size() == 1)
-    return &getDeclForTypeSymbol(symbols.front());
+    return &getDeclForTypeSymbol(symbols.front().getSymbol());
 
   assert(getCanonicalTrait(trait) == trait &&
          "trait type should always be canonicalized");

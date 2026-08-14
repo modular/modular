@@ -125,8 +125,8 @@ kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>
 "some.op"() {
   // CHECK: a = #kgen.genref<@LinkedList<:type index, 3>>
   a = #kgen.genref<@LinkedList<:type index, 3>>,
-  // CHECK-SAME: b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, "Boolable", "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
-  b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, "Boolable", "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
+  // CHECK-SAME: b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, @Boolable, "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
+  b = #kgen.get_witness<#kgen.genref<@LinkedList<:type index, 3>>, @Boolable, "__bool__"> : !kgen.generator<(!kgen.struct<(index, pointer<none>)>) -> i1>,
   // CHECK-SAME: c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
   c = #kgen.get_linkage_name<#kgen.target<triple = "unknown", arch = "", simd_bit_width = 128>, #kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string,
   // CHECK-SAME: d = #kgen.get_type_name<#kgen.genref<@LinkedList<:type index, 3>>, true> : !kgen.string,
@@ -151,8 +151,8 @@ kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>
 // CHECK-LABEL: kgen.generator @canonicalize_get_witness_upcast
 kgen.generator @canonicalize_get_witness_upcast<T: !DerivedTrait>() {
   // CHECK-NOT: upcast
-  // CHECK: #kgen.get_witness<:trait<@BaseTrait> T, "BaseTrait", "AssociatedType">
-  kgen.param.constant: !kgen.type = <#kgen.get_witness<upcast(:!BaseTrait T), "BaseTrait", "AssociatedType"> : !kgen.type>
+  // CHECK: #kgen.get_witness<:trait<@BaseTrait> T, @BaseTrait, "AssociatedType">
+  kgen.param.constant: !kgen.type = <#kgen.get_witness<upcast(:!BaseTrait T), @BaseTrait, "AssociatedType"> : !kgen.type>
   kgen.return
 }
 
@@ -187,8 +187,8 @@ kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
   constraint1 = #kgen.constraint<true, loc("test.mojo":10:5)>,
   // CHECK-SAME: constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), #[[LOC_C2]]>
   constraint2 = #kgen.constraint<ge(:scalar<index> a, 4), loc("test.mojo":15:10)>,
-  // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, :type [typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type]), #[[LOC_C3]]>
-  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, :type #kgen.type<typevalue<#kgen.trait_ref<@trait_1, @trait_2>>, type> : !kgen.type), loc("test.mojo":20:15)>,
+  // CHECK-SAME: #kgen.constraint<conforms_to(:type array<1, i1>, :type [typevalue<#kgen.trait_ref<[@trait_1, @trait_2]>>, type]), #[[LOC_C3]]>
+  constraint3 = #kgen.constraint<conforms_to(:type array<1, i1>, :type #kgen.type<typevalue<#kgen.trait_ref<[@trait_1, @trait_2]>>, type> : !kgen.type), loc("test.mojo":20:15)>,
   // The optional user message round-trips (both textual and bytecode).
   // CHECK-SAME: constraint4 = #kgen.constraint<true, #[[LOC_C1]], "N must be positive">
   constraint4 = #kgen.constraint<true, loc("test.mojo":10:5), "N must be positive">,

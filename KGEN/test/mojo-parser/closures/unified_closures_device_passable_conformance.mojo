@@ -20,7 +20,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 # CHECK-LABEL: lit.struct.decl @"{{.*}}parametricCaptureClosure{{.*}}__storage::__device_type"
 # CHECK-SAME: attributes {synthetic} {
 # CHECK-NEXT: lit.struct.field capture3 : !lit.struct<#SIMD {{.*}}
-# CHECK-NEXT: lit.struct.field capture2 : !kgen.param<:!AnyType #kgen.get_witness<:!{{.*}}Hosty{{.*}} Y, "std::builtin::device_passable::DevicePassable", "device_type">>
+# CHECK-NEXT: lit.struct.field capture2 : !kgen.param<:!AnyType #kgen.get_witness<:!{{.*}}Hosty{{.*}} Y, @std::@builtin::@device_passable::@DevicePassable, "device_type">>
 
 # CHECK-LABEL: lit.struct.decl @"{{.*}}capturesClosure{{.*}}__storage"
 # CHECK-SAME: attributes {definesClosure,{{.*}}synthetic}

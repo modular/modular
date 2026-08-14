@@ -36,9 +36,9 @@ lit.trait.decl @MyTrait {
 }
 
 lit.struct.decl @MyContainer<T: !MyTrait> {
-  lit.struct.field a: !kgen.param<#kgen.get_witness<:!MyTrait T, "test::MyTrait", "Ty">>
+  lit.struct.field a: !kgen.param<#kgen.get_witness<:!MyTrait T, @test::@MyTrait, "Ty">>
 
-  lit.fn @"__init__(get_witness($0, test::MyTrait, Ty))"(%a: !kgen.param<#kgen.get_witness<:!MyTrait T, "test::MyTrait", "Ty">>) -> !kgen.none {
+  lit.fn @"__init__(get_witness($0, test::MyTrait, Ty))"(%a: !kgen.param<#kgen.get_witness<:!MyTrait T, @test::@MyTrait, "Ty">>) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }

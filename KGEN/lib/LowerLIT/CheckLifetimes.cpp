@@ -314,7 +314,7 @@ struct TypeDeclInfo {
   getTraitDeclsForType(LIT::TraitType type) const {
     SmallVector<LIT::TraitDeclOp, 2> result;
     for (auto symbol : type.getSymbols()) {
-      auto it = shared->traitMap.find(symbol);
+      auto it = shared->traitMap.find(symbol.getSymbol());
       assert(it != shared->traitMap.end() &&
              "reference to trait that wasn't declared");
       result.push_back(it->second);
@@ -459,10 +459,10 @@ static TraitType refineWithContextualWhereClauses(
     return curTrait;
 
   // Merge original bounds with refinements (see ExprNodes.cpp).
-  SmallVector<SymbolRefAttr> traitSymbols(curTrait.getSymbols());
+  SmallVector<TraitSymbolAttr> traitSymbols(curTrait.getSymbols());
   size_t origCount = traitSymbols.size();
   llvm::append_range(traitSymbols, refinedBound.getSymbols());
-  sortAndDeduplicateSymbols(traitSymbols);
+  sortAndDeduplicateTraitSymbols(traitSymbols);
   if (traitSymbols.size() == origCount)
     return curTrait;
 
@@ -487,8 +487,8 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
                              "type conforms to no traits");
 
     StringAttr message;
-    for (SymbolRefAttr symbol : llvm::reverse(refinedTrait.getSymbols())) {
-      TraitDeclOp traitDecl = shared->traitMap.at(symbol);
+    for (TraitSymbolAttr symbol : llvm::reverse(refinedTrait.getSymbols())) {
+      TraitDeclOp traitDecl = shared->traitMap.at(symbol.getSymbol());
       // If the trait has a linear type error message set, it means it does
       // not conform to Deinitable and is a linear type.
       if (auto errorMsg = traitDecl.getLinearTypeErrorMsgAttr()) {
@@ -534,10 +534,9 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
       auto specSig = evaluator.getReboundType(delFn.getFuncTypeGenerator());
 
       // Okay, build the GetWitnessAttr.
-      StringAttr traitName = StringAttr::get(
-          specSig.getContext(),
-          getFlattenedSymbolName(getFullyResolvedSymbolRef(impDestroyTrait)));
-      auto result = GetWitnessAttr::get(selfParam, traitName,
+      auto traitSymbol =
+          TraitSymbolAttr::get(getFullyResolvedSymbolRef(impDestroyTrait));
+      auto result = GetWitnessAttr::get(selfParam, traitSymbol,
                                         delFn.getSymNameAttr(), specSig);
       return SpecialMemberInfo::available(result);
     }
@@ -550,10 +549,10 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
   // Returns nullopt if the trait isn't in the composition at all.
   auto isTypeDeinitable = [&](StructInfo info, Type structType) -> TriState {
     TraitType canonTrait = info.decl.getCanonicalTrait();
-    ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
+    ArrayRef<TraitSymbolAttr> symbols = canonTrait.getSymbols();
     ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
     for (auto [i, symbol] : llvm::enumerate(symbols)) {
-      if (symbol.getLeafReference() != "Deinitable")
+      if (symbol.getSymbol().getLeafReference() != "Deinitable")
         continue;
       if (i >= constraints.size())
         return TriState::yes(); // Unconditional conformance.

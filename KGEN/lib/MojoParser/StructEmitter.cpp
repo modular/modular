@@ -62,7 +62,8 @@ fieldConditionallyConformsToBuiltin(ASTType fieldType, StringRef traitName,
     return {};
 
   TypedAttr fieldParam = getCanonicalAttr(paramType.getParam());
-  SmallVector<SymbolRefAttr> traitSymbols = {requiredTraitDecl->getSymbolRef()};
+  SmallVector<TraitSymbolAttr> traitSymbols = {
+      TraitSymbolAttr::get(requiredTraitDecl->getSymbolRef())};
   auto traitType = TraitType::get(fieldParam.getContext(), traitSymbols);
   auto conformsTo =
       TypeConformsToTraitAttr::get(fieldParam, traitType.getPValue());
@@ -376,8 +377,12 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
 
   assert(funcOp && "Couldn't synthesize default trait wrapper in body");
 
-  // Annotate with metadata linking back to trait default implementation.
-  funcOp.setInheritedFromAttr(traitFnDecl->getSymbolRef());
+  funcOp.setInheritedFromAttr(
+      TraitSymbolAttr::get(traitFnDecl->getParentDecl()->getSymbolRef()));
+  // Annotate with metadata linking back to trait default implementation. The
+  // trait names the conformance this wrapper satisfies; the function symbol is
+  // what `populateDefaultedTraitFunction` forwards the call to.
+  funcOp.setDefaultFnRefAttr(traitFnDecl->getSymbolRef());
 
   // Right now there's not really a great way to re-apply the decorators that
   // were on the defaulted trait method to the struct's wrapper lit.fn op, but
@@ -426,14 +431,14 @@ LogicalResult StructEmitter::populateDefaultedTraitFunction(ASTDecl &fnDecl) {
 
   emitter.builder = OpBuilder::atBlockBegin(fn.getBody());
 
-  auto inheritedFromAttr = fn.getInheritedFrom();
-  assert(inheritedFromAttr &&
-         "inherited_from attribute should always be present on a"
+  auto defaultFnRefAttr = fn.getDefaultFnRef();
+  assert(defaultFnRefAttr &&
+         "defaultFnRef attribute should always be present on a"
          " default-method stub");
 
   // Look up the trait's default implementation function
   ASTDecl *traitDefaultMethodDecl =
-      shared.declResolver->getDeclForFuncSymbol(*inheritedFromAttr);
+      shared.declResolver->getDeclForFuncSymbol(*defaultFnRefAttr);
   assert(traitDefaultMethodDecl &&
          "Could not find trait default method implementation");
 
@@ -558,13 +563,14 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
 /// trait if it does not already.
 static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
   // Pull in the entire ancestor chain of the new symbol.
-  SmallVector<SymbolRefAttr> newSymbols = {traitDecl->getSymbolRef()};
+  SmallVector<TraitSymbolAttr> newSymbols = {
+      TraitSymbolAttr::get(traitDecl->getSymbolRef())};
   canonicalizeTraitCompositionSymbols(traitDecl->getShared(), newSymbols);
   // Merge the new canonical symbols with the existing canonical trait symbols.
   TraitType trait = structOp.getCanonicalTrait();
   llvm::append_range(newSymbols, trait.getSymbols());
   // No need to pull in any ancestors now. Just sort and deduplicate.
-  sortAndDeduplicateSymbols(newSymbols);
+  sortAndDeduplicateTraitSymbols(newSymbols);
   structOp.setCanonicalTrait(TraitType::get(structOp.getContext(), newSymbols));
 }
 
@@ -1180,7 +1186,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       shared.lookupBuiltinTrait(traitName, structDecl.getLoc());
   auto witnessName =
       StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
-  auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
+  auto traitSymbol = TraitSymbolAttr::get(traitDecl->getSymbolRef());
 
   CValue ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
   if (!ret.getIfPValue())
@@ -1200,9 +1206,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
 
     TypedAttr fieldIsTrivial =
         shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-            PValue(fieldOp.getType()),
-            StringAttr::get(getContext(), witnessSymbolName), witnessName,
-            ret.getType());
+            PValue(fieldOp.getType()), traitSymbol, witnessName, ret.getType());
 
     ret = emitAnd(ret, fieldIsTrivial);
   }

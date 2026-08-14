@@ -917,18 +917,18 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
 /// Returns the combined list of original + refined trait symbols, canonicalized
 /// to include ancestor traits. Returns empty if no refinement applies (i.e.,
 /// no new traits were added beyond the original bounds).
-static SmallVector<SymbolRefAttr>
+static SmallVector<TraitSymbolAttr>
 mergeOriginalAndRefinedBounds(TraitType origBound, TraitType refinedBound,
                               SharedState &shared) {
 
-  SmallVector<SymbolRefAttr> traitSymbols(origBound.getSymbols());
+  SmallVector<TraitSymbolAttr> traitSymbols(origBound.getSymbols());
   size_t origCount = traitSymbols.size();
 
   // Append refined symbols and fix up the ordering. Both sides are already
   // ancestor-closed, so the union is too — we only need sort+dedup, not a
   // second full canonicalize pass.
   llvm::append_range(traitSymbols, refinedBound.getSymbols());
-  sortAndDeduplicateSymbols(traitSymbols);
+  sortAndDeduplicateTraitSymbols(traitSymbols);
 
   // No new traits added — no refinement needed.
   if (traitSymbols.size() == origCount)
@@ -999,7 +999,7 @@ static Type maybeRefineParamType(Type varType, ParamType paramType,
   if (!origBound)
     return varType;
 
-  SmallVector<SymbolRefAttr> traitSymbols = mergeOriginalAndRefinedBounds(
+  SmallVector<TraitSymbolAttr> traitSymbols = mergeOriginalAndRefinedBounds(
       origBound, refinedBound, declScope.getShared());
   if (traitSymbols.empty())
     return varType;
@@ -2378,7 +2378,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
       // should be no conflict on a single trait.
       assert(sugarIsa<TraitType>(typeDecl->getIfTypeValue()));
 
-      SmallVector<SymbolRefAttr> mergedTraitSymbols;
+      SmallVector<TraitSymbolAttr> mergedTraitSymbols;
       for (ASTDecl *decl : memberDecls) {
         auto aliasDeclOp = cast<AliasDeclOp>(decl->getIfOperation());
         // Must be a trait are mergeable, otherwise we should have already
@@ -2388,7 +2388,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
                                     traitType.getSymbols().end());
         }
       }
-      sortAndDeduplicateSymbols(mergedTraitSymbols);
+      sortAndDeduplicateTraitSymbols(mergedTraitSymbols);
       aliasType = TraitType::get(emitter.getContext(), mergedTraitSymbols);
     }
 
@@ -2404,10 +2404,8 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
     auto witnessEntryName = StringAttr::get(emitter.getContext(), spelling);
     // The trait reference is the "inheritedFrom" symbol (if it was inherited),
     // or the parent trait of the alias decl if it was self-declared.
-    SymbolRefAttr traitSymRef = aliasDeclOpParam.getInheritedFrom().value_or(
-        memberDecl->getParentDecl()->getSymbolRef());
-    auto traitName = StringAttr::get(emitter.getContext(),
-                                     getFlattenedSymbolName(traitSymRef));
+    TraitSymbolAttr traitSymbol = aliasDeclOpParam.getInheritedFrom().value_or(
+        TraitSymbolAttr::get(memberDecl->getParentDecl()->getSymbolRef()));
 
     // If the base is a trait composition type, upcast the composition into the
     // trait that defined the alias so that types match.
@@ -2451,7 +2449,7 @@ auto AttributeRefNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
     auto witnessEntryResult =
         shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-            basePValue, traitName, witnessEntryName, aliasType);
+            basePValue, traitSymbol, witnessEntryName, aliasType);
     return emitter.emitResult(getParamMemberSugar(witnessEntryResult), this,
                               dest);
   }
@@ -3909,9 +3907,10 @@ AnyValue BinOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     auto rhsTrait =
         sugarDynCastIfPresent<AnyTraitType>(rhsRV.getRValueTypeIfResolvable());
     if (lhsTrait && rhsTrait) {
-      SmallVector<SymbolRefAttr> symbols(lhsTrait.getTraitType().getSymbols());
+      SmallVector<TraitSymbolAttr> symbols(
+          lhsTrait.getTraitType().getSymbols());
       llvm::append_range(symbols, rhsTrait.getTraitType().getSymbols());
-      sortAndDeduplicateSymbols(symbols);
+      sortAndDeduplicateTraitSymbols(symbols);
       if (llvm::equal(symbols, lhsTrait.getTraitType().getSymbols())) {
         emitter.emitWarning(getLoc())
             << "redundant trait composition: "

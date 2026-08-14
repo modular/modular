@@ -108,5 +108,5 @@ struct Entry[K: KE](Movable where False):
 
 def use[K: KE & Copyable](e: Entry[K]):
     # Make sure we can look through sugar rebind due to `KE`.
-    # CHECK: lit.call{{.*}}#kgen.get_witness<:!{{.*}} K, "{{.*}}Copyable", "copy($0)">
+    # CHECK: lit.call{{.*}}#kgen.get_witness<:!{{.*}} K, @{{.*}}Copyable, "copy($0)">
     var _k = (e.key).copy()

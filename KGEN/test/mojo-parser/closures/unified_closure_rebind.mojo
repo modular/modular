@@ -32,25 +32,20 @@
 # S0-NOT: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"<impl:
 
 
-
-
-
 def makeIt[U: TrivialRegisterPassable](a: U):
     def parametric() {var a} -> U:
         return a
-
 
 
 def conditionallyDevicePassable(x: Int):
     def device_passable() {var} -> Int:
         return x
 
+
 # COM: Ensure external parameter references are pulled into alias decls
 # S2-DAG: lit.trait.decl @"def{{.*}} -> None"
 # S2-DAG: lit.alias.decl T: !AnyType_DoIt
 # S2-DAG: lit.alias.decl TT: !AnyType_DoIt
-
-
 
 
 trait DoIt:
@@ -66,8 +61,8 @@ struct House[T: DoIt](Movable where False):
 def useIt[TT: DoIt, C: def(x: TT)](impl: C):
     pass
 
-# S3-DAG: kgen.conformance @"{{.*}}::RegisterPassable" {
 
+# S3-DAG: kgen.conformance @"{{.*}}::RegisterPassable" {
 
 
 def takesRegisterPassable[T: RegisterPassable](impl: T):
@@ -80,13 +75,13 @@ def addTrivialRegisterPassable(x: Int):
 
     takesRegisterPassable(closure)
 
+
 # COM: Verify top-level function symbols get conformance for count's closure
 # COM: trait.
 # S4-DAG: lit.struct.decl @"def[w: Int](vec: s4_ToySIMD[Int(1), w]) thin -> s4_ToyMask[Int(1), w]_{{.*}}"
 # S4-DAG: kgen.conformance @"def[{{.*}}w: Int](vec: s4_ToySIMD[dtype_tag, w]) -> s4_ToyMask[dtype_tag, w]{1}" {
 # S4-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
 # S4-DAG: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
-
 
 
 @fieldwise_init
@@ -119,8 +114,6 @@ struct s4_MiniSpan[dtype_tag: Int](Movable where False):
         return 0
 
 
-
-
 def is_vec_a[w: Int](vec: s4_ToySIMD[1, w]) -> s4_ToyMask[1, w]:
     _ = vec
     return s4_ToyMask[1, w](0)
@@ -130,13 +123,13 @@ def repro_top_level():
     var s = s4_MiniSpan[1](0)
     _ = s.count(is_vec_a)
 
+
 # COM: Verify nested captured closures get conformance for count's
 # COM: closure trait on the storage struct (no parametric wrapper).
 # S5-DAG: lit.struct.decl @"{{.*}}is_vec_a_capturing::__storage"
 # S5-DAG: kgen.conformance @"def[{{.*}}u: Int](vec: s5_ToySIMD[dtype_tag, u]) -> s5_ToyMask[dtype_tag, u]{1}" {
 # S5-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
 # S5-DAG: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
-
 
 
 @fieldwise_init
@@ -182,13 +175,13 @@ def repro_capturing(mem: String):
     var s = s5_MiniSpan[1](0)
     _ = s.count(is_vec_a_capturing)
 
+
 # COM: Verify nested type parameters constrained by a trait (not just Int
 # COM: parameters) get conformance resolved from nested struct type arguments.
 # S6-DAG: lit.struct.decl @"{{.*}}apply_concrete::__storage"
 # S6-DAG: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]{1}" {
 # S6-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
 # S6-DAG: kgen.witness "E" : !AnyType_ElemLike = !ConcreteElem
-
 
 
 trait ElemLike:
@@ -229,11 +222,11 @@ def repro_nested_type_param(mem: String):
     var s = Store[ConcreteElem](0)
     _ = s.apply(apply_concrete)
 
+
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
 # S7-DAG: lit.struct.decl @"{{.*}}my_func::__storage"
 # S7-DAG: kgen.conformance @"def[width: Int, rank: Int, alignment: Int = Int(1)]() -> None" {
 # S7-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
-
 
 
 def print(x: Int):
@@ -260,6 +253,7 @@ def main() raises:
 
     s7_callee[simd_width=4](10, 11, my_func)
 
+
 # COM: Verify the result is properly rebound in the struct wrapper when a closure
 # COM: lazily conforms to a trait whose return type contains an alias parameter.
 # S8: lit.struct.decl @"def[width: Int]() thin -> V[Int(42), width]_PtrWrapper"
@@ -271,13 +265,9 @@ def main() raises:
 # S8-NEXT: kgen.witness "dtype" :{{.*}} = {:scalar<index> 42}
 
 
-
 @fieldwise_init
 struct V[dtype: Int, width: Int](RegisterPassable):
     var _v: Int
-
-
-
 
 
 def s8_callee[
@@ -293,13 +283,13 @@ def rebindResult():
 
     s8_callee[42](my_closure)
 
+
 # COM: Verify ParamListAttr matching: closure returning Tuple with parameterized
 # COM: elements requires recursive matching through #kgen.param_list param values.
 # S9-DAG: lit.struct.decl @"{{.*}}my_map_fn::__storage"
 # S9-DAG: @"def[rank: Int, //](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]{1}" {
 # S9-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
 # S9-DAG:   kgen.witness "rank" : !Int = {:scalar<index> 2}
-
 
 
 struct ToyIndex[size: Int](RegisterPassable):
@@ -330,4 +320,3 @@ def repro_variadic_attr():
         return ToyIndex[2](), ToyIndex[2]()
 
     variadic_callee[2, type_of(my_map_fn)](my_map_fn)
-

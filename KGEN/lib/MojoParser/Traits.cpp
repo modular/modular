@@ -69,11 +69,11 @@ collectMethodsWithNameFromDecls(ASTDecl &structDecl, StringAttr methodName,
 /// expected struct method with the current struct type.
 static std::pair<FnTypeGeneratorType, ParamBindings>
 getTraitFunctionSignature(ASTDecl &declScope, FnOp traitFn,
-                          ASTType structSelfType, SymbolRefAttr traitSymbol,
+                          ASTType structSelfType, TraitSymbolAttr traitSymbol,
                           const ExprNode *expr,
                           ParameterEvaluator &traitAliasReplacer) {
-  ASTDecl &traitDecl =
-      declScope.getShared().declResolver->getDeclForTypeSymbol(traitSymbol);
+  ASTDecl &traitDecl = declScope.getShared().declResolver->getDeclForTypeSymbol(
+      traitSymbol.getSymbol());
   LogicalResult result = declScope.getShared().declResolver->resolveSignature(
       traitDecl, llvm::SMLoc());
   assert(result.succeeded() && "failed to resolve signature");
@@ -210,8 +210,9 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 
     SyntheticNode syntheticNode(structDecl.getLoc());
     auto [wrapperSignature, bindings] = getTraitFunctionSignature(
-        structDecl, traitFn, structSelfType, traitDecl.getSymbolRef(),
-        &syntheticNode, traitAliasReplacer);
+        structDecl, traitFn, structSelfType,
+        TraitSymbolAttr::get(traitDecl.getSymbolRef()), &syntheticNode,
+        traitAliasReplacer);
 
     // If a function with matching signature is defined in the same trait we're
     // golden since existing machinery takes care of reporting there is a
@@ -307,7 +308,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
             traitDecl.getSymbolRef().getLeafReference();
 
         ASTDecl *otherTraitFn = shared.resolveAndGetFuncDecl(
-            fnOp.getInheritedFromAttr(), structDecl.getLoc());
+            fnOp.getDefaultFnRefAttr(), structDecl.getLoc());
         assert(otherTraitFn && "Couldn't find trait fn decl");
 
         StringAttr otherTraitName =
@@ -437,7 +438,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
 }
 
 LogicalResult
-LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
+LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
                                std::optional<MojoInflightDiag> &diag,
                                ConformanceOp op, ASTDecl &conformanceDecl) {
   // If the conformance table already has witnesses, it was pre-built (e.g., for
@@ -485,7 +486,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   }
 
   // Search for extensions in the trait's file scope
-  ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(parent);
+  ASTDecl &traitDecl =
+      shared.declResolver->getDeclForTypeSymbol(parent.getSymbol());
   if (ASTDecl *traitFileScope =
           traitDecl.getNearestDeclOfType<FileModuleOp>()) {
     traitFileScope->findExtensionsInScopeForStruct(structDecl.getSymbolRef(),
@@ -963,8 +965,8 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
   if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
     if (auto it = inheritedFrom->find(parent);
         it != inheritedFrom->end() && it->second.first != parent) {
-      ASTDecl &parentDecl =
-          emitter.getDeclResolver().getDeclForTypeSymbol(it->second.first);
+      ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
+          it->second.first.getSymbol());
       diag->attachNote(parentDecl)
           << "inherited through '" << *parentDecl.getUserNameIfOperation()
           << "' here";
@@ -1123,12 +1125,13 @@ static TriState doesNominalTypeConformToUncached(
                                                paramBindings);
   }
 
-  ArrayRef<SymbolRefAttr> providedSymbolsArr = providedCanonTrait.getSymbols();
+  ArrayRef<TraitSymbolAttr> providedSymbolsArr =
+      providedCanonTrait.getSymbols();
   ArrayRef<ConstraintAttr> constraints = providedCanonTrait.getConstraints();
 
   // Map each provided symbol to the condition under which it is provided. A
   // null or trivially-true entry means the symbol is provided unconditionally.
-  llvm::SmallDenseMap<SymbolRefAttr, TypedAttr> providedConditions;
+  llvm::SmallDenseMap<TraitSymbolAttr, TypedAttr> providedConditions;
   assert((constraints.empty() ||
           constraints.size() == providedSymbolsArr.size()) &&
          "trait constraints must be parallel to symbols");
@@ -1141,7 +1144,7 @@ static TriState doesNominalTypeConformToUncached(
   // Parallel to `providedConditions`, retain each provider constraint so a
   // diagnostic caller can point at the failing `where` clause (and its optional
   // user message). Extension conformances below are unconditional today.
-  llvm::SmallDenseMap<SymbolRefAttr, ConstraintAttr> providedConstraints;
+  llvm::SmallDenseMap<TraitSymbolAttr, ConstraintAttr> providedConstraints;
   if (details && selfIsStruct && !constraints.empty())
     for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr))
       providedConstraints[symbol] = constraints[i];
@@ -1156,7 +1159,7 @@ static TriState doesNominalTypeConformToUncached(
     }
     // Search for extensions in the trait's parent scope(s).
     // TODO(MOCO-522): Arcana docs on our orphan rule.
-    for (SymbolRefAttr traitSymbol : trait.getSymbols()) {
+    for (TraitSymbolAttr traitSymbol : trait.getSymbols()) {
       ASTDecl *traitDecl =
           shared.declResolver->getTraitDecl(TraitType::get(traitSymbol));
       assert(traitDecl && "couldn't find trait decl for trait symbol");
@@ -1190,7 +1193,7 @@ static TriState doesNominalTypeConformToUncached(
         if (!extOp.getCanonicalTrait().has_value())
           continue;
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
-        for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
+        for (TraitSymbolAttr symbol : extCanonicalTrait.getSymbols()) {
           // Extension conformances are currently unconditional.
           providedConditions[symbol] = TypedAttr();
         }
@@ -1213,7 +1216,7 @@ static TriState doesNominalTypeConformToUncached(
   // of the same `where` clause emit once. Cold path.
   const bool collectAll = details != nullptr;
   DenseSet<std::pair<LocationAttr, Attribute>> seenConstraints;
-  auto recordFailure = [&](SymbolRefAttr required, TriState kind) {
+  auto recordFailure = [&](TraitSymbolAttr required, TriState kind) {
     if (!collectAll)
       return;
     assert(kind.isFalse() || kind.isUnknown());
@@ -1299,19 +1302,19 @@ static TriState doesNominalTypeConformToUncached(
 }
 
 void LIT::canonicalizeTraitCompositionSymbols(
-    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
+    SharedState &shared, SmallVectorImpl<TraitSymbolAttr> &symbols) {
   canonicalizeTraitCompositionSymbols(
       symbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
         ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
         return cast<TraitDeclOp>(memberDecl.getIfOperation());
       });
 
-  sortAndDeduplicateSymbols(symbols);
+  sortAndDeduplicateTraitSymbols(symbols);
 }
 
 SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
-    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols,
-    const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap) {
+    SharedState &shared, SmallVectorImpl<TraitSymbolAttr> &symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap) {
 
   // Canonicalize the symbols first.
   canonicalizeTraitCompositionSymbols(shared, symbols);
@@ -1321,7 +1324,7 @@ SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
   // fill in the missing constraints if we have an non-empty map.
   SmallVector<ConstraintAttr> constraints;
   constraints.reserve(symbols.size());
-  for (SymbolRefAttr symbol : symbols) {
+  for (TraitSymbolAttr symbol : symbols) {
     if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
       constraints.push_back(it->second);
     } else {
@@ -1399,21 +1402,21 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
   if (auto metaB = sugarDynCast<StructMetaType>(typeB); metaB && structB)
     replacerB = populateReplacer(structB, metaB);
 
-  llvm::SmallDenseSet<SymbolRefAttr> symbolsA(traitA.getSymbols().begin(),
-                                              traitA.getSymbols().end());
-  llvm::SmallDenseSet<SymbolRefAttr> symbolsB(traitB.getSymbols().begin(),
-                                              traitB.getSymbols().end());
+  llvm::SmallDenseSet<TraitSymbolAttr> symbolsA(traitA.getSymbols().begin(),
+                                                traitA.getSymbols().end());
+  llvm::SmallDenseSet<TraitSymbolAttr> symbolsB(traitB.getSymbols().begin(),
+                                                traitB.getSymbols().end());
   llvm::set_intersect(symbolsA, symbolsB);
 
-  DenseMap<SymbolRefAttr, ConstraintAttr> constraints;
+  DenseMap<TraitSymbolAttr, ConstraintAttr> constraints;
   if (!traitA.getConstraints().empty() || !traitB.getConstraints().empty()) {
-    auto findConstraint = [](TraitType trait, SymbolRefAttr symbol) {
+    auto findConstraint = [](TraitType trait, TraitSymbolAttr symbol) {
       auto it = llvm::find(trait.getSymbols(), symbol);
       size_t idx = std::distance(trait.getSymbols().begin(), it);
       return trait.getConstraints()[idx];
     };
 
-    for (SymbolRefAttr commonTrait : symbolsA) {
+    for (TraitSymbolAttr commonTrait : symbolsA) {
       // The original constraints for the common trait.
       SmallVector<ConstraintAttr, 2> origCons;
       if (!traitA.getConstraints().empty()) {
@@ -1434,21 +1437,22 @@ Type LIT::mergeTwoMetaTypeBounds(SharedState &shared, ASTType typeA,
     }
   }
 
-  SmallVector<SymbolRefAttr> symbols(symbolsA.begin(), symbolsA.end());
+  SmallVector<TraitSymbolAttr> symbols(symbolsA.begin(), symbolsA.end());
   SmallVector<ConstraintAttr> mergedConstraints =
       canonicalizeTraitSymbolsAndConstraints(shared, symbols, constraints);
 
   return TraitType::get(shared.getContext(), symbols, mergedConstraints);
 }
 
-SmallVector<SymbolRefAttr>
+SmallVector<TraitSymbolAttr>
 LIT::reduceTraitCompositionSymbols(SharedState &shared,
-                                   ArrayRef<SymbolRefAttr> symbols) {
-  DenseSet<SymbolRefAttr> impliedSymbols;
-  for (SymbolRefAttr symbol : symbols) {
-    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+                                   ArrayRef<TraitSymbolAttr> symbols) {
+  DenseSet<TraitSymbolAttr> impliedSymbols;
+  for (TraitSymbolAttr symbol : symbols) {
+    ASTDecl &traitDecl =
+        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
     auto traitOp = cast<TraitDeclOp>(traitDecl.getIfOperation());
-    for (SymbolRefAttr ancestor : traitOp.getCanonicalTrait().getSymbols()) {
+    for (TraitSymbolAttr ancestor : traitOp.getCanonicalTrait().getSymbols()) {
       if (ancestor != symbol)
         impliedSymbols.insert(ancestor);
     }
@@ -1456,13 +1460,13 @@ LIT::reduceTraitCompositionSymbols(SharedState &shared,
 
   // Keep only the symbols that are not already implied by another symbol in the
   // composition. `{Movable, AnyType}` will be reduced to `{Movable}`
-  SmallVector<SymbolRefAttr> reduced;
-  for (SymbolRefAttr symbol : symbols) {
+  SmallVector<TraitSymbolAttr> reduced;
+  for (TraitSymbolAttr symbol : symbols) {
     if (!impliedSymbols.contains(symbol))
       reduced.push_back(symbol);
   }
 
-  sortAndDeduplicateSymbols(reduced);
+  sortAndDeduplicateTraitSymbols(reduced);
   return reduced;
 }
 
@@ -1676,9 +1680,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(
   ASTDecl *parentTraitDecl = entry.getParentDecl();
   MLIRContext *ctx = parentTraitDecl->getContext();
   return shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-      PValue(type),
-      StringAttr::get(ctx,
-                      getFlattenedSymbolName(parentTraitDecl->getSymbolRef())),
+      PValue(type), TraitSymbolAttr::get(parentTraitDecl->getSymbolRef()),
       StringAttr::get(ctx, witnessName), resultType);
 }
 

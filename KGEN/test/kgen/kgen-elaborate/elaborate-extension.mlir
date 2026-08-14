@@ -21,8 +21,8 @@ kgen.struct.generator @make = struct_inst<"make"(data: index)> {
 // to `def() -> V` by forwarding each witness to `A`'s own `def() -> T` witnesses.
 kgen.struct.generator @extension1<A: type> = struct_inst<"extension1"[A]<:type A>> {
   kgen.conformance @"def() -> V" {
-    kgen.witness "V" : type = #kgen.get_witness<A, "def() -> T", "T">
-    kgen.witness "__call__" : (!kgen.param<A>) -> index = #kgen.get_witness<A, "def() -> T", "__call__">
+    kgen.witness "V" : type = #kgen.get_witness<A, @"def() -> T", "T">
+    kgen.witness "__call__" : (!kgen.param<A>) -> index = #kgen.get_witness<A, @"def() -> T", "__call__">
   }
 }
 
@@ -30,7 +30,7 @@ kgen.struct.generator @extension1<A: type> = struct_inst<"extension1"[A]<:type A
 // CHECK-LABEL: kgen.func @"sink
 // CHECK: kgen.call @call
 kgen.generator @sink<V: type, F: type>(%arg: !kgen.param<F>) -> !kgen.param<V> {
-  kgen.param.declare callFn : (!kgen.param<F>) -> !kgen.param<V> = <#kgen.get_witness<F, "def() -> V", "__call__">>
+  kgen.param.declare callFn : (!kgen.param<F>) -> !kgen.param<V> = <#kgen.get_witness<F, @"def() -> V", "__call__">>
   %result = kgen.call_param[(!kgen.param<F>) -> !kgen.param<V> : callFn](%arg)
   kgen.return %result : !kgen.param<V>
 }

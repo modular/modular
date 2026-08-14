@@ -55,7 +55,7 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:PlainStruct"
-# CHECK-SAME: immediateParents = #M<symbols[@struct_extensions_importing::@Flying]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions_importing::@Flying>]>
 # CHECK-SAME: targetStruct = @struct_package::@plain_struct::@PlainStruct
 __extension PlainStruct(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
@@ -95,7 +95,7 @@ struct Spaceship(Movable where False):
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #M<symbols[@trait_package::@plain_trait::@Flying]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@trait_package::@plain_trait::@Flying>]>
 # CHECK-SAME: targetStruct = @struct_extensions_importing::@Spaceship
 __extension Spaceship(ImportedFlying):
     # CHECK-LABEL: lit.fn @"fly_to

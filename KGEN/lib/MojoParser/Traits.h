@@ -35,27 +35,27 @@ class MojoInflightDiag;
 /// optimizations is possible when the struct is already known to conform to
 /// certain ancestors. On success, the `ConformanceOp` will be populated.
 LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
-                                        SymbolRefAttr parent,
+                                        TraitSymbolAttr parent,
                                         std::optional<MojoInflightDiag> &diag,
                                         ConformanceOp op,
                                         ASTDecl &conformanceDecl);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(
-    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);
+    SharedState &shared, SmallVectorImpl<TraitSymbolAttr> &symbols);
 
 /// Canonicalize the list of symbols that form a trait composition, but also
 /// take constraints into account, `symbolConstraints` maps each symbol in the
 /// provided `symbols` vector to its constraints.
 SmallVector<ConstraintAttr> canonicalizeTraitSymbolsAndConstraints(
-    SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols,
-    const DenseMap<SymbolRefAttr, ConstraintAttr> &symbolConstraints);
+    SharedState &shared, SmallVectorImpl<TraitSymbolAttr> &symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &symbolConstraints);
 
 /// Reduce the list of trait composition symbols to the minimal set of symbols
 /// that still implies the original trait composition.
-SmallVector<SymbolRefAttr>
+SmallVector<TraitSymbolAttr>
 reduceTraitCompositionSymbols(SharedState &shared,
-                              ArrayRef<SymbolRefAttr> symbols);
+                              ArrayRef<TraitSymbolAttr> symbols);
 
 /// Given a type expression and scope-level assumptions, compute the effective
 /// trait bound implied by any `conforms_to(type, Trait)` constraints.

@@ -181,7 +181,7 @@ void ASTDecl::takeDecls(ASTDecl &src) {
   knownAssumptions = std::move(src.knownAssumptions);
 }
 
-DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
+DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *
 ASTDecl::getTraitConformanceLineage(bool createIfMissing) {
   if (!traitConformanceLineage && createIfMissing)
     traitConformanceLineage.reset(new TraitConformanceLineageType());
@@ -384,7 +384,7 @@ SymbolRefAttr ASTDecl::getSymbolRef() const {
         LIT::reduceTraitCompositionSymbols(getShared(), traitType.getSymbols());
     // If this is a single trait, return it.
     if (reducedSymbols.size() == 1)
-      return reducedSymbols[0];
+      return reducedSymbols[0].getSymbol();
     return {};
   }
 
@@ -418,7 +418,7 @@ Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
 
 void ASTDecl::findExtensionsInScopeForStruct(
     SymbolRefAttr targetStruct, llvm::SmallPtrSetImpl<ASTDecl *> &results,
-    std::optional<SymbolRefAttr> filterTrait) {
+    std::optional<TraitSymbolAttr> filterTrait) {
   if (!declsInScope)
     return;
 
@@ -460,7 +460,7 @@ void ASTDecl::findExtensionsInScopeForStruct(
 
     // Use the extension's canonicalTrait (flattened hierarchy) to check
     // whether it implements the filter trait.
-    for (SymbolRefAttr symbol :
+    for (TraitSymbolAttr symbol :
          extOp.getCanonicalTrait().value().getSymbols()) {
       if (symbol == filterTrait.value()) {
         results.insert(decl);

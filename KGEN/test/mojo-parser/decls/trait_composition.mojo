@@ -80,7 +80,7 @@ def useAny[T: AnyType](x: T):
 # CHECK-SAME: <T: !AnyType_Trait1>
 # CHECK-SAME: (%x: !lit.ref<:!AnyType_Trait1 T,
 def use1[T: Trait1](x: T):
-    # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!AnyType_Trait1 T,{{.*}} #kgen.get_witness<:!AnyType_Trait1 T, "trait_composition::Trait1", "f1{{.*}}">][{{.*}}](%x)
+    # CHECK: lit.call tail[{{.*}}"self": !lit.ref<:!AnyType_Trait1 T,{{.*}} #kgen.get_witness<:!AnyType_Trait1 T, @trait_composition::@Trait1, "f1{{.*}}">][{{.*}}](%x)
     x.f1()
 
 
@@ -106,7 +106,7 @@ def use12[T: Trait1 & Trait2](x: T):
 def use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call tail[
     # CHECK-SAME: "self": !lit.ref<:!AnyType_Trait2_Trait3 T,
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Trait2_Trait3 T{{.*}}, @trait_composition::@Trait3, "f3{{.*}}">
     x.f3()
 
 
@@ -220,7 +220,7 @@ trait IntConstructable:
 def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{:scalar<index> 33}>
     # CHECK: lit.call tail[
-    # CHECK-SAME: #kgen.get_witness<:!AnyType_Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
+    # CHECK-SAME: #kgen.get_witness<:!AnyType_Defaultable_IntConstructable T{{.*}}, @trait_composition::@IntConstructable, "__init__{{.*}}">
     # CHECK-SAME: %[[INT33]]
     return T(33)
 
@@ -336,6 +336,6 @@ trait SubHandle(Handle):
 # CHECK: lit.fn @"transfer
 # CHECK-SAME: %self: !lit.ref<:!AnyType_Handle_SubHandle *"_Self`"
 # CHECK-SAME: :!AnyType_Handle upcast(:!AnyType_Handle_SubHandle *"_Self`")
-# CHECK-SAME: inheritedFrom = @{{.*}}::@Handle
+# CHECK-SAME: inheritedFrom = #kgen.trait_symbol<@{{.*}}Handle>
 def main():
     pass

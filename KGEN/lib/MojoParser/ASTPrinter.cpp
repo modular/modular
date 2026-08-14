@@ -1829,13 +1829,14 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     // Print using the most concise form of the trait composition.
-    SmallVector<SymbolRefAttr> reduced(traitType.getSymbols());
+    SmallVector<TraitSymbolAttr> reduced(traitType.getSymbols());
     if (diagShared)
       reduced = reduceTraitCompositionSymbols(*ctx.shared, reduced);
 
     llvm::interleave(
         reduced, os,
-        [&](SymbolRefAttr symbol) {
+        [&](TraitSymbolAttr traitSymbol) {
+          SymbolRefAttr symbol = traitSymbol.getSymbol();
           ASTDecl *decl =
               diagShared
                   ? diagShared->declResolver->getDeclForTypeSymbolIfExists(

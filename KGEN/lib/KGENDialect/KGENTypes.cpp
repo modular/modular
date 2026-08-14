@@ -214,7 +214,7 @@ TypeValueType TypeValueType::getFromBytecode(TypedAttr typeValue) {
   return Base::get(typeValue.getContext(), typeValue);
 }
 
-ArrayRef<SymbolRefAttr> TypeValueType::getTraitSymbols() const {
+ArrayRef<TraitSymbolAttr> TypeValueType::getTraitSymbols() const {
   if (auto traitRef = sugarDynCast<TraitInstanceRefAttr>(getTypeValue()))
     return traitRef.getSymbols();
   return {};

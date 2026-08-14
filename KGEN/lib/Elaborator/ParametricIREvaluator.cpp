@@ -755,9 +755,9 @@ ParametricIREvaluator::resolveStructOp(TypedAttr typeValue,
 }
 
 Operation *ParametricIREvaluator::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, StringAttr traitName) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
   SymbolTable symtab(resolved.decl.getOperation());
-  return symtab.lookup<ConformanceOp>(traitName);
+  return symtab.lookup<ConformanceOp>(traitSymbol.getFlattenedName());
 }
 
 void ParametricIREvaluator::withEvaluator(

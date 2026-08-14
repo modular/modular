@@ -119,7 +119,7 @@ lit.struct.decl @Inner {
 }
 
 lit.struct.decl @Wrap<T: !HasOutput> {
-  lit.struct.field value : !kgen.param<#kgen.get_witness<:!HasOutput T, "HasOutput", "Output">>
+  lit.struct.field value : !kgen.param<#kgen.get_witness<:!HasOutput T, @HasOutput, "Output">>
 }
 
 kgen.generator @access_wrong_type(%wrap: !lit.struct<@Wrap<:!HasOutput #inner_type>>) {

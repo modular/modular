@@ -414,11 +414,15 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     Its body contains the conformance table entries that map trait requirements
     to the struct type's definitions.
 
-    - The optional `traitRef` parameter is a reference to the trait being
-      conformed to.
-    - The `immediateParents` parameter contains the conformance tables that this
-      conformance table directly inherits from. It only includes the first level
-      of parents, not any further ancestors.
+    - The `sym_name` parameter is the flattened name of the trait being
+      conformed to, which is what a `#kgen.get_witness` looks this table up by.
+    - The optional `traitSymbol` parameter references the trait declaration
+      that `sym_name` is the flattened form of. It is present until `lower-lit`
+      erases the trait declarations, after which nothing can resolve it and the
+      flattened `sym_name` is the only identity that remains.
+    - The `immediateParents` parameter names the conformance tables that this
+      conformance table directly inherits from, sorted by flattened name. It
+      only includes the first level of parents, not any further ancestors.
     - The `constraint` parameter specifies the condition under which this
       conformance applies. This is used for conditional trait conformance,
       where a struct only conforms to a trait when certain conditions are met.
@@ -458,8 +462,9 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    OptionalAttr<SymbolRefAttr>:$traitRef,
-    DefaultValuedAttr<M_SymbolRefArrayAttr, "ArrayRef<SymbolRefAttr>{}">:$immediateParents,
+    OptionalAttr<KGEN_TraitSymbolAttr>:$traitSymbol,
+    DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
+                      "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     KGEN_ConstraintAttr:$constraint
   );
   let regions = (region SizedRegion<1>:$body);
@@ -475,13 +480,12 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
     // Primary builder that canonicalizes null constraints to the trivially
     // true constraint. This allows callers to pass a potentially-null
     // constraint.
-    OpBuilder<(ins "StringAttr":$sym_name,
-                   "SymbolRefAttr":$traitRef,
-                   "SymbolRefArrayAttr":$immediateParents,
+    OpBuilder<(ins "TraitSymbolAttr":$traitSymbol,
+                   "TraitSymbolArrayAttr":$immediateParents,
                    "ConstraintAttr":$constraint), [{
-      $_state.addAttribute(getSymNameAttrName($_state.name), sym_name);
-      if (traitRef)
-        $_state.addAttribute(getTraitRefAttrName($_state.name), traitRef);
+      $_state.addAttribute(getSymNameAttrName($_state.name),
+                           traitSymbol.getFlattenedName());
+      $_state.addAttribute(getTraitSymbolAttrName($_state.name), traitSymbol);
       $_state.addAttribute(getImmediateParentsAttrName($_state.name),
                            immediateParents);
       $_state.addAttribute(getConstraintAttrName($_state.name),
@@ -491,13 +495,14 @@ def KGEN_ConformanceOp : KGENOp<"conformance", [
       (void)$_state.addRegion();
     }]>,
     // Builder for unconditional conformance (no constraint argument).
-    OpBuilder<(ins "StringAttr":$sym_name,
-                   "SymbolRefAttr":$traitRef,
-                   "SymbolRefArrayAttr":$immediateParents), [{
-      build($_builder, $_state, sym_name, traitRef, immediateParents,
+    OpBuilder<(ins "TraitSymbolAttr":$traitSymbol,
+                   "TraitSymbolArrayAttr":$immediateParents), [{
+      build($_builder, $_state, traitSymbol, immediateParents,
             /*constraint=*/ConstraintAttr());
     }]>
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

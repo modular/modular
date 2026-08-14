@@ -88,9 +88,10 @@ static LogicalResult resolveDefaultedOpFromTrait(DeclResolver &resolver,
                                                  ASTDecl *structDecl) {
   auto traitFnDecl = defaultedOp->getParentOfType<TraitDeclOp>();
 
-  auto traitSymbolRef = getFullyResolvedSymbolRef(traitFnDecl);
-  auto conformanceSymName = getFlattenedSymbolName(traitSymbolRef);
-  auto conformanceDecl = structDecl->lookupInCurrentScope(conformanceSymName);
+  auto traitSymbol =
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitFnDecl));
+  auto conformanceDecl =
+      structDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
 
   return resolver.resolveBody(*conformanceDecl.front(),
                               conformanceDecl.front()->getLoc());
@@ -1628,14 +1629,14 @@ registerClosureParamCaptures(ArrayRef<ParamDeclAttr> params, ASTDecl &decl,
         shared, getCanonicalType(closureParam.getType()));
     assert(closureTraitOr && "expected closure type");
 
-    // Get the trait name for the GetWitnessAttr.
+    // Get the trait symbol for the GetWitnessAttr.
     TraitDeclOp closureTrait = *closureTraitOr;
-    StringAttr traitName = builder.getStringAttr(
-        getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
+    auto traitSymbol =
+        TraitSymbolAttr::get(getFullyResolvedSymbolRef(closureTrait));
 
     // LHS: C.T - GetWitnessAttr accessing the alias on the closure param.
     TypedAttr witnessAttr =
-        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitName,
+        GetWitnessAttr::get(ParamDeclRefAttr::get(closureParam), traitSymbol,
                             ref.externalName, ref.externalType);
 
     TypedAttr idConstraint = ParamIdenticalAttr::get(witnessAttr, rhs);
@@ -2887,7 +2888,7 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 //===----------------------------------------------------------------------===//
 
 struct ParsedTraitConstraint {
-  SymbolRefAttr traitSymbol;
+  TraitSymbolAttr traitSymbol;
   ConstraintAttr constraint;
   /// Whether this constraint was for an explicitly listed trait in the
   /// conformance list (vs propagated from an ancestor).
@@ -2925,19 +2926,20 @@ struct ParsedConformanceEntry {
 ///
 /// Returns failure if any implication errors were found.
 static LogicalResult verifyDerivedAncestorImplication(
-    const DenseMap<SymbolRefAttr, ConstraintAttr> &explicitConstraints,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &explicitConstraints,
     SharedState &shared) {
   bool hasErrors = false;
   for (const auto &[symbol, constraint] : explicitConstraints) {
     TypedAttr prop = constraint.getProposition();
 
-    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    ASTDecl &traitDecl =
+        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
     auto traitDeclOp =
         dyn_cast_or_null<TraitDeclOp>(traitDecl.getIfOperation());
     if (!traitDeclOp)
       continue;
 
-    for (SymbolRefAttr ancestor :
+    for (TraitSymbolAttr ancestor :
          traitDeclOp.getCanonicalTrait().getSymbols()) {
       if (ancestor == symbol)
         continue;
@@ -2970,8 +2972,8 @@ static LogicalResult verifyDerivedAncestorImplication(
 ///
 /// Returns failure if any diamond errors were found.
 static LogicalResult resolvePropagatedConstraints(
-    const DenseMap<SymbolRefAttr, SmallVector<ConstraintAttr, 2>> &propagated,
-    DenseMap<SymbolRefAttr, ConstraintAttr> &traitConstraints,
+    const DenseMap<TraitSymbolAttr, SmallVector<ConstraintAttr, 2>> &propagated,
+    DenseMap<TraitSymbolAttr, ConstraintAttr> &traitConstraints,
     SharedState &shared) {
   ConstraintAttr unconditional =
       getUnconditionalConstraint(shared.getContext());
@@ -3056,14 +3058,14 @@ static LogicalResult resolvePropagatedConstraints(
 /// Returns failure if any constraint errors were found.
 static LogicalResult buildTraitConstraintsMap(
     ArrayRef<ParsedTraitConstraint> parsedConstraints,
-    const DenseSet<SymbolRefAttr> &explicitTraits,
-    const DenseSet<SymbolRefAttr> &compilerInjectedTraits,
-    DenseMap<SymbolRefAttr, ConstraintAttr> &traitConstraints,
+    const DenseSet<TraitSymbolAttr> &explicitTraits,
+    const DenseSet<TraitSymbolAttr> &compilerInjectedTraits,
+    DenseMap<TraitSymbolAttr, ConstraintAttr> &traitConstraints,
     SharedState &shared) {
   ConstraintAttr unconditional =
       getUnconditionalConstraint(shared.getContext());
-  DenseMap<SymbolRefAttr, ConstraintAttr> explicitConstraints;
-  DenseMap<SymbolRefAttr, SmallVector<ConstraintAttr, 2>> propagated;
+  DenseMap<TraitSymbolAttr, ConstraintAttr> explicitConstraints;
+  DenseMap<TraitSymbolAttr, SmallVector<ConstraintAttr, 2>> propagated;
   bool hasErrors = false;
 
   // Partition parsed constraints into explicit and propagated.
@@ -3203,13 +3205,13 @@ static ParseResult parseOptionalConformanceListSyntax(
 static ParseResult resolveConformanceList(
     ArrayRef<ParsedConformanceEntry> parsedConformances, ASTDecl &declScope,
     ASTDecl &decl, SharedState &shared,
-    DenseSet<SymbolRefAttr> &immediateParents,
+    DenseSet<TraitSymbolAttr> &immediateParents,
     SmallVectorImpl<ParsedTraitConstraint> *traitConstraints = nullptr,
-    DenseSet<SymbolRefAttr> *explicitTraits = nullptr) {
+    DenseSet<TraitSymbolAttr> *explicitTraits = nullptr) {
   if (parsedConformances.empty())
     return success();
 
-  DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *inheritedFrom =
+  DenseMap<TraitSymbolAttr, std::pair<TraitSymbolAttr, SMLoc>> *inheritedFrom =
       decl.getTraitConformanceLineage(/*createIfMissing=*/true);
 
   bool isTrait = isa_and_nonnull<TraitDeclOp>(decl.getIfOperation());
@@ -3287,13 +3289,13 @@ static ParseResult resolveConformanceList(
     // conformance constraints, set them now.
     if (explicitTraits || traitConstraints) {
       // We used the reduced set to detect conflict constraints.
-      SmallVector<SymbolRefAttr> reduced =
+      SmallVector<TraitSymbolAttr> reduced =
           reduceTraitCompositionSymbols(shared, traitType.getSymbols());
       if (explicitTraits)
         explicitTraits->insert_range(reduced);
 
       if (traitConstraints) {
-        for (SymbolRefAttr symbol : reduced) {
+        for (TraitSymbolAttr symbol : reduced) {
           traitConstraints->push_back(
               {symbol, constraint, /*isExplicit=*/true});
         }
@@ -3303,12 +3305,13 @@ static ParseResult resolveConformanceList(
     // Successively flatten the parent list so we always have all the parents
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
-    for (SymbolRefAttr symbol : traitType.getSymbols()) {
+    for (TraitSymbolAttr symbol : traitType.getSymbols()) {
       // If this symbol is already a parent, skip further processing.
       // Note: The explicit constraint was already recorded above.
       if (inheritedFrom->contains(symbol))
         continue;
-      ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+      ASTDecl &traitDecl =
+          shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
 
       // Check for API author error: stable trait cannot inherit from unstable.
       // Only applies when `decl` is a trait (not a struct conforming to a
@@ -3324,7 +3327,7 @@ static ParseResult resolveConformanceList(
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
               .getCanonicalTrait();
 
-      for (SymbolRefAttr ancestor : canonicalParent.getSymbols()) {
+      for (TraitSymbolAttr ancestor : canonicalParent.getSymbols()) {
         inheritedFrom->try_emplace(ancestor,
                                    std::make_pair(symbol, conformance.loc));
         // Any immediate parent that is actually a parent of this `symbol` is no
@@ -3499,7 +3502,7 @@ static std::optional<ConstraintAttr>
 getConformanceCondition(ASTDecl &structDecl, StringRef traitName) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl.getIfOperation());
   TraitType canonicalTrait = structOp.getCanonicalTrait();
-  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<TraitSymbolAttr> symbols = canonicalTrait.getSymbols();
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
 
   SmallVector<TypedAttr> bodyPropositions = llvm::map_to_vector(
@@ -3597,7 +3600,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   SMLoc identifierLoc;
   SmallVector<ParsedConformanceEntry> parsedConformances;
   SmallVector<ParsedTraitConstraint> parsedConstraints;
-  DenseSet<SymbolRefAttr> explicitTraits;
+  DenseSet<TraitSymbolAttr> explicitTraits;
   if (p.parseToken(Token::kw_struct,
                    "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
@@ -3619,7 +3622,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     return failure();
   TypeCheckedParamList &paramSignature = *paramSignatureOrError;
 
-  DenseSet<SymbolRefAttr> immediateParents; // unused.
+  DenseSet<TraitSymbolAttr> immediateParents; // unused.
   if (resolveConformanceList(parsedConformances, sigDecl, decl, shared,
                              immediateParents, &parsedConstraints,
                              &explicitTraits))
@@ -3646,15 +3649,18 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       shared.lookupBuiltinTrait("Deinitable", decl.getLoc());
   ASTDecl *movableDecl = shared.lookupBuiltinTrait("Movable", decl.getLoc());
 
-  DenseSet<SymbolRefAttr> compilerInjectedTraits;
+  DenseSet<TraitSymbolAttr> compilerInjectedTraits;
   if (anyTypeDecl)
-    compilerInjectedTraits.insert(anyTypeDecl->getSymbolRef());
+    compilerInjectedTraits.insert(
+        TraitSymbolAttr::get(anyTypeDecl->getSymbolRef()));
   if (implicitDelDecl)
-    compilerInjectedTraits.insert(implicitDelDecl->getSymbolRef());
+    compilerInjectedTraits.insert(
+        TraitSymbolAttr::get(implicitDelDecl->getSymbolRef()));
   if (movableDecl)
-    compilerInjectedTraits.insert(movableDecl->getSymbolRef());
+    compilerInjectedTraits.insert(
+        TraitSymbolAttr::get(movableDecl->getSymbolRef()));
   // Build the final constraint map from the parsed constraints.
-  DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
+  DenseMap<TraitSymbolAttr, ConstraintAttr> traitConstraints;
   if (failed(buildTraitConstraintsMap(parsedConstraints, explicitTraits,
                                       compilerInjectedTraits, traitConstraints,
                                       shared)))
@@ -3669,22 +3675,23 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setParamsAttr(paramsArrayAttr);
   structOp.setSignature(sig);
 
-  SmallVector<SymbolRefAttr> parentTraits;
+  SmallVector<TraitSymbolAttr> parentTraits;
   if (auto *inheritedFrom = decl.getTraitConformanceLineage())
     for (auto [symbol, _] : *inheritedFrom)
       parentTraits.push_back(symbol);
 
   // Make every nominal struct type inherit from `AnyType`.
   if (anyTypeDecl)
-    parentTraits.push_back(anyTypeDecl->getSymbolRef());
+    parentTraits.push_back(TraitSymbolAttr::get(anyTypeDecl->getSymbolRef()));
 
   // Make every nominal struct type inherit from `Deinitable` and
   // `Movable`. May be overridden / narrowed by explicit conditional `where`
   // conformance.
   if (implicitDelDecl)
-    parentTraits.push_back(implicitDelDecl->getSymbolRef());
+    parentTraits.push_back(
+        TraitSymbolAttr::get(implicitDelDecl->getSymbolRef()));
   if (movableDecl)
-    parentTraits.push_back(movableDecl->getSymbolRef());
+    parentTraits.push_back(TraitSymbolAttr::get(movableDecl->getSymbolRef()));
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
@@ -4145,7 +4152,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
   TraitType canonicalTrait = structOp.getCanonicalTrait();
-  ArrayRef<SymbolRefAttr> symbols = canonicalTrait.getSymbols();
+  ArrayRef<TraitSymbolAttr> symbols = canonicalTrait.getSymbols();
   // Constraints array is either empty (all unconditional) or parallel with
   // symbols.
   ArrayRef<ConstraintAttr> constraints = canonicalTrait.getConstraints();
@@ -4162,17 +4169,18 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
                              remapper.replace(constraints[i].getProposition())))
       continue;
 
-    StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
-    ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
-    SymbolRefArrayAttr immediateParents =
+    TraitSymbolAttr traitSymbol = parent;
+    StringAttr name = traitSymbol.getFlattenedName();
+    ASTDecl &parentDecl = getDeclForTypeSymbol(parent.getSymbol());
+    TraitSymbolArrayAttr immediateParents =
         cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
             .getImmediateParentsAttr();
     // Use 3-arg builder for unconditional conformance, 4-arg for conditional.
     ConformanceOp witnessTable =
         hasConstraints
-            ? ConformanceOp::create(b, name, parent, immediateParents,
+            ? ConformanceOp::create(b, traitSymbol, immediateParents,
                                     constraints[i])
-            : ConformanceOp::create(b, name, parent, immediateParents);
+            : ConformanceOp::create(b, traitSymbol, immediateParents);
     witnessTable.getBody().push_back(new Block());
     ASTDecl &decl = addDecl(witnessTable, structDecl.getLoc(), name,
                             &structDecl, {}, {}, -1);
@@ -4392,10 +4400,11 @@ ParseResult DeclResolver::resolveBody(StructFieldOp op, Lexer &lexer,
 //===----------------------------------------------------------------------===//
 LogicalResult
 DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
-                                 SmallVector<SymbolRefAttr> &parentTraits,
-                                 DenseSet<SymbolRefAttr> &immediateParents) {
+                                 SmallVector<TraitSymbolAttr> &parentTraits,
+                                 DenseSet<TraitSymbolAttr> &immediateParents) {
   // Add the trait itself to its canonical trait list.
-  parentTraits.push_back(getFullyResolvedSymbolRef(traitOp));
+  parentTraits.push_back(
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(traitOp)));
   TraitType canonTrait = getCanonicalTrait(parentTraits);
   traitOp.setCanonicalTrait(canonTrait);
 
@@ -4414,11 +4423,11 @@ DeclResolver::addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
   traitOp.setSignature(sig);
 
   // Add the immediate parents to the trait.
-  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
-                                                 immediateParents.end());
-  sortAndDeduplicateSymbols(immediateParentsVec);
+  SmallVector<TraitSymbolAttr> immediateParentsVec(immediateParents.begin(),
+                                                   immediateParents.end());
+  sortAndDeduplicateTraitSymbols(immediateParentsVec);
   traitOp.setImmediateParents(
-      SymbolRefArrayAttr::get(ctx, immediateParentsVec));
+      TraitSymbolArrayAttr::get(ctx, immediateParentsVec));
 
   decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
   return success();
@@ -4471,7 +4480,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Map from each symbol to the first symbol that explicitly inherits from it.
-  DenseSet<SymbolRefAttr> immediateParents;
+  DenseSet<TraitSymbolAttr> immediateParents;
   SmallVector<ParsedConformanceEntry> parsedConformances;
   if (parseOptionalConformanceListSyntax(
           p, parsedConformances, decl.getParentDecl()->getIndentation(),
@@ -4479,14 +4488,14 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
       resolveConformanceList(parsedConformances, *decl.getParentDecl(), decl,
                              shared, immediateParents))
     return failure();
-  SmallVector<SymbolRefAttr> parentTraits;
+  SmallVector<TraitSymbolAttr> parentTraits;
   bool definesClosure = traitOp.getDefinesClosure();
   if (auto *inheritedFrom = decl.getTraitConformanceLineage()) {
     for (auto [symbol, _] : *inheritedFrom) {
       parentTraits.push_back(symbol);
       if (definesClosure)
         continue;
-      ASTDecl &type = getDeclForTypeSymbol(symbol);
+      ASTDecl &type = getDeclForTypeSymbol(symbol.getSymbol());
       if (auto traitDecl =
               dyn_cast_if_present<TraitDeclOp>(type.getIfOperation()))
         if (traitDecl.getDefinesClosure())
@@ -4502,7 +4511,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (parentTraits.empty() && traitOp.getSymName() != "AnyType") {
     if (ASTDecl *anyTypeDecl =
             shared.lookupBuiltinTrait("AnyType", decl.getLoc())) {
-      parentTraits.push_back(anyTypeDecl->getSymbolRef());
+      parentTraits.push_back(TraitSymbolAttr::get(anyTypeDecl->getSymbolRef()));
       // No need to add AnyType to immediateParents, since it
       // has an empty requirements table.
     }
@@ -4510,7 +4519,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   auto conformsToTrait = [&](StringRef traitName) {
     return traitOp.getSymName() == traitName ||
-           llvm::any_of(parentTraits, [&](SymbolRefAttr symbol) {
+           llvm::any_of(parentTraits, [&](TraitSymbolAttr symbol) {
              return symbol.getLeafReference().getValue() == traitName;
            });
   };
@@ -4654,8 +4663,9 @@ void DeclResolver::addParentDeclsToTrait(TraitDeclOp traitOp,
   };
 
   // Now just pull in the functions in the bodies of all parents.
-  for (SymbolRefAttr parentOrSelf : traitOp.getCanonicalTrait().getSymbols()) {
-    ASTDecl &parentOrSelfDecl = getDeclForTypeSymbol(parentOrSelf);
+  for (TraitSymbolAttr parentOrSelf :
+       traitOp.getCanonicalTrait().getSymbols()) {
+    ASTDecl &parentOrSelfDecl = getDeclForTypeSymbol(parentOrSelf.getSymbol());
     if (&parentOrSelfDecl == &traitDecl)
       continue;
     auto &parentDecl = parentOrSelfDecl;
@@ -4887,7 +4897,7 @@ DeclResolver::resolveSyntheticSignature(FnOp inheritedFnOp,
 
   replaceTraitMethodSelfTypes(clonedFunc, PValue(parentTraitSelfType).get(),
                               PValue(childTraitSelfType).get());
-  clonedFunc.setInheritedFromAttr(parentTraitRef);
+  clonedFunc.setInheritedFromAttr(TraitSymbolAttr::get(parentTraitRef));
 
   childTraitDeclOp.getBody()->push_back(clonedFunc);
   childTraitFnDecl.setIRValue(clonedFunc.getOperation());
@@ -5007,7 +5017,7 @@ DeclResolver::resolveSyntheticSignature(AliasDeclOp inheritedAliasOp,
 
   // Mark the alias as inherited so that conformance checking won't
   // give duplicate errors if it is not provided.
-  clonedAliasDecl.setInheritedFromAttr(parentTraitRef);
+  clonedAliasDecl.setInheritedFromAttr(TraitSymbolAttr::get(parentTraitRef));
   childTraitBody.push_back(clonedAliasDecl);
 
   childTraitAliasDecl.setIRValue(clonedAliasDecl);
@@ -5093,7 +5103,7 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
   // Use the parent scope to resolve the traits in the conformance list.
   // TODO(MOCO-522): This might need to change once we have parametric traits,
   // we might want to resolve from the extension's scope at that point.
-  DenseSet<SymbolRefAttr> immediateParents;
+  DenseSet<TraitSymbolAttr> immediateParents;
   SmallVector<ParsedConformanceEntry> parsedConformances;
   if (failed(parseOptionalConformanceListSyntax(
           p, parsedConformances, parentDecl->getIndentation(),
@@ -5103,15 +5113,15 @@ LogicalResult DeclResolver::resolveSignature(ExtensionDeclOp extensionDeclOp,
     return failure();
 
   // Store the immediate parent traits in the extension
-  SmallVector<SymbolRefAttr> immediateParentsVec(immediateParents.begin(),
-                                                 immediateParents.end());
-  sortAndDeduplicateSymbols(immediateParentsVec);
+  SmallVector<TraitSymbolAttr> immediateParentsVec(immediateParents.begin(),
+                                                   immediateParents.end());
+  sortAndDeduplicateTraitSymbols(immediateParentsVec);
   extensionDeclOp.setImmediateParents(
-      SymbolRefArrayAttr::get(getContext(), immediateParentsVec));
+      TraitSymbolArrayAttr::get(getContext(), immediateParentsVec));
 
   // Compute canonicalTrait for the extension (flattened trait hierarchy)
   if (!immediateParentsVec.empty()) {
-    SmallVector<SymbolRefAttr> canonicalSymbols(immediateParentsVec);
+    SmallVector<TraitSymbolAttr> canonicalSymbols(immediateParentsVec);
     TraitType canonicalTrait = getCanonicalTrait(canonicalSymbols);
     extensionDeclOp.setCanonicalTrait(canonicalTrait);
   }
@@ -5233,27 +5243,27 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
         extensionDeclOp.getLoc(), extensionBody);
 
     // Get the target struct's existing conformances
-    SmallVector<SymbolRefAttr> structConformances(
+    SmallVector<TraitSymbolAttr> structConformances(
         structDeclOp.getCanonicalTrait().getSymbols().begin(),
         structDeclOp.getCanonicalTrait().getSymbols().end());
 
     // Compute set difference: extension traits - struct traits
-    SmallVector<SymbolRefAttr> extensionOnlyTraits;
-    for (SymbolRefAttr extensionTrait :
+    SmallVector<TraitSymbolAttr> extensionOnlyTraits;
+    for (TraitSymbolAttr extensionTrait :
          extensionDeclOp.getCanonicalTrait()->getSymbols()) {
       if (!llvm::is_contained(structConformances, extensionTrait))
         extensionOnlyTraits.push_back(extensionTrait);
     }
 
     // Create conformances only for extension-specific traits
-    for (SymbolRefAttr parent : extensionOnlyTraits) {
-      StringAttr name = b.getStringAttr(getFlattenedSymbolName(parent));
-      ASTDecl &parentDecl = getDeclForTypeSymbol(parent);
-      SymbolRefArrayAttr immediateParents =
+    for (TraitSymbolAttr traitSymbol : extensionOnlyTraits) {
+      StringAttr name = traitSymbol.getFlattenedName();
+      ASTDecl &parentDecl = getDeclForTypeSymbol(traitSymbol.getSymbol());
+      TraitSymbolArrayAttr immediateParents =
           cast_or_null<TraitDeclOp>(parentDecl.getIfOperation())
               .getImmediateParentsAttr();
       ConformanceOp witnessTable =
-          ConformanceOp::create(b, name, parent, immediateParents);
+          ConformanceOp::create(b, traitSymbol, immediateParents);
       witnessTable.getBody().push_back(new Block());
       ASTDecl &decl = addDecl(witnessTable, extensionDecl.getLoc(), name,
                               &extensionDecl, {}, {}, -1);
@@ -5330,10 +5340,10 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
   DenseMap<StringAttr, Type> existingAliases;
   // Functions are deduplicated by filtering out all inherited functions.
 
-  for (SymbolRefAttr symbol : traitType.getSymbols()) {
+  for (TraitSymbolAttr symbol : traitType.getSymbols()) {
     // FIXME: we need to handle trait type with constraints correctly here...
     // The constraints need to be preserved on the incorporated decls.
-    ASTDecl &parentDecl = getDeclForTypeSymbol(symbol);
+    ASTDecl &parentDecl = getDeclForTypeSymbol(symbol.getSymbol());
     if (failed(resolveBody(parentDecl, traitDecl.getLoc())))
       return failure();
 
@@ -5405,8 +5415,11 @@ ParseResult DeclResolver::resolveBody(ConformanceOp op, ASTDecl &decl) {
   assert(declToVerify &&
          "ConformanceOps are only created inside structs or extensions");
 
-  if (failed(verifyAndBuildConformance(*declToVerify, op.getTraitRefAttr(),
-                                       diag, op, decl)))
+  TraitSymbolAttr traitSymbol = op.getTraitSymbolAttr();
+  assert(traitSymbol && "conformance bodies are resolved before `lower-lit` "
+                        "erases the trait reference");
+  if (failed(verifyAndBuildConformance(*declToVerify, traitSymbol, diag, op,
+                                       decl)))
     return failure();
 
   return success();

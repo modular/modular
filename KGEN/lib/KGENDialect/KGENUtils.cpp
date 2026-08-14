@@ -440,6 +440,34 @@ ParseResult KGEN::parseTypeParamValues(AsmParser &p,
       [&] { return parseTypeParamValue(p, values.emplace_back()); });
 }
 
+void KGEN::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
+  p.printAttribute(trait.getSymbol());
+}
+
+ParseResult KGEN::parseTraitSymbol(AsmParser &p, TraitSymbolAttr &trait) {
+  SymbolRefAttr symbol;
+  if (p.parseAttribute(symbol))
+    return failure();
+  trait = TraitSymbolAttr::get(symbol);
+  return success();
+}
+
+void KGEN::printTraitSymbols(AsmPrinter &p, ArrayRef<TraitSymbolAttr> traits) {
+  p << '[';
+  llvm::interleaveComma(traits, p, [&](TraitSymbolAttr trait) {
+    p.printAttribute(trait.getSymbol());
+  });
+  p << ']';
+}
+
+ParseResult KGEN::parseTraitSymbols(AsmParser &p,
+                                    SmallVectorImpl<TraitSymbolAttr> &traits) {
+  return p.parseCommaSeparatedList(AsmParser::Delimiter::Square, [&] {
+    TraitSymbolAttr &trait = traits.emplace_back();
+    return parseTraitSymbol(p, trait);
+  });
+}
+
 void KGEN::printTypeValueBody(
     AsmPrinter &p, TypeParamAttr type,
     llvm::function_ref<void(AsmPrinter &, Type)> typePrinter) {

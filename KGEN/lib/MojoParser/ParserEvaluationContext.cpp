@@ -68,12 +68,13 @@ ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, StringAttr traitName) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
   auto *astDecl = static_cast<ASTDecl *>(resolved.handle);
 
   // Typically, this is a StructDeclOp created by the parser.
   if (isa<StructDeclOp>(astDecl->getIfOperation())) {
-    auto conformanceDecls = astDecl->lookupInCurrentScope(traitName);
+    auto conformanceDecls =
+        astDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
     if (conformanceDecls.empty())
       return nullptr;
 
@@ -152,9 +153,9 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
       // canonicalize downcast<:ft T, tt> into
       // upcast<:tt, downcast<:ft T, tt & ft>
       if (auto from = sugarDynCast<TraitType>(fromType.extractMetaType())) {
-        SmallVector<SymbolRefAttr> symbols(from.getSymbols());
+        SmallVector<TraitSymbolAttr> symbols(from.getSymbols());
         llvm::append_range(symbols, toTrait.getSymbols());
-        sortAndDeduplicateSymbols(symbols);
+        sortAndDeduplicateTraitSymbols(symbols);
 
         auto allTraits = TraitType::get(from.getContext(), symbols, {});
 

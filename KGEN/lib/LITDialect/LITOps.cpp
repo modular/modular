@@ -1220,7 +1220,7 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(SpecialFunctionKind::kNormal)),
         /*linkageName=*/LinkageNameAttr(), sourceName, /*inheritedFrom=*/{},
-        StringAttr(), DocStringAttr(),
+        /*defaultFnRef=*/{}, StringAttr(), DocStringAttr(),
         /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/none, /*stableSinceVersion=*/{},
         ArrayAttr::get(ctx, {}), ArrayAttr::get(ctx, {}), Attribute());
@@ -1606,7 +1606,7 @@ void ExtensionDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), targetStructName, /*targetStruct=*/{},
-        /*immediateParents=*/SymbolRefArrayAttr::get(ctx, {}),
+        /*immediateParents=*/TraitSymbolArrayAttr::get(ctx, {}),
         /*canonicalTrait=*/{});
   result.regions[0]->push_back(new Block());
 }
@@ -2048,7 +2048,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
-        SymbolRefArrayAttr::get(ctx, {}),
+        TraitSymbolArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
         /*definesClosure=*/none,
         /*docString=*/{},

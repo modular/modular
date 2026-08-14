@@ -30,7 +30,7 @@ trait MyIterator(Deinitable):
 # CHECK-LABEL: lit.fn @"take_and_peek
 # CHECK: lit.var.decl "x" var
 # CHECK: lit.call{{.*}}"next
-# CHECK: get_witness<:!AnyType_Movable #kgen.get_witness<{{.*}}"Element">, "std::builtin::stubs::Deinitable", "__deinit__
+# CHECK: get_witness<:!AnyType_Movable #kgen.get_witness<{{.*}}"Element">, @std::@builtin::@stubs::@Deinitable, "__deinit__
 def take_and_peek[Iter: MyIterator](var it: Iter) where conforms_to(
     Iter.Element, Deinitable
 ):

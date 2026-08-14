@@ -554,7 +554,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     ```mlir
     #kgen.type_conforms_to_trait<
         #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
-        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
+        #kgen.type<typevalue<#kgen.trait_ref<[@Movable, @Copyable]>>, type> : !kgen.type>
     ```
 
     For the common case of a single checked type value, the operand is printed
@@ -588,7 +588,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     /// `traitType` wraps a type that implements the `TraitSymbolInterface`;
     /// this returns that type's trait symbols. Returns `std::nullopt` if the
     /// trait value is not yet concrete.
-    std::optional<ArrayRef<SymbolRefAttr>> getTraitSymbols() const;
+    std::optional<ArrayRef<TraitSymbolAttr>> getTraitSymbols() const;
 
     /// Fold the attribute given the operations that holds a symbol table for
     /// the trait it implemented, it should either be a `kgen.struct.generator`
@@ -800,6 +800,68 @@ def KGEN_ExtensionAttr : KGEN_ExprAttr<"Extension", "extension"> {
 }
 
 //===----------------------------------------------------------------------===//
+// TraitSymbolAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TraitSymbolAttr : KGENAttr<"TraitSymbol", "trait_symbol"> {
+  let summary = "A reference to a trait declaration.";
+  let description = [{
+    The `#kgen.trait_symbol` attribute names a trait by a reference to its
+    declaration.
+
+    TODO: it will be holding an array of parameters for closure traits in the
+    future.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbol<@std::@builtin::@bool::@Boolable>
+    ```
+  }];
+
+  let parameters = (ins "SymbolRefAttr":$symbol);
+
+  let assemblyFormat = "`<` $symbol `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return $_get(symbol.getContext(), symbol);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the name that keys this trait's conformance tables in a
+    /// conforming struct's symbol table: the flattened form of the symbol,
+    /// e.g. `"pkg::mod::Trait"` for `@pkg::@mod::@Trait`.
+    StringAttr getFlattenedName() const;
+
+    /// Return the trait's own name, without any enclosing scopes.
+    StringAttr getLeafReference() const {
+      return getSymbol().getLeafReference();
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// TraitSymbolArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_TraitSymbolArrayAttr : ArrayOfAttr<KGENDialect, "TraitSymbolArray",
+    "trait_symbols", "TraitSymbolAttr"> {
+  let summary = "List of trait symbols.";
+  let description = [{
+    The `#kgen.trait_symbols` attribute represents a list of trait symbols, the
+    list is sorted by flattened name.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbols<[@std::@builtin::@Movable, @std::@builtin::@Copyable]>
+    ```
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // GetWitnessAttr
 //===----------------------------------------------------------------------===//
 
@@ -824,25 +886,26 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
 
   let parameters = (ins
     "TypedAttr":$typeValue,
-    "StringAttr":$traitName,
+    "TraitSymbolAttr":$traitSymbol,
     "StringAttr":$witnessName,
     AttributeSelfTypeParameter<"", "Type">:$type
   );
   let assemblyFormat = [{
-    `<` custom<TypeParamValue>($typeValue) `,` $traitName `,` $witnessName `>`
+    `<` custom<TypeParamValue>($typeValue) `,`
+    custom<TraitSymbol>($traitSymbol) `,` $witnessName `>`
   }];
 
   let builders = [
     // Convenience form with inferred context.
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
-                                        "StringAttr":$traitName,
+                                        "TraitSymbolAttr":$traitSymbol,
                                         "StringAttr":$witnessName,
                                         "Type":$type), [{
-      return get(type.getContext(), typeValue, traitName, witnessName, type);
+      return get(type.getContext(), typeValue, traitSymbol, witnessName, type);
     }], "GetWitnessAttr">,
 
     // Verbose form with MLIRContext, used by the generated parser.
-    AttrBuilder<(ins "TypedAttr":$typeValue, "StringAttr":$traitName,
+    AttrBuilder<(ins "TypedAttr":$typeValue, "TraitSymbolAttr":$traitSymbol,
                      "StringAttr":$witnessName, "Type":$type), "",
                 "GetWitnessAttr">,
   ];
@@ -1619,16 +1682,17 @@ def KGEN_TraitInstanceRefAttr : KGEN_ExprAttr<"TraitInstanceRef", "trait_ref"> {
     of the trait.
   }];
 
-  let parameters = (ins ArrayRefParameter<"SymbolRefAttr">:$symbols,
+  let parameters = (ins ArrayRefParameter<"TraitSymbolAttr">:$symbols,
                         AttributeSelfTypeParameter<"">:$type);
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "ArrayRef<SymbolRefAttr>":$symbols,
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TraitSymbolAttr>":$symbols,
                                         "Type":$type), [{
       return get(type.getContext(), symbols, type);
     }]>
   ];
-  let assemblyFormat = "`<` $symbols `>`";
+  // Print the traits as bare symbols rather than as nested attributes.
+  let assemblyFormat = "`<` custom<TraitSymbols>($symbols) `>`";
 }
 
 

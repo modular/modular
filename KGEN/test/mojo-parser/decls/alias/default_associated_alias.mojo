@@ -23,12 +23,12 @@ trait B:
     comptime a: Int
 
     # This is a default value
-    # CHECK:      lit.alias.decl *"c`2": !alias_Int1 = <sugar_member_alias(!kgen.param<:!B_AnyType *"_Self`">, "a", #kgen.get_witness<:!B_AnyType *"_Self`", "{{.*}}::B", "a">)>
+    # CHECK:      lit.alias.decl *"c`2": !alias_Int1 = <sugar_member_alias(!kgen.param<:!B_AnyType *"_Self`">, "a", #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">)>
     # CHECK-SAME:   {defaultedAssociatedAlias}
     comptime c = Self.a
 
     # This is a dependent default type alias
-    # CHECK:      lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int #kgen.get_witness<:!B_AnyType *"_Self`", "{{.*}}::B", "a">>>> = <@{{.*}}::@DT<:!Int #kgen.get_witness<:!B_AnyType *"_Self`", "{{.*}}::B", "a">>>
+    # CHECK:      lit.alias.decl *"T`3": meta<!lit.struct<#DT <:!Int #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">>>> = <@{{.*}}::@DT<:!Int #kgen.get_witness<:!B_AnyType *"_Self`", @{{.*}}::@B, "a">>>
     # CHECK-SAME:   {defaultedAssociatedAlias}
     comptime T = DT[Self.a]
 
@@ -83,7 +83,7 @@ trait Parent:
     # CHECK-SAME:   {defaultedAssociatedAlias}
     comptime A: Int = 1
     # In Parent, `Self.X` lowers to references against Parent's `_Self`.
-    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!kgen.param<:!Parent_AnyType *"_Self`">, "A", #kgen.get_witness<:!Parent_AnyType *"_Self`", "{{.*}}::Parent", "A">)>
+    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!kgen.param<:!Parent_AnyType *"_Self`">, "A", #kgen.get_witness<:!Parent_AnyType *"_Self`", @{{.*}}::@Parent, "A">)>
     # CHECK-SAME:   {defaultedAssociatedAlias}
     comptime B: Int = Self.A
 
@@ -91,9 +91,9 @@ trait Parent:
 trait Child(Parent):
     # `A` has no Self references in its value, so the clone keeps `<{1}>`.
     # CHECK:      lit.alias.decl *"A`{{[0-9]+}}": !alias_Int1 = <rebind(:!Int {:scalar<index> 1})>
-    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = @{{.*}}::@Parent}
+    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = #kgen.trait_symbol<@{{.*}}Parent>}
     # `B`'s value DOES reference `_Self`; after cloning into Child, those
     # `_Self` references must be retyped from `!Parent` to `!Child`.
-    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!kgen.param<:!Child_Parent_AnyType *"_Self`">, "A", #kgen.get_witness<:!Child_Parent_AnyType *"_Self`", "{{.*}}::Parent", "A">)>
-    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = @{{.*}}::@Parent}
+    # CHECK:      lit.alias.decl *"B`{{[0-9]+}}": !alias_Int1 = <sugar_member_alias(!kgen.param<:!Child_Parent_AnyType *"_Self`">, "A", #kgen.get_witness<:!Child_Parent_AnyType *"_Self`", @{{.*}}::@Parent, "A">)>
+    # CHECK-SAME:   {defaultedAssociatedAlias, inheritedFrom = #kgen.trait_symbol<@{{.*}}Parent>}
     pass

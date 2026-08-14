@@ -97,7 +97,7 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
   auto simplifyFrom =
       [&](ResolvedStructHandle handle) -> std::optional<FailureOr<TypedAttr>> {
     Operation *conformanceOp =
-        context.resolveConformanceForStruct(handle, getTraitName());
+        context.resolveConformanceForStruct(handle, getTraitSymbol());
     if (!conformanceOp)
       return std::nullopt;
 
@@ -110,7 +110,8 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
     if (failed(result))
       context.emitMaterializationError(
           "failed to locate witness entry '" + getWitnessName().getValue() +
-          "' for trait '" + getTraitName().getValue() + "'");
+          "' for trait '" + getTraitSymbol().getFlattenedName().getValue() +
+          "'");
     return result;
   };
 
@@ -143,7 +144,7 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
         "struct '" +
         SymbolTable::getSymbolName(resolvedOr->decl.getOperation()).getValue() +
         "' does not have witness table for trait '" +
-        getTraitName().getValue() + "'");
+        getTraitSymbol().getFlattenedName().getValue() + "'");
   return failure();
 }
 

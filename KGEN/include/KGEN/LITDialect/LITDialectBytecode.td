@@ -44,7 +44,7 @@ def StructType : DialectType<(type
 )>;
 
 def TraitType : DialectType<(type
-  ConcreteAttrArray<"SymbolRefAttr">:$symbols,
+  ConcreteAttrArray<"::M::KGEN::TraitSymbolAttr">:$symbols,
   ConcreteAttrArray<"ConstraintAttr">:$constraints
 )>;
 

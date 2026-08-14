@@ -353,4 +353,3 @@ def s11_launch[Body: s11_RowBody](body: Body, num_blocks: Int):
         _ = num_blocks
 
     s11_dispatch[1024]()
-

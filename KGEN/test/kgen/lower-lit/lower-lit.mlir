@@ -344,7 +344,7 @@ lit.struct.decl @foo {
 // Traits
 //===----------------------------------------------------------------------===//
 
-// CHECK: #type_value = #kgen.type<typevalue<#kgen.trait_ref<@RetZero>>, type> : !kgen.type
+// CHECK: #type_value = #kgen.type<typevalue<#kgen.trait_ref<[@RetZero]>>, type> : !kgen.type
 lit.trait.decl @RetZero {
   // CHECK-LABEL: kgen.generator @"RetZero::return_zero"
   lit.fn @return_zero() -> index {

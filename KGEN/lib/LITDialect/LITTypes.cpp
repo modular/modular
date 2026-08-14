@@ -632,7 +632,7 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
 //===----------------------------------------------------------------------===//
 
 TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
-                                        ArrayRef<SymbolRefAttr> symbols,
+                                        ArrayRef<TraitSymbolAttr> symbols,
                                         ArrayRef<ConstraintAttr> constraints) {
   // Fast path: no constraints provided means unconditional conformance.
   if (constraints.empty())
@@ -640,7 +640,7 @@ TraitType TraitType::canonicalizeAndGet(MLIRContext *context,
 
   // Canonicalize constraints:
   // 1. When all remaining constraints are trivially true, clear the array
-  SmallVector<SymbolRefAttr> canonSymbols;
+  SmallVector<TraitSymbolAttr> canonSymbols;
   SmallVector<ConstraintAttr> canonConstraints;
   canonSymbols.reserve(symbols.size());
   canonConstraints.reserve(constraints.size());
@@ -674,7 +674,7 @@ Type TraitType::parse(AsmParser &p) {
   if (p.parseLess())
     return {};
 
-  SmallVector<SymbolRefAttr> symbols;
+  SmallVector<TraitSymbolAttr> symbols;
   SmallVector<ConstraintAttr> constraints;
   bool hasAnyConstraints = false;
 
@@ -686,7 +686,7 @@ Type TraitType::parse(AsmParser &p) {
       SymbolRefAttr symbol;
       if (p.parseAttribute(symbol))
         return failure();
-      symbols.push_back(symbol);
+      symbols.push_back(TraitSymbolAttr::get(symbol));
 
       // Check for optional "where <constraint>" after this symbol.
       if (succeeded(p.parseOptionalKeyword("where"))) {
@@ -724,14 +724,14 @@ Type TraitType::parse(AsmParser &p) {
 }
 
 void TraitType::print(AsmPrinter &p) const {
-  ArrayRef<SymbolRefAttr> symbols = getSymbols();
+  ArrayRef<TraitSymbolAttr> symbols = getSymbols();
   ArrayRef<ConstraintAttr> constraints = getConstraints();
 
   p << '<';
   for (size_t i = 0; i < symbols.size(); ++i) {
     if (i > 0)
       p << ", ";
-    p.printAttribute(symbols[i]);
+    p.printAttribute(symbols[i].getSymbol());
     // Print "where <constraint>" for conditional conformance constraints.
     if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
       p << " where ";
@@ -742,7 +742,7 @@ void TraitType::print(AsmPrinter &p) const {
 }
 
 LogicalResult TraitType::verify(function_ref<InFlightDiagnostic()> emitError,
-                                ArrayRef<SymbolRefAttr> symbols,
+                                ArrayRef<TraitSymbolAttr> symbols,
                                 ArrayRef<ConstraintAttr> constraints) {
   // If constraints are present, they must form a parallel array with symbols.
   if (!constraints.empty() && constraints.size() != symbols.size()) {
@@ -766,7 +766,7 @@ LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
 MetaType TraitType::getMetaType() { return MetaType::get(*this); }
 
 /// Return symbols carried by this trait type.
-ArrayRef<SymbolRefAttr> TraitType::getTraitSymbols() const {
+ArrayRef<TraitSymbolAttr> TraitType::getTraitSymbols() const {
   return getSymbols();
 }
 
@@ -786,12 +786,13 @@ TypedAttr TraitType::getPValue() {
 
 // Sugar support: non-parameterized types get aliases.
 mlir::OpAsmAliasResult LIT::TraitType::getAlias(raw_ostream &os) const {
-  ArrayRef<SymbolRefAttr> symbols = getSymbols();
+  ArrayRef<TraitSymbolAttr> symbols = getSymbols();
   if (symbols.empty())
     return mlir::OpAsmAliasResult::NoAlias;
   SmallVector<StringRef> names;
-  for (SymbolRefAttr symbol : symbols) {
-    if (std::optional<StringRef> name = StructType::getAliasName(symbol))
+  for (TraitSymbolAttr symbol : symbols) {
+    if (std::optional<StringRef> name =
+            StructType::getAliasName(symbol.getSymbol()))
       names.push_back(*name);
     else
       return mlir::OpAsmAliasResult::NoAlias;

@@ -188,12 +188,13 @@ static void addConformanceTable(
   ImplicitLocOpBuilder b(structDeclOp->getLoc(), structDeclOp.getContext());
   b.setInsertionPointToEnd(&structDeclOp.getBodyRegion().front());
   TraitDeclOp traitDeclOp = closureParent.getTrait(fileModule);
-  SymbolRefArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
+  TraitSymbolArrayAttr immediateParents = traitDeclOp.getImmediateParentsAttr();
   SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
-  StringAttr parentName = b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+  auto traitSymbol = TraitSymbolAttr::get(parentSymbol);
+  StringAttr parentName = traitSymbol.getFlattenedName();
   ConformanceOp witnessTable =
-      ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
+      ConformanceOp::create(b, traitSymbol, immediateParents);
   Block &block = witnessTable.getBody().emplaceBlock();
   b.setInsertionPointToStart(&block);
   for (auto [name, newWitness] : witnesses)
@@ -206,11 +207,11 @@ static void addConformanceTable(
   conformDecl.resolvedness = DeclResolvedness::signature;
 
   // Update the types of the struct wrapper.
-  SymbolRefAttr symbol = closureParent.getSymbolRef(fileModule);
+  auto symbol = TraitSymbolAttr::get(closureParent.getSymbolRef(fileModule));
   TraitType oldTraitType = structDeclOp.getCanonicalTrait();
   if (llvm::is_contained(oldTraitType.getSymbols(), symbol))
     return;
-  SmallVector<SymbolRefAttr> symbols;
+  SmallVector<TraitSymbolAttr> symbols;
   llvm::append_range(symbols, oldTraitType.getSymbols());
   symbols.push_back(symbol);
   canonicalizeTraitCompositionSymbols(structDecl.getShared(), symbols);
@@ -483,10 +484,10 @@ std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
 
   closureTrait.setDefinesClosure(true);
   // Populate the trait with parent and self methods.
-  SmallVector<SymbolRefAttr> parents;
-  DenseSet<SymbolRefAttr> immediateParents;
+  SmallVector<TraitSymbolAttr> parents;
+  DenseSet<TraitSymbolAttr> immediateParents;
   for (ClosureParent &p : closureParents) {
-    SymbolRefAttr sym = p.getSymbolRef(moduleDecl);
+    auto sym = TraitSymbolAttr::get(p.getSymbolRef(moduleDecl));
     immediateParents.insert(sym);
     parents.push_back(sym);
   }
@@ -531,11 +532,12 @@ populateParametersFromFnGeneratorType(FnTypeGeneratorType sig) {
 static TraitType
 getTraitType(SmallVector<ClosureEmitter::ClosureParent> &closureParents,
              ASTDecl &moduleDecl) {
-  SmallVector<SymbolRefAttr> symbols;
+  SmallVector<TraitSymbolAttr> symbols;
   llvm::append_range(
       symbols, llvm::map_to_vector(closureParents,
                                    [&](ClosureEmitter::ClosureParent &parent) {
-                                     return parent.getSymbolRef(moduleDecl);
+                                     return TraitSymbolAttr::get(
+                                         parent.getSymbolRef(moduleDecl));
                                    }));
   canonicalizeTraitCompositionSymbols(moduleDecl.getShared(), symbols);
   return TraitType::get(moduleDecl.getContext(), symbols);
@@ -566,7 +568,7 @@ static FnTypeGeneratorType replaceTraitWitnessLookupsWithParamWitnessLookups(
     if (getWitness.getTypeValue().getType() != replaceMeType)
       return getWitness;
     return GetWitnessAttr::get(
-        ParamDeclRefAttr::get(implType), getWitness.getTraitName(),
+        ParamDeclRefAttr::get(implType), getWitness.getTraitSymbol(),
         getWitness.getWitnessName(), getWitness.getType());
   });
   return cast<FnTypeGeneratorType>(replacer.replace(sig));
@@ -865,7 +867,7 @@ static SymbolConstantAttr getSymbolNoParamValues(StructDeclOp declOp,
 static ConformanceOp lookupConformanceTable(StructDeclOp op,
                                             SymbolRefAttr traitSymbol) {
   for (auto conformance : op.getFields().getOps<ConformanceOp>()) {
-    if (conformance.getTraitRef() == traitSymbol) {
+    if (conformance.getTraitSymbolAttr().getSymbol() == traitSymbol) {
       return conformance;
     }
   }
@@ -897,7 +899,8 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
       ParamDeclAttr::get(ctx, StringAttr::get(ctx, name), valueAttr.getType());
   AliasDeclOp aliasOp = LIT::AliasDeclOp::create(
       b, declOp.getBodyRegion().getLoc(), paramAttr, valueAttr);
-  aliasOp.setInheritedFromAttr(parent.getSymbolRef(moduleDecl));
+  aliasOp.setInheritedFromAttr(
+      TraitSymbolAttr::get(parent.getSymbolRef(moduleDecl)));
   shared.declResolver->addFullyResolvedDecl(aliasOp, StringAttr::get(ctx, name),
                                             structDecl.getLoc(), &structDecl);
 
@@ -911,9 +914,9 @@ static void generateIsTrivialSpecialAlias(StringRef name, bool value,
 
 void ClosureEmitter::processClosureTraits(
     TraitType traitType, std::function<void(TraitDeclOp)> const &process) {
-  for (SymbolRefAttr traitSymbol : traitType.getSymbols()) {
-    ASTDecl *traitDecl =
-        shared.getDeclResolver().getDeclForTypeSymbolIfExists(traitSymbol);
+  for (TraitSymbolAttr traitSymbol : traitType.getSymbols()) {
+    ASTDecl *traitDecl = shared.getDeclResolver().getDeclForTypeSymbolIfExists(
+        traitSymbol.getSymbol());
     if (!traitDecl)
       continue;
     auto closureTrait = dyn_cast<TraitDeclOp>(traitDecl->getIfOperation());
@@ -927,7 +930,8 @@ std::optional<TraitDeclOp> ClosureEmitter::getClosureDecl(SharedState &shared,
                                                           Type type) {
   auto closureTrait = [&](TraitType traitType) -> std::optional<TraitDeclOp> {
     for (auto sym : traitType.getSymbols()) {
-      ASTDecl &decl = shared.getDeclResolver().getDeclForTypeSymbol(sym);
+      ASTDecl &decl =
+          shared.getDeclResolver().getDeclForTypeSymbol(sym.getSymbol());
       if (auto traitOp =
               dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation())) {
         if (traitOp.getDefinesClosure())
@@ -1122,16 +1126,17 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     auto traitParent = parent.getTrait(moduleDecl);
     auto fnOp = parent.getDefiningOp(moduleDecl);
     b.setInsertionPointToEnd(&declOp.getBodyRegion().front());
-    SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
+    TraitSymbolArrayAttr immediateParents =
+        traitParent.getImmediateParentsAttr();
     SymbolRefAttr parentSymbol = getFullyResolvedSymbolRef(
         cast<mlir::SymbolOpInterface>(traitParent.getOperation()));
-    StringAttr parentName =
-        b.getStringAttr(getFlattenedSymbolName(parentSymbol));
+    auto parentTrait = TraitSymbolAttr::get(parentSymbol);
 
     ConformanceOp witnessTable =
-        ConformanceOp::create(b, parentName, parentSymbol, immediateParents);
+        ConformanceOp::create(b, parentTrait, immediateParents);
     ASTDecl &witnessDecl = shared.declResolver->addDecl(
-        witnessTable, structDecl.getLoc(), parentName, &structDecl, {}, {}, -1);
+        witnessTable, structDecl.getLoc(), parentTrait.getFlattenedName(),
+        &structDecl, {}, {}, -1);
     witnessDecl.resolvedness = DeclResolvedness::body;
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
@@ -1403,12 +1408,12 @@ extractParameterReferencesIntoAliasRef(
   auto declRef = dyn_cast<ParamType>(selfType.mlirType);
   auto ref = dyn_cast_if_present<ParamDeclRefAttr>(declRef.getParam());
   assert(ref && "expected the self type of a trait to be a parameter");
-  StringAttr traitName = StringAttr::get(
-      ctx, getFlattenedSymbolName(getFullyResolvedSymbolRef(closureTrait)));
+  auto traitSymbol =
+      TraitSymbolAttr::get(getFullyResolvedSymbolRef(closureTrait));
   StringRef selfName = ref.getName().getValue();
   auto externParamReplacer = [&](StringRef witnessName,
                                  Type witnessType) -> TypedAttr {
-    return GetWitnessAttr::get(PValue(selfType), traitName,
+    return GetWitnessAttr::get(PValue(selfType), traitSymbol,
                                StringAttr::get(ctx, witnessName), witnessType);
   };
   return extractParameterReferencesIntoAliasRef(dependentSignatureType,
@@ -1565,9 +1570,10 @@ ClosureEmitter::getSpecializedClosureTrait(GeneratorType aliasGenerator,
     return {};
   TraitType origTraitType = anyTrait.getTraitType();
   TraitDeclOp closureTrait;
-  SymbolRefAttr closureSymbol;
-  for (SymbolRefAttr symbol : origTraitType.getSymbols()) {
-    ASTDecl &decl = shared.getDeclResolver().getDeclForTypeSymbol(symbol);
+  TraitSymbolAttr closureSymbol;
+  for (TraitSymbolAttr symbol : origTraitType.getSymbols()) {
+    ASTDecl &decl =
+        shared.getDeclResolver().getDeclForTypeSymbol(symbol.getSymbol());
     if (auto candidate =
             dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation());
         candidate && candidate.getDefinesClosure()) {
@@ -1620,12 +1626,12 @@ ClosureEmitter::getSpecializedClosureTrait(GeneratorType aliasGenerator,
       shared.getOrCreateClosureTrait(loc, moduleDecl, reboundSig);
   if (!newTraitDecl)
     return {};
-  SymbolRefAttr newClosureSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(newTraitDecl->getIfOperation()));
+  auto newClosureSymbol = TraitSymbolAttr::get(getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(newTraitDecl->getIfOperation())));
 
   // Preserve the non-closure conjuncts
-  SmallVector<SymbolRefAttr> symbols;
-  for (SymbolRefAttr symbol : origTraitType.getSymbols())
+  SmallVector<TraitSymbolAttr> symbols;
+  for (TraitSymbolAttr symbol : origTraitType.getSymbols())
     symbols.push_back(symbol == closureSymbol ? newClosureSymbol : symbol);
   return TraitType::canonicalizeAndGet(shared.getContext(), symbols, {});
 }
@@ -2085,11 +2091,10 @@ static FailureOr<ASTType> getDeviceType(ASTType hostType, ASTDecl &scope,
     return failure();
 
   MLIRContext *ctx = shared.getContext();
-  StringAttr traitName = StringAttr::get(
-      ctx, getFlattenedSymbolName(devicePassableDecl->getSymbolRef()));
+  auto traitSymbol = TraitSymbolAttr::get(devicePassableDecl->getSymbolRef());
   TypedAttr deviceTypeWitness =
       shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-          PValue(hostType), traitName, StringAttr::get(ctx, kDeviceType),
+          PValue(hostType), traitSymbol, StringAttr::get(ctx, kDeviceType),
           aliasOp.getType());
 
   if (!deviceTypeWitness || !LIT::isTypeExpr(deviceTypeWitness))
@@ -2515,11 +2520,12 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   auto addWitnessTable = [&](ClosureParent &closureParent) {
     TraitDeclOp traitParent = closureParent.getTrait(moduleDecl);
     builder.setInsertionPointToEnd(&structOp.getFields().front());
-    SymbolRefArrayAttr immediateParents = traitParent.getImmediateParentsAttr();
+    TraitSymbolArrayAttr immediateParents =
+        traitParent.getImmediateParentsAttr();
     SymbolRefAttr parentSymbol = closureParent.getSymbolRef(moduleDecl);
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     ConformanceOp witnessTable = ConformanceOp::create(
-        builder, parentName, parentSymbol, immediateParents);
+        builder, TraitSymbolAttr::get(parentSymbol), immediateParents);
     Block &block = witnessTable.getBody().emplaceBlock();
 
     ASTDecl &conformDecl = shared.declResolver->addDecl(
@@ -3500,17 +3506,16 @@ inferClosureTraitExtension(SharedState &shared, TraitDeclOp sourceTrait,
   if (failed(specialization))
     return failure();
 
-  StringAttr sourceName = StringAttr::get(
-      shared.getContext(),
-      getFlattenedSymbolName(getFullyResolvedSymbolRef(
-          cast<mlir::SymbolOpInterface>(sourceTrait.getOperation()))));
+  auto sourceTraitSymbol = TraitSymbolAttr::get(getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(sourceTrait.getOperation())));
 
   // An adaptor calls the anchor's own `__call__`
   DenseMap<StringAttr, TypedAttr> sourceAuxiliaryWitnesses;
   for (auto [alias, auxiliaryParam] :
        llvm::zip(sourceAliases, sourceParams.take_front(sourceAuxCount))) {
-    TypedAttr witness = GetWitnessAttr::get(
-        anchor, sourceName, alias.getParamDecl().getName(), alias.getType());
+    TypedAttr witness =
+        GetWitnessAttr::get(anchor, sourceTraitSymbol,
+                            alias.getParamDecl().getName(), alias.getType());
     sourceAuxiliaryWitnesses[auxiliaryParam.getName()] = witness;
     parts.fnLevelBindings.push_back(witness);
   }
@@ -3668,9 +3673,9 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
     return failure();
 
   // does the struct already conform to the trait?
-  SymbolRefAttr target = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
-  for (SymbolRefAttr currentTrait :
+  auto target = TraitSymbolAttr::get(getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation())));
+  for (TraitSymbolAttr currentTrait :
        structDeclOp.getCanonicalTrait().getSymbols()) {
     if (target == currentTrait) {
       return success();
@@ -3892,19 +3897,19 @@ ASTDecl *ClosureEmitter::createExtensionStruct(ASTDecl &moduleDecl,
   // A stateless extension carries no storage
   declOp.setConvention(TypeConvention::RegisterPassable);
 
-  // The source trait's flattened symbol name, used as the trait key for the
-  // `get_witness` lookups against `Anchor`.
+  // The source trait, used as the trait key for the `get_witness` lookups
+  // against `Anchor`.
   SymbolRefAttr sourceSymbol = getFullyResolvedSymbolRef(
       cast<mlir::SymbolOpInterface>(sourceTrait.getOperation()));
-  StringAttr sourceName =
-      StringAttr::get(ctx, getFlattenedSymbolName(sourceSymbol));
+  auto sourceTraitSymbol = TraitSymbolAttr::get(sourceSymbol);
 
   // The anchor's own `__call__`, viewed through the extension's type parameter.
   ASTType anchorType(ParamType::get(anchorRef));
   FnTypeGeneratorType callWitnessType =
       specializeSignature(sourceCall, anchorType, *shared.declResolver);
-  TypedAttr callWitness = GetWitnessAttr::get(
-      ctx, anchorRef, sourceName, sourceCall.getSymNameAttr(), callWitnessType);
+  TypedAttr callWitness =
+      GetWitnessAttr::get(ctx, anchorRef, sourceTraitSymbol,
+                          sourceCall.getSymNameAttr(), callWitnessType);
 
   // If the target trait is more abstract than the struct an adaptor method is
   // needed.
@@ -4056,7 +4061,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
                                               devicePassableTrait->getLoc())))
     return;
   TraitDeclOp trait = cast<TraitDeclOp>(devicePassableTrait->getIfOperation());
-  SymbolRefAttr devicePassableSymbol = devicePassableTrait->getSymbolRef();
+  auto devicePassableSymbol =
+      TraitSymbolAttr::get(devicePassableTrait->getSymbolRef());
 
   for (auto &nameGroup : devicePassableTrait->getDeclsInScope()) {
     for (ASTDecl *funcFieldOrAlias : nameGroup.second) {

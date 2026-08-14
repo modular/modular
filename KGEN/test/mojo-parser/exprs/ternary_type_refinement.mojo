@@ -56,7 +56,7 @@ def accepts_refined_param[T: RefinedParam]() -> Int:
 # `T.static_value()` call resolves to the trait witness.
 # CHECK-LABEL: lit.fn @"ternary_refines_true_branch
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType T, {{.*}}StaticExtra{{.*}})> -> !alias_Int1 {
-# CHECK: lit.call tail{{.*}}#kgen.get_witness<:!AnyType T, "ternary_type_refinement::StaticExtra", "static_value()">
+# CHECK: lit.call tail{{.*}}#kgen.get_witness<:!AnyType T, @ternary_type_refinement::@StaticExtra, "static_value()">
 # CHECK: } else {
 # CHECK: kgen.param.constant{{.*}}<rebind(:!Int {:scalar<index> 0})>
 def ternary_refines_true_branch[T: AnyType]() -> Int:
@@ -68,7 +68,7 @@ def ternary_refines_true_branch[T: AnyType]() -> Int:
 # CHECK: kgen.param.if <{{.*}}not(conforms_to(:!AnyType T, {{.*}}StaticExtra{{.*}}))> -> !alias_Int1 {
 # CHECK: kgen.param.constant{{.*}}<rebind(:!Int {:scalar<index> 0})>
 # CHECK: } else {
-# CHECK: lit.call tail{{.*}}#kgen.get_witness<:!AnyType T, "ternary_type_refinement::StaticExtra", "static_value()">
+# CHECK: lit.call tail{{.*}}#kgen.get_witness<:!AnyType T, @ternary_type_refinement::@StaticExtra, "static_value()">
 def ternary_negated_refines_else_branch[T: AnyType]() -> Int:
     return 0 if not conforms_to(T, StaticExtra) else T.static_value()
 
@@ -99,7 +99,7 @@ def ternary_refinement_preserves_and_scopes[T: OriginalParam]() -> Int:
 # `static_value` witness under the `conforms_to` condition).
 # CHECK-LABEL: lit.fn @"ternary_refines_in_comptime_binding
 # CHECK: lit.alias.decl {{.*}}"value{{.*}} = <cond(
-# CHECK-SAME: #kgen.get_witness<:!AnyType T, "ternary_type_refinement::StaticExtra", "static_value()">
+# CHECK-SAME: #kgen.get_witness<:!AnyType T, @ternary_type_refinement::@StaticExtra, "static_value()">
 def ternary_refines_in_comptime_binding[T: AnyType]() -> Int:
     comptime value = T.static_value() if conforms_to(T, StaticExtra) else 0
     return value

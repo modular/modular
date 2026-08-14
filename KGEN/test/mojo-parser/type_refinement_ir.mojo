@@ -131,15 +131,15 @@ struct BaseMiniPack[
 
 # CHECK-LABEL: lit.fn @"refine_type_base_static_member
 # CHECK: kgen.param.if <{{.*}}conforms_to(:!AnyType T, :meta<!{{.*}}StaticExtra> !{{.*}}StaticExtra){{.*}}> {
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType T, "type_refinement_ir::StaticExtra", "static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType T, @type_refinement_ir::@StaticExtra, "static_value{{.*}}">
 def refine_type_base_static_member[T: AnyType]():
     comptime if conforms_to(T, StaticExtra):
         _ = T.static_value()
 
 
 # CHECK-LABEL: lit.fn @"refine_type_base_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticRefined, "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticOriginal, "original_static_value{{.*}}">
 def refine_type_base_static_member_preserves_original_bound[
     T: StaticOriginal
 ]():
@@ -149,8 +149,8 @@ def refine_type_base_static_member_preserves_original_bound[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_base_alias_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticRefined, "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticOriginal, "original_static_value{{.*}}">
 def refine_type_base_alias_static_member_preserves_original_bound[
     T: StaticOriginal
 ]():
@@ -161,8 +161,8 @@ def refine_type_base_alias_static_member_preserves_original_bound[
 
 
 # CHECK-LABEL: lit.fn @"refine_type_of_static_member_preserves_original_bound
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticRefined", "refined_static_value{{.*}}">
-# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, "type_refinement_ir::StaticOriginal", "original_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticRefined, "refined_static_value{{.*}}">
+# CHECK: lit.call{{.*}}#kgen.get_witness<:!AnyType_StaticOriginal T, @type_refinement_ir::@StaticOriginal, "original_static_value{{.*}}">
 def refine_type_of_static_member_preserves_original_bound[
     T: StaticOriginal
 ](read x: T):

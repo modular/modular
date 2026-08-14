@@ -1664,7 +1664,8 @@ PValue IREmitter::bindNonStructTypeToTrait(ASTExprAnd<CValue> value,
 static ASTDecl *getClosureTraitDecl(SharedState &shared,
                                     const TraitType &traitTy) {
   for (const auto &symbol : traitTy.getSymbols()) {
-    auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    auto &symbolDecl =
+        shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
     if (symbolDecl.isErroneous())
       continue;
 
@@ -1729,10 +1730,11 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
     } else if (sugarIsa<StructMetaMetaType, AnyTraitType>(
                    fromType.extractMetaType())) {
       if (ASTType(fromType).getDecl(shared)) {
-        SmallVector<SymbolRefAttr> toCheck;
+        SmallVector<TraitSymbolAttr> toCheck;
         // Check for closure rebindability.
         for (const auto &symbol : trait.getSymbols()) {
-          auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+          auto &symbolDecl =
+              shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
           auto traitDeclOp = cast<TraitDeclOp>(symbolDecl.getIfOperation());
           if (traitDeclOp.getDefinesClosure()) {
             // If this is a struct, check whether we can do lazy conformance.
@@ -1801,7 +1803,8 @@ FailureOr<TriState> IREmitter::canMetaTypeUpCastTo(
       // Check for closure rebindability, mirroring the AnyTraitType-metatype
       // branch above.
       for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
-        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        auto &symbolDecl =
+            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
         if (auto traitDeclOp =
                 dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
             traitDeclOp && traitDeclOp.getDefinesClosure()) {
@@ -2072,7 +2075,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       // Augment the witness table of closure wrapper with rebind if
       // necessary. We do this for every closure trait in the type.
       for (const auto &symbol : trait.getSymbols()) {
-        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        auto &symbolDecl =
+            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
         if (auto traitDeclOp =
                 dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
             traitDeclOp && traitDeclOp.getDefinesClosure()) {
@@ -2136,7 +2140,8 @@ IREmitter::emitTypeValueUpCastToTrait(ASTExprAnd<CValue> valueExpr,
       // Augment the witness table of a closure wrapper with a rebind if
       // necessary, mirroring the AnyTraitType-metatype branch above.
       for (const auto &symbol : anyTrait.getTraitType().getSymbols()) {
-        auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        auto &symbolDecl =
+            shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
         if (auto traitDeclOp =
                 dyn_cast_if_present<TraitDeclOp>(symbolDecl.getIfOperation());
             traitDeclOp && traitDeclOp.getDefinesClosure()) {

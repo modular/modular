@@ -216,6 +216,17 @@ void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 /// Parse an array of parameter type values.
 ParseResult parseTypeParamValues(AsmParser &p, SmallVector<TypedAttr> &values);
 
+/// Print a trait symbol
+void printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait);
+/// Parse a trait symbol
+ParseResult parseTraitSymbol(AsmParser &p, TraitSymbolAttr &trait);
+
+/// Print a comma-separated list of trait symbols.
+void printTraitSymbols(AsmPrinter &p, ArrayRef<TraitSymbolAttr> traits);
+/// Parse a comma-separated list of trait symbols.
+ParseResult parseTraitSymbols(AsmParser &p,
+                              SmallVectorImpl<TraitSymbolAttr> &traits);
+
 /// Print the body of a type-value (without any surrounding brackets). Caller
 /// specifies how types are printed.
 void printTypeValueBody(

@@ -332,9 +332,9 @@ public:
   /// Given a list of symbols, canonicalize the list and return the canonical
   /// trait type.
   TraitType getCanonicalTrait(
-      SmallVectorImpl<SymbolRefAttr> &symbols,
-      const DenseMap<SymbolRefAttr, ConstraintAttr> &constraintMap =
-          DenseMap<SymbolRefAttr, ConstraintAttr>());
+      SmallVectorImpl<TraitSymbolAttr> &symbols,
+      const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap =
+          DenseMap<TraitSymbolAttr, ConstraintAttr>());
 
   /// Define the self parameter of the trait and add inheritance attributes. For
   /// example, given:
@@ -346,8 +346,8 @@ public:
   /// trait @vanilla<?, *"_Self`": !lit.trait<@vanilla>>(!lit.trait<@AnyType,
   /// @Movable>) attributes {immediateParents = #M<symbols[@AnyType]>}
   LogicalResult addSelfTypeToTrait(TraitDeclOp traitOp, ASTDecl &decl,
-                                   SmallVector<SymbolRefAttr> &parentTraits,
-                                   DenseSet<SymbolRefAttr> &immediateParents);
+                                   SmallVector<TraitSymbolAttr> &parentTraits,
+                                   DenseSet<TraitSymbolAttr> &immediateParents);
   // Populate the trait with methods it inherits from parents.
   void addParentDeclsToTrait(TraitDeclOp traitOp, ASTDecl &traitDecl);
 

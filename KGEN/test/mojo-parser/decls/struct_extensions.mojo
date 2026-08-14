@@ -154,7 +154,7 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #M<symbols[@struct_extensions::@Flying]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions::@Flying>]>
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
@@ -168,7 +168,7 @@ __extension Spaceship(Flying):
 # CHECK-NEXT: kgen.witness "fly_to
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# CHECK-NEXT: } attributes {immediateParents = #M<symbols[]>, traitRef = @struct_extensions::@Flying}
+# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>, traitSymbol = #kgen.trait_symbol<@struct_extensions::@Flying>}
 
 
 # // -----
@@ -249,7 +249,7 @@ trait Flying:
 
 
 # CHECK-LABEL: lit.extension.decl @"extension:Spaceship"
-# CHECK-SAME: immediateParents = #M<symbols[@struct_extensions::@Flying]>
+# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@struct_extensions::@Flying>]>
 # CHECK-SAME: targetStruct = @struct_extensions::@Spaceship
 __extension Spaceship(Flying):
     # CHECK-LABEL: lit.fn @"fly_to
@@ -263,7 +263,7 @@ __extension Spaceship(Flying):
 # CHECK-NEXT: kgen.witness "fly_to($0,::SIMD[::DType(int), ::SIMDLength(1)])"
 # CHECK-SAME: = @struct_extensions::@"extension:Spaceship"::@"fly_to
 # ConformanceOp's immediateParents should match the trait's immediateParents.
-# CHECK-NEXT: } attributes {immediateParents = #M<symbols[]>, traitRef = @struct_extensions::@Flying}
+# CHECK-NEXT: } attributes {immediateParents = #kgen<trait_symbols[]>, traitSymbol = #kgen.trait_symbol<@struct_extensions::@Flying>}
 
 # // -----
 

@@ -461,6 +461,14 @@ buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
                                           /*replaceAttrs=*/true,
                                           /*replaceLocs=*/true,
                                           /*replaceTypes=*/true);
+    // TODO: this will be deleted after sym_name attr is removed from
+    // conformance op, right now, keep them in sync as rewrites above might
+    // update the trait symbol.
+    packageModule->walk([](KGEN::ConformanceOp conformance) {
+      if (KGEN::TraitSymbolAttr trait = conformance.getTraitSymbolAttr())
+        conformance.setSymNameAttr(trait.getFlattenedName());
+    });
+
     mlir::SymbolTable::setSymbolName(thePackage, newName);
   }
 
