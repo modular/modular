@@ -1154,7 +1154,7 @@ class GetWitnessAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_name: max._core.dialects.builtin.StringAttr,
+        trait_symbol: TraitSymbolAttr,
         witness_name: max._core.dialects.builtin.StringAttr,
         type: max._core.Type,
     ) -> None: ...
@@ -1162,14 +1162,14 @@ class GetWitnessAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_name: max._core.dialects.builtin.StringAttr,
+        trait_symbol: TraitSymbolAttr,
         witness_name: max._core.dialects.builtin.StringAttr,
         type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_name(self) -> max._core.dialects.builtin.StringAttr: ...
+    def trait_symbol(self) -> TraitSymbolAttr: ...
     @property
     def witness_name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
@@ -2365,20 +2365,58 @@ class TraitInstanceRefAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self,
-        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
-        type: max._core.Type,
+        self, symbols: Sequence[TraitSymbolAttr], type: max._core.Type
     ) -> None: ...
     @overload
     def __init__(
-        self,
-        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
-        type: max._core.Type,
+        self, symbols: Sequence[TraitSymbolAttr], type: max._core.Type
     ) -> None: ...
     @property
-    def symbols(self) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def symbols(self) -> Sequence[TraitSymbolAttr]: ...
     @property
     def type(self) -> max._core.Type | None: ...
+
+class TraitSymbolArrayAttr(max._core.Attribute):
+    """
+    The `#kgen.trait_symbols` attribute represents a list of trait symbols, the
+    list is sorted by flattened name.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbols<[@std::@builtin::@Movable, @std::@builtin::@Copyable]>
+    ```
+    """
+
+    def __init__(self, value: Sequence[TraitSymbolAttr]) -> None: ...
+    @property
+    def value(self) -> Sequence[TraitSymbolAttr]: ...
+
+class TraitSymbolAttr(max._core.Attribute):
+    """
+    The `#kgen.trait_symbol` attribute names a trait by a reference to its
+    declaration.
+
+    TODO: it will be holding an array of parameters for closure traits in the
+    future.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbol<@std::@builtin::@bool::@Boolable>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+    ) -> None: ...
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
@@ -2391,7 +2429,7 @@ class TypeConformsToTraitAttr(max._core.Attribute):
     ```mlir
     #kgen.type_conforms_to_trait<
         #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
-        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
+        #kgen.type<typevalue<#kgen.trait_ref<[@Movable, @Copyable]>>, type> : !kgen.type>
     ```
 
     For the common case of a single checked type value, the operand is printed
@@ -2797,11 +2835,15 @@ class ConformanceOp(max._core.Operation):
     Its body contains the conformance table entries that map trait requirements
     to the struct type's definitions.
 
-    - The optional `traitRef` parameter is a reference to the trait being
-      conformed to.
-    - The `immediateParents` parameter contains the conformance tables that this
-      conformance table directly inherits from. It only includes the first level
-      of parents, not any further ancestors.
+    - The `sym_name` parameter is the flattened name of the trait being
+      conformed to, which is what a `#kgen.get_witness` looks this table up by.
+    - The optional `traitSymbol` parameter references the trait declaration
+      that `sym_name` is the flattened form of. It is present until `lower-lit`
+      erases the trait declarations, after which nothing can resolve it and the
+      flattened `sym_name` is the only identity that remains.
+    - The `immediateParents` parameter names the conformance tables that this
+      conformance table directly inherits from, sorted by flattened name. It
+      only includes the first level of parents, not any further ancestors.
     - The `constraint` parameter specifies the condition under which this
       conformance applies. This is used for conditional trait conformance,
       where a struct only conforms to a trait when certain conditions are met.
@@ -2844,9 +2886,8 @@ class ConformanceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
-        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        trait_symbol: TraitSymbolAttr,
+        immediate_parents: TraitSymbolArrayAttr,
         constraint: ConstraintAttr,
     ) -> None: ...
     @overload
@@ -2854,9 +2895,8 @@ class ConformanceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
-        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        trait_symbol: TraitSymbolAttr,
+        immediate_parents: TraitSymbolArrayAttr,
     ) -> None: ...
     @property
     def sym_name(self) -> str: ...
@@ -2865,19 +2905,13 @@ class ConformanceOp(max._core.Operation):
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
     @property
-    def trait_ref(self) -> max._core.dialects.builtin.SymbolRefAttr | None: ...
-    @trait_ref.setter
-    def trait_ref(
-        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
-    ) -> None: ...
+    def trait_symbol(self) -> TraitSymbolAttr | None: ...
+    @trait_symbol.setter
+    def trait_symbol(self, arg: TraitSymbolAttr, /) -> None: ...
     @property
-    def immediate_parents(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def immediate_parents(self) -> Sequence[TraitSymbolAttr]: ...
     @immediate_parents.setter
-    def immediate_parents(
-        self, arg: max._core.dialects.m.SymbolRefArrayAttr, /
-    ) -> None: ...
+    def immediate_parents(self, arg: TraitSymbolArrayAttr, /) -> None: ...
     @property
     def constraint(self) -> ConstraintAttr: ...
     @constraint.setter
@@ -4574,9 +4608,7 @@ class TraitSymbolInterface(Protocol):
     """
 
     @property
-    def trait_symbols(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def trait_symbols(self) -> Sequence[TraitSymbolAttr]: ...
 
 class BuildInfoType(max._core.Type):
     """
