@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for the component allowlist applied to MAX Serve log handlers."""
+"""Tests for MAX Serve telemetry configuration: the log-handler component
+allowlist and kernel-trace gating."""
 
 from __future__ import annotations
 
@@ -19,8 +20,13 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from max.serve.config import Settings
-from max.serve.telemetry.common import configure_logging
+from max.serve.config import KernelTraceLevel, Settings
+from max.serve.telemetry import common
+from max.serve.telemetry.common import (
+    batch_spans_enabled,
+    configure_kernel_tracing,
+    configure_logging,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -84,3 +90,20 @@ def test_excludes_uvicorn_access_records(emitted: Path) -> None:
 def test_excludes_unrelated_third_party_records(emitted: Path) -> None:
     _emit("httpx", logging.WARNING, "third-party-chatter")
     assert "third-party-chatter" not in emitted.read_text()
+
+
+def test_kernel_trace_level_gates_batch_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # setattr records the pre-test global so teardown restores it even after
+    # the configure calls below overwrite it.
+    monkeypatch.setattr(common, "_kernel_trace_level", KernelTraceLevel.OFF)
+    for level, expected in (("batch", True), ("off", False)):
+        monkeypatch.setenv("MAX_SERVE_KERNEL_TRACE_LEVEL", level)
+        configure_kernel_tracing(Settings())
+        assert batch_spans_enabled() == expected
+    # op/kernel imply batch spans. Set the global directly: at these levels
+    # configure_kernel_tracing also touches GPU profiling state.
+    for deep_level in (KernelTraceLevel.OP, KernelTraceLevel.KERNEL):
+        monkeypatch.setattr(common, "_kernel_trace_level", deep_level)
+        assert batch_spans_enabled()

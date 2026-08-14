@@ -661,17 +661,30 @@ def configure_tracing(settings: Settings) -> None:
         logger.info("Tracing initialized.")
 
 
+_kernel_trace_level = KernelTraceLevel.OFF
+
+
+def batch_spans_enabled() -> bool:
+    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
+    return _kernel_trace_level >= KernelTraceLevel.BATCH
+
+
 def configure_kernel_tracing(settings: Settings) -> None:
     """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
 
     Must be called in the model worker process before ``InferenceSession``
-    is constructed so that the libkineto auto-start picks up the enabled flag.
+    is constructed so that the libkineto auto-start picks up the enabled
+    flag. Also records the level read by :func:`batch_spans_enabled`, so it
+    must run before the scheduler starts.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.
     """
+    global _kernel_trace_level
     level = settings.kernel_trace_level
-    if level in (KernelTraceLevel.OFF, KernelTraceLevel.BATCH):
+    _kernel_trace_level = level
+    if level < KernelTraceLevel.OP:
         return
 
     if level == KernelTraceLevel.KERNEL:

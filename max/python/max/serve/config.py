@@ -17,6 +17,7 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from enum import Enum
@@ -54,19 +55,25 @@ class MetricRecordingMethod(Enum):
     PROCESS = "PROCESS"
 
 
+@functools.total_ordering
 class KernelTraceLevel(Enum):
     """Controls GPU kernel-trace capture depth.
 
-    All levels above ``off`` add overhead to the model worker process.
-    Use the minimum level that satisfies your observability needs.
+    Members are declared in increasing capture depth and compare in that
+    order, so gates can be written as e.g. ``level >= BATCH``. Each level
+    includes everything at the levels below it. All levels above ``off`` add
+    overhead to the model worker process. Use the minimum level that
+    satisfies your observability needs.
     """
 
     OFF = "off"
-    """No libkineto capture. Serving overhead is zero (default)."""
+    """No ``max.batch`` spans and no libkineto capture (default). Request and
+    phase spans are governed by the tracing exporter config, not this flag."""
 
     BATCH = "batch"
-    """Batch-level OTel spans only (``max.batch``, ``max.phase.*``).
-    No per-kernel GPU detail. Minimal overhead."""
+    """Emit a ``max.batch`` OTel span per forward pass (requires tracing to
+    be configured, see ``disable_telemetry``). No per-kernel GPU detail.
+    Minimal overhead."""
 
     OP = "op"
     """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation
@@ -75,6 +82,12 @@ class KernelTraceLevel(Enum):
     KERNEL = "kernel"
     """Full GPU kernel timeline via libkineto. Records every CUDA kernel
     launch and NVTX range. Highest overhead; use for deep profiling only."""
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, KernelTraceLevel):
+            return NotImplemented
+        members = list(KernelTraceLevel)
+        return members.index(self) < members.index(other)
 
 
 class Settings(BaseSettings):
@@ -273,9 +286,10 @@ class Settings(BaseSettings):
         default=KernelTraceLevel.OFF,
         description=(
             "GPU kernel-trace capture depth. 'off' (default) adds zero "
-            "overhead. 'batch' enables OTel batch/phase spans with no GPU "
-            "capture. 'op' adds NVTX op-level ranges. 'kernel' enables full "
-            "libkineto GPU kernel timeline capture (highest overhead)."
+            "overhead. 'batch' enables per-forward-pass max.batch OTel "
+            "spans (when tracing is enabled) with no GPU capture. 'op' "
+            "adds NVTX op-level ranges. 'kernel' enables full libkineto "
+            "GPU kernel timeline capture (highest overhead)."
         ),
         alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
     )

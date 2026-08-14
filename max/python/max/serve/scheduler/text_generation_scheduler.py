@@ -42,6 +42,7 @@ from max.serve.queue import (
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry.common import batch_spans_enabled
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context as OtelContext
 
@@ -301,14 +302,19 @@ class TokenGenerationScheduler(Scheduler):
             if tracing_enabled
             else None
         )
-        batch_span = _tracer.start_span(
-            "max.batch",
-            attributes={
-                "max.batch_id": batch_id,
-                "max.ce_count": len(self.batch_constructor.all_ce_reqs),
-                "max.tg_count": len(self.batch_constructor.all_tg_reqs),
-            },
-        )
+        # INVALID_SPAN is OTel's no-op singleton. Real spans are opt-in: a
+        # root span per forward pass escapes parent-based sampling, which is
+        # too much export volume to be always-on.
+        batch_span: otel_trace.Span = otel_trace.INVALID_SPAN
+        if tracing_enabled and batch_spans_enabled():
+            batch_span = _tracer.start_span(
+                "max.batch",
+                attributes={
+                    "max.batch_id": batch_id,
+                    "max.ce_count": len(self.batch_constructor.all_ce_reqs),
+                    "max.tg_count": len(self.batch_constructor.all_tg_reqs),
+                },
+            )
 
         try:
             # Execute the batch.
