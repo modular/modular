@@ -578,7 +578,7 @@ def _run_and_check_split(
         for i in range(B * N):
             buf[i] = Scalar[DType.float32](scores_host[i])
 
-    persistent_topk_block_split(
+    persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
         rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
             scores_dev.unsafe_ptr()
@@ -1574,7 +1574,7 @@ def _run_and_check_bounded(
         for b in range(B):
             buf[b] = Int32(bounds[b])
 
-    persistent_topk_block_split(
+    persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
         rebind[UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin]](
             scores_dev.unsafe_ptr()

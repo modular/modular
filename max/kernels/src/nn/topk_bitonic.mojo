@@ -3341,7 +3341,7 @@ def _choose_split_factor(rows: Int, num_tiles: Int, sm_count: Int) -> Int:
 
 
 def persistent_topk_block_split[
-    ordered: Bool = True, deterministic: Bool = True
+    ordered: Bool = False, deterministic: Bool = False
 ](
     ctx: DeviceContext,
     in_scores: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
