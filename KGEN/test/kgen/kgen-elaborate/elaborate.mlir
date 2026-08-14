@@ -1435,6 +1435,22 @@ kgen.generator export @get_type_name(%arg0: !kgen.struct<(none, !kgen.pointer<no
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func export @get_type_name_of_ref
+kgen.generator export @get_type_name_of_ref() {
+  // A lowered !lit.ref to a named struct: AsValue is pointer-to-typevalue.
+  // CHECK-NEXT: constant: string = <"ref[NonParametric]">
+  kgen.param.constant: string = <#kgen.get_type_name<[pointer<typevalue<#kgen.genref<@NonParametric>>>, pointer<index>], #kgen.simd<false>:!kgen.scalar<bool>>>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @get_type_name_of_parametric_ref
+kgen.generator export @get_type_name_of_parametric_ref() {
+  // Same pointer wrapping, parameterized struct.
+  // CHECK-NEXT: constant: string = <"ref[LinkedList[<unprintable>]]">
+  kgen.param.constant: string = <#kgen.get_type_name<[pointer<typevalue<:!kgen.type #kgen.genref<@LinkedList<:type none>>>>, pointer<index>], #kgen.simd<false>:!kgen.scalar<bool>>>
+  kgen.return
+}
+
 // -----
 
 !capture = !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)>

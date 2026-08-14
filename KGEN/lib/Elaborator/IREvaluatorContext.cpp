@@ -15,6 +15,7 @@
 #include "ElaboratorHelper.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -168,6 +169,19 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
   return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
 }
 
+static TypedAttr getElementTypeFromPointer(TypedAttr typeValue) {
+  auto typeParam = dyn_cast<TypeParamAttr>(typeValue);
+  if (!typeParam)
+    return {};
+  auto pointerType = dyn_cast<PointerType>(typeParam.getTypeValue());
+  if (!pointerType)
+    return {};
+  auto typeValueType = dyn_cast<TypeValueType>(pointerType.getElementType());
+  if (!typeValueType)
+    return {};
+  return typeValueType.getTypeValue();
+}
+
 FailureOr<TypedAttr>
 IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   auto qualifiedBuiltins =
@@ -177,18 +191,29 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
     return failure();
   }
 
-  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
-  TypedAttr typeRef =
-      getTypeRefForTypeValueIfResolved(getTypeNameAttr.getTypeValue());
-  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
-  if (!instanceRef) {
-    emitError({*errorLoc, "'get_type_name' requires a concrete type, got " +
-                              mlir::debugString(getTypeNameAttr)});
-    return failure();
+  bool qualified = qualifiedBuiltins.getAsBool();
+  TypedAttr typeValue = getTypeNameAttr.getTypeValue();
+  bool isRef = false;
+  if (TypedAttr inner = getElementTypeFromPointer(typeValue)) {
+    typeValue = inner;
+    isRef = true;
   }
-  return {StringAttr::get(
-      stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins.getAsBool()),
-      getTypeNameAttr.getType())};
+
+  TypedAttr typeRef = getTypeRefForTypeValueIfResolved(typeValue);
+  if (auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef)) {
+    std::string name;
+    llvm::raw_string_ostream os(name);
+    if (isRef)
+      os << "ref[";
+    os << stringifyTypeInstanceRef(instanceRef, qualified);
+    if (isRef)
+      os << "]";
+    return {StringAttr::get(name, getTypeNameAttr.getType())};
+  }
+
+  emitError({*errorLoc, "'get_type_name' requires a concrete type, got " +
+                            mlir::debugString(getTypeNameAttr)});
+  return failure();
 }
 
 FailureOr<TypedAttr>
@@ -682,6 +707,14 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
           if (auto instanceRef =
                   dyn_cast<TypeInstanceRefAttr>(typeValue.getTypeValue())) {
             os << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins);
+            return;
+          }
+        }
+        if (TypedAttr inner = getElementTypeFromPointer(typeAttr)) {
+          if (auto instanceRef = dyn_cast<TypeInstanceRefAttr>(inner)) {
+            os << "ref["
+               << stringifyTypeInstanceRef(instanceRef, qualifiedBuiltins)
+               << "]";
             return;
           }
         }
