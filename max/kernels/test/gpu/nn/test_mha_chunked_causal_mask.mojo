@@ -56,7 +56,9 @@ def build_ChunkedCausalMask[
                     var masked = chunk_masked or causal_masked
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
+                        Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
+                            mask.dtype
+                        ](0),
                     )
 
 
