@@ -88,7 +88,7 @@ def create_scheduler_under_kv_pressure() -> TokenGenerationScheduler:
     assert create_batch_and_execute(scheduler).batch_type == CE
 
     kv_cache = scheduler.batch_constructor.kv_cache
-    assert kv_cache.get_num_used_pages(0) / kv_cache.get_num_pages(0) > 0.9
+    assert kv_cache.block_count().used_pct > 90
 
     enqueue_request(request_queue, prompt_len=2, max_seq_len=4)
     return scheduler

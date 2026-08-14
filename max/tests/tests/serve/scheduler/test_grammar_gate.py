@@ -20,6 +20,7 @@ from unittest.mock import Mock
 import numpy as np
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     TransferDirection,
 )
@@ -48,8 +49,7 @@ def create_mock_kv_cache() -> Mock:
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
     cache.pending_transfers_exist = Mock(return_value=False)
-    cache.get_num_pages = Mock(return_value=100)
-    cache.get_num_used_pages = Mock(return_value=0)
+    cache.block_count = Mock(return_value=BlockCount(free=100, total=100))
     return cache
 
 

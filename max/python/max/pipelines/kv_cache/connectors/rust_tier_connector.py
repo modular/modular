@@ -63,7 +63,7 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
-from ..kv_connector import KVConnectorTransfer
+from ..kv_connector import BlockCount, KVConnectorTransfer
 from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
@@ -293,20 +293,18 @@ class RustTierConnector:
         _unsafe_free_fast_pinned_buffer(self._host_buffer)
 
     @property
-    def num_host_blocks(self) -> int:
-        return self._rust.num_host_blocks()
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._rust.num_free_host_blocks(),
+            total=self._rust.num_host_blocks(),
+        )
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return self._rust.num_used_host_blocks()
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return self._rust.num_disk_blocks()
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return self._rust.num_used_disk_blocks()
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._rust.num_free_disk_blocks(),
+            total=self._rust.num_disk_blocks(),
+        )
 
     def reset_prefix_cache(self) -> None:
         self._rust.reset_prefix_cache()

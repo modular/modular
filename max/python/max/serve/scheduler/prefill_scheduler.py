@@ -266,6 +266,7 @@ class PrefillScheduler(Scheduler):
             len(self.kv_cache.get_req_blocks(at.context))
             for at in self.active_transfers.values()
         )
+        block_count = self.kv_cache.block_count(src_replica_idx)
         logger.debug(
             "KV transfer started for request %s: blocks pinned on prefill "
             "pending transfer completion. Active in-flight transfers: %d, "
@@ -273,8 +274,8 @@ class PrefillScheduler(Scheduler):
             req_id,
             len(self.active_transfers),
             transfer_pinned,
-            self.kv_cache.num_free_blocks(src_replica_idx),
-            self.kv_cache.total_num_blocks(src_replica_idx),
+            block_count.free,
+            block_count.total,
         )
 
         assert context.tokens.generated_length != 0, (

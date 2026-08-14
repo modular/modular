@@ -988,11 +988,7 @@ class TextBatchConstructor:
         # Under KV pressure, drain TG before admitting more CE work: a new
         # prefill competes for the blocks in-flight generations still need,
         # and preempting one of those discards prefill already paid for.
-        kv_percentage = (
-            100
-            * self.kv_cache.get_num_used_pages(replica_idx)
-            / self.kv_cache.get_num_pages(replica_idx)
-        )
+        kv_percentage = self.kv_cache.block_count(replica_idx).used_pct
         if kv_percentage > self.tg_priority_kv_percentage:
             return RequestType.TG
 

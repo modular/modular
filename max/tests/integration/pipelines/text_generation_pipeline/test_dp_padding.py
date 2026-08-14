@@ -532,17 +532,17 @@ def test_padding_does_not_allocate_new_blocks() -> None:
     _claim_and_alloc(kv_manager, ctxs_r0, replica_idx=0)
     _claim_and_alloc(kv_manager, ctxs_r1, replica_idx=1)
 
-    used_after_real_r0 = kv_manager.get_num_used_pages(replica_idx=0)
-    used_after_real_r1 = kv_manager.get_num_used_pages(replica_idx=1)
+    used_after_real_r0 = kv_manager.block_count(replica_idx=0).used
+    used_after_real_r1 = kv_manager.block_count(replica_idx=1).used
 
     _, info = padder.pad_batch(
         _make_inputs([ctxs_r0, ctxs_r1], batch_type=BatchType.TG)
     )
     assert info is not None
 
-    assert kv_manager.get_num_used_pages(replica_idx=0) == used_after_real_r0
+    assert kv_manager.block_count(replica_idx=0).used == used_after_real_r0
     # Dummies use the null block, so used page count should not increase.
-    assert kv_manager.get_num_used_pages(replica_idx=1) == used_after_real_r1
+    assert kv_manager.block_count(replica_idx=1).used == used_after_real_r1
 
     _release_info(info, kv_manager, pipeline)
 
@@ -557,12 +557,12 @@ def test_repeated_pad_and_release_cycles() -> None:
         _claim_and_alloc(kv_manager, ctxs_r0, replica_idx=0)
         _claim_and_alloc(kv_manager, ctxs_r1, replica_idx=1)
 
-        used_before = kv_manager.get_num_used_pages(replica_idx=1)
+        used_before = kv_manager.block_count(replica_idx=1).used
         _, info = padder.pad_batch(
             _make_inputs([ctxs_r0, ctxs_r1], batch_type=BatchType.TG)
         )
         assert info is not None
-        assert kv_manager.get_num_used_pages(replica_idx=1) == used_before
+        assert kv_manager.block_count(replica_idx=1).used == used_before
 
         _release_info(info, kv_manager, pipeline)
 

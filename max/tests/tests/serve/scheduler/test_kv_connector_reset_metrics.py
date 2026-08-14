@@ -21,6 +21,7 @@ from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -84,20 +85,12 @@ class _CountingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def num_host_blocks(self) -> int:
-        return 0
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:

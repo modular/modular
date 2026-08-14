@@ -24,6 +24,7 @@ from max.pipelines.context import (
 )
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     TransferDirection,
 )
@@ -80,13 +81,15 @@ def create_mock_lora_manager(max_num_loras: int = 2) -> Mock:
 
 
 def set_mock_kv_usage(cache: Mock, used_fraction: float) -> None:
-    """Point a mock cache's device page counts at a given usage fraction.
+    """Point a mock cache's device block count at a given usage fraction.
 
-    ``_identify_priority`` divides used pages by total pages, so a mock that
-    reaches it needs real numbers rather than auto-created ``Mock`` attributes.
+    ``_identify_priority`` reads ``block_count().used_pct``, so a mock that
+    reaches it needs real numbers rather than an auto-created ``Mock``.
     """
-    cache.get_num_pages = Mock(return_value=100)
-    cache.get_num_used_pages = Mock(return_value=round(used_fraction * 100))
+    used = round(used_fraction * 100)
+    cache.block_count = Mock(
+        return_value=BlockCount(free=100 - used, total=100)
+    )
 
 
 def create_mock_kv_cache() -> Mock:

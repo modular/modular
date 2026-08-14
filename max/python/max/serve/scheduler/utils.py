@@ -265,29 +265,25 @@ class BatchMetrics:
 
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
-            total_kv_blocks = sum(
-                kv_cache.get_num_pages(replica_idx)
+            block_counts = [
+                kv_cache.block_count(replica_idx)
                 for replica_idx in range(num_replicas)
-            )
-            used_kv_blocks = sum(
-                kv_cache.get_num_used_pages(replica_idx)
-                for replica_idx in range(num_replicas)
-            )
+            ]
+            total_kv_blocks = sum(bc.total for bc in block_counts)
+            used_kv_blocks = sum(bc.used for bc in block_counts)
             assert total_kv_blocks > 0
             used_kv_pct = used_kv_blocks / total_kv_blocks
 
-            total_host_kv_blocks = sum(
-                kv_cache.get_num_host_pages(replica_idx)
+            host_block_counts = [
+                kv_cache.host_block_count(replica_idx)
                 for replica_idx in range(num_replicas)
-            )
+            ]
+            total_host_kv_blocks = sum(bc.total for bc in host_block_counts)
 
             metrics_agg = kv_cache.get_metrics_aggregated()
 
             if total_host_kv_blocks > 0:
-                used_host_kv_blocks = sum(
-                    kv_cache.get_num_used_host_pages(replica_idx)
-                    for replica_idx in range(num_replicas)
-                )
+                used_host_kv_blocks = sum(bc.used for bc in host_block_counts)
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
 
             device_blocks_served = metrics_agg.device_blocks_served
@@ -301,15 +297,13 @@ class BatchMetrics:
             disk_blocks_read = metrics_agg.disk_blocks_read
             inflight_disk_ops = metrics_agg.inflight_disk_ops
 
-            total_disk_kv_blocks = sum(
-                kv_cache.get_num_disk_pages(replica_idx)
+            disk_block_counts = [
+                kv_cache.disk_block_count(replica_idx)
                 for replica_idx in range(num_replicas)
-            )
+            ]
+            total_disk_kv_blocks = sum(bc.total for bc in disk_block_counts)
             if total_disk_kv_blocks > 0:
-                used_disk_kv_blocks = sum(
-                    kv_cache.get_num_used_disk_pages(replica_idx)
-                    for replica_idx in range(num_replicas)
-                )
+                used_disk_kv_blocks = sum(bc.used for bc in disk_block_counts)
                 used_disk_kv_pct = used_disk_kv_blocks / total_disk_kv_blocks
 
             # dKV latency metrics: sum across replicas then average.

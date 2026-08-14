@@ -58,6 +58,7 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -1088,22 +1089,14 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
+    def host_block_count(self) -> BlockCount:
+        # BlockManager gates the load path on host_block_count.total > 0. dKV
+        # capacity is managed externally by the dKV service.
+        return BlockCount(free=sys.maxsize, total=sys.maxsize)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""

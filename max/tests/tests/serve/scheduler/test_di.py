@@ -755,12 +755,12 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     req_id = ctx.request_id
 
     # Record baseline KV usage.
-    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
 
     # Send to prefill -> allocates KV blocks on decode
     decode.run_iteration()
 
-    pages_after_send = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_after_send = decode.kv_cache.block_count(replica_idx=0).used
     assert pages_after_send > pages_before, (
         "Expected KV blocks to be allocated after sending to prefill"
     )
@@ -776,7 +776,7 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     assert batch[req_id].result is None  # cancelled
 
     # KV blocks must be released back to pool
-    pages_after_cancel = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_after_cancel = decode.kv_cache.block_count(replica_idx=0).used
     assert pages_after_cancel == pages_before, (
         f"KV blocks leaked after cancel: had {pages_before} before, "
         f"{pages_after_cancel} after cancel (expected {pages_before}). "
@@ -903,11 +903,11 @@ def test_completed_request_cleans_up_all_state() -> None:
     )
 
     # Initially no KV pages allocated on decode
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0
 
     # Send to prefill -> allocates decode KV blocks
     decode.run_iteration()
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) > 0, (
+    assert decode.kv_cache.block_count(replica_idx=0).used > 0, (
         "Expected KV pages allocated after sending to prefill"
     )
 
@@ -918,7 +918,7 @@ def test_completed_request_cleans_up_all_state() -> None:
     run_until(
         lambda: not decode.inflight_transfers
         and not decode.prefill_reqs
-        and decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
+        and decode.kv_cache.block_count(replica_idx=0).used == 0
         and not prefill.active_transfers
         and not prefill.transfer_engine.inflight_send_transfers,
         decode,
@@ -932,10 +932,10 @@ def test_completed_request_cleans_up_all_state() -> None:
     assert prefill.transfer_engine.inflight_send_transfers == {}
 
     # Both KV caches released
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0, (
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0, (
         "Decode KV pages not freed after request completed"
     )
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
 
 
 def test_multiple_requests_all_transfers_cleaned_up() -> None:
@@ -960,7 +960,7 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
         and not decode.prefill_reqs
         and not prefill.active_transfers
         and not prefill.transfer_engine.inflight_send_transfers
-        and prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0,
+        and prefill.kv_cache.block_count(replica_idx=0).used == 0,
         decode,
         prefill,
     )
@@ -969,7 +969,7 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
     assert decode.prefill_reqs == {}
     assert prefill.active_transfers == {}
     assert prefill.transfer_engine.inflight_send_transfers == {}
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
 
 
 def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
@@ -1403,7 +1403,7 @@ def test_overlap_prefill_pending_first_token_defers_insufficient_blocks() -> (
     prefill.run_iteration()
     assert ctx1.request_id in prefill._pending_first_token
     assert len(prefill.active_transfers) == 0
-    assert prefill.kv_cache.num_free_blocks(0) == 0
+    assert prefill.kv_cache.block_count(0).free == 0
     assert prefill.batch_constructor._is_anything_inflight(0)
 
     # A new CE request arrives while req1 pins every block.
@@ -1566,8 +1566,8 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     prefill.run_iteration()
     run_until(
         lambda: len(done_request_ids(q)) == num_requests
-        and decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-        and prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+        and decode.kv_cache.block_count(replica_idx=0).used == 0
+        and prefill.kv_cache.block_count(replica_idx=0).used == 0
         and not decode.inflight_transfers
         and not prefill.active_transfers,
         decode,
@@ -1583,8 +1583,8 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     assert done_count == num_requests
 
     # All KV pages must be released on both sides
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == 0
-    assert prefill.kv_cache.get_num_used_pages(replica_idx=0) == 0
+    assert decode.kv_cache.block_count(replica_idx=0).used == 0
+    assert prefill.kv_cache.block_count(replica_idx=0).used == 0
     # No lingering transfer state
     assert decode.inflight_transfers == {}
     assert prefill.active_transfers == {}
@@ -2390,7 +2390,7 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
     q.request_queue.put(ctx)
     req_id = ctx.request_id
 
-    pages_before = decode.kv_cache.get_num_used_pages(replica_idx=0)
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
 
     # Send to prefill but never run prefill, so PrefillResponse never arrives.
     decode.run_iteration()
@@ -2406,7 +2406,7 @@ def test_decode_run_iteration_evicts_stuck_prefill_request_end_to_end(
 
     assert req_id not in decode.prefill_reqs
     assert decode.prefill_reqs_per_replica[0] == 0
-    assert decode.kv_cache.get_num_used_pages(replica_idx=0) == pages_before
+    assert decode.kv_cache.block_count(replica_idx=0).used == pages_before
 
     saw_cancel_response = False
     while not q.response_queue.empty():

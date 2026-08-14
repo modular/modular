@@ -31,6 +31,7 @@ from typing import cast
 import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
     PrefixCacheHits,
@@ -118,8 +119,8 @@ class _TierStubConnector:
         return "TierStubConnector"
 
     @property
-    def num_host_blocks(self) -> int:
-        return 4
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=4, total=4)
 
     @property
     def supported_hash_algos(self) -> frozenset[str]:

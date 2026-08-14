@@ -39,6 +39,7 @@ from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.connectors.rust_tier_connector import (
     RustTierConnector,
 )
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVHashAlgo
 from max.pipelines.modeling.types import RequestID
@@ -255,8 +256,10 @@ class _StubConnector:
         return "StubConnector"
 
     @property
-    def num_host_blocks(self) -> int:
-        return self._num_host_blocks
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._num_host_blocks, total=self._num_host_blocks
+        )
 
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
@@ -310,7 +313,7 @@ def test_block_manager_capability_guard(
     Exercises the capability check that replaced the legacy ahash64-only
     guard: BlockManager must accept every algo declared in
     ``connector.supported_hash_algos`` and reject every one outside it,
-    regardless of the connector's ``num_host_blocks`` (the legacy guard
+    regardless of the connector's ``host_block_count`` (the legacy guard
     skipped this for offload-less connectors).
     """
     connector = _StubConnector(
@@ -335,7 +338,7 @@ def test_block_manager_capability_guard(
 
 
 def test_block_manager_capability_check_runs_even_without_host_blocks() -> None:
-    """Legacy guard only fired when ``num_host_blocks > 0``; the capability
+    """Legacy guard only fired when ``host_block_count.total > 0``; the capability
     check must run unconditionally so a no-host-block connector still
     refuses an algo it does not claim to support.
     """

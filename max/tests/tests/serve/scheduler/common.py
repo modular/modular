@@ -187,7 +187,7 @@ def create_kv_cache(
     )
 
     assert all(
-        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        kv_manager.block_count(replica_idx=replica_idx).total == num_blocks
         for replica_idx in range(dp)
     )
     return kv_manager
