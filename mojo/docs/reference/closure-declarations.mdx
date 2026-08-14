@@ -461,7 +461,8 @@ def main() raises:
 
 The `thin` effect applies to function *types*, not to closure declarations.
 `thin` describes a non-capturing function type, so it can't represent a
-closure that captures. See
+closure that captures. A `thin` function type is also the only one that accepts
+trailing `where` clauses. See
 [Function declarations](./function-declarations.mdx).
 
 ## Nesting

@@ -16,6 +16,28 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- A `thin` function type can now carry trailing `where` clauses, constraining
+  the parameters it declares. This lets a generic algorithm state what it
+  promises the function it is handed, instead of leaving the constraint to be
+  restated at every binding site.
+
+  ```mojo
+  comptime Kernel = def[w: Int](Int) thin -> None where (
+      w > 0, "width must be positive"
+  )
+
+  def apply[F: Kernel](x: Int):
+      F[4](x)     # ok
+      F[0](x)     # error: violated constraint
+  ```
+
+  The clause binds to the innermost function type, so a declaration-level
+  `where` that follows a function-type result needs that result parenthesized:
+
+  ```mojo
+  def make[n: Int]() -> (def() thin -> None) where n > 0: ...
+  ```
+
 ## Language changes
 
 - Renamed the `@parameter` decorator on parametric closures to
