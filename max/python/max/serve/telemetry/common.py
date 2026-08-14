@@ -26,6 +26,7 @@ from time import time
 
 import numpy as np
 import requests
+from max.profiler import set_gpu_profiling_state
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
@@ -671,15 +672,6 @@ def configure_kernel_tracing(settings: Settings) -> None:
     """
     level = settings.kernel_trace_level
     if level in (KernelTraceLevel.OFF, KernelTraceLevel.BATCH):
-        return
-
-    try:
-        from max.profiler import set_gpu_profiling_state
-    except ImportError:
-        logging.getLogger("max.serve").warning(
-            "GPU profiling unavailable; kernel_trace_level=%s has no effect",
-            level.value,
-        )
         return
 
     if level == KernelTraceLevel.KERNEL:
