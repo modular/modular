@@ -589,6 +589,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
                 )
             ],
             vision_token_ids=self.vision_token_ids,
+            cache_salt=request.cache_salt,
         )
 
         return context

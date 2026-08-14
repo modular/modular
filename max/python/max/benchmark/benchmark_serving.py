@@ -512,6 +512,7 @@ async def benchmark(
             sampling=args.sampling,
             disable_tqdm=args.disable_tqdm,
             max_concurrency=args.warmup_concurrency,
+            use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
         )
 
     # Capture baseline server metrics after priming so priming requests
@@ -667,6 +668,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -688,6 +690,7 @@ async def benchmark(
                 warmup_delay_ms=args.chat_warmup_delay_ms,
                 max_concurrency=max_concurrency,
                 sampling=args.sampling,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -715,6 +718,7 @@ async def benchmark(
                 burstiness=args.burstiness,
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
+                use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs

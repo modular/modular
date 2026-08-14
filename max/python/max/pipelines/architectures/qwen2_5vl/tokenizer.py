@@ -676,6 +676,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
 
     def new_context_blocking(

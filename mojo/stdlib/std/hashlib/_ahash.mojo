@@ -111,6 +111,30 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.pad = pi_key[1]
         self.extra_keys = U128(pi_key[2], pi_key[3])
 
+    def __init__(out self, seed: U256):
+        """Initializes the hasher with a runtime seed mixed into its keyed state.
+
+        Same derivation as the zero-argument initializer, but XORs in
+        `seed` first. An all-zero `seed` reproduces that output exactly.
+
+        Args:
+            seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+                per-tenant or per-request salt.
+        """
+        var pi_key = (
+            Self.key
+            ^ U256(
+                0x243F_6A88_85A3_08D3,
+                0x1319_8A2E_0370_7344,
+                0xA409_3822_299F_31D0,
+                0x082E_FA98_EC4E_6C89,
+            )
+            ^ seed
+        )
+        self.buffer = pi_key[0]
+        self.pad = pi_key[1]
+        self.extra_keys = U128(pi_key[2], pi_key[3])
+
     @always_inline
     def _update(mut self, new_data: UInt64):
         """Update the buffer value with new data.
@@ -224,3 +248,49 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var rot = self.buffer & 63
         var folded = _folded_multiply(self.buffer, self.pad)
         return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))
+
+
+def hash_seeded_bytes(
+    data: Pointer[mut=False, UInt8, _], n: Int, seed: U256
+) -> UInt64:
+    """Hashes a sequence of bytes with a runtime seed mixed into AHash's keyed state.
+
+    Seeded analogue of `hash(bytes, n)`. An all-zero `seed` reproduces
+    `hash(data, n)` exactly.
+
+    Args:
+        data: Pointer to the byte sequence to hash.
+        n: The number of bytes to hash.
+        seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = AHasher[U256(0)](seed)
+    hasher._update_with_bytes(Span(unsafe_ptr=data, length=n))
+    var value = hasher^.finish()
+    return value
+
+
+def hash_seeded[T: Hashable](value: T, seed: U256) -> UInt64:
+    """Hashes a `Hashable` value with a runtime seed mixed into AHash's keyed state.
+
+    Seeded analogue of `hash(hashable)`. An all-zero `seed` reproduces
+    `hash(value)` exactly.
+
+    Parameters:
+        T: Any Hashable type.
+
+    Args:
+        value: The input data to hash.
+        seed: Runtime bits mixed into the hasher's keyed state, e.g. a
+            per-tenant or per-request salt.
+
+    Returns:
+        A 64-bit integer hash value.
+    """
+    var hasher = AHasher[U256(0)](seed)
+    hasher.update(value)
+    var result = hasher^.finish()
+    return result

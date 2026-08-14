@@ -28,7 +28,7 @@ import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
@@ -75,6 +75,7 @@ from max.serve.router.openai_routes import (
     _coerce_positive_float,
     _coerce_positive_int,
     _create_response_format,
+    _get_cache_salt,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
     _set_batch_id_attributes,
@@ -642,6 +643,47 @@ def test_create_chat_completion_request_with_cache_salt() -> None:
 
     with pytest.raises(ValidationError):
         CreateChatCompletionRequest.model_validate(request_oversized)
+
+
+def _make_request(headers: dict[str, str]) -> Request:
+    """Minimal fastapi.Request carrying only headers, for testing
+    header-extraction helpers without a full app/TestClient."""
+    scope = {
+        "type": "http",
+        "headers": [
+            (k.lower().encode(), v.encode()) for k, v in headers.items()
+        ],
+    }
+    return Request(scope)
+
+
+def test_get_cache_salt_header_takes_precedence_over_body() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-header"
+    )
+
+
+def test_get_cache_salt_falls_back_to_body_without_header() -> None:
+    request = _make_request({})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-body"
+    )
+
+
+def test_get_cache_salt_returns_none_when_neither_present() -> None:
+    request = _make_request({})
+    assert _get_cache_salt(request, None, use_client_cache_salt=True) is None
+
+
+def test_get_cache_salt_ignored_when_not_trusted() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=False)
+        is None
+    )
 
 
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:

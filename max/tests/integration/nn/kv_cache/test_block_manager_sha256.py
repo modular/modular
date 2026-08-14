@@ -21,6 +21,7 @@ BlockManager.compute_hashes_for_request:
 - Different cache_salt => different hash chain (multi-tenant isolation).
 - Different kv_hash_seed => different hash chain (cluster isolation).
 - kv_hash_algo="ahash64" (default) still yields int hashes (no regression).
+- kv_hash_algo="ahash64" also supports cache_salt/kv_hash_seed isolation.
 """
 
 from __future__ import annotations
@@ -165,18 +166,13 @@ def test_ahash64_default_unchanged() -> None:
         assert len(h) == 8
 
 
-def test_ahash64_with_cache_salt_drops_and_warns_once(
+def test_ahash64_with_cache_salt_isolates(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Under ahash64, a request-supplied cache_salt is dropped (not hashed in)
-    and the BlockManager emits exactly one warning per process for the entire
-    deployment, no matter how many salted requests arrive.
-
-    This guards the operator-visible policy decision: ahash64 deployments do
-    NOT silently provide multi-tenant isolation; they advertise via a one-time
-    warning that cache_salt is inert, and produce identical hashes for
-    identical tokens regardless of salt (so prefix-cache hit rates remain
-    intact for the legacy path)."""
+    """Under ahash64, different request-supplied cache_salt values now
+    produce disjoint hash chains for identical tokens (multi-tenant
+    isolation) -- the same guarantee the sha256 path already had, with
+    no warning emitted (cache_salt is no longer dropped)."""
     tokens = np.arange(33, dtype=np.int32)
     bm = _make_block_manager()  # default ahash64
 
@@ -187,45 +183,28 @@ def test_ahash64_with_cache_salt_drops_and_warns_once(
         bm.compute_hashes_for_request(
             _make_ctx(tokens, RequestID("req-B"), cache_salt="tenant-B")
         )
-        bm.compute_hashes_for_request(
-            _make_ctx(tokens, RequestID("req-C"), cache_salt="tenant-C")
-        )
 
     a = bm.req_to_hashes[RequestID("req-A")]
     b = bm.req_to_hashes[RequestID("req-B")]
-    c = bm.req_to_hashes[RequestID("req-C")]
-    assert a == b == c, (
-        "ahash64 must ignore cache_salt; identical tokens => identical hashes"
-    )
-
-    matching = [
-        r
-        for r in caplog.records
-        if r.levelname == "WARNING" and "cache_salt was supplied" in r.message
-    ]
-    assert len(matching) == 1, (
-        f"expected exactly one cache_salt-dropped warning across three "
-        f"salted requests, got {len(matching)}"
-    )
+    assert a != b
+    assert set(a).isdisjoint(set(b))
+    assert not any(r.levelname == "WARNING" for r in caplog.records)
 
 
-def test_ahash64_without_cache_salt_does_not_warn(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """If no request supplies a cache_salt, the warning must not fire."""
+def test_ahash64_seed_isolation() -> None:
+    """Same tokens + different kv_hash_seed => disjoint hashes (cluster isolation)."""
     tokens = np.arange(33, dtype=np.int32)
-    bm = _make_block_manager()  # default ahash64
 
-    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-        bm.compute_hashes_for_request(_make_ctx(tokens))
+    bm1 = _make_block_manager(kv_hash_seed=b"\x00" * 32)  # default ahash64
+    bm1.compute_hashes_for_request(_make_ctx(tokens))
 
-    matching = [
-        r for r in caplog.records if "cache_salt was supplied" in r.message
-    ]
-    assert matching == [], (
-        f"unexpected salt-dropped warning when no salt was supplied: "
-        f"{[r.message for r in matching]}"
-    )
+    bm2 = _make_block_manager(kv_hash_seed=b"\x01" * 32)
+    bm2.compute_hashes_for_request(_make_ctx(tokens))
+
+    a = bm1.req_to_hashes[RequestID("req-1")]
+    b = bm2.req_to_hashes[RequestID("req-1")]
+    assert a != b
+    assert set(a).isdisjoint(set(b))
 
 
 # ---------------------------------------------------------------------------

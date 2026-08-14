@@ -1714,6 +1714,52 @@ def _get_target_endpoint(
     return body_target_endpoint
 
 
+_CACHE_SALT_MAX_LEN = 512
+
+
+def _get_cache_salt(
+    request: Request,
+    body_cache_salt: str | None,
+    use_client_cache_salt: bool,
+) -> str | None:
+    """Extract cache_salt from header or body.
+
+    Header takes precedence over body parameter.
+    Uses the header name 'X-Cache-Salt'. Not authenticated by MAX Serve --
+    a trusted gateway must set it from session identity, not raw clients.
+    Ignored entirely unless use_client_cache_salt is True.
+
+    Args:
+        request: FastAPI Request object
+        body_cache_salt: cache_salt from the request body
+        use_client_cache_salt: whether to honor cache_salt at all
+
+    Returns:
+        cache_salt value from header if present, otherwise from body,
+        or None if use_client_cache_salt is False
+
+    Raises:
+        HTTPException: if the header value exceeds _CACHE_SALT_MAX_LEN
+            (the body field enforces the same cap via its pydantic schema).
+    """
+    if not use_client_cache_salt:
+        return None
+
+    header_cache_salt = request.headers.get("X-Cache-Salt")
+    if header_cache_salt:
+        if len(header_cache_salt) > _CACHE_SALT_MAX_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"X-Cache-Salt header exceeds {_CACHE_SALT_MAX_LEN} "
+                    "characters."
+                ),
+            )
+        return header_cache_salt
+
+    return body_cache_salt
+
+
 def _resolve_grammar_constraints(
     tools: list[TextGenerationRequestTool] | None,
     tool_choice: str | dict[str, Any] | None,
@@ -2131,7 +2177,11 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
-            cache_salt=completion_request.cache_salt,
+            cache_salt=_get_cache_salt(
+                request,
+                completion_request.cache_salt,
+                request.app.state.settings.use_client_cache_salt,
+            ),
             chat_template_options=chat_template_options,
         )
 
@@ -3044,7 +3094,11 @@ async def openai_create_completion(
                     request, completion_request.target_endpoint
                 ),
                 dkv_cache_hint=completion_request.dkv_cache_hint,
-                cache_salt=completion_request.cache_salt,
+                cache_salt=_get_cache_salt(
+                    request,
+                    completion_request.cache_salt,
+                    request.app.state.settings.use_client_cache_salt,
+                ),
             )
             token_requests.append(tgr)
 

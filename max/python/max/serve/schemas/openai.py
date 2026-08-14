@@ -358,9 +358,10 @@ class _MaxRequestExtensions(BaseModel):
         max_length=512,
         description=(
             "Per-request salt that isolates this prompt's prefix-cache "
-            "entries from other requests. Combined with the cluster-level "
-            "kv_cache_hash_seed via XOR. Requires kv_cache_hash_algo=sha256 "
-            "or sha256_64; ignored under ahash64 with a one-time warning."
+            "entries from other requests. Combined with "
+            "kv_cache_hash_seed via XOR. Works under any "
+            "kv_cache_hash_algo: a cryptographic guarantee under "
+            "sha256/sha256_64, best-effort under ahash64."
         ),
     )
 
