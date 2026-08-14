@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Provides top-K selection kernels using warp- and block-level reductions for CPU and GPU."""
 
+from std.builtin.debug_assert import ASSERT_MODE
 from std.math import align_up, ceildiv, exp, iota
 from std.math.uutils import ufloordiv, udivmod
 from std.memory import ThinAllocation, alloc, dealloc
@@ -2105,9 +2106,6 @@ def fused_token_sampling_gpu[
         coord_to_index_list(input.layout.shape_coord())
     )
 
-    # for validation
-    var batch_size = input_shape[0]
-
     @__parameter
     def trace_information() -> String:
         return String(";").join(
@@ -2181,8 +2179,13 @@ def fused_token_sampling_gpu[
             row_major(Coord(out_vals_shape)),
         )
 
-        var valid_buf = ctx.enqueue_create_buffer[DType.int8](batch_size)
-        ctx.enqueue_memset(valid_buf, 1)  # 1 for True
+        var batch_size = input_shape[0]
+        var valid_buf = Optional[DeviceBuffer[DType.int8]](None)
+        var valid = Optional[UnsafePointer[Int8, MutAnyOrigin]](None)
+        comptime if ASSERT_MODE == "all":
+            valid_buf = ctx.enqueue_create_buffer[DType.int8](batch_size)
+            ctx.enqueue_memset(valid_buf.value(), 1)
+            valid = valid_buf.value().unsafe_ptr().as_unsafe_any_origin()
 
         topk_gpu[sampling=True, largest=True](
             ctx,
@@ -2197,17 +2200,19 @@ def fused_token_sampling_gpu[
             block_size=block_size,
             num_blocks_per_input=num_blocks_per_input,
             seed=seed,
-            valid=rebind[UnsafePointer[Int8, MutAnyOrigin]](
-                valid_buf.unsafe_ptr()
-            ),
+            valid=valid,
         )
-        var valid_host = ctx.enqueue_create_host_buffer[DType.int8](batch_size)
-        ctx.enqueue_copy(valid_host, valid_buf)
-        ctx.synchronize()
 
-        for i in range(batch_size):
-            if not valid_host[i]:
-                raise Error("NaN logits detected in batch row " + String(i))
+        comptime if ASSERT_MODE == "all":
+            var valid_host = ctx.enqueue_create_host_buffer[DType.int8](
+                batch_size
+            )
+            ctx.enqueue_copy(valid_host, valid_buf.value())
+            ctx.synchronize()
+
+            for i in range(batch_size):
+                if not valid_host[i]:
+                    raise Error("NaN logits detected in batch row " + String(i))
 
         _ = valid_buf^
         _ = out_vals_buf^

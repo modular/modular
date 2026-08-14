@@ -383,7 +383,12 @@ This version is still a work in progress.
   cost at a bound sized to the runtime lengths; shapes without a metadata
   gap are unchanged except a small fixed per-call cost for the row-bounds
   clamp (~4% on a batch-256, 4k-context decode).
-
+- Sped up GPU token sampling by about 4% per output token when the largest
+  `top_k` in the batch is below 10, by removing a device synchronize from
+  `fused_token_sampling_gpu`. The synchronize backed a check that raised on an
+  all-NaN logits row. Such a row now yields an arbitrary in-range token rather
+  than an error. Set `max-debug.assert-level` to `all` to restore the check, or
+  use `max-debug.nan-check` to locate NaN logits.
 - Fixed expert-parallel dispatch dropping half of every token belonging to an
   expert that only one communication SM serves, which surfaced as NaN logits.
   The block-scaled wire formats (NVFP4 and MXFP8) copy a token tile as two
