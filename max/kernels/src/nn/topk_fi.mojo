@@ -1293,11 +1293,186 @@ def apply_min_p_mask_kernel[
             probs[row_start + i] = Scalar[dtype](0)
 
 
+# The joint top-k/top-p cutoff search is bounded in practice by the value
+# narrowing (min_gt_low == max_le_high); the iteration cap is defensive
+# insurance against fp pathologies (NaN-laced rows), mirroring the Apple
+# search path's fixed bound.
+comptime _CUTOFF_SEARCH_MAX_ITERS = 64
+
+
+@always_inline
+def _block_reduce_cutoff_stats[
+    block_size: Int, broadcast: Bool = True
+](
+    count0: Int32,
+    count1: Int32,
+    mass0: Float32,
+    mass1: Float32,
+    min_gt_low: Float32,
+    max_le_high: Float32,
+) -> Tuple[Int32, Int32, Float32, Float32, Float32, Float32]:
+    """Fused block reduction for the cutoff search: 4 sums + min + max.
+
+    Performs all six reductions in a single 2-barrier pass by casting the
+    Int32 counts to Float32 (exact for counts up to 2^23).
+    """
+
+    @always_inline
+    @__parameter
+    def _reduce_fn[
+        dtype: DType, width: SIMDLength, reduction_idx: Int
+    ](v: SIMD[dtype, width]) -> Scalar[dtype]:
+        comptime if reduction_idx < 4:
+            return warp.sum(v)
+        elif reduction_idx == 4:
+            return warp.min(v)
+        else:
+            return warp.max(v)
+
+    var results = block._block_reduce[
+        block_size,
+        warp_reduce_fn=_reduce_fn,
+        broadcast=broadcast,
+    ](
+        StaticTuple[Scalar[DType.float32], 6](
+            Float32(count0),
+            Float32(count1),
+            mass0,
+            mass1,
+            min_gt_low,
+            max_le_high,
+        ),
+        initial_vals=StaticTuple[Scalar[DType.float32], 6](
+            0, 0, 0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
+        ),
+    )
+    return (
+        Int32(results[0]),
+        Int32(results[1]),
+        results[2],
+        results[3],
+        results[4],
+        results[5],
+    )
+
+
+@always_inline
+def _topk_topp_cutoff_search[
+    vec_size: Int,
+    block_size: Int,
+    load_dist: def(Int) capturing[_] -> SIMD[DType.float32, vec_size],
+](
+    d: Int,
+    k: Int32,
+    p_eff: Float32,
+    low_init: Float32,
+    high_init: Float32,
+    mass_above_low_init: Float32,
+) -> Tuple[Float32, Float32]:
+    """Finds the exact constraint-set cutoff and kept mass for joint top-k/top-p.
+
+    A token with value ``t`` (in the working distribution domain served by
+    ``load_dist``) survives the joint constraint iff ``count(> t) < k`` and
+    ``mass(> t) <= p_eff`` — the same predicate
+    ``TopKTopPSamplingFromProbKernel`` accepts samples with. That predicate is
+    monotone in ``t``, so the surviving set is exactly ``{v : v > cutoff}``
+    for the returned ``cutoff``, with all ties at the boundary value kept
+    (this differs from an exact-count sorted rule only at exact fp ties).
+
+    Dual-pivot ternary search with the value-narrowing termination from
+    ``TopKMaskLogitsKernel``: bounds snap to actual data values via
+    ``min_gt_low`` / ``max_le_high`` and the search ends when exactly one
+    distinct value remains in ``(low, high]``, giving an exact cutoff with no
+    epsilon reasoning.
+
+    Callers must guarantee the bracket invariants at entry: the predicate
+    fails at ``low_init`` (some constraint violated), holds at ``high_init``,
+    and ``mass_above_low_init == mass(> low_init)``. Rows where nothing fails
+    (constraints disabled, or fewer than ``k`` positive-mass tokens) must be
+    short-circuited by the caller instead of searched.
+
+    Returns:
+        ``(cutoff, kept_mass)`` where ``kept_mass == mass(> cutoff)``. On the
+        (defensive) iteration cap, returns the current bracket state, which
+        keeps a superset of the constraint set but stays self-consistent.
+    """
+    var tx = thread_idx.x
+    var low = low_init
+    var high = high_init
+    var mass_above_low = mass_above_low_init
+
+    for _ in range(_CUTOFF_SEARCH_MAX_ITERS):
+        var pivot_0 = (high + 2 * low) / 3
+        var pivot_1 = (2 * high + low) / 3
+
+        # Accumulate thread-local counts/masses across all chunks.
+        var thread_count_0: Int32 = 0
+        var thread_count_1: Int32 = 0
+        var thread_mass_0 = Float32(0)
+        var thread_mass_1 = Float32(0)
+        var min_gt_low = high
+        var max_le_high = low
+
+        for i in range(ceildiv(d, block_size * vec_size)):
+            var v = SIMD[DType.float32, vec_size](0)
+            if (i * block_size + tx) * vec_size < d:
+                v = load_dist((i * block_size + tx) * vec_size)
+
+            comptime for j in range(vec_size):
+                var idx = (i * block_size + tx) * vec_size + j
+                var valid = idx < d
+                if v[j] > pivot_0 and valid:
+                    thread_count_0 += 1
+                    thread_mass_0 += v[j]
+                if v[j] > pivot_1 and valid:
+                    thread_count_1 += 1
+                    thread_mass_1 += v[j]
+                if v[j] > low and valid:
+                    min_gt_low = min(min_gt_low, v[j])
+                if v[j] <= high and valid:
+                    max_le_high = max(max_le_high, v[j])
+
+        # Single fused block reduction after processing all chunks.
+        var stats = _block_reduce_cutoff_stats[block_size](
+            thread_count_0,
+            thread_count_1,
+            thread_mass_0,
+            thread_mass_1,
+            min_gt_low,
+            max_le_high,
+        )
+        var count_0 = stats[0]
+        var count_1 = stats[1]
+        var mass_0 = stats[2]
+        var mass_1 = stats[3]
+        min_gt_low = stats[4]
+        max_le_high = stats[5]
+
+        # pivot_1 > pivot_0: if the constraint still fails above the higher
+        # pivot it also fails above the lower one, so test high-to-low.
+        if count_1 >= k or mass_1 > p_eff:
+            low = pivot_1
+            mass_above_low = mass_1
+        elif count_0 >= k or mass_0 > p_eff:
+            low = pivot_0
+            mass_above_low = mass_0
+            high = min(pivot_1, max_le_high)
+        else:
+            high = min(pivot_0, max_le_high)
+
+        # Exactly one distinct data value remains in (low, high]: every token
+        # above `low` passes the predicate, every token at or below fails.
+        if min_gt_low == max_le_high or high <= low:
+            break
+
+    return Tuple[Float32, Float32](low, mass_above_low)
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
 )
 @__name(
-    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}",
+    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}_{from_logits}_{emit_dist}_{dist_dtype}",
 )
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
@@ -1310,6 +1485,8 @@ def TopKTopPSamplingFromProbKernel[
     out_idx_type: DType,
     deterministic: Bool,
     from_logits: Bool = False,
+    emit_dist: Bool = False,
+    dist_dtype: DType = DType.float32,
     ProbsStorageType: TensorStorage = PointerStorage[element_width=1],
     OutputStorageType: TensorStorage = PointerStorage[element_width=1],
 ](
@@ -1319,6 +1496,7 @@ def TopKTopPSamplingFromProbKernel[
     output: TileTensor[
         out_idx_type, OutputLayoutType, output_origin, Storage=OutputStorageType
     ],
+    out_dist: Optional[UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]],
     indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int32,
@@ -1351,6 +1529,12 @@ def TopKTopPSamplingFromProbKernel[
     simply `min_p`), matching `apply_min_p_mask_kernel` semantics in the
     normalized domain.
 
+    When `emit_dist` is set, the kernel also writes the masked renormalized
+    distribution it drew from to `out_dist`. Speculative decoding builds its
+    rejection residual from that distribution, and reads the sampled token's
+    own probability back out of it. Requires `from_logits`, and a non-Apple
+    GPU because the cutoff search uses block collectives.
+
     Parameters:
         ProbsLayoutType: Memory layout of the input `probs` tile.
         probs_origin: Origin tag for the immutable input `probs` tile.
@@ -1365,12 +1549,17 @@ def TopKTopPSamplingFromProbKernel[
         from_logits: If True, `probs` holds raw logits and softmax with
             per-row temperature scaling and min-p masking is fused into the
             kernel (defaults to False).
+        emit_dist: If True, also write the masked distribution to
+            `out_dist` (defaults to False).
+        dist_dtype: Element type of `out_dist`.
         ProbsStorageType: Storage type of the input `probs` tile.
         OutputStorageType: Storage type of the output `output` tile.
 
     Args:
         probs: Input probability distribution [batch_size, _d].
         output: Output sampled indices [batch_size].
+        out_dist: Output masked distribution [batch_size, _d]; required when
+            `emit_dist` is set.
         indices: Optional row indices for batch indexing [batch_size].
         top_k_arr: Optional per-row top_k values [batch_size].
         top_k_val: Default top_k value if top_k_arr is null.
@@ -1385,6 +1574,13 @@ def TopKTopPSamplingFromProbKernel[
         min_p: Optional per-row min-p thresholds [batch_size]. Only used
             when `from_logits` is True.
     """
+    comptime assert (
+        not emit_dist or from_logits
+    ), "out_dist requires from_logits"
+    comptime assert (
+        not emit_dist or not is_apple_gpu()
+    ), "out_dist is not supported on Apple GPUs"
+
     var _top_k_val = Int(top_k_val)
     var _d = Int(d)
     comptime assert output.flat_rank == 1
@@ -1413,6 +1609,8 @@ def TopKTopPSamplingFromProbKernel[
             k = Int(top_k_arr.unsafe_value().load(row_idx))
         if k == -1:
             k = _top_k_val
+        if k <= 0 or k > _d:
+            k = _d
 
         var p = top_p_val
         if top_p_arr:
@@ -1591,6 +1789,10 @@ def TopKTopPSamplingFromProbKernel[
             var q: Float32 = z
             var low: Float32 = 0.0
             var high: Float32 = 1.0
+            # Weight of the accepted token, or -1 if the loop exited without
+            # accepting. `emit_dist` warm-starts its cutoff search from
+            # (low, accepted_e], the bracket this loop already narrowed.
+            var accepted_e = Float32(-1)
 
             # Seeded once; see the top-k kernel above for why the slot cannot
             # be left to whatever the previous workgroup wrote.
@@ -1717,6 +1919,7 @@ def TopKTopPSamplingFromProbKernel[
                 ):
                     # Case 1: pivot_0 accepted - count below k AND prob mass below p.
                     # Use <= so that p=0 correctly accepts the argmax (sum_above=0).
+                    accepted_e = pivot_0
                     break
 
                 # Only reduce pivot_1 when pivot_0 is rejected.
@@ -1739,6 +1942,44 @@ def TopKTopPSamplingFromProbKernel[
 
             barrier()
 
+            comptime if emit_dist:
+                # The accept predicate is monotone in the token's own weight,
+                # so the surviving set is {v : v > cutoff} and softmax over it
+                # is v / kept_mass. A row that never accepted (non-finite
+                # logits, or the bracket collapsing) has no constraint set to
+                # report, so it stays zero -- callers read that as "no
+                # distribution for this row".
+                var cutoff = Float32.MAX_FINITE
+                var kept_mass = Float32(1)
+
+                if accepted_e >= 0:
+
+                    @__parameter
+                    @always_inline
+                    def load_dist_vec(
+                        offset: Int,
+                    ) -> SIMD[DType.float32, vec_size]:
+                        return load_dist[vec_size](offset)
+
+                    var refined = _topk_topp_cutoff_search[
+                        vec_size, block_size, load_dist_vec
+                    ](_d, Int32(k), p_eff, low, accepted_e, q)
+                    cutoff = refined[0]
+                    kept_mass = refined[1]
+
+                var dist_row = TileTensor(
+                    out_dist.unsafe_value() + bx * _d,
+                    row_major(Idx[1], _d),
+                )
+                for i in range(tx, _d // vec_size, block_size):
+                    var e = load_dist[vec_size](i * vec_size)
+                    var masked = (e.gt(cutoff)).select(
+                        e / kept_mass, SIMD[DType.float32, vec_size](0)
+                    )
+                    dist_row.store[width=vec_size](
+                        (Idx[0], i * vec_size), masked.cast[dist_dtype]()
+                    )
+
         if tx == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
 
@@ -1748,6 +1989,12 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     from_logits: Bool = False,
+    emit_dist: Bool = False,
+    dist_dtype: DType = DType.float32,
+    DistLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64, Int64].element_types,
+        stride_types=Coord[Int64, ComptimeInt[1]].element_types,
+    ],
     TopKArrLayoutType: TensorLayout = Layout[
         shape_types=Coord[Int64].element_types,
         stride_types=Coord[ComptimeInt[1]].element_types,
@@ -1834,12 +2081,18 @@ def topk_topp_sampling_from_prob[
             Storage=MinPStorageType,
         ]
     ] = None,
+    out_dist: Optional[
+        TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
+    ] = None,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
     Performs stochastic sampling considering only tokens that satisfy both the
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
     1.0 (default) this behaves identically to topk_sampling_from_prob.
+
+    When `emit_dist` is set, the masked renormalized distribution is written
+    to `out_dist` as well; see the kernel docstring.
 
     When `from_logits` is True, `probs` contains raw logits: softmax with
     per-row temperature scaling and the optional min-p mask are fused into
@@ -1853,6 +2106,10 @@ def topk_topp_sampling_from_prob[
         from_logits: If True, `probs` holds raw logits and softmax with
             per-row temperature scaling and min-p masking is fused into
             the kernel (defaults to False).
+        emit_dist: If True, also write the masked renormalized distribution
+            to `out_dist` (defaults to False).
+        dist_dtype: Element type of `out_dist`.
+        DistLayoutType: Memory layout of the optional `out_dist` tensor.
         TopKArrLayoutType: Memory layout of the optional `top_k_arr` tensor.
         IndicesLayoutType: Memory layout of the optional `indices` tensor.
         TopPArrLayoutType: Memory layout of the optional `top_p_arr` tensor.
@@ -1886,6 +2143,8 @@ def topk_topp_sampling_from_prob[
             used when `from_logits` is True; defaults to 1.0 per row.
         min_p: Optional per-row min-p thresholds [batch_size]. Only used
             when `from_logits` is True.
+        out_dist: Output masked distribution [batch_size, d]. Required when
+            `emit_dist` is set.
 
     Raises:
         Error: If tensor ranks or shapes are invalid.
@@ -1955,6 +2214,20 @@ def topk_topp_sampling_from_prob[
         if min_p:
             min_p_ptr = min_p.unsafe_value().ptr
 
+        var dist_ptr: Optional[
+            UnsafePointer[Scalar[dist_dtype], MutAnyOrigin]
+        ] = None
+
+        comptime if emit_dist:
+            if not out_dist:
+                raise Error("out_dist is required when emit_dist is set")
+            var dist_shape = coord_to_index_list(
+                out_dist.unsafe_value().layout.shape_coord()
+            )
+            if dist_shape[0] != batch_size or dist_shape[1] != d:
+                raise Error("out_dist shape must match probs shape")
+            dist_ptr = out_dist.unsafe_value().ptr
+
         @__parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
             comptime kernel = TopKTopPSamplingFromProbKernel[
@@ -1968,12 +2241,15 @@ def topk_topp_sampling_from_prob[
                 out_idx_type,
                 deterministic,
                 from_logits,
+                emit_dist,
+                dist_dtype,
                 ProbsStorageType=probs.Storage,
                 OutputStorageType=output.Storage,
             ]
             ctx.enqueue_function[kernel](
                 probs.as_immut(),
                 output,
+                dist_ptr,
                 indices_ptr,
                 top_k_ptr,
                 Int32(top_k_val),
