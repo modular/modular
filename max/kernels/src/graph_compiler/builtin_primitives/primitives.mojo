@@ -158,15 +158,6 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
         self = Self(view, storage^)
 
-    def __init__(out self, *, copy: Self):
-        """Creates a copy sharing the same backing memory (retains the storage).
-
-        Args:
-            copy: The composite to copy.
-        """
-        self.view = copy.view
-        self.storage = copy.storage
-
     def unsafe_ptr(self) -> Pointer[Scalar[DType.int8], MutAnyOrigin]:
         """Returns the view's raw device data pointer.
 
@@ -283,15 +274,6 @@ struct OwnedTensor[dtype: DType, rank: Int, mut: Bool = False](
         """
         self.tensor = tensor
         self.storage = storage^
-
-    def __init__(out self, *, copy: Self):
-        """Creates a copy sharing the same backing memory (retains the storage).
-
-        Args:
-            copy: The composite to copy.
-        """
-        self.tensor = copy.tensor
-        self.storage = copy.storage
 
     def unsafe_ptr(self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
         """Returns the view's raw device data pointer.

@@ -54,16 +54,6 @@ struct TMADescriptor[
         """
         self.tensormap = tensormap
 
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """
-        Copy initializes this `TMADescriptor` from another instance.
-
-        Args:
-            copy: The other `TMADescriptor` instance to copy from.
-        """
-        self.tensormap = copy.tensormap
-
 
 def create_tma_descriptor[
     dtype: DType,

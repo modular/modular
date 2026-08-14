@@ -213,7 +213,6 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
             move: The union to move from.
         """
         # Bitwise move of the raw storage
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = move._storage
 
     # Note: No __deinit__ - UnsafeUnion doesn't know what type is stored, so it

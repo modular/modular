@@ -594,16 +594,6 @@ struct ComposedLayout[offset: Optional[Int] = 0](Copyable):
         self.layout_b = layout_b
 
     @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy constructor for ComposedLayout.
-
-        Args:
-            copy: The ComposedLayout to copy from.
-        """
-        self.layout_a = copy.layout_a.copy()
-        self.layout_b = copy.layout_b
-
-    @always_inline
     def __call__(self, idx: IntTuple) -> Int:
         """Apply composed layout to an index.
 

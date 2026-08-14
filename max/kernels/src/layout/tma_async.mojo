@@ -809,16 +809,6 @@ struct TMATensorTile[
         self.descriptor = descriptor
 
     @always_inline
-    def __init__(out self, *, copy: Self):
-        """
-        Copy initializes this `TMATensorTile` from another instance.
-
-        Args:
-            copy: The other `TMATensorTile` instance to copy from.
-        """
-        self.descriptor = copy.descriptor
-
-    @always_inline
     def prefetch_descriptor(self):
         """
         Prefetches the TMA descriptor into cache to reduce latency.
@@ -5662,16 +5652,6 @@ struct RaggedTMA3DTile[
                 )
 
     @always_inline
-    def __init__(out self, *, copy: Self):
-        """
-        Copy initializes this `RaggedTMA3DTile` from another instance.
-
-        Args:
-            copy: The other `RaggedTMA3DTile` instance to copy from.
-        """
-        self.descriptor = copy.descriptor
-
-    @always_inline
     def async_copy_from_col[
         col: Int,
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
@@ -6347,22 +6327,6 @@ struct TMATensorTileIm2col[
         self.in_channels = in_channels
         self.lower_corner_h = lower_corner_h
         self.lower_corner_w = lower_corner_w
-
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Copy initializes from another instance.
-
-        Args:
-            copy: The other instance to copy from.
-        """
-        self.descriptor = copy.descriptor
-        self.out_height = copy.out_height
-        self.out_width = copy.out_width
-        self.filter_h = copy.filter_h
-        self.filter_w = copy.filter_w
-        self.in_channels = copy.in_channels
-        self.lower_corner_h = copy.lower_corner_h
-        self.lower_corner_w = copy.lower_corner_w
 
     @always_inline
     def prefetch_descriptor(self):

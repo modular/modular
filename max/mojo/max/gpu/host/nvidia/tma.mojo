@@ -318,15 +318,6 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         """
         self.data = StaticTuple[UInt8, 128]()
 
-    @always_inline
-    def __init__(out self, *, copy: Self):
-        """Creates a copy of a TMA descriptor.
-
-        Args:
-            copy: The descriptor to copy.
-        """
-        self.data = copy.data
-
 
 def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
