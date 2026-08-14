@@ -48,8 +48,9 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     """Monotonic forward-pass counter stamped by the scheduler.
 
     Identifies which GPU forward pass produced this result, acting as a join
-    key between OTel ``max.batch`` spans and ``max.phase.*`` spans. ``None``
-    for cancelled operations.
+    key between the OTel ``max.phase.*`` spans and — when
+    ``kernel_trace_level`` is ``batch`` or above — the ``max.batch`` spans.
+    ``None`` for cancelled operations.
     """
 
     @classmethod
