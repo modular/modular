@@ -9,6 +9,10 @@ package(default_visibility = [
 modular_py_test(
     name = "kv_cache",
     srcs = glob(["*.py"]),
+    per_test_tags = {
+        # Relies on ambient environment, not really hermetic.
+        "test_ucx_env.py": ["skip-external-ci"],
+    },
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
