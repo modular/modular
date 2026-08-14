@@ -27,7 +27,9 @@ from max.gpu.primitives import block
 from std.gpu.primitives import warp
 from max.gpu.primitives.grid_controls import (
     PDL,
+    launch_dependent_grids,
     pdl_launch_attributes,
+    wait_on_dependent_grids,
     PDLLevel,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -2668,6 +2670,252 @@ def topk_softmax_sample[
             )
 
         # Runtime dispatch to compile-time parameter.
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size]()
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
+)
+@__name(t"topk_topp_masked_probs_{dtype}")
+def TopKTopPMaskedProbsKernel[
+    block_size: Int,
+    vec_size: Int,
+    dtype: DType,
+    LogitsLayoutType: TensorLayout,
+    logits_origin: ImmOrigin,
+](
+    logits: TileTensor[dtype, LogitsLayoutType, logits_origin],
+    probs_ptr: UnsafePointer[Float32, MutAnyOrigin],
+    top_k_arr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    top_k_val: Int32,
+    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    top_p_val: Float32,
+    temperature: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
+    d: Int32,
+):
+    """Writes each row's top-k/top-p masked softmax, without sampling.
+
+    Works in the unnormalized domain `e_i = exp((logit_i - row_max) / temp)`:
+    a token survives the joint constraint iff `e > cutoff` (recovered by the
+    same dual-pivot search the sampler uses) and its masked probability is
+    `e / kept_mass`. The output row is that masked renormalized distribution
+    -- the same tensor `TopKTopPSamplingFromProbKernel` emits under
+    `emit_dist`, so a verifier's target-side probabilities and a draft's
+    proposal distribution are described identically.
+    """
+    comptime assert (
+        not is_apple_gpu()
+    ), "TopKTopPMaskedProbsKernel is not supported on Apple GPUs"
+    var _d = Int(d)
+    var bx = block_idx.x
+    var tx = thread_idx.x
+
+    wait_on_dependent_grids()
+    launch_dependent_grids()
+
+    var k = Int(top_k_val)
+    if top_k_arr:
+        k = Int(top_k_arr.unsafe_value().load(bx))
+    if k <= 0 or k > _d:
+        k = _d
+
+    var p = top_p_val
+    if top_p_arr:
+        p = top_p_arr.unsafe_value()[bx]
+    p = p.clamp(Float32(0.0), Float32(1.0))
+
+    var temp_val = Float32(1.0)
+    if temperature:
+        temp_val = temperature.unsafe_value()[bx]
+    # Clamp so a greedy (T=0) row cannot divide by zero.
+    var inv_temp = 1.0 / max(temp_val, Float32(1e-6))
+
+    var logits_row = TileTensor(logits.ptr + bx * _d, row_major(Idx[1], _d))
+
+    var thread_max = Scalar[DType.float32].MIN
+    for i in range(tx, _d // vec_size, block_size):
+        var v = logits_row.load[width=vec_size]((Idx[0], i * vec_size)).cast[
+            DType.float32
+        ]()
+        thread_max = max(thread_max, v.reduce_max())
+    var m = block.max[block_size=block_size, broadcast=True](thread_max)
+
+    @__parameter
+    @always_inline
+    def load_e(offset: Int) -> SIMD[DType.float32, vec_size]:
+        var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
+            DType.float32
+        ]()
+        return exp((v - m) * inv_temp)
+
+    # Total mass, plus how many tokens carry any: a row whose every
+    # positive token already satisfies the constraint has no boundary to
+    # find, and the search's precondition (the predicate fails at 0)
+    # would not hold.
+    var thread_sum = Float32(0)
+    var thread_pos: Int32 = 0
+    for i in range(tx, _d // vec_size, block_size):
+        var e = load_e(i * vec_size)
+        thread_sum += e.reduce_add()
+        comptime for j in range(vec_size):
+            if e[j] > 0:
+                thread_pos += 1
+    var total = _block_reduce_value_count[DType.float32, broadcast=True](
+        ValueCount[DType.float32](thread_sum, thread_pos)
+    )
+    var z = total.value
+    var p_eff = p * z
+
+    var cut = Float32(0)
+    var mass_s = z
+    if total.count >= Int32(k) or z > p_eff:
+        var refined = _topk_topp_cutoff_search[vec_size, block_size, load_e](
+            _d, Int32(k), p_eff, 0.0, 1.0, z
+        )
+        cut = refined[0]
+        mass_s = refined[1]
+
+    var probs_row = TileTensor(probs_ptr + bx * _d, row_major(Idx[1], _d))
+    for i in range(tx, _d // vec_size, block_size):
+        var e = load_e(i * vec_size)
+        var masked = (e.gt(cut)).select(
+            e / mass_s, SIMD[DType.float32, vec_size](0)
+        )
+        probs_row.store[width=vec_size]((Idx[0], i * vec_size), masked)
+
+
+def topk_topp_masked_probs[
+    dtype: DType,
+    block_size: Int = 1024,
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TopPArrLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    TemperatureLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
+    ],
+    ProbsLayoutType: TensorLayout = Layout[
+        shape_types=Coord[Int64, Int64].element_types,
+        stride_types=Coord[Int64, ComptimeInt[1]].element_types,
+    ],
+](
+    ctx: DeviceContext,
+    logits: TileTensor[mut=False, dtype, ...],
+    probs: TileTensor[DType.float32, ProbsLayoutType, MutAnyOrigin],
+    top_k_val: Int,
+    top_p_val: Float32 = 1.0,
+    top_k_arr: Optional[
+        TileTensor[DType.int64, TopKArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+    top_p_arr: Optional[
+        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """Computes per-row top-k/top-p masked softmax, one block per row.
+
+    See `TopKTopPMaskedProbsKernel` for what the output means.
+
+    Parameters:
+        dtype: Element type of `logits`.
+        block_size: Threads per block.
+        TopKArrLayoutType: Memory layout of `top_k_arr`.
+        TopPArrLayoutType: Memory layout of `top_p_arr`.
+        TemperatureLayoutType: Memory layout of `temperature`.
+        ProbsLayoutType: Memory layout of `probs`.
+
+    Args:
+        ctx: Device context.
+        logits: Input logits [batch_size, d].
+        probs: Output masked renormalized distribution [batch_size, d].
+        top_k_val: Default top-k; `<= 0` or `> d` keeps every token.
+        top_p_val: Default top-p threshold.
+        top_k_arr: Optional per-row top-k [batch_size].
+        top_p_arr: Optional per-row top-p [batch_size].
+        temperature: Optional per-row temperature [batch_size]; 0 is clamped.
+
+    Raises:
+        Error: If the tensor shapes disagree.
+    """
+    comptime assert logits.rank == 2, "logits rank must be 2"
+
+    var shape = coord_to_index_list(logits.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    @__parameter
+    def trace_information() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("logits", shape, dtype),
+                    "top_k=" + String(top_k_val),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "topk_topp_masked_probs",
+        Trace[TraceLevel.OP]._get_detail_str[trace_information](),
+        task_id=Int(ctx.id()),
+    ):
+        var probs_shape = coord_to_index_list(probs.layout.shape_coord())
+        if probs_shape[0] != batch_size or probs_shape[1] != d:
+            raise Error("probs shape must match the logits shape")
+
+        # Speculative decoding runs this with zero rows on every step that has
+        # no drafts to verify, and a grid of 0 is not a legal launch.
+        if batch_size == 0:
+            return
+
+        var vec_size = gcd(8, d)
+
+        var top_k_ptr: Optional[UnsafePointer[Int64, ImmutAnyOrigin]] = None
+        if top_k_arr:
+            top_k_ptr = top_k_arr.unsafe_value().ptr
+
+        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
+        if top_p_arr:
+            top_p_ptr = top_p_arr.unsafe_value().ptr
+
+        var temperature_ptr: Optional[
+            UnsafePointer[Float32, ImmutAnyOrigin]
+        ] = None
+        if temperature:
+            temperature_ptr = temperature.unsafe_value().ptr
+
+        @__parameter
+        def launch_kernel[vec_size: Int]() raises:
+            comptime kernel = TopKTopPMaskedProbsKernel[
+                block_size,
+                vec_size,
+                dtype,
+                logits.LayoutType,
+                ImmOrigin(logits.origin),
+            ]
+            ctx.enqueue_function[kernel](
+                logits.as_immut(),
+                probs.ptr,
+                top_k_ptr,
+                Int32(top_k_val),
+                top_p_ptr,
+                top_p_val,
+                temperature_ptr,
+                Int32(d),
+                grid_dim=batch_size,
+                block_dim=block_size,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
         comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size]()

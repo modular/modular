@@ -421,6 +421,12 @@ This version is still a work in progress.
   token's own probability out of it -- a value that has to agree with the
   sampler's accept decision, so it comes from the sampling kernel rather than
   a separate softmax. The existing single-output path is unchanged.
+- Added `max.nn.kernels.topk_topp_masked_probs`, which computes a row's
+  top-k/top-p masked renormalized softmax without sampling and without a
+  sort. Speculative decoding verification reads the target's masked
+  probability of each drafted token and builds its rejection residual from
+  this one tensor, in the same form the draft sampler emits its proposal
+  distribution.
 
 ## Breaking changes
 
