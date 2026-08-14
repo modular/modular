@@ -1092,12 +1092,16 @@ class TextBatchConstructor:
                     fatal = self._is_insufficient_blocks_fatal(
                         replica_idx, no_other_work
                     )
-                    (logger.error if fatal else logger.warning)(
-                        f"_add_ce_requests InsufficientBlocksError "
-                        f"(replica_idx={replica_idx}, fatal={fatal}): {e}"
-                    )
                     if fatal:
-                        raise
+                        held_blocks = len(self.kv_cache.get_req_blocks(ctx))
+                        raise InsufficientBlocksError(
+                            f"_add_ce_requests: InsufficientBlocksError is "
+                            f"fatal on replica {replica_idx} -- no other "
+                            f"work and nothing in flight to free blocks. "
+                            f"Request {ctx.request_id} has "
+                            f"{len(ctx.tokens)} tokens and already holds "
+                            f"{held_blocks} blocks. {e}"
+                        ) from e
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 
@@ -1182,12 +1186,20 @@ class TextBatchConstructor:
                         fatal = self._is_insufficient_blocks_fatal(
                             replica_idx, no_other_work=len(batch) == 0
                         )
-                        (logger.error if fatal else logger.warning)(
-                            f"_add_tg_requests InsufficientBlocksError "
-                            f"(replica_idx={replica_idx}, fatal={fatal}): {e}"
-                        )
                         if fatal:
-                            raise
+                            held_blocks = len(
+                                self.kv_cache.get_req_blocks(candidate_context)
+                            )
+                            raise InsufficientBlocksError(
+                                f"_add_tg_requests: InsufficientBlocksError "
+                                f"is fatal on replica {replica_idx} -- no "
+                                f"other work and nothing in flight to free "
+                                f"blocks. Request "
+                                f"{candidate_context.request_id} has "
+                                f"{len(candidate_context.tokens)} tokens "
+                                f"and already holds {held_blocks} "
+                                f"blocks. {e}"
+                            ) from e
                         return
 
                     # Pop the oldest candidate id

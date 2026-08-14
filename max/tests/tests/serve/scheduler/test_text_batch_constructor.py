@@ -303,6 +303,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
+    kv_cache.get_req_blocks = Mock(return_value=[])
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -401,6 +402,7 @@ def _presence_test_setup(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
+    kv_cache.get_req_blocks = Mock(return_value=[])
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
