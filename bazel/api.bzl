@@ -45,7 +45,6 @@ modular_py_library = _modular_py_library
 modular_py_venv = _modular_py_venv
 modular_run_binary_test = _modular_run_binary_test
 modular_versioned_expand_template = _modular_versioned_expand_template
-mojo_binary = _mojo_binary
 mojo_overlay_layer = _mojo_overlay_layer
 mojo_overlay_srcs = _mojo_overlay_srcs
 mojo_test = _mojo_test
@@ -220,6 +219,12 @@ def mojo_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
 # buildifier: disable=unused-variable
 def mojo_shared_library(deps = [], use_production_compiler_for_asan = None, **kwargs):
     _mojo_shared_library(
+        deps = _process_mojo_deps(deps),
+        **kwargs
+    )
+
+def mojo_binary(deps = [], **kwargs):
+    _mojo_binary(
         deps = _process_mojo_deps(deps),
         **kwargs
     )
