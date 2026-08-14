@@ -75,6 +75,44 @@ def make_closure(x: Int, str:String):
 
 # // -----
 
+# COM: Nested unified closure capturing locals declared in a nested lexical
+# COM: scope of the enclosing closure (MOCO-4652).
+
+def takeInt[T: def (x: Int) -> Int, //](state: T, x: Int):
+    _ = state(x)
+
+
+def capture_nested_scope_local(t: Int):
+    def task(x: Int) {imm}:
+        if x:
+            var kg = x
+            # CHECK: lit.call {{.*}}use_imm::__storage"::@"__init__
+            # CHECK-SAME: "kg":
+            def use_imm(i: Int) {imm kg} -> Int:
+                return kg + i
+
+            var acc = x
+            # CHECK: lit.call {{.*}}use_mut::__storage"::@"__init__
+            # CHECK-SAME: "acc":
+            def use_mut(i: Int) {mut acc, imm} -> Int:
+                acc += i
+                return acc
+
+            _ = takeInt(use_imm, t)
+            _ = takeInt(use_mut, t)
+        while x:
+            var kg = x
+            # CHECK: lit.call {{.*}}use_while::__storage"::@"__init__
+            # CHECK-SAME: "kg":
+            def use_while(i: Int) {imm kg} -> Int:
+                return kg + i
+
+            _ = takeInt(use_while, t)
+            break
+    task(t)
+
+# // -----
+
 # COM: Verify mutability casts are inserted
 
 def takeIt[T: def () -> None, //](state: T):

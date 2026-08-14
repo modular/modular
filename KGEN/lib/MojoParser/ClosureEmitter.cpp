@@ -2908,9 +2908,10 @@ static FailureOr<ASTDecl *> partialLookup(StringAttr name, ASTDecl &scope,
 }
 
 // Search the scope and its parents for a decl with the name without resolving
-// anything.
+// anything. If `upperBound` is set, the walk includes that decl and then stops.
 static FailureOr<ASTDecl *> findCapture(SharedState &shared, StringRef name,
-                                        llvm::SMLoc loc, ASTDecl &scope) {
+                                        llvm::SMLoc loc, ASTDecl &scope,
+                                        ASTDecl *upperBound = nullptr) {
   auto nameAttr = StringAttr::get(shared.getContext(), name);
   ASTDecl *current = &scope;
   do {
@@ -2919,6 +2920,8 @@ static FailureOr<ASTDecl *> findCapture(SharedState &shared, StringRef name,
       return failure();
     if (result.value())
       return result.value();
+    if (current == upperBound)
+      break;
   } while ((current = current->getParentDecl()));
   return nullptr;
 }
@@ -2938,16 +2941,21 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
            "been registered in the scope");
     return existing.front();
   }
-  // If this is a nested closure, emit the parent capture first.
   FnOp funcOp = cast<FnOp>(closure.getIfOperation());
   ASTDecl *fnParentDecl = closure.getParentDecl()->getNearestDeclOfType<FnOp>();
   auto parentFn = cast<FnOp>(fnParentDecl->getIfOperation());
   ASTDecl *result = nullptr;
   if (usesClosurePipeline(parentFn)) {
-    result = addCaptureValue(shared, *fnParentDecl, name, location);
-    // Propagate failure.
-    if (!result)
+    auto localMaybe = findCapture(shared, name, location,
+                                  *closure.getParentDecl(), fnParentDecl);
+    if (failed(localMaybe))
       return nullptr;
+    result = localMaybe.value();
+    if (!result) {
+      result = addCaptureValue(shared, *fnParentDecl, name, location);
+      if (!result)
+        return nullptr;
+    }
   } else {
     auto hitMaybe = partialLookup(StringAttr::get(shared.getContext(), name),
                                   closure, location);
