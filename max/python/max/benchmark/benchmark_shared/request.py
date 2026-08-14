@@ -92,6 +92,10 @@ class BaseRequestFuncInput(ABC):
 
     model: str
     session_id: str | None
+    # kw_only so this can default without disturbing the required-field
+    # ordering of subclasses (RequestFuncInput adds several fields with no
+    # default after inheriting from this base).
+    cache_salt: str | None = field(default=None, kw_only=True)
 
     @abstractmethod
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
@@ -847,6 +851,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         }
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
+        if request_func_input.cache_salt:
+            headers["X-Cache-Salt"] = request_func_input.cache_salt
 
         if self.backend == "atom":
             # ATOM doesn't per-token-stream chat/completions: send non-streaming

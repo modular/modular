@@ -226,6 +226,12 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_GENERATED_MEDIA_STORAGE_MB",
     )
 
+    use_client_cache_salt: bool = Field(
+        description="If True, honor cache_salt from clients (header or body). Off by default",
+        default=False,
+        alias="MAX_SERVE_USE_CLIENT_CACHE_SALT",
+    )
+
     # Telemetry and logging configuration
     logs_console_level: str | None = Field(
         default="INFO",

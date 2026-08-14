@@ -322,6 +322,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             ],
             vision_token_ids=self.vision_token_ids,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
         return context
 

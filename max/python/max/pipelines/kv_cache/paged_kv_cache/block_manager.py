@@ -58,8 +58,6 @@ from .block_utils import (
 
 logger = logging.getLogger("max.pipelines")
 
-SALT_DROPPED_WARNED: bool = False
-
 
 def compute_block_hashes(
     ctx: TextContext,
@@ -125,19 +123,6 @@ def compute_block_hashes(
             )
         token_hash_overrides.extend(ctx.token_hash_overrides)
 
-    cache_salt = ctx.cache_salt
-    if cache_salt is not None and kv_hash_algo == "ahash64":
-        global SALT_DROPPED_WARNED
-        if not SALT_DROPPED_WARNED:
-            logger.warning(
-                "cache_salt was supplied on a request but "
-                "kv_cache_hash_algo=ahash64; salt is being dropped. Set "
-                "kv_cache_hash_algo=sha256 to enable per-request "
-                "prefix-cache isolation."
-            )
-            SALT_DROPPED_WARNED = True
-        cache_salt = None
-
     return hash_request_tokens(
         token_ids=unhashed_tokens,
         block_size=block_size,
@@ -146,7 +131,7 @@ def compute_block_hashes(
         token_hash_overrides=token_hash_overrides,
         algo=kv_hash_algo,
         seed=kv_hash_seed,
-        salt=cache_salt,
+        salt=ctx.cache_salt,
     )
 
 

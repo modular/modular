@@ -530,11 +530,10 @@ class TextContext:
     """Optional per-request salt that isolates this prompt's prefix-cache
     entries from other requests sharing the same tokens.
 
-    Combined with the cluster-level ``kv_cache_hash_seed`` via XOR inside
-    ``BlockManager.compute_hashes_for_request`` to derive the root parent
-    hash. Has effect only when ``kv_cache_hash_algo`` is ``sha256`` or
-    ``sha256_64``; under ``ahash64`` the salt is dropped with a one-time
-    warning. Capped at 512 chars at the OpenAI schema layer.
+    Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
+    Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
+    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
+    at 512 chars at the OpenAI schema layer.
     """
 
     dkv_hint_instance_name: str = field(default="")

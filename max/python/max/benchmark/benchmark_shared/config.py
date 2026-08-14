@@ -619,6 +619,12 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    use_session_id_as_cache_salt: bool = Field(
+        default=False,
+        description="Send each multi-turn chat session's id as the X-Cache-Salt header on every request in that session, so MAX Serve's per-session KV-cache isolation can be measured. Same salt across a session's turns; distinct salt per session. No-op against servers that ignore the header.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     warmup_to_steady_state: bool = Field(
         default=True,
         description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",

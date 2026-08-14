@@ -248,11 +248,11 @@ class KVCacheConfig(ConfigFileModel):
         default="ahash64",
         description=(
             "Hash algorithm used for KV-cache block identity. "
-            "``ahash64`` is the legacy 64-bit non-cryptographic hasher. "
-            "``sha256`` is a 256-bit cryptographic hasher with optional "
-            "per-cluster seed and per-request salt. ``sha256_64`` "
-            "truncates the SHA-256 chain to 64 bits for protocol "
-            "compatibility."
+            "``ahash64`` (default) is fast and non-cryptographic; "
+            "``sha256`` is a cryptographic 256-bit hasher; both support "
+            "an optional seed/salt for prefix-cache isolation. "
+            "``sha256_64`` truncates the SHA-256 chain to 64 bits for "
+            "protocol compatibility."
         ),
     )
     """Hash algorithm used for KV-cache block identity."""
@@ -260,14 +260,13 @@ class KVCacheConfig(ConfigFileModel):
     kv_cache_hash_seed: str | None = Field(
         default=None,
         description=(
-            "Optional 64-character hex string (32 bytes) used as a "
-            "cluster-wide seed when ``kv_cache_hash_algo`` is "
-            "``sha256``/``sha256_64``. When omitted, MAX generates a "
-            "random seed at process start; the hex is logged once. "
-            "Ignored for ``ahash64``."
+            "Optional 64-character hex string (32 bytes), a cluster-wide "
+            "seed for kv_cache_hash_algo. If omitted, sha256/sha256_64 "
+            "generate a random seed at startup; ahash64 does not, so "
+            "existing deployments are unaffected unless set explicitly."
         ),
     )
-    """Optional 32-byte hex seed for sha256/sha256_64 hashing."""
+    """Optional 32-byte hex seed for KV-cache hashing."""
 
     _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.

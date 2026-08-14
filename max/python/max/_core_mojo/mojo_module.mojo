@@ -18,6 +18,7 @@ from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 from std.python._cpython import PyObjectPtr
 from std.memory import unsafe_memcpy
+from std.hashlib._ahash import hash_seeded, hash_seeded_bytes
 
 
 from sha256 import sha256
@@ -93,6 +94,7 @@ def _mojo_block_hasher[
     py_array_object_ptr: Pointer[PyArrayObject[dtype], _],
     block_size: Int,
     parent_hash: Int,
+    seed: SIMD[DType.uint64, 4],
 ) -> PythonObject:
     # Compute number of hashes
     var num_elts: Int = py_array_object_ptr[].num_elts()
@@ -111,9 +113,9 @@ def _mojo_block_hasher[
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.unsafe_offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.unsafe_bitcast[Byte]()
-        var token_hash = hash(hash_ptr_bytes, num_bytes)
+        var token_hash = hash_seeded_bytes(hash_ptr_bytes, num_bytes, seed)
         var pair_to_hash = SIMD[DType.uint64, 2](UInt64(prev_hash), token_hash)
-        var curr_hash = hash(pair_to_hash)
+        var curr_hash = hash_seeded(pair_to_hash, seed)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
         var curr_hash_obj = cpython.PyLong_FromSsize_t(Int(curr_hash))
@@ -128,6 +130,7 @@ def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
     parent_hash_obj: PythonObject,
+    seed_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
     var py_array_object_ptr = Pointer[PyArrayObject[DType.int32], _](
@@ -138,9 +141,17 @@ def mojo_block_hasher(
     var block_size = Int(py=block_size_obj)
     var parent_hash = Int(py=parent_hash_obj)
 
+    # Parse the 32-byte seed into 4 uint64 lanes.
+    var seed_array_ptr = Pointer[PyArrayObject[DType.uint8], _](
+        unchecked_downcast_value=seed_obj
+    )
+    var seed = (
+        seed_array_ptr[].data.unsafe_bitcast[UInt64]().unsafe_load[width=4]()
+    )
+
     # Performing hashing
     var results = _mojo_block_hasher(
-        py_array_object_ptr, block_size, parent_hash
+        py_array_object_ptr, block_size, parent_hash, seed
     )
 
     return results^
