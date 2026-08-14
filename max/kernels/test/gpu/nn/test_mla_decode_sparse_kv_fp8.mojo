@@ -2706,6 +2706,38 @@ def main() raises:
         ):
             seed(42)
 
+            # A split with no compiled combine kernel must fail the launch
+            # instead of skipping the reduction. The message is asserted, not
+            # just the raise, because an unreduced output also fails the value
+            # comparison. 5 stays unbucketed if the table grows.
+            var unbucketed_raised = False
+            try:
+                run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                    "unbucketed_split_must_raise",
+                    2,
+                    2048,
+                    ctx,
+                    topk=2048,
+                    q_max_seq_len=1,
+                    forced_np=5,
+                )
+            except e:
+                if "no compiled combine kernel" in String(e):
+                    unbucketed_raised = True
+                else:
+                    raise Error(
+                        String(
+                            "a split outside the bucket table failed for the"
+                            " wrong reason: "
+                        )
+                        + String(e)
+                    )
+            if not unbucketed_raised:
+                raise Error(
+                    "a split outside the bucket table was accepted, so the"
+                    " split-K reduction can still be skipped silently"
+                )
+
             # =====================================================
             # KERN-3217 q1 split-K tuning: np-invariance + zero-work coverage.
             # The dispatch change relaxes the split-K page floor for the
@@ -2731,6 +2763,16 @@ def main() raises:
                 topk=2048,
                 q_max_seq_len=1,
                 forced_np=0,
+            )
+            # The one table entry no shipped path had launched before.
+            run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
+                "q1_np_inv_eff2048_bs2_np3",
+                2,
+                2048,
+                ctx,
+                topk=2048,
+                q_max_seq_len=1,
+                forced_np=3,
             )
             run_test_sparse_kv_fp8[DType.bfloat16, DType.float8_e4m3fn, 8](
                 "q1_np_inv_eff2048_bs2_np4",
@@ -2951,6 +2993,19 @@ def main() raises:
                 topk=64,
                 q_max_seq_len=6,
             )
+            # The geometry the cost model selects in production, which no
+            # other case covers: multi-token and an odd split.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "unfolded_np3_b2_h8_cl512_topk64_seq6",
+                2,
+                512,
+                ctx,
+                topk=64,
+                q_max_seq_len=6,
+                forced_np=3,
+            )
             # --- Phase 5 shape matrix (NullMask, shared_index): topk tile
             # boundaries, batch sizes, and the production split-K shape. ---
             # topk=40: partial first tile (< BN_QK=64).
@@ -2996,6 +3051,30 @@ def main() raises:
                 ctx,
                 topk=1024,
                 q_max_seq_len=6,
+            )
+            # Every shape above sits on a page or tile boundary, so a length
+            # that divides evenly is the only one either path has run. Prime
+            # cache and topk put the partial last page, the partial last tile
+            # and the split remainder all off their boundaries at once.
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=True
+            ](
+                "shared_fold_b2_h8_cl1021_topk101_seq6",
+                2,
+                1021,
+                ctx,
+                topk=101,
+                q_max_seq_len=6,
+            )
+            run_test_sparse_kv_fp8[
+                DType.bfloat16, DType.float8_e4m3fn, 8, shared_index=False
+            ](
+                "unfolded_b3_h8_cl1279_topk257_seq5",
+                3,
+                1279,
+                ctx,
+                topk=257,
+                q_max_seq_len=5,
             )
             # Production shape: bs8, cache=2048, topk=2048 (every token), the
             # benchmark shape; split-K over the true 2048 domain (fold relaxes

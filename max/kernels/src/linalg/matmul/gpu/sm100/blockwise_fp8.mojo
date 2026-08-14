@@ -44,6 +44,8 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
+from internal_utils.fp8_utils import cast_saturating
+
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
 
@@ -445,10 +447,15 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
                     if m < UInt32(M) and n < UInt32(N):
-                        var c_mn = SIMD[accum_type, 2](
-                            c_frag[2 * i_vec],
-                            c_frag[2 * i_vec + 1],
-                        ).cast[c_type]()
+                        # Saturating: a plain cast of an out-of-range f32 to
+                        # FP8 yields NaN on NVIDIA (the `cvt` is not
+                        # `satfinite`). No-op for non-FP8 `c_type`.
+                        var c_mn = cast_saturating[c_type](
+                            SIMD[accum_type, 2](
+                                c_frag[2 * i_vec],
+                                c_frag[2 * i_vec + 1],
+                            )
+                        )
 
                         comptime if elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()

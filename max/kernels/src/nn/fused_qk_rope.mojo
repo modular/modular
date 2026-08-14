@@ -21,6 +21,7 @@ from std.utils.numerics import get_accum_type
 from std.complex import ComplexSIMD
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
+from internal_utils.fp8_utils import cast_saturating
 from kv_cache.types import KVCacheT, KVCollectionT
 from layout import (
     Coord,
@@ -172,7 +173,9 @@ def rope_q_proj[
 
     comptime if interleaved:
         var val_inter = q_proj.load[width=width, alignment=alignment](coord)
-        var res_inter = rope_value(val_inter, freq_val).cast[output_dtype]()
+        var res_inter = cast_saturating[output_dtype](
+            rope_value(val_inter, freq_val)
+        )
         output.store[alignment=alignment](coord, res_inter)
     else:
         comptime if has_nope_prefix:
@@ -181,7 +184,7 @@ def rope_q_proj[
                     coord
                 )
                 output.store[alignment=alignment](
-                    coord, val_pass.cast[output_dtype]()
+                    coord, cast_saturating[output_dtype](val_pass)
                 )
                 return
 
@@ -208,7 +211,7 @@ def rope_q_proj[
             )
         )
 
-        var res = rope_value(val, freq_val).cast[output_dtype]()
+        var res = cast_saturating[output_dtype](rope_value(val, freq_val))
         var output_re, output_im = res.deinterleave()
         output.store[alignment=half_alignment](coord_re, output_re)
         output.store[alignment=half_alignment](coord_im, output_im)

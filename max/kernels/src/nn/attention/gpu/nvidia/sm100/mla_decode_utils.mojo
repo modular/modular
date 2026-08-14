@@ -338,6 +338,11 @@ struct MLA_SM100_Decode_Config:
     comptime TMEM_CORR_LI: Int = Self.TMEM_CORR_SCALE + 1
     var tmem_used: Int
     var num_kv_stages: Int
+    # Depth of the MMA-operand KV ring. Equal to `num_kv_stages` everywhere
+    # except the unified-gather path, whose two KV buffers need not share a
+    # depth: only the one the MMA consumes carries the loop-carried WAR edge
+    # that bounds the steady-state rate.
+    var num_kv_mma_stages: Int
     var smem_used: Int
     var dtype_size: Int
     var num_threads: Int  # bf16: 3 WGs (MMA, softmax, correction); fp8: 4 WGs (+convert)
@@ -549,6 +554,9 @@ struct MLA_SM100_Decode_Config:
         #   P lives in a separate SMEM region (same as native FP8). P stage = BM*BN_QK*1 = 4096 bytes.
         var smem_per_kv: Int
         var smem_for_p: Int
+        # Extra depth given to the MMA-operand KV ring alone; see the
+        # unified-gather branch below. 0 on every other path.
+        var extra_mma_stages: Int = 0
         if per_token_scale_rope_aware:
             # Per-token-scale: KV stage = content FP8 + rope BF16
             smem_per_kv = (
@@ -611,6 +619,28 @@ struct MLA_SM100_Decode_Config:
             if decode_layout_g:
                 self.num_kv_stages = 4
             smem_for_p = self.num_kv_stages * (p_per_stage + gather_per_stage)
+            # Unified gather stages KV twice: the linear gather destination
+            # and the SW64 buffer the MMA reads. Only the second carries the
+            # WAR back-edge that closes the steady-state loop, so the loop's
+            # rate is bounded by (cycle weight) / (that ring's depth) and the
+            # gather ring's depth does not enter it. A symmetric extra stage
+            # costs `smem_per_stage_total` and does not fit; one extra SW64
+            # stage and its barrier pair does. Spend the leftover there only.
+            if native_fp8_unified_gather:
+                var extra_kv_stage = smem_per_kv + 2 * Self.mbar_size
+                # The sparse dispatch adds idx_bars, idx_smem and the TMEM
+                # pointer on top of `smem_used`; reserve them or the deeper
+                # ring overflows the carveout at launch rather than here.
+                var sparse_reserve = (
+                    2 * self.num_kv_stages * Self.mbar_size
+                    + 4
+                    + self.num_kv_stages * self.BN_QK * 4
+                )
+                var leftover = (
+                    available - self.num_kv_stages * smem_per_stage_total
+                )
+                if leftover >= extra_kv_stage + sparse_reserve:
+                    extra_mma_stages = 1
         else:
             smem_per_kv = self.BN_QK * self.padded_q_depth * dtype_size
             smem_for_p = 0  # P lives inside KV stages for BF16/old FP8
@@ -620,8 +650,12 @@ struct MLA_SM100_Decode_Config:
             self.num_kv_stages = (
                 Self.sm100_smem_carveout - smem_use
             ) // smem_per_kv
+        self.num_kv_mma_stages = self.num_kv_stages + extra_mma_stages
         smem_use += smem_for_p
         smem_use += self.num_kv_stages * (smem_per_kv)
+        # The deeper MMA ring's own tile plus the producer/consumer mbar pair
+        # the `fixed_barriers` count below does not cover.
+        smem_use += extra_mma_stages * (smem_per_kv + 2 * Self.mbar_size)
         # Per-token scale SMEM: N stages * 256 bytes each (only for per_token_scale_rope_aware)
         smem_use += self.num_kv_stages * self.per_token_scales_per_stage
         # We have the following resources that need smem barriers:
@@ -1262,6 +1296,7 @@ struct DecodeKVProducer[
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
     num_consumer: Int = 2,
+    num_stages: Int = config.num_kv_stages,
 ](TrivialRegisterPassable):
     """Producer side of the decode KV pipeline that loads KV tiles via TMA.
 
@@ -1277,10 +1312,13 @@ struct DecodeKVProducer[
             the consumer side is a full warpgroup independently arriving
             (not TMA/MMA-elected), as with a manual SMEM-to-SMEM
             re-staging producer/consumer pair.
+        num_stages: Ring depth (defaults to `config.num_kv_stages`). Set
+            explicitly when a kernel stages KV through two rings of
+            different depths.
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
+        Self.num_stages, 1, Self.num_producer, Self.num_consumer
     ]
 
     # One KV stage = a BN_QK x 576 logical K tile (loaded as
@@ -1361,6 +1399,7 @@ struct DecodeKVConsumer[
     config: MLA_SM100_Decode_Config,
     num_producer: Int = 1,
     num_consumer: Int = 2,
+    num_stages: Int = config.num_kv_stages,
 ](TrivialRegisterPassable):
     """Consumer side of the decode KV pipeline that waits for and releases KV stages.
 
@@ -1373,10 +1412,13 @@ struct DecodeKVConsumer[
         num_consumer: Number of consumer threads arriving on each consumer
             mbarrier (defaults to 2, matching the standard mmaQK+mmaPV
             dual-consumer KV pipeline).
+        num_stages: Ring depth (defaults to `config.num_kv_stages`). Set
+            explicitly when a kernel stages KV through two rings of
+            different depths.
     """
 
     comptime KVPipeType = KVPipelineGeneric[
-        Self.config.num_kv_stages, 1, Self.num_producer, Self.num_consumer
+        Self.num_stages, 1, Self.num_producer, Self.num_consumer
     ]
     # Stage element count tracks the producer (BN_QK x q_depth).
     comptime kv_stage_elems = Self.config.BN_QK * Self.config.q_depth
@@ -3501,32 +3543,62 @@ struct MLA_SM100_Decode_Common[
         var use_sparse_causal_logical: Bool = False
         comptime if SparseCausalLogical:
             use_sparse_causal_logical = Bool(logical_indices)
+            if use_sparse_causal_logical:
+                # Decide visibility for the whole group up front and hand the
+                # element loop the same `mask_bits` word every other mask
+                # produces. Deciding it per element instead put the read
+                # INSIDE the loop's branch, so each of the half_load reads
+                # paid its own memory latency. The slots are contiguous in
+                # `i`; reading them in batches lets a batch share one
+                # latency, and a short batch keeps the live set from growing
+                # by all half_load positions.
+                #
+                # Slots at or past `logical_indices_len` are the gather's
+                # clamped overflow and must be masked WITHOUT a read (see
+                # that argument's docstring). Carrying that bound on the LOOP
+                # rather than per element keeps the set of addresses read
+                # here exactly the set the per-element form read.
+                comptime logical_batch = 8
+                var n_readable = max(
+                    min(logical_indices_len - col_base, half_load), 0
+                )
+                var logical_row = logical_indices.unsafe_value() + (
+                    q_token_idx * logical_indices_stride + col_base
+                )
+                # `pos <= causal_limit - 1` in 32 bits is `pos <
+                # causal_limit` in Int, for every position `logical_indices`
+                # can represent: causal_limit >= 1 here (CausalMask is
+                # required), and saturating the bound keeps a horizon wider
+                # than Int32 admitting every slot, as the Int compare did.
+                var causal_last = SIMD[DType.int32, logical_batch](
+                    Int32(min(causal_limit - 1, Int(Int32.MAX)))
+                )
+                # -1 marks a padding slot, so the low bound rejects it.
+                comptime lowest_pos = SIMD[DType.int32, logical_batch](0)
+                var logical_bits: UInt32 = 0
+                var slot = 0
+                while slot + logical_batch <= n_readable:
+                    var pos = logical_row.load[
+                        width=logical_batch, alignment=4
+                    ](slot)
+                    var visible = pos.ge(lowest_pos) & pos.le(causal_last)
+                    var batch_bits: UInt32 = 0
+                    comptime for j in range(logical_batch):
+                        if visible[j]:
+                            batch_bits |= UInt32(1) << UInt32(j)
+                    logical_bits |= batch_bits << UInt32(slot)
+                    slot += logical_batch
+                while slot < n_readable:
+                    var pos = logical_row[slot]
+                    if pos >= 0 and pos <= causal_last[0]:
+                        logical_bits |= UInt32(1) << UInt32(slot)
+                    slot += 1
+                mask_bits = logical_bits
 
         comptime for i in range(0, half_load):
-            var in_bound: Bool
-            comptime if SparseCausalLogical:
-                if use_sparse_causal_logical and (
-                    col_base + i < logical_indices_len
-                ):
-                    # Mask this score-sorted slot by its logical key position
-                    # (-1 = padding). Slots past logical_indices_len are the
-                    # gather's clamped overflow and are masked below without a
-                    # read (see logical_indices_len for the safety rationale).
-                    var logical_pos = Int(
-                        logical_indices.unsafe_value()[
-                            q_token_idx * logical_indices_stride + col_base + i
-                        ]
-                    )
-                    in_bound = logical_pos >= 0 and logical_pos < causal_limit
-                elif use_sparse_causal_logical:
-                    in_bound = False
-                else:
-                    var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
-                    in_bound = bit != UInt32(0)
-            else:
-                # rank1-style mask_r2p: turn bit into predicate and use it to select
-                var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
-                in_bound = bit != UInt32(0)
+            # rank1-style mask_r2p: turn bit into predicate and use it to select
+            var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
+            var in_bound: Bool = bit != UInt32(0)
             # masked_val = s_row[i]      if in_bound
             #            = MASK_VALUE    otherwise (finite sentinel; see
             #            module-level comment on MASK_VALUE for why)
