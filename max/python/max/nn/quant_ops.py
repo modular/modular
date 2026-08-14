@@ -273,12 +273,8 @@ def _matmul_float8_mxfp8(
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
-        return dynamic_block_scaled_matmul_amd(
-            x_fp8,
-            weight,
-            x_scales,
-            weight_scale.to(x.device),
-            out_type=DType.bfloat16,
+        return _matmul_float8_mxfp8_prequantized(
+            x_fp8, x_scales, weight, weight_scale
         )
 
     x, x_scales = quantize_dynamic_block_scaled(
@@ -299,6 +295,40 @@ def _matmul_float8_mxfp8(
         x_scales,
         weight_scale,
         sf_vector_size=32,
+        out_type=DType.bfloat16,
+    )
+
+
+def _matmul_float8_mxfp8_prequantized(
+    x_fp8: TensorValue,
+    x_scales: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Computes the AMD MXFP8 matmul from an already-quantized activation.
+
+    The AMD arm of :func:`_matmul_float8_mxfp8`, minus the dynamic quantize:
+    single owner for the operand order, scale layout (rank-2 E8M0, no SF-atom
+    interleave on CDNA), and output dtype. Callers that produce the
+    ``(data, scales)`` pair themselves -- e.g. the MSA attention op that fuses
+    the quantize into its split-K combine -- must go through here so a scale
+    layout change lands in one place.
+
+    Args:
+        x_fp8: The activation in ``float8_e4m3fn``, shape ``[M, K]``.
+        x_scales: The activation's E8M0 block scales, rank-2 ``[M, K // 32]``.
+        weight: The weight tensor in ``float8_e4m3fn``, shape ``[N, K]``.
+        weight_scale: The E8M0 weight scales, rank-2 ``[N, K // 32]`` as loaded
+            from the checkpoint.
+
+    Returns:
+        The output tensor in bf16, shape ``[M, N]``.
+    """
+    return dynamic_block_scaled_matmul_amd(
+        x_fp8,
+        weight,
+        x_scales,
+        weight_scale.to(x_fp8.device),
         out_type=DType.bfloat16,
     )
 

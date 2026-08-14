@@ -45,6 +45,11 @@ from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import KVCacheParams, MHAKVCacheParams, PagedCacheValues
 
+# Elements sharing one MX block scale, matching `MXFP8_SF_VECTOR_SIZE` /
+# `MXFP4_SF_VECTOR_SIZE` in `linalg` and the `sf_vector_size=32` the MX
+# quantize wrappers take.
+_MX_SF_VECTOR_SIZE = 32
+
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
     MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
     MHAMaskVariant.NULL_MASK: AttentionMaskVariant.NULL_MASK,
@@ -2968,10 +2973,150 @@ def msa_sparse_attention_ragged(
         Output tensor ``[total_q, n_heads, head_dim]`` (prefill) or
         ``[batch, n_heads, head_dim]`` (decode), BF16.
     """
+    values = _msa_sparse_attention_ragged_values(
+        input=input,
+        input_row_offsets=input_row_offsets,
+        cache_row_offsets=cache_row_offsets,
+        total_context_length=total_context_length,
+        kv_collection=kv_collection,
+        layer_idx=layer_idx,
+        block_indices=block_indices,
+        topk=topk,
+        scale=scale,
+    )
+
+    return ops.inplace_custom(
+        "mo.msa.attention.ragged.paged",
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape,
+                device=input.device,
+            )
+        ],
+        parameters={
+            "group": group,
+            "topk": topk,
+        },
+    )[0].tensor
+
+
+def msa_sparse_attention_ragged_mxfp8(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_row_offsets: TensorValue,
+    total_context_length: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    block_indices: TensorValue,
+    *,
+    group: int,
+    topk: int,
+    scale: float,
+) -> tuple[TensorValue, TensorValue]:
+    """Computes MiniMax-M3 block-sparse attention, emitting MXFP8 + scales.
+
+    AMD (gfx950) variant of :func:`msa_sparse_attention_ragged` whose output
+    is the o_proj-ready MXFP8 activation instead of BF16: quantized data
+    ``[num_rows, n_heads, head_dim]`` in ``float8_e4m3fn`` plus E8M0 block
+    scales ``[num_rows, n_heads * head_dim // 32]`` -- the same pair
+    :func:`quantize_dynamic_block_scaled` produces from the BF16 output, so
+    it feeds :func:`dynamic_block_scaled_matmul_amd` directly and the
+    separate quantize dispatch is skipped. Bit-identical to that unfused
+    pair; on split-K decode shapes the quantize fuses into the reduce and
+    saves a dispatch.
+
+    Args:
+        kv_params: Key-value cache parameters for the main KV cache.
+        input: Query tensor ``[total_q, n_heads, head_dim]`` (prefill) or
+            ``[batch, n_heads, head_dim]`` (decode); dtype matches the KV
+            cache (BF16 or FP8 e4m3).
+        input_row_offsets: Ragged query offsets ``[batch + 1]`` uint32.
+        cache_row_offsets: Ragged valid-cache offsets ``[batch + 1]`` uint32.
+        total_context_length: Total padded cache length for the batch, CPU
+            scalar ``[1]`` uint32.
+        kv_collection: Main paged KV cache (BF16 or FP8 e4m3, no scales).
+        layer_idx: Layer index, uint32, on CPU.
+        block_indices: Selected block ids. Prefill: ``[n_kv_heads, total_q,
+            topk]``; decode: ``[n_kv_heads, batch, topk]``. int32.
+        group: Query heads per kv-head (``n_heads // n_kv_heads``).
+        topk: Number of gathered KV blocks per token.
+        scale: QK scale.
+
+    Returns:
+        The quantized attention output ``[total_q, n_heads, head_dim]``
+        ``float8_e4m3fn`` and its E8M0 block scales ``[total_q,
+        n_heads * head_dim // 32]``.
+    """
+    values = _msa_sparse_attention_ragged_values(
+        input=input,
+        input_row_offsets=input_row_offsets,
+        cache_row_offsets=cache_row_offsets,
+        total_context_length=total_context_length,
+        kv_collection=kv_collection,
+        layer_idx=layer_idx,
+        block_indices=block_indices,
+        topk=topk,
+        scale=scale,
+    )
+
+    # One E8M0 scale per block of the flattened [n_heads * head_dim] row,
+    # matching `quantize_dynamic_block_scaled`'s rank-2 AMD layout.
+    row_width = input.shape[1] * input.shape[2]
+    if int(row_width) % _MX_SF_VECTOR_SIZE != 0:
+        raise ValueError(
+            "n_heads * head_dim must be a multiple of"
+            f" {_MX_SF_VECTOR_SIZE}, got {row_width}"
+        )
+
+    results = ops.inplace_custom(
+        "mo.msa.attention.ragged.paged.mxfp8",
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=input.shape,
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[input.shape[0], row_width // _MX_SF_VECTOR_SIZE],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group": group,
+            "topk": topk,
+        },
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def _msa_sparse_attention_ragged_values(
+    *,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_row_offsets: TensorValue,
+    total_context_length: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    block_indices: TensorValue,
+    topk: int,
+    scale: float,
+) -> list[Value[Any]]:
+    """Validates and builds the shared operand list for the MSA attention ops.
+
+    ``mo.msa.attention.ragged.paged`` and its ``.mxfp8`` variant take the
+    identical input operands in the identical order; only their outputs
+    differ. Keeping the list in one place keeps them from drifting.
+    """
     # The KV cache dtype selects the kernel's compute dtype. `input` (the query)
     # must match `kv_collection.kv_blocks`: BF16, or native FP8 e4m3 for an FP8
-    # KV cache. The kernel infers `kv_type` from these operands and always emits
-    # a BF16 output.
+    # KV cache. The kernel infers `kv_type` from these operands.
     if input.dtype not in (DType.bfloat16, DType.float8_e4m3fn):
         raise ValueError(
             f"input must be bfloat16 or float8_e4m3fn, got {input.dtype}"
@@ -3050,23 +3195,7 @@ def msa_sparse_attention_ragged(
         block_indices,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-
-    return ops.inplace_custom(
-        "mo.msa.attention.ragged.paged",
-        device=input.device,
-        values=values,
-        out_types=[
-            TensorType(
-                dtype=DType.bfloat16,
-                shape=input.shape,
-                device=input.device,
-            )
-        ],
-        parameters={
-            "group": group,
-            "topk": topk,
-        },
-    )[0].tensor
+    return values
 
 
 def flash_attention_gpu(
