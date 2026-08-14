@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-import os
-
+import hf_repo_lock
 import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.graph.weights import WeightsFormat
@@ -32,11 +31,12 @@ from test_common.pipeline_model_dummy import (
 )
 from test_common.registry import prepare_registry
 
-requires_hf_network = pytest.mark.skipif(
-    os.environ.get("HF_HUB_OFFLINE", "0") == "1",
-    reason="Resolves a live HuggingFace repo; presubmit runs offline, the HF "
-    "workflow covers this (MODELS-890)",
+_HF_REPO_ID = "trl-internal-testing/tiny-random-LlamaForCausalLM"
+_locked_revision = hf_repo_lock.revision_for_hf_repo(_HF_REPO_ID)
+assert _locked_revision is not None, (
+    f"{_HF_REPO_ID} is missing from hf-repo-lock.tsv"
 )
+_HF_REVISION: str = _locked_revision
 
 
 @prepare_registry
@@ -153,7 +153,6 @@ def test_registry__retrieve_architecture_module_v3() -> None:
 
 
 @prepare_registry
-@requires_hf_network
 def test_config__prefer_module_v3_default_is_false() -> None:
     """Test that prefer_module_v3 defaults to False in PipelineConfig for backward compat."""
     # Register ModuleV2 arch (matches prefer_module_v3=False)
@@ -178,7 +177,8 @@ def test_config__prefer_module_v3_default_is_false() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
+                    huggingface_model_revision=_HF_REVISION,
                     quantization_encoding="float32",
                     max_length=128,
                 )
@@ -191,7 +191,6 @@ def test_config__prefer_module_v3_default_is_false() -> None:
 
 
 @prepare_registry
-@requires_hf_network
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
@@ -219,7 +218,8 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
+                    huggingface_model_revision=_HF_REVISION,
                     quantization_encoding="float32",
                     max_length=128,
                 )
@@ -232,7 +232,6 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
 
 
 @prepare_registry
-@requires_hf_network
 def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
     """Test that prefer_module_v3=True falls back to ModuleV2 when no ModuleV3 registered."""
     # Only register the ModuleV2 architecture (standard HF name)
@@ -257,7 +256,8 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
+                    huggingface_model_revision=_HF_REVISION,
                     # Use only one GPU since this model does not support multi-GPU inference.
                     device_specs=[DeviceSpec.accelerator()],
                     quantization_encoding="float32",
@@ -301,7 +301,6 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
 
 
 @prepare_registry
-@requires_hf_network
 @pytest.mark.skipif(
     accelerator_count() > 1, reason="Test requires single GPU or CPU"
 )
@@ -328,7 +327,8 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
+                    model_path=_HF_REPO_ID,
+                    huggingface_model_revision=_HF_REVISION,
                     quantization_encoding="float32",
                     max_length=128,
                 )
