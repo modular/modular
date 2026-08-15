@@ -178,8 +178,8 @@ class Line:
         except IndexError:
             second_leaf = None
 
-        leaf_is_def = (
-            lambda leaf: leaf.type == token.NAME and leaf.value == "def"
+        leaf_is_def = lambda leaf: (
+            leaf.type == token.NAME and leaf.value == "def"
         )
         return (
             first_leaf.type == token.MLIR_REGION
