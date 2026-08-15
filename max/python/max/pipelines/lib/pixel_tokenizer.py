@@ -44,7 +44,6 @@ from max.pipelines.request.provider_options import (
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
-    import PIL.Image
     from max.pipelines.lib.config import PipelineConfig
 
 logger = logging.getLogger("max.pipelines")

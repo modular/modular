@@ -172,8 +172,6 @@ ignore = [
   "S110",
   "S112",
   "SIM910",
-  "TC004",
-  "TC005",
 ]
 extend-select = [
   "ANN", # Require function type annotations

@@ -21,10 +21,7 @@ production :class:`GreedyReshard` to check what the picker selects.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 from max.driver import CPU
 from max.experimental.sharding import (
