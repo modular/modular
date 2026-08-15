@@ -540,7 +540,7 @@ def debug_assert[
 
 @no_inline
 def _debug_assert_msg(
-    message: Pointer[mut=False, Byte, _], length: Int, loc: SourceLocation
+    message: ImmPointer[Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

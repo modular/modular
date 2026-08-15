@@ -43,7 +43,7 @@ def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-def _read_small(data: Pointer[mut=False, UInt8, _], length: Int) -> U128:
+def _read_small(data: ImmPointer[UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -250,9 +250,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         return (folded << rot) | (folded >> ((UInt64(64) - rot) & UInt64(63)))
 
 
-def hash_seeded_bytes(
-    data: Pointer[mut=False, UInt8, _], n: Int, seed: U256
-) -> UInt64:
+def hash_seeded_bytes(data: ImmPointer[UInt8, _], n: Int, seed: U256) -> UInt64:
     """Hashes a sequence of bytes with a runtime seed mixed into AHash's keyed state.
 
     Seeded analogue of `hash(bytes, n)`. An all-zero `seed` reproduces

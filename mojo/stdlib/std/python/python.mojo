@@ -66,7 +66,7 @@ def _get_python_interface() raises -> Pointer[CPython, ImmStaticOrigin]:
 struct Python(Defaultable, ImplicitlyCopyable):
     """Provides methods that help you use Python code in Mojo."""
 
-    var _impl: Pointer[mut=False, CPython, ImmStaticOrigin]
+    var _impl: ImmPointer[CPython, ImmStaticOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
     # ===-------------------------------------------------------------------===#
@@ -87,7 +87,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         Args:
             cpython: Reference to the `CPython` singleton.
         """
-        self._impl = Pointer[mut=False, CPython, MutAnyOrigin](
+        self._impl = ImmPointer[CPython, MutAnyOrigin](
             to=cpython
         ).unsafe_origin_cast[ImmStaticOrigin]()
 

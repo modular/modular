@@ -569,13 +569,15 @@ struct Pointer[
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().write({})
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
+        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
+            {}
+        )
 
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(memory: Pointer[mut=False, MaybeUninit[Self], _]) -> Bool:
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
         comptime NullType = _Null[Self.T, Self.address_space]
         comptime null_address = Int(NullType())
         return Int(memory.unsafe_bitcast[NullType]()[]) == null_address
@@ -1268,7 +1270,7 @@ struct Pointer[
     @always_inline("nodebug")
     def swap_pointees[
         U: Movable
-    ](self: Pointer[mut=True, U, _], other: Pointer[mut=True, U, _],):
+    ](self: MutPointer[U, _], other: MutPointer[U, _],):
         """Swap the values at the pointers.
 
         This function assumes that `self` and `other` _may_ overlap in memory.
@@ -1634,7 +1636,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -1680,7 +1682,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -1724,7 +1726,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         """Stores a single element value `val` at element offset 0.
 
         Specify `alignment` when writing to packed/unaligned memory. Requires a
@@ -1784,7 +1786,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: I,
         val: SIMD[dtype, width],
     ):
@@ -1809,7 +1811,7 @@ struct Pointer[
         volatile: Bool = False,
         non_temporal: Bool = False,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: Scalar[offset_type],
         val: SIMD[dtype, width],
     ):
@@ -1832,7 +1834,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         self.unsafe_store[
             width,
             alignment=alignment,
@@ -1849,7 +1851,7 @@ struct Pointer[
         alignment: Int = align_of[dtype](),
         volatile: Bool = False,
         non_temporal: Bool = False,
-    ](self: Pointer[mut=True, Scalar[dtype], ...], val: SIMD[dtype, width]):
+    ](self: MutPointer[Scalar[dtype], ...], val: SIMD[dtype, width]):
         comptime assert width > 0, "width must be a positive integer value"
         comptime assert (
             alignment > 0
@@ -1917,7 +1919,7 @@ struct Pointer[
         //,
         width: SIMDLength = 1,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: S,
     ):
@@ -1953,7 +1955,7 @@ struct Pointer[
         //,
         width: SIMDLength = 1,
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         val: SIMD[dtype, width],
         stride: S,
     ):
@@ -2066,7 +2068,7 @@ struct Pointer[
         width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -2145,7 +2147,7 @@ struct Pointer[
         width: SIMDLength = 1,
         alignment: Int = align_of[dtype](),
     ](
-        self: Pointer[mut=True, Scalar[dtype], ...],
+        self: MutPointer[Scalar[dtype], ...],
         offset: SIMD[_, width],
         val: SIMD[dtype, width],
         mask: SIMD[DType.bool, width] = SIMD[DType.bool, width](fill=True),
@@ -2156,13 +2158,13 @@ struct Pointer[
     @doc_hidden
     @always_inline
     @deprecated(use=unsafe_free)
-    def free(self: Pointer[mut=True, Self.T, ...]):
+    def free(self: MutPointer[Self.T, ...]):
         """Free the memory referenced by the pointer."""
         _free(self)
 
     @__allow_legacy_custom_self_type
     @always_inline
-    def unsafe_free(self: Pointer[mut=True, Self.T, ...]):
+    def unsafe_free(self: MutPointer[Self.T, ...]):
         """Frees the memory referenced by the pointer."""
         _free(self)
 

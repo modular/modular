@@ -56,7 +56,7 @@ struct amd_signal_t(Copyable):
 
 
 @always_inline
-def update_mbox(sig: Pointer[mut=False, amd_signal_t, ...]):
+def update_mbox(sig: ImmPointer[amd_signal_t, ...]):
     var mb = sig[].event_mailbox_ptr
     if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
         var mb_ptr = Pointer[
@@ -658,7 +658,7 @@ struct Buffer(TrivialRegisterPassable):
             )
         )
 
-    def pop(mut self, top: Pointer[mut=True, UInt64, ...]) -> UInt64:
+    def pop(mut self, top: MutPointer[UInt64, ...]) -> UInt64:
         var f = Atomic.load[ordering=Ordering.ACQUIRE](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
@@ -690,7 +690,7 @@ struct Buffer(TrivialRegisterPassable):
 
         return readfirstlane(packet_ptr)
 
-    def push(mut self, top: Pointer[mut=True, UInt64, ...], ptr: UInt64):
+    def push(mut self, top: MutPointer[UInt64, ...], ptr: UInt64):
         var f = Atomic.load[ordering=Ordering.RELAXED](top)
         var p = self.get_header(ptr)
         while True:

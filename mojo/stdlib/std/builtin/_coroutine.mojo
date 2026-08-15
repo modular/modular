@@ -127,7 +127,7 @@ struct Coroutine[type: Deinitable, origins: OriginSet](
         }
 
     @always_inline
-    def _set_result_slot(self, slot: Pointer[mut=True, Self.type, ...]):
+    def _set_result_slot(self, slot: MutPointer[Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot._get_kgen_pointer()
         )
@@ -236,8 +236,8 @@ struct RaisingCoroutine[type: AnyType, origins: OriginSet](
     @always_inline
     def _set_result_slot(
         self,
-        slot: Pointer[mut=True, Self.type, ...],
-        err: Pointer[mut=False, Error, ...],
+        slot: MutPointer[Self.type, ...],
+        err: ImmPointer[Error, ...],
     ):
         __mlir_op.`co.set_byref_error_result`(
             self._handle, slot._get_kgen_pointer(), err._get_kgen_pointer()

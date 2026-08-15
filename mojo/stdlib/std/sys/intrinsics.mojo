@@ -527,7 +527,7 @@ def masked_load[
     size: SIMDLength,
     alignment: Int = 1,
 ](
-    addr: Pointer[mut=False, Scalar[dtype], ...],
+    addr: ImmPointer[Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
     passthrough: SIMD[dtype, size],
 ) -> SIMD[dtype, size]:
@@ -575,7 +575,7 @@ def masked_store[
     alignment: Int = 1,
 ](
     value: SIMD,
-    addr: Pointer[mut=True, Scalar[value.dtype], ...],
+    addr: MutPointer[Scalar[value.dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Stores a value at a memory location, skipping masked lanes.
@@ -614,7 +614,7 @@ def compressed_store[
     dtype: DType, size: SIMDLength
 ](
     value: SIMD[dtype, size],
-    addr: Pointer[mut=True, Scalar[dtype], ...],
+    addr: MutPointer[Scalar[dtype], ...],
     mask: SIMD[DType.bool, size],
 ):
     """Compresses the lanes of `value`, skipping `mask` lanes, and stores
@@ -651,7 +651,7 @@ def compressed_store[
 def strided_load[
     dtype: DType, //, simd_width: SIMDLength, *, invariant: Bool = False
 ](
-    addr: Pointer[mut=False, Scalar[dtype], ...],
+    addr: ImmPointer[Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True
@@ -709,7 +709,7 @@ def strided_store[
     dtype: DType, //, simd_width: SIMDLength
 ](
     value: SIMD[dtype, simd_width],
-    addr: Pointer[mut=True, Scalar[dtype], ...],
+    addr: MutPointer[Scalar[dtype], ...],
     stride: Int,
     mask: SIMD[DType.bool, simd_width] = SIMD[DType.bool, simd_width](
         fill=True

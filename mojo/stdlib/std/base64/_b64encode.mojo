@@ -195,7 +195,7 @@ def _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sig
 
 def load_incomplete_simd[
     width: Int
-](pointer: Pointer[mut=False, UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
+](pointer: ImmPointer[UInt8, _], nb_of_elements_to_load: Int) -> SIMD[
     DType.uint8, width
 ]:
     var result = SIMD[DType.uint8, width](0)
@@ -207,7 +207,7 @@ def load_incomplete_simd[
 
 
 @no_inline
-def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
+def _b64encode(input_bytes: ImmSpan[Byte, _], mut result: String):
     comptime simd_width = simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))

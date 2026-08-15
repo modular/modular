@@ -34,7 +34,7 @@ from std.sys import CompilationTarget
 
 
 @always_inline
-def free(ptr: Pointer[mut=True, NoneType, ...]):
+def free(ptr: MutPointer[NoneType, ...]):
     # manually construct the call to free and attach the
     # correct attributes
     __mlir_op.`pop.external_call`[
@@ -75,7 +75,7 @@ comptime FILE_ptr = OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
 
 
 @always_inline
-def fdopen(fd: c_int, mode: Pointer[mut=False, c_char, _]) -> FILE_ptr:
+def fdopen(fd: c_int, mode: ImmPointer[c_char, _]) -> FILE_ptr:
     return external_call["fdopen", FILE_ptr](fd, mode)
 
 
@@ -91,8 +91,8 @@ def fflush(stream: FILE_ptr) -> c_int:
 
 @always_inline
 def popen(
-    command: Pointer[mut=False, c_char, _],
-    type: Pointer[mut=False, c_char, _],
+    command: ImmPointer[c_char, _],
+    type: ImmPointer[c_char, _],
 ) -> FILE_ptr:
     return external_call["popen", FILE_ptr](command, type)
 
@@ -105,7 +105,7 @@ def pclose(stream: FILE_ptr) -> c_int:
 @always_inline
 def setvbuf(
     stream: FILE_ptr,
-    buffer: Pointer[mut=True, c_char, _],
+    buffer: MutPointer[c_char, _],
     mode: c_int,
     size: c_size_t,
 ) -> c_int:
@@ -135,7 +135,7 @@ def posix_spawnp[
     argv_origin: ImmOrigin,
     //,
 ](
-    pid: Pointer[mut=True, c_pid_t, _],
+    pid: MutPointer[c_pid_t, _],
     file: CStringSlice[_],
     argv: Pointer[Optional[CStringSlice[argv_origin]], _],
     envp: OptionalPointer[
@@ -209,8 +209,8 @@ def execvp[
     origin: ImmOrigin,
     //,
 ](
-    file: Pointer[mut=False, c_char, _],
-    argv: Pointer[mut=False, OptionalPointer[mut=False, c_char, origin], _],
+    file: ImmPointer[c_char, _],
+    argv: ImmPointer[OptionalPointer[mut=False, c_char, origin], _],
 ) -> c_int:
     """[`execvp`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/exec.html)
     — execute a file.
@@ -247,7 +247,7 @@ def kill(pid: c_int, sig: c_int) -> c_int:
 
 
 @always_inline
-def pipe(fildes: Pointer[mut=True, c_int, _]) -> c_int:
+def pipe(fildes: MutPointer[c_int, _]) -> c_int:
     """[`pipe()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/pipe.html) — create an interprocess channel.
     """
     return external_call["pipe", c_int](fildes)
@@ -262,9 +262,7 @@ def close(fd: c_int) -> c_int:
 
 
 @always_inline
-def write(
-    fd: c_int, buf: OpaquePointer[mut=False, _], nbyte: c_size_t
-) -> c_int:
+def write(fd: c_int, buf: ImmOpaquePointer[_], nbyte: c_size_t) -> c_int:
     """[`write()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/write.html)
     — write to a file descriptor.
     """
@@ -286,7 +284,7 @@ struct WaitFlags:
 @always_inline
 def waitpid(
     pid: c_pid_t,
-    status: Pointer[mut=True, c_int, _],
+    status: MutPointer[c_int, _],
     options: c_int,
 ) -> c_pid_t:
     """[`waitpid()`](https://pubs.opengroup.org/onlinepubs/9799919799/functions/waitpid.html)
@@ -352,7 +350,7 @@ def dlsym[
     result_type: AnyType = NoneType
 ](
     handle: OptionalPointer[NoneType, _],
-    name: Pointer[mut=False, c_char, _],
+    name: ImmPointer[c_char, _],
     out result: OptionalPointer[result_type, MutUntrackedOrigin],
 ):
     result = external_call["dlsym", type_of(result)](handle, name)
@@ -360,7 +358,7 @@ def dlsym[
 
 def realpath(
     path: CStringSlice[_],
-    resolved_path: Pointer[mut=True, c_char, _],
+    resolved_path: MutPointer[c_char, _],
     out result: OptionalPointer[c_char, MutUntrackedOrigin],
 ):
     """Expands all symbolic links and resolves references to /./, /../ and extra

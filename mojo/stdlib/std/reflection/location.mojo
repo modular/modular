@@ -167,7 +167,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     @staticmethod
     @always_inline
     @doc_hidden
-    def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
+    def write_niche(memory: MutPointer[MaybeUninit[Self], _]):
         memory.unsafe_bitcast[Byte]().unsafe_offset(
             Self._LineByteOffset
         ).unsafe_bitcast[Int]().write(Self._LineNiche)
@@ -175,7 +175,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     @staticmethod
     @always_inline
     @doc_hidden
-    def isa_niche(memory: Pointer[mut=False, MaybeUninit[Self], _]) -> Bool:
+    def isa_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> Bool:
         return (
             memory.unsafe_bitcast[Byte]()
             .unsafe_offset(Self._LineByteOffset)

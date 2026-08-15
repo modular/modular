@@ -322,7 +322,7 @@ def _printf[
 @no_inline
 def _snprintf[
     fmt: StaticString, *types: AnyType
-](str: Pointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
+](str: MutPointer[UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:

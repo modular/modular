@@ -164,7 +164,7 @@ struct _FormatUtils:
 
         @always_inline
         def _build_slice(
-            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
                 unsafe_from_utf8=Span(
@@ -527,7 +527,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         def _build_slice(
-            p: Pointer[mut=False, UInt8, _], start: Int, end: Int
+            p: ImmPointer[UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(
                 unsafe_from_utf8=Span[UInt8, p.origin](

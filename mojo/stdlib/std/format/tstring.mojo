@@ -17,7 +17,7 @@ import std.format._utils as fmt
 
 
 @always_inline
-def _strlen(ptr: Pointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
     var offset = 0
     while ptr[unsafe_offset=offset]:
         offset += 1
@@ -56,7 +56,7 @@ struct TString[
 
     @always_inline
     def _write_to_impl(
-        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte, _]
+        self, mut writer: Some[Writer], encoded_bytes: ImmSpan[Byte, _]
     ):
         var offset = 0
 

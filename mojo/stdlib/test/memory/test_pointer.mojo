@@ -124,9 +124,7 @@ def test_nicheable() raises:
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def _test_get_imm() raises -> Int:
-    def foo(
-        x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
-    ) -> Int:
+    def foo(x: ImmPointer[Int, ...], y: ImmPointer[Int, ...]) -> Int:
         return x[]
 
     var x = Int(0)

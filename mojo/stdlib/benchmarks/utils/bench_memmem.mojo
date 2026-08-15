@@ -149,8 +149,8 @@ from std.benchmark import black_box, keep
 def _memmem_baseline[
     dtype: DType
 ](
-    haystack: Span[mut=False, Scalar[dtype], _],
-    needle: Span[mut=False, Scalar[dtype], _],
+    haystack: ImmSpan[Scalar[dtype], _],
+    needle: ImmSpan[Scalar[dtype], _],
 ) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     if not needle:
         return haystack.unsafe_ptr()
