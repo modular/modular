@@ -155,6 +155,8 @@ def test_unset_width_bakes_fifteen_into_every_kv_leaf() -> None:
             num_key_value_heads=2,
             head_dim=16,
             global_head_dim=32,
+            # Matches the real gemma-4-31B-it config's sliding window.
+            sliding_window=1024,
         )
     )
     kv_params = UnifiedDflashGemma4_31BModel.get_kv_params(

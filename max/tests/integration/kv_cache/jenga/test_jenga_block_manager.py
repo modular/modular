@@ -18,8 +18,10 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pytest
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext, TokenBuffer
-from max.pipelines.kv_cache import InsufficientBlocksError, KVCacheGroupId
+from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
     KVLeafInfo,
@@ -114,13 +116,13 @@ def test_claim_and_alloc() -> None:
     bm.claim(ctx)
     bm.alloc(ctx)
 
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2, 3]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2, 3]
 
     for _ in range(4):
         ctx.update(42)
     bm.alloc(ctx)
 
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2, 3, 4, 5, 6, 7]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2, 3, 4, 5, 6, 7]
 
 
 def test_release() -> None:
@@ -132,22 +134,22 @@ def test_release() -> None:
     # Allocate blocks for A
     bm.claim(ctxA)
     bm.alloc(ctxA)
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 2, 3]
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 2, 3]
 
     # No blocks left for B
-    assert bm.num_free_huge_blocks() == 0
+    assert bm.huge_block_count().free == 0
     bm.claim(ctxB)
     with pytest.raises(InsufficientBlocksError):
         bm.alloc(ctxB)
 
     # Once we release A, there is space recovered
     bm.release(ctxA)
-    assert bm.num_free_huge_blocks() == 3
+    assert bm.huge_block_count().free == 3
 
     # Allocate blocks for B. A is released tail first, so its last block is the
     # first one handed back out -- see test_release_recycles_the_tail_first.
     bm.alloc(ctxB)
-    assert bm.get_req_blocks(ctxB)[FULL] == [3, 2, 1]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [3, 2, 1]
 
 
 def test_release_recycles_the_tail_first() -> None:
@@ -168,21 +170,21 @@ def test_release_recycles_the_tail_first() -> None:
     bm.alloc(ctxA)
     ctxA.update(42)
     bm.step(ctxA)
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 2, 3, 4]
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 2, 3, 4]
     bm.release(ctxA)
 
     # An unrelated request takes A's last two blocks, evicting what they held.
     ctxB = make_ctx_with_tokens([99, 98])
     bm.claim(ctxB)
     bm.alloc(ctxB)
-    assert bm.get_req_blocks(ctxB)[FULL] == [4, 3]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [4, 3]
 
     # A's first block was the last to be overwritten, so it is still there for
     # a request that shares its prefix.
     ctxC = make_ctx(num_tokens=2)
     bm.claim(ctxC)
     bm.alloc(ctxC)
-    assert bm.get_req_blocks(ctxC)[FULL] == [1, 2]
+    assert bm.get_req_blocks_per_leaf(ctxC)[FULL] == [1, 2]
     assert ctxC.tokens.processed_length == 1
 
 
@@ -192,13 +194,13 @@ def test_ratio() -> None:
 
     bm.claim(ctx)
     # 1 of the 10 huge blocks is reserved for the null block.
-    assert bm.num_free_huge_blocks() == 9
+    assert bm.huge_block_count().free == 9
     bm.alloc(ctx)
     # 1 huge block is used for the new request.
-    assert bm.num_free_huge_blocks() == 8
+    assert bm.huge_block_count().free == 8
 
     # With ratio 3, the first non-null block is the 3rd one.
-    assert bm.get_req_blocks(ctx)[FULL] == [3, 4, 5]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [3, 4, 5]
 
 
 def test_block_size() -> None:
@@ -208,17 +210,17 @@ def test_block_size() -> None:
     # Need 1 block to hold 3 tokens.
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1]
 
     # 4 tokens still fits in 1 block.
     ctx.update(42)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1]
 
     # 5 tokens needs 2 blocks.
     ctx.update(42)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2]
 
 
 def test_huge_block_shared_by_different_req() -> None:
@@ -231,13 +233,13 @@ def test_huge_block_shared_by_different_req() -> None:
 
     # Notice that huge_page=2 corresponds to little_pages=6,7,8 and they are
     # split between the two requests.
-    assert bm.num_free_huge_blocks() == 3
+    assert bm.huge_block_count().free == 3
     bm.alloc(ctxA)
-    assert bm.get_req_blocks(ctxA)[FULL] == [3, 4, 5, 6, 7]
-    assert bm.num_free_huge_blocks() == 1
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [3, 4, 5, 6, 7]
+    assert bm.huge_block_count().free == 1
     bm.alloc(ctxB)
-    assert bm.get_req_blocks(ctxB)[FULL] == [8, 9, 10, 11]
-    assert bm.num_free_huge_blocks() == 0
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [8, 9, 10, 11]
+    assert bm.huge_block_count().free == 0
 
 
 def test_little_block_cannot_be_shared_by_different_req() -> None:
@@ -264,11 +266,11 @@ def test_little_block_cannot_be_shared_by_different_req() -> None:
     bm.alloc(ctxA)
     with pytest.raises(InsufficientBlocksError):
         bm.alloc(ctxB)
-    assert bm.num_free_huge_blocks() == 1
+    assert bm.huge_block_count().free == 1
     # A's blocks are 1 and 3, not 1 and 2: the round above released its blocks
     # tail first, so the pool hands them back in that order.
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 3]
-    assert bm.get_req_blocks(ctxB)[FULL] == []
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 3]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == []
 
 
 def test_oom() -> None:
@@ -301,7 +303,7 @@ def test_dont_use_req_before_claim() -> None:
     bm = make_manager({FULL: full()})
     ctx = make_ctx(num_tokens=3)
     with pytest.raises(ValueError, match="Request is not claimed"):
-        bm.get_req_blocks(ctx)
+        bm.get_req_blocks_per_leaf(ctx)
     with pytest.raises(ValueError, match="Request is not claimed"):
         bm.alloc(ctx)
     with pytest.raises(ValueError, match="Request is not claimed"):
@@ -319,20 +321,20 @@ def test_chunked_prefill() -> None:
     # the forwards so far have needed, not the whole prompt's worth.
     ctx.tokens.chunk(2)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2]
     ctx.update(42)
     bm.step(ctx)
 
     ctx.tokens.chunk(2)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2, 3, 4]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2, 3, 4]
     ctx.update(42)
     bm.step(ctx)
 
     # The last chunk needs no trimming: 2 tokens are left.
     assert ctx.tokens.active_length == 2
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[FULL] == [1, 2, 3, 4, 5, 6]
+    assert bm.get_req_blocks_per_leaf(ctx)[FULL] == [1, 2, 3, 4, 5, 6]
 
 
 # ===--------------------------------------------------------------------=== #
@@ -350,28 +352,37 @@ def test_values_and_scales() -> None:
 
     # We can fit two requests with 1 token
     # huge_page=1 is values, huge_page=2 is scales, huge_page=3 is values
-    assert bm.num_free_huge_blocks() == 3
-    # The num_free_little_blocks method counts the maximum number of little
-    # blocks allocable for each type.
-    assert bm.num_free_little_blocks() == {VALUES: 3, SCALES: 30}
+    assert bm.huge_block_count().free == 3
+    # little_block_count's total is fixed by the 3 allocable huge blocks'
+    # ratio-converted capacity; free shrinks as requests claim blocks.
+    assert bm.little_block_count() == {
+        VALUES: BlockCount(free=3, total=3),
+        SCALES: BlockCount(free=30, total=30),
+    }
 
     ctx = make_ctx(num_tokens=1)
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[VALUES] == [1]
-    assert bm.get_req_blocks(ctx)[SCALES] == [20]
-    assert bm.num_free_huge_blocks() == 1
-    assert bm.num_free_little_blocks() == {VALUES: 1, SCALES: 19}
+    assert bm.get_req_blocks_per_leaf(ctx)[VALUES] == [1]
+    assert bm.get_req_blocks_per_leaf(ctx)[SCALES] == [20]
+    assert bm.huge_block_count().free == 1
+    assert bm.little_block_count() == {
+        VALUES: BlockCount(free=1, total=3),
+        SCALES: BlockCount(free=19, total=30),
+    }
 
     # The second request takes the last huge block for its values, which leaves
     # scales with the 8 little blocks it already holds and nothing to grow into.
     ctx = make_ctx(num_tokens=1)
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[VALUES] == [3]
-    assert bm.get_req_blocks(ctx)[SCALES] == [21]
-    assert bm.num_free_huge_blocks() == 0
-    assert bm.num_free_little_blocks() == {VALUES: 0, SCALES: 8}
+    assert bm.get_req_blocks_per_leaf(ctx)[VALUES] == [3]
+    assert bm.get_req_blocks_per_leaf(ctx)[SCALES] == [21]
+    assert bm.huge_block_count().free == 0
+    assert bm.little_block_count() == {
+        VALUES: BlockCount(free=0, total=3),
+        SCALES: BlockCount(free=8, total=30),
+    }
 
     # OOM. There is no more room for values, but there is still room for scales.
     ctx = make_ctx(num_tokens=1)
@@ -399,13 +410,13 @@ def test_fp8_spec_dec() -> None:
     # them even though each wants a single page. Each cache numbers its pages
     # in its own space, at its own ratio: huge block h holds ids
     # [h * ratio, (h + 1) * ratio).
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         "target/values": [1],  # huge block 1, 1 page each
         "target/scales": [20],  # huge block 2, 10 pages each
         "draft/values": [6],  # huge block 3, 2 pages each
         "draft/scales": [80],  # huge block 4, 20 pages each
     }
-    assert bm.num_free_huge_blocks() == 0
+    assert bm.huge_block_count().free == 0
 
 
 # ===--------------------------------------------------------------------=== #
@@ -425,14 +436,14 @@ def test_swa_frees_the_blocks_it_slid_past() -> None:
 
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[SLIDING] == [1, 2, 3, 4, 5, 6]
+    assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [1, 2, 3, 4, 5, 6]
 
     # Nothing is released until a forward has filled the blocks, which is what
     # ctx.update records.
     ctx.update(42)
     bm.step(ctx)
-    assert bm.get_req_blocks(ctx)[SLIDING] == [0, 0, 0, 4, 5, 6]
-    assert bm.num_free_huge_blocks() == 6
+    assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [0, 0, 0, 4, 5, 6]
+    assert bm.huge_block_count().free == 6
 
 
 def test_swa_frees_the_blocks_it_slid_past_with_block_size_larger_than_1() -> (
@@ -446,15 +457,15 @@ def test_swa_frees_the_blocks_it_slid_past_with_block_size_larger_than_1() -> (
     ctx = make_ctx(num_tokens=6)
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx)[SLIDING] == [1, 2, 3]
+    assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [1, 2, 3]
 
     # The next query is at token 6, and a window of 3 has it read back to token
     # 4, which lives in block 2. Blocks 0 and 1 are below that, so they go. A
     # released slot is nulled where it stands rather than shifting the row.
     ctx.update(42)
     bm.step(ctx)
-    assert bm.get_req_blocks(ctx)[SLIDING] == [0, 0, 3]
-    assert bm.num_free_huge_blocks() == 8
+    assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [0, 0, 3]
+    assert bm.huge_block_count().free == 8
 
 
 def test_swa_reuses_the_blocks_it_freed() -> None:
@@ -475,16 +486,16 @@ def test_swa_reuses_the_blocks_it_freed() -> None:
     bm.alloc(ctx)
     ctx.update(42)
     bm.step(ctx)
-    assert bm.get_req_blocks(ctx)[SLIDING] == [1, 2]
+    assert bm.get_req_blocks_per_leaf(ctx)[SLIDING] == [1, 2]
 
     for _ in range(50):
         decode(bm, ctx)
-        row = bm.get_req_blocks(ctx)[SLIDING]
+        row = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
         assert len([bid for bid in row if bid != 0]) == 3
 
     # The row still spans every block index, and every page in it came from the
     # five the pool can back.
-    row = bm.get_req_blocks(ctx)[SLIDING]
+    row = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
     assert len(row) == 52
     assert row[-3:] == [5, 1, 2]
 
@@ -502,7 +513,7 @@ def test_swa_reuses_a_window_it_still_holds() -> None:
     bm.alloc(ctxA)
     ctxA.update(42)
     bm.step(ctxA)
-    assert bm.get_req_blocks(ctxA)[SLIDING] == [0, 0, 0, 4, 5, 6]
+    assert bm.get_req_blocks_per_leaf(ctxA)[SLIDING] == [0, 0, 0, 4, 5, 6]
     bm.release(ctxA)
 
     # The blocks below the window were freed, but freeing keeps their commits,
@@ -511,7 +522,7 @@ def test_swa_reuses_a_window_it_still_holds() -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
     assert ctxB.tokens.processed_length == 5
-    assert bm.get_req_blocks(ctxB)[SLIDING] == [0, 0, 3, 4, 5, 7]
+    assert bm.get_req_blocks_per_leaf(ctxB)[SLIDING] == [0, 0, 3, 4, 5, 7]
 
 
 def test_swa_resumes_below_a_hole_in_its_history() -> None:
@@ -541,7 +552,7 @@ def test_swa_resumes_below_a_hole_in_its_history() -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
     assert ctxB.tokens.processed_length == 2
-    assert bm.get_req_blocks(ctxB)[SLIDING] == [1, 2, 7, 8, 9, 10]
+    assert bm.get_req_blocks_per_leaf(ctxB)[SLIDING] == [1, 2, 7, 8, 9, 10]
 
 
 def test_swa_refuses_a_window_it_cannot_complete() -> None:
@@ -574,7 +585,7 @@ def test_swa_refuses_a_window_it_cannot_complete() -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
     assert ctxB.tokens.processed_length == 0
-    assert bm.get_req_blocks(ctxB)[SLIDING] == [7, 8, 9, 10, 11, 12]
+    assert bm.get_req_blocks_per_leaf(ctxB)[SLIDING] == [7, 8, 9, 10, 11, 12]
 
 
 # ===--------------------------------------------------------------------=== #
@@ -602,14 +613,14 @@ def test_prefix_caching(enable_prefix_caching: bool) -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
 
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 2, 3, 4, 5, 6]
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 2, 3, 4, 5, 6]
     if enable_prefix_caching:
         # The two prompts share their first three tokens, so B reuses those
         # blocks and computes the rest.
-        assert bm.get_req_blocks(ctxB)[FULL] == [1, 2, 3, 7, 8, 9]
+        assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [1, 2, 3, 7, 8, 9]
         assert ctxB.tokens.processed_length == 3
     else:
-        assert bm.get_req_blocks(ctxB)[FULL] == [7, 8, 9, 10, 11, 12]
+        assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [7, 8, 9, 10, 11, 12]
         assert ctxB.tokens.processed_length == 0
 
 
@@ -625,7 +636,7 @@ def test_lru_evicts_the_tail_of_a_released_prefix() -> None:
     bm.alloc(ctxA)
     ctxA.update(42)
     bm.step(ctxA)
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 2, 3, 4]
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 2, 3, 4]
     bm.release(ctxA)
 
     # The pool is full, so serving anything at all costs a committed block. The
@@ -633,7 +644,7 @@ def test_lru_evicts_the_tail_of_a_released_prefix() -> None:
     ctxB = make_ctx_with_tokens([99])
     bm.claim(ctxB)
     bm.alloc(ctxB)
-    assert bm.get_req_blocks(ctxB)[FULL] == [4]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [4]
     bm.release(ctxB)
 
     # A request repeating A's prompt therefore hits 3 of its 4 blocks.
@@ -641,7 +652,7 @@ def test_lru_evicts_the_tail_of_a_released_prefix() -> None:
     bm.claim(ctxC)
     bm.alloc(ctxC)
     assert ctxC.tokens.processed_length == 3
-    assert bm.get_req_blocks(ctxC)[FULL] == [1, 2, 3, 4]
+    assert bm.get_req_blocks_per_leaf(ctxC)[FULL] == [1, 2, 3, 4]
 
 
 def test_reset_prefix_cache_drops_commits_nobody_holds() -> None:
@@ -664,7 +675,7 @@ def test_reset_prefix_cache_drops_commits_nobody_holds() -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
     assert ctxB.tokens.processed_length == 0
-    assert bm.get_req_blocks(ctxB)[FULL] == [5, 6, 7, 8]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [5, 6, 7, 8]
 
 
 def test_reset_prefix_cache_keeps_commits_a_request_holds() -> None:
@@ -687,7 +698,7 @@ def test_reset_prefix_cache_keeps_commits_a_request_holds() -> None:
     bm.claim(ctxB)
     bm.alloc(ctxB)
     assert ctxB.tokens.processed_length == 3
-    assert bm.get_req_blocks(ctxB)[FULL] == [1, 2, 3, 5]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [1, 2, 3, 5]
 
 
 # ===--------------------------------------------------------------------=== #
@@ -705,7 +716,7 @@ def test_full_and_swa_share_one_block_index() -> None:
 
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6],
         SLIDING: [7, 8, 9, 10, 11, 12],
     }
@@ -714,7 +725,7 @@ def test_full_and_swa_share_one_block_index() -> None:
     bm.step(ctx)
     # Both rows still span every block index, so index i means the same tokens
     # in both. The sliding cache just stops backing the ones it cannot read.
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6],
         SLIDING: [0, 0, 0, 10, 11, 12],
     }
@@ -741,7 +752,7 @@ def test_full_and_swa_resume_from_the_same_block() -> None:
     # Both caches resume at block 5: the full one adopts the whole prefix,
     # the sliding one only the part its attention reads.
     assert ctxB.tokens.processed_length == 5
-    assert bm.get_req_blocks(ctxB) == {
+    assert bm.get_req_blocks_per_leaf(ctxB) == {
         FULL: [1, 2, 3, 4, 5, 13],
         SLIDING: [0, 0, 9, 10, 11, 14],
     }
@@ -779,7 +790,7 @@ def test_a_dropped_sliding_window_blocks_all_reuse() -> None:
 
     assert ctxB.tokens.processed_length == 0
     # Nothing adopted anywhere, so both caches draw a fresh row.
-    assert bm.get_req_blocks(ctxB) == {
+    assert bm.get_req_blocks_per_leaf(ctxB) == {
         FULL: [13, 14, 15, 16, 17, 18],
         SLIDING: [19, 9, 8, 7, 6, 5],
     }
@@ -796,7 +807,7 @@ def test_partial_window_hit_at_start() -> None:
     ctx = make_ctx(num_tokens=1000)
     bm.claim(ctx)
     bm.alloc(ctx)
-    sliding_blocks = bm.get_req_blocks(ctx)[SLIDING]
+    sliding_blocks = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
     ctx.update(42)
     bm.step(ctx)
     bm.release(ctx)
@@ -844,7 +855,7 @@ def test_window_hit_with_irregular_ratio() -> None:
     ctx = make_ctx(num_tokens=1000)
     bm.claim(ctx)
     bm.alloc(ctx)
-    sliding_blocks = bm.get_req_blocks(ctx)[SLIDING]
+    sliding_blocks = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
     ctx.update(42)
     bm.step(ctx)
     bm.release(ctx)
@@ -903,14 +914,14 @@ def test_alphabet() -> None:
     ctx = make_ctx(num_tokens=len(alphabet))
     bm.claim(ctx)
     bm.alloc(ctx)
-    full_blocks = bm.get_req_blocks(ctx)[FULL]
-    sliding_blocks = bm.get_req_blocks(ctx)[SLIDING]
+    full_blocks = bm.get_req_blocks_per_leaf(ctx)[FULL]
+    sliding_blocks = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
     assert full_blocks == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     assert sliding_blocks == [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
     ctx.update(42)
     bm.step(ctx)
-    sliding_blocks_after = bm.get_req_blocks(ctx)[SLIDING]
+    sliding_blocks_after = bm.get_req_blocks_per_leaf(ctx)[SLIDING]
     assert sliding_blocks_after == [0, 0, 0, 0, 0, 0, 0, 0, 19, 20]
     bm.release(ctx)
 
@@ -926,7 +937,7 @@ def test_alphabet() -> None:
     bm.claim(ctx)
     bm.alloc(ctx)
     assert ctx.tokens.processed_length == 9
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6, 7, 8, 9, 21],
         SLIDING: [0, 0, 0, 0, 0, 0, 0, 18, 19, 22],
     }
@@ -954,7 +965,7 @@ def test_alphabet() -> None:
     bm.claim(ctx)
     bm.alloc(ctx)
     assert ctx.tokens.processed_length == 4
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 23, 24, 25, 26, 27, 28],
         SLIDING: [0, 0, 13, 14, 29, 17, 16, 15, 12, 11],
     }
@@ -1003,14 +1014,14 @@ def test_multi_window() -> None:
 
     bm.claim(ctx)
     bm.alloc(ctx)
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6, 7, 8],
         NEAR: [9, 10, 11, 12, 13, 14, 15, 16],
         FAR: [17, 18, 19, 20, 21, 22, 23, 24],
     }
     ctx.update(42)
     bm.step(ctx)
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6, 7, 8],
         # NEAR evicted 6 blocks as they fall out of the window
         NEAR: [0, 0, 0, 0, 0, 0, 15, 16],
@@ -1024,7 +1035,7 @@ def test_multi_window() -> None:
 
     # Prefix caching works as intended
     assert ctx.tokens.processed_length == 7
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 6, 7, 25],
         NEAR: [0, 0, 0, 0, 0, 14, 15, 26],
         FAR: [0, 0, 0, 20, 21, 22, 23, 27],
@@ -1045,9 +1056,9 @@ def test_two_windows_converge_on_prefix_cache_hit() -> None:
     ctxA = make_ctx(num_tokens=len(alphabet))
     bm.claim(ctxA)
     bm.alloc(ctxA)
-    full_blocks = bm.get_req_blocks(ctxA)[FULL]
-    near_blocks = bm.get_req_blocks(ctxA)[NEAR]
-    far_blocks = bm.get_req_blocks(ctxA)[FAR]
+    full_blocks = bm.get_req_blocks_per_leaf(ctxA)[FULL]
+    near_blocks = bm.get_req_blocks_per_leaf(ctxA)[NEAR]
+    far_blocks = bm.get_req_blocks_per_leaf(ctxA)[FAR]
     ctxA.update(42)
     bm.step(ctxA)
     bm.release(ctxA)
@@ -1072,7 +1083,7 @@ def test_two_windows_converge_on_prefix_cache_hit() -> None:
     bm.claim(ctx)
     bm.alloc(ctx)
     assert ctx.tokens.processed_length == 5
-    assert bm.get_req_blocks(ctx) == {
+    assert bm.get_req_blocks_per_leaf(ctx) == {
         FULL: [1, 2, 3, 4, 5, 37, 38, 39, 40, 41, 42, 43],
         NEAR: [0, 0, 0, 16, 17, 44, 45, 46, 47, 48, 49, 50],
         FAR: [0, 0, 27, 28, 29, 51, 52, 53, 54, 55, 56, 57],
@@ -1103,15 +1114,15 @@ def test_replicas_draw_from_their_own_pool() -> None:
     bm.alloc(ctxA)
 
     # Replica 0 is spent and replica 1 has not been touched.
-    assert bm.num_free_huge_blocks(0) == 0
-    assert bm.num_free_huge_blocks(1) == 3
+    assert bm.huge_block_count(0).free == 0
+    assert bm.huge_block_count(1).free == 3
 
     bm.claim(ctxB, replica_idx=1)
     bm.alloc(ctxB)
 
-    assert bm.get_req_blocks(ctxA)[FULL] == [1, 2, 3]
-    assert bm.get_req_blocks(ctxB)[FULL] == [1, 2, 3]
-    assert bm.num_free_huge_blocks(1) == 0
+    assert bm.get_req_blocks_per_leaf(ctxA)[FULL] == [1, 2, 3]
+    assert bm.get_req_blocks_per_leaf(ctxB)[FULL] == [1, 2, 3]
+    assert bm.huge_block_count(1).free == 0
 
 
 def test_a_dry_replica_does_not_borrow_from_its_neighbor() -> None:
@@ -1132,7 +1143,7 @@ def test_a_dry_replica_does_not_borrow_from_its_neighbor() -> None:
         bm.alloc(ctxB)
 
     # The neighbor's pages were never a candidate.
-    assert bm.num_free_huge_blocks(1) == 3
+    assert bm.huge_block_count(1).free == 3
 
 
 def test_a_request_stays_on_the_replica_that_claimed_it() -> None:
@@ -1148,12 +1159,12 @@ def test_a_request_stays_on_the_replica_that_claimed_it() -> None:
 
     decode(bm, ctx)
 
-    assert bm.num_free_huge_blocks(0) == 7
-    assert bm.num_free_huge_blocks(1) == 4
+    assert bm.huge_block_count(0).free == 7
+    assert bm.huge_block_count(1).free == 4
 
     bm.release(ctx)
 
-    assert bm.num_free_huge_blocks(1) == 7
+    assert bm.huge_block_count(1).free == 7
 
 
 def test_replicas_keep_separate_prefix_caches() -> None:
@@ -1184,7 +1195,7 @@ def test_replicas_keep_separate_prefix_caches() -> None:
     bm.alloc(elsewhere)
 
     assert elsewhere.tokens.processed_length == 0
-    assert bm.get_req_blocks(elsewhere)[FULL] == [1, 2, 3, 4]
+    assert bm.get_req_blocks_per_leaf(elsewhere)[FULL] == [1, 2, 3, 4]
 
     # Same prompt, same replica: three blocks adopted, one drawn for the tail.
     again = make_ctx(num_tokens=4)
@@ -1192,7 +1203,7 @@ def test_replicas_keep_separate_prefix_caches() -> None:
     bm.alloc(again)
 
     assert again.tokens.processed_length == 3
-    assert bm.get_req_blocks(again)[FULL] == [1, 2, 3, 5]
+    assert bm.get_req_blocks_per_leaf(again)[FULL] == [1, 2, 3, 5]
 
 
 def test_reset_prefix_cache_clears_every_replica() -> None:
@@ -1214,3 +1225,77 @@ def test_reset_prefix_cache_clears_every_replica() -> None:
 
     assert len(bm.pools[0].prefix_caches[FULL]) == 0
     assert len(bm.pools[1].prefix_caches[FULL]) == 0
+
+
+# ===--------------------------------------------------------------------=== #
+# effective_max_seq_length
+# ===--------------------------------------------------------------------=== #
+
+
+def test_effective_max_seq_length_single_full_leaf() -> None:
+    """One leaf gets every allocable huge block (block 0 is the null block),
+    so capacity grows linearly."""
+    bm = make_manager({FULL: full(ratio=1)}, block_size=4, num_huge_blocks=5)
+    assert bm.effective_max_seq_length == 4 * 4
+
+
+def test_effective_max_seq_length_balances_across_full_leaves() -> None:
+    """Huge blocks go to whichever leaf has the least capacity so far."""
+    bm = make_manager(
+        {"a": full(ratio=1), "b": full(ratio=1)},
+        block_size=1,
+        num_huge_blocks=4,
+    )
+    # 3 allocable huge blocks: a=1,b=0 -> a=1,b=1 -> a=2,b=1.
+    assert bm.effective_max_seq_length == 1
+
+
+def test_effective_max_seq_length_weighs_by_ratio() -> None:
+    """A higher ratio grows a leaf's capacity faster per huge block."""
+    bm = make_manager(
+        {"a": full(ratio=1), "b": full(ratio=3)},
+        block_size=1,
+        num_huge_blocks=4,
+    )
+    # 3 allocable huge blocks: a=1,b=0 -> a=1,b=3 -> a=2,b=3.
+    assert bm.effective_max_seq_length == 2
+
+
+def test_effective_max_seq_length_sliding_window_saturates_to_none() -> None:
+    """A sliding-window-only geometry has no ceiling once windows fill.
+
+    Once every leaf's window is fully covered, more blocks add no more
+    capacity, so there is no finite bound on how long a sequence it can
+    serve: the eviction rotates old blocks out as the window slides.
+    """
+    bm = make_manager(
+        {SLIDING: sliding(ratio=1, window=3)},
+        block_size=1,
+        num_huge_blocks=10,
+    )
+    assert bm.effective_max_seq_length is None
+
+
+def test_effective_max_seq_length_sliding_window_below_saturation() -> None:
+    """Below saturation, a sliding-window leaf still grows like a full one."""
+    bm = make_manager(
+        {SLIDING: sliding(ratio=1, window=3)},
+        block_size=1,
+        num_huge_blocks=3,
+    )
+    # 2 allocable huge blocks, short of the 3 needed to saturate the window.
+    assert bm.effective_max_seq_length == 2
+
+
+def test_effective_max_seq_length_full_leaf_is_the_bottleneck_once_swa_caps() -> (
+    None
+):
+    """A saturated sliding leaf drops out; the full leaf alone sets the bound."""
+    bm = make_manager(
+        {FULL: full(ratio=1), SLIDING: sliding(ratio=1, window=2)},
+        block_size=1,
+        num_huge_blocks=6,
+    )
+    # 5 allocable huge blocks: full=1,sliding=0 -> full=1,sliding=1
+    # -> full=2,sliding=1 -> full=2,sliding capped (None) -> full=3.
+    assert bm.effective_max_seq_length == 3

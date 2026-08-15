@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from unittest.mock import MagicMock, Mock
 
 from max.driver import is_virtual_device_mode
@@ -28,8 +29,24 @@ from max.nn.kv_cache import (
 
 from .paged_kv_cache import PagedKVCacheManager
 from .paged_kv_cache.cache_manager_interface import PagedKVCacheManagerInterface
+from .paged_kv_cache.jenga_cache_manager import JengaKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _use_jenga_cache() -> bool:
+    """Whether ``MODULAR_USE_JENGA_KV_CACHE`` selects ``JengaKVCacheManager``.
+
+    TODO(bez): temporary flag for the Jenga cutover -- see
+    ``PagedKVCacheManagerInterface``. Delete once ``JengaKVCacheManager``
+    replaces ``PagedKVCacheManager`` outright.
+    """
+    return os.getenv("MODULAR_USE_JENGA_KV_CACHE", "0").lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+    )
 
 
 def _load_single_kv_manager(
@@ -38,6 +55,7 @@ def _load_single_kv_manager(
     total_num_host_pages: int,
     session: InferenceSession,
     max_batch_size: int,
+    available_cache_memory: int,
 ) -> PagedKVCacheManagerInterface:
     # In compile-only mode (virtual device mode), use the null KV manager
     # to avoid GPU memory allocation
@@ -51,6 +69,20 @@ def _load_single_kv_manager(
     if params.page_size % 128 != 0 or params.page_size < 128:
         raise ValueError(
             "Page size must be a multiple of 128 and at least 128."
+        )
+
+    if _use_jenga_cache():
+        # TODO(bez): temporary flag for the Jenga cutover -- see
+        # PagedKVCacheManagerInterface. Delete this branch once
+        # JengaKVCacheManager replaces PagedKVCacheManager outright.
+        logger.warning(
+            "JengaKVCacheManager is experimental and incompatible with features "
+            "like KVCache offloading or Spec Decoding."
+        )
+        return JengaKVCacheManager.create(
+            params=params,
+            available_bytes=available_cache_memory,
+            max_batch_size=max_batch_size,
         )
 
     return PagedKVCacheManager(
@@ -111,4 +143,5 @@ def load_kv_manager(
         total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
+        available_cache_memory=available_cache_memory,
     )

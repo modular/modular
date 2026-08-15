@@ -246,8 +246,7 @@ class Gemma4TextConfig(Gemma3Config):
         sliding_window_rope_type = sliding_window_rope_params.get("rope_type")
         if sliding_window_rope_type != "default":
             raise ValueError(
-                f"Sliding window rope type {sliding_window_rope_type}"
-                " not supported"
+                f"Sliding window rope type {sliding_window_rope_type} not supported"
             )
         sliding_window_rope_theta = sliding_window_rope_params["rope_theta"]
 
@@ -536,6 +535,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 else None
             ),
             num_draft_tokens=num_spec_tokens,
+            window_size=huggingface_config.text_config.sliding_window,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -552,6 +552,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 else None
             ),
             num_draft_tokens=num_spec_tokens,
+            window_size=None,
         )
         return MultiKVCacheParams.from_params(
             {

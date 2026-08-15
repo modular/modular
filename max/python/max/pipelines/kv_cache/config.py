@@ -288,6 +288,7 @@ class KVCacheConfig(ConfigFileModel):
         num_draft_tokens: int = 0,
         allow_kv_head_replication: bool | None = None,
         page_size: int | None = None,
+        window_size: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -319,6 +320,7 @@ class KVCacheConfig(ConfigFileModel):
                 back to the config's :attr:`kv_cache_page_size`). Architectures
                 with a kernel-imposed minimum page size pass their effective
                 value here instead of mutating the shared config.
+            window_size: Window size for the attention layer.
 
         Returns:
             The constructed KV cache parameters.
@@ -358,6 +360,7 @@ class KVCacheConfig(ConfigFileModel):
             num_draft_tokens=num_draft_tokens,
             kv_hash_algo=self.kv_cache_hash_algo,
             kv_hash_seed=kv_hash_seed,
+            window_size=window_size,
         )
         if is_mla:
             if num_q_heads is None:

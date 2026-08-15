@@ -142,6 +142,9 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": MULTI | {"MI355"},
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": MULTI | {"MI355"},
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": NON_XL | AMD_XL,
+    # Jenga requires data_parallel_degree=1 and doesn't support KVConnector /
+    # disaggregated serving yet, so it can't run on multi-GPU runners.
+    "google/gemma-4-31B-it__jenga": MULTI,
 }
 
 MODELS: Mapping[str, set[str]] = {**HF_MODELS, **CUSTOM_MODELS}

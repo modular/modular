@@ -23,16 +23,24 @@ different caches. This allows the memory to be fungible between the caches.
 from __future__ import annotations
 
 import logging
+from bisect import bisect_left
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from .block_manager import _compute_seq_len, compute_block_hashes
+from .block_manager import (
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+    _compute_seq_len,
+    compute_block_hashes,
+)
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
 
@@ -139,7 +147,7 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         replica_idx: int,
     ) -> None:
         """Keeps every page: this group reads its whole history."""
-        pass
+        return
 
 
 @dataclass(frozen=True)
@@ -306,7 +314,7 @@ class JengaBlockManager:
 
     def __init__(
         self,
-        leaf_infos: dict[str, KVLeafInfo],
+        leaf_infos: Mapping[str, KVLeafInfo],
         num_huge_blocks: int,
         block_size: int,
         enable_prefix_caching: bool = True,
@@ -314,12 +322,14 @@ class JengaBlockManager:
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
         max_num_input_tokens: int | None = None,
+        num_draft_tokens_per_step: int = 0,
     ) -> None:
         self._block_size = block_size
         self._enable_prefix_caching = enable_prefix_caching
         self._kv_hash_algo = kv_hash_algo
         self._kv_hash_seed = kv_hash_seed
         self._max_num_input_tokens = max_num_input_tokens
+        self._num_draft_tokens_per_step = num_draft_tokens_per_step
 
         ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
         self.pools = [
@@ -377,6 +387,10 @@ class JengaBlockManager:
         for leaf in self._leaves.values():
             leaf.req_to_blocks[req_id] = []
 
+    def contains(self, ctx: TextContext) -> bool:
+        """Returns whether the request is registered with the block manager."""
+        return ctx.request_id in self._req_to_replica
+
     @traced
     def release(self, ctx: TextContext) -> None:
         """Frees every page the request holds, in every cache."""
@@ -398,7 +412,7 @@ class JengaBlockManager:
     # ============================================================================
 
     @traced
-    def alloc(self, ctx: TextContext) -> None:
+    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
         """Gives every cache the pages the next forward needs.
 
         Raises:
@@ -425,6 +439,8 @@ class JengaBlockManager:
             for _ in range(num_new_blocks):
                 req_blocks.append(pool.alloc_block(leaf_id))
 
+        return CompletedTransfer(direction=TransferDirection.LOAD)
+
     @traced
     def step(self, ctx: TextContext) -> None:
         """Records what the forward just wrote, and slides every window."""
@@ -450,26 +466,97 @@ class JengaBlockManager:
     # Misc
     # ============================================================================
 
-    def get_req_blocks(self, ctx: TextContext) -> dict[str, list[int]]:
-        """Returns the pages the request holds, per leaf."""
+    @property
+    def effective_max_seq_length(self) -> int | None:
+        """Returns the longest single-request sequence every leaf could serve simultaneously.
+
+        ``None`` if there is no finite bound (every leaf is sliding-window
+        and each window fits the budget). Binary search over
+        :meth:`_fits_in_cache`, which is monotonic in ``seq_len``: a leaf's
+        block requirement never decreases -- it grows for full attention,
+        and plateaus once a sliding window is fully covered. That makes this
+        equivalent to the largest ``seq_len`` for which every leaf still
+        fits, without needing to simulate how the shared huge-block budget
+        gets partitioned across leaves.
+        """
+        # Nothing can outrun a single leaf handed the entire budget at the
+        # most generous ratio, so that is a safe ceiling to search up to.
+        # Still fitting AT the ceiling means there is no finite bound: every
+        # leaf must be sliding-window, since only their demand plateaus.
+        upper_bound = (
+            self.huge_block_count().total
+            * self._block_size
+            * max(self.pools[0].cache_ratios.values())
+        )
+        search_space = upper_bound + 2
+        idx = bisect_left(
+            range(search_space),
+            True,
+            key=lambda seq_len: not self._fits_in_cache(seq_len),
+        )
+        return (idx - 1) if idx < search_space else None
+
+    def _blocks_demanded(self, seq_len: int) -> dict[str, int]:
+        """Returns the pages each leaf holds for a ``seq_len``-token request."""
+        demand = {}
+        for leaf_id, leaf in self._leaves.items():
+            num_blocks = ceildiv(seq_len, self._block_size)
+            if leaf.group_id.is_sliding_window():
+                # A window only keeps its most recent tokens resident, so its
+                # demand stops growing once the window itself is covered.
+                num_blocks = min(
+                    num_blocks,
+                    ceildiv(leaf.group_id.window_size, self._block_size),
+                )
+            demand[leaf_id] = num_blocks
+        return demand
+
+    def _fits_in_cache(self, seq_len: int) -> bool:
+        """Whether an empty pool could serve one ``seq_len``-token request.
+
+        Measures capacity, not current occupancy, so it counts against every
+        huge block rather than the free ones and credits nothing a live
+        request already holds.
+        """
+        pool = self.pools[0]
+        needed = self._huge_blocks_for_demand(
+            pool, self._blocks_demanded(seq_len)
+        )
+        return needed <= self.huge_block_count().total
+
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the pages the request holds, per leaf.
+
+        Distinct from :meth:`PagedKVCacheManagerInterface.get_req_blocks`
+        (a single flat ``list[int]``, sized for one leaf): Jenga's caches
+        aren't interchangeable, so this returns one list per leaf instead.
+        """
         self._replica_of(ctx)
         return {
             leaf_id: [block.bid for block in leaf.req_to_blocks[ctx.request_id]]
             for leaf_id, leaf in self._leaves.items()
         }
 
-    def num_free_huge_blocks(self, replica_idx: int = 0) -> int:
-        """Returns how many huge blocks any cache could still claim."""
-        return len(self.pools[replica_idx].free_huge_blocks)
+    def huge_block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns the huge-block occupancy for the given replica.
 
-    def num_total_huge_blocks(self, replica_idx: int = 0) -> int:
-        """Returns how many huge blocks are currently in use."""
-        return len(self.pools[replica_idx].huge_blocks)
+        ``total`` excludes the null block (huge block 0), which every cache
+        shares and which is never allocable.
+        """
+        pool = self.pools[replica_idx]
+        return BlockCount(
+            free=len(pool.free_huge_blocks), total=len(pool.huge_blocks)
+        )
 
-    def num_free_little_blocks(self, replica_idx: int = 0) -> dict[str, int]:
-        """Returns how many little blocks any cache could still claim."""
+    def little_block_count(self, replica_idx: int = 0) -> dict[str, BlockCount]:
+        """Returns each leaf's little-block occupancy for the given replica."""
+        pool = self.pools[replica_idx]
+        total_huge_blocks = len(pool.huge_blocks)
         return {
-            leaf_id: self.pools[replica_idx].num_free_blocks(leaf_id)
+            leaf_id: BlockCount(
+                free=pool.num_free_blocks(leaf_id),
+                total=total_huge_blocks * pool.cache_ratios[leaf_id],
+            )
             for leaf_id in self._leaves
         }
 
@@ -492,9 +579,12 @@ class JengaBlockManager:
         num_current_blocks = len(
             self._leaves[leaf_id].req_to_blocks[ctx.request_id]
         )
+        # Jenga doesn't support speculative decoding yet, so num_draft_tokens
+        # is always 0 here.
         seq_len = _compute_seq_len(
             ctx,
             num_draft_tokens=0,
+            num_draft_tokens_per_step=self._num_draft_tokens_per_step,
             max_num_input_tokens=self._max_num_input_tokens,
         )
         num_required_blocks = ceildiv(seq_len, self._block_size)
@@ -528,24 +618,47 @@ class JengaBlockManager:
         )
         return hashes
 
+    def _huge_blocks_for_demand(
+        self,
+        pool: JengaBlockPool,
+        demand: Mapping[str, int],
+        free_little_blocks: Mapping[str, int] | None = None,
+    ) -> int:
+        """Converts a per-leaf page demand into the huge blocks it must claim.
+
+        A huge block is carved for exactly one leaf, so leaves never share
+        one: each cache's demand is converted at its own ratio and the
+        totals are summed. Counting each cache's free pages on their own
+        would let every one of them believe it has room while together they
+        overrun the pool.
+
+        ``free_little_blocks`` credits pages already carved for a leaf and
+        still free; omit it to size a pool that has carved nothing yet.
+        """
+        num_huge_blocks = 0
+        for leaf_id, num_pages in demand.items():
+            already_free = (
+                free_little_blocks.get(leaf_id, 0) if free_little_blocks else 0
+            )
+            shortfall = num_pages - already_free
+            if shortfall > 0:
+                num_huge_blocks += ceildiv(
+                    shortfall, pool.cache_ratios[leaf_id]
+                )
+        return num_huge_blocks
+
     def _check_admission(
         self, pool: JengaBlockPool, demand: dict[str, int]
     ) -> None:
-        """Rejects a request the pool cannot serve, before it draws anything.
-
-        Each cache's free pages are counted separately, so each could believe
-        it has room while together they overrun the pool. We convert every
-        cache's page demand into the huge blocks it would have to claim, and
-        check the total demand.
-        """
-        num_huge_blocks_needed = 0
-        for leaf_id, num_pages in demand.items():
-            shortfall = num_pages - len(pool.free_little_blocks[leaf_id])
-            if shortfall > 0:
-                num_huge_blocks_needed += ceildiv(
-                    shortfall, pool.cache_ratios[leaf_id]
-                )
-
+        """Rejects a request the pool cannot serve, before it draws anything."""
+        num_huge_blocks_needed = self._huge_blocks_for_demand(
+            pool,
+            demand,
+            {
+                leaf_id: len(blocks)
+                for leaf_id, blocks in pool.free_little_blocks.items()
+            },
+        )
         num_free = len(pool.free_huge_blocks)
         if num_huge_blocks_needed > num_free:
             raise InsufficientBlocksError(

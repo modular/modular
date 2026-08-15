@@ -476,6 +476,8 @@ def _target_hf_geometry() -> SimpleNamespace:
             num_global_key_value_heads=4,
             head_dim=128,
             global_head_dim=128,
+            # Matches the real gemma-4-31B-it config's sliding window.
+            sliding_window=1024,
         )
     )
 

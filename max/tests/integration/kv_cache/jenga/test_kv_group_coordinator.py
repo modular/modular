@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
-from max.pipelines.kv_cache import KVCacheGroupId
+from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import LittleKVCacheBlock
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     FullKVGroupCoordinator,
