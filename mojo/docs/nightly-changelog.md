@@ -164,6 +164,9 @@ This release completes the removal of APIs deprecated during the v1.0 cycle.
 - Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
   instead.
 
+- Removed `String.set_byte_length()`, an internal helper that set the length
+  field without reserving capacity.
+
 - Removed the `validate` parameter from
   [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
   validates. Passing `validate=False` did not skip any work on valid input; it
