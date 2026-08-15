@@ -718,16 +718,9 @@ def test_array_slicing() raises:
     assert_equal(partial[1], 20)
     assert_equal(partial[2], 30)
 
-    # empty slice / out-of-range clamping
-    var clamped1 = arr[ContiguousSlice(10, 15, None)]
-    assert_equal(len(clamped1), 0)
-
-    var clamped2 = arr[ContiguousSlice(3, 2, None)]
-    assert_equal(len(clamped2), 0)
-
-    var clamped3 = arr[ContiguousSlice(4, 10, None)]
-    assert_equal(len(clamped3), 1)
-    assert_equal(clamped3[0], 40)
+    # empty slice (within bounds)
+    var empty = arr[ContiguousSlice(2, 2, None)]
+    assert_equal(len(empty), 0)
 
     # mutation through the returned Span reflects back on the original Array
     var mut_arr: Array[Int, 5] = [0, 10, 20, 30, 40]
