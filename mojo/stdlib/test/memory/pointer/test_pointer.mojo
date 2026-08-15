@@ -101,22 +101,33 @@ def test_unsafepointer_of_move_only_type() raises:
 
     comptime ObserveType = ObservableMoveOnly[actions_ptr.origin]
 
-    var allocation = alloc[ObserveType]({count = 1}).into_managed()
+    var allocation = alloc[ObserveType]({count = 1})
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(ObserveType(42, actions_ptr))
-    assert_equal(len(actions_ptr[]), 2)
-    assert_equal(actions_ptr[][0], "__init__")
-    assert_equal(actions_ptr[][1], "move ctor", msg="emplace_value")
-    assert_equal(ptr[].value, 42)
 
-    # Stop compiler warnings
-    var true = True
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture every value the asserts
+    # below need before tearing down the allocation.
+    var len_after_write = len(actions_ptr[])
+    var action0 = actions_ptr[][0]
+    var action1 = actions_ptr[][1]
+    var written_value = ptr[].value
 
-    if true:  # scope value
-        var value = ptr.unsafe_take_pointee()
-        assert_equal(len(actions_ptr[]), 3)
-        assert_equal(actions_ptr[][2], "move ctor")
-        assert_equal(value.value, 42)
+    var value = ptr.unsafe_take_pointee()
+    var len_after_take = len(actions_ptr[])
+    var action2 = actions_ptr[][2]
+    var taken_value = value.value
+
+    dealloc(allocation^)
+
+    assert_equal(len_after_write, 2)
+    assert_equal(action0, "__init__")
+    assert_equal(action1, "move ctor", msg="emplace_value")
+    assert_equal(written_value, 42)
+
+    assert_equal(len_after_take, 3)
+    assert_equal(action2, "move ctor")
+    assert_equal(taken_value, 42)
 
     assert_equal(len(actions_ptr[]), 4)
     assert_equal(actions_ptr[][3], "__deinit__")

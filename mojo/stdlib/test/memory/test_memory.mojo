@@ -24,6 +24,7 @@ from std.memory import (
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
     forget_deinit,
+    dealloc,
 )
 from std.testing import TestSuite
 from std.testing import (
@@ -616,11 +617,16 @@ def test_pointer_refitem() raises:
 
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
-    var allocation = alloc[String]({count = 1}).into_managed()
+    var allocation = alloc[String]({count = 1})
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(init_with=lambda () -> String: String())
     ptr[] = payload
-    assert_equal(ptr[], payload)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var value = ptr[]
+    unsafe_destroy_n(ptr, count=1)
+    dealloc(allocation^)
+    assert_equal(value, payload)
 
 
 def test_pointer_refitem_pair() raises:
@@ -816,30 +822,41 @@ def test_uninit_move_n_trivial() raises:
 
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
-    var src_allocation = alloc[MoveCounter[String]]({count = 3}).into_managed()
+    var src_allocation = alloc[MoveCounter[String]]({count = 3})
     var src = src_allocation.unsafe_ptr()
     src.unsafe_offset(0).unsafe_write(MoveCounter("foo"))
     src.unsafe_offset(1).unsafe_write(MoveCounter("bar"))
     src.unsafe_offset(2).unsafe_write(MoveCounter("baz"))
 
-    var dest_allocation = alloc[MoveCounter[String]]({count = 3}).into_managed()
+    var dest_allocation = alloc[MoveCounter[String]]({count = 3})
     var dest = dest_allocation.unsafe_ptr()
     unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the values first.
+    var value0 = dest[unsafe_offset=0].value
+    var value1 = dest[unsafe_offset=1].value
+    var value2 = dest[unsafe_offset=2].value
+    var move_count0 = dest[unsafe_offset=0].move_count
+    var move_count1 = dest[unsafe_offset=1].move_count
+    var move_count2 = dest[unsafe_offset=2].move_count
+
+    # Don't destroy src - it's uninitialized after move
+    unsafe_destroy_n(dest, count=3)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
     # Verify values were moved
-    assert_equal(dest[unsafe_offset=0].value, "foo")
-    assert_equal(dest[unsafe_offset=1].value, "bar")
-    assert_equal(dest[unsafe_offset=2].value, "baz")
+    assert_equal(value0, "foo")
+    assert_equal(value1, "bar")
+    assert_equal(value2, "baz")
 
     # Verify move constructor was called.
     # First time for the initial move into the allocation.
     # Second time for the move from src -> dest
-    assert_equal(dest[unsafe_offset=0].move_count, 2)
-    assert_equal(dest[unsafe_offset=1].move_count, 2)
-    assert_equal(dest[unsafe_offset=2].move_count, 2)
-
-    # Don't destroy src - it's uninitialized after move
-    unsafe_destroy_n(dest, count=3)
+    assert_equal(move_count0, 2)
+    assert_equal(move_count1, 2)
+    assert_equal(move_count2, 2)
 
 
 def test_uninit_copy_n_trivial() raises:
@@ -871,36 +888,53 @@ def test_uninit_copy_n_trivial() raises:
 
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
-    var src_allocation = alloc[CopyCounter[String]]({count = 3}).into_managed()
+    var src_allocation = alloc[CopyCounter[String]]({count = 3})
     var src = src_allocation.unsafe_ptr()
     src.unsafe_write(CopyCounter("alpha"))
     src.unsafe_offset(1).unsafe_write(CopyCounter("beta"))
     src.unsafe_offset(2).unsafe_write(CopyCounter("gamma"))
 
-    var dest_allocation = alloc[CopyCounter[String]]({count = 3}).into_managed()
+    var dest_allocation = alloc[CopyCounter[String]]({count = 3})
     var dest = dest_allocation.unsafe_ptr()
     unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
-    # Verify values were copied
-    assert_equal(dest[unsafe_offset=0].value, "alpha")
-    assert_equal(dest[unsafe_offset=1].value, "beta")
-    assert_equal(dest[unsafe_offset=2].value, "gamma")
-
-    # Verify copy constructor was called (count incremented)
-    assert_equal(dest[unsafe_offset=0].copy_count, 1)
-    assert_equal(dest[unsafe_offset=1].copy_count, 1)
-    assert_equal(dest[unsafe_offset=2].copy_count, 1)
-
-    # Source should still be valid
-    assert_equal(src[unsafe_offset=0].value, "alpha")
-    assert_equal(src[unsafe_offset=1].value, "beta")
-    assert_equal(src[unsafe_offset=2].value, "gamma")
-    assert_equal(src[unsafe_offset=0].copy_count, 0)
-    assert_equal(src[unsafe_offset=1].copy_count, 0)
-    assert_equal(src[unsafe_offset=2].copy_count, 0)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the values first.
+    var dest_value0 = dest[unsafe_offset=0].value
+    var dest_value1 = dest[unsafe_offset=1].value
+    var dest_value2 = dest[unsafe_offset=2].value
+    var dest_copy_count0 = dest[unsafe_offset=0].copy_count
+    var dest_copy_count1 = dest[unsafe_offset=1].copy_count
+    var dest_copy_count2 = dest[unsafe_offset=2].copy_count
+    var src_value0 = src[unsafe_offset=0].value
+    var src_value1 = src[unsafe_offset=1].value
+    var src_value2 = src[unsafe_offset=2].value
+    var src_copy_count0 = src[unsafe_offset=0].copy_count
+    var src_copy_count1 = src[unsafe_offset=1].copy_count
+    var src_copy_count2 = src[unsafe_offset=2].copy_count
 
     unsafe_destroy_n(src, count=3)
     unsafe_destroy_n(dest, count=3)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
+    # Verify values were copied
+    assert_equal(dest_value0, "alpha")
+    assert_equal(dest_value1, "beta")
+    assert_equal(dest_value2, "gamma")
+
+    # Verify copy constructor was called (count incremented)
+    assert_equal(dest_copy_count0, 1)
+    assert_equal(dest_copy_count1, 1)
+    assert_equal(dest_copy_count2, 1)
+
+    # Source should still be valid
+    assert_equal(src_value0, "alpha")
+    assert_equal(src_value1, "beta")
+    assert_equal(src_value2, "gamma")
+    assert_equal(src_copy_count0, 0)
+    assert_equal(src_copy_count1, 0)
+    assert_equal(src_copy_count2, 0)
 
 
 def test_destroy_n_trivial() raises:
@@ -927,51 +961,63 @@ def test_destroy_n_nontrivial() raises:
     var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count)]
 
-    var allocation = alloc[Counter]({count = 3}).into_managed()
+    var allocation = alloc[Counter]({count = 3})
     var ptr = allocation.unsafe_ptr()
     ptr.unsafe_offset(0).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(1).unsafe_write(Counter(counter_ptr))
     ptr.unsafe_offset(2).unsafe_write(Counter(counter_ptr))
 
     unsafe_destroy_n(ptr, count=3)
+    dealloc(allocation^)
     # Verify destructor was called for all 3 elements
     assert_equal(del_count, 3)
 
 
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src_allocation = alloc[MoveCounter[String]]({count = 1}).into_managed()
+    var src_allocation = alloc[MoveCounter[String]]({count = 1})
     var src = src_allocation.unsafe_ptr()
     # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
     unsafe_memcpy(dest=src, src=Pointer(to=tmp), count=1)
 
-    var dest_allocation = alloc[MoveCounter[String]]({count = 1}).into_managed()
+    var dest_allocation = alloc[MoveCounter[String]]({count = 1})
     var dest = dest_allocation.unsafe_ptr()
     unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
 
-    # Nothing should have happened - move count should still be 0
-    assert_equal(src[unsafe_offset=0].move_count, 0)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var move_count = src[unsafe_offset=0].move_count
 
     # Cleanup/free the memory
     unsafe_destroy_n(src, count=1)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
+    # Nothing should have happened - move count should still be 0
+    assert_equal(move_count, 0)
 
 
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src_allocation = alloc[CopyCounter[String]]({count = 1}).into_managed()
+    var src_allocation = alloc[CopyCounter[String]]({count = 1})
     var src = src_allocation.unsafe_ptr()
     src.unsafe_write(CopyCounter("test"))
 
-    var dest_allocation = alloc[CopyCounter[String]]({count = 1}).into_managed()
+    var dest_allocation = alloc[CopyCounter[String]]({count = 1})
     var dest = dest_allocation.unsafe_ptr()
     unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
 
-    # Nothing should have happened - copy count should still be 0
-    assert_equal(src[unsafe_offset=0].copy_count, 0)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var copy_count = src[unsafe_offset=0].copy_count
 
     # Cleanup/free the memory
     unsafe_destroy_n(src, count=1)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
+    assert_equal(copy_count, 0)
 
 
 def test_destroy_n_zero_count() raises:
