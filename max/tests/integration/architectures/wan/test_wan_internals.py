@@ -187,8 +187,7 @@ def test_wan_tokenizer_uses_single_frame_video_latents_for_images(
     tokenizer._scheduler = SimpleNamespace(
         use_flow_sigmas=False,
         order=1,
-        retrieve_timesteps_and_sigmas=lambda image_seq_len,
-        num_inference_steps: (
+        retrieve_timesteps_and_sigmas=lambda image_seq_len, num_inference_steps: (
             np.array([1.0, 0.0], dtype=np.float32),
             np.array([1.0, 0.0], dtype=np.float32),
         ),

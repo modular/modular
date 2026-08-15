@@ -309,6 +309,7 @@ Fails if error rate degrades or p99 latency grows 3x from baseline.
 # scenarios/my_custom.py
 from scenarios import BaseScenario, register_scenario, Verdict
 
+
 @register_scenario
 class MyCustomScenario(BaseScenario):
     name = "my_custom"
@@ -317,7 +318,9 @@ class MyCustomScenario(BaseScenario):
 
     async def run(self, client, config):
         results = []
-        resp = await client.post_json({"model": config.model, "messages": [...]})
+        resp = await client.post_json(
+            {"model": config.model, "messages": [...]}
+        )
         results.append(self.make_result("my_custom", "test_name", Verdict.PASS))
         return results
 ```
@@ -329,6 +332,7 @@ class MyCustomScenario(BaseScenario):
 import asyncio
 from scenarios import BaseScenario, register_scenario, Verdict
 from helpers import make_tool, collect_stream
+
 
 @register_scenario
 class MyValidation(BaseScenario):
@@ -344,18 +348,33 @@ class MyValidation(BaseScenario):
         loop = asyncio.get_event_loop()
 
         def _test():
-            tools = [make_tool("get_weather", {"type": "object", "properties": {"city": {"type": "string"}}})]
+            tools = [
+                make_tool(
+                    "get_weather",
+                    {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                    },
+                )
+            ]
             return validator.tc_chat_stream(
                 [{"role": "user", "content": "Weather in Paris"}],
-                tools, tool_choice="required",
+                tools,
+                tool_choice="required",
             )
 
         try:
             result = await loop.run_in_executor(None, _test)
             # Validate result...
-            results.append(self.make_result(self.name, "test_name", Verdict.PASS))
+            results.append(
+                self.make_result(self.name, "test_name", Verdict.PASS)
+            )
         except Exception as e:
-            results.append(self.make_result(self.name, "test_name", Verdict.ERROR, error=str(e)))
+            results.append(
+                self.make_result(
+                    self.name, "test_name", Verdict.ERROR, error=str(e)
+                )
+            )
         return results
 ```
 

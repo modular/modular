@@ -45,7 +45,7 @@ inferring it from `x` as a parameter since the user is required to pass `dt` as
 the first parameter.
 
 ```python
-scalar_param[DType.int32, Int32()]() # 'dt' parameter is required
+scalar_param[DType.int32, Int32()]()  # 'dt' parameter is required
 ```
 
 This has been requested multiple times in various forms, especially given the

@@ -200,10 +200,10 @@ Python faced this exact problem and addressed it with PEP 328
 from collections import OrderedDict
 
 # Relative imports - always local
-from . import memory              # Current package
-from .memory import MyAllocator   # Current package's memory module
-from .. import utils              # Parent package
-from ..utils import helper        # Parent package's utils module
+from . import memory  # Current package
+from .memory import MyAllocator  # Current package's memory module
+from .. import utils  # Parent package
+from ..utils import helper  # Parent package's utils module
 ```
 
 Python's approach:

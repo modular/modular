@@ -427,7 +427,9 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
             subgraph_layer_groups=(
                 groups if self.config.use_subgraphs else None
             ),
-            name_for_subgraph=lambda g: f"qwen3_5_{self.layer_types[groups[g][0]]}_block",
+            name_for_subgraph=lambda g: (
+                f"qwen3_5_{self.layer_types[groups[g][0]]}_block"
+            ),
             weight_prefix_for_layer=lambda i: f"layers.{i}.",
         )
         h = h_list[0]

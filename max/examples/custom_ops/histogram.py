@@ -32,18 +32,20 @@ if __name__ == "__main__":
         "histogram",
         # The custom Mojo operation is referenced by its string name, and we
         # need to provide inputs as a list as well as expected output types.
-        forward=lambda x: ops.custom(
-            name="histogram",
-            device=DeviceRef.from_device(device),
-            values=[x],
-            out_types=[
-                TensorType(
-                    dtype=DType.int64,
-                    shape=[256],
-                    device=DeviceRef.from_device(device),
-                )
-            ],
-        )[0].tensor,
+        forward=lambda x: (
+            ops.custom(
+                name="histogram",
+                device=DeviceRef.from_device(device),
+                values=[x],
+                out_types=[
+                    TensorType(
+                        dtype=DType.int64,
+                        shape=[256],
+                        device=DeviceRef.from_device(device),
+                    )
+                ],
+            )[0].tensor
+        ),
         input_types=[
             TensorType(
                 DType.uint8, shape=[n], device=DeviceRef.from_device(device)

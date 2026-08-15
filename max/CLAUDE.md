@@ -134,8 +134,7 @@ result = session.run(input_data)
 
 ```python
 @register_pipelines_model("your-model", provider="your-org")
-class YourModelConfig(HFModelConfig):
-    ...
+class YourModelConfig(HFModelConfig): ...
 ```
 
 ## Testing Guidelines
@@ -184,7 +183,7 @@ blow-up is in CI, not locally.
   test sharding instead of splitting into separate files. Add `shard_count` or
   `per_test_shard_count` to the BUILD rule:
 
-  ```python
+  ```bzl
   modular_py_test(
       name = "tests",
       srcs = ["test_attention.py", ...],

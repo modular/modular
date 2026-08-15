@@ -215,18 +215,20 @@ device = CPU() if accelerator_count() == 0 else Accelerator()
 
 graph = Graph(
     "addition",
-    forward=lambda x: ops.custom(
-        name="add_one",
-        device=DeviceRef.from_device(device),
-        values=[x],
-        out_types=[
-            TensorType(
-                dtype=x.dtype,
-                shape=x.tensor.shape,
-                device=DeviceRef.from_device(device),
-            )
-        ],
-    )[0].tensor,
+    forward=lambda x: (
+        ops.custom(
+            name="add_one",
+            device=DeviceRef.from_device(device),
+            values=[x],
+            out_types=[
+                TensorType(
+                    dtype=x.dtype,
+                    shape=x.tensor.shape,
+                    device=DeviceRef.from_device(device),
+                )
+            ],
+        )[0].tensor
+    ),
     input_types=[
         TensorType(
             dtype,

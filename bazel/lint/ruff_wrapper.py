@@ -46,7 +46,7 @@ def main(runfiles_root: Path) -> int:
         ):
             files = []
         else:
-            files = [f for f in changed if f.endswith((".py", ".pyi"))]
+            files = [f for f in changed if f.endswith((".py", ".pyi", ".md"))]
             if not files:
                 return 0
 
@@ -57,13 +57,44 @@ def main(runfiles_root: Path) -> int:
         format_args = []
         check_args = ["--fix"]
 
-    # --quiet suppresses success summaries ("All checks passed!",
-    # "N files left unchanged") while still emitting real lint errors / diffs.
-    result = subprocess.call([ruff, "format", "--quiet", *format_args, *files])
-    return (
-        subprocess.call([ruff, "check", "--quiet", *check_args, *files])
-        or result
+    # --quiet can potentially suppress error diagnostics in `ruff format`,
+    # so only output that if it fails. We want to suppress success summaries
+    # ("All checks passed!", "N files left unchanged") while still emitting
+    # real lint errors / diffs.
+    fmt_result = subprocess.run(
+        [
+            ruff,
+            "format",
+            # Ignore internal-only broken symlink. This seems to be the only way to ignore it.
+            "--exclude=oss/modular/oss.AGENTS.md",
+            "--color=always",
+            *format_args,
+            *files,
+        ],
+        check=False,
+        capture_output=True,
     )
+    if fmt_result.returncode != 0:
+        print(fmt_result.stdout.decode())
+        print(fmt_result.stderr.decode())
+    check_result = subprocess.run(
+        [
+            ruff,
+            "check",
+            "--color=always",
+            *check_args,
+            *files,
+        ],
+        check=False,
+        capture_output=True,
+    )
+    if check_result.returncode != 0:
+        print(check_result.stdout.decode())
+        print(check_result.stderr.decode())
+
+    if fmt_result.returncode != 0:
+        return fmt_result.returncode
+    return check_result.returncode
 
 
 if __name__ == "__main__":
