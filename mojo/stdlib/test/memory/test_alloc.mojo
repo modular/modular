@@ -197,15 +197,6 @@ def test_deletable_allocation_auto_deallocs_at_last_use() raises:
     assert_equal(total, 0 + 1 + 2)
 
 
-def test_deletable_allocation_del_does_not_run_pointee_destructors() raises:
-    var deleted = False
-    var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())
-    var deletable = alloc(Layout[type_of(obs)](count=1)).into_managed()
-    deletable.unsafe_ptr().unsafe_write(obs^)
-    _ = deletable^
-    assert_false(deleted)
-
-
 def test_dealloc_does_not_run_pointee_destructors() raises:
     var deleted = False
     var obs = ObservableDel(Pointer(to=deleted).as_unsafe_any_origin())

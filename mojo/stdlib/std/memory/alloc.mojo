@@ -36,7 +36,9 @@ destroyed handles, a `ManagedAllocation` implements `Deinitable`: it
 deallocates its storage in its destructor, which Mojo runs automatically after
 the value's last use (ASAP destruction), so no explicit `dealloc` is needed.
 Like `dealloc`, this frees the storage without running the destructors of any
-elements written into it.
+elements written into it. Because of that, `into_managed()` requires `T` to be
+`IsTriviallyDeinitable`: for any other `T`, the skipped destructor call could
+silently leak resources owned by elements left in the storage.
 
 Examples:
 
@@ -126,6 +128,7 @@ from std.memory.memory import _free, _malloc
 from std.os import abort
 from std.sys import align_of, size_of
 from std.sys.intrinsics import unlikely
+from std.traits import IsTriviallyDeinitable
 
 
 @explicit_destroy(
@@ -299,7 +302,14 @@ struct Allocation[T: AnyType](
         """
         return self._alloc^
 
-    def into_managed(deinit self) -> ManagedAllocation[Self.T]:
+    def into_managed(
+        deinit self,
+    ) -> ManagedAllocation[Self.T] where (
+        IsTriviallyDeinitable[Self.T],
+        "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
+        " its storage without ever running T's `__deinit__`, which would"
+        " leak resources owned by any initialized elements",
+    ):
         """Consumes the `Allocation` and wraps it in a `ManagedAllocation`.
 
         This converts the explicitly destroyed handle into a self-freeing
@@ -315,6 +325,12 @@ struct Allocation[T: AnyType](
         destroyed. If the elements need their destructors run, destroy them
         yourself (for example with `unsafe_destroy_n`) before the
         `ManagedAllocation` is destroyed.
+
+        Constraints:
+            `T` must be `IsTriviallyDeinitable`. Because a `ManagedAllocation`
+            never runs `T`'s `__deinit__`, allowing a non-trivial `T` here would
+            let its deinitializer be silently skipped, potentially leaking
+            resources.
 
         Returns:
             A `ManagedAllocation` owning this storage.
@@ -379,7 +395,10 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     Like `dealloc`, the destructor frees the storage but does not run the
     destructors of any elements written into it. If the elements need their
     destructors run, destroy them yourself (for example with
-    `unsafe_destroy_n`) before the `ManagedAllocation` is destroyed.
+    `unsafe_destroy_n`) before the `ManagedAllocation` is destroyed. Because of
+    that, constructing a `ManagedAllocation` requires `T` to be
+    `IsTriviallyDeinitable`: for any other `T`, the skipped destructor call
+    could silently leak resources owned by elements left in the storage.
 
     Parameters:
         T: The type of the elements stored in the allocation.
@@ -400,13 +419,26 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     var _alloc: Allocation[Self.T]
     """The wrapped `Allocation` that owns the storage."""
 
-    def __init__(out self, var allocation: Allocation[Self.T], /):
+    def __init__(
+        out self, var allocation: Allocation[Self.T], /
+    ) where (
+        IsTriviallyDeinitable[Self.T],
+        "T must be trivially deinitable, since a `ManagedAllocation` deallocs"
+        " its storage without ever running T's `__deinit__`, which would"
+        " leak resources owned by any initialized elements",
+    ):
         """Initializes a `ManagedAllocation` that owns `allocation`.
 
         This is the constructor form of `Allocation.into_managed()`. The new
         `ManagedAllocation` assumes responsibility for deallocating the
         storage and frees it automatically when it is destroyed, after its last
         use.
+
+        Constraints:
+            `T` must be `IsTriviallyDeinitable`. Because a `ManagedAllocation`
+            never runs `T`'s deinitializer, allowing a non-trivial `T` here would
+            let its deinitializer be silently skipped, leaking any resources
+            (heap memory, file handles, and so on) `T`'s elements own.
 
         Args:
             allocation: The `Allocation` to take ownership of. It is consumed by
