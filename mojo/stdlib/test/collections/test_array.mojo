@@ -30,6 +30,7 @@ from test_utils import (
     check_write_to,
 )
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
+from std.builtin.builtin_slice import ContiguousSlice
 
 
 def test_array_unsafe_get() raises:
