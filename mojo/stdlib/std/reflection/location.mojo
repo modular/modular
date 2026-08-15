@@ -170,7 +170,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
     def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
         memory.unsafe_bitcast[Byte]().unsafe_offset(
             Self._LineByteOffset
-        ).unsafe_bitcast[Int]().unsafe_write(Self._LineNiche)
+        ).unsafe_bitcast[Int]().write(Self._LineNiche)
 
     @staticmethod
     @always_inline

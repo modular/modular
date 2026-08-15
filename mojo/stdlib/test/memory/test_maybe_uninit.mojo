@@ -92,6 +92,15 @@ def test_write_over_initialized_leaks_previous_value() raises:
     assert_equal(count, 1)
 
 
+def test_write() raises:
+    var a = MaybeUninit[Int]()
+    a.write(41)
+    assert_equal(a.unsafe_assume_init(), 41)
+
+    a.write(42)
+    assert_equal(a.unsafe_assume_init(), 42)
+
+
 def test_unsafe_assume_init_move() raises:
     var a = MoveCounter(0)
     var uninit = MaybeUninit[MoveCounter[Int]](a^)

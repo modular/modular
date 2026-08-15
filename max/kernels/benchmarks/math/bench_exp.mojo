@@ -84,7 +84,7 @@ def bench_unary[
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
-        input_ptr.unsafe_offset(i).unsafe_write(f)
+        input_ptr.unsafe_offset(i).write(f)
 
     @__parameter
     def bench(mut b: Bencher, size: Int) raises:

@@ -180,12 +180,10 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
-            stride_ptr.unsafe_write(
-                rebind[StrideType](Idx[StrideType.static_value])
-            )
+            stride_ptr.write(rebind[StrideType](Idx[StrideType.static_value]))
         else:
             var stride_val = tensor.layout.stride[idx]().value()
-            stride_ptr.unsafe_write(
+            stride_ptr.write(
                 rebind[StrideType](Scalar[StrideType.DTYPE](stride_val))
             )
 
@@ -194,9 +192,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
-            shape_ptr.unsafe_write(
-                rebind[ShapeType](Idx[ShapeType.static_value])
-            )
+            shape_ptr.write(rebind[ShapeType](Idx[ShapeType.static_value]))
         else:
             var shape_val = Int(tensor.layout.shape[idx]().value())
 
@@ -205,9 +201,9 @@ def _reshape_tile_tensor_with_batch_to_3d(
                     shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
             comptime if ShapeType == Int:
-                shape_ptr.unsafe_write(rebind[ShapeType](shape_val))
+                shape_ptr.write(rebind[ShapeType](shape_val))
             else:
-                shape_ptr.unsafe_write(
+                shape_ptr.write(
                     rebind[ShapeType](Scalar[ShapeType.DTYPE](shape_val))
                 )
 

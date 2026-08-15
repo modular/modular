@@ -76,7 +76,7 @@ def run_reduce[
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals.unsafe_offset(i).unsafe_write(
+        expected_vals.unsafe_offset(i).write(
             Scalar[dtype](shape[axis]) * Scalar[dtype](1)
         )
 
