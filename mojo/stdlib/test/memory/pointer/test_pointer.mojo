@@ -141,6 +141,17 @@ def test_unsafepointer_move_pointee_move_count() raises:
     assert_equal(2, ptr_2[].move_count)
 
 
+def test_write() raises:
+    var x = 0
+    var ptr = Pointer(to=x)
+
+    ptr.write(41)
+    assert_equal(ptr[], 41)
+
+    ptr.write(42)
+    assert_equal(ptr[], 42)
+
+
 def test_unsafepointer_unsafe_write() raises:
     var ptr = alloc[ExplicitCopyOnly]({count = 1}).unsafe_leak()
 
@@ -758,7 +769,7 @@ def test_unsafe_pointer_niche() raises:
     UP.write_niche(Pointer(to=storage))
     assert_true(UP.isa_niche(Pointer(to=storage)))
 
-    storage.unsafe_write(UP(to=x))
+    storage.write(UP(to=x))
     assert_false(UP.isa_niche(Pointer(to=storage)))
 
 

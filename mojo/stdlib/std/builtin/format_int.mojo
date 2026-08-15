@@ -300,7 +300,7 @@ def _write_int[
     # earlier in the buffer as we write the more-significant digits.
     var offset = CAPACITY - 1
 
-    buf.unsafe_ptr().unsafe_offset(offset).unsafe_write(
+    buf.unsafe_ptr().unsafe_offset(offset).write(
         0
     )  # Write NUL terminator at the end
 
@@ -320,7 +320,7 @@ def _write_int[
 
             # Write the char representing the value of the least significant
             # digit.
-            buf.unsafe_ptr().unsafe_offset(offset).unsafe_write(
+            buf.unsafe_ptr().unsafe_offset(offset).write(
                 digit_chars_array.unsafe_ptr()[unsafe_offset=Int(digit_value)]
             )
 

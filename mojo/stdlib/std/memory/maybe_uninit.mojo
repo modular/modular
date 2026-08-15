@@ -267,6 +267,25 @@ struct MaybeUninit[T: AnyType](
         unsafe_memset_zero(Pointer(to=result), 1)
 
     @always_inline
+    def write(
+        mut self,
+        var value: Self.T,
+        /,
+    ) where conforms_to(Self.T, Movable) and IsTriviallyDeinitable[Self.T]:
+        """Initialize this memory with the given `value`.
+
+        This overwrites any previous value in the memory. Unlike
+        `unsafe_write()`, this is safe to call even when the memory is
+        already initialized: `T` is constrained to be trivially
+        deinitializable, so there's no destructor to skip and overwriting
+        a previous value can't leak a resource.
+
+        Args:
+            value: The value to store in memory.
+        """
+        self.unsafe_ptr().unsafe_write(value^)
+
+    @always_inline
     def unsafe_write(
         mut self, var value: Self.T, /
     ) where conforms_to(Self.T, Movable):
@@ -275,6 +294,10 @@ struct MaybeUninit[T: AnyType](
         This overwrites any previous value without destroying it.
         This means, if a previous `T` existed in the memory, that old instance
         will not be destroyed, potentially leading to memory leaks.
+
+        If `T` is trivially deinitializable (for example, `Int`), prefer
+        `write()` instead: it overwrites safely, since there's no
+        destructor that a previous value could leak.
 
         Args:
             value: The value to store in memory.

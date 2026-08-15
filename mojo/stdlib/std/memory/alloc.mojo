@@ -392,7 +392,7 @@ struct ManagedAllocation[T: AnyType](RegisterPassable, Writable):
     var managed = alloc(Layout[Int32](count=4)).into_managed()
     var ptr = managed.unsafe_ptr()
     for i in range(4):
-        ptr.unsafe_offset(i).unsafe_write(i)
+        ptr.unsafe_offset(i).write(i)
     # `managed` frees its storage when it is destroyed (after its last use).
     ```
     """
@@ -741,7 +741,7 @@ def alloc[T: AnyType, /](layout: Layout[T], /) -> Allocation[T]:
     var allocation = alloc(Layout[Int32](count=4))
     var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        ptr.unsafe_offset(i).unsafe_write(i)
+        ptr.unsafe_offset(i).write(i)
     dealloc(allocation^)
     ```
     """
@@ -896,7 +896,7 @@ struct Layout[T: AnyType](TrivialRegisterPassable, Writable):
 
         var layout = Layout[Int64].single()
         var allocation = alloc(layout)
-        allocation.unsafe_ptr().unsafe_write(0)
+        allocation.unsafe_ptr().write(0)
         dealloc(allocation^)
         ```
         """

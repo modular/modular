@@ -620,7 +620,7 @@ struct TileTensor[
         else:
             var coord = Coord[*CoordLikes]()
             comptime for i in range(CoordLikes.length):
-                UnsafePointer(to=coord[i]).unsafe_write(coords[i])
+                UnsafePointer(to=coord[i]).write(coords[i])
             return self.load(coord)
 
     @always_inline("nodebug")
@@ -731,10 +731,10 @@ struct TileTensor[
         comptime for i in range(Self.rank):
             comptime if IndexTypes[i] == _All:
                 comptime kept_idx = _count_all_before[i, *IndexTypes]()
-                UnsafePointer(to=new_shape[kept_idx]).unsafe_write(
+                UnsafePointer(to=new_shape[kept_idx]).write(
                     rebind[KeptShapeTypes[kept_idx]](self.layout.shape[i]())
                 )
-                UnsafePointer(to=new_stride[kept_idx]).unsafe_write(
+                UnsafePointer(to=new_stride[kept_idx]).write(
                     rebind[KeptStrideTypes[kept_idx]](self.layout.stride[i]())
                 )
 
@@ -778,7 +778,7 @@ struct TileTensor[
         var linear_tuple = DynamicCoord[Self.linear_idx_type, arg_count]()
 
         comptime for i in range(arg_count):
-            UnsafePointer(to=linear_tuple[i]).unsafe_write(
+            UnsafePointer(to=linear_tuple[i]).write(
                 rebind[type_of(linear_tuple).element_types[i]](
                     Scalar[Self.linear_idx_type](index(items[i]))
                 )
@@ -1536,7 +1536,7 @@ struct TileTensor[
         var coordinates = DynamicCoord[Self.linear_idx_type, Self.rank]()
 
         comptime for i in range(Self.rank):
-            UnsafePointer(to=coordinates[i]).unsafe_write(
+            UnsafePointer(to=coordinates[i]).write(
                 rebind[coordinates.element_types[i]](
                     Scalar[Self.linear_idx_type](tile_coords[i])
                 )
@@ -1970,13 +1970,13 @@ struct TileTensor[
         comptime for i in range(Self.rank):
             comptime NewShapeType = NewShapeTypes[i]
             comptime if i == axis:
-                UnsafePointer(to=new_shape[i]).unsafe_write(
+                UnsafePointer(to=new_shape[i]).write(
                     rebind[NewShapeType](
                         Scalar[Self.linear_idx_type](partition_dim)
                     )
                 )
             else:
-                UnsafePointer(to=new_shape[i]).unsafe_write(
+                UnsafePointer(to=new_shape[i]).write(
                     rebind[NewShapeType](self.layout.shape[i]())
                 )
 
@@ -2003,7 +2003,7 @@ struct TileTensor[
 
         comptime for i in range(Self.rank):
             comptime NewShapeType = NewShapeTypes[i]
-            UnsafePointer(to=new_shape[i]).unsafe_write(NewShapeType())
+            UnsafePointer(to=new_shape[i]).write(NewShapeType())
 
         return Layout(new_shape, self.layout.stride_coord())
 
@@ -2099,7 +2099,7 @@ struct TileTensor[
             var shape_ptr = UnsafePointer(to=new_shape[i])
             comptime NewShapeType = NewShapeTypes[i]
 
-            shape_ptr.unsafe_write(
+            shape_ptr.write(
                 rebind[NewShapeType](ComptimeInt[NewShapeType.static_value]())
             )
 
@@ -3409,14 +3409,14 @@ def _distribute[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.length):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=shape[i]).unsafe_write(
+            UnsafePointer(to=shape[i]).write(
                 _coerce_dynamic[NewShapeTypes[i]](
                     Int(data_layout_tensor.layout.shape_coord()[i].value())
                     // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=stride[i]).unsafe_write(
+            UnsafePointer(to=stride[i]).write(
                 _coerce_dynamic[NewStrideTypes[i]](
                     Int(data_layout_tensor.layout.stride_coord()[i].value())
                     * thread_layout.shape_types[i].static_value
@@ -3507,14 +3507,14 @@ def _distribute_with_offset[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.length):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=shape[i]).unsafe_write(
+            UnsafePointer(to=shape[i]).write(
                 _coerce_dynamic[NewShapeTypes[i]](
                     Int(data_layout_tensor.layout.shape_coord()[i].value())
                     // thread_layout.shape_types[i].static_value
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=stride[i]).unsafe_write(
+            UnsafePointer(to=stride[i]).write(
                 _coerce_dynamic[NewStrideTypes[i]](
                     Int(data_layout_tensor.layout.stride_coord()[i].value())
                     * thread_layout.shape_types[i].static_value
@@ -3926,7 +3926,7 @@ def _vectorize[
     # Populate runtime values for dimensions that aren't statically known.
     comptime for i in range(NewShapeTypes.length):
         comptime if not NewShapeTypes[i].is_static_value:
-            UnsafePointer(to=new_shape[i]).unsafe_write(
+            UnsafePointer(to=new_shape[i]).write(
                 rebind[NewShapeTypes[i]](
                     Scalar[NewShapeTypes[i].DTYPE](
                         ceildiv(
@@ -3943,7 +3943,7 @@ def _vectorize[
                 )
             )
         comptime if not NewStrideTypes[i].is_static_value:
-            UnsafePointer(to=new_stride[i]).unsafe_write(
+            UnsafePointer(to=new_stride[i]).write(
                 rebind[NewStrideTypes[i]](
                     Scalar[NewStrideTypes[i].DTYPE](
                         data_layout_tensor.layout.stride_coord()[i].value()

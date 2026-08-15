@@ -45,7 +45,7 @@ from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.reflection import reflect
-from std.traits import IsTriviallyMovable
+from std.traits import IsTriviallyDeinitable, IsTriviallyMovable
 from std.memory.address_space import AddressSpace
 from std.memory import unsafe_memcpy
 from std.memory.memory import _free
@@ -371,7 +371,7 @@ struct Pointer[
     # Check for absence, then unwrap to use the pointer.
     if maybe_ptr:
         var ptr = maybe_ptr.value()
-        ptr.unsafe_write(42)
+        ptr.write(42)
         print(ptr[])  # => 42
         dealloc(
             ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
@@ -570,9 +570,7 @@ struct Pointer[
     @always_inline
     @doc_hidden
     def write_niche(memory: Pointer[mut=True, MaybeUninit[Self], _]):
-        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().unsafe_write(
-            {}
-        )
+        memory.unsafe_bitcast[_Null[Self.T, Self.address_space]]().write({})
 
     @staticmethod
     @always_inline
@@ -2528,6 +2526,42 @@ struct Pointer[
 
     @__allow_legacy_custom_self_type
     @always_inline
+    def write[
+        U: Movable, //
+    ](self: Pointer[U, _], var value: U, /) where (
+        type_of(self).mut and IsTriviallyDeinitable[U]
+    ):
+        """Write `value` into the pointer location, moving from `value`.
+
+        Unlike `unsafe_write()`, this is safe to call even when the pointee
+        already holds a live value: `U` is constrained to be trivially
+        deinitializable, so there's no destructor to skip and overwriting
+        a previous value can't leak a resource.
+
+        Example:
+
+        ```mojo
+        from std.memory.alloc import alloc, dealloc, Layout
+
+        var allocation = alloc(Layout[Int].single())
+        var ptr = allocation.unsafe_ptr()
+        ptr.write(41)
+        ptr.write(42)  # OK: overwriting is safe, `Int` has no destructor.
+        print(ptr[])  # => 42
+        dealloc(allocation^)
+        ```
+
+        Parameters:
+            U: The type the pointer points to, which must be `Movable` and
+                trivially deinitializable.
+
+        Args:
+            value: The value to emplace.
+        """
+        __get_address_as_uninit_lvalue(self._mlir_value) = value^
+
+    @__allow_legacy_custom_self_type
+    @always_inline
     def unsafe_write[
         U: Movable, //
     ](self: Pointer[U, _], var value: U, /) where type_of(self).mut:
@@ -2549,6 +2583,10 @@ struct Pointer[
         ptr.unsafe_deinit_pointee()
         dealloc(allocation^)
         ```
+
+        If `U` is trivially deinitializable (for example, `Int`), prefer
+        `write()` instead: it overwrites safely, since there's no
+        destructor that a previous value could leak.
 
         Parameters:
             U: The type the pointer points to, which must be `Movable`.

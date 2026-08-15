@@ -130,6 +130,13 @@ This version is still a work in progress.
   than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
   this does not require the pointee type to be `Movable`.
 
+- Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
+  `unsafe_write()` for types that are trivially deinitializable (for example
+  `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
+  through `write()` can't leak a resource, so it's callable without first
+  destroying the previous value. Prefer it over `unsafe_write()` whenever the
+  pointee type is trivially deinitializable.
+
 - `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
   mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
   is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
