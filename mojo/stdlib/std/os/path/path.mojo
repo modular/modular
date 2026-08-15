@@ -313,7 +313,7 @@ def realpath[
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(Int(_unsafe_strlen(string.as_bytes().unsafe_ptr())))
+    string._set_byte_length(Int(_unsafe_strlen(string.as_bytes().unsafe_ptr())))
     string._set_nul_terminated()
 
     return string^
