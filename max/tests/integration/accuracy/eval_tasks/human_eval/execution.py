@@ -186,8 +186,6 @@ def chdir(root: str) -> Generator[None, None, None]:
     os.chdir(root)
     try:
         yield
-    except BaseException:  # noqa: TRY203 (https://github.com/astral-sh/ruff/issues/27775)
-        raise
     finally:
         os.chdir(cwd)
 
