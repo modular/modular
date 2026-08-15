@@ -1274,8 +1274,9 @@ def test_nemotron_opencode_sample_requests(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()
@@ -1322,8 +1323,9 @@ def test_nemotron_opencode_disable_tool_calls(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()
@@ -1353,8 +1355,9 @@ def test_nemotron_opencode_gen_multiturn(mock_stream: Mock) -> None:
 
     tok = Mock(spec=PreTrainedTokenizerBase)
     tok.encode = Mock(
-        side_effect=lambda text, add_special_tokens=False: [0]
-        * max(len(text), 1)
+        side_effect=lambda text, add_special_tokens=False: (
+            [0] * max(len(text), 1)
+        )
     )
 
     dataset = NemotronOpenCodeBenchmarkDataset()

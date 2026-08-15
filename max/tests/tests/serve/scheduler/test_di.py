@@ -511,8 +511,10 @@ def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     # Pump prefill until cleanup_active_transfers observes the completed send
     # transfer — the flattened-engine transfer must be released symmetrically.
     run_until(
-        lambda: not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers,
+        lambda: (
+            not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+        ),
         prefill,
     )
     assert prefill.active_transfers == {}
@@ -917,11 +919,13 @@ def test_completed_request_cleans_up_all_state() -> None:
     # transfer completing and cleans up.
     prefill.run_iteration()
     run_until(
-        lambda: not decode.inflight_transfers
-        and not decode.prefill_reqs
-        and decode.kv_cache.block_count(replica_idx=0).used == 0
-        and not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers,
+        lambda: (
+            not decode.inflight_transfers
+            and not decode.prefill_reqs
+            and decode.kv_cache.block_count(replica_idx=0).used == 0
+            and not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+        ),
         decode,
         prefill,
     )
@@ -957,11 +961,13 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
 
     # Both sides need to poll for transfer completion
     run_until(
-        lambda: not decode.inflight_transfers
-        and not decode.prefill_reqs
-        and not prefill.active_transfers
-        and not prefill.transfer_engine.inflight_send_transfers
-        and prefill.kv_cache.block_count(replica_idx=0).used == 0,
+        lambda: (
+            not decode.inflight_transfers
+            and not decode.prefill_reqs
+            and not prefill.active_transfers
+            and not prefill.transfer_engine.inflight_send_transfers
+            and prefill.kv_cache.block_count(replica_idx=0).used == 0
+        ),
         decode,
         prefill,
     )
@@ -1566,11 +1572,13 @@ def test_overlap_di_both_sides_kv_cache_fully_released() -> None:
     prefill.run_iteration()
     prefill.run_iteration()
     run_until(
-        lambda: len(done_request_ids(q)) == num_requests
-        and decode.kv_cache.block_count(replica_idx=0).used == 0
-        and prefill.kv_cache.block_count(replica_idx=0).used == 0
-        and not decode.inflight_transfers
-        and not prefill.active_transfers,
+        lambda: (
+            len(done_request_ids(q)) == num_requests
+            and decode.kv_cache.block_count(replica_idx=0).used == 0
+            and prefill.kv_cache.block_count(replica_idx=0).used == 0
+            and not decode.inflight_transfers
+            and not prefill.active_transfers
+        ),
         decode,
         prefill,
     )

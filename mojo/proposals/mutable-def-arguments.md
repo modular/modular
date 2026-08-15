@@ -16,9 +16,9 @@ this? Python allows code that mutates arguments:
 
 ```python
 def foo(a):
-  print(a)
-  a = 0       # Note that this affects 'a' in this function, not the caller
-  print(a)
+    print(a)
+    a = 0  # Note that this affects 'a' in this function, not the caller
+    print(a)
 ```
 
 We retains the goal of Mojo growing into a superset of Python over time, so we’d
@@ -28,9 +28,9 @@ future), so the equivalent Mojo code is:
 
 ```python
 def foo(a: PythonObject):
-  print(a)
-  a = 0       # Ok!
-  print(a)
+    print(a)
+    a = 0  # Ok!
+    print(a)
 ```
 
 This works today, but the implementation details are pretty ugly and surprising,
@@ -115,8 +115,8 @@ allow this to compile:
 
 ```python
 def perf(list: List[Int]):
-  # Implicit and invisible copy of a list made!
-  list.append(4)
+    # Implicit and invisible copy of a list made!
+    list.append(4)
 ```
 
 This is inconsistent with Mojo’s goals of driving performance and making the

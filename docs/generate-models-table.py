@@ -501,7 +501,7 @@ def format_table(archs: list[dict[str, Any]]) -> str:
             all_labels = set()
             for task, input_mods in sorted(
                 arch["modality_input_pairs"],
-                key=lambda p: (p[0] or ""),
+                key=lambda p: p[0] or "",
             ):
                 all_labels.update(derive_modality_labels(task, input_mods))
         modality_cell = (

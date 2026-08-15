@@ -1238,8 +1238,8 @@ def test_log_metrics_overlap_coalesces_completed_batch_into_transaction() -> (
         # In the overlap path, batch_execution_time is emitted only by
         # publish_completed_batch_metrics; record the transaction depth when it
         # fires (must be > 0, i.e. inside the coalescing transaction).
-        mock_metrics.batch_execution_time.side_effect = (
-            lambda *args, **kwargs: emit_depths.append(depth)
+        mock_metrics.batch_execution_time.side_effect = lambda *args, **kwargs: (
+            emit_depths.append(depth)
         )
         SchedulerLogger().log_metrics(
             sch_config=_mock_sch_config(),
