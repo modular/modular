@@ -655,7 +655,7 @@ struct Span[
     @always_inline
     @__allow_legacy_custom_self_type
     def copy_from(
-        self: Span[mut=True, Self.T, _], other: Span[Self.T, _]
+        self: MutSpan[Self.T, _], other: Span[Self.T, _]
     ) where conforms_to(Self.T, Copyable & Deinitable):
         """
         Performs an element wise copy from all elements of `other` into all elements of `self`.
@@ -772,7 +772,7 @@ struct Span[
     @always_inline
     @__allow_legacy_custom_self_type
     def unsafe_swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) where conforms_to(Self.T, Movable):
         """Swap the values at indices `a` and `b` without performing bounds checking.
 
@@ -804,7 +804,7 @@ struct Span[
 
     @__allow_legacy_custom_self_type
     def swap_elements(
-        self: Span[mut=True, Self.T, _], a: Int, b: Int
+        self: MutSpan[Self.T, _], a: Int, b: Int
     ) raises where conforms_to(Self.T, Movable):
         """
         Swap the values at indices `a` and `b`.
@@ -857,7 +857,7 @@ struct Span[
         }
 
     @__allow_legacy_custom_self_type
-    def reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
+    def reverse[dtype: DType, //](self: MutSpan[Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -898,7 +898,7 @@ struct Span[
         dtype: DType,
         //,
     ](
-        self: Span[mut=True, Scalar[dtype], _],
+        self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
     ):
         """Apply the function to the `Span` inplace.
@@ -934,7 +934,7 @@ struct Span[
         dtype: DType,
         //,
     ](
-        self: Span[mut=True, Scalar[dtype], _],
+        self: MutSpan[Scalar[dtype], _],
         func: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[dtype, w]],
         *,
         cond: Some[def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[DType.bool, w]],

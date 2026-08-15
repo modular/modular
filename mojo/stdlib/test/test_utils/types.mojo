@@ -770,7 +770,7 @@ struct Observable[
     def write_niche[
         index: Int
     ](
-        memory: Pointer[mut=True, MaybeUninit[Self], _]
+        memory: MutPointer[MaybeUninit[Self], _]
     ) where Self.opt_into_unsafe_niche:
         """Writes niche bit pattern `index` into storage.
 
@@ -789,7 +789,7 @@ struct Observable[
 
     @staticmethod
     def classify_niche(
-        memory: Pointer[mut=False, MaybeUninit[Self], _]
+        memory: ImmPointer[MaybeUninit[Self], _]
     ) -> NicheIndex where Self.opt_into_unsafe_niche:
         """Classifies the bit pattern at `memory` as a niche or a live value.
 

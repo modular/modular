@@ -555,7 +555,7 @@ struct String(
     def __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: Pointer[mut=False, c_char, _],
+        unsafe_from_utf8_ptr: ImmPointer[c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -575,9 +575,7 @@ struct String(
             )
         )
 
-    def __init__(
-        out self, *, unsafe_from_utf8_ptr: Pointer[mut=False, UInt8, _]
-    ):
+    def __init__(out self, *, unsafe_from_utf8_ptr: ImmPointer[UInt8, _]):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
@@ -1074,7 +1072,7 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    def _iadd(mut self, other: Span[mut=False, Byte, _]):
+    def _iadd(mut self, other: ImmSpan[Byte, _]):
         var other_len = len(other)
         if other_len == 0:
             return

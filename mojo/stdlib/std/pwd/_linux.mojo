@@ -30,7 +30,7 @@ struct _C_Passwd(TrivialRegisterPassable):
     var pw_shell: char
 
 
-def _build_pw_struct(passwd_ptr: Pointer[mut=False, _C_Passwd, _]) -> Passwd:
+def _build_pw_struct(passwd_ptr: ImmPointer[_C_Passwd, _]) -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
         pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),

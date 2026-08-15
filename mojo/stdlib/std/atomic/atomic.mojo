@@ -755,8 +755,8 @@ def _compare_exchange_integral_impl[
     failure_ordering: Ordering,
     weak: Bool = False,
 ](
-    atomic_ptr: Pointer[mut=True, Scalar[dtype], ...],
-    expected_ptr: Pointer[mut=True, Scalar[dtype], ...],
+    atomic_ptr: MutPointer[Scalar[dtype], ...],
+    expected_ptr: MutPointer[Scalar[dtype], ...],
     desired: Scalar[dtype],
 ) -> Bool:
     comptime assert dtype.is_integral(), "the input type must be integral"
@@ -821,7 +821,7 @@ def _compare_exchange_integral_impl[
 @always_inline
 def _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
-](ptr: Pointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
+](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.unsafe_bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op=__mlir_attr.`#pop<bin_op max>`,
@@ -834,7 +834,7 @@ def _max_impl_base[
 @always_inline
 def _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
-](ptr: Pointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
+](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.unsafe_bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
         bin_op=__mlir_attr.`#pop<bin_op min>`,
@@ -851,7 +851,7 @@ def _max_impl[
     *,
     scope: StaticString,
     ordering: Ordering,
-](ptr: Pointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
+](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
@@ -877,7 +877,7 @@ def _min_impl[
     *,
     scope: StaticString,
     ordering: Ordering,
-](ptr: Pointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
+](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
     comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()

@@ -261,9 +261,7 @@ struct CStringSlice[origin: ImmOrigin](
     @staticmethod
     @doc_hidden
     @always_inline
-    def write_niche[
-        index: Int
-    ](memory: Pointer[mut=True, MaybeUninit[Self], _]):
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         Self._PointerType.write_niche[index](
             memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
@@ -272,9 +270,7 @@ struct CStringSlice[origin: ImmOrigin](
     @staticmethod
     @doc_hidden
     @always_inline
-    def classify_niche(
-        memory: Pointer[mut=False, MaybeUninit[Self], _]
-    ) -> NicheIndex:
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         return Self._PointerType.classify_niche(
             memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()

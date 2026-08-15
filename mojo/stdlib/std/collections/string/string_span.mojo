@@ -215,7 +215,7 @@ struct StringSpan[mut: Bool, //, origin: Origin[mut=mut]](
         var length: Int = Int(
             SIMDLength(mlir_value=__mlir_op.`pop.string.size`(_kgen))
         )
-        var ptr = Pointer[mut=False, _, ImmStaticOrigin](
+        var ptr = ImmPointer[_, ImmStaticOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(_kgen)
         ).unsafe_bitcast[Byte]()
         self._slice = {unsafe_ptr = ptr, length = length}
@@ -2610,7 +2610,7 @@ def _to_string_list[
 
 
 @always_inline
-def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
+def _unsafe_strlen(ptr: ImmPointer[Byte, _], max: Int = Int.MAX) -> Int:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
@@ -2632,9 +2632,9 @@ def _unsafe_strlen(ptr: Pointer[mut=False, Byte, _], max: Int = Int.MAX) -> Int:
 @always_inline
 def _memchr[
     dtype: DType, //
-](
-    source: Span[mut=False, Scalar[dtype], _], char: Scalar[dtype]
-) -> OptionalPointer[Scalar[dtype], source.origin]:
+](source: ImmSpan[Scalar[dtype], _], char: Scalar[dtype]) -> OptionalPointer[
+    Scalar[dtype], source.origin
+]:
     if (
         __is_run_in_comptime_interpreter
         or len(source) < simd_width_of[Scalar[dtype]]()
@@ -2653,9 +2653,11 @@ def _memchr[
 def _memchr_impl[
     dtype: DType, //
 ](
-    source: Span[mut=False, Scalar[dtype], _],
+    source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[Scalar[dtype], source.origin]:
+) -> OptionalPointer[
+    Scalar[dtype], source.origin
+]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
@@ -2683,8 +2685,8 @@ def _memchr_impl[
 def _memmem[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], _],
-    needle_span: Span[mut=False, Scalar[dtype], _],
+    haystack_span: ImmSpan[Scalar[dtype], _],
+    needle_span: ImmSpan[Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     if (
         __is_run_in_comptime_interpreter
@@ -2720,8 +2722,8 @@ def _memmem[
 def _memmem_impl[
     dtype: DType, //
 ](
-    haystack_span: Span[mut=False, Scalar[dtype], _],
-    needle_span: Span[mut=False, Scalar[dtype], _],
+    haystack_span: ImmSpan[Scalar[dtype], _],
+    needle_span: ImmSpan[Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack_span.origin]:
     var haystack: Pointer[
         Scalar[dtype], haystack_span.origin
@@ -2789,9 +2791,11 @@ def _memmem_impl[
 def _memrchr[
     dtype: DType
 ](
-    source: Span[mut=False, Scalar[dtype], _],
+    source: ImmSpan[Scalar[dtype], _],
     char: Scalar[dtype],
-) -> OptionalPointer[Scalar[dtype], source.origin]:
+) -> OptionalPointer[
+    Scalar[dtype], source.origin
+]:
     var base: Pointer[Scalar[dtype], source.origin] = source.unsafe_ptr()
     for i in reversed(range(len(source))):
         if source.unsafe_get(i) == char:
@@ -2803,8 +2807,8 @@ def _memrchr[
 def _memrmem[
     dtype: DType
 ](
-    haystack: Span[mut=False, Scalar[dtype], _],
-    needle: Span[mut=False, Scalar[dtype], _],
+    haystack: ImmSpan[Scalar[dtype], _],
+    needle: ImmSpan[Scalar[dtype], _],
 ) -> OptionalPointer[Scalar[dtype], haystack.origin]:
     var hp: Pointer[Scalar[dtype], haystack.origin] = haystack.unsafe_ptr()
     if not needle:

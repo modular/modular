@@ -14,9 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-def test_cannot_cast_immutable_to_mutable[
-    T: AnyType
-](p: Pointer[mut=True, T, ...]):
+def test_cannot_cast_immutable_to_mutable[T: AnyType](p: MutPointer[T, ...]):
     pass
 
 

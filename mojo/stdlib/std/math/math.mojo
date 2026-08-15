@@ -1320,7 +1320,7 @@ def iota[
 def iota[
     dtype: DType, //
 ](
-    buff: Pointer[mut=True, Scalar[dtype], _, address_space=_],
+    buff: MutPointer[Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -1345,9 +1345,7 @@ def iota[
     vectorize[simd_width_of[dtype]()](len, fill)
 
 
-def iota[
-    dtype: DType, //
-](span: Span[mut=True, Scalar[dtype], _], offset: Int = 0):
+def iota[dtype: DType, //](span: MutSpan[Scalar[dtype], _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Parameters:
@@ -1360,7 +1358,7 @@ def iota[
     iota(span.unsafe_ptr(), len(span), offset)
 
 
-def iota(span: Span[mut=True, Int, _], offset: Int = 0):
+def iota(span: MutSpan[Int, _], offset: Int = 0):
     """Fill a Span with consecutive numbers starting from the specified offset.
 
     Args:

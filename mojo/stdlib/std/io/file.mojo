@@ -638,7 +638,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
     def _write(
         self,
-        ptr: Pointer[mut=False, UInt8, _, address_space=_],
+        ptr: ImmPointer[UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.
