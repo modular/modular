@@ -304,55 +304,30 @@ struct Span[
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] list: List[downcast[Self.T, Movable]],
-    ):
+        out self,
+        ref[Self.origin] list: List[Self.T],
+    ) where conforms_to(Self.T, Movable):
         """Construct a `Span` from a `List`.
 
         Args:
             list: The list to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](list.unsafe_ptr())
-        self._len = list._len
+        self._data = rebind[type_of(self._data)](list.unsafe_ptr())
+        self._len = len(list)
 
     @always_inline
     @implicit
     def __init__(
-        out self: Span[Self.T, Self.origin],
-        ref[Self.origin] array: Array[downcast[Self.T, Movable], _],
+        out self,
+        ref[Self.origin, Self.address_space] array: Array[Self.T, _],
     ):
         """Construct a `Span` from an `Array`.
 
         Args:
             array: The array to which the span refers.
         """
-        self._data = rebind[type_of(self)._PointerType](array.unsafe_ptr())
-        self._len = array.length
-
-    @always_inline
-    @implicit
-    def __init__[
-        array_origin: Origin[mut=Self.mut],
-        U: Copyable,
-        size: Int,
-        //,
-    ](
-        out self: Span[U, array_origin],
-        ref[array_origin] array: Array[U, size],
-    ):
-        """Construct a `Span` from an `Array`.
-
-        Parameters:
-            array_origin: The origin of the array.
-            U: The type of the elements in the `Array`.
-            size: The size of the `Array`.
-
-        Args:
-            array: The array to which the span refers.
-        """
-
         self._data = array.unsafe_ptr()
-        self._len = size
+        self._len = array.length
 
     # ===------------------------------------------------------------------===#
     # Operator dunders
