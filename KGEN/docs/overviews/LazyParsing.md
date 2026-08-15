@@ -222,8 +222,8 @@ Python happily accepts an expression as a type annotation, including things like
 the following code:
 
 ```python
-x: 1+2 = 42 # The type is 1+2??
-print(x)   # prints '42'
+x: 1 + 2 = 42  # The type is 1+2??
+print(x)  # prints '42'
 ```
 
 Together, this will give Mojo proper scoping rules for explicitly-declared
@@ -241,15 +241,20 @@ Python code:
 ```python
 define = True
 
+
 class C:
-    print("hello") # prints 'hello'
+    print("hello")  # prints 'hello'
     if define:
-        def f(self): print(10)
+
+        def f(self):
+            print(10)
     else:
-        def f(self): print(20)
+
+        def f(self):
+            print(20)
 
 
-C().f() # prints '10'
+C().f()  # prints '10'
 ```
 
 In fact, the body of a Python class is just code that is executed, and the
