@@ -231,7 +231,7 @@ def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
                     msg
                     + " Consider passing `copy = True` to `Buffer.from_dlpack`."
                 )
-            raise e
+            raise
 
         return buffer.view(DType.bool) if is_bool else buffer
 

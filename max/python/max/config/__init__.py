@@ -503,9 +503,9 @@ def resolve_max_config_inheritance(
         # Merge base config with current config (current takes precedence)
         return deep_merge_max_configs(base_config_dict, config_dict)
 
-    except (FileNotFoundError, ValueError) as e:
+    except (FileNotFoundError, ValueError):
         # Re-raise FileNotFoundError and ValueError exceptions (these are intentional validation errors)
-        raise e
+        raise
     except Exception as e:
         logger.warning(f"Failed to load base configuration '{depends_on}': {e}")
         return config_dict
