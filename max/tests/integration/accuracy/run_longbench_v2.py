@@ -134,8 +134,8 @@ def query_llm(
                 max_tokens=max_new_tokens,
             )
             return completion.choices[0].message.content or ""
-        except KeyboardInterrupt as e:
-            raise e
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             print(f"Error Occurs: {e}        Retry ...")
             time.sleep(1)

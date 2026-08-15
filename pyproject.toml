@@ -84,6 +84,8 @@ ignore = [
   "SIM117", # Merge with statements
   "SIM300", # YODA conditions
   "SIM905", # Use a list literal instead of str.split
+  "TRY002", # TODO: Suggests to use more specific errors than "Exception"
+  "TRY004", # TODO: Suggests TypeError for invalid types
 
   # TODO: Temporary exclusions - bumping to 0.16.3 is a large jump
   "ASYNC210",
@@ -172,11 +174,6 @@ ignore = [
   "SIM910",
   "TC004",
   "TC005",
-  "TRY002",
-  "TRY004",
-  "TRY201",
-  "TRY203",
-  "TRY401",
 ]
 extend-select = [
   "ANN", # Require function type annotations
