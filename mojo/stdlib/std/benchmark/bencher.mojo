@@ -20,6 +20,7 @@ and both CPU and GPU kernel benchmarking.
 
 from . import Report, Unit
 import std.time
+from std.benchmark import black_box
 from std.collections import Dict, Optional
 import std.format._utils as fmt
 from std.os import abort, getenv
@@ -1459,6 +1460,17 @@ struct Bencher(RegisterPassable):
             f()
         var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)
+
+    def _iter_setup[
+        T: Movable
+    ](mut self, *, setup: Some[def() -> T], benchmark: Some[def(var T)]):
+        """Run the benchmark function using the output from setup."""
+        for _ in range(self.num_iters):
+            var setup = black_box(take=setup())
+            var start = std.time.perf_counter_ns()
+            benchmark(setup^)
+            var stop = std.time.perf_counter_ns()
+            self.elapsed += Int(stop - start)
 
     def iter[IterFn: def() raises](mut self, f: IterFn) raises:
         """Returns the total elapsed time by running a raising target closure a
