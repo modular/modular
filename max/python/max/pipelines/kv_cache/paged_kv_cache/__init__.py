@@ -17,6 +17,7 @@ from .block_utils import InsufficientBlocksError
 from .cache_manager import BlockCount, PagedKVCacheManager
 from .cache_manager_interface import PagedKVCacheManagerInterface
 from .dummy_cache_manager import DummyKVCache
+from .jenga_cache_manager import JengaKVCacheManager
 from .transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -28,6 +29,7 @@ __all__ = [
     "BlockCount",
     "DummyKVCache",
     "InsufficientBlocksError",
+    "JengaKVCacheManager",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
     "PagedKVCacheManager",
