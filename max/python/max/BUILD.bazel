@@ -26,6 +26,7 @@ modular_nanobind_extension(
     deps = [
         "//Support:BazelRunfiles",
         "//Support:NanobindUtils",
+        "//Support:NixlPluginDir",
         "//max/python/max/_core/internal:AsyncRTPython",
         "//max/python/max/_core/internal/modules",
         "@llvm-project//llvm:Support",
@@ -128,6 +129,11 @@ modular_py_library(
     deps = [
         "//max/python/max/mlir",
     ],
+)
+
+modular_py_library(
+    name = "_eager_policy",
+    srcs = ["_eager_policy.py"],
 )
 
 alias(

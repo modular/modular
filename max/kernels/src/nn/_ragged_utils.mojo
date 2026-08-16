@@ -14,9 +14,9 @@
 from std.sys.info import _current_target, simd_width_of
 from std.math.uutils import ufloordiv
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
 from layout import Coord, Idx, coord_to_index_list
 
@@ -146,7 +146,7 @@ def merge_ragged_tensors[
         # Compute flat offsets for pointer load/store (Horner form).
         # Inner dimensions are the same across a, b, and c.
         @always_inline
-        @parameter
+        @__parameter
         def _flat_offset[r: Int](index: IndexList[r]) -> Int:
             comptime assert r == rank
             var flat = index[0]

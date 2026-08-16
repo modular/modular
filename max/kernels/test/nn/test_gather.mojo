@@ -19,7 +19,7 @@
 from std.sys import simd_width_of
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.gather_scatter import gather
 
 
@@ -28,13 +28,13 @@ def test_gather() raises:
     print("== test_gather")
 
     @always_inline
-    @parameter
+    @__parameter
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
         # Setup input.
-        var input_stack = InlineArray[Float32, num_rows * row_size](
+        var input_stack = Array[Float32, num_rows * row_size](
             uninitialized=True
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size]())
@@ -45,7 +45,7 @@ def test_gather() raises:
 
         # Setup indices.
         comptime num_indices = 16
-        var indices_stack = InlineArray[Scalar[indices_type], num_indices](
+        var indices_stack = Array[Scalar[indices_type], num_indices](
             uninitialized=True
         )
         var indices = TileTensor(indices_stack, row_major[num_indices]())
@@ -56,7 +56,7 @@ def test_gather() raises:
         indices[1] = -num_rows
 
         # create output
-        var output_stack = InlineArray[Float32, num_indices * row_size](
+        var output_stack = Array[Float32, num_indices * row_size](
             uninitialized=True
         )
         var output = TileTensor(
@@ -96,13 +96,13 @@ def test_gather_3d() raises:
     print("== test_gather_3d\n")
 
     @always_inline
-    @parameter
+    @__parameter
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
         # Setup input.
-        var input_stack = InlineArray[Float32, num_rows * row_size * 1](
+        var input_stack = Array[Float32, num_rows * row_size * 1](
             uninitialized=True
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size, 1]())
@@ -113,7 +113,7 @@ def test_gather_3d() raises:
 
         # Setup indices.
         comptime num_indices = 16
-        var indices_stack = InlineArray[Scalar[indices_type], num_indices * 1](
+        var indices_stack = Array[Scalar[indices_type], num_indices * 1](
             uninitialized=True
         )
         var indices = TileTensor(indices_stack, row_major[num_indices, 1]())
@@ -122,7 +122,7 @@ def test_gather_3d() raises:
             indices[i, 0] = Scalar[indices_type](i // 2)
 
         # create output
-        var output_stack = InlineArray[Float32, num_indices * 1 * row_size * 1](
+        var output_stack = Array[Float32, num_indices * 1 * row_size * 1](
             uninitialized=True
         )
         var output = TileTensor(
@@ -161,14 +161,14 @@ def test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
     @always_inline
-    @parameter
+    @__parameter
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
         comptime num_indices = 0
 
         # Setup input.
-        var input_stack = InlineArray[Float32, num_rows * row_size](
+        var input_stack = Array[Float32, num_rows * row_size](
             uninitialized=True
         )
         var input = TileTensor(input_stack, row_major[num_rows, row_size]())
@@ -178,18 +178,16 @@ def test_gather_empty_indices() raises:
                 input[i, j] = Float32(i)
 
         # Setup indices.
-        # There isn't a way to represent a stack size of 0 with InlineArray
+        # There isn't a way to represent a stack size of 0 with Array
         # so we use 1 here
-        var indices_stack = InlineArray[Scalar[indices_type], 1](
-            uninitialized=True
-        )
+        var indices_stack = Array[Scalar[indices_type], 1](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[num_indices]())
 
         for i in range(num_indices):
             indices[i] = Scalar[indices_type](i // 2)
 
         # create output
-        var output_stack = InlineArray[Float32, num_rows * row_size](
+        var output_stack = Array[Float32, num_rows * row_size](
             uninitialized=True
         )
         var output = TileTensor(

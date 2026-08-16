@@ -16,7 +16,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, NonCallableMock
 
 from max.driver import DeviceSpec
-from max.dtype import DType
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
 )
@@ -49,7 +48,7 @@ def mock_pipeline_config(
     pipeline_config.model = MagicMock()
     pipeline_config.runtime = MagicMock()
     pipeline_config.model.quantization_encoding = quantization_encoding
-    pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
+    pipeline_config.model.kv_cache.kv_cache_format = None
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(NUM_RANKS)

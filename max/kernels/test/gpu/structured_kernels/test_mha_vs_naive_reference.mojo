@@ -36,7 +36,7 @@ MLA vs naive reference convention).
 
 from std.math import ceildiv, rsqrt
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, Layout, TileTensor, UNKNOWN_VALUE
@@ -147,8 +147,8 @@ def _mha_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         sink_weights_ptr,
         grid_dim=(
             config.num_heads,
@@ -396,12 +396,12 @@ def test_mha_vs_naive[
     var sum_diff: Float64 = 0
     var num_checked = 0
     # Per-head mismatch counters.
-    var head_mismatches = InlineArray[Int, NUM_HEADS](fill=0)
-    var head_max_diff = InlineArray[Float32, NUM_HEADS](fill=0)
+    var head_mismatches = Array[Int, NUM_HEADS](fill=0)
+    var head_max_diff = Array[Float32, NUM_HEADS](fill=0)
     # Per-head cosine-similarity accumulators (FP64 for stability).
-    var head_dot = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var head_out_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var head_ref_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
+    var head_dot = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var head_out_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var head_ref_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
 
     var num_nonfinite_hk = 0
     var num_nonfinite_ref = 0

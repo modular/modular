@@ -34,12 +34,12 @@ def main():
     # You can write types out explicitly if you want of course.
     var bigger_vec2: SIMD[DType.float32, 32] = bigger_vec
 
-    print("small_vec DType:", small_vec.dtype, "size:", Int(small_vec.size))
+    print("small_vec DType:", small_vec.dtype, "length:", Int(small_vec.length))
     print(
         "bigger_vec2 DType:",
         bigger_vec2.dtype,
-        "size:",
-        Int(bigger_vec2.size),
+        "length:",
+        Int(bigger_vec2.length),
     )
     # end-simd-usage-example
 
@@ -48,7 +48,7 @@ def main():
     from std.math import sqrt
 
     def rsqrt[
-        dt: DType, width: SIMDSize
+        dt: DType, width: SIMDLength
     ](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)
 

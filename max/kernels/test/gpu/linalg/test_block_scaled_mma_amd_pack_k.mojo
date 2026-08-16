@@ -33,8 +33,8 @@ selectors per scale word).
 
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import MI355X
 from std.memory import bitcast
 from std.testing import assert_true
 from std.utils import StaticTuple

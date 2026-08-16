@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any, Protocol
+from typing import Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -23,14 +23,13 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
-from ..layer import LayerList, Module, Shardable
+from ..layer import LayerList, Module, Shardable, SubgraphInput
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import (
@@ -62,6 +61,7 @@ def distributed_logits_postprocess(
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     logits_scaling: float = 1.0,
     logit_softcapping: float | None = None,
+    capture_hidden_states: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Common logits postprocessing for multi-device sharded models.
 
@@ -81,6 +81,9 @@ def distributed_logits_postprocess(
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
         logits_scaling: Scaling factor for logits.
+        capture_hidden_states: For ``SELECTED_LAYERS`` mode, the per-layer
+            captured hidden states gathered during the layer loop. See
+            :func:`extract_hs`.
 
     Returns:
         Tuple of (last_logits, [logits, offsets], [hidden_states]).
@@ -170,6 +173,7 @@ def distributed_logits_postprocess(
         last_token_hs_distributed=last_token_h,
         all_hs_distributed=h,
         normalizer=norm_shards,
+        capture_hidden_states=capture_hidden_states,
     )
     return ret_val
 
@@ -197,6 +201,7 @@ class DistributedLogitsPostprocessMixin:
         input_row_offsets: Sequence[TensorValue],
         return_n_logits: TensorValue,
         signal_buffers: Sequence[BufferValue],
+        capture_hidden_states: list[list[TensorValue]] | None = None,
     ) -> tuple[TensorValue, ...]:
         return distributed_logits_postprocess(
             h,
@@ -210,6 +215,7 @@ class DistributedLogitsPostprocessMixin:
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
             logit_softcapping=self.logit_softcapping,
+            capture_hidden_states=capture_hidden_states,
         )
 
 
@@ -255,40 +261,12 @@ class DistributedTransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_prompt_lengths: list[TensorValue],
-        kv_max_cache_lengths: list[TensorValue],
-        kv_dispatch_metadata: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
-
-        # We have to unpack our PagedCacheValues into constituent parts so
-        # subgraphs have only max.graph.Values as arguments.
-        # Re-pack those arguments into a nice structured type.
-        kv_collections = [
-            PagedCacheValues(
-                kv_blocks=kv_block,
-                cache_lengths=cache_lengths,
-                lookup_table=lookup_table,
-                max_prompt_length=max_prompt_length,
-                max_cache_length=max_cache_length,
-                attention_dispatch_metadata=dispatch_metadata,
-            )
-            for kv_block, cache_lengths, lookup_table, max_prompt_length, max_cache_length, dispatch_metadata in zip(
-                kv_blocks,
-                kv_cache_lengths,
-                kv_lookup_table,
-                kv_max_prompt_lengths,
-                kv_max_cache_lengths,
-                kv_dispatch_metadata,
-                strict=True,
-            )
-        ]
 
         attn_outs = self.self_attn(
             layer_idx,
@@ -371,42 +349,14 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
-        dispatch_metadata_tensors: list[TensorValue] = []
-        for kv_collection in kv_collections:
-            assert kv_collection.attention_dispatch_metadata is not None
-            dispatch_metadata_tensors.append(
-                kv_collection.attention_dispatch_metadata
-            )
-
-        kv_blocks = [
-            kv_collection.kv_blocks for kv_collection in kv_collections
-        ]
-        kv_cache_lengths = [
-            kv_collection.cache_lengths for kv_collection in kv_collections
-        ]
-        kv_lookup_table = [
-            kv_collection.lookup_table for kv_collection in kv_collections
-        ]
-        kv_max_prompt_lengths = [
-            kv_collection.max_prompt_length for kv_collection in kv_collections
-        ]
-        kv_max_cache_lengths = [
-            kv_collection.max_cache_length for kv_collection in kv_collections
-        ]
-
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+        ) -> list[SubgraphInput]:
             return [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
-                kv_blocks,
-                kv_cache_lengths,
-                kv_lookup_table,
-                kv_max_prompt_lengths,
-                kv_max_cache_lengths,
-                dispatch_metadata_tensors,
+                kv_collections,
                 freqs_cis,
                 input_row_offsets_per_device,
             ]

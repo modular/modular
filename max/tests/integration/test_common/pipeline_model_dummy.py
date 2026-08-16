@@ -232,9 +232,9 @@ class DummyTextTokenizer(TextTokenizer):
         self._delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 
     @property
-    def eos(self) -> int:
-        """The end of sequence token for this tokenizer."""
-        return -1
+    def eos_token_ids(self) -> set[int]:
+        """Dummy tokenizer has no EOS tokens."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -321,8 +321,8 @@ class DummyPixelTokenizer(
         type(self).init_kwargs = kwargs
 
     @property
-    def eos(self) -> int:
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -351,6 +351,9 @@ class DummyPixelTokenizer(
 
 @dataclass(kw_only=True)
 class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
+    DEFAULT_ENCODING = "bfloat16"
+    SUPPORTED_ENCODINGS = {"bfloat16"}
+
     @property
     def num_key_value_heads(self) -> int:
         """Number of key-value heads to use for the KV cache."""
@@ -380,6 +383,14 @@ class DummyLlamaArchConfig(ArchConfigWithAttentionKVCache):
         """The maximum sequence length that can be processed by the model."""
         assert self.huggingface_config is not None
         return self.huggingface_config.max_position_embeddings
+
+
+# Wire the ArchConfig onto the pipeline models (mirrors real arches, which set
+# `model_config_cls` as a ClassVar). Assigned here rather than in the class body
+# because `DummyLlamaArchConfig` references the model classes and so must be
+# defined after them. Generic consumers (e.g. `_resolved_encoding`) read
+# `DEFAULT_ENCODING` through this pointer.
+DummyPipelineModel.model_config_cls = DummyLlamaArchConfig
 
 
 DUMMY_LLAMA_ARCH = SupportedArchitecture(
@@ -463,7 +474,6 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     tokenizer=DummyTextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    rope_type="normal",
     multi_gpu_supported=False,
     config=DummyLlamaArchConfig,
 )

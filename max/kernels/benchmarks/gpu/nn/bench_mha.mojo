@@ -14,6 +14,7 @@
 from std.math import isclose, rsqrt
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
@@ -91,13 +92,12 @@ def run_mha[
 
     if bench:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 # Construct device buffers with offsets.
                 var q_device = TileTensor(
                     cb_q.offset_ptr(iteration),
@@ -155,9 +155,9 @@ def run_mha[
                     num_partitions if num_partitions > 0 else Optional[Int](),
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 

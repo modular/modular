@@ -37,7 +37,11 @@ from max.engine import InferenceSession
 
 
 def export_slots(
-    derived: str, *, include_cpu: bool, include_accelerators: bool
+    derived: str,
+    *,
+    include_cpu: bool,
+    include_accelerators: bool,
+    only_family: str | None = None,
 ) -> list[dict[str, str]]:
     """Compile and export one single-device MEF per (op family, kept device).
 
@@ -55,49 +59,52 @@ def export_slots(
         derived: The cache dir the MEFs are exported into (``MODULAR_DERIVED_PATH``).
         include_cpu: Warm the CPU slot.
         include_accelerators: Warm the accelerator slots.
+        only_family: Warm only this GC family (a ``GC_FAMILIES`` name); ``None``
+            warms all. Raises ``ValueError`` on an unknown family.
 
     Returns:
         One ``{family, device_class, mef}`` entry per exported MEF.
     """
-    # Deferred: importing these freezes their device set from the (already-set)
-    # virtual-device knobs; see the module docstring.
-    matmul_gc = importlib.import_module("max._interpreter_ops.matmul_gc")
-    unary_gc = importlib.import_module(
-        "max._interpreter_ops.unary_elementwise_gc"
-    )
+    # Deferred import: freezes each family's device set from the (already-set)
+    # virtual-device knobs, then reads the shared GC_FAMILIES registry.
+    interpreter_ops = importlib.import_module("max._interpreter_ops")
+
+    families = interpreter_ops.GC_FAMILIES
+    if only_family is not None:
+        known = {f.name for f in families}
+        if only_family not in known:
+            raise ValueError(
+                f"unknown GC family {only_family!r}; known: {sorted(known)}"
+            )
+        families = tuple(f for f in families if f.name == only_family)
 
     entries: list[dict[str, str]] = []
-    for family, devices, build_for_device in (
-        (
-            "matmul",
-            matmul_gc._sweep_devices(),
-            matmul_gc.build_matmul_module_for_device,
-        ),
-        (
-            "unary",
-            list(unary_gc._DEVICES),
-            unary_gc.build_unary_module_for_device,
-        ),
-    ):
-        for device in devices:
+    for family in families:
+        for device in family.sweep_devices():
             is_cpu = device.label == "cpu"
             if is_cpu and not include_cpu:
                 continue
             if not is_cpu and not include_accelerators:
                 continue
-            # The CPU slot is device_class "cpu"; each accelerator is
-            # "gpu:{id}", keyed on the same id its graphs embed.
-            if is_cpu:
-                device_class, mef_name = "cpu", f"{family}_cpu.mef"
-            else:
-                device_class = f"gpu:{device.id}"
-                mef_name = f"{family}_slot_{device.id}.mef"
-            InferenceSession(devices=[device]).compile(
-                build_for_device(device)
-            ).export_mef(os.path.join(derived, mef_name))
+            module = family.build_module_for_device(device)
+            if not module.top_level_graph_names():
+                # A device-restricted family (e.g. GPU-only) legitimately has
+                # no graph for some devices; compiling an empty Module is a
+                # hard compiler error, not a no-op, so skip rather than try.
+                continue
+            # Same device->slot naming the consumer adopts by (device_class_of).
+            device_class = interpreter_ops.gc_compile.device_class_of(device)
+            mef_name = (
+                f"{family.name}_cpu.mef"
+                if is_cpu
+                else f"{family.name}_slot_{device.id}.mef"
+            )
+            InferenceSession(devices=[device]).compile(module).export_mef(
+                os.path.join(derived, mef_name)
+            )
             entries.append(
                 {
-                    "family": family,
+                    "family": family.name,
                     "device_class": device_class,
                     "mef": mef_name,
                 }

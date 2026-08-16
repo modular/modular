@@ -14,8 +14,8 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
-from std.gpu.primitives import block
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives import block
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
 
 
@@ -28,7 +28,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length_dev: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -42,6 +42,7 @@ def _verify_buffers_gpu[
       [3] out_nz — 1.0 if any output element is nonzero
       [4] ref_nz — 1.0 if any reference element is nonzero
     """
+    var length = Int(length_dev)
     var abs_diff_sum: Float32 = 0
     var abs_ref_sum: Float32 = 0
     var max_violation = Float32.MIN_FINITE
@@ -84,9 +85,10 @@ def _fill_buffer[
     dtype: DType,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    length: Int,
+    length_dev: Int32,
     val: Scalar[dtype],
 ):
+    var length = Int(length_dev)
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
     while i < length:
@@ -128,7 +130,7 @@ def run_verify_kernel[
     ctx.enqueue_function[kernel](
         output_buf,
         reference_buf,
-        length,
+        Int32(length),
         atol,
         rtol,
         result_device,
@@ -181,7 +183,7 @@ def fill_on_device[
     comptime kernel = _fill_buffer[dtype]
     ctx.enqueue_function[kernel](
         buf,
-        length,
+        Int32(length),
         val,
         grid_dim=fill_grid,
         block_dim=FILL_BLOCK,

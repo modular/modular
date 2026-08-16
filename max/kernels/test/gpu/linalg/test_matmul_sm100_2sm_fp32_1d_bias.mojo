@@ -14,8 +14,8 @@
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -103,9 +103,9 @@ def test_blackwell_matmul_with_1d_bias[
     var bias_tile = TileTensor(bias_device, bias_shape)
 
     # Initialize
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
-    rand(bias_host.ptr, bias_host.num_elements(), min=-10, max=10)
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
+    rand(bias_host._storage, bias_host.num_elements(), min=-10, max=10)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -126,7 +126,10 @@ def test_blackwell_matmul_with_1d_bias[
     )
 
     comptime EpilogueType = TileTensor[
-        matmul_config.c_type, type_of(bias_shape), ImmutAnyOrigin
+        matmul_config.c_type,
+        type_of(bias_shape),
+        ImmutAnyOrigin,
+        Storage=bias_tile.Storage,
     ]
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
@@ -170,8 +173,8 @@ def test_blackwell_matmul_with_1d_bias[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,

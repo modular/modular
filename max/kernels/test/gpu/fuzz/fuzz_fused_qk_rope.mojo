@@ -71,7 +71,7 @@ from std.math import align_up, ceildiv, cos, max, min, sin
 from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -471,27 +471,27 @@ def run_one_case(
     )
 
     var kv_collection = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+        LayoutTensor[dtype, Layout.row_major[6]()](
             blocks_lt.ptr,
             RuntimeLayout[Layout.row_major[6]()](
                 blocks_lt.runtime_layout.shape.value,
                 blocks_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, cl_layout](
             cache_lengths_lt.ptr,
             RuntimeLayout[cl_layout](
                 cache_lengths_lt.runtime_layout.shape.value,
                 cache_lengths_lt.runtime_layout.stride.value,
             ),
-        ),
-        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+        ).as_unsafe_any_origin(),
+        LayoutTensor[mut=False, DType.uint32, lt_layout_2d](
             lookup_table_lt.ptr,
             RuntimeLayout[lt_layout_2d](
                 lookup_table_lt.runtime_layout.shape.value,
                 lookup_table_lt.runtime_layout.stride.value,
             ),
-        ),
+        ).as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )

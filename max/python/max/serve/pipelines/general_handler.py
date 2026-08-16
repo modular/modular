@@ -59,7 +59,7 @@ class GeneralPipelineHandler(
             response_stream = await self.model_worker.stream(
                 request.request_id, context
             )
-            async for responses in response_stream:
+            async for responses, _batch_id in response_stream:
                 for response in responses:
                     yield response
         finally:

@@ -128,7 +128,7 @@ struct Complex(
         self.im *= rhs
 
     def __truediv__(self, rhs: Self) -> Self:
-        denom = rhs.squared_norm()
+        var denom = rhs.squared_norm()
         return Self(
             (self.re * rhs.re + self.im * rhs.im) / denom,
             (self.im * rhs.re - self.re * rhs.im) / denom,
@@ -138,7 +138,7 @@ struct Complex(
         return Self(self.re / rhs, self.im / rhs)
 
     def __rtruediv__(self, lhs: Float64) -> Self:
-        denom = self.squared_norm()
+        var denom = self.squared_norm()
         return Self(
             (lhs * self.re) / denom,
             (-lhs * self.im) / denom,

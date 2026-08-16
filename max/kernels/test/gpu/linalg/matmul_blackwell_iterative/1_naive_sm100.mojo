@@ -16,7 +16,7 @@ from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -119,7 +119,7 @@ def test_kernel_1[
         comptime num_warmup = 20
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel](
                 c.device_tensor[update=False](),
@@ -155,8 +155,8 @@ def test_kernel_1[
 
         ctx.synchronize()
 
-        c_host = c.tensor()
-        c_host_ref = c_ref.tensor()
+        var c_host = c.tensor()
+        var c_host_ref = c_ref.tensor()
 
         for m in range(M):
             for n in range(N):
