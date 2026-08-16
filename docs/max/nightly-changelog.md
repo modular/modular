@@ -505,6 +505,9 @@ This version is still a work in progress.
   instead of rejecting them as branch/base conflicts; they carry no grammar
   constraint.
 
+- Fixed a race that enforced structured-output grammars during a reasoning
+  model's thinking span.
+
 - Fixed structured output and constrained tool calling being silently ignored
   on the Kimi K2.5-family pipelines when serving with DFlash speculative
   decoding (`--speculative-method dflash`). The unified DFlash graph compiled
