@@ -15,22 +15,22 @@
 # start-take-simd
 def take_simd(vec: SIMD[...]):
     print(vec.dtype)
-    print(Int(vec.size))
+    print(Int(vec.length))
 
 
 # end-take-simd
 
 
-def take_simd2[t: DType, s: SIMDSize, //](vec: SIMD[t, s]):
+def take_simd2[t: DType, s: SIMDLength, //](vec: SIMD[t, s]):
     print(t)
     print(Int(s))
 
 
 # start-interleave
-def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.size * 2]:
-    var result = SIMD[v1.dtype, v1.size * 2]()
+def interleave(v1: SIMD, v2: type_of(v1)) -> SIMD[v1.dtype, v1.length * 2]:
+    var result = SIMD[v1.dtype, v1.length * 2]()
 
-    comptime for i in range(v1.size):
+    comptime for i in range(v1.length):
         result[i * 2] = v1[i]
         result[i * 2 + 1] = v2[i]
     return result
@@ -47,7 +47,7 @@ def simd_param[value: SIMD[...]]():
     pass
 
 
-def simd_param2[dtype: DType, size: SIMDSize, //, value: SIMD[dtype, size]]():
+def simd_param2[dtype: DType, size: SIMDLength, //, value: SIMD[dtype, size]]():
     pass
 
 
@@ -55,7 +55,7 @@ struct SomeStruct[s: SIMD[...]]:
     pass
 
 
-struct SomeStruct2[dtype: DType, size: SIMDSize, //, s: SIMD[dtype, size]]:
+struct SomeStruct2[dtype: DType, size: SIMDLength, //, s: SIMD[dtype, size]]:
     pass
 
 
@@ -64,7 +64,7 @@ comptime SomeComptime[s: SIMD[...]] = SomeStruct[s]
 
 # Equivalent to:
 comptime SomeComptime2[
-    dtype: DType, size: SIMDSize, //, S: SIMD[dtype, size]
+    dtype: DType, size: SIMDLength, //, S: SIMD[dtype, size]
 ] = SomeStruct[S]
 # end-automatic-parameterization-comptime
 

@@ -28,19 +28,19 @@ Selection order (highest to lowest priority):
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 import threading
-from collections import OrderedDict
+import warnings
 from collections.abc import Callable, Sequence
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from max import _core, driver, engine
 from max._core.dialects import rmo
-from max._core.mlrt import AsyncValue
 from max.graph import Graph
 
+from .compile_pool import _map_future, pool
 from .support import SetterContext, _session
 
 
@@ -105,25 +105,19 @@ def _interpreter_max_ops() -> int:
 def _eager_model_cache_key(graph: Graph) -> EagerCacheKey:
     """Builds a compact, stable cache key for a finalized eager graph.
 
-    Uses a SHA-256 hash of the MLIR module ASM (with debug info stripped)
-    combined with the resolved kernel library paths and SHA-256 hashes of
-    their contents.  Hashing file contents (rather than ``st_mtime``)
-    avoids a time-of-check/time-of-use race and produces a deterministic
-    key regardless of filesystem timestamp granularity.
+    Uses a SHA-256 hash of the MLIR module bytecode combined with the
+    resolved kernel library paths and SHA-256 hashes of their contents.
+    Hashing file contents (rather than ``st_mtime``) avoids a
+    time-of-check/time-of-use race and produces a deterministic key
+    regardless of filesystem timestamp granularity.
 
     Args:
         graph: A finalized graph ready for compilation.
 
     Returns:
-        A tuple of ``(asm_hex_digest, ((resolved_path, content_hash), ...))``.
+        A tuple of ``(module_hash, ((resolved_path, content_hash), ...))``.
     """
-    module_asm = graph._module.asm(
-        assume_verified=True,
-        enable_debug_info=False,
-        pretty_debug_info=False,
-        use_local_scope=True,
-    )
-    asm_hash = hashlib.sha256(module_asm.encode()).hexdigest()
+    module_hash = hashlib.sha256(graph._module.bytecode).hexdigest()
     kernel_paths = tuple(
         (
             str(Path(p).resolve()),
@@ -131,53 +125,7 @@ def _eager_model_cache_key(graph: Graph) -> EagerCacheKey:
         )
         for p in graph.kernel_libraries_paths
     )
-    return (asm_hash, kernel_paths)
-
-
-# Bounds memory: each entry pins an engine.Model + its MEF buffer.
-_EAGER_MODEL_CACHE_MAX_SIZE = int(
-    os.environ.get("MAX_EAGER_MODEL_CACHE_SIZE", "128")
-)
-_EAGER_MODEL_CACHE_LOCK = threading.Lock()
-_EAGER_MODEL_CACHE: OrderedDict[EagerCacheKey, engine.Model] = OrderedDict()
-_EAGER_MODEL_CACHE_SESSION: engine.api.InferenceSession | None = None
-
-
-def _load_eager_model(graph: Graph) -> engine.Model:
-    """Loads or retrieves a cached compiled model for an eager graph.
-
-    The cache is load-bearing even though the C++ MEF cache exists below
-    it: ~74% of a MEF hit is spent bytecode-serializing seeded MOGG
-    kernel decls into the C++ cache key (``FrameworkFrontend.cpp:518``).
-    A Python hit here skips the whole ``session.load`` roundtrip.
-
-    Returns:
-        A compiled ``engine.Model`` ready for execution.
-    """
-    global _EAGER_MODEL_CACHE_SESSION
-
-    session = _session()
-    key = _eager_model_cache_key(graph)
-
-    with _EAGER_MODEL_CACHE_LOCK:
-        if _EAGER_MODEL_CACHE_SESSION is not session:
-            _EAGER_MODEL_CACHE.clear()
-            _EAGER_MODEL_CACHE_SESSION = session
-
-        cached = _EAGER_MODEL_CACHE.get(key)
-        if cached:
-            _EAGER_MODEL_CACHE.move_to_end(key)
-            return cached
-
-    model = session.load(graph)
-
-    with _EAGER_MODEL_CACHE_LOCK:
-        if _EAGER_MODEL_CACHE_SESSION is session:
-            _EAGER_MODEL_CACHE[key] = model
-            if len(_EAGER_MODEL_CACHE) > _EAGER_MODEL_CACHE_MAX_SIZE:
-                _EAGER_MODEL_CACHE.popitem(last=False)
-
-    return model
+    return (module_hash, kernel_paths)
 
 
 class InterpreterExecutor:
@@ -186,8 +134,9 @@ class InterpreterExecutor:
     Raises :class:`UnsupportedGraphError` when
     :func:`max._interpreter.can_execute` refuses the graph
     (e.g. ``CustomOp`` present, unregistered op, or over the op-count
-    threshold).  All runtime errors propagate unchanged — an explicit
-    interpreter request is deliberately loud.
+    threshold), or when this build lacks the interpreter's op handlers.
+    All runtime errors propagate unchanged — an explicit interpreter
+    request is deliberately loud.
     """
 
     def __init__(self, max_ops: int | None = None) -> None:
@@ -238,87 +187,57 @@ class CompilingExecutor:
         return model(*inputs)
 
 
-class CompositeExecutor:
-    """Interpreter for small graphs, cached synchronous compile otherwise.
+class JitExecutor:
+    """Executes via the interpreter while compiling in the background.
 
-    Attempts the interpreter (gated by an op-count threshold) and falls back to
-    a cached synchronous compile when it refuses the graph.
-    ``fallback_on_error`` governs interpreter errors raised *after* it accepts a
-    graph: when True the graph is compiled instead, when False the error
-    propagates.  ``interpreter=None`` disables the interpreter entirely, making
-    this a cached compile-only executor.
+    The first call for a given graph (keyed by structure) submits the
+    graph to a background compile *process*
+    (:class:`~max.experimental.compile_pool.ProcessCompilePool`) and
+    caches the resulting future for the life of this executor. The future
+    resolves to an initialized model: ``session.init`` runs as soon as the
+    compile lands, off the calling thread, so a call that finds a done
+    future executes immediately. While the compile is pending, calls
+    execute via the interpreter. When the interpreter refuses a graph,
+    the call waits for that graph's compile.
+
+    Failed compilations are assumed to not be transient and are cached.
     """
+
+    cache: dict[EagerCacheKey, Future[engine.Model]]
+    lock: threading.Lock
 
     def __init__(
         self,
         *,
-        interpreter: InterpreterExecutor | None,
-        fallback_on_error: bool,
+        interpreter: Executor,
+        sync_on_interpreter_fallback: bool = True,
     ) -> None:
         """Initializes the executor.
 
         Args:
-            interpreter: The interpreter to try first, or ``None`` to always
-                compile.
-            fallback_on_error: Whether to fall back to compilation when the
-                interpreter raises a non-:class:`UnsupportedGraphError` error.
+            interpreter: Executor serving graphs whose compile is pending.
+            sync_on_interpreter_fallback: Whether a graph the interpreter
+                refuses waits for its compile. When False such a graph
+                raises :class:`UnsupportedGraphError` instead.
         """
-        self._interpreter = interpreter
-        self._fallback_on_error = fallback_on_error
-
-    def execute(
-        self, graph: Graph, inputs: Sequence[driver.Buffer]
-    ) -> Sequence[driver.Buffer | None]:
-        """Executes *graph* via the interpreter, falling back to compilation.
-
-        Raises:
-            UnsupportedGraphError: Never; graphs the interpreter refuses are
-                compiled instead.
-        """
-        if self._interpreter is not None:
-            try:
-                return self._interpreter.execute(graph, inputs)
-            except UnsupportedGraphError:
-                pass
-            except Exception:
-                if not self._fallback_on_error:
-                    raise
-                logging.getLogger("max.experimental").debug(
-                    "Interpreter failed, falling back to graph compiler",
-                    exc_info=True,
-                )
-        return _load_eager_model(graph)(*inputs)
-
-
-class JitExecutor:
-    """Executes via the interpreter while compiling in the background.
-
-    The first call for a given graph (keyed by structure) starts an
-    asynchronous compile on the runtime's worker pool and caches the
-    handle for the life of this executor; while the compile is pending,
-    calls execute via the interpreter.  When the interpreter refuses a
-    graph, the call waits for that graph's compile.
-
-    ``MAX_INTERPRETER_MAX_OPS`` caps the graph size the interpreter serves
-    (default 1024 dispatchable ops).
-
-    A compile failure propagates on every call that reaches the compiled
-    path for that graph; it is not retried.
-    """
-
-    cache: dict[EagerCacheKey, AsyncValue[engine.Model]]
-    lock: threading.Lock
-
-    def __init__(self) -> None:
         self.cache = {}
         self.lock = threading.Lock()
-        self.interpreter = InterpreterExecutor(
-            max_ops=int(
-                os.environ.get(
-                    _INTERPRETER_MAX_OPS_ENV_VAR, _DEFAULT_INTERPRETER_MAX_OPS
+        self.interpreter = interpreter
+        self.sync_on_interpreter_fallback = sync_on_interpreter_fallback
+
+    def compile(self, graph: Graph) -> Future[engine.Model]:
+        """Submits the graph to the compiler on first sight.
+
+        Returns:
+            A future resolving to the initialized model.
+        """
+        key = _eager_model_cache_key(graph)
+        with self.lock:
+            if (future := self.cache.get(key)) is None:
+                future = self.cache[key] = _map_future(
+                    pool().compile(graph), _session().init
                 )
-            )
-        )
+        return future
 
     def execute(
         self, graph: Graph, inputs: Sequence[driver.Buffer]
@@ -326,30 +245,84 @@ class JitExecutor:
         """Executes *graph*, compiling in the background on first call.
 
         Raises:
-            UnsupportedGraphError: Never; graphs the interpreter refuses
-                wait on the compiled model instead.
+            Exception: The interpreter's own error, when it fails and
+                ``sync_on_interpreter_fallback`` is False.
         """
-        key = _eager_model_cache_key(graph)
-
-        with self.lock:
-            future = self.cache.get(key)
-            if future is None:
-                session = _session()
-                # Compilation mutates the graph; compile a copy so the
-                # interpreter path still sees the original module.
-                compiled = session.compile_async(graph.copy())
-                future = self.cache[key] = compiled._compiled.and_then(
-                    lambda _: session.init(compiled)
-                )
+        future = self.compile(graph)
 
         if not future.done():
             try:
                 return self.interpreter.execute(graph, inputs)
-            except UnsupportedGraphError:
-                pass
-            future.wait()
+            # TODO(MXF-595): narrow to a typed interpreter refusal.
+            except Exception as e:
+                if not self.sync_on_interpreter_fallback:
+                    raise
+                warnings.warn(
+                    (
+                        f"The eager interpreter failed on this graph ({e!r});"
+                        " serving it with the compiled model instead. Please"
+                        " file a bug against MAX Framework."
+                    ),
+                    stacklevel=2,
+                )
 
-        model = future.result()
+        return future.result()(*inputs)
+
+
+CompositeExecutor = JitExecutor
+
+
+class _FallbackExecutor:
+    """Executes via the interpreter, compiling only graphs it cannot serve.
+
+    Unlike :class:`JitExecutor`, nothing is compiled in the background: a
+    graph the interpreter serves never touches the compiler, and a graph it
+    refuses is compiled synchronously in-process and cached for the life of
+    this executor.
+
+    Internal executor for CI use, selected with
+    ``MAX_EAGER_EXECUTOR=fallback-internal``.  Not a supported mode; it may
+    change or be removed without notice.
+    """
+
+    cache: dict[EagerCacheKey, engine.Model]
+    lock: threading.Lock
+
+    def __init__(self, *, interpreter: Executor) -> None:
+        """Initializes the executor.
+
+        Args:
+            interpreter: Executor serving graphs that don't need compilation.
+        """
+        self.cache = {}
+        self.lock = threading.Lock()
+        self.interpreter = interpreter
+
+    def execute(
+        self, graph: Graph, inputs: Sequence[driver.Buffer]
+    ) -> Sequence[driver.Buffer | None]:
+        """Executes *graph*, compiling it only if the interpreter fails."""
+        try:
+            return self.interpreter.execute(graph, inputs)
+        except UnsupportedGraphError:
+            pass
+        # TODO(MXF-595): narrow to a typed interpreter refusal.
+        except Exception as e:
+            warnings.warn(
+                (
+                    f"The eager interpreter failed on this graph ({e!r});"
+                    " serving it with a synchronously compiled model instead."
+                    " Please file a bug against MAX Framework."
+                ),
+                stacklevel=2,
+            )
+        key = _eager_model_cache_key(graph)
+        with self.lock:
+            model = self.cache.get(key)
+        if model is None:
+            compiled = _session().load(graph)
+            with self.lock:
+                model = self.cache.setdefault(key, compiled)
         return model(*inputs)
 
 
@@ -359,21 +332,30 @@ _MAX_EAGER_EXECUTOR_ENV_VAR = "MAX_EAGER_EXECUTOR"
 def _default_composite() -> CompositeExecutor:
     """Builds the auto-selected eager executor.
 
-    Interprets graphs within the ``MAX_INTERPRETER_MAX_OPS`` threshold and
-    falls back to a cached compile on refusal or interpreter error.  This is
-    the out-of-the-box eager execution path.
+    Interprets graphs within the ``MAX_INTERPRETER_MAX_OPS`` threshold
+    while their background compile is pending, and waits for the compiled
+    model for graphs the interpreter refuses.  This is the out-of-the-box
+    eager execution path.
     """
     return CompositeExecutor(
         interpreter=InterpreterExecutor(max_ops=_interpreter_max_ops()),
-        fallback_on_error=True,
+    )
+
+
+def _fallback_internal() -> _FallbackExecutor:
+    """Builds the internal interpret-first, compile-on-refusal executor."""
+    return _FallbackExecutor(
+        interpreter=InterpreterExecutor(max_ops=_interpreter_max_ops()),
     )
 
 
 _EXECUTORS: dict[str, Callable[[], Executor]] = {
     "composite": _default_composite,
-    "jit": JitExecutor,
+    "jit": _default_composite,
     "compile": CompilingExecutor,
     "interpreter": InterpreterExecutor,
+    # TODO(SDLC-4307): CI stopgap until composite stops background compiles.
+    "fallback-internal": _fallback_internal,
 }
 
 
@@ -382,9 +364,10 @@ def _executor_from_env() -> Executor:
         os.environ.get(_MAX_EAGER_EXECUTOR_ENV_VAR, "composite").lower().strip()
     )
     if name not in _EXECUTORS:
+        supported = sorted(n for n in _EXECUTORS if not n.endswith("-internal"))
         raise ValueError(
             f"{_MAX_EAGER_EXECUTOR_ENV_VAR}={name!r}: expected one of "
-            f"{sorted(_EXECUTORS)}"
+            f"{supported}"
         )
     return _EXECUTORS[name]()
 
@@ -402,9 +385,7 @@ def default_executor() -> Executor:
     return _DEFAULT_EXECUTOR
 
 
-def set_default_executor(
-    executor: Executor,
-) -> SetterContext[Executor]:
+def set_default_executor(executor: Executor) -> SetterContext[Executor]:
     """Sets the ambient default executor.
 
     The set takes effect immediately. The returned

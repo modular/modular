@@ -13,11 +13,11 @@
 
 from std.sys import size_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from std.gpu import block_idx, thread_idx
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -30,7 +30,7 @@ from layout.tma_async import (
     TMATensorTileArray,
     _idx_product,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -63,7 +63,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     ]() * size_of[dtype]()
 
     comptime __cta_tile_layout = Layout.row_major(M, N)
-    tile = LayoutTensor[
+    var tile = LayoutTensor[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
@@ -77,7 +77,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     )
     device_tma_tile[block_idx.x][].tensormap_fence_release()
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -93,7 +93,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[M, N](block_idx.x, 0)
+    var dst_tile = dst.tile[M, N](block_idx.x, 0)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -129,7 +129,9 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
+    var tensormaps_host_ptr = unsafe_stack_allocation[
+        num_of_tensormaps * 128, UInt8
+    ]()
 
     comptime for i in range(num_of_tensormaps):
         for j in range(128):
@@ -164,8 +166,8 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         block_dim=(M * N),
     )
 
-    new_src_host = new_src.tensor()
-    dst_host = dst.tensor()
+    var new_src_host = new_src.tensor()
+    var dst_host = dst.tensor()
 
     for m in range(num_of_tensormaps * M):
         for n in range(N):
@@ -209,7 +211,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     ]() * size_of[dtype]()
 
     comptime __cta_tile_layout = Layout.row_major(M, N)
-    tile = LayoutTensor[
+    var tile = LayoutTensor[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
@@ -217,7 +219,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var smem_desc = stack_allocation[
+    var smem_desc = unsafe_stack_allocation[
         1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
@@ -243,7 +245,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     # Entire warp should call this as it's an aligned instruction
     device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -259,7 +261,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[M, N](0, 0)
+    var dst_tile = dst.tile[M, N](0, 0)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -294,7 +296,9 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
+    var tensormaps_host_ptr = unsafe_stack_allocation[
+        num_of_tensormaps * 128, UInt8
+    ]()
 
     comptime for i in range(num_of_tensormaps):
         for j in range(128):
@@ -329,8 +333,8 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         block_dim=(M * N),
     )
 
-    new_src_host = new_src.tensor()
-    dst_host = dst.tensor()
+    var new_src_host = new_src.tensor()
+    var dst_host = dst.tensor()
 
     for m in range(num_of_tensormaps * M):
         for n in range(N):
@@ -373,7 +377,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     ]() * size_of[dtype]()
 
     comptime __cta_tile_layout = Layout.row_major(tile_M, tile_N)
-    tile = LayoutTensor[
+    var tile = LayoutTensor[
         dtype,
         __cta_tile_layout,
         MutAnyOrigin,
@@ -381,7 +385,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var smem_desc = stack_allocation[
+    var smem_desc = unsafe_stack_allocation[
         1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
@@ -395,7 +399,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
 
     # update the smem tensor map global addr, dims, and strides. Only the one elected thread should call this
     if thread_idx.x == 0:
-        global_addr = src.ptr + subtensors_m[block_idx.x] * tile_N
+        var global_addr = src.ptr + subtensors_m[block_idx.x] * tile_N
 
         device_tma_tile[
             block_idx.x
@@ -424,7 +428,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     # Entire warp should call this as it's an aligned instruction
     device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
-    mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         address_space=AddressSpace.SHARED,
@@ -440,7 +444,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tile_M, tile_N](block_idx.x, 0)
+    var dst_tile = dst.tile[tile_M, tile_N](block_idx.x, 0)
     copy_sram_to_dram[Layout.row_major(tile_M, tile_N)](dst_tile, tile)
 
 
@@ -489,7 +493,9 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_subtensors
     )
-    var tensormaps_host_ptr = stack_allocation[num_of_subtensors * 128, UInt8]()
+    var tensormaps_host_ptr = unsafe_stack_allocation[
+        num_of_subtensors * 128, UInt8
+    ]()
 
     comptime for i in range(num_of_subtensors):
         for j in range(128):
@@ -530,12 +536,12 @@ def test_tma_replace_global_dim_in_smem_descriptor[
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    dest_tile = LayoutTensor[
+    var dest_tile = LayoutTensor[
         dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutAnyOrigin
     ].stack_allocation()
 
-    new_src_host = new_src.tensor()
-    dst_host = dst.tensor()
+    var new_src_host = new_src.tensor()
+    var dst_host = dst.tensor()
 
     for i in range(num_of_subtensors):
         dest_tile.copy_from(dst_host.tile[cta_tile_M, cta_tile_N](i, 0))
@@ -546,7 +552,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
 
         for dest_idx in range(cta_tile_M * cta_tile_N):
             if dest_idx < src_M * src_N:
-                swizzled_dest_idx = swizzle(dest_idx)
+                var swizzled_dest_idx = swizzle(dest_idx)
                 assert_equal(
                     dest_tile.ptr[swizzled_dest_idx], src_ptr[dest_idx]
                 )

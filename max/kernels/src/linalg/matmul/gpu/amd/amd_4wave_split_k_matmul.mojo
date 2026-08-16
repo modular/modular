@@ -36,7 +36,7 @@ from std.sys import align_of
 from std.utils import Index, IndexList
 
 from std.gpu import block_dim, global_idx, grid_dim
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
@@ -59,9 +59,9 @@ def _split_k_reduce_kernel[
 ](
     scratch: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
-    total_elems: Int,
-    elems_per_split: Int,
-    n_dim: Int,
+    total_elems: Int32,
+    elems_per_split: Int32,
+    n_dim: Int32,
 ):
     """Element-wise reduction across `num_splits` partial outputs.
 
@@ -73,20 +73,23 @@ def _split_k_reduce_kernel[
     When `elementwise_lambda_fn` is set, the reduced f32 value at
     flat index `tid` is delivered to the lambda with global
     coords `(tid // N, tid % N)` instead of being stored to `c_ptr`.
-    The lambda fires exactly once per output cell — on the reduced
-    sum, not on each partial — which is the correct epilogue semantics
+    The lambda fires exactly once per output cell (on the reduced
+    sum, not on each partial), which is the correct epilogue semantics
     for split-K.
     """
+    var _total_elems = Int(total_elems)
+    var _elems_per_split = Int(elems_per_split)
+    var _n_dim = Int(n_dim)
     var tid = Int(global_idx.x)
     var stride = Int(grid_dim.x * block_dim.x)
-    while tid < total_elems:
+    while tid < _total_elems:
         var acc = Float32(0.0)
         comptime for s in range(num_splits):
-            acc += scratch[s * elems_per_split + tid]
+            acc += scratch[s * _elems_per_split + tid]
         comptime if Bool(elementwise_lambda_fn):
             comptime epilogue_fn = elementwise_lambda_fn.value()
-            var m = tid // n_dim
-            var n = tid - m * n_dim
+            var m = tid // _n_dim
+            var n = tid - m * _n_dim
             epilogue_fn[alignment=align_of[Scalar[c_type]]()](
                 IndexList[2](m, n),
                 SIMD[c_type, 1](acc.cast[c_type]()),
@@ -162,7 +165,7 @@ def amd_4wave_split_k_matmul[
     """Launches the single-launch split-K 4-wave matmul on the device.
 
     Production callers go through a higher-level dispatcher that
-    selects tile shapes based on M, N, K, and dtype — it should set
+    selects tile shapes based on M, N, K, and dtype; it should set
     `block_{m,n,k}_override` explicitly. The internal auto-pick is a
     convenience default for direct/ad-hoc/benchmark callers.
 
@@ -179,12 +182,12 @@ def amd_4wave_split_k_matmul[
     Pre-allocate `workspace = SplitKWorkspace[num_splits](ctx, M*N)`
     and re-use across calls with the same shape. The workspace holds
     `num_splits * M * N` f32 partials; the final output (FP8 / bf16 /
-    fp16 — matches `c_type`) is reduced into `c` by the reduce kernel.
+    fp16, which matches `c_type`) is reduced into `c` by the reduce kernel.
 
     When `elementwise_lambda_fn` is set, the reduce kernel fires the
     lambda once per output cell on the reduced f32 sum and skips the
     write to `c`. The matmul kernels themselves do not see the lambda
-    — they always write f32 partials to the workspace — which is the
+    (they always write f32 partials to the workspace), which is the
     correct semantics: the lambda must observe the FINAL value, not
     the per-split partials.
 
@@ -269,7 +272,7 @@ def amd_4wave_split_k_matmul[
         mma_shape=Index(16, 16, _mma_k),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def launch_split_k[config: KernelConfig]() raises:
         # Workspace is row-major (num_splits * M, N) — split_id selects
@@ -335,9 +338,9 @@ def amd_4wave_split_k_matmul[
     ctx.enqueue_function[reduce_kernel](
         workspace.scratch.unsafe_ptr(),
         c.ptr,
-        total_elems,
-        elems_per_split,
-        N,
+        Int32(total_elems),
+        Int32(elems_per_split),
+        Int32(N),
         grid_dim=(num_blocks,),
         block_dim=(block_dim_x,),
     )

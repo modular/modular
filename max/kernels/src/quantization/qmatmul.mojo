@@ -10,12 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides CPU kernels for block-wise quantized int4 matrix multiplication."""
+
 from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
-from std.algorithm import sync_parallelize, tile
-from std.gpu.host import DeviceContext
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -35,11 +39,11 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 
@@ -59,6 +63,19 @@ def matmul_qint4_pack_b[
         mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
+    """Repacks block-wise quantized int4 weights into the tiled layout
+    expected by the `matmul_qint4` kernels.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+
+    Args:
+        b_tt: Source tensor holding packed uint8 weights with float16 scales.
+        b_rot_tt: Destination tensor for the repacked weights.
+
+    Raises:
+        If N is not a multiple of 32.
+    """
     var b = b_tt.to_layout_tensor()
     var b_rot = b_rot_tt.to_layout_tensor()
     comptime assert b.rank == 2
@@ -160,7 +177,7 @@ def _quantize_a_buffer[
 
         var am_ptr = a.ptr + ko
 
-        @parameter
+        @__parameter
         @always_inline
         def process_rows[tile_m: Int](m: Int):
             for row in range(tile_m):
@@ -240,9 +257,7 @@ def _unpack_weights[
         b_scale_ptr += tile_n * simd_width
         b_packed_ptr += size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         for _ in range(0, group_size, 8):
             comptime for col in range(tile_n):
@@ -339,7 +354,7 @@ def _scale_and_accumulate[
     mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](
+    var b_scale = Array[SIMD[DType.float32, simd_width], tile_n](
         uninitialized=True
     )
 
@@ -349,7 +364,7 @@ def _scale_and_accumulate[
             col * simd_width
         ).cast[DType.float32]()
 
-    @parameter
+    @__parameter
     @always_inline
     def apply_a_scale[row: Int](a_scale: Float32):
         comptime for col in range(tile_n):
@@ -481,9 +496,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
             var a_val_lo = bitcast[DType.int32, 1](a_ptr.load[width=4](k))
@@ -621,9 +634,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = size_of[DType.float16]() * tile_n * simd_width
 
-        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
-            fill=0
-        )
+        var b_column_sums = Array[SIMD[DType.int32, simd_width], tile_n](fill=0)
 
         comptime for k in range(0, group_size, 8):
             var a_lo = SIMD[DType.int32, simd_width](
@@ -792,7 +803,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
             comptime for lane in range(0, 4, 2):
                 comptime for col in range(tile_n):
                     var b_data_packed = b_ptr.load[
-                        width=SIMDSize(simd_width) * 4
+                        width=SIMDLength(simd_width) * 4
                     ](b_offset).cast[DType.uint8]()
                     b_offset += simd_width * 4
 
@@ -835,16 +846,14 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 16):
-            var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](
-                uninitialized=True
-            )
+            var a_tile = Array[SIMD[DType.int8, 16], tile_m](uninitialized=True)
 
             comptime for row in range(tile_m):
                 a_tile[row] = a_ptr.load[width=16](row * group_size + k)
 
             comptime for lane in range(4):
                 comptime for col in range(tile_n):
-                    var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](
+                    var b_val = b_ptr.load[width=SIMDLength(simd_width) * 4](
                         b_offset
                     )
                     b_offset += simd_width * 4
@@ -928,25 +937,27 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         var b_offset = 0
 
         comptime for k in range(0, group_size, 8):
-            var a_tile = InlineArray[
-                SIMD[DType.int8, SIMDSize(simd_width) * 4], block_m
+            var a_tile = Array[
+                SIMD[DType.int8, SIMDLength(simd_width) * 4], block_m
             ](fill=0)
 
             comptime if tile_m > 1:
                 comptime for row in range(block_m):
-                    a_tile[row] = a_ptr.load[width=SIMDSize(simd_width) * 4](
+                    a_tile[row] = a_ptr.load[width=SIMDLength(simd_width) * 4](
                         a_offset
                     )
                     a_offset += simd_width * 4
             else:
                 var a_val = a_ptr.load[width=simd_width * 2](a_offset)
-                a_tile[0] = rebind[SIMD[DType.int8, SIMDSize(simd_width) * 4]](
-                    a_val.join(SIMD[DType.int8, simd_width * 2](0))
-                )
+                a_tile[0] = rebind[
+                    SIMD[DType.int8, SIMDLength(simd_width) * 4]
+                ](a_val.join(SIMD[DType.int8, simd_width * 2](0)))
                 a_offset += simd_width * 2
 
             comptime for col in range(tile_n * 2):
-                var b_val = b_ptr.load[width=SIMDSize(simd_width) * 4](b_offset)
+                var b_val = b_ptr.load[width=SIMDLength(simd_width) * 4](
+                    b_offset
+                )
                 b_offset += simd_width * 4
 
                 comptime for row in range(block_m):
@@ -1019,7 +1030,7 @@ def _matmul_qint4_m_1[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @parameter
+    @__parameter
     @__copy_capture(N, K, k_groups, work_count, num_workers)
     def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
@@ -1028,7 +1039,7 @@ def _matmul_qint4_m_1[
 
         var b_ptr = b.ptr.bitcast[Int8]()
 
-        @parameter
+        @__parameter
         @always_inline
         def process_cols[tile_n: Int](n_idx: Int):
             var n = task_n_start + n_idx * simd_width
@@ -1108,7 +1119,7 @@ def _matmul_qint4_m_any[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @parameter
+    @__parameter
     @__copy_capture(M, N, K, k_groups, work_count, num_workers)
     def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
@@ -1121,19 +1132,19 @@ def _matmul_qint4_m_any[
             var ko_count = min(K_BATCH_SIZE, K - ko)
             var ko_group = ko // group_size
 
-            @parameter
+            @__parameter
             @always_inline
             def process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
-                var b_s8_buf = stack_allocation[
+                var b_s8_buf = unsafe_stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
                     DType.int8,
                     alignment=alignment,
                 ]()
-                var b_scale_buf = stack_allocation[
+                var b_scale_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.float32,
                     alignment=alignment,
@@ -1144,7 +1155,7 @@ def _matmul_qint4_m_any[
                 # accumulator.
                 comptime needs_correction = aq_type.is_unsigned()
 
-                var b_correction_buf = stack_allocation[
+                var b_correction_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,
@@ -1171,7 +1182,7 @@ def _matmul_qint4_m_any[
                 var ak_ptr = a_quant.ptr + ko * M
                 var ak_scale_ptr = a_scale.ptr + ko_group * M
 
-                @parameter
+                @__parameter
                 @always_inline
                 def process_rows[tile_m: Int](m: Int):
                     var c_ptr = c.ptr + c._offset(Index(m, n))
@@ -1276,12 +1287,18 @@ def _matmul_qint4[
     )
     var a_scale_base = alloc(AllocLayout[Float32](count=M * k_groups))
 
+    var a_quant_ptr: UnsafePointer[
+        Scalar[aq_type], origin_of(a_quant_base._alloc)
+    ] = a_quant_base.unsafe_ptr()
     var a_quant = LayoutTensor[aq_type, Layout.row_major[2]()](
-        a_quant_base.unsafe_ptr(),
+        a_quant_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, K)),
     )
+    var a_scale_ptr: UnsafePointer[
+        Float32, origin_of(a_scale_base._alloc)
+    ] = a_scale_base.unsafe_ptr()
     var a_scale = LayoutTensor[DType.float32, Layout.row_major[2]()](
-        a_scale_base.unsafe_ptr(),
+        a_scale_ptr,
         RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, k_groups)),
     )
 
@@ -1315,11 +1332,27 @@ def matmul_qint4[
     ],
     ctx: Optional[DeviceContext] = None,
 ):
+    """Computes a matrix multiply of a float32 A matrix against block-wise
+    quantized int4 B weights, producing a float32 result.
+
+    Dispatches to an architecture-specific kernel (VNNI, AVX2, NEON i8mm,
+    or NEON dotprod) at compile time.
+
+    Parameters:
+        group_size: Number of elements per quantization group.
+        elementwise_lambda_fn: Optional epilogue applied to each output element.
+
+    Args:
+        a_tt: Input A tensor in float32.
+        b_tt: Input B tensor holding packed uint8 int4 weights.
+        c_tt: Output C tensor in float32.
+        ctx: Optional device context for parallel execution.
+    """
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()
 
-    @parameter
+    @__parameter
     def kernel_dispatch[kernel: _MatmulQInt4Kernel]():
         return _matmul_qint4[
             kernel,

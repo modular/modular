@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import MI300X
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import MI300X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

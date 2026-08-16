@@ -296,10 +296,12 @@ def _create_vision_max_pipeline(
         trust_remote_code=trust_remote_code,
         max_length=max_length,
         kv_cache=kv_cache,
-        enable_chunked_prefill=(
-            enable_chunked_prefill
-            if enable_chunked_prefill is not None
-            else True
+        runtime=pipelines.PipelineRuntimeConfig(
+            enable_chunked_prefill=(
+                enable_chunked_prefill
+                if enable_chunked_prefill is not None
+                else True
+            ),
         ),
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
@@ -872,6 +874,50 @@ class KimiK2_6PipelineOracle(KimiK2_5PipelineOracle):
         return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
 
+class KimiK2_7PipelineOracle(KimiK2_5PipelineOracle):
+    """Pipeline oracle for Kimi-K2.7-Code-NVFP4 (vLLM only).
+
+    K2.7-Code reuses the Kimi-K2.5 MAX architecture — confirmed via the HF
+    config (``architectures: KimiK25ForConditionalGeneration``, ``vision_config``
+    present), same as K2.5 and K2.6. It therefore inherits K2.5's vLLM golden
+    setup verbatim: multimodal (``KIMIK2_5_REQUESTS``) + text inputs and the
+    vision ``_vllm_extra_kwargs`` (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt``
+    on the ``vision_chunk`` mm-data key).
+
+    The MAX pipeline runs in TP+EP mode (``data_parallel_degree=1``,
+    ``ep_size=8``, ``ep_use_allreduce=True``) to match the served K2.7-Code
+    deployment (same layout as K2.6), rather than the K2.5 base oracle's DP+EP
+    (``dp=8``) layout.
+    """
+
+    def create_max_pipeline(
+        self,
+        *,
+        encoding: pipelines.SupportedEncoding,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
+        config = pipelines.PipelineArgs.from_flat_kwargs(
+            device_specs=device_specs,
+            quantization_encoding=encoding,
+            model_path=self.model_path,
+            huggingface_model_revision=revision,
+            huggingface_weight_revision=revision,
+            max_length=4096,
+            trust_remote_code=self.trust_remote_code,
+            max_batch_input_tokens=4096,
+            ep_size=8,
+            data_parallel_degree=1,
+            ep_use_allreduce=True,
+        )
+        hf_repo_lock.apply_to_config(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
+            PipelineConfig.from_args(config)
+        )
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        return MaxPipelineAndTokenizer(pipeline, tokenizer)
+
+
 class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
     """Oracle for the text-only DeepseekV3 conversion of Kimi-K2.5-NVFP4.
 
@@ -1007,8 +1053,10 @@ class KimiK2_5DeepseekV3LocalPathPipelineOracle(
             max_length=4096,
             trust_remote_code=self.trust_remote_code,
             data_parallel_degree=8,
-            max_batch_input_tokens=4096,
-            ep_size=8,
+            runtime=pipelines.PipelineRuntimeConfig(
+                max_batch_input_tokens=4096,
+                ep_size=8,
+            ),
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             PipelineConfig.from_args(config)
@@ -1109,9 +1157,9 @@ class GenericOracle(PipelineOracle):
             )
 
         # Defer resolution so we can set _weights_repo_id before
-        # validation runs.  Without this, PipelineConfig.resolve() would
-        # look for weight files in the model repo (meta-llama) instead of
-        # the weights repo (bartowski).
+        # validation runs.  Without this, construction-time resolution
+        # would look for weight files in the model repo (meta-llama)
+        # instead of the weights repo (bartowski).
         config_kwargs = {
             "task": self.task,
             "device_specs": device_specs if device_specs else None,
@@ -1499,25 +1547,20 @@ class ImageGenerationOracle(PipelineOracle):
                 quantization_encoding=encoding,
             )
 
-        pipeline_args_kwargs: dict[str, Any] = {
+        runtime_kwargs: dict[str, Any] = {
             "prefer_module_v3": prefer_module_v3,
         }
 
         # Optional denoising-cache overrides (e.g. TaylorSeer / FBCache).
         denoising_cache = self.config_params.get("denoising_cache")
         if denoising_cache is not None:
-            pipeline_args_kwargs["denoising_cache"] = DenoisingCacheConfig(
+            runtime_kwargs["denoising_cache"] = DenoisingCacheConfig(
                 **denoising_cache
             )
 
-        # NOTE: PipelineArgs has no `runtime` field -- unlike PipelineConfig,
-        # its runtime knobs (prefer_module_v3, denoising_cache, etc.) are flat
-        # top-level fields, so they must be passed directly rather than
-        # wrapped in a PipelineRuntimeConfig (which raises "Extra inputs are
-        # not permitted", since ConfigFileModel forbids extra fields).
         config = pipelines.PipelineArgs(
             models=models,
-            **pipeline_args_kwargs,
+            runtime=pipelines.PipelineRuntimeConfig(**runtime_kwargs),
         )
 
         # retrieve resolves the manifest and picks the tokenizer/executor
@@ -1599,6 +1642,7 @@ class WanGenerationOracle(ImageGenerationOracle):
         """Create MAX Wan pixel generation pipeline."""
         models = ModelManifest.from_model_path(
             self.model_path,
+            revision=hf_repo_lock.revision_for_hf_repo(self.model_path),
             device_specs=device_specs,
         )
         config = pipelines.PipelineArgs(models=models)
@@ -1747,11 +1791,6 @@ class NemotronHOracle(GenericOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
-    "stepfun-ai/Step-3.5-Flash": GenericOracle(
-        model_path="stepfun-ai/Step-3.5-Flash",
-        config_params={"trust_remote_code": True},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
     "allenai/OLMo-1B-hf": GenericOracle(
         model_path="allenai/OLMo-1B-hf",
         config_params={"max_length": 1024},
@@ -1947,16 +1986,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-1124-13B": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["float32"],
-            "cpu": ["float32"],
-        },
-    ),
     "allenai/OLMo-2-1124-13B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-1124-13B-Instruct",
         config_params={
@@ -1967,38 +1996,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "cpu": ["bfloat16"],
         },
     ),
-    "allenai/OLMo-2-1124-13B-Instruct-RLVR1": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR1",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/OLMo-2-1124-13B-Instruct-RLVR2": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B-Instruct-RLVR2",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
     "allenai/OLMo-2-0325-32B-Instruct": GenericOracle(
         model_path="allenai/OLMo-2-0325-32B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "tngtech/OLMo-2-Instruct-Math-32B": GenericOracle(
-        model_path="tngtech/OLMo-2-Instruct-Math-32B",
         config_params={
             "max_length": 4096,
         },
@@ -2052,11 +2051,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "mistral-experimental/pixtral-12b": PixtralPipelineOracle(),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "unsloth/gpt-oss-20b-BF16": GenericOracle(
-        model_path="unsloth/gpt-oss-20b-BF16",
         config_params={"max_length": 512},
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
@@ -2249,18 +2243,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
-    "deepseek-ai/DeepSeek-R1": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-R1",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
     "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
         model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
         config_params={
@@ -2287,30 +2269,8 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
     ),
-    "nvidia/DeepSeek-R1-0528-NVFP4-v2": GenericOracle(
-        model_path="nvidia/DeepSeek-R1-0528-NVFP4-v2",
-        config_params={
-            "max_length": 1028,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 1024,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
-        add_bos_token=True,
-    ),
-    "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
-    "nvidia/Kimi-K2.6-NVFP4": KimiK2_6PipelineOracle("nvidia/Kimi-K2.6-NVFP4"),
-    "amd/Kimi-K2.5-MXFP4": AmdKimiK2_5MXFP4PipelineOracle(
-        "amd/Kimi-K2.5-MXFP4"
-    ),
-    # NVFP4 weights pre-staged on the dedicated prod-2 8xB200 runner. Loaded
-    # as a vanilla DeepseekV3 checkpoint (same bytes as Kimi-K2.5-NVFP4 with
-    # vision stripped). See logit_verification_config.yaml for goldens. The
-    # path is pinned to the runner's staged location; this oracle only runs
-    # on that runner via the +prod-2-8xb200 tag filter.
-    "nvidia/Kimi-K2.5-NVFP4__internal": KimiK2_5DeepseekV3LocalPathPipelineOracle(
-        "/mnt/local/data/quantized/v4"
+    "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
+        "nvidia/Kimi-K2.7-Code-NVFP4"
     ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the
@@ -2352,43 +2312,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         prompts=list(test_data.SHORT_TEXT_PROMPTS),
         apply_chat_template=False,
-    ),
-    "MiniMaxAI/MiniMax-M2.7": GenericOracle(
-        model_path="MiniMaxAI/MiniMax-M2.7",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-    ),
-    "lukealonso/MiniMax-M2.7-NVFP4": GenericOracle(
-        model_path="lukealonso/MiniMax-M2.7-NVFP4",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": True,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
-        },
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
-    ),
-    "amd/MiniMax-M2.7-MXFP4": GenericOracle(
-        model_path="amd/MiniMax-M2.7-MXFP4",
-        config_params={
-            # Chat-templating adds the system prompt and role markers, so the
-            # longest prompt grows past the raw 516-token budget to ~530.
-            "max_length": 640,
-            "trust_remote_code": True,
-            "max_batch_input_tokens": 640,
-            "ep_size": 4,
-            "data_parallel_degree": 4,
-        },
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
-        # The reference golden is chat-templated, so template the MAX side too.
-        apply_chat_template=True,
     ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",

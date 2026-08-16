@@ -20,7 +20,7 @@ from std.testing import (
     assert_true,
     assert_raises,
 )
-from test_utils import Observable
+from test_utils import Observable, CopyCounter
 
 
 def test_product2() raises:
@@ -324,11 +324,11 @@ def test_product4_copies() raises:
 
 @fieldwise_init
 struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
-    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+    """A `Copyable` owned iterator backed by an `Array` for testing."""
 
     comptime Element = Int
     comptime IteratorOwnedType: Iterator = Self
-    var _data: InlineArray[Int, Self.size]
+    var _data: Array[Int, Self.size]
     var _index: Int
 
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -351,20 +351,20 @@ struct _CopyableOwned[size: Int](IterableOwned):
     """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
 
     comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
-    var _data: InlineArray[Int, Self.size]
+    var _data: Array[Int, Self.size]
 
     def __iter__(var self) -> Self.IteratorOwnedType:
-        return _CopyableOwnedIter(self._data, 0)
+        return _CopyableOwnedIter(self._data.copy(), 0)
 
 
 def _owned2(a: Int, b: Int) -> _CopyableOwned[2]:
-    var data: InlineArray[Int, 2] = [a, b]
-    return _CopyableOwned(data)
+    var data: Array[Int, 2] = [a, b]
+    return _CopyableOwned(data^)
 
 
 def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
-    var data: InlineArray[Int, 3] = [a, b, c]
-    return _CopyableOwned(data)
+    var data: Array[Int, 3] = [a, b, c]
+    return _CopyableOwned(data^)
 
 
 def test_product2_owned() raises:
@@ -454,6 +454,39 @@ def test_product4_owned() raises:
         count += 1
 
     assert_equal(count, 16)
+
+
+# The `_Product{3,4}` iterators flatten a right-nested tuple on each `next()`.
+# That flatten moves elements out rather than copying them, so a yielded element
+# carries only the copies the product machinery makes while replaying the inner
+# iterators, plus none from the flatten. These tests pin those counts so a
+# regression that reintroduces a per-element copy in the flatten path is caught.
+
+
+def test_product3_element_copies() raises:
+    var l1 = [CopyCounter(1), CopyCounter(2)]
+    var l2 = [CopyCounter(10), CopyCounter(20)]
+    var l3 = [CopyCounter(100), CopyCounter(200)]
+
+    for a, b, c in product(l1, l2, l3):
+        assert_equal(a.copy_count, 2)
+        assert_equal(b.copy_count, 2)
+        # The fastest-varying (rightmost) element is copied once.
+        assert_equal(c.copy_count, 1)
+
+
+def test_product4_element_copies() raises:
+    var l1 = [CopyCounter(1), CopyCounter(2)]
+    var l2 = [CopyCounter(3), CopyCounter(4)]
+    var l3 = [CopyCounter(5), CopyCounter(6)]
+    var l4 = [CopyCounter(7), CopyCounter(8)]
+
+    for a, b, c, d in product(l1, l2, l3, l4):
+        assert_equal(a.copy_count, 2)
+        assert_equal(b.copy_count, 2)
+        assert_equal(c.copy_count, 2)
+        # The fastest-varying (rightmost) element is copied once.
+        assert_equal(d.copy_count, 1)
 
 
 def main() raises:

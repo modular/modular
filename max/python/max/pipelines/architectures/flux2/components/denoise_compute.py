@@ -39,6 +39,9 @@ from max.graph.weights import load_weights
 from max.nn.comm import Signals
 from max.nn.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import traced
 
@@ -193,7 +196,10 @@ class DenoiseCompute(CompiledComponent):
 
         config = manifest["transformer"]
         config_dict = config.huggingface_config.to_dict()
-        encoding = config.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(config)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(config.device_specs)
 
         transformer_config = Flux2Config.initialize_from_config(
@@ -205,7 +211,7 @@ class DenoiseCompute(CompiledComponent):
         device_refs = transformer_config.devices
 
         # Load weights and adapt for NVFP4 / stacked-QKV checkpoints.
-        paths = config.resolved_weight_paths()
+        paths = config.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         raw_state_dict = {key: value.data() for key, value in weights.items()}
         raw_state_dict = adapt_weights(

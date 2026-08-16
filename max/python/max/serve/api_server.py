@@ -38,6 +38,7 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
 )
+from max.serve._error_envelope import openai_error_body
 from max.serve.config import APIType, MetricRecordingMethod, Settings
 from max.serve.media import GeneratedMediaStore
 from max.serve.pipelines.eplb_stats_rpc import (
@@ -58,9 +59,9 @@ from max.serve.router import (
     openresponses_routes,
     sagemaker_routes,
 )
-from max.serve.schemas.openai import Error, ErrorResponse
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
@@ -156,6 +157,9 @@ async def lifespan(
                 override_architecture=override_architecture,
                 task=serving_settings.task,
             ),
+            # Cap the in-transit request backlog to the model worker (HTTP 429
+            # when full). ``None`` keeps the queue unbounded.
+            request_queue_size=settings.max_queue_size,
         )
         model_worker = await exit_stack.enter_async_context(
             start_model_worker(
@@ -223,6 +227,7 @@ async def lifespan(
                 serving_settings.pipeline_config.sampling.structured_output_backend,
                 delegate,
                 len(delegate),
+                tool_parser_name=serving_settings.pipeline_config.runtime.tool_parser,
             )
 
         # Also store as handler for OpenResponses API route compatibility
@@ -273,36 +278,13 @@ def make_metrics_app() -> Callable[..., Any]:
     return make_asgi_app()
 
 
-_OPENAI_ERROR_TYPES: dict[int, str] = {
-    400: "invalid_request_error",
-    401: "authentication_error",
-    403: "permission_error",
-    404: "not_found_error",
-    409: "conflict_error",
-    422: "invalid_request_error",
-    429: "rate_limit_error",
-}
-
-
-def _openai_error_body(status_code: int, message: str) -> dict[str, Any]:
-    error_type = _OPENAI_ERROR_TYPES.get(
-        status_code,
-        "invalid_request_error" if status_code < 500 else "api_error",
-    )
-    return ErrorResponse(
-        error=Error(
-            code=str(status_code), message=message, param="", type=error_type
-        )
-    ).model_dump()
-
-
 async def _openai_http_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
     assert isinstance(exc, HTTPException)
     return JSONResponse(
         status_code=exc.status_code,
-        content=_openai_error_body(exc.status_code, str(exc.detail)),
+        content=openai_error_body(exc.status_code, str(exc.detail)),
         headers=getattr(exc, "headers", None),
     )
 
@@ -311,7 +293,30 @@ async def _openai_validation_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
     return JSONResponse(
-        status_code=422, content=_openai_error_body(422, str(exc))
+        status_code=422, content=openai_error_body(422, str(exc))
+    )
+
+
+async def _request_queue_full_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Map a full model-worker request queue to HTTP 429.
+
+    ``RequestQueueFull`` is raised at admission (the push to the worker, awaited
+    before any response status is committed) by any endpoint that submits to the
+    worker, so it is handled centrally here rather than per route. Returns the
+    OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
+    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    """
+    assert isinstance(exc, RequestQueueFull)
+    request_id = getattr(request.state, "request_id", "<unknown>")
+    logger.warning("Request queue full for request %s", request_id)
+    return JSONResponse(
+        status_code=429,
+        content=openai_error_body(
+            429, "Server is at capacity. Please retry later."
+        ),
+        headers={"Retry-After": "1"},
     )
 
 
@@ -424,6 +429,9 @@ def fastapi_app(
     app.add_exception_handler(
         RequestValidationError, _openai_validation_exception_handler
     )
+    app.add_exception_handler(
+        RequestQueueFull, _request_queue_full_exception_handler
+    )
 
     return app
 
@@ -436,6 +444,10 @@ def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
         host=server_settings.host,
         port=server_settings.port,
         timeout_graceful_shutdown=server_settings.graceful_shutdown_timeout_s,
+        # uvicorn defaults to closing idle connections after 5s, far below the
+        # idle timeout of a pooling client, which makes the server the side
+        # that closes and turns the race into client-visible TCP resets.
+        timeout_keep_alive=server_settings.http_keepalive_timeout_s,
         # The serving lifespan (model worker, pipeline, telemetry) is entered
         # explicitly by the entrypoint around `server.serve()` so that a worker
         # crash cancels the serving task directly. Keep uvicorn out of the

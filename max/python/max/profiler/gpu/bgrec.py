@@ -297,7 +297,7 @@ class BackgroundRecorder:
 
         with BackgroundRecorder() as recorder:
             # Run your GPU workload here
-            run_inference_session()
+            sum(range(1_000_000))
 
         # Access collected time-series data
         for i, snapshot in enumerate(recorder.stats):
@@ -350,7 +350,11 @@ class BackgroundRecorder:
         )
         proc = _RecorderProcess(raw_proc)
         try:
-            proc.wait_for_ready(timeout=10)
+            # The child re-imports the max package before signaling ready,
+            # which can exceed 10s on contended CI workers. A dead child is
+            # detected separately (EOF/die notification), so a generous
+            # deadline costs nothing on the happy path.
+            proc.wait_for_ready(timeout=60)
         except:
             proc.kill_gracefully()
             raise

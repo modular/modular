@@ -267,7 +267,7 @@ def _init_random_state() -> _RandomState:
 
 
 def _get_global_random_state(
-    out result: UnsafePointer[_RandomState, MutUntrackedOrigin]
+    out result: Pointer[_RandomState, MutUntrackedOrigin]
 ):
     """Gets the global random state.
 

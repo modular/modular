@@ -38,7 +38,7 @@
 
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
 from layout import TileTensor, Coord, row_major, Idx
@@ -59,10 +59,10 @@ comptime STATIC_SCALE = 0.5
 comptime BAND_MS = [25, 27, 29, 31, 8, 16, 64, 128]
 
 
-@parameter
+@__parameter
 @always_inline
 def scaled_compute_fn[
-    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](idx: IndexList[2], val: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
     # Mirror MatmulStaticScaledFloat8's SM100 compute lambda: accumulate in
     # fp32, apply the scalar scale, cast back to output dtype (bf16).
@@ -117,8 +117,8 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var c_ref_tensor = TileTensor(c_ref_device, c_shape)
 
     seed(0)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
@@ -145,7 +145,9 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(c_ref_host_ptr, c_ref_device)
     ctx.synchronize()
 
-    assert_almost_equal(c_host.ptr, c_ref_host.ptr, m * N, atol=0.01, rtol=0.01)
+    assert_almost_equal(
+        c_host._storage, c_ref_host._storage, m * N, atol=0.01, rtol=0.01
+    )
     print("=== PASS FP8 (N=", N, ", K=", K, ", m=", m, ") ===")
 
     _ = a_device^
@@ -181,8 +183,8 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     var c_ref_tensor = TileTensor(c_ref_device, c_shape)
 
     seed(0)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
@@ -207,7 +209,9 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(c_ref_host_ptr, c_ref_device)
     ctx.synchronize()
 
-    assert_almost_equal(c_host.ptr, c_ref_host.ptr, m * N, atol=0.01, rtol=0.01)
+    assert_almost_equal(
+        c_host._storage, c_ref_host._storage, m * N, atol=0.01, rtol=0.01
+    )
     print("=== PASS BF16 (N=", N, ", K=", K, ", m=", m, ") ===")
 
     _ = a_device^

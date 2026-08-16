@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib._ahash import AHasher
+from std.hashlib._ahash import AHasher, hash_seeded, hash_seeded_bytes
 
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -31,6 +31,9 @@ from std.testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
 comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
+
+comptime seed0 = SIMD[DType.uint64, 4](0, 0, 0, 0)
+comptime seed1 = SIMD[DType.uint64, 4](1, 0, 0, 0)
 
 
 def test_hash_byte_array() raises:
@@ -59,15 +62,15 @@ def test_hash_byte_array() raises:
 def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significatly different hash values
-    var data = InlineArray[UInt8, 256](uninitialized=True)
-    memset_zero(data.unsafe_ptr(), 256)
+    var data = Array[UInt8, 256](uninitialized=True)
+    unsafe_memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
     hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(256):
-        memset_zero(data.unsafe_ptr(), 256)
+        unsafe_memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
         hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
@@ -89,8 +92,8 @@ def test_avalanche() raises:
 def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
-    var data = InlineArray[UInt8, 8](uninitialized=True)
-    memset_zero(data.unsafe_ptr(), 8)
+    var data = Array[UInt8, 8](uninitialized=True)
+    unsafe_memset_zero(data.unsafe_ptr(), 8)
     data[0] = 23
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
@@ -109,6 +112,50 @@ def test_trailing_zeros() raises:
 
     assert_dif_hashes(hashes0, 18)
     assert_dif_hashes(hashes1, 18)
+
+
+def test_seeded_zero_matches_unseeded() raises:
+    # An all-zero seed must reproduce the unseeded hash exactly, so
+    # existing callers that never pass a seed see no behavior change.
+    comptime a = StaticString("a")
+    var data = Array[UInt8, 256](uninitialized=True)
+    unsafe_memset_zero(data.unsafe_ptr(), 256)
+
+    assert_equal(
+        hash_seeded_bytes(data.unsafe_ptr(), 256, seed0),
+        hash[hasher0](data.unsafe_ptr(), 256),
+    )
+    assert_equal(hash_seeded(a, seed0), hash[hasher0](a))
+
+
+def test_seeded_diffusion() raises:
+    # Two distinct seeds hashing identical data must diffuse into
+    # significantly different hash values (mirrors test_avalanche).
+    var data = Array[UInt8, 256](uninitialized=True)
+    unsafe_memset_zero(data.unsafe_ptr(), 256)
+    var hashes0 = List[UInt64]()
+    var hashes1 = List[UInt64]()
+    hashes0.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed0))
+    hashes1.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed1))
+
+    for i in range(256):
+        unsafe_memset_zero(data.unsafe_ptr(), 256)
+        var v = 1 << (i & 7)
+        data[i >> 3] = UInt8(v)
+        hashes0.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed0))
+        hashes1.append(hash_seeded_bytes(data.unsafe_ptr(), 256, seed1))
+
+    for i in range(len(hashes0)):
+        var diff = dif_bits(hashes0[i], hashes1[i])
+        assert_true(
+            diff > 16,
+            "Index: {}, diff between: {} and {} is: {}".format(
+                i, hashes0[i], hashes1[i], diff
+            ),
+        )
+
+    assert_dif_hashes(hashes0, 12)
+    assert_dif_hashes(hashes1, 12)
 
 
 def test_fill_factor() raises:
@@ -157,7 +204,7 @@ def test_fill_factor() raises:
 
 def test_hash_simd_values() raises:
     def hash(value: SIMD) -> UInt64:
-        hasher = hasher0()
+        var hasher = hasher0()
         hasher._update_with_simd(value)
         return hasher^.finish()
 

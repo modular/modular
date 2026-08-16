@@ -31,6 +31,9 @@ from max.pipelines.diffusion.cache import (
     TaylorSeerCache,
 )
 from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -196,7 +199,10 @@ class WanExecutor(
 
         # Extract model config.
         transformer_config = manifest["transformer"]
-        encoding = transformer_config.quantization_encoding or "bfloat16"
+        resolved_encoding, _ = _resolve_component_encoding_and_weights(
+            transformer_config
+        )
+        encoding = resolved_encoding or "bfloat16"
         # Under FP8 only the DiT linear weights are quantized; latents, the
         # CFG-combine / scheduler helper graphs, guidance scales, and the
         # TaylorSeer cache all operate in the bfloat16 working dtype.

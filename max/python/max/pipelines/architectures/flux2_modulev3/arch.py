@@ -26,7 +26,7 @@ flux2_modulev3_arch = SupportedArchitecture(
     name="Flux2Pipeline_ModuleV3",
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
+    default_encoding=Flux2ArchConfig.DEFAULT_ENCODING,
     supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     example_repo_ids=[
         "black-forest-labs/FLUX.2-dev",

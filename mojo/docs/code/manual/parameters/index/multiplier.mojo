@@ -19,6 +19,6 @@ def multiplier[factor: Int](x: Int) -> Int:
 
 def main():
     comptime times_ten = multiplier[10]
-    x10 = times_ten(3)
+    var x10 = times_ten(3)
     _ = x10
     # end-multiplier-example

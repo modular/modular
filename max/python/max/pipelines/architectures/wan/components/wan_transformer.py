@@ -25,6 +25,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Module, TensorType
 from max.graph.weights import load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import Tracer, traced
 
@@ -75,7 +78,10 @@ class WanTransformer(CompiledComponent):
 
         config_entry = manifest["transformer"]
         config_dict = config_entry.huggingface_config.to_dict()
-        encoding = config_entry.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(config_entry)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(config_entry.device_specs)
 
         self.config = WanConfig.generate(config_dict, encoding, devices)
@@ -103,7 +109,7 @@ class WanTransformer(CompiledComponent):
         # use native Wan-AI naming with per-tensor weight/input scales and a
         # dedicated adapter; the bfloat16 path uses the diffusers remap.
         self._fp8 = self.config.quant_config is not None
-        paths = config_entry.resolved_weight_paths()
+        paths = config_entry.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         if self._fp8:
             state_dict = adapt_wan_fp8_weights(weights)
@@ -134,7 +140,10 @@ class WanTransformer(CompiledComponent):
             return None
 
         config_entry_2 = manifest["transformer_2"]
-        paths_2 = config_entry_2.resolved_weight_paths()
+        _, resolved_weight_path_2 = _resolve_component_encoding_and_weights(
+            config_entry_2
+        )
+        paths_2 = config_entry_2.resolved_weight_paths(resolved_weight_path_2)
         weights_2 = load_weights(paths_2)
         if self._fp8:
             state_dict_2 = adapt_wan_fp8_weights(weights_2)
