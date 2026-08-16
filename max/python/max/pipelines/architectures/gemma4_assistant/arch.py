@@ -28,8 +28,8 @@ gemma4_assistant_arch = SupportedArchitecture(
         "google/gemma-4-31B-it-assistant",
         "google/gemma-4-26B-A4B-it-assistant",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    default_encoding=Gemma4AssistantConfig.DEFAULT_ENCODING,
+    supported_encodings=Gemma4AssistantConfig.SUPPORTED_ENCODINGS,
     pipeline_model=Gemma3_MultiModalModel,
     tokenizer=Gemma4Tokenizer,
     context_type=TextContext,
@@ -45,8 +45,5 @@ gemma4_assistant_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
-    # Pin to llguidance (see UnifiedMTPGemma4ForCausalLM): the gemma4 tool
-    # parser emits llguidance-format grammars xgrammar cannot compile. Guards
-    # the case where this draft checkpoint is served as a standalone target.
-    default_structured_output_backend="llguidance",
+    default_structured_output_backend="xgrammar",
 )

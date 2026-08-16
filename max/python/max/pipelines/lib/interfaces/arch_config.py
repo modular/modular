@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, cast, runtime_checkable
 
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
@@ -38,9 +38,18 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
-from max.pipelines.kv_cache.config import KVCacheConfig
+from max.pipelines.kv_cache.config import (
+    KVCacheConfig,
+    cache_dtype_for_encoding,
+)
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -298,7 +307,15 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     - head_dim: int
     - num_layers: int
     - model_max_seq_len: int
+    - DEFAULT_ENCODING: SupportedEncoding
     """
+
+    # The architecture's default and supported encodings, mirrored from the
+    # `SupportedArchitecture` registration. `DEFAULT_ENCODING` is used by
+    # `initialize` to resolve `quantization_encoding` when the user didn't
+    # specify one. Concrete subclasses must define these.
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding]
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]]
 
     dtype: DType
     """The data type to use for the model."""
@@ -306,6 +323,8 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
     """The physical devices to use when running the model."""
     cache_dtype: DType | None = None
     """The data type to use for the KV cache."""
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved weight encoding the model runs with."""
     kv_cache: KVCacheConfig = field(default_factory=KVCacheConfig)
     """The KV cache configuration to use when running the model."""
     data_parallel_degree: int = 1
@@ -325,17 +344,20 @@ class ArchConfigWithAttentionKVCache(ArchConfigWithKVCache, abc.ABC):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        if model_config.quantization_encoding is None:
-            raise ValueError(
-                "Quantization encoding is required for ArchConfigWithAttentionKVCache"
-            )
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         return cls(
-            dtype=supported_encoding_dtype(model_config.quantization_encoding),
+            dtype=supported_encoding_dtype(quantization_encoding),
             devices=[
                 DeviceRef(device_type=d.device_type, id=d.id)
                 for d in model_config.device_specs
             ],
-            cache_dtype=model_config.kv_cache.cache_dtype,
+            cache_dtype=cache_dtype_for_encoding(
+                quantization_encoding,
+                model_config.kv_cache.kv_cache_format,
+            ),
+            quantization_encoding=quantization_encoding,
             kv_cache=model_config.kv_cache,
             data_parallel_degree=model_config.data_parallel_degree,
             user_provided_max_length=model_config.max_length,

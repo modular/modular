@@ -17,8 +17,8 @@ from std.sys import argv, size_of
 from std.sys.defines import get_defined_int
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100, H100, _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import A100, H100, _is_sm10x_gpu
 from layout import (
     Idx,
     TileTensor,
@@ -133,7 +133,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -250,8 +250,8 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth):
-                    orig = flash_output_ptr[d + depth * (h + s * num_heads)]
-                    rep = output_ptr[d + depth * (h + s * num_heads)]
+                    var orig = flash_output_ptr[d + depth * (h + s * num_heads)]
+                    var rep = output_ptr[d + depth * (h + s * num_heads)]
                     if rep != orig:
                         print("repeat s h d =", repeat, s, h, d)
                     assert_equal(rep, orig)
@@ -502,7 +502,7 @@ def main() raises:
             ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
         # CausalPaddingMask tests: allocate valid_lengths on device.
-        @parameter
+        @__parameter
         def make_vl(
             val: UInt32, ctx: DeviceContext
         ) raises -> LayoutTensor[

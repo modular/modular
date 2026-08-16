@@ -18,11 +18,10 @@ per-iter offsets to defeat L2 reuse, and the FLOPs formula below, so the
 TFLOPS number is directly comparable across runs on the same node at a
 fixed shape.
 
-Timing is **device time**: `Bencher.iter_custom[fn](ctx)` forwards to
-`DeviceContext.execution_time`, which brackets the launches with GPU
-events (NOT wall-clock around `enqueue_function`). This is the trustworthy
-path — a prior coarse harness that wall-clocked the launch produced
-non-physical TFLOPS.
+Timing is **device time**: `bencher_iter_custom()` forwards to
+`DeviceContext.execution_time()`, which brackets the launches with GPU events
+(NOT wall-clock around `enqueue_function()`). This is the trustworthy path — a
+prior coarse harness that wall-clocked the launch produced non-physical TFLOPS.
 
 `MlaPrefillV2` delegates every numeric step to `MlaPrefillV2Core[config]`'s
 FP32-scores / reference-cadence path, gated behind
@@ -83,6 +82,7 @@ from std.sys import (
     size_of,
 )
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -91,7 +91,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -354,7 +354,7 @@ def run_mla_prefill_v2[
         var work_info_ptr = dev_work_info.unsafe_ptr()
         var num_works = md.num_works
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(
             cb_q,
@@ -369,9 +369,8 @@ def run_mla_prefill_v2[
             num_cu,
         )
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]
                 ]()
@@ -470,18 +469,18 @@ def run_mla_prefill_v2[
                     o_tt,
                     mask,
                     scale,
-                    cache_seq_len,  # num_keys (self-attention)
-                    0,  # start_pos
+                    Int32(cache_seq_len),  # num_keys (self-attention)
+                    Int32(0),  # start_pos
                     work_indptr_ptr,
                     work_info_ptr,
-                    num_works,
+                    Int32(num_works),
                     grid_dim=(gx, gy, gz),
                     block_dim=_kernel.NUM_THREADS,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # MLA prefill FLOPs (NullMask — full attention, NOT half for
             # causal): one two-segment QK at `d_qk = d_nope + d_rope = 192`
             # plus one PV at `d_pv = d_nope = 128`.
@@ -493,7 +492,7 @@ def run_mla_prefill_v2[
                 * (cache_seq_len * _D_QK + cache_seq_len * _D_NOPE)
             )
 
-        def compute_hbm_bytes() {read} -> Int:
+        def compute_hbm_bytes() {imm} -> Int:
             # HBM footprint per launch (NullMask, full attention):
             # - Q: B * H * N * d_qk    elts of `qkv_type`
             # - K read: B * H_kv * NK * d_qk    elts of `qkv_type`

@@ -19,13 +19,13 @@ from std.sys import align_of, argv, size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import lop
-from std.gpu.memory import external_memory
+from max.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -45,7 +45,7 @@ from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
 from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
-from std.memory import memset_zero
+from std.memory import unsafe_memset_zero
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -101,7 +101,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -179,7 +179,9 @@ def repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        var q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            warp_x, warp_y
+        )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
@@ -408,7 +410,7 @@ struct _block_Q4_0:
     comptime group_size = 32
 
     var base_scale: Float16
-    var q_bits: InlineArray[UInt8, Self.group_size // 2]
+    var q_bits: Array[UInt8, Self.group_size // 2]
 
 
 def test_repack_Q4_0_for_sm8x[
@@ -416,7 +418,7 @@ def test_repack_Q4_0_for_sm8x[
 ](ctx: DeviceContext, n: NType, k: KType) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    def fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
+    def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     def build_b_buffer(
@@ -724,7 +726,7 @@ def test_quantized[
         comptime nwarmup = 2
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             multistage_gemm_q[
                 group_size=group_size, pack_factor=pack_factor, config=config

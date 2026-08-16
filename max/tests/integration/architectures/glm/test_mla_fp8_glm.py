@@ -276,8 +276,8 @@ def _run_layer(
         params=kv_params, total_num_pages=8, session=session, max_batch_size=4
     )
     ctx = create_text_context(np.empty(SEQ_LEN))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0)
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
     kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
     row_offsets_buf = Buffer(DType.uint32, [2])
     row_offsets_buf[0] = 0

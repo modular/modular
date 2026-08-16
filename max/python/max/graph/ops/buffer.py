@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Ops for reading and writing mutable buffers in a graph."""
 
+import numpy as np
+from max._core import Attribute
+from max._core import graph as _graph
 from max._core.dialects import kgen, mo, rmo
+from max.driver import Buffer
 
 from ..graph import Graph
 from ..type import BufferType, TensorType
@@ -107,12 +111,22 @@ def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
     Graph.current.device_chains[destination.device] = output_chain
 
 
-def buffer_create(type: BufferType) -> BufferValue:
+def buffer_create(
+    type: BufferType, init_value: float | int | bool | None = None
+) -> BufferValue:
     """Creates a new buffer of the given type.
 
     Allocates a fresh :class:`~max.graph.BufferValue` inside the graph, rather
     than taking one as a graph input. Use it when a graph needs scratch mutable
     state that isn't passed in from outside.
+
+    By default the buffer is uninitialized and re-created on every execution. If
+    ``init_value`` is provided, the buffer instead becomes persistent state: it
+    is allocated once and filled with ``init_value`` a single time when the
+    model is loaded, and the same buffer is reused (and its mutations preserved)
+    across every execution. Use this for a buffer that a kernel mutates in place
+    and only needs zeroed (or otherwise initialized) once, such as a counter
+    that a kernel resets at the end of each call.
 
     The following example creates a buffer and reads it back:
 
@@ -131,11 +145,34 @@ def buffer_create(type: BufferType) -> BufferValue:
 
     Args:
         type: The type of the resulting :class:`~max.graph.BufferValue`.
+        init_value: An optional scalar to initialize the buffer with once, when
+            the model is loaded. Providing it makes the buffer persistent state
+            that is reused across executions. Must be representable in the
+            buffer's ``dtype``.
 
     Returns:
         A new buffer of the requested type.
     """
-    return Graph.current._add_op_generated(mo.BufferCreateOp, type)[0].buffer
+    # When no init value is requested, omit the attribute entirely (the op's
+    # builder defaults it to absent). MLIR attribute casters reject ``None``, so
+    # the kwarg must be omitted rather than passed as ``None``.
+    kwargs: dict[str, Attribute] = {}
+    if init_value is not None:
+        # Encode the scalar as a single-element, dtype-matched elements
+        # attribute (mirroring ``ops.constant``). Going through numpy + the
+        # buffer bytes lets any dtype -- including reduced-precision floats --
+        # be represented exactly, which building a scalar ``FloatAttr`` directly
+        # cannot.
+        host = Buffer.from_numpy(
+            np.array([init_value], dtype=type.dtype.to_numpy())
+        )
+        kwargs["init_value"] = _graph.array_attr(
+            host, TensorType(type.dtype, [1], device=type.device).to_mlir()
+        )
+
+    return Graph.current._add_op_generated(mo.BufferCreateOp, type, **kwargs)[
+        0
+    ].buffer
 
 
 def buffer_store_slice(

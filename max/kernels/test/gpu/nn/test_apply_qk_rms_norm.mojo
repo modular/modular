@@ -14,7 +14,7 @@
 from std.math import rsqrt
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import apply_qk_rms_norm
 from std.testing import assert_almost_equal

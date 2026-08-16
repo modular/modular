@@ -17,14 +17,14 @@ from std.memory import Pointer
 def main():
     var some_value: Int = 42
     # start-pointer-create
-    ptr = Pointer(to=some_value)
+    var ptr = Pointer(to=some_value)
     # end-pointer-create
 
     print(ptr[])
 
     # Pointers can be copied
     # start-pointer-copy
-    copied_ptr = ptr
+    var copied_ptr = ptr
     # end-pointer-copy
 
     print(copied_ptr[])

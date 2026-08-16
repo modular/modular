@@ -11,31 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the sparse MLA decoding kernel for SM100 (Blackwell) GPUs.
+
+Provides the `MLA_SM100_Decode_Sparse` struct, a sparse-attention variant of
+the SM100 MLA decode kernel that loads KV cache tiles via gather4 TMA using
+per-tile sparse indices, with FP8-to-BF16 conversion in shared memory before
+UMMA consumption.
+"""
+
 from std.collections import OptionalReg
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
     thread_idx,
     block_idx,
     warp_id,
     lane_id,
 )
+from max.gpu.sync import barrier
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.primitives.grid_controls import launch_dependent_grids
+from max.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     CacheEviction,
     external_memory,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
-    named_barrier,
-)
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -47,7 +52,7 @@ from layout.tma_async import (
     TMATensorTile,
     _gather4_box_width,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
@@ -119,6 +124,40 @@ struct MLA_SM100_Decode_Sparse[
     has_extra_kv: Bool = False,
     has_variable_topk: Bool = False,
 ](TrivialRegisterPassable):
+    """Sparse MLA decoding kernel for SM100 with FP8 KV cache and gather4 TMA.
+
+    Extends the SM100 MLA decode kernel to sparse attention by loading KV
+    tiles through gather4 TMA using per-tile sparse indices. Uses four
+    warpgroups plus four individual warps: a convert warpgroup performs
+    FP8-to-BF16 conversion in shared memory before the QK and PV MMA warps
+    consume the data. Supports blockwise FP8 scaling, attention sinks, an
+    extra KV cache for always-attend tokens, and variable top-k lengths.
+
+    Parameters:
+        q_type: `DType` of the query tensor and softmax accumulator.
+        KVLUTType: `MHAOperand` describing the paged KV cache layout and
+            element type; its `dtype` is the FP8 KV element type.
+        output_type: `DType` of the output tensor written via TMA store.
+        SplitAccumType: `OptionalPointer` selecting the split-K
+            accumulation buffer dtype used by the combine kernel.
+        MaskType: `MHAMask` selecting the attention mask; only `NullMask`
+            and `CausalMask` are supported.
+        config: `MLA_SM100_Decode_Config` with tile sizes, stage counts,
+            and swizzle parameters for the decode kernel.
+        ValidLengthType: `OptionalPointer` selecting the dtype of the
+            per-batch valid-length buffer.
+        _is_cache_length_accurate: Whether the cached sequence length
+            is exact, enabling tighter bounds (defaults to `False`).
+        ragged: Whether ragged batching is enabled, so each batch may
+            have a different query length (defaults to `False`).
+        has_attn_sink: Whether an attention sink is applied, keeping
+            leading tokens always attended (defaults to `False`).
+        has_extra_kv: Whether a separate extra KV cache holds
+            always-attend tokens (defaults to `False`).
+        has_variable_topk: Whether the sparse top-k length varies per
+            batch, read from `topk_lengths` (defaults to `False`).
+    """
+
     comptime kv_type = Self.KVLUTType.dtype
     # KV nope type is always FP8 (same as kv_type from the LUT)
     comptime kv_nope_type = Self.KVLUTType.dtype  # float8_e4m3fn
@@ -322,7 +361,7 @@ struct MLA_SM100_Decode_Sparse[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
@@ -359,7 +398,7 @@ struct MLA_SM100_Decode_Sparse[
             SplitAccumType=Self.SplitAccumType,
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        indices_stride: Int,
+        indices_stride_dev: Int32,
         topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         attn_sink_ptr: OptionalReg[
@@ -383,7 +422,7 @@ struct MLA_SM100_Decode_Sparse[
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_indices_stride: Int,
+        extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
             UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
@@ -392,7 +431,7 @@ struct MLA_SM100_Decode_Sparse[
         ],
     ):
         # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
-        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        # (MLA_SM100_Decode_QKV_FP8). Reject it here at comptime.
         comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
             _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
@@ -401,22 +440,24 @@ struct MLA_SM100_Decode_Sparse[
             " Sliding window is supported only by MLA_SM100_Decode_QKV_FP8"
             " (native FP8)."
         )
-        # Per-warpgroup register allocation.  Softmax carries the
+        # Per-warpgroup register allocation. Softmax carries the
         # epilogue (O scale + writeback) in this variant, so it gets the
         # larger 184-register slice; correction (72) is leaner because it
-        # no longer holds the epilogue.  The MMA / load / store WG also
+        # no longer holds the epilogue. The MMA / load / store WG also
         # runs lean (72), and the FP8→FP16 convert WG matches softmax
-        # (184) since both hold larger working sets.  Sum must stay ≤
+        # (184) since both hold larger working sets. Sum must stay ≤
         # total SM register budget; bump together if a path spills.
         comptime num_reg_softmax = 184
         comptime num_reg_correction = 72
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
+        var indices_stride = Int(indices_stride_dev)
+        var extra_indices_stride = Int(extra_indices_stride_dev)
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
         var num_partitions = mla_decode_pack.num_partitions
-        mask = mla_decode_pack.mask
-        valid_length = mla_decode_pack.valid_length
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         # OffsetPosition.__init__ handles sparse overrides (topk loading,
         # clamping to actual_tokens, extra_topk, and split-K recomputation)
@@ -484,7 +525,7 @@ struct MLA_SM100_Decode_Sparse[
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
         # must still write -inf LSE, zero o_accum_split, and call
         # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
+        # combine kernel. Skipping launch_dependent_grids() causes the
         # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
@@ -521,7 +562,7 @@ struct MLA_SM100_Decode_Sparse[
                     )
 
                 return  # This query position doesn't exist for this batch
-        q_smem = external_memory[
+        var q_smem = external_memory[
             Scalar[Self.q_type],
             address_space=AddressSpace.SHARED,
             alignment=128,
@@ -698,7 +739,7 @@ struct MLA_SM100_Decode_Sparse[
         comptime idx_smem_stride = Self.config.BN_QK  # 64 Int32 values per stage
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        is_leader = elect() != 0
+        var is_leader = elect() != 0
         if warp_idx == 8:
             if is_leader:
                 mbar_q[].init(1)
@@ -899,7 +940,7 @@ struct MLA_SM100_Decode_Sparse[
 
         d_indices values encode: physical_block * page_size + offset.
         The kernel calls kv_lut.get_tma_row() to convert each encoded
-        index to the actual TMA row.  Invalid indices (-1) are preserved.
+        index to the actual TMA row. Invalid indices (-1) are preserved.
         """
         var lane = thread_idx.x & 31
         var max_idx = max(topk, UInt32(1)) - 1
@@ -957,6 +998,36 @@ struct MLA_SM100_Decode_Sparse[
         For each KV tile, transforms d_indices to TMA rows and (when
         blockwise) loads FP32 scales to scale SMEM. Signals idx_bars
         when each tile's data is ready. Runs 1 tile ahead of warp 8.
+
+        Args:
+            idx_bars: Double-buffered barrier pipeline between this
+                producer (warp 11) and the index consumer (warp 8).
+            idx_smem_base: Base SMEM pointer for the double-buffered
+                transformed gather4 row indices, `BN_QK` `Int32` per stage.
+            kv_lut: `MHAOperand` for the original paged KV cache, used to
+                convert encoded indices to TMA rows.
+            d_indices: Per-tile sparse indices into the original KV cache,
+                encoded as `physical_block * page_size + offset`;
+                `-1` marks invalid entries.
+            topk: Number of selected KV tokens in the original cache for
+                this batch.
+            scales_ptr: Pointer to FP32 blockwise scales for the original
+                KV cache.
+            scale_smem_base: Base SMEM pointer for the double-buffered
+                e8m0 scales, used when `config.scale_block_size > 0`.
+            offset_position: Precomputed per-CTA position and offset
+                state for the current batch and split.
+            num_orig_blocks: Number of `BN_QK`-sized KV tiles belonging
+                to the original cache, equals `ceildiv(topk, BN_QK)`.
+            extra_kv_lut: `MHAOperand` for the extra paged KV cache
+                holding always-attend tokens.
+            extra_d_indices: Per-tile sparse indices into the extra KV
+                cache, encoded as `physical_block * page_size + offset`;
+                `-1` marks invalid entries.
+            extra_topk: Number of selected KV tokens in the extra cache
+                for this batch.
+            extra_scales_ptr: Pointer to FP32 blockwise scales for the
+                extra KV cache, or `None` when blockwise scaling is off.
         """
         var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
@@ -1813,7 +1884,7 @@ struct MLA_SM100_Decode_Sparse[
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
         var elect_mask = elect()
         # Use num_keys_this_split for loop bounds (each split processes its portion)
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 
@@ -1842,7 +1913,7 @@ struct MLA_SM100_Decode_Sparse[
             var s_tmem_slot = s0_tmem + slot_idx * s_stride
 
             kv_cons.wait[qk_stage=0]()
-            k_slot_index = kv_cons.stage_index[qk_stage=0]()
+            var k_slot_index = kv_cons.stage_index[qk_stage=0]()
 
             Self.UMMAQKTSS.mma[stage_idx=0](
                 a=q_descriptor,
@@ -1896,7 +1967,7 @@ struct MLA_SM100_Decode_Sparse[
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
         var elect_mask = elect()
-        num_k_tiles = ceildiv(
+        var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN_QK
         )
 

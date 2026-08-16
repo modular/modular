@@ -24,15 +24,14 @@ sources in [`stdlib/std`](../stdlib/std) as follows:
 4. This package’s [`BUILD.bazel`](BUILD.bazel) pulls
    `//oss/modular/mojo/stdlib/std:docs` and puts it
    under `docs/std/` inside the site tarball with the manual and other
-   generated drops (CLI pages, layout library reference, and so on).
+   generated drops (CLI pages and so on).
 
 **Cross-links in generated Markdown:** ``mojo doc`` emits logical JSON paths
 (``/std/...``, ``/kernels/...``).
 [`mojodoc_api_href.py`](../../bazel/internal/mojodoc_api_href.py)
 is the single place that knows the published site layout and rewrites them:
-stdlib → **mojolang.org** ``/docs/std/...``, ``kernels/layout`` →
-**mojolang.org** ``/docs/layout/...``, other kernels → **docs.modular.com**
-``/max/api/kernels/...``.
+stdlib → **mojolang.org** ``/docs/std/...``, kernels → **docs.modular.com**
+``/api/mojo/...``.
 
 ## Contributing
 

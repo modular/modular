@@ -31,7 +31,7 @@ aligned control. Calls `mha_prefill_v2` DIRECTLY (bypasses the dispatcher
 NullMask+partial-K gate) so it gates the kernel, not the dispatcher.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 

@@ -75,6 +75,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -82,7 +83,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -266,15 +267,14 @@ def _bench_one_kernel[
         # Dummy 1-element workspace for non-split-K kernels — never read.
         split_k_workspace = SplitKWorkspace[num_splits](ctx, 1)
 
-    @parameter
+    @__parameter
     @__copy_capture(
         cb_a, cb_b, cb_c, shape_c, shape_a, shape_b, split_k_workspace
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -323,7 +323,7 @@ def _bench_one_kernel[
                     transpose_b=transpose_b,
                 )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
