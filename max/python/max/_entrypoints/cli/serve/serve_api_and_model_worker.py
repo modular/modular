@@ -35,6 +35,7 @@ from max.serve.api_server import (
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.process_control import SubprocessExit
+from sse_starlette.sse import unpatch_uvicorn_signal_handler
 from uvicorn import Server
 
 logger = logging.getLogger("max._entrypoints")
@@ -64,7 +65,7 @@ def serve_api_server_and_model_worker(
     # arch that overrides a built-in must be imported first, or the stale lazy
     # built-in entry is materialized instead (and may fail to import).
     PIPELINE_REGISTRY._import_custom_architectures(
-        pipeline_args.custom_architectures
+        pipeline_args.runtime.custom_architectures
     )
 
     # Auto-detect pipeline task from the model architecture if not explicitly set.
@@ -141,6 +142,19 @@ def serve_api_server_and_model_worker(
     # alone: its default handler already raises KeyboardInterrupt, which
     # unwinds the same way (and is less surprising for interactive use/tests).
     signal.signal(signal.SIGTERM, _exit_on_signal)
+
+    # sse-starlette patches uvicorn's Server.handle_exit on import so a signal
+    # tears down every in-flight EventSourceResponse immediately, which cuts
+    # streaming completions off mid-generation with no terminal chunk. Its patch
+    # guards against SSE streams that never end; ours always do, and uvicorn
+    # already bounds the wait by timeout_graceful_shutdown and cancels whatever
+    # is left, so restore uvicorn's handler and let that timeout be the only
+    # authority. Must run after the import that installs the patch, hence here
+    # rather than at module scope. Upstream replaced this helper with
+    # AppStatus.disable_automatic_graceful_drain(), and also learned to find the
+    # Server by introspecting the SIGTERM handler, so bumping sse-starlette past
+    # 2.1.2 means switching to that call.
+    unpatch_uvicorn_signal_handler()
 
     with Tracer("openai_compatible_frontend_server"):
         uvloop.run(serve())

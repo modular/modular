@@ -57,7 +57,7 @@ operations, including a comptime `size`, indexing at fixed indices (for example
 `Ts[i]` in `comptime` loops), and helpers such as `TypeList.of`, `splat`,
 `tabulate`, `map`, `reduce`, `filter_idx`, and `contains`. Typical uses are
 trait predicates over several type parameters (see
-`stdlib/std/reflection/traits.mojo`) and metaprogramming that walks or
+`stdlib/std/traits/movable.mojo`) and metaprogramming that walks or
 transforms type packs.
 
 **Value lists** bind a sequence of compile-time **values** that all share one
@@ -158,7 +158,7 @@ with the `is_owned` parameter. When set, `__del__` walks the list in reverse and
 destroys each element, matching normal argument teardown order.
 
 ```mojo
-@parameter
+@__parameter
 def destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
     arg^.destroy()
 

@@ -140,6 +140,27 @@ cc_library(
     ],
 )
 
+# CPU + verbs flavor: the cpu flavor plus the uct_ib RDMA transports, for a
+# CPU-only process that still transfers over an InfiniBand fabric — dKV, which
+# runs on GPU hosts but registers host DRAM only. The plain cpu flavor has
+# tcp/shm/cma alone and would fall back to TCP on such a host.
+cc_library(
+    name = "ucx_cpu_verbs",
+    hdrs = glob(["include/**/*"]),
+    # Specifies the include path relative to the repository root.
+    includes = ["include"],
+    deps = [
+        ":ucm_import",
+        ":ucp_import",
+        ":ucs_import",
+        ":ucs_signal_import",
+        ":uct_cma_import",
+        ":uct_ib_import",
+        ":uct_ib_mlx5_import",
+        ":uct_import",
+    ],
+)
+
 cc_library(
     name = "ucx_cuda_verbs",
     hdrs = glob(["include/**/*"]),

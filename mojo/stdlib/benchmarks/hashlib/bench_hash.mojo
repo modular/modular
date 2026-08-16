@@ -582,12 +582,12 @@ def gen_word_pairs[words: String = words_en]() -> List[String]:
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
     var words = gen_word_pairs[s]()
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         for w in words:
             var h = hash[HasherType](w)
@@ -596,10 +596,10 @@ def bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         var h = hash[HasherType](s)
         keep(h)

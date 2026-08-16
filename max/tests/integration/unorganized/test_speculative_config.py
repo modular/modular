@@ -29,8 +29,21 @@ def test_is_eagle() -> None:
 
 
 def test_num_speculative_tokens() -> None:
-    """Verify num_speculative_tokens uses default and accepts custom values."""
-    assert SpeculativeConfig().num_speculative_tokens == 2
+    """Verify per-method defaults and that custom values are accepted."""
+    # Unset stays None so each method resolves its own default: eagle/mtp
+    # use 2, dflash-style block drafts derive the draft's trained width.
+    assert SpeculativeConfig().num_speculative_tokens is None
+    assert (
+        SpeculativeConfig(speculative_method="dflash").num_speculative_tokens
+        is None
+    )
+    assert (
+        SpeculativeConfig(speculative_method="eagle").num_speculative_tokens
+        == 2
+    )
+    assert (
+        SpeculativeConfig(speculative_method="mtp").num_speculative_tokens == 2
+    )
     assert (
         SpeculativeConfig(num_speculative_tokens=10).num_speculative_tokens
         == 10
@@ -103,6 +116,28 @@ def test_synthetic_acceptance_rate_invalid() -> None:
         SpeculativeConfig(synthetic_acceptance_rate=-0.1)
     with pytest.raises(Exception):
         SpeculativeConfig(synthetic_acceptance_rate=1.5)
+
+
+def test_sampled_draft_proposal_rejects_relaxed_acceptance() -> None:
+    """Relaxed acceptance reads the drafted token as the draft's argmax.
+
+    A sampled proposal can draw from anywhere in the draft's distribution, so
+    the two modes are mutually exclusive and the config refuses the pair
+    rather than letting a run silently accept tail draws.
+    """
+    with pytest.raises(ValueError, match="use_relaxed_acceptance_for_thinking"):
+        SpeculativeConfig(
+            draft_proposal="sampled",
+            use_relaxed_acceptance_for_thinking=True,
+        )
+
+    # Each alone is fine, and argmax is unaffected.
+    assert SpeculativeConfig(draft_proposal="sampled").draft_proposal == (
+        "sampled"
+    )
+    assert SpeculativeConfig(
+        use_relaxed_acceptance_for_thinking=True
+    ).use_relaxed_acceptance_for_thinking
 
 
 @pytest.mark.parametrize("num_steps", [1, 2, 3, 5, 7, 10])

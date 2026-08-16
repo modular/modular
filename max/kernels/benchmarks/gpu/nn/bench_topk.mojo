@@ -14,7 +14,8 @@
 from std.math import ceildiv, iota
 from std.random import random_float64
 
-from std.algorithm.reduction import max as reduce_max
+from max.algorithm.reduction import max as reduce_max
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
@@ -136,7 +137,10 @@ def bench_topk_batched[
 
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+            Span(
+                unsafe_ptr=K_host_buffer.ptr,
+                length=K_host_buffer.num_elements(),
+            )
         )
     )
 
@@ -150,13 +154,12 @@ def bench_topk_batched[
 
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(K_dev_buffer, top_p_dev_buffer)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -173,7 +176,7 @@ def bench_topk_batched[
                 top_p=top_p_tt.as_unsafe_any_origin().as_immut(),
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var kernel_name = String(
         "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
@@ -321,17 +324,19 @@ def bench_topk_multi_rank[
     ctx.synchronize()
     var max_k = Int(
         reduce_max(
-            Span(ptr=K_host_buffer.ptr, length=K_host_buffer.num_elements())
+            Span(
+                unsafe_ptr=K_host_buffer.ptr,
+                length=K_host_buffer.num_elements(),
+            )
         )
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(k)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             topk_gpu[sampling=sampling, largest=largest](
                 ctx,
                 max_k,
@@ -345,7 +350,7 @@ def bench_topk_multi_rank[
                 num_blocks_per_input=num_blocks_per_input,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var kernel_name = "topk-multirank"
     var num_bytes = device_in.num_elements() * size_of[dtype]()
@@ -462,12 +467,11 @@ def bench_topk_fi[
     ctx.synchronize()
     var seed_tt = TileTensor(seed_device_buffer, row_major(batch_size))
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
                 K,
@@ -478,7 +482,7 @@ def bench_topk_fi[
                 rng_seed=seed_tt.as_unsafe_any_origin().as_immut(),
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var kernel_name = String(
         "bench-topk-fi",
@@ -646,21 +650,21 @@ def bench_dispatch[
     )
     var iter0 = 0
 
-    @parameter
+    @__parameter
     @always_inline
     def do_bench(mut bb: Bencher) raises:
         @always_inline
         def launch(
             dctx: DeviceContext,
         ) raises {
-            read buf0,
-            read buf1,
-            read buf2,
-            read buf3,
-            read out_tt,
-            read seed_imm,
-            read batch_size,
-            read N,
+            imm buf0,
+            imm buf1,
+            imm buf2,
+            imm buf3,
+            imm out_tt,
+            imm seed_imm,
+            imm batch_size,
+            imm N,
             mut iter0,
         }:
             var r = iter0 % 4
@@ -683,7 +687,7 @@ def bench_dispatch[
             )
             iter0 += 1
 
-        bb.iter_custom(launch, ctx)
+        bencher_iter_custom(bb, launch, ctx)
 
     b.bench_function[do_bench](BenchId(label))
 
@@ -744,13 +748,11 @@ def bench_bitonic_topk(
     scores_buf.enqueue_fill(Scalar[dtype](0.5))
     ctx.synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
-    @__copy_capture(scores_tt, idxs_buf)
     def bench_fn(mut bb: Bencher):
-        @parameter
         @always_inline
-        def launch(dctx: DeviceContext) raises:
+        def launch(dctx: DeviceContext) raises {mut idxs_buf, imm}:
             persistent_topk_block(
                 dctx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -764,7 +766,7 @@ def bench_bitonic_topk(
                 batch_size,
             )
 
-        bb.iter_custom[launch](ctx)
+        bencher_iter_custom(bb, launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

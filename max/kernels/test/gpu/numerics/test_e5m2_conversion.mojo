@@ -13,7 +13,7 @@
 
 from std.math import inf, nan
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import bitcast
 
 
@@ -358,7 +358,7 @@ def test_simd_e5m2_to_f32():
     for i in range(256):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    e5m2_casted_f32 = e5m2_simd.cast[DType.float32]()
+    var e5m2_casted_f32 = e5m2_simd.cast[DType.float32]()
 
     comptime M = 32
     comptime N = 8
@@ -408,7 +408,7 @@ def test_simd_e5m2_to_f16():
     for i in range(256):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    e5m2_casted_f16 = e5m2_simd.cast[DType.float16]()
+    var e5m2_casted_f16 = e5m2_simd.cast[DType.float16]()
 
     comptime M = 32
     comptime N = 8
@@ -458,7 +458,7 @@ def test_simd_e5m2_to_bf16():
     for i in range(256):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    e5m2_casted_bf16 = e5m2_simd.cast[DType.bfloat16]()
+    var e5m2_casted_bf16 = e5m2_simd.cast[DType.bfloat16]()
 
     comptime M = 32
     comptime N = 8
@@ -542,7 +542,7 @@ def test_simd_f32_to_e5m2():
     for i in range(M):
         f32_simd[i] = Float32(i - 256)
 
-    f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2]()
+    var f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2]()
 
     for i in range(64):
         for j in range(8):

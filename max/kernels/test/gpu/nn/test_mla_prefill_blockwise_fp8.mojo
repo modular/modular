@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import randn
 from layout import (
     Idx,
@@ -438,8 +438,8 @@ def test_prefill[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    lhs = output_rank4[b, s, h, d]
-                    rhs = output_ref[b, s, h, d]
+                    var lhs = output_rank4[b, s, h, d]
+                    var rhs = output_ref[b, s, h, d]
                     # if abs((lhs - rhs)) > 2.2e-2:
                     #    print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)

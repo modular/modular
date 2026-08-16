@@ -13,9 +13,10 @@
 
 import std.math as math
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope_gpu
+from nn.normalization import rms_norm_rope
+from std.sys import align_of
 from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
@@ -142,44 +143,61 @@ def run_rms_norm_rope_gpu[
     var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
 
     @always_inline
-    @__copy_capture(data_buf)
-    @parameter
     def input_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.raw_load[
+            width=width, alignment=alignment * align_of[dtype]()
+        ](idx)
 
     @always_inline
-    @__copy_capture(cos_vals)
-    @parameter
     def cos_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var cos_vals} -> SIMD[cos_sin_dtype, width]:
         var idx = cos_vals.layout(Coord(coords))
-        return cos_vals.raw_load[width=width, alignment=alignment](idx)
+        return cos_vals.raw_load[
+            width=width, alignment=alignment * align_of[cos_sin_dtype]()
+        ](idx)
 
     @always_inline
-    @__copy_capture(sin_vals)
-    @parameter
     def sin_fn[
-        width: Int, _rank: Int, alignment: Int
-    ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+        width: Int, alignment: Int, _rank: Int
+    ](coords: IndexList[_rank]) {var sin_vals} -> SIMD[cos_sin_dtype, width]:
         var idx = sin_vals.layout(Coord(coords))
-        return sin_vals.raw_load[width=width, alignment=alignment](idx)
+        return sin_vals.raw_load[
+            width=width, alignment=alignment * align_of[cos_sin_dtype]()
+        ](idx)
 
     @always_inline
-    @__copy_capture(output_buf)
-    @parameter
     def output_fn[
-        width: Int, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[output_dtype, width]) -> None:
+        width: SIMDLength, _rank: Int, alignment: Int
+    ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
+        var output_buf
+    } -> None:
         var idx = output_buf.layout(Coord(coords))
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+        output_buf.raw_store[
+            width=width, alignment=alignment * align_of[output_dtype]()
+        ](idx, val)
 
-    rms_norm_rope_gpu[
-        input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=True
-    ](shape, gamma, epsilon, weight_offset, cos_vals, sin_vals, ctx)
+    rms_norm_rope[
+        dtype,
+        output_dtype,
+        cos_sin_dtype,
+        rank,
+        target="gpu",
+    ](
+        input_fn,
+        cos_fn,
+        sin_fn,
+        output_fn,
+        Coord(shape),
+        Scalar[DType.int](cols),
+        gamma,
+        epsilon.cast[dtype](),
+        weight_offset,
+        ctx,
+    )
 
     ctx.enqueue_copy(result_gpu, output_d)
     ctx.synchronize()

@@ -26,7 +26,7 @@ the attention READ path; this test covers the quant/cast WRITE boundary that the
 attention microbench cannot see."""
 
 from std.sys import has_nvidia_gpu_accelerator
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils.numerics import isnan, max_finite, min_finite
 from internal_utils.fp8_utils import fp8_quantize, cast_saturating
 

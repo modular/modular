@@ -26,7 +26,7 @@
 
 from std.sys import argv
 from std.random import rand
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalPaddingMask
@@ -103,7 +103,7 @@ def main() raises:
 
         var vl_dev = ctx.enqueue_create_buffer[DType.uint32](1)
         ctx.enqueue_memset(vl_dev, UInt32(valid_length))
-        var vl = LayoutTensor[DType.uint32, Layout.row_major(1), MutAnyOrigin](
+        var vl = LayoutTensor[DType.uint32, Layout.row_major(1)](
             vl_dev.unsafe_ptr()
         )
         var mask = CausalPaddingMask(vl)

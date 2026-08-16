@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements non-maximum suppression (NMS) for object detection bounding-box filtering."""
 
 from std.math import iota
 
@@ -208,6 +209,9 @@ def non_max_suppression_shape_func[
     selected, allowing proper output buffer allocation. Can be removed once the
     graph compiler supports value semantic kernels that allocate their own output.
 
+    Parameters:
+        dtype: The data type for box coordinates and scores.
+
     Args:
         boxes: Rank-3 tensor of bounding boxes with shape (batch, num_boxes, 4).
         scores: Rank-3 tensor of scores with shape (batch, num_classes, num_boxes).
@@ -254,6 +258,24 @@ def non_max_suppression[
     func: FuncType,
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
+
+    Parameters:
+        dtype: The data type for box coordinates and scores.
+        FuncType: Type of the `func` callback invoked for each selected box.
+
+    Args:
+        boxes: Rank-3 tensor of bounding boxes with shape (batch, num_boxes, 4).
+            Each box is [y1, x1, y2, x2].
+        scores: Rank-3 tensor of detection scores with shape (batch,
+            num_classes, num_boxes).
+        max_output_boxes_per_class: Maximum number of boxes to select per
+            class.
+        iou_threshold: IoU threshold for suppression. Boxes with IoU above
+            this value are suppressed.
+        score_threshold: Minimum score for a box to be considered. Boxes
+            below this are filtered out.
+        func: Callback invoked for each selected box with the batch index,
+            class index, and box index.
     """
     comptime assert boxes.rank == 3, "boxes must be of rank 3"
     comptime assert scores.rank == 3, "scores must be of rank 3"
@@ -304,14 +326,15 @@ def non_max_suppression[
             # Initialize box indices [0, 1, 2, ..., num_boxes-1]
             iota(box_idxs)
 
-            @parameter
             @always_inline
-            def _greater_than(lhs: Int64, rhs: Int64) -> Bool:
+            def _greater_than(
+                lhs: Int64, rhs: Int64
+            ) {per_class_scores} -> Bool:
                 """Compare boxes by their scores in descending order."""
                 return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
             # Sort box indices by descending score
-            sort[_greater_than](box_idxs)
+            sort(box_idxs, _greater_than)
 
             # Iteratively select boxes and suppress overlapping ones
             var pred_idx = 0
@@ -349,15 +372,19 @@ def non_max_suppression[
                 #   2. The end contains suppressed boxes with score=-inf (order doesn't matter)
                 # Note: Use num_boxes_curr_pred (not num_boxes_remaining) because it
                 # represents the count before we marked boxes as suppressed above
-                sort[_greater_than](
+                var box_idxs_ptr: UnsafePointer[
+                    box_idxs.T, origin_of(box_idxs)
+                ] = box_idxs.unsafe_ptr()
+                sort(
                     Span[box_idxs.T, origin_of(box_idxs)](
-                        ptr=box_idxs.unsafe_ptr() + pred_idx,
+                        unsafe_ptr=box_idxs_ptr + pred_idx,
                         length=num_boxes_curr_pred,
-                    )
+                    ),
+                    _greater_than,
                 )
 
             @always_inline
-            @parameter
+            @__parameter
             def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (

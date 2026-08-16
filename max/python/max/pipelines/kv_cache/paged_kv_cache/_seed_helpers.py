@@ -13,11 +13,11 @@
 
 """Resolve the kv_cache_hash_seed from operator config.
 
-The CLI / config layer carries the seed as an optional 64-character hex
-string. This module decodes it to 32 raw bytes, validates length, and
-when one is required but not provided, generates a random 32-byte seed
-that is cached for the lifetime of the process. The active seed hex is
-logged exactly once on first resolution.
+The seed is an optional 64-character hex string, decoded here to 32 raw
+bytes. If none is configured, `sha256`/`sha256_64` get a random one
+(cached for the process lifetime); `ahash64` does not, so unconfigured
+deployments stay deterministic across restarts. The active seed hex is
+logged once.
 """
 
 from __future__ import annotations
@@ -44,23 +44,20 @@ def resolve_kv_hash_seed(
         algo: The selected hash algorithm.
         seed_hex: Optional 64-character hex string (32 bytes after decode).
     Returns:
-        - ``None`` for ``ahash64`` (the legacy hasher does not use a seed).
-        - 32 raw bytes for ``sha256`` / ``sha256_64``. If ``seed_hex`` is
-          ``None``, a random seed is generated once per process and reused
-          on subsequent calls.
+        - ``None`` if no seed is configured. ``ahash64`` never
+          auto-generates one; ``sha256``/``sha256_64`` do (random,
+          cached for the process lifetime).
+        - 32 raw bytes when ``seed_hex`` is set, for any algo.
     Raises:
-        ValueError: If ``seed_hex`` is provided but is not a valid
-            64-character hex string decoding to exactly 32 bytes.
+        ValueError: If ``seed_hex`` is not a valid 64-character hex
+            string decoding to exactly 32 bytes.
     """
-    if algo == "ahash64":
-        if seed_hex is not None:
-            logger.warning(
-                "kv_cache_hash_seed=%r ignored because "
-                "kv_cache_hash_algo=ahash64.",
-                seed_hex,
-            )
-        return None
     if seed_hex is None:
+        if algo == "ahash64":
+            # Unlike sha256, never auto-randomize the seed for the default
+            # algo: doing so would silently change every existing ahash64
+            # deployment's cache behavior on every restart.
+            return None
         return _get_or_create_random_seed()
 
     try:

@@ -19,7 +19,7 @@ from std.os import setenv
 ```
 """
 
-from std.ffi import c_int, external_call, _CPointer
+from std.ffi import c_int, external_call
 from std.sys import CompilationTarget
 
 
@@ -78,7 +78,7 @@ def getenv(var name: String, default: String = "") -> String:
       The value of the environment variable.
     """
     var ptr = external_call[
-        "getenv", _CPointer[UInt8, UntrackedOrigin[mut=False]]
+        "getenv", OptionalPointer[UInt8, ImmUntrackedOrigin]
     ](name.as_c_string_slice().unsafe_ptr())
     if not ptr:
         return default
