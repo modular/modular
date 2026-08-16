@@ -140,6 +140,75 @@ def test_xgrammar_stop_tokens_cover_runtime_eos_set(
     )
 
 
+# Minimal schema for the whitespace-mode tests: one required string property.
+_WS_SCHEMA = json.dumps(
+    {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "required": ["a"],
+        "additionalProperties": False,
+    }
+)
+
+
+def _make_helper(backend_name: str, **kwargs: Any) -> StructuredOutputHelper:
+    # The TikToken-shaped fake exercises both backends: llguidance cannot
+    # infer a decoder from the WordLevel HF fake, but both backends accept
+    # the byte-level adapter path.
+    delegate = _FakeTikTokenTokenizer()
+    pipeline_tokenizer = MagicMock()
+    pipeline_tokenizer.delegate = delegate
+    pipeline_tokenizer.eos_token_ids = {delegate.eos_token_id}
+    return StructuredOutputHelper.from_tokenizer(
+        cast("PipelineTokenizer[Any, Any, Any]", pipeline_tokenizer),
+        enable_structured_output=True,
+        backend_name=backend_name,
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize("backend_name", ["xgrammar", "llguidance"])
+def test_any_whitespace_grammar_admits_whitespace(backend_name: str) -> None:
+    """``any_whitespace=True`` compiles a grammar that accepts whitespaceful JSON."""
+    helper = _make_helper(backend_name, any_whitespace=True)
+    assert helper.backend is not None
+    matcher = helper.backend.create_matcher(
+        helper.backend.compile_json_schema(_WS_SCHEMA)
+    )
+    payload = '{ "a": "x" }'
+    tokens = [ord(c) for c in payload]
+    assert matcher.try_consume_tokens(tokens) == len(tokens), (
+        f"[{backend_name}] whitespace-tolerant grammar rejected {payload!r}"
+    )
+    assert matcher.is_accepting()
+
+
+@pytest.mark.parametrize("backend_name", ["xgrammar", "llguidance"])
+def test_default_grammar_stays_compact(backend_name: str) -> None:
+    """The default (``any_whitespace`` unset) keeps the compact-JSON grammar.
+
+    Guards the Gemma-4 runaway mitigation (0c57a6bd331): flipping the global
+    default is a product decision, so an unset knob must reproduce today's
+    whitespace-free grammar exactly.
+    """
+    helper = _make_helper(backend_name)
+    assert helper.backend is not None
+    grammar = helper.backend.compile_json_schema(_WS_SCHEMA)
+
+    compact = helper.backend.create_matcher(grammar)
+    tokens = [ord(c) for c in '{"a":"x"}']
+    assert compact.try_consume_tokens(tokens) == len(tokens)
+    assert compact.is_accepting()
+
+    spaced = helper.backend.create_matcher(grammar)
+    payload = '{"a": "x"}'
+    consumed = spaced.try_consume_tokens([ord(c) for c in payload])
+    assert consumed == payload.index(" "), (
+        f"[{backend_name}] compact grammar consumed {consumed} tokens of "
+        f"{payload!r}; expected rejection at the whitespace"
+    )
+
+
 class _SlowBackend:
     """Minimal stand-in carrying the ``name`` the decorator reads."""
 

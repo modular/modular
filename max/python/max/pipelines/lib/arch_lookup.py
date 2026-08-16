@@ -289,6 +289,19 @@ class SupportedArchitecture:
     If None, the global default from ``SamplingConfig`` is used.
     """
 
+    default_structured_output_any_whitespace: bool | None = None
+    """Optional default for whitespace-tolerant structured-output grammars.
+
+    When set, the pipeline config will use this value for
+    ``sampling.structured_output_any_whitespace`` if the user did not
+    explicitly configure one. ``False`` constrains ``response_format``
+    generation to compact JSON (the runaway-generation mitigation);
+    ``True`` lets the grammar accept whitespace between JSON tokens, which
+    some models need at structural boundaries.
+
+    If None, the global default (compact JSON) is used.
+    """
+
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.
 

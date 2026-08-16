@@ -282,14 +282,18 @@ class LlguidanceBackend(GrammarBackend[Any]):
 
     name = "llguidance"
 
-    def __init__(self, tokenizer_info: Any) -> None:
+    def __init__(
+        self, tokenizer_info: Any, any_whitespace: bool = False
+    ) -> None:
         self._tokenizer_info = tokenizer_info
+        self._any_whitespace = any_whitespace
 
     @classmethod
     def from_tokenizer_delegate(
         cls,
         tokenizer_delegate: PreTrainedTokenizerBase,
         vocab_size: int,
+        any_whitespace: bool = False,
     ) -> LlguidanceBackend:
         """Build the llguidance tokenizer info from a tokenizer delegate."""
         if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
@@ -300,13 +304,19 @@ class LlguidanceBackend(GrammarBackend[Any]):
             adapter = _TikTokenAdapter(tokenizer_delegate)
             wrapper = TokenizerWrapper(adapter)
             tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
-        return cls(tokenizer_info)
+        return cls(tokenizer_info, any_whitespace=any_whitespace)
 
     @_log_if_slow
     def compile_json_schema(self, json_schema: str) -> Any:
         """Compile a JSON schema to a grammar handle for this backend."""
+        # The empty whitespace pattern pins compact JSON (no whitespace
+        # between tokens); omitting it uses llguidance's whitespace-tolerant
+        # default.
         return LLMatcher.grammar_from_json_schema(
-            json_schema, overrides={"whitespace_pattern": ""}
+            json_schema,
+            overrides=(
+                None if self._any_whitespace else {"whitespace_pattern": ""}
+            ),
         )
 
     @_log_if_slow
@@ -479,9 +489,11 @@ class XgrammarBackend(GrammarBackend[Any]):
         compiler: Any,
         # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
         reject_unsupported: bool = False,
+        any_whitespace: bool = False,
     ) -> None:
         self._compiler = compiler
         self._reject_unsupported = reject_unsupported
+        self._any_whitespace = any_whitespace
 
     @classmethod
     def from_tokenizer_delegate(
@@ -492,6 +504,7 @@ class XgrammarBackend(GrammarBackend[Any]):
         reject_unsupported: bool = False,
         stop_token_ids: Collection[int] | None = None,
         special_token_ids: Collection[int] = (),
+        any_whitespace: bool = False,
     ) -> XgrammarBackend:
         """Build the xgrammar tokenizer info and compiler from a delegate."""
         stop_token_ids = (
@@ -519,6 +532,7 @@ class XgrammarBackend(GrammarBackend[Any]):
                 tokenizer_info, max_memory_bytes=_xgrammar_cache_limit_bytes()
             ),
             reject_unsupported=reject_unsupported,
+            any_whitespace=any_whitespace,
         )
 
     @_log_if_slow
@@ -529,10 +543,12 @@ class XgrammarBackend(GrammarBackend[Any]):
             if isinstance(json_schema, str)
             else json.dumps(json_schema)
         )
+        # Compact mode pins the separators; whitespace-tolerant mode must
+        # leave them unset (xgrammar's flexible-whitespace grammar).
         return self._compiler.compile_json_schema(
             schema,
-            any_whitespace=False,
-            separators=(",", ":"),
+            any_whitespace=self._any_whitespace,
+            separators=None if self._any_whitespace else (",", ":"),
             # TODO(CENG-813): remove this Gemma-only scoping once require_object_root and reject_unsupported default on for all models.
             reject_unsupported=self._reject_unsupported,
         )
@@ -642,6 +658,7 @@ def make_grammar_backend(
     *,
     tool_parser_name: str | None = None,
     stop_token_ids: Collection[int] | None = None,
+    any_whitespace: bool = False,
 ) -> GrammarBackend[Any]:
     """Construct the structured-output backend selected by ``name``.
 
@@ -652,6 +669,8 @@ def make_grammar_backend(
         tool_parser_name: Active tool parser, used to derive the special-token
             mask and the fail-closed compile policy (xgrammar only).
         stop_token_ids: The full set of stop token IDs.
+        any_whitespace: Whether ``response_format`` grammars accept whitespace
+            between JSON tokens. ``False`` (the default) pins compact JSON.
 
     Returns:
         A configured :class:`GrammarBackend`.
@@ -661,7 +680,7 @@ def make_grammar_backend(
     """
     if name == "llguidance":
         return LlguidanceBackend.from_tokenizer_delegate(
-            tokenizer_delegate, vocab_size
+            tokenizer_delegate, vocab_size, any_whitespace=any_whitespace
         )
     if name == "xgrammar":
         return XgrammarBackend.from_tokenizer_delegate(
@@ -674,6 +693,7 @@ def make_grammar_backend(
             special_token_ids=special_token_ids_for(
                 tool_parser_name, tokenizer_delegate
             ),
+            any_whitespace=any_whitespace,
         )
     raise ValueError(
         f"unknown structured output backend: {name!r} "
@@ -687,6 +707,7 @@ def make_grammar_validator(
     vocab_size: int,
     *,
     tool_parser_name: str | None = None,
+    any_whitespace: bool | None = None,
 ) -> GrammarValidator:
     """Build the admission-time :class:`GrammarValidator` for a backend.
 
@@ -712,4 +733,5 @@ def make_grammar_validator(
         tokenizer_delegate,
         vocab_size,
         tool_parser_name=tool_parser_name,
+        any_whitespace=bool(any_whitespace),
     )

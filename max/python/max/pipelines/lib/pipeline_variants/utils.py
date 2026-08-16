@@ -437,6 +437,7 @@ class StructuredOutputHelper:
         enable_structured_output: bool,
         tool_parser_name: str | None = None,
         backend_name: str | None = None,
+        any_whitespace: bool | None = None,
     ) -> StructuredOutputHelper:
         """Create a helper from a tokenizer.
 
@@ -449,6 +450,9 @@ class StructuredOutputHelper:
             backend_name: Structured-output backend to use. ``None`` (the
                 default, i.e. an unresolved ``SamplingConfig``) falls back to
                 ``"xgrammar"``.
+            any_whitespace: Whether ``response_format`` grammars accept
+                whitespace between JSON tokens. ``None`` (an unresolved
+                ``SamplingConfig``) falls back to ``False`` (compact JSON).
 
         Returns:
             A configured StructuredOutputHelper instance.
@@ -466,6 +470,7 @@ class StructuredOutputHelper:
             vocab_size,
             tool_parser_name=tool_parser_name,
             stop_token_ids=tokenizer.eos_token_ids,
+            any_whitespace=bool(any_whitespace),
         )
 
         # Extract structural tags from tool parser if available

@@ -228,6 +228,7 @@ async def lifespan(
                 delegate,
                 len(delegate),
                 tool_parser_name=serving_settings.pipeline_config.runtime.tool_parser,
+                any_whitespace=serving_settings.pipeline_config.sampling.structured_output_any_whitespace,
             )
 
         # Also store as handler for OpenResponses API route compatibility
