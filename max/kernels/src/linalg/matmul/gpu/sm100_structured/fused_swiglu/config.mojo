@@ -31,8 +31,8 @@ from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.collections.set import Set
 
 from ...tile_scheduler import RasterOrder
@@ -56,6 +56,17 @@ def swiglu_extra_fixed_smem[
     The tile shape is ``(output_tile_shape[0], output_tile_shape[1] / 2)``
     in both ``AB_swapped`` orientations (dims are transposed but byte count
     is symmetric), so the same formula applies for both.
+
+    Parameters:
+        c_type: DType of the C output elements.
+
+    Args:
+        mma_shape: MMA instruction shape as `(MMA_M, MMA_N, MMA_K)`,
+            used to derive the output tile shape.
+        cta_group: Number of cooperating CTAs per cluster group
+            (1 or 2).
+        AB_swapped: Whether the A and B operands are swapped (defaults
+            to `False`).
     """
     var ots = _compute_output_tile_shape(
         c_type, mma_shape, cta_group, AB_swapped
@@ -82,6 +93,13 @@ struct FusedSwiGLUMatmulConfig[
     SMEM→TMA path the half-output-tile overhead is subtracted before solving
     for the stage count; for the register→GMEM path no extra deduction is
     made.
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        c_type: DType of the C output elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
     """
 
     # Primary parameters
@@ -266,8 +284,38 @@ def swiglu_matmul_config[
 
     For the SMEM→TMA path (``register_swiglu=False``) the extra SMEM consumed
     by the double-buffered half-output tiles is subtracted from the budget
-    before solving for the stage count.  For the register→GMEM path
+    before solving for the stage count. For the register→GMEM path
     (``register_swiglu=True``) no extra deduction is made.
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        c_type: DType of the C output elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+
+    Args:
+        mma_shape: MMA instruction shape as `(MMA_M, MMA_N, MMA_K)`.
+        cta_group: Number of cooperating CTAs per cluster group
+            (defaults to 2).
+        cluster_shape: Thread block cluster tile counts as
+            `(cluster_m, cluster_n, cluster_k)` (defaults to `(2, 1, 1)`).
+        AB_swapped: Whether the A and B operands are swapped (defaults
+            to `False`).
+        block_swizzle_size: Block swizzle factor for tile remapping, one
+            of 0, 1, 2, 4, or 8 (defaults to 0).
+        raster_order: Order CLC rasterizes tiles across the cluster
+            grid (defaults to `RasterOrder.AlongM`).
+        k_group_size: Number of K tiles loaded per pipeline stage
+            (defaults to 1).
+        num_clc_pipeline_stages: Number of CLC pipeline stages for work
+            distribution (defaults to 2).
+        num_accum_pipeline_stages: Number of accumulator pipeline stages
+            (defaults to 2).
+        use_bias: Whether a bias vector is applied in the epilogue
+            (defaults to `False`).
+        register_swiglu: Selects the SwiGLU epilogue path: `True` for
+            register→GMEM, `False` for SMEM→TMA (defaults to `False`).
     """
     return FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=mma_shape,
@@ -304,6 +352,18 @@ def build_sm100_matmul_configs[
 
     For untuned (N, K) shapes returns an empty set; dispatch falls back to
     its safety-net config.
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        c_type: DType of the C output elements.
+        N: Number of columns in the output C matrix.
+        K: Contraction dimension of the GEMM (shared inner size of A and
+            B).
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        has_bias: Whether a bias vector is applied in the epilogue
+            (defaults to `False`).
     """
     comptime config_t = FusedSwiGLUMatmulConfig[
         a_type, b_type, c_type, transpose_b
@@ -314,11 +374,9 @@ def build_sm100_matmul_configs[
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) {} -> Bool:
-        return x.N == N and x.K == K
-
-    comptime nk_configs = tuning_table.find(rule=rule_nk)
+    comptime nk_configs = tuning_table.find(
+        rule=lambda (x: TuningConfigSwiGLU) -> Bool: x.N == N and x.K == K
+    )
 
     # Tuned shape: build directly from each tuning table entry.
     # For untuned (N, K) shapes the set is empty; dispatch falls back to its
@@ -356,12 +414,29 @@ def choose_swiglu_config[
     """Select a ``FusedSwiGLUMatmulConfig`` using a wave-minimization heuristic.
 
     Implements the same MMA shape selection as the normal matmul heuristic,
-    simplified for BF16 (no FP8 special cases).  For small M (< 32) uses a
+    simplified for BF16 (no FP8 special cases). For small M (< 32) uses a
     single-CTA configuration with AB swapped; for large M uses two-CTA clusters
     and sweeps both normal and swapped AB to minimize waves.
     ``FusedSwiGLUMatmulConfig.__init__`` recomputes ``num_pipeline_stages``
     from the swiglu-specific SMEM budget (which accounts for the half-output
     tile and optional bias tile overhead).
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        c_type: DType of the C output elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        has_bias: Whether a bias vector is applied in the epilogue
+            (defaults to `False`).
+        register_swiglu: Selects the SwiGLU epilogue path: `True` for
+            register→GMEM, `False` for SMEM→TMA (defaults to `True`).
+
+    Args:
+        M: Number of rows in the output C matrix.
+        N: Number of columns in the output C matrix.
+        K: Contraction dimension of the GEMM (shared inner size of A and
+            B).
     """
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
@@ -393,7 +468,7 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             var N_aligned = align_up(N, 16)
@@ -476,6 +551,20 @@ def build_sm100_swiglu_heuristic_configs[
     ``choose_swiglu_config`` can return at runtime is pre-instantiated at
     compile time, enabling the runtime-value == compile-time-constant matching
     in the dispatch fallback.
+
+    Parameters:
+        a_type: DType of the A operand elements.
+        b_type: DType of the B operand elements.
+        c_type: DType of the C output elements.
+        N: Number of columns in the output C matrix.
+        K: Contraction dimension of the GEMM (shared inner size of A and
+            B).
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        has_bias: Whether a bias vector is applied in the epilogue
+            (defaults to `False`).
+        register_swiglu: Selects the SwiGLU epilogue path: `True` for
+            register→GMEM, `False` for SMEM→TMA (defaults to `True`).
     """
     comptime config_t = FusedSwiGLUMatmulConfig[
         a_type, b_type, c_type, transpose_b
@@ -483,14 +572,14 @@ def build_sm100_swiglu_heuristic_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:

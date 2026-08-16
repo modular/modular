@@ -32,11 +32,12 @@
 # offset`` yields ``x[i, j] == i*64 + j`` -- which is exactly what the test
 # checks.
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, fence_async_view_proxy
-from std.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import fence_async_view_proxy
+from max.gpu.sync import cp_async_bulk_commit_group, cp_async_bulk_wait_group
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

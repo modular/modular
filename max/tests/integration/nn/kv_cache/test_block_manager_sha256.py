@@ -21,6 +21,7 @@ BlockManager.compute_hashes_for_request:
 - Different cache_salt => different hash chain (multi-tenant isolation).
 - Different kv_hash_seed => different hash chain (cluster isolation).
 - kv_hash_algo="ahash64" (default) still yields int hashes (no regression).
+- kv_hash_algo="ahash64" also supports cache_salt/kv_hash_seed isolation.
 """
 
 from __future__ import annotations
@@ -35,10 +36,11 @@ import numpy as np
 import pytest
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.dkv.connector import DKVConnector
-from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
+from max.pipelines.kv_cache.connectors.rust_tier_connector import (
+    RustTierConnector,
+)
+from max.pipelines.kv_cache.kv_connector import BlockCount
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVHashAlgo
 from max.pipelines.modeling.types import RequestID
@@ -56,12 +58,14 @@ def _make_ctx(
     ``isinstance`` check that fails for SimpleNamespace), and
     ``ctx.cache_salt`` (direct attribute access — the real ``TextContext``
     always defines this attribute, so the stub must too, even when no
-    caller-supplied salt is set).
+    caller-supplied salt is set), and ``ctx.pending_future_count`` (trailing
+    future-token placeholders are excluded from hashing).
     """
     ctx = SimpleNamespace(
         request_id=request_id,
         tokens=tokens,
         cache_salt=cache_salt,
+        pending_future_count=0,
     )
     return cast(TextContext, ctx)
 
@@ -74,7 +78,6 @@ def _make_block_manager(
     kv_hash_seed: bytes | None = None,
 ) -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=total_blocks,
         block_size=block_size,
         connector=cast(object, NullConnector()),  # type: ignore[arg-type]
@@ -150,7 +153,7 @@ def test_sha256_seed_isolation() -> None:
 
 
 def test_ahash64_default_unchanged() -> None:
-    """Default kv_hash_algo yields list[int]; legacy path unchanged."""
+    """Default kv_hash_algo yields canonical 8-byte hashes; legacy path unchanged."""
     bm = _make_block_manager()  # default = ahash64
 
     tokens = np.arange(33, dtype=np.int32)
@@ -159,21 +162,17 @@ def test_ahash64_default_unchanged() -> None:
     hashes = bm.req_to_hashes[RequestID("req-1")]
     assert len(hashes) == 4
     for h in hashes:
-        assert isinstance(h, int)
+        assert isinstance(h, bytes)
+        assert len(h) == 8
 
 
-def test_ahash64_with_cache_salt_drops_and_warns_once(
+def test_ahash64_with_cache_salt_isolates(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Under ahash64, a request-supplied cache_salt is dropped (not hashed in)
-    and the BlockManager emits exactly one warning per process for the entire
-    deployment, no matter how many salted requests arrive.
-
-    This guards the operator-visible policy decision: ahash64 deployments do
-    NOT silently provide multi-tenant isolation; they advertise via a one-time
-    warning that cache_salt is inert, and produce identical hashes for
-    identical tokens regardless of salt (so prefix-cache hit rates remain
-    intact for the legacy path)."""
+    """Under ahash64, different request-supplied cache_salt values now
+    produce disjoint hash chains for identical tokens (multi-tenant
+    isolation) -- the same guarantee the sha256 path already had, with
+    no warning emitted (cache_salt is no longer dropped)."""
     tokens = np.arange(33, dtype=np.int32)
     bm = _make_block_manager()  # default ahash64
 
@@ -184,45 +183,28 @@ def test_ahash64_with_cache_salt_drops_and_warns_once(
         bm.compute_hashes_for_request(
             _make_ctx(tokens, RequestID("req-B"), cache_salt="tenant-B")
         )
-        bm.compute_hashes_for_request(
-            _make_ctx(tokens, RequestID("req-C"), cache_salt="tenant-C")
-        )
 
     a = bm.req_to_hashes[RequestID("req-A")]
     b = bm.req_to_hashes[RequestID("req-B")]
-    c = bm.req_to_hashes[RequestID("req-C")]
-    assert a == b == c, (
-        "ahash64 must ignore cache_salt; identical tokens => identical hashes"
-    )
-
-    matching = [
-        r
-        for r in caplog.records
-        if r.levelname == "WARNING" and "cache_salt was supplied" in r.message
-    ]
-    assert len(matching) == 1, (
-        f"expected exactly one cache_salt-dropped warning across three "
-        f"salted requests, got {len(matching)}"
-    )
+    assert a != b
+    assert set(a).isdisjoint(set(b))
+    assert not any(r.levelname == "WARNING" for r in caplog.records)
 
 
-def test_ahash64_without_cache_salt_does_not_warn(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """If no request supplies a cache_salt, the warning must not fire."""
+def test_ahash64_seed_isolation() -> None:
+    """Same tokens + different kv_hash_seed => disjoint hashes (cluster isolation)."""
     tokens = np.arange(33, dtype=np.int32)
-    bm = _make_block_manager()  # default ahash64
 
-    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-        bm.compute_hashes_for_request(_make_ctx(tokens))
+    bm1 = _make_block_manager(kv_hash_seed=b"\x00" * 32)  # default ahash64
+    bm1.compute_hashes_for_request(_make_ctx(tokens))
 
-    matching = [
-        r for r in caplog.records if "cache_salt was supplied" in r.message
-    ]
-    assert matching == [], (
-        f"unexpected salt-dropped warning when no salt was supplied: "
-        f"{[r.message for r in matching]}"
-    )
+    bm2 = _make_block_manager(kv_hash_seed=b"\x01" * 32)
+    bm2.compute_hashes_for_request(_make_ctx(tokens))
+
+    a = bm1.req_to_hashes[RequestID("req-1")]
+    b = bm2.req_to_hashes[RequestID("req-1")]
+    assert a != b
+    assert set(a).isdisjoint(set(b))
 
 
 # ---------------------------------------------------------------------------
@@ -253,8 +235,10 @@ class _StubConnector:
         return "StubConnector"
 
     @property
-    def num_host_blocks(self) -> int:
-        return self._num_host_blocks
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._num_host_blocks, total=self._num_host_blocks
+        )
 
     @property
     def supported_hash_algos(self) -> frozenset[KVHashAlgo]:
@@ -271,7 +255,6 @@ class _StubConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
     ) -> None:
         raise NotImplementedError("StubConnector.offload must not be called")
 
@@ -309,7 +292,7 @@ def test_block_manager_capability_guard(
     Exercises the capability check that replaced the legacy ahash64-only
     guard: BlockManager must accept every algo declared in
     ``connector.supported_hash_algos`` and reject every one outside it,
-    regardless of the connector's ``num_host_blocks`` (the legacy guard
+    regardless of the connector's ``host_block_count`` (the legacy guard
     skipped this for offload-less connectors).
     """
     connector = _StubConnector(
@@ -318,7 +301,6 @@ def test_block_manager_capability_guard(
 
     def _construct() -> BlockManager:
         return BlockManager(
-            device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
             total_num_blocks=32,
             block_size=8,
             connector=cast(object, connector),  # type: ignore[arg-type]
@@ -335,14 +317,13 @@ def test_block_manager_capability_guard(
 
 
 def test_block_manager_capability_check_runs_even_without_host_blocks() -> None:
-    """Legacy guard only fired when ``num_host_blocks > 0``; the capability
+    """Legacy guard only fired when ``host_block_count.total > 0``; the capability
     check must run unconditionally so a no-host-block connector still
     refuses an algo it does not claim to support.
     """
     connector = _StubConnector(supported_hash_algos=_LEGACY, num_host_blocks=0)
     with pytest.raises(ValueError, match="not supported by"):
         BlockManager(
-            device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
             total_num_blocks=32,
             block_size=8,
             connector=cast(object, connector),  # type: ignore[arg-type]
@@ -361,25 +342,24 @@ def test_null_connector_supports_all_algos() -> None:
     assert NullConnector().supported_hash_algos == _FULL
 
 
-def test_local_and_tiered_connectors_declare_full_sha256_support() -> None:
-    """Lock the host-tier connectors' declared capabilities at the class
-    level. Both rely on numpy-keyed dicts so they natively handle the
-    ``bytes`` SHA-256 hashes alongside ``int`` ahash64 hashes.
+def test_rust_tier_connector_declares_full_sha256_support() -> None:
+    """Lock the host/disk tier connector's declared capabilities at the class
+    level. The Rust tier keys blocks by the caller-computed hash bytes, so it
+    handles SHA-256 hashes alongside ahash64 ones.
     """
-    # Both classes expose ``supported_hash_algos`` as a property; read it
-    # off the descriptor to avoid constructing real KV memory buffers.
-    for cls in (LocalConnector, TieredConnector):
-        prop = inspect.getattr_static(cls, "supported_hash_algos")
-        assert isinstance(prop, property), (
-            f"{cls.__name__}.supported_hash_algos must be a property"
-        )
-        # The property body is a single ``return frozenset({...})`` literal,
-        # so calling ``fget`` against ``None`` is unsafe. Instead, assert
-        # the literal source matches the expected set via a smoke roundtrip
-        # through a fresh subclass instance with __init__ patched out.
-        instance = cls.__new__(cls)
-        assert prop.fget is not None
-        assert prop.fget(instance) == _FULL
+    # The class exposes ``supported_hash_algos`` as a property; read it off the
+    # descriptor to avoid constructing real KV memory buffers.
+    prop = inspect.getattr_static(RustTierConnector, "supported_hash_algos")
+    assert isinstance(prop, property), (
+        "RustTierConnector.supported_hash_algos must be a property"
+    )
+    # The property body is a single ``return frozenset({...})`` literal, so
+    # calling ``fget`` against ``None`` is unsafe. Instead, assert the literal
+    # source matches the expected set via a smoke roundtrip through a fresh
+    # instance with __init__ patched out.
+    instance = RustTierConnector.__new__(RustTierConnector)
+    assert prop.fget is not None
+    assert prop.fget(instance) == _FULL
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +388,6 @@ def test_block_manager_accepts_dkv_advertised_algos(
         supported_hash_algos=dkv_advertised, num_host_blocks=4
     )
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=32,
         block_size=8,
         connector=cast(object, connector),  # type: ignore[arg-type]

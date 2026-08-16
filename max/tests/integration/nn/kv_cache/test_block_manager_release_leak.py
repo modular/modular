@@ -26,7 +26,6 @@ from typing import cast
 import numpy as np
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.modeling.types import RequestID
 
@@ -34,13 +33,17 @@ from max.pipelines.modeling.types import RequestID
 def _make_ctx(tokens: np.ndarray, request_id: RequestID) -> TextContext:
     return cast(
         TextContext,
-        SimpleNamespace(request_id=request_id, tokens=tokens, cache_salt=None),
+        SimpleNamespace(
+            request_id=request_id,
+            tokens=tokens,
+            cache_salt=None,
+            pending_future_count=0,
+        ),
     )
 
 
 def _make_block_manager() -> BlockManager:
     return BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=256,
         block_size=8,
         connector=cast(object, NullConnector()),  # type: ignore[arg-type]
@@ -48,23 +51,24 @@ def _make_block_manager() -> BlockManager:
     )
 
 
-def _track_request(bm: BlockManager, request_id: RequestID) -> None:
-    """Fill req_to_hashes (via compute_hashes) and req_to_blocks for a request."""
-    bm.compute_hashes_for_request(
-        _make_ctx(np.arange(33, dtype=np.int32), request_id)
-    )
+def _track_request(bm: BlockManager, request_id: RequestID) -> TextContext:
+    """Claim a request and fill its req_to_hashes and req_to_blocks entries."""
+    ctx = _make_ctx(np.arange(33, dtype=np.int32), request_id)
+    bm.claim(ctx)
+    bm.compute_hashes_for_request(ctx)
     bm.req_to_blocks[request_id] = [
         bm.allocate_device_block() for _ in range(2)
     ]
+    return ctx
 
 
 def test_release_deletes_per_request_entries() -> None:
     """release must delete the per-request keys, not reset them to ``[]``."""
     bm = _make_block_manager()
     request_id = RequestID("req-1")
-    _track_request(bm, request_id)
+    ctx = _track_request(bm, request_id)
 
-    bm.release(request_id)
+    bm.release(ctx)
 
     assert request_id not in bm.req_to_blocks
     assert request_id not in bm.req_to_hashes
@@ -74,22 +78,19 @@ def test_release_does_not_accumulate_across_requests() -> None:
     """After N request lifecycles the per-request maps return to empty."""
     bm = _make_block_manager()
     for i in range(64):
-        request_id = RequestID(f"req-{i}")
-        _track_request(bm, request_id)
-        bm.release(request_id)
+        bm.release(_track_request(bm, RequestID(f"req-{i}")))
 
     assert len(bm.req_to_blocks) == 0
     assert len(bm.req_to_hashes) == 0
 
 
-def test_release_is_idempotent() -> None:
-    """A repeated release must not raise -- why we use pop, not del."""
+def test_release_drops_a_request_that_was_never_hashed() -> None:
+    """A request released before it hashed anything has no ``req_to_hashes``
+    entry to drop -- which is why the cleanup pops with a default."""
     bm = _make_block_manager()
-    request_id = RequestID("req-1")
-    _track_request(bm, request_id)
+    ctx = _make_ctx(np.arange(33, dtype=np.int32), RequestID("req-unhashed"))
+    bm.claim(ctx)
 
-    bm.release(request_id)
-    bm.release(request_id)  # must not raise
+    bm.release(ctx)  # must not raise
 
-    assert request_id not in bm.req_to_blocks
-    assert request_id not in bm.req_to_hashes
+    assert RequestID("req-unhashed") not in bm.req_to_hashes

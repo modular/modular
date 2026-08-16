@@ -105,6 +105,46 @@ At runtime:
 
 This isn't prompting. It's controlled code generation.
 
+## Connect to the docs MCP server
+
+Connect the docs
+[Model Context Protocol](https://modelcontextprotocol.io) (MCP) server to give
+your AI assistant live access to Mojo's documentation. Your assistant can
+search Mojo's manual, API references, and code examples while it plans, writes,
+and debugs your code, so its answers stay grounded in the current
+documentation instead of its training data.
+
+Your assistant can usually set up the MCP server itself with a prompt like
+this:
+
+```text
+Add the Mojo docs MCP server at https://mojo-mcp.modular.com/mcp/ and verify it
+by searching the docs.
+```
+
+Or configure it manually in your tool's settings.
+
+With Claude Code, add the server from the command line:
+
+```sh
+claude mcp add --transport http mojo-docs https://mojo-mcp.modular.com/mcp/
+```
+
+With Cursor, add the server to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mojo-docs": {
+      "url": "https://mojo-mcp.modular.com/mcp/"
+    }
+  }
+}
+```
+
+Any other client that supports MCP's streamable HTTP transport connects with
+the same URL. The server indexes both the stable and nightly documentation.
+
 ## FAQ
 
 **Are the skills always up to date with the latest Mojo?**

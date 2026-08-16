@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, sqrt
-from std.memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc, dealloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -24,8 +25,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import (
@@ -44,10 +45,10 @@ from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import (
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
-    mla_prefill_sparse,
 )
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
 from std.utils.index import Index, IndexList
@@ -105,13 +106,12 @@ def bench_decode[
     ](batch_size, num_keys, 1, ctx)
     var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_k, cb_o, scalar_args_buf_lt)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -163,9 +163,9 @@ def bench_decode[
                 num_partitions=num_partitions,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -239,8 +239,12 @@ def bench_prefill[
     )
 
     # input row offsets and cache row offsets
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var input_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
+    var cache_row_offsets = alloc[UInt32](
+        {count = batch_size + 1}
+    ).unsafe_leak()
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -275,7 +279,7 @@ def bench_prefill[
         row_major(Coord(batch_size + 1)),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         cb_q,
@@ -287,9 +291,8 @@ def bench_prefill[
         cache_row_offsets_device,
     )
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major(
@@ -356,9 +359,9 @@ def bench_prefill[
                 q_max_seq_len=seq_len,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 4 * batch_size * num_heads * seq_len * num_keys * depth
 
     m.bench_function[bench_func](
@@ -403,7 +406,7 @@ def bench_prefill_sparse[
     q_tmem_depth: Int = 384,
     page_size: Int = 128,
     cache_busting: Bool = True,
-](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext,) raises:
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext) raises:
     var scale = Float32(1.0) / sqrt(Float32(192.0))
     comptime kv_num_heads = 1
     comptime num_layers = 1
@@ -428,7 +431,10 @@ def bench_prefill_sparse[
     cb_q.init_on_device(InitializationType.uniform_distribution, ctx)
 
     # KV blocks: host-init with random data, copy to device.
-    var kv_host = alloc[Scalar[qkv_type]](block_elems)
+    var kv_host_alloc = alloc[Scalar[qkv_type]](
+        {count = block_elems}
+    ).into_managed()
+    var kv_host = kv_host_alloc.unsafe_ptr()
     randn[qkv_type](
         kv_host, block_elems, mean=Float64(0.0), standard_deviation=Float64(0.5)
     )
@@ -436,13 +442,17 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(blocks_device, kv_host)
 
     # Sequential LUT: page i → physical block i (batch_size=1).
-    var lut_host = alloc[UInt32](num_pages)
+    var lut_host_alloc = alloc[UInt32]({count = num_pages}).into_managed()
+    var lut_host = lut_host_alloc.unsafe_ptr()
     for i in range(num_pages):
         lut_host[i] = UInt32(i)
     var lut_device = ctx.enqueue_create_buffer[DType.uint32](num_pages)
     ctx.enqueue_copy(lut_device, lut_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host_alloc = alloc[UInt32](
+        {count = batch_size}
+    ).into_managed()
+    var cache_lengths_host = cache_lengths_host_alloc.unsafe_ptr()
     cache_lengths_host[0] = UInt32(num_kv_tokens)
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
@@ -450,7 +460,10 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     # Physical indices: cycle through all valid (page, offset) pairs.
-    var indices_host = alloc[UInt32](total_indices)
+    var indices_host_alloc = alloc[UInt32](
+        {count = total_indices}
+    ).into_managed()
+    var indices_host = indices_host_alloc.unsafe_ptr()
     for i in range(total_indices):
         var page_id = i % num_pages
         var tok_in_page = i % page_size
@@ -458,7 +471,8 @@ def bench_prefill_sparse[
     var indices_device = ctx.enqueue_create_buffer[DType.uint32](total_indices)
     ctx.enqueue_copy(indices_device, indices_host)
 
-    var topk_lengths_host = alloc[UInt32](s_q)
+    var topk_lengths_host_alloc = alloc[UInt32]({count = s_q}).into_managed()
+    var topk_lengths_host = topk_lengths_host_alloc.unsafe_ptr()
     for i in range(s_q):
         topk_lengths_host[i] = UInt32(topk)
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.uint32](s_q)
@@ -466,11 +480,11 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
-    kv_host.free()
-    lut_host.free()
-    cache_lengths_host.free()
-    indices_host.free()
-    topk_lengths_host.free()
+    dealloc(kv_host_alloc^)
+    dealloc(lut_host_alloc^)
+    dealloc(cache_lengths_host_alloc^)
+    dealloc(indices_host_alloc^)
+    dealloc(topk_lengths_host_alloc^)
 
     # Build PagedKVCacheCollection from device buffers.
     comptime kv_params = KVCacheStaticParams(
@@ -526,13 +540,12 @@ def bench_prefill_sparse[
         group=num_heads,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(cb_q, cb_o, kv_cache, indices_tt, topk_lengths_tt, scale)
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_tt = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major((s_q, Idx[num_heads], Idx[qk_depth])),
@@ -557,9 +570,9 @@ def bench_prefill_sparse[
                 ctx,
             )
 
-        b.iter_custom[_kernel_launch](ctx)
+        bencher_iter_custom(b, _kernel_launch, ctx)
 
-    def compute_flops() {read} -> Int:
+    def compute_flops() {imm} -> Int:
         return 2 * s_q * topk * num_heads * (qk_depth + v_depth)
 
     m.bench_function[bench_func](

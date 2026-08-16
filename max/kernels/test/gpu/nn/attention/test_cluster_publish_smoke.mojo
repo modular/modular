@@ -51,10 +51,9 @@ relies on. Passing for `P in {2, 4, 8}` clears the M4 #1 risk.
 """
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.memory import AddressSpace
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.memory import stack_allocation
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
@@ -77,11 +76,11 @@ def publish_smoke_kernel[
 ](output: UnsafePointer[UInt32, MutAnyOrigin]):
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         W, DType.uint32, address_space=AddressSpace.SHARED, alignment=16
     ]()
     # The publish mbarrier (one SharedMemBarrier = one 8-byte slot).
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1, DType.int64, address_space=AddressSpace.SHARED, alignment=8
     ]().bitcast[SharedMemBarrier]()
 

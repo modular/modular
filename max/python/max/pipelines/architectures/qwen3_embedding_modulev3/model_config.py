@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -23,7 +25,14 @@ from typing_extensions import Self
 class Qwen3EmbeddingConfig(ArchConfig):
     """Qwen3 embedding model configuration."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
+
     pipeline_config: PipelineConfig
+    quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
         return Qwen3EmbeddingConfig.calculate_max_seq_len(

@@ -14,12 +14,12 @@
 
 
 from std.collections import OptionalReg
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Layout,
     LayoutTensor,
@@ -28,8 +28,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
@@ -69,7 +68,35 @@ def matmul[
 
     `use_tf32=False` (GPU only) requires IEEE-fp32 multiplies for fp32
     inputs instead of TF32 tensor-core truncation; see `_matmul_gpu`. The
-    CPU path is always IEEE fp32."""
+    CPU path is always IEEE fp32.
+
+    Parameters:
+        transpose_a: Transpose `a` before the matmul (defaults to `False`);
+            currently unsupported.
+        transpose_b: Transpose `b` before the matmul (defaults to `False`).
+        b_packed: `b` is already in a CPU-friendly packed layout (CPU only;
+            defaults to `False`).
+        elementwise_lambda_fn: Epilogue lambda applied to each stored tile of
+            `c` (defaults to `None`).
+        elementwise_compute_lambda_fn: Compute lambda transforming each result
+            tile before store; on CPU it is wrapped as an epilogue (defaults
+            to `None`).
+        saturated_vnni: Use the saturating VNNI variant on x86 (CPU only;
+            defaults to `False`).
+        _trace_description: Extra string folded into the op trace label
+            (defaults to an empty string).
+        target: Target platform string such as `"cpu"` or a GPU target
+            (defaults to `"cpu"`).
+        use_tf32: On GPU, allow TF32 tensor-core truncation for fp32 inputs
+            (defaults to `True`).
+
+    Args:
+        c: Rank-2 output `TileTensor` accumulating the matmul result.
+        a: Rank-2 LHS `TileTensor` of the matmul.
+        b: Rank-2 RHS `TileTensor` of the matmul.
+        ctx: Optional `DeviceContext` required for GPU targets and used for
+            CPU tracing (defaults to `None`).
+    """
     comptime assert c.rank == 2, "c must be rank 2"
     comptime assert a.rank == 2, "a must be rank 2"
     comptime assert b.rank == 2, "b must be rank 2"
@@ -87,7 +114,7 @@ def matmul[
             return
 
         @always_inline
-        @parameter
+        @__parameter
         def description_fn() -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
@@ -128,7 +155,7 @@ def matmul[
             return
 
         @always_inline
-        @parameter
+        @__parameter
         def cpu_description_fn() -> String:
             var shape = GemmShape.get[transpose_b](c, a, b)
             # fmt: off
@@ -159,10 +186,10 @@ def matmul[
 
             # The CPU version of matmul doesn't support compute lambda.
             # Wrap it around an epilogue lambda instead.
-            @parameter
+            @__parameter
             @always_inline
             def compute_lambda_wrapper[
-                _type: DType, _width: SIMDSize, *, alignment: Int = 1
+                _type: DType, _width: SIMDLength, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 comptime if elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()

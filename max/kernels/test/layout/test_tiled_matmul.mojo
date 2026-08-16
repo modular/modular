@@ -13,7 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import sync_parallelize, vectorize
+from std.algorithm import vectorize
+
+from max.algorithm import sync_parallelize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -88,7 +90,7 @@ struct MMA_Vec(TiledOp):
         for var m in range(M):
             for var n in range(N):
 
-                def dot[width: Int](k: Int) {read}:
+                def dot[width: Int](k: Int) {imm}:
                     dst.store[width](
                         m,
                         n,
@@ -184,7 +186,7 @@ def gemm_l1_cache[
     #     l1_lhs_cache.append(LayoutTensor[dtype, L1.m, L1.k]())
     #     l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
 
-    @parameter
+    @__parameter
     def process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[

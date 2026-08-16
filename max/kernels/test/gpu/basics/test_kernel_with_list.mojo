@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):

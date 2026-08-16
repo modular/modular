@@ -30,6 +30,10 @@ from max.graph import (
 )
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.comm.ep.ep_kernels import (
+    ep_mxfp4_max_padded_m,
+    uses_mx_ep_token_format,
+)
 from max.nn.moe import MoEGate, MoEQuantized
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.quant_config import (
@@ -344,3 +348,111 @@ def test_ep_moe_mxfp8_nvidia(
             f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f}"
             " < 0.98"
         )
+
+
+def _mx_quant_config(
+    fmt: QuantFormat, *, preshuffled_b: bool = True
+) -> QuantConfig:
+    """Builds an MX (block-scaled, group 32) quant config for the fold gate."""
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 32),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e8m0fnu,
+            block_size=(1, 32),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=fmt,
+        block_scaled_preshuffled_b=preshuffled_b,
+        can_use_fused_swiglu=True,
+    )
+
+
+def _build_ep_moe(
+    quant_config: QuantConfig, n_devices: int, max_tokens_per_rank: int
+) -> tuple[MoEQuantized, EPConfig]:
+    ep_config = EPConfig(
+        dispatch_dtype=(
+            DType.uint8 if quant_config.is_mxfp4 else DType.float8_e4m3fn
+        ),
+        combine_dtype=DType.bfloat16,
+        hidden_size=HIDDEN_DIM,
+        top_k=8,
+        n_experts=NUM_EXPERTS,
+        max_tokens_per_rank=max_tokens_per_rank,
+        n_gpus_per_node=n_devices,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
+        dispatch_quant_config=quant_config,
+        fused_shared_expert=True,
+    )
+    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
+    moe = MoEQuantized(
+        devices=[DeviceRef.CPU()] + devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=8,
+        moe_dim=MOE_DIM,
+        has_shared_experts=True,
+        shared_experts_dim=MOE_DIM,
+        ep_size=n_devices,
+        dtype=ep_config.dispatch_dtype,
+        apply_router_weight_first=False,
+        ep_batch_manager=EPBatchManager(ep_config),
+        quant_config=quant_config,
+        use_swigluoai=True,
+        swiglu_alpha=1.702,
+        swiglu_limit=7.0,
+    )
+    return moe, ep_config
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip",
+    reason="The MX EP A-scale dispatch fold is AMD-only",
+)
+@pytest.mark.parametrize("n_devices", [2])
+def test_ep_mxfp8_scale_fold_gate_amd(n_devices: int) -> None:
+    """The dispatch A-scale fold must engage for MXFP8, not just MXFP4.
+
+    Pinned where the fold is decided -- before any weight is loaded.
+    """
+    assert n_devices <= accelerator_count(), (
+        "Devices are not enough to run EP test"
+    )
+    max_tokens_per_rank = 128
+    # The fold's single source of truth for the per-expert slot stride.
+    max_recv_per_expert = max_tokens_per_rank * n_devices
+    expected_stride = (max_recv_per_expert + 31) // 32 * 32
+
+    for fmt in (QuantFormat.MXFP8, QuantFormat.MXFP4):
+        moe, ep_config = _build_ep_moe(
+            _mx_quant_config(fmt), n_devices, max_tokens_per_rank
+        )
+        assert uses_mx_ep_token_format(ep_config), (
+            f"{fmt} should dispatch through MXTokenFormat on AMD"
+        )
+        moe.configure_ep_scale_fusion(dispatch_supports_fold=True)
+        assert ep_config.mxfp4_a_scales_preshuffled, (
+            f"{fmt} EP A-scale fold did not engage"
+        )
+        assert ep_mxfp4_max_padded_m(ep_config) == expected_stride
+
+    # Boundary: the fold still requires the preshuffled-B grouped matmul, so
+    # widening the format check must not make it fire on the row-major kernel.
+    moe, ep_config = _build_ep_moe(
+        _mx_quant_config(QuantFormat.MXFP8, preshuffled_b=False),
+        n_devices,
+        max_tokens_per_rank,
+    )
+    moe.configure_ep_scale_fusion(dispatch_supports_fold=True)
+    assert not ep_config.mxfp4_a_scales_preshuffled, (
+        "the fold must stay off without a preshuffled-B matmul to read it"
+    )
+    assert ep_mxfp4_max_padded_m(ep_config) == 0

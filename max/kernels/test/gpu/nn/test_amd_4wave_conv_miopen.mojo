@@ -27,7 +27,7 @@ The expected gap is the accumulated FP8-vs-BF16 per-multiply rounding
 noise summed over K = R*S*C; tolerance below is calibrated for that.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 
 from layout import Coord, TileTensor, row_major

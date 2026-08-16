@@ -155,7 +155,7 @@ var y: SIMD[DType.int8, 16] = # ...    # sixteen 8-bit ints
 Use `DType` to write functions that work across numeric kinds:
 
 ```mojo
-# Double a value. The cast is required because the generic type
+# Double a value. The cast is required because the parameterized type
 # parameter can't be used directly with the literal `2`.
 def double[T: DType](x: Scalar[T]) -> Scalar[T]:
     return x * UInt8(2).cast[T]()
@@ -190,10 +190,9 @@ def double[T: DType](x: Scalar[T]) -> Scalar[T]:
 
 ### Other DType specifications
 
-| Value           | Selects                     |
-|-----------------|-----------------------------|
-| `DType.bool`    | Boolean (1-bit)             |
-| `DType.invalid` | No valid DType has been set |
+| Value        | Selects         |
+|--------------|-----------------|
+| `DType.bool` | Boolean (1-bit) |
 
 ## Integers
 
@@ -319,6 +318,8 @@ Mojo doesn't provide a `Float` type analogous to `Int`. Instead it
 provides numerous fixed-width floating-point types. Each is an alias for a
 one-element `SIMD`:
 
+<!-- markdownlint-disable MD013 -->
+
 | Type              | Bits      | Standard          | What it is                                    |
 |-------------------|-----------|-------------------|-----------------------------------------------|
 | `Float16`         | 16        | IEEE 754 binary16 | `Scalar[DType.float16]`                       |
@@ -333,12 +334,15 @@ one-element `SIMD`:
 | `Float8_e8m0fnu`  | 8         | OFP8 §5.4         | `Scalar[DType.float8_e8m0fnu]`                |
 | `FloatLiteral`    | arbitrary | --                | Compile-time only. Materializes to `Float64`. |
 
+<!-- markdownlint-enable MD013 -->
+
 :::note
 
 - IEEE-754 is the IEEE Standard for Floating-Point Arithmetic.
 - OFP8 is an 8-bit Floating Point Specification, which creates
   a standard for representing floating-point numbers in a
   compact format.
+
 :::
 
 ### `Float16` {#float16}
@@ -604,7 +608,7 @@ Variables have a fixed type and never convert implicitly.
 ## Explicit conversions
 
 Converting between numeric types always requires an explicit
-constructor or cast. Mojo doesn't perform implicit numeric
+initializer or cast. Mojo doesn't perform implicit numeric
 conversions between variables:
 
 ```mojo
@@ -622,7 +626,7 @@ var b = a.cast[DType.int32]()     # Float32 → Int32
 var c = a.cast[DType.float64]()   # Float32 → Float64
 ```
 
-Between `Int` and `SIMD`-based types, use constructors:
+Between `Int` and `SIMD`-based types, use initializers:
 
 ```mojo
 var i = 42                        # Int

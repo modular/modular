@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements C string interoperability utilities."""
 
-from std.collections.string.string_slice import _unsafe_strlen
-from std.memory import UnsafeMaybeUninit
+from std.collections.string.string_span import _unsafe_strlen
+from std.memory import MaybeUninit
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
@@ -29,7 +29,7 @@ def _validate_bytes(slice: Span[Byte, _]) raises:
         raise Error("CStringSlice has interior nul byte")
 
 
-struct CStringSlice[origin: ImmutOrigin](
+struct CStringSlice[origin: ImmOrigin](
     Equatable,
     ImplicitlyCopyable,
     Sized,
@@ -46,7 +46,7 @@ struct CStringSlice[origin: ImmutOrigin](
         origin: The origin of the `CStringSlice`.
     """
 
-    comptime _PointerType = UnsafePointer[Int8, Self.origin]
+    comptime _PointerType = Pointer[Int8, Self.origin]
 
     var _data: Self._PointerType
 
@@ -54,15 +54,15 @@ struct CStringSlice[origin: ImmutOrigin](
     def __init__(
         out self,
         *,
-        unsafe_from_ptr: UnsafePointer[Int8, Self.origin],
+        unsafe_from_ptr: Pointer[Int8, Self.origin],
     ):
-        """Construct a `CStringSlice` from an `UnsafePointer`.
+        """Construct a `CStringSlice` from a `Pointer`.
 
         Args:
-            unsafe_from_ptr: The `UnsafePointer` to construct the `CStringSlice` from.
+            unsafe_from_ptr: The `Pointer` to construct the `CStringSlice` from.
 
         Safety:
-            The `UnsafePointer` must be a valid nul-terminated C string.
+            The `Pointer` must be a valid nul-terminated C string.
             The pointer cannot be null. To represent nullability, use
             `Optional[CStringSlice]`.
 
@@ -73,12 +73,12 @@ struct CStringSlice[origin: ImmutOrigin](
 
         def getenv_wrapper(
             name: CStringSlice,
-        ) raises -> CStringSlice[StaticConstantOrigin]:
+        ) raises -> CStringSlice[ImmStaticOrigin]:
             # External call to 'getenv'.
             # C signature: const char *getenv(const char *name);
             var result = external_call[
                 "getenv",
-                Optional[CStringSlice[StaticConstantOrigin]],
+                Optional[CStringSlice[ImmStaticOrigin]],
             ](name)
 
             try:
@@ -116,7 +116,7 @@ struct CStringSlice[origin: ImmutOrigin](
         """
         _validate_bytes(slice.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = slice.unsafe_ptr().bitcast[Int8]()
+        self._data = slice.as_bytes().unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -131,7 +131,7 @@ struct CStringSlice[origin: ImmutOrigin](
         """
         _validate_bytes(span)
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = span.unsafe_ptr().bitcast[Int8]()
+        self._data = span.unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __eq__(self, rhs_same: Self) -> Bool:
@@ -163,8 +163,8 @@ struct CStringSlice[origin: ImmutOrigin](
         while a[] == b[]:
             if a[] == Int8(0):
                 return True
-            a += 1
-            b += 1
+            a = a.unsafe_offset(1)
+            b = b.unsafe_offset(1)
         return False
 
     @always_inline
@@ -187,7 +187,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             The length of the C string.
         """
-        return Int(_unsafe_strlen(self._data.bitcast[Byte]()))
+        return Int(_unsafe_strlen(self._data.unsafe_bitcast[Byte]()))
 
     def write_to(self, mut writer: Some[Writer]):
         """Write the `CStringSlice` to a `Writer`, the nul terminator is
@@ -208,7 +208,7 @@ struct CStringSlice[origin: ImmutOrigin](
         t"CStringSlice({self.as_bytes_with_nul()})".write_to(writer)
 
     @always_inline
-    def unsafe_ptr(self) -> UnsafePointer[Int8, Self.origin]:
+    def unsafe_ptr(self) -> Pointer[Int8, Self.origin]:
         """Get a pointer to the underlying `CStringSlice`.
 
         Returns:
@@ -227,8 +227,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            unsafe_ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self),
         )
 
@@ -243,8 +243,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Returns:
             A span of the underlying `CStringSlice` as bytes.
         """
-        return Span(
-            ptr=self._data.bitcast[Byte](),
+        return Span[Byte, Self.origin](
+            unsafe_ptr=self._data.unsafe_bitcast[Byte](),
             length=len(self) + 1,
         )
 
@@ -261,21 +261,17 @@ struct CStringSlice[origin: ImmutOrigin](
     @staticmethod
     @doc_hidden
     @always_inline
-    def write_niche[
-        index: Int
-    ](memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         Self._PointerType.write_niche[index](
-            memory.bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )
 
     @staticmethod
     @doc_hidden
     @always_inline
-    def classify_niche(
-        memory: UnsafePointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> NicheIndex:
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         return Self._PointerType.classify_niche(
-            memory.bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )

@@ -28,9 +28,8 @@ Usage:
 
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     ComptimeInt,
     Coord,
@@ -49,7 +48,7 @@ from layout.tma_async import (
 )
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils.index import IndexList
 
 # Core matrix constant from tensor_core_async.mojo
@@ -308,7 +307,7 @@ def _strided_layout[
 # ============================================================================
 
 
-@parameter
+@__parameter
 def _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
     """Extract static shapes from a TensorLayout into an IndexList.
 
@@ -516,6 +515,7 @@ def create_tma_tile[
     tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    unpack_fp4: Bool = False,
 ](ctx: DeviceContext, tensor: TileTensor[mut=False, ...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
@@ -531,6 +531,9 @@ def create_tma_tile[
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
         swizzle_mode: TMA swizzle mode.
+        unpack_fp4: When True, `tensor` is nibble-packed E2M1 held as `uint8`
+            and the copy pads it into shared memory so a K extent spans one
+            byte per element.
 
     Args:
         ctx: Device context for TMA descriptor creation.
@@ -544,6 +547,7 @@ def create_tma_tile[
         swizzle_mode=swizzle_mode,
         __tile_shape=_to_index_list[tma_tile_layout](),
         __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
+        unpack_fp4=unpack_fp4,
     ](ctx, tensor)
 
 
@@ -654,7 +658,7 @@ struct SMemTileArrayWithLayout[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -693,6 +697,9 @@ struct SMemTileArrayWithLayout[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -733,7 +740,7 @@ struct SMemTileArrayWithLayout[
         Returns:
             A new SMemTileArrayWithLayout backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -805,7 +812,7 @@ struct SMemTileArray[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -844,6 +851,9 @@ struct SMemTileArray[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -893,7 +903,7 @@ struct SMemTileArray[
         Returns:
             A new SMemTileArray backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -972,7 +982,7 @@ struct SMemTileArray2D[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -1016,6 +1026,9 @@ struct SMemTileArray2D[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -1086,7 +1099,7 @@ struct SMemTileArray2D[
         Returns:
             A new SMemTileArray2D backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -1144,7 +1157,7 @@ struct SMemTileArray2DRowMajor[
     comptime storage_size: Int = Self.num_elements * size_of[Self.dtype]()
 
     # Storage type for stack allocation
-    comptime Storage = InlineArray[Scalar[Self.dtype], Self.num_elements]
+    comptime Storage = Array[Scalar[Self.dtype], Self.num_elements]
 
     # Pointer to the array data
     var ptr: UnsafePointer[
@@ -1183,6 +1196,9 @@ struct SMemTileArray2DRowMajor[
     @always_inline
     def __getitem__[T: Intable](self, index: T) -> Self.Tile:
         """Get tile at the given index.
+
+        Parameters:
+            T: Index value type, must be convertible to `Int`.
 
         Args:
             index: The tile index.
@@ -1226,7 +1242,7 @@ struct SMemTileArray2DRowMajor[
         Returns:
             A new SMemTileArray2DRowMajor backed by stack-allocated shared memory.
         """
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,

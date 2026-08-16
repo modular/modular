@@ -30,13 +30,12 @@ from max.nn.kv_cache import (
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     PipelineConfig,
     UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
 from max.pipelines.lib.pipeline_variants.unified_spec_decode_model import (
     _UnifiedSpecDecodeModelMixin,
 )
@@ -80,7 +79,8 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
 
 
 class UnifiedEagleLlama3Model(
-    _UnifiedSpecDecodeModelMixin, PipelineModelWithKVCache[TextContext]
+    _UnifiedSpecDecodeModelMixin,
+    GraphPipelineModelWithKVCache[TextContext],
 ):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
@@ -90,6 +90,7 @@ class UnifiedEagleLlama3Model(
     )
 
     model: Model
+    _draft_state_dict: dict[str, Any]
 
     def __init__(
         self,
@@ -134,105 +135,119 @@ class UnifiedEagleLlama3Model(
             cache_dtype,
         )
 
-    def load_model(self, session: InferenceSession) -> Model:
-        with CompilationTimer("unified_eagle_llama3_model") as timer:
-            target_state_dict = parse_state_dict_from_weights(
-                self.pipeline_config, self.weights, self.adapter
-            )
+    def _load_state_dict(self) -> dict[str, Any]:
+        target_state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
+        )
 
-            assert self.pipeline_config.draft_model is not None
-            draft_model_config = self.pipeline_config.draft_model
-            draft_weight_paths = draft_model_config.resolved_weight_paths()
-            draft_weights = load_weights(draft_weight_paths)
-            draft_hf_config = draft_model_config.huggingface_config
-            assert draft_hf_config is not None
+        assert self.pipeline_config.draft_model is not None
+        draft_model_config = self.pipeline_config.draft_model
+        draft_weight_paths = draft_model_config.resolved_weight_paths()
+        draft_weights = load_weights(draft_weight_paths)
+        draft_hf_config = draft_model_config.huggingface_config
+        assert draft_hf_config is not None
+        self._draft_state_dict = _convert_safetensor_with_model_config(
+            dict(draft_weights.items()),
+            draft_hf_config,
+            draft_model_config,
+        )
 
-            draft_state_dict = _convert_safetensor_with_model_config(
-                dict(draft_weights.items()),
-                draft_hf_config,
-                draft_model_config,
-            )
+        return target_state_dict
 
-            target_hf_config = self.huggingface_config
-            assert target_hf_config is not None
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> UnifiedEagleLlama3Config:
+        assert self.pipeline_config.draft_model is not None
+        draft_model_config = self.pipeline_config.draft_model
+        draft_hf_config = draft_model_config.huggingface_config
+        assert draft_hf_config is not None
 
-            target_config = Llama3Config.initialize(self.pipeline_config)
-            target_config.finalize(
-                huggingface_config=target_hf_config,
-                state_dict=target_state_dict,
-                return_logits=ReturnLogits.VARIABLE,
-                return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
-            )
+        target_hf_config = self.huggingface_config
+        assert target_hf_config is not None
 
-            draft_config = Llama3Config.initialize_from_config(
-                self.pipeline_config, draft_hf_config, draft_model_config
-            )
-            # The draft model config may default to gpu:0. Override its
-            # devices to match the target so weights land on the correct GPU
-            # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
-            draft_config.devices = target_config.devices
-            draft_config.kv_params = replace(
-                draft_config.kv_params, devices=target_config.devices
-            )
-            draft_config.finalize(
-                huggingface_config=draft_hf_config,
-                state_dict=draft_state_dict,
-                return_logits=ReturnLogits.LAST_TOKEN,
-                return_hidden_states=ReturnHiddenStates.LAST,
-            )
+        target_config = Llama3Config.initialize(self.pipeline_config)
+        target_config.finalize(
+            huggingface_config=target_hf_config,
+            state_dict=state_dict,
+            return_logits=ReturnLogits.VARIABLE,
+            return_hidden_states=ReturnHiddenStates.ALL_NORMALIZED,
+        )
 
-            assert self.pipeline_config.speculative is not None
+        draft_config = Llama3Config.initialize_from_config(
+            self.pipeline_config, draft_hf_config, draft_model_config
+        )
+        # The draft model config may default to gpu:0. Override its
+        # devices to match the target so weights land on the correct GPU
+        # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
+        draft_config.devices = target_config.devices
+        draft_config.kv_params = replace(
+            draft_config.kv_params, devices=target_config.devices
+        )
+        draft_config.finalize(
+            huggingface_config=draft_hf_config,
+            state_dict=self._draft_state_dict,
+            return_logits=ReturnLogits.LAST_TOKEN,
+            return_hidden_states=ReturnHiddenStates.LAST,
+        )
 
-            unified_config = UnifiedEagleLlama3Config(
-                target=target_config,
-                draft=draft_config,
-                speculative_config=self.pipeline_config.speculative,
-                enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
-            )
+        assert self.pipeline_config.speculative is not None
 
-            nn_model = UnifiedEagleLlama3Module(unified_config)
+        assert isinstance(self.kv_params, KVCacheParams)
+        draft_num_layers = draft_config.num_hidden_layers
+        self._draft_kv_params = replace(
+            self.kv_params, num_layers=draft_num_layers
+        )
+        self.kv_params = MultiKVCacheParams.from_params(
+            {"target": self.kv_params, "draft": self._draft_kv_params}
+        )
 
-            # Share embed_tokens and lm_head BEFORE loading so state_dict()
-            # deduplicates them.
-            nn_model.draft.embed_tokens = nn_model.target.embed_tokens
-            nn_model.draft.lm_head = nn_model.target.lm_head
+        return UnifiedEagleLlama3Config(
+            target=target_config,
+            draft=draft_config,
+            speculative_config=self.pipeline_config.speculative,
+            enable_structured_output=self.pipeline_config.needs_bitmask_constraints,
+        )
 
-            # --- Merge and load weights at top level ---
-            # Load with "target.*" and "draft.*" prefixed keys so the graph
-            # sees unique weight names (both models have layers.0.*).
-            unified_state_dict = convert_unified_safetensor_state_dict(
-                target_state_dict, draft_state_dict
-            )
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: Any,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert isinstance(model_config, UnifiedEagleLlama3Config)
 
-            # strict=False: shared weights (embed_tokens, lm_head) are aliased
-            # to target's and won't have draft.* copies. EAGLE also replaces
-            # some norms with Identity. rope_freqs.weight is unused.
-            nn_model.load_state_dict(
-                unified_state_dict,
-                override_quantization_encoding=True,
-                weight_alignment=1,
-                strict=False,
-            )
-            self.state_dict = nn_model.state_dict()
+        nn_model = UnifiedEagleLlama3Module(model_config)
 
-            assert isinstance(self.kv_params, KVCacheParams)
-            draft_num_layers = draft_config.num_hidden_layers
-            self._draft_kv_params = replace(
-                self.kv_params, num_layers=draft_num_layers
-            )
-            self.kv_params = MultiKVCacheParams.from_params(
-                {"target": self.kv_params, "draft": self._draft_kv_params}
-            )
+        # Share embed_tokens and lm_head BEFORE loading so state_dict()
+        # deduplicates them.
+        nn_model.draft.embed_tokens = nn_model.target.embed_tokens
+        nn_model.draft.lm_head = nn_model.target.lm_head
 
-            with Graph(
-                "unified_eagle_llama3",
-                input_types=nn_model.input_types(),
-            ) as graph:
-                inputs = nn_model._unflatten_graph_inputs(graph.inputs)
-                outputs = nn_model(inputs)
-                graph.output(*outputs)
+        unified_state_dict = convert_unified_safetensor_state_dict(
+            state_dict, self._draft_state_dict
+        )
 
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
+        # --- Merge and load weights at top level ---
+        # Load with "target.*" and "draft.*" prefixed keys so the graph
+        # sees unique weight names (both models have layers.0.*).
+        # strict=False: shared weights (embed_tokens, lm_head) are aliased
+        # to target's and won't have draft.* copies. EAGLE also replaces
+        # some norms with Identity. rope_freqs.weight is unused.
+        nn_model.load_state_dict(
+            unified_state_dict,
+            override_quantization_encoding=True,
+            weight_alignment=1,
+            strict=False,
+        )
+        weights_registry = nn_model.state_dict()
 
-        return model
+        with Graph(
+            "unified_eagle_llama3",
+            input_types=nn_model.input_types(),
+        ) as graph:
+            inputs = nn_model._unflatten_graph_inputs(graph.inputs)
+            outputs = nn_model(inputs)
+            graph.output(*outputs)
+
+        return graph, weights_registry

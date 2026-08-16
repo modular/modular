@@ -48,10 +48,10 @@ def lookup_fn(count: Int):
 
     for i in range(count):
         # Some computation, doesn't matter what it is.
-        idx = dynamic_function(i)
+        var idx = dynamic_function(i)
 
         # Look up another value
-        lookup = list_of_values[idx]
+        var lookup = list_of_values[idx]
 
         # Use the value
         process(lookup)
@@ -60,7 +60,7 @@ def lookup_fn(count: Int):
 This looks reasonable, but compiling it produces an error on this line:
 
 ```mojo
-lookup = list_of_values[idx]
+var lookup = list_of_values[idx]
 ```
 
 ```output
@@ -80,11 +80,11 @@ def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
-        idx = dynamic_function(i)
+        var idx = dynamic_function(i)
 
         # This is the problem
         var tmp: List[Int] = materialize[list_of_values]()
-        lookup = tmp[idx]
+        var lookup = tmp[idx]
         # tmp is destroyed here
 
         process(lookup)
@@ -104,9 +104,9 @@ def lookup_fn(count: Int):
 
     var list = materialize[list_of_values]()
     for i in range(count):
-        idx = dynamic_function(i)
+        var idx = dynamic_function(i)
 
-        lookup = list[idx]
+        var lookup = list[idx]
 
         process(lookup)
     # materialized list is destroyed here
@@ -130,7 +130,7 @@ other locations in memory. That rules out using collection types like `List` and
 `Dict`.
 
 The easiest way to use `global_constant()` is with
-[`InlineArray`](/docs/std/collections/inline_array/InlineArray/), which
+[`Array`](/docs/std/collections/array/Array/), which
 allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
@@ -138,7 +138,7 @@ uses `global_constant()` to create a static lookup table.
 from std.builtin.globals import global_constant
 
 def use_lookup(idx: Int) -> Int64:
-    comptime numbers: InlineArray[Int64, 10] = [
+    comptime numbers: Array[Int64, 10] = [
         1, 3, 14, 34, 63, 101, 148, 204, 269, 343
     ]
     ref lookup_table = global_constant[numbers]()
@@ -159,7 +159,7 @@ reference to this memory.
 
 Note the use of `ref lookup_table` to bind the reference returned by
 `global_constant()`. Using `var lookup_table` would cause a compiler error,
-because it would trigger a copy, and `InlineArray` doesn't support implicit
+because it would trigger a copy, and `Array` doesn't support implicit
 copying.
 
 ## Using the `comptime` keyword
