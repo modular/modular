@@ -23,11 +23,19 @@ boundary tie, a forced large-value block, the 512K-context row (4096 blocks),
 `k > num_blocks`, a single-block row, and degenerate rows with no selectable
 value (all `-inf` or all `NaN`), which must emit all `-1` without writing out
 of bounds.
+
+A final group asserts the output does not depend on `block_dim`. That is not a
+property of this kernel alone -- the MSA prefill launcher SIZES its CTA to the
+work (`sparse_indexer_prefill.mojo`'s `clamp(align_up(ceildiv(max_num_blocks,
+16), WARP_SIZE), WARP_SIZE, 128)`), which is only sound because the winner is
+the globally smallest index among tied maxima at every width. The argument is
+that `insert` keeps the lowest index it saw and the block reduction breaks ties
+the same way; `_run_block_dim_invariance` turns that argument into evidence.
 """
 
 from std.collections import Set
-from std.gpu import block_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import WARP_SIZE, block_idx
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
 from std.testing import assert_equal, assert_true
@@ -52,9 +60,11 @@ def _select_test_kernel[
 ](
     scores: TileTensor[DType.float32, ScoresLT, MutAnyOrigin],
     out_idxs: TileTensor[DType.int32, OutLT, MutAnyOrigin],
-    num_blocks: Int,
-    k: Int,
+    num_blocks_dev: Int32,
+    k_dev: Int32,
 ):
+    var num_blocks = Int(num_blocks_dev)
+    var k = Int(k_dev)
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
     var row = block_idx.x
     var s_lt = scores.to_layout_tensor()
@@ -182,8 +192,8 @@ def _run_case(
     ctx.enqueue_function[kernel](
         scores_t,
         out_t,
-        num_blocks,
-        k,
+        Int32(num_blocks),
+        Int32(k),
         grid_dim=num_rows,
         block_dim=128,
     )
@@ -267,6 +277,129 @@ def _run_case(
     _ = out_dev
 
 
+def _launch_select(
+    num_rows: Int,
+    num_blocks: Int,
+    k: Int,
+    scores_host: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    block_dim: Int,
+    ctx: DeviceContext,
+) raises -> List[Int32]:
+    """Select over a FRESH device copy of `scores_host` at one CTA width.
+
+    The copy is per call, not per case: `block_select_topk` evicts each winner
+    in place, so a second launch over the same device buffer would select from
+    an already-consumed row and agree with the first for the wrong reason.
+    """
+    var n_scores = num_rows * num_blocks
+    var n_out = num_rows * k
+
+    var stage = ctx.enqueue_create_host_buffer[DType.float32](n_scores)
+    for j in range(n_scores):
+        stage[j] = scores_host[j]
+    var scores_dev = ctx.enqueue_create_buffer[DType.float32](n_scores)
+    ctx.enqueue_copy(dst_buf=scores_dev, src_buf=stage)
+
+    var out_dev = ctx.enqueue_create_buffer[DType.int32](n_out)
+    out_dev.enqueue_fill(Int32(-2))  # poison: must be overwritten
+
+    var scores_t = TileTensor(scores_dev, row_major((num_rows, num_blocks)))
+    var out_t = TileTensor(out_dev, row_major((num_rows, k)))
+    comptime kernel = _select_test_kernel[
+        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+    ]
+    ctx.enqueue_function[kernel](
+        scores_t,
+        out_t,
+        Int32(num_blocks),
+        Int32(k),
+        grid_dim=num_rows,
+        block_dim=block_dim,
+    )
+
+    var out_host = ctx.enqueue_create_host_buffer[DType.int32](n_out)
+    ctx.enqueue_copy(dst_buf=out_host, src_buf=out_dev)
+    ctx.synchronize()
+    var out = List[Int32](capacity=n_out)
+    for i in range(n_out):
+        out.append(out_host[i])
+    _ = scores_dev
+    _ = out_dev
+    return out^
+
+
+def _run_block_dim_invariance(
+    num_rows: Int,
+    num_blocks: Int,
+    k: Int,
+    mode: Int,
+    ctx: DeviceContext,
+) raises:
+    """Every legal CTA width must emit a bit-identical `out_idxs`.
+
+    The ladder is derived from `WARP_SIZE` rather than hard-coded, because the
+    contract is "a positive multiple of the warp size, at most 1024" and a
+    wave-64 arch has no legal 32-wide block. `3 * WARP_SIZE` is deliberate: the
+    contract admits non-power-of-two widths, and the prefill launcher's
+    `align_up(..., WARP_SIZE)` sizing rule can land on one.
+
+    Tie-heavy modes carry this test. On tie-free data any correct selector
+    agrees at every width, so `MODE_ALL_EQUAL` / `MODE_BOUNDARY_TIE` are what
+    would actually catch a width-dependent tiebreak.
+    """
+    print(
+        "  block_dim invariance: num_rows=",
+        num_rows,
+        " num_blocks=",
+        num_blocks,
+        " k=",
+        k,
+        " mode=",
+        mode,
+    )
+    var n_scores = num_rows * num_blocks
+    var scores_host = ctx.enqueue_create_host_buffer[DType.float32](n_scores)
+    if mode == MODE_RANDOM:
+        rand(scores_host.as_span())
+    else:
+        for r in range(num_rows):
+            _fill_row(
+                scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
+            )
+    ctx.synchronize()
+    var host_ptr = rebind[UnsafePointer[Scalar[DType.float32], MutAnyOrigin]](
+        scores_host.unsafe_ptr()
+    )
+
+    var bdims = List[Int]()
+    for mult in [1, 2, 3, 4, 8, 16, 32]:
+        if mult * WARP_SIZE <= 1024:
+            bdims.append(mult * WARP_SIZE)
+
+    var reference = _launch_select(
+        num_rows, num_blocks, k, host_ptr, bdims[0], ctx
+    )
+    for bdim in bdims:
+        var got = _launch_select(num_rows, num_blocks, k, host_ptr, bdim, ctx)
+        for i in range(len(reference)):
+            assert_equal(
+                got[i],
+                reference[i],
+                String(
+                    "block_dim ",
+                    bdim,
+                    " differs from ",
+                    bdims[0],
+                    " at slot ",
+                    i,
+                    ": ",
+                    got[i],
+                    " vs ",
+                    reference[i],
+                ),
+            )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # Tie-free random (exact set cross-check). k <= num_blocks.
@@ -287,4 +420,14 @@ def main() raises:
         # No selectable winner (all -inf / all NaN): must not write OOB; all -1.
         _run_case(4, 64, 16, -1, MODE_ALL_DEAD, ctx)
         _run_case(2, 4096, 16, -1, MODE_ALL_NAN, ctx)
+
+        # Width invariance, which is what makes the prefill launcher's dynamic
+        # CTA sizing sound. 1024 blocks spans every width in the ladder; the
+        # narrow rows cover the widths that exceed the row itself (most threads
+        # contribute nothing to the reduction) and the no-winner early-out.
+        _run_block_dim_invariance(8, 1024, 16, MODE_ALL_EQUAL, ctx)
+        _run_block_dim_invariance(8, 1024, 16, MODE_BOUNDARY_TIE, ctx)
+        _run_block_dim_invariance(8, 1024, 16, MODE_RANDOM, ctx)
+        _run_block_dim_invariance(8, 8, 16, MODE_RANDOM, ctx)
+        _run_block_dim_invariance(8, 8, 16, MODE_ALL_NAN, ctx)
         print("all block_select_topk cases passed")

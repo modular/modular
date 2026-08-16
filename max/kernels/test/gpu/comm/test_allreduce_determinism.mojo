@@ -50,7 +50,7 @@ from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
 
 # DeepEP reruns 20x; reruns inside one process are cheap.
@@ -140,7 +140,7 @@ def allreduce_determinism_test[
     )
 
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * length
@@ -176,7 +176,7 @@ def allreduce_determinism_test[
     comptime InTensorType = TileTensor[
         dtype, type_of(row_major(length)), ImmutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = TileTensor(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -188,7 +188,7 @@ def allreduce_determinism_test[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(length)), MutAnyOrigin
     ]
-    var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         out_tensors[i] = TileTensor(out_dev[i], row_major(length))
 
@@ -280,15 +280,15 @@ def run_determinism_sweep() raises -> None:
 
     comptime for d in range(len(dtypes)):
         comptime for g in range(len(gpu_counts)):
-            comptime dtype = dtypes[d]
-            comptime ngpus = gpu_counts[g]
+            comptime dtype = rebind[DType](dtypes[d])
+            comptime ngpus = rebind[Int](gpu_counts[g])
             if DeviceContext.number_of_devices() < ngpus:
                 continue
             var ctx = List[DeviceContext]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
-                comptime length = lengths[li]
+                comptime length = rebind[Int](lengths[li])
                 allreduce_determinism_test[dtype=dtype, ngpus=ngpus](
                     ctx, length
                 )

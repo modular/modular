@@ -25,11 +25,11 @@ from max.experimental.cascade.core import (
     pipeline_method,
     worker_method,
 )
-from max.experimental.cascade.pipelines import CascadePipeline
-from max.experimental.cascade.pipelines.imgen import (
+from max.experimental.cascade.interfaces.imgen import (
     ImageGenInterface,
     ImageGenRequest,
 )
+from max.experimental.cascade.interfaces.pipeline import CascadePipeline
 from PIL import Image
 from scipy import ndimage
 

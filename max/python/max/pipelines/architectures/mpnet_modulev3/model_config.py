@@ -15,12 +15,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithBoundedMaxSeqLen,
 )
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -29,9 +31,16 @@ from typing_extensions import Self, override
 class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
     """Configuration for MPNet V3 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
+
     pool_embeddings: bool
     huggingface_config: AutoConfig
     max_seq_len: int
+    quantization_encoding: SupportedEncoding | None = None
 
     @override
     @classmethod

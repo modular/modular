@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from std.utils import IndexList
@@ -39,7 +39,7 @@ struct ImplT(BaseT):
 
 
 def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
-    @parameter
+    @__parameter
     @__copy_capture(thing)
     def kernel_fn():
         var idx = thread_idx.x

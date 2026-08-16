@@ -41,7 +41,7 @@ from std.utils import Variant
 
 @fieldwise_init
 struct Counter[
-    V: KeyElement & Copyable & ImplicitlyDeletable,
+    V: KeyElement & Copyable & Deinitable,
     H: Hasher = default_hasher,
 ](
     Boolable,
@@ -131,7 +131,7 @@ struct Counter[
         """
         self._data = Dict[Self.V, Int, Self.H]()
         for item in values:
-            self._data[item.copy()] = self._data.get(item, 0) + 1
+            self._data.setdefault(item.copy(), 0) += 1
 
     def __init__(out self, items: List[Self.V]):
         """Create a `Counter` from an input iterable.
@@ -151,7 +151,7 @@ struct Counter[
         """
         self._data = Dict[Self.V, Int, Self.H]()
         for item in items:
-            self._data[item.copy()] = self._data.get(item, 0) + 1
+            self._data.setdefault(item.copy(), 0) += 1
 
     @staticmethod
     def fromkeys(keys: List[Self.V], value: Int) -> Self:
@@ -223,9 +223,7 @@ struct Counter[
             _DictEntryIter(
                 0,
                 0,
-                UnsafePointer(to=self._data).unsafe_origin_cast[
-                    origin_of(self)
-                ]()[],
+                Pointer(to=self._data).unsafe_origin_cast[origin_of(self)]()[],
             )
         )
 
@@ -316,16 +314,17 @@ struct Counter[
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_counter_body[
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_counter_body[
                 f_key=fmt.write_repr_to[Self.V],
                 f_val=fmt.write_repr_to[Int],
             ](w)
 
         fmt.FormatStruct(writer, "Counter").params(
             fmt.TypeNames[Self.V](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators
@@ -900,7 +899,9 @@ struct Counter[
             n: The number of most common elements to return.
 
         Returns:
-            A list of the `n` most common elements and their counts.
+            A list of the `n` most common elements and their counts. If the
+            counter has fewer than `n` unique elements, all of them are
+            returned; if `n` is negative, the list is empty.
 
         Example:
 
@@ -919,12 +920,11 @@ struct Counter[
             var t = CountTuple[Self.V](item.key, item.value)
             items.append(t^)
 
-        @parameter
         def comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
             return a < b
 
-        sort[comparator](items)
-        items.shrink(Int(n))
+        sort(items, comparator)
+        items.shrink(max(0, min(n, len(items))))
         return items^
 
     def elements(self) -> List[Self.V]:
@@ -970,9 +970,7 @@ struct Counter[
         ```
         """
         for item in other.items():
-            self._data[item.key.copy()] = (
-                self._data.get(item.key, 0) + item.value
-            )
+            self._data.setdefault(item.key.copy(), 0) += item.value
 
     def subtract(mut self, other: Self):
         """Subtract counts. Both inputs and outputs may be zero or negative.
@@ -993,12 +991,10 @@ struct Counter[
         ```
         """
         for item in other.items():
-            self[item.key] = self.get(item.key, 0) - item.value
+            self._data.setdefault(item.key.copy(), 0) -= item.value
 
 
-struct CountTuple[V: KeyElement & Copyable & ImplicitlyDeletable](
-    Comparable, Copyable
-):
+struct CountTuple[V: KeyElement & Copyable & Deinitable](Comparable, Copyable):
     """A tuple representing a value and its count in a `Counter`.
 
     Parameters:

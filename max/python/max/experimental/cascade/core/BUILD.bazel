@@ -8,6 +8,7 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/support:taskgroups",
+        requirement("numpy"),
         requirement("pydantic"),
     ],
 )

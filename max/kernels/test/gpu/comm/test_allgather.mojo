@@ -18,7 +18,7 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p, init_signal_buffer
 import comm.vendor.ccl as vendor_ccl
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import (
     Idx,
     TileTensor,
@@ -43,7 +43,7 @@ def all_gather_test[
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -101,28 +101,36 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Build TileTensor arrays directly.
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `Array` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
     )
-    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    var tt_in_bufs = Array[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(lengths[i])
-        ).as_immut()
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
-    var tt_out_bufs = InlineArray[OutTileType, ngpus * ngpus](
-        uninitialized=True
-    )
+    var tt_out_bufs = Array[OutTileType, ngpus * ngpus](uninitialized=True)
     comptime for i in range(ngpus * ngpus):
         comptime device_idx = i // ngpus
         comptime input_idx = i % ngpus
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][input_idx],
             row_major(lengths[input_idx]),
-        )
+        ).as_unsafe_any_origin()
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
     var uniform = True
@@ -155,7 +163,7 @@ def all_gather_test[
     print("  Testing implementation with rank_sigs (P2P-capable)")
 
     for gpu_idx in range(ngpus):
-        var device_out = InlineArray[OutTileType, ngpus](uninitialized=True)
+        var device_out = Array[OutTileType, ngpus](uninitialized=True)
         comptime for src_idx in range(ngpus):
             device_out[src_idx] = tt_out_bufs[gpu_idx * ngpus + src_idx]
         allgather(
@@ -228,7 +236,7 @@ def grouped_all_gather_test[
     var out_bufs_list = List[List[DeviceBuffer[dtype]]](capacity=ngpus)
     var host_buffers = List[HostBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -268,21 +276,29 @@ def grouped_all_gather_test[
             )
         out_bufs_list.append(device_outputs^)
 
+    # TODO(MOCO-4346): `.as_unsafe_any_origin()` casts the tensors off the
+    # `List` interior origin; storing an interior-origin type into an
+    # uninitialized `Array` trips a CheckLifetimes over-rejection.
+    # Drop these casts once the compiler bug is fixed.
     comptime InTileType = type_of(
-        TileTensor(in_bufs_list[0], row_major(lengths[0])).as_immut()
+        TileTensor(in_bufs_list[0], row_major(lengths[0]))
+        .as_immut()
+        .as_unsafe_any_origin()
     )
-    var tt_in_bufs = InlineArray[InTileType, ngpus](uninitialized=True)
+    var tt_in_bufs = Array[InTileType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
-        tt_in_bufs[i] = TileTensor(
-            in_bufs_list[i], row_major(lengths[i])
-        ).as_immut()
+        tt_in_bufs[i] = (
+            TileTensor(in_bufs_list[i], row_major(lengths[i]))
+            .as_immut()
+            .as_unsafe_any_origin()
+        )
 
     comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0][0], row_major(lengths[0]))
+        TileTensor(
+            out_bufs_list[0][0], row_major(lengths[0])
+        ).as_unsafe_any_origin()
     )
-    var tt_out_bufs = InlineArray[OutTileType, ngpus * group_size](
-        uninitialized=True
-    )
+    var tt_out_bufs = Array[OutTileType, ngpus * group_size](uninitialized=True)
     comptime for i in range(ngpus * group_size):
         comptime device_idx = i // group_size
         comptime local_idx = i % group_size
@@ -291,14 +307,12 @@ def grouped_all_gather_test[
         tt_out_bufs[i] = TileTensor(
             out_bufs_list[device_idx][local_idx],
             row_major(lengths[input_idx]),
-        )
+        ).as_unsafe_any_origin()
 
     comptime for group_idx in range(ngpus // group_size):
         comptime group_start = group_idx * group_size
-        var group_in_bufs = InlineArray[InTileType, group_size](
-            uninitialized=True
-        )
-        var group_rank_sigs = InlineArray[
+        var group_in_bufs = Array[InTileType, group_size](uninitialized=True)
+        var group_rank_sigs = Array[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](uninitialized=True)
 
@@ -308,9 +322,7 @@ def grouped_all_gather_test[
 
         comptime for local_idx in range(group_size):
             comptime device_idx = group_start + local_idx
-            var device_out = InlineArray[OutTileType, group_size](
-                uninitialized=True
-            )
+            var device_out = Array[OutTileType, group_size](uninitialized=True)
             comptime for src_idx in range(group_size):
                 device_out[src_idx] = tt_out_bufs[
                     device_idx * group_size + src_idx

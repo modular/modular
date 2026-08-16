@@ -29,8 +29,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.primitives import block
+from max.gpu.host import DeviceContext
+from max.gpu.primitives import block
 from std.testing import assert_equal, assert_almost_equal, TestSuite
 
 
@@ -85,9 +85,9 @@ def run_case[
     var out_sum = ctx.enqueue_create_buffer[DType.float32](block_size)
 
     # Host input + reference.
-    var host_in = InlineArray[Float32, block_size](fill=0)
-    var ref_incl = InlineArray[Float32, block_size](fill=0)
-    var ref_excl = InlineArray[Float32, block_size](fill=0)
+    var host_in = Array[Float32, block_size](fill=0)
+    var ref_incl = Array[Float32, block_size](fill=0)
+    var ref_excl = Array[Float32, block_size](fill=0)
     var running = Float32(0)
     for i in range(block_size):
         var val = fill_active if i < n_active else Float32(0)
@@ -111,9 +111,9 @@ def run_case[
         block_dim=block_size,
     )
 
-    var got_incl = InlineArray[Float32, block_size](fill=0)
-    var got_excl = InlineArray[Float32, block_size](fill=0)
-    var got_sum = InlineArray[Float32, block_size](fill=0)
+    var got_incl = Array[Float32, block_size](fill=0)
+    var got_excl = Array[Float32, block_size](fill=0)
+    var got_sum = Array[Float32, block_size](fill=0)
     out_incl.enqueue_copy_to(Span(got_incl))
     out_excl.enqueue_copy_to(Span(got_excl))
     out_sum.enqueue_copy_to(Span(got_sum))

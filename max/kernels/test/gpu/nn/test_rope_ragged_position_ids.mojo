@@ -24,7 +24,7 @@ reference (and differs from the input -- the identity-collapse signature).
 
 from std.math import cos, sin
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
 from std.testing import assert_almost_equal, assert_true
@@ -92,7 +92,7 @@ def test_rope_ragged_position_ids[
     # `output_fn`.
     @always_inline
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) {var out_t} -> None:
         out_t.store[width=width](Coord(idx), val)
 

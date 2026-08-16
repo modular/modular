@@ -26,7 +26,7 @@ L1-rel < 1%).
 """
 
 from std.benchmark import keep
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 from std.time import perf_counter_ns
 from std.utils import IndexList

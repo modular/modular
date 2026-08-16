@@ -73,7 +73,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/hooks:print_hook",
-        "//max/tests/integration/graph:modular_graph_test",
+        "//max/tests/integration/test_common:modular_graph_test",
         requirement("numpy"),
         requirement("torch"),
         requirement("hypothesis"),
@@ -84,8 +84,10 @@ modular_py_test(
 _NN_LIGHT_GPU_TESTS = [
     "test_async_host_func_gpu.py",
     "test_completion_flag_gpu.py",
+    "test_graph_observes_pending_driver_work_gpu.py",
     "test_grouped_matmul_rowwise_fp8_gpu.py",
     "test_host_func_gpu.py",
+    "test_launch_trace_graph_gpu.py",
     "test_moe_gpu.py",
     "test_sleep_gpu.py",
     "test_slice_gpu.py",
@@ -115,6 +117,7 @@ modular_py_test(
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
+            "test_router_gate_mixed_gemv_gpu.py",
             "test_sgmv_kernels_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
         ],
@@ -127,6 +130,12 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    # Distinct MXFP8 / FP8-KV graphs are compiled. Shard so
+    # they run as parallel processes instead of serializing in one (keeps the
+    # per-shard wall-clock and peak memory down).
+    per_test_shard_count = {
+        "test_fused_qkv_mxfp8_matmul_gpu.py": 3,
+    },
     tags = [
         "gpu",
     ],
@@ -389,6 +398,33 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Split out of :amd_tests, which is tagged "manual" for an unrelated timeout
+# (GEX-2676) and so never ran this in CI.
+modular_py_test(
+    name = "router_gate_mixed_gemv_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_router_gate_mixed_gemv_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
         requirement("torch"),
     ],
 )

@@ -33,6 +33,7 @@
 # against a vendor-BLAS + host-side reference to catch numerical drift.
 # ===----------------------------------------------------------------------=== #
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -45,7 +46,7 @@ from std.sys import get_defined_bool, get_defined_int, size_of
 
 from internal_utils import assert_almost_equal
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import sqrt
 from layout import Coord, Idx, TileTensor, row_major
 
@@ -208,19 +209,19 @@ def main() raises:
             transpose_b=True,
         )
 
-        @parameter
         @always_inline
-        @__copy_capture(
-            cb_a,
-            cb_b,
-            cb_gamma,
-            cb_y,
-            cb_normed,
-            cb_unnormed,
-            eps,
-            counter_buf,
-        )
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(
+            ctx: DeviceContext, iteration: Int
+        ) raises {
+            mut cb_a,
+            mut cb_b,
+            mut cb_gamma,
+            mut cb_y,
+            mut cb_normed,
+            mut cb_unnormed,
+            mut counter_buf,
+            imm,
+        }:
             var a_tensor = TileTensor(cb_a.offset_ptr(iteration), a_shape)
             var b_tensor = TileTensor(cb_b.offset_ptr(iteration), b_shape)
             var gamma_tensor = TileTensor(
@@ -261,10 +262,10 @@ def main() raises:
                     ctx,
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut b: Bencher) raises:
-            b.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         var bw = ThroughputMeasure(BenchMetric.bytes, total_bytes)
 

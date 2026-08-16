@@ -15,13 +15,17 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from std.memory import memcmp
+from std.memory import unsafe_memcmp
 ```
 """
 
-
 from std.math import iota
 from std.memory.unsafe_pointer import unsafe_cast
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 from std.sys import _libc as libc
 from std.ffi import external_call
 from std.sys import (
@@ -46,13 +50,13 @@ from std.algorithm import vectorize
 def _memcmp_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: ImmPointer[Scalar[dtype], ...],
+    s2: ImmPointer[Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     for i in range(count):
-        var s1i = s1[i]
-        var s2i = s2[i]
+        var s1i = s1[unsafe_offset=i]
+        var s2i = s2[unsafe_offset=i]
         if s1i != s2i:
             return 1 if s1i > s2i else -1
     return 0
@@ -62,15 +66,15 @@ def _memcmp_impl_unconstrained[
 def _memcmp_opt_impl_unconstrained[
     dtype: DType, //
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: ImmPointer[Scalar[dtype], ...],
+    s2: ImmPointer[Scalar[dtype], ...],
     count: Int,
 ) -> Int:
     comptime simd_width = simd_width_of[dtype]()
     if count < simd_width:
         for i in range(count):
-            var s1i = s1[i]
-            var s2i = s2[i]
+            var s1i = s1[unsafe_offset=i]
+            var s2i = s2[unsafe_offset=i]
             if s1i != s2i:
                 return 1 if s1i > s2i else -1
         return 0
@@ -78,8 +82,8 @@ def _memcmp_opt_impl_unconstrained[
     var last = count - simd_width
 
     for i in range(0, last, simd_width):
-        var s1i = s1.load[width=simd_width](i)
-        var s2i = s2.load[width=simd_width](i)
+        var s1i = s1.unsafe_load[width=simd_width](i)
+        var s2i = s2.unsafe_load[width=simd_width](i)
         var diff = s1i.ne(s2i)
         if any(diff):
             var index = Int(
@@ -90,8 +94,8 @@ def _memcmp_opt_impl_unconstrained[
             )
             return -1 if s1i[index] < s2i[index] else 1
 
-    var s1i = s1.load[width=simd_width](last)
-    var s2i = s2.load[width=simd_width](last)
+    var s1i = s1.unsafe_load[width=simd_width](last)
+    var s2i = s2.unsafe_load[width=simd_width](last)
     var diff = s1i.ne(s2i)
     if any(diff):
         var index = Int(
@@ -108,8 +112,8 @@ def _memcmp_opt_impl_unconstrained[
 def _memcmp_impl[
     dtype: DType
 ](
-    s1: UnsafePointer[mut=False, Scalar[dtype], ...],
-    s2: UnsafePointer[mut=False, Scalar[dtype], ...],
+    s1: ImmPointer[Scalar[dtype], ...],
+    s2: ImmPointer[Scalar[dtype], ...],
     count: Int,
 ) -> Int where dtype.is_integral():
     if __is_run_in_comptime_interpreter:
@@ -119,11 +123,11 @@ def _memcmp_impl[
 
 
 @always_inline
-def memcmp[
+def unsafe_memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
-    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s1: ImmPointer[type, _, address_space=address_space],
+    s2: ImmPointer[type, _, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -146,12 +150,14 @@ def memcmp[
 
     comptime if size_of[type]() % size_of[DType.int32]() == 0:
         return _memcmp_impl(
-            s1.bitcast[Int32](),
-            s2.bitcast[Int32](),
+            s1.unsafe_bitcast[Int32](),
+            s2.unsafe_bitcast[Int32](),
             byte_count // size_of[DType.int32](),
         )
 
-    return _memcmp_impl(s1.bitcast[Byte](), s2.bitcast[Byte](), byte_count)
+    return _memcmp_impl(
+        s1.unsafe_bitcast[Byte](), s2.unsafe_bitcast[Byte](), byte_count
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -161,8 +167,8 @@ def memcmp[
 
 @always_inline
 def _memcpy_impl(
-    dest_data: UnsafePointer[mut=True, Byte, ...],
-    src_data: UnsafePointer[mut=False, Byte, ...],
+    dest_data: MutPointer[Byte, ...],
+    src_data: ImmPointer[Byte, ...],
     n: Int,
 ):
     """Copies a memory area.
@@ -173,8 +179,10 @@ def _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    def copy[width: Int](offset: Int) {read}:
-        dest_data.store(offset, src_data.load[width=width](offset))
+    def copy[width: Int](offset: Int) {imm}:
+        dest_data.unsafe_store(
+            offset, src_data.unsafe_load[width=width](offset)
+        )
 
     comptime if is_gpu():
         vectorize[simd_bit_width()](n, copy)
@@ -184,35 +192,41 @@ def _memcpy_impl(
     if n < 5:
         if n == 0:
             return
-        dest_data[0] = src_data[0]
-        dest_data[n - 1] = src_data[n - 1]
+        dest_data[unsafe_offset=0] = src_data[unsafe_offset=0]
+        dest_data[unsafe_offset=n - 1] = src_data[unsafe_offset=n - 1]
         if n <= 2:
             return
-        dest_data[1] = src_data[1]
-        dest_data[n - 2] = src_data[n - 2]
+        dest_data[unsafe_offset=1] = src_data[unsafe_offset=1]
+        dest_data[unsafe_offset=n - 2] = src_data[unsafe_offset=n - 2]
         return
 
     if n <= 16:
         if n >= 8:
             var ui64_size = size_of[UInt64]()
-            dest_data.bitcast[UInt64]().store[alignment=1](
-                0, src_data.bitcast[UInt64]().load[alignment=1](0)
+            dest_data.unsafe_bitcast[UInt64]().unsafe_store[alignment=1](
+                0, src_data.unsafe_bitcast[UInt64]().unsafe_load[alignment=1](0)
             )
-            (dest_data + n - ui64_size).bitcast[UInt64]().store[alignment=1](
+            dest_data.unsafe_offset(n - ui64_size).unsafe_bitcast[
+                UInt64
+            ]().unsafe_store[alignment=1](
                 0,
-                (src_data + n - ui64_size)
-                .bitcast[UInt64]()
-                .load[alignment=1](0),
+                src_data.unsafe_offset(n - ui64_size)
+                .unsafe_bitcast[UInt64]()
+                .unsafe_load[alignment=1](0),
             )
             return
 
         var ui32_size = size_of[UInt32]()
-        dest_data.bitcast[UInt32]().store[alignment=1](
-            0, src_data.bitcast[UInt32]().load[alignment=1](0)
+        dest_data.unsafe_bitcast[UInt32]().unsafe_store[alignment=1](
+            0, src_data.unsafe_bitcast[UInt32]().unsafe_load[alignment=1](0)
         )
-        (dest_data + n - ui32_size).bitcast[UInt32]().store[alignment=1](
+        dest_data.unsafe_offset(n - ui32_size).unsafe_bitcast[
+            UInt32
+        ]().unsafe_store[alignment=1](
             0,
-            (src_data + n - ui32_size).bitcast[UInt32]().load[alignment=1](0),
+            src_data.unsafe_offset(n - ui32_size)
+            .unsafe_bitcast[UInt32]()
+            .unsafe_load[alignment=1](0),
         )
         return
 
@@ -235,16 +249,11 @@ def _memcpy_impl(
 @always_inline
 def unsafe_memcpy[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[T, _],
-    count: Int,
-):
+](*, dest: MutPointer[T, _], src: Pointer[T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
     The dest and src memory must **not** overlap. For potentially
-    overlapping memory regions, use `memmove`.
+    overlapping memory regions, use `unsafe_memmove`.
 
     Parameters:
         T: The element type.
@@ -258,10 +267,13 @@ def unsafe_memcpy[
         `dest` and `src` must be valid for at least `count * size_of[T]()`
         bytes.
     """
+    if count == 0:
+        return
+
     var n = count * size_of[T]()
 
-    var dest_bytes = dest.bitcast[Byte]()
-    var src_bytes = src.bitcast[Byte]()
+    var dest_bytes = dest.unsafe_bitcast[Byte]()
+    var src_bytes = src.unsafe_bitcast[Byte]()
 
     if __is_run_in_comptime_interpreter:
         llvm_intrinsic["llvm.memcpy", NoneType](
@@ -271,56 +283,18 @@ def unsafe_memcpy[
         _memcpy_impl(dest_bytes, src_bytes, n)
 
 
-@always_inline
-@deprecated(use=unsafe_memcpy)
-def memcpy[
-    T: AnyType
-](
-    *,
-    dest: OptionalUnsafePointer[mut=True, T, _],
-    src: OptionalUnsafePointer[T, _],
-    count: Int,
-):
-    """Copy `count * size_of[T]()` bytes from src to dest.
-
-    The dest and src memory must **not** overlap. For potentially
-    overlapping memory regions, use `memmove`.
-
-    Parameters:
-        T: The element type.
-
-    Args:
-        dest: The destination pointer.
-        src: The source pointer.
-        count: The number of elements to copy.
-
-    Safety:
-        `dest` and `src` must be valid for at least `count * size_of[T]()`
-        bytes. `dest` or `src` can only be `None` when `count == 0`.
-    """
-    if count == 0:
-        return
-
-    unsafe_memcpy(dest=dest.unsafe_value(), src=src.unsafe_value(), count=count)
-
-
 # ===-----------------------------------------------------------------------===#
 # memmove
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-def memmove[
+def unsafe_memmove[
     T: AnyType
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: MutPointer[T, _], src: ImmPointer[T, _], count: Int,):
     """Copy `count * size_of[T]()` bytes from src to dest.
 
-    Unlike `memcpy`, the memory regions are allowed to overlap.
+    Unlike `unsafe_memcpy`, the memory regions are allowed to overlap.
 
     Parameters:
         T: The element type.
@@ -333,15 +307,37 @@ def memmove[
     var n = count * size_of[T]()
     if __is_run_in_comptime_interpreter:
         for i in range(n):
-            (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
+            dest.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_store(
+                src.unsafe_bitcast[Byte]().unsafe_offset(i).unsafe_load()
+            )
     else:
         llvm_intrinsic["llvm.memmove", NoneType](
             # <dest>, <src>, <len>, <isvolatile>
-            dest.bitcast[Byte](),
-            src.bitcast[Byte](),
+            dest.unsafe_bitcast[Byte](),
+            src.unsafe_bitcast[Byte](),
             n,
             False,
         )
+
+
+@always_inline
+@deprecated(use=unsafe_memmove)
+def memmove[
+    T: AnyType
+](*, dest: MutPointer[T, _], src: ImmPointer[T, _], count: Int,):
+    """Copy `count * size_of[T]()` bytes from src to dest.
+
+    Unlike `memcpy`, the memory regions are allowed to overlap.
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+    """
+    unsafe_memmove(dest=dest, src=src, count=count)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -350,26 +346,30 @@ def memmove[
 
 
 @always_inline("nodebug")
-def _memset_impl(
-    ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
-):
-    def fill[width: Int](offset: Int) {read}:
-        ptr.store(offset, SIMD[DType.uint8, width](value))
+def _memset_impl(ptr: MutPointer[Byte, ...], value: Byte, count: Int):
+    def fill[width: Int](offset: Int) {imm}:
+        ptr.unsafe_store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
     vectorize[simd_width](count, fill)
 
 
 @always_inline
-def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
+def unsafe_memset(ptr: MutPointer[...], value: Byte, count: Int):
     """Fills memory with the given value.
 
+    Prefer the safe, bounds-carrying `Span.fill()` (for example,
+    `my_span.fill(value)` on a `Span[Byte]`), which works in every address
+    space. This raw entry point fills at byte granularity, so unlike
+    `Span.fill()` it applies to elements of any type, including types that
+    cannot cross an address-space boundary as a value.
+
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
         value: The value to fill with.
         count: Number of elements to fill (in elements, not bytes).
     """
-    _memset_impl(ptr.bitcast[Byte](), value, count * size_of[ptr.type]())
+    _memset_impl(ptr.unsafe_bitcast[Byte](), value, count * size_of[ptr.T]())
 
 
 # ===-----------------------------------------------------------------------===#
@@ -378,20 +378,25 @@ def memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
 
 
 @always_inline
-def memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
+def unsafe_memset_zero(ptr: MutPointer[...], count: Int):
     """Fills memory with zeros.
 
+    Prefer the safe, bounds-carrying `Span.fill(0)`, which works in every
+    address space. This raw entry point fills at byte granularity, so unlike
+    `Span.fill()` it applies to elements of any type, including types that
+    cannot cross an address-space boundary as a value.
+
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
         count: Number of elements to fill (in elements, not bytes).
     """
-    memset(ptr, 0, count)
+    unsafe_memset(ptr, 0, count)
 
 
 @always_inline
-def memset_zero[
+def unsafe_memset_zero[
     dtype: DType, //, *, count: Int
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]):
+](ptr: MutPointer[Scalar[dtype], ...]):
     """Fills memory with zeros.
 
     Parameters:
@@ -399,14 +404,14 @@ def memset_zero[
         count: Number of elements to fill (in elements, not bytes).
 
     Args:
-        ptr: UnsafePointer to the beginning of the memory block to fill.
+        ptr: Pointer to the beginning of the memory block to fill.
     """
 
     comptime if count > 128:
-        return memset_zero(ptr, count)
+        return unsafe_memset_zero(ptr, count)
 
-    def fill[width: Int](offset: Int) {read}:
-        ptr.store(offset, SIMD[dtype, width](0))
+    def fill[width: Int](offset: Int) {imm}:
+        ptr.unsafe_store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
 
@@ -425,12 +430,10 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out result: Optional[
-        UnsafePointer[
-            type,
-            MutUntrackedOrigin,
-            address_space=AddressSpace.GENERIC,
-        ]
+    out result: OptionalPointer[
+        type,
+        MutUntrackedOrigin,
+        address_space=AddressSpace.GENERIC,
     ],
 ):
     comptime MlirPointerType = type_of(result).T._mlir_type
@@ -452,9 +455,9 @@ def _malloc[
             alignment.__mlir_index__(), size.__mlir_index__()
         )
 
-    # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+    # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
     # represented exactly as the `MlirPointerType` so we can do a bit-cast.
-    result = UnsafePointer(to=mlir_pointer).bitcast[type_of(result)]()[]
+    result = Pointer(to=mlir_pointer).unsafe_bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -463,22 +466,28 @@ def _malloc[
 
 
 @always_inline
-def _free(ptr: UnsafePointer[mut=True, ...]):
+def _free(ptr: MutPointer[...]):
     comptime if is_gpu():
-        libc.free(ptr.bitcast[NoneType]())
+        libc.free(ptr.unsafe_bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr._get_kgen_pointer())
 
 
 @always_inline
-def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
+def _free(ptr: OptionalPointer[mut=True, ...]):
     comptime if is_gpu():
-        libc.free(unsafe_cast[Type=NoneType, origin=MutUntrackedOrigin](ptr))
+        # SAFETY: `Optional[Pointer]`'s niche layout is identical regardless of
+        # pointee type, so reinterpret to the erased type `libc.free` expects.
+        libc.free(
+            Pointer(to=ptr).unsafe_bitcast[
+                OptionalPointer[mut=True, NoneType, MutAnyOrigin]
+            ]()[]
+        )
     else:
         comptime KgenPointerType = type_of(ptr).T._mlir_type
-        # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+        # SAFETY: Due to the niche optimization, `Optional[Pointer]` is
         # represented exactly as the `KgenPointerType` so we can do a bit-cast.
-        var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
+        var kgen_pointer = Pointer(to=ptr).unsafe_bitcast[KgenPointerType]()[]
         __mlir_op.`pop.aligned_free`(kgen_pointer)
 
 
@@ -488,6 +497,7 @@ def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
 
 
 @always_inline("nodebug")
+@deprecated(use=IsTriviallyMovable)
 def is_trivially_movable[T: Movable]() -> Bool:
     """Returns whether `T` has a trivial move constructor.
 
@@ -506,6 +516,7 @@ def is_trivially_movable[T: Movable]() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated(use=IsTriviallyCopyable)
 def is_trivially_copyable[T: Copyable]() -> Bool:
     """Returns whether `T` has a trivial copy constructor.
 
@@ -524,12 +535,13 @@ def is_trivially_copyable[T: Copyable]() -> Bool:
 
 
 @always_inline("nodebug")
+@deprecated(use=IsTriviallyDeinitable)
 def is_trivially_deletable[T: AnyType]() -> Bool:
     """Returns whether `T` has a trivial destructor.
 
     A destructor is trivial when the compiler generates it and all of `T`'s
     fields are themselves trivially destructible. In practice this means
-    `__del__` is a no-op. A non-`ImplicitlyDeletable` (linear) type returns `False`
+    `__deinit__` is a no-op. A non-`Deinitable` (linear) type returns `False`
 
     Parameters:
         T: The type to check.
@@ -537,7 +549,7 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
     Returns:
         `True` if `T` has a trivial destructor.
     """
-    comptime if conforms_to(T, ImplicitlyDeletable):
+    comptime if conforms_to(T, Deinitable):
         return T.__del__is_trivial
     else:
         return False
@@ -549,17 +561,12 @@ def is_trivially_deletable[T: AnyType]() -> Bool:
 
 
 @always_inline
-def uninit_move_n[
+def unsafe_uninit_move_n[
     T: Movable,
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=True, T, _],
-    count: Int,
-):
+](*, dest: MutPointer[T, _], src: MutPointer[T, _], count: Int,):
     """Move `count` values from `src` into memory at `dest`.
 
     This function transfers ownership of `count` values from the source memory
@@ -568,22 +575,22 @@ def uninit_move_n[
     initialized.
 
     For types with trivial move constructors, this is optimized to a single
-    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
-    it manually moves each element.
+    `unsafe_memcpy` (or `unsafe_memmove` when `overlapping=True`) operation.
+    Otherwise, it manually moves each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to move, which must be `Movable`.
         overlapping: If False, the function assumes `src` and `dest` do not
             overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `memmove` to handle this
-            safely.
+            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
+            this safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -602,28 +609,23 @@ def uninit_move_n[
         behavior.
     """
 
-    comptime if is_trivially_movable[T]():
+    comptime if IsTriviallyMovable[T]:
         comptime if overlapping:
-            memmove(dest=dest, src=src, count=count)
+            unsafe_memmove(dest=dest, src=src, count=count)
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).init_pointee_move_from(src + i)
+            dest.unsafe_offset(i).unsafe_write_move_from(src.unsafe_offset(i))
 
 
 @always_inline
-def uninit_copy_n[
+def unsafe_uninit_copy_n[
     T: Copyable,
     //,
     *,
     overlapping: Bool,
-](
-    *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
-    count: Int,
-):
+](*, dest: MutPointer[T, _], src: ImmPointer[T, _], count: Int,):
     """Copy `count` values from `src` into memory at `dest`.
 
     This function creates copies of `count` values from the source memory in the
@@ -631,22 +633,22 @@ def uninit_copy_n[
     valid and initialized.
 
     For types with trivial copy constructors, this is optimized to a single
-    `unsafe_memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise,
-    it calls `unsafe_write()` on each element.
+    `unsafe_memcpy` (or `unsafe_memmove` when `overlapping=True`) operation.
+    Otherwise, it calls `unsafe_write()` on each element.
 
     The destination memory is treated as a raw span of bits to write to. Any
     existing values at `dest` are silently overwritten without being destroyed.
     For types with non-trivial destructors, this can cause memory leaks. Call
-    `destroy_n()` on the destination region first if it contains initialized
-    values that need cleanup. For trivial types like `Int`, this is not a
-    concern.
+    `unsafe_destroy_n()` on the destination region first if it contains
+    initialized values that need cleanup. For trivial types like `Int`, this is
+    not a concern.
 
     Parameters:
         T: The type of values to copy, which must be `Copyable`.
         overlapping: If False, the function assumes `src` and `dest` do not
             overlap and uses `unsafe_memcpy`. If True, the function assumes
-            `src` and `dest` may overlap and uses `memmove` to handle this
-            safely.
+            `src` and `dest` may overlap and uses `unsafe_memmove` to handle
+            this safely.
 
     Args:
         dest: Pointer to the destination memory region.
@@ -665,20 +667,18 @@ def uninit_copy_n[
         behavior.
     """
 
-    comptime if is_trivially_copyable[T]():
+    comptime if IsTriviallyCopyable[T]:
         comptime if overlapping:
-            memmove(dest=dest, src=src, count=count)
+            unsafe_memmove(dest=dest, src=src, count=count)
         else:
             unsafe_memcpy(dest=dest, src=src, count=count)
     else:
         for i in range(count):
-            (dest + i).unsafe_write(copy=(src + i)[])
+            dest.unsafe_offset(i).unsafe_write(copy=src.unsafe_offset(i)[])
 
 
 @always_inline
-def destroy_n[
-    T: ImplicitlyDeletable
-](pointer: UnsafePointer[mut=True, T, _], count: Int):
+def unsafe_destroy_n[T: Deinitable](pointer: MutPointer[T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving
@@ -688,7 +688,7 @@ def destroy_n[
     Otherwise, it calls `unsafe_deinit_pointee()` on each element.
 
     Parameters:
-        T: The type of values to destroy, which must be `ImplicitlyDeletable`.
+        T: The type of values to destroy, which must be `Deinitable`.
 
     Args:
         pointer: Pointer to the memory region containing values to destroy.
@@ -702,12 +702,12 @@ def destroy_n[
         must not be read or destroyed again until re-initialized.
     """
 
-    comptime if is_trivially_deletable[T]():
+    comptime if IsTriviallyDeinitable[T]:
         # Trivial destructors don't need to be called!
         pass
     else:
         for i in range(count):
-            (pointer + i).unsafe_deinit_pointee()
+            pointer.unsafe_offset(i).unsafe_deinit_pointee()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -717,7 +717,7 @@ def destroy_n[
 
 @always_inline("nodebug")
 def forget_deinit[T: AnyType](var value: T):
-    """Takes ownership and skips running `__del__` deinitializers.
+    """Takes ownership and skips running `__deinit__` deinitializers.
 
     This is a low-level operation, and should not be used unless necessary.
     Consider if refactoring to avoid needing this function would be more
@@ -743,8 +743,8 @@ def forget_deinit[T: AnyType](var value: T):
 
     @fieldwise_init
     struct Noisy:
-        def __del__(deinit self):
-            print("@ Noisy.__del__: Noisy is being deleted!")
+        def __deinit__(deinit self):
+            print("@ Noisy.__deinit__: Noisy is being deleted!")
 
     def main():
         var noisy = Noisy()
@@ -763,18 +763,18 @@ def forget_deinit[T: AnyType](var value: T):
     struct Parent:
         var child: Child
 
-        def __del__(deinit self):
-            print("@ Parent.__del__")
+        def __deinit__(deinit self):
+            print("@ Parent.__deinit__")
 
     @fieldwise_init
     struct Child(Movable):
-        def __del__(deinit self):
-            print("@ Child.__del__")
+        def __deinit__(deinit self):
+            print("@ Child.__deinit__")
 
     def main():
         var parent = Parent(Child())
 
-        # Neither Parent.__del__ nor Child.__del__ is called.
+        # Neither Parent.__deinit__ nor Child.__deinit__ is called.
         forget_deinit(parent^)
     ```
     """

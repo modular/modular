@@ -59,7 +59,7 @@ Two hard M5 constraints, both satisfied by the width-16 decode:
 
 from std.collections import Optional
 from std.gpu import WARP_SIZE, global_idx, lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import std.gpu.primitives.warp as warp
 from std.utils import IndexList
@@ -86,15 +86,35 @@ def fp4_gemv_kernel[
     scales: TileTensor[
         DType.float8_e4m3fn, s_layout, ImmutAnyOrigin
     ],  # [N,K//16]
-    n: Int,
-    k: Int,
+    n_arg: Int32,
+    k_arg: Int32,
 ):
     """One warp per output column; 32 lanes stride down K decoding FP4 -> fp32.
 
     `c` is `[1, N]`, `a` the bf16 activation `[1, K]`, `packed` the FP4 weight
     `[N, K//2]` (lo-nibble first), `scales` the FP8-E4M3 block scales
     `[N, ceil(K/16)]`. Accumulation is fp32.
+
+    Parameters:
+        c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
+        c_layout: `TileTensor` layout of the output `c`.
+        a_layout: `TileTensor` layout of the activation `a`.
+        p_layout: `TileTensor` layout of the packed FP4 weight.
+        s_layout: `TileTensor` layout of the FP8 block scales.
+        elementwise_lambda_fn: Optional fused epilogue applied on the
+            width-1 store.
+
+    Args:
+        c: Output tile tensor `[1, N]` receiving the GEMV result.
+        a: Bf16 activation tile tensor `[1, K]`, the single activation row.
+        packed: FP4-packed weight tile tensor `[N, K//2]` (lo-nibble first).
+        scales: FP8-E4M3 block scales tile tensor `[N, ceil(K/16)]`.
+        n_arg: Number of output columns (rows of the transposed weight).
+        k_arg: Inner dimension length; must be a multiple of
+            `NVFP4_SF_VECTOR_SIZE` (16).
     """
+    var n = Int(n_arg)
+    var k = Int(k_arg)
     comptime SF = NVFP4_SF_VECTOR_SIZE  # 16 nibbles / scale block
     comptime BYTES = SF // 2  # 8 packed bytes / block
 
@@ -171,6 +191,16 @@ def enqueue_apple_fp4_gemv[
         c_type: Output element type (fp16, bf16, fp32). Accumulation is fp32.
         elementwise_lambda_fn: Optional fused epilogue (AMD's `(row, col)`
             contract), applied on the width-1 store.
+
+    Args:
+        c: Output tile tensor `[1, N]` receiving the GEMV result.
+        a: Bf16 activation tile tensor `[1, K]`, the single activation row.
+        packed: FP4-packed weight tile tensor `[N, K//2]` (lo-nibble first).
+        scales: FP8-E4M3 block scales tile tensor `[N, ceil(K/16)]`.
+        n: Number of output columns (rows of the transposed weight).
+        k: Inner dimension length; must be a multiple of
+            `NVFP4_SF_VECTOR_SIZE` (16).
+        ctx: `DeviceContext` used to enqueue the kernel on the device.
     """
     comptime BLK = 256  # 8 warps / threadgroup
     var grid = ceildiv(n * WARP_SIZE, BLK)
@@ -188,8 +218,8 @@ def enqueue_apple_fp4_gemv[
         a,
         packed,
         scales,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=grid,
         block_dim=BLK,
     )

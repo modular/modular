@@ -59,8 +59,8 @@ SKIP_MODELS: set[str] = {
     "modularai/llama-3.1-405b-instruct-autofp8",
     "deepseek-ai/deepseek-r1",
     "deepseek-ai/deepseek-v3.1-terminus",
-    "nvidia/deepseek-r1-0528-nvfp4-v2",
     "amd/kimi-k2.5-mxfp4",
+    "nvidia/kimi-k2.7-code-nvfp4",
 }
 
 

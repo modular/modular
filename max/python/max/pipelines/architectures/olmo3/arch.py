@@ -28,10 +28,8 @@ olmo3_arch = SupportedArchitecture(
     example_repo_ids=[
         "allenai/Olmo-3-7B-Instruct",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=Olmo3Config.DEFAULT_ENCODING,
+    supported_encodings=Olmo3Config.SUPPORTED_ENCODINGS,
     pipeline_model=Olmo3Model,
     batching=Olmo3BatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
@@ -39,7 +37,6 @@ olmo3_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=False,
-    rope_type="yarn",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
