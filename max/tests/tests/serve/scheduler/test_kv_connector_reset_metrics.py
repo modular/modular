@@ -19,15 +19,13 @@ from collections.abc import Sequence
 
 from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.pipelines.kv_cache.connectors.local_connector import LocalConnector
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 
 
@@ -66,7 +64,6 @@ class _CountingConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         return CompletedTransfer(TransferDirection.OFFLOAD)
@@ -88,20 +85,12 @@ class _CountingConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def num_host_blocks(self) -> int:
-        return 0
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -130,7 +119,6 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
     connector._d2h_blocks_copied = 5
     connector._h2d_blocks_copied = 2
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -149,32 +137,6 @@ def test_block_manager_reset_metrics_clears_connector_counters() -> None:
     assert bm.metrics.d2h_blocks_copied == 3
 
 
-def test_local_connector_reset_metrics() -> None:
-    connector = LocalConnector.__new__(LocalConnector)
-    connector._h2d_blocks_copied = 4
-    connector._d2h_blocks_copied = 7
-
-    connector.reset_metrics()
-
-    assert connector.metrics.h2d_blocks_copied == 0
-    assert connector.metrics.d2h_blocks_copied == 0
-
-
-def test_tiered_connector_reset_metrics() -> None:
-    connector = TieredConnector.__new__(TieredConnector)
-    connector._h2d_blocks_copied = 1
-    connector._d2h_blocks_copied = 2
-    connector._disk_blocks_written = 3
-    connector._disk_blocks_read = 4
-
-    connector.reset_metrics()
-
-    assert connector._h2d_blocks_copied == 0
-    assert connector._d2h_blocks_copied == 0
-    assert connector._disk_blocks_written == 0
-    assert connector._disk_blocks_read == 0
-
-
 def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     """Models BatchMetrics.create(): sample aggregated metrics, then reset.
 
@@ -183,7 +145,6 @@ def test_scheduler_sampling_cycle_reports_per_batch_deltas() -> None:
     """
     connector = _CountingConnector()
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,
@@ -239,6 +200,36 @@ def test_kv_cache_metrics_add_sums_dkv_health_fields() -> None:
     assert total.dkv_degraded
 
 
+def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:
+    """device_blocks_served and cross_replica_{blocks,bytes}_copied sum
+    across replicas (CENG-845 G0/G0-DP tier-attribution counters)."""
+    replica_0 = KVCacheMetrics(
+        device_blocks_served=5,
+        cross_replica_blocks_copied=2,
+        cross_replica_bytes_copied=1024,
+        h2d_blocks_copied=10,
+        disk_blocks_read=3,
+    )
+    replica_1 = KVCacheMetrics(
+        device_blocks_served=7,
+        cross_replica_blocks_copied=1,
+        cross_replica_bytes_copied=512,
+        h2d_blocks_copied=4,
+        disk_blocks_read=1,
+    )
+
+    total = replica_0 + replica_1
+
+    assert total.device_blocks_served == 12
+    assert total.cross_replica_blocks_copied == 3
+    assert total.cross_replica_bytes_copied == 1536
+    assert total.h2d_blocks_copied == 14
+    assert total.disk_blocks_read == 4
+    # defaults stay zero
+    assert KVCacheMetrics().device_blocks_served == 0
+    assert KVCacheMetrics().cross_replica_bytes_copied == 0
+
+
 def test_kv_cache_metrics_dkv_degraded_predicate() -> None:
     """dkv_degraded is true only with a dKV tier and a client not connected."""
     # no dKV tier attached
@@ -267,7 +258,6 @@ def test_dkv_health_persists_across_sample_and_reset() -> None:
     connector._total_clients = 2
     connector._reconnect_attempts = 3
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         enable_prefix_caching=True,

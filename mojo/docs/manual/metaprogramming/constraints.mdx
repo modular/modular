@@ -4,6 +4,10 @@ sidebar_label: Constraints
 description: How to use Mojo's constraint system to express program guarantees.
 ---
 
+<!-- markdownlint-disable MD033 MD045 MD024-->
+<!-- FIXME: Add alt text to images -->
+<!-- FIXME: Summary is used twice as a heading -->
+
 Mojo's constraint system lets you express program guarantees that go beyond
 what the type system provides. This page explains how to use this system
 effectively.
@@ -54,7 +58,7 @@ You can use constraints in the following contexts:
   `struct MyContainer[T: AnyType](Copyable where conforms_to(T, Copyable)):`
 
   You'll use this form, called *conditional trait conformance*, when defining
-  generic types. For details, see the section on
+  parameterized types. For details, see the section on
   [conditional trait conformances](/docs/manual/generics/#conditional-trait-conformance).
 
 ## Symbolic propositions
@@ -180,7 +184,7 @@ comptime assert x > 0, "x must be greater than 0."
 ```
 
 The message is optional. If the condition evaluates to false at compile time,
-compilation fails and the compiler shows the message (or a generic message if
+compilation fails and the compiler shows the message (or a default message if
 none is specified).
 
 Mojo adds the asserted condition to the list of "known true" propositions for
@@ -548,3 +552,5 @@ def create_list_from_span[lo: Int, hi: Int]() -> Optional[List[hi - lo]]:
   1. Add a constraint to push the requirement onto their own callers.
   2. Branch on the condition (`comptime if`).
   3. Assert an invariant (`comptime assert`).
+
+<!-- markdownlint-enable MD033 MD045 MD024 -->

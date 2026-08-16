@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,32 +21,32 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod_unchecked
 from std.sys import align_of, size_of
 
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
     cluster_wait,
     cluster_arrive_relaxed,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, lane_id, warp_id as get_warp_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     async_copy_arrive,
     umma_arrive_peer_cta,
     named_barrier,
@@ -54,7 +54,7 @@ from std.gpu.sync import (
     syncwarp,
     umma_arrive_leader_cta,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     CoordLike,
@@ -1387,81 +1387,15 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     workspace: Span[UInt64, MutAnyOrigin],
     alpha: Float32,
     sfb_global_ptr: UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin],
-    sfb_batch_stride: Int,
-    sfb_n_stride: Int,
-    sfb_k_tiles: Int,
-    sfb_n_total: Int,
+    sfb_batch_stride: Int32,
+    sfb_n_stride: Int32,
+    sfb_k_tiles: Int32,
+    sfb_n_total: Int32,
 ):
-    """Warp-specialized TMA + UMMA kernel for small-BN block-scaled matmul on SM100.
-
-    Partitions the block's warps into MainLoad (TMA for A/B/SFA), SfbLoad
-    (cp.async for SFB), SfbReady (2CTA cross-CTA SFB barrier), Mma, Scheduler
-    (CLC tile scheduling), and Epilogue (TMEM drain + TMA store) roles, and
-    drives them through pipelined producer/consumer mbarriers to compute
-    `C = alpha * (A @ B)` with block-scaled (MXFP8 or NVFP4) operands.
-
-    Parameters:
-        a_type: Element dtype of the A operand matrix.
-        b_type: Element dtype of the B operand matrix.
-        c_type: Element dtype of the C output matrix; cannot be
-            `float32`.
-        sfa_dtype: Element dtype of the A scale factors.
-        sfb_dtype: Element dtype of the B scale factors.
-        a_rank: Tensor rank of the A operand TMA descriptor.
-        a_tile_shape: Per-tile shape of the A TMA load.
-        a_desc_shape: Full descriptor shape of the A TMA load.
-        b_rank: Tensor rank of the B operand TMA descriptor.
-        b_tile_shape: Per-tile shape of the B TMA load.
-        b_desc_shape: Full descriptor shape of the B TMA load.
-        c_rank: Tensor rank of the C output TMA descriptor.
-        c_tile_shape: Per-tile shape of the C TMA store.
-        c_desc_shape: Full descriptor shape of the C TMA store.
-        sfa_tma_dtype: Element dtype used for the SFA TMA descriptor; may
-            differ from `sfa_dtype` (for example `uint16` for 4D TMA).
-        sfa_rank: Tensor rank of the SFA TMA descriptor.
-        sfa_tile_shape: Per-tile shape of the SFA TMA load.
-        sfa_desc_shape: Full descriptor shape of the SFA TMA load.
-        transpose_b: Whether B is stored in K-major (transposed) layout;
-            must be `True`.
-        config: Kernel configuration controlling tile shapes, pipeline
-            stages, cluster geometry, and swizzle modes.
-        cluster_shape: Cluster dimensions in (M, N, K) thread blocks
-            (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Fused elementwise compute lambda
-            applied during the epilogue (defaults to `None`).
-        elementwise_lambda_fn: Fused elementwise epilogue lambda applied
-            to the output tile (defaults to `None`).
-        pdl_level: Programmatic dependent launch level controlling
-            dependent grid synchronization (defaults to `PDLLevel()`).
-        max_profiled_tiles_per_SM: Maximum number of tiles to profile per
-            SM; 0 disables profiling (defaults to 0).
-
-    Args:
-        a_tma_op: TMA tensor tile descriptor for loading A from global
-            memory.
-        b_tma_op: TMA tensor tile descriptor for loading B from global
-            memory.
-        c_tma_op: TMA tensor tile descriptor for storing C to global
-            memory.
-        sfa_tma_op: TMA tensor tile descriptor for loading SFA (A scale
-            factors) from global memory.
-        cluster_dim: Grid dimensions in (M, N, K) thread blocks for the
-            kernel launch.
-        mnk: Problem dimensions as (M, N, K) in elements.
-        workspace: Profiling workspace span; empty when profiling is
-            disabled.
-        alpha: Scalar multiplier applied to the product `A @ B`.
-        sfb_global_ptr: Global memory pointer to the SFB (B scale
-            factors) tensor.
-        sfb_batch_stride: Stride in elements between consecutive batch
-            slices of SFB in global memory.
-        sfb_n_stride: Stride in elements between consecutive N-groups of
-            SFB in global memory.
-        sfb_k_tiles: Number of K-tiles in the SFB tensor along the
-            contraction dimension.
-        sfb_n_total: Total number of N elements in the SFB tensor; used
-            for out-of-bounds bounds checking.
-    """
+    var _sfb_batch_stride = Int(sfb_batch_stride)
+    var _sfb_n_stride = Int(sfb_n_stride)
+    var _sfb_k_tiles = Int(sfb_k_tiles)
+    var _sfb_n_total = Int(sfb_n_total)
     comptime assert c_type != DType.float32, "c_type cannot be float32"
     comptime assert transpose_b, "only support k-major B"
 
@@ -1716,7 +1650,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = tmem_addr_storage.unsafe_ptr()
 
-    clc_response = clc_response_storage.unsafe_ptr()
+    var clc_response = clc_response_storage.unsafe_ptr()
     var clc_full_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
@@ -1728,7 +1662,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
-    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
     var sfb_ready_mbars: UnsafePointer[
         SharedMemBarrier,
         origin_of(sfb_ready_mbars_storage),
@@ -2041,7 +1975,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             ](0, 1, 0)
 
             while work_info.is_valid():
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 clc_pipe_consumer_state.step()
@@ -2060,10 +1994,10 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_pipeline,
                         sfb_smem_tt.ptr,
                         sfb_global_ptr,
-                        sfb_batch_stride,
-                        sfb_n_stride,
-                        sfb_k_tiles,
-                        sfb_n_total,
+                        _sfb_batch_stride,
+                        _sfb_n_stride,
+                        _sfb_k_tiles,
+                        _sfb_n_total,
                         load_mma_pipeline,
                         smem_release_state,
                     )
@@ -2081,10 +2015,10 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_pipeline,
                         sfb_smem_tt.ptr,
                         sfb_global_ptr,
-                        sfb_batch_stride,
-                        sfb_n_stride,
-                        sfb_k_tiles,
-                        sfb_n_total,
+                        _sfb_batch_stride,
+                        _sfb_n_stride,
+                        _sfb_k_tiles,
+                        _sfb_n_total,
                         load_mma_pipeline,
                         smem_release_state,
                     )
@@ -2110,7 +2044,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             ]()
 
             while work_info.is_valid():
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 clc_pipe_consumer_state.step()
@@ -2161,7 +2095,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     )
 
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
 
@@ -2182,7 +2116,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             # non blocking, arrives and proceeds
             named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-            tmem_addr = ptr_tmem_addr[0]
+            var tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
                 config.num_accum_pipeline_stages * MMA_N
             )
@@ -2195,7 +2129,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             while work_info.is_valid():
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 clc_pipe_consumer_state.step()
@@ -2278,7 +2212,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
         var tile_writer = TileWriterType(Pointer(to=c_tma_op))
 
         var tile_idx = 0
@@ -2308,7 +2242,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 )
                 mma_output_pipeline.consumer_step()
 
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 work_info = next_work_info
@@ -2475,9 +2409,9 @@ def _create_tma_and_launch[
     # stride[0]=n_groups*stride[1].
     var sfb_ptr = sfb_5d_tensor.ptr
     comptime K_TILE_ELEMS = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
-    var sfb_k_tiles = Int(sfb_5d_tensor.dim[2]())
-    var sfb_n_stride_val = sfb_k_tiles * K_TILE_ELEMS
-    var sfb_batch_stride_val = Int(sfb_5d_tensor.dim[1]()) * sfb_n_stride_val
+    var _sfb_k_tiles = Int(sfb_5d_tensor.dim[2]())
+    var _sfb_n_stride_val = _sfb_k_tiles * K_TILE_ELEMS
+    var _sfb_batch_stride_val = Int(sfb_5d_tensor.dim[1]()) * _sfb_n_stride_val
 
     # Shared memory
     # ctx.default_device_info.shared_memory_per_multiprocessor gives this magic number on B200
@@ -2575,10 +2509,10 @@ def _create_tma_and_launch[
         workspace,
         Float32(alpha),
         sfb_ptr,
-        sfb_batch_stride_val,
-        sfb_n_stride_val,
-        sfb_k_tiles,
-        N_maybe_swapped,
+        Int32(_sfb_batch_stride_val),
+        Int32(_sfb_n_stride_val),
+        Int32(_sfb_k_tiles),
+        Int32(N_maybe_swapped),
         grid_dim=grid_dim,
         # 1 TMA, 1 SFB_LOAD, 1 MMA, 1 Scheduler, 4 EPILOGUE (+1 SFB_READY for 2CTA)
         block_dim=(
@@ -2733,7 +2667,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Reshape scale factors to 5D TileTensor for TMA.
     # create_tensor_tile reads .layout.shape/stride from the TileTensor.
-    @parameter
+    @__parameter
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[

@@ -13,37 +13,74 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import logging.handlers
+import math
 import os
 import platform
 import uuid
+from collections.abc import Callable
+from contextvars import ContextVar
 from time import time
 
+import numpy as np
 import requests
-from max.serve.config import Settings
+from max.profiler import set_gpu_profiling_state
+from max.serve.config import KernelTraceLevel, Settings
+from max.serve.telemetry.metrics import (
+    HISTOGRAM_SHADOW_SUFFIX,
+    configure_histogram_shadow_emission,
+)
 from opentelemetry._logs import set_logger_provider
+from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
+)
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter,
 )
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import set_meter_provider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics import Counter, Histogram, MeterProvider
 from opentelemetry.sdk.metrics._internal.aggregation import (
     ExplicitBucketHistogramAggregation,
+    ExponentialBucketHistogramAggregation,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    ExponentialHistogram,
+    Metric,
+)
+from opentelemetry.sdk.metrics._internal.point import (
+    Histogram as ExplicitHistogramData,
 )
 from opentelemetry.sdk.metrics.export import (
+    AggregationTemporality,
     MetricReader,
+    MetricsData,
     PeriodicExportingMetricReader,
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
 otelBaseUrl = "https://telemetry.modular.com:443"
+
+request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
+    "max.serve.request_trace_ctx", default=None
+)
+"""The OTel context extracted from the current request's inbound W3C
+traceparent/tracestate headers (or None). Set once per request by the route
+handler in openai_routes.py before it calls into the pipeline, so it is
+already populated by the time TextContext is constructed in llm.py — even
+though route handlers and the pipeline live in different modules, ContextVar
+values propagate through the whole async call chain within the same task."""
 
 
 def _getCloudProvider() -> str:
@@ -94,180 +131,45 @@ metrics_resource = Resource.create(
 )
 
 
-# Latency metrics (milliseconds). Fine at sub-10ms, ~1.3-1.5x steps elsewhere
-# out to 30 min for slow ops (request time, model load, compile).
-HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    5.0,
-    7.5,
-    10.0,
-    # Typical interactive latency band
-    15.0,
-    20.0,
-    30.0,
-    40.0,
-    50.0,
-    75.0,
-    100.0,
-    150.0,
-    200.0,
-    300.0,
-    400.0,
-    500.0,
-    750.0,
-    # Longer running requests up to 30 seconds
-    1_000.0,
-    1_500.0,
-    2_000.0,
-    3_000.0,
-    5_000.0,
-    7_500.0,
-    10_000.0,
-    15_000.0,
-    20_000.0,
-    30_000.0,
-    45_000.0,  # 45s
-    60_000.0,  # 1m
-    90_000.0,  # 1m30s
-    120_000.0,  # 2m
-    180_000.0,  # 3m
-    240_000.0,  # 4m
-    300_000.0,  # 5m
-    420_000.0,  # 7m
-    600_000.0,  # 10m
-    900_000.0,  # 15m
-    1_200_000.0,  # 20m
-    1_800_000.0,  # 30m
+def _log_spaced_buckets(
+    start: float, stop: float, max_ratio: float
+) -> tuple[float, ...]:
+    """Builds a 0 boundary plus geometrically spaced boundaries up to ``stop``."""
+    steps = math.ceil(math.log(stop / start) / math.log(max_ratio))
+    return (0.0,) + tuple(
+        float(f"{bound:.3g}")
+        for bound in np.exp(
+            np.linspace(math.log(start), math.log(stop), steps + 1)
+        )
+    )
+
+
+# Latency metrics (milliseconds). Log-spaced from 1ms out to 8 hours, which
+# covers slow ops (request time, model load, compile) and long agentic requests.
+HISTOGRAM_LATENCY_BUCKETS_MS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 8 * 60 * 60 * 1000.0, 1.5
 )
 
-# Percentages / utilization ratios (0-100). Finer resolution toward the high
-# end where saturation matters.
-HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = (
-    0.0,
-    1.0,
-    2.5,
-    5.0,
-    7.5,
-    10.0,
-    15.0,
-    20.0,
-    25.0,
-    30.0,
-    40.0,
-    50.0,
-    60.0,
-    70.0,
-    75.0,
-    80.0,
-    85.0,
-    90.0,
-    92.5,
-    95.0,
-    97.5,
-    99.0,
-    100.0,
+# Percentages / utilization ratios (0-100). Linear rather than geometric, since
+# utilization is only actionable near saturation: 5% steps through the bulk,
+# tightening to 1% above 90% so a nearly-full KV cache tier resolves to a
+# single point instead of a range. Kept to 29 boundaries because several of
+# these metrics carry a label that multiplies the series count (batch_type,
+# draft position).
+HISTOGRAM_PERCENT_BUCKETS: tuple[float, ...] = tuple(
+    float(pct) for pct in (*range(0, 91, 5), *range(91, 101))
 )
 
-# Token counts per request/batch and other unbounded counts. ~1.25-1.5x steps
-# through 1k-128k so nearby token sizes (e.g. 8k/10k/12k) stay distinct;
-# coarser at the small occupancy end and the large-context tail.
-HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    6.0,
-    8.0,
-    12.0,
-    16.0,
-    24.0,
-    32.0,
-    48.0,
-    64.0,
-    96.0,
-    128.0,
-    192.0,
-    256.0,
-    384.0,
-    512.0,
-    768.0,
-    1_000.0,
-    1_500.0,
-    2_000.0,
-    3_000.0,
-    4_000.0,
-    6_000.0,
-    8_000.0,
-    10_000.0,
-    12_000.0,
-    16_000.0,
-    20_000.0,
-    24_000.0,
-    32_000.0,
-    48_000.0,
-    64_000.0,
-    96_000.0,
-    128_000.0,
-    192_000.0,
-    256_000.0,
-    384_000.0,
-    512_000.0,
-    768_000.0,
-    1_000_000.0,
+# Token counts per request/batch and other unbounded counts. Log-spaced from 1
+# up to 100M, so batch-level token totals over very long contexts stay on scale.
+HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 100_000_000.0, 1.5
 )
 
-# Batch size (number of requests in a batch). Fine-grained at low sizes where
-# small differences (e.g. 8 vs 12) matter, coarsening with size, stopping at
-# 512: by 1 to 8, by 2 to 16, by 4 to 32, by 8 to 128, by 16 to 256, by 32 to
-# 512.
-HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
-    1.0,
-    2.0,
-    3.0,
-    4.0,
-    5.0,
-    6.0,
-    7.0,
-    8.0,
-    10.0,
-    12.0,
-    14.0,
-    16.0,
-    20.0,
-    24.0,
-    28.0,
-    32.0,
-    40.0,
-    48.0,
-    56.0,
-    64.0,
-    72.0,
-    80.0,
-    88.0,
-    96.0,
-    104.0,
-    112.0,
-    120.0,
-    128.0,
-    144.0,
-    160.0,
-    176.0,
-    192.0,
-    208.0,
-    224.0,
-    240.0,
-    256.0,
-    288.0,
-    320.0,
-    352.0,
-    384.0,
-    416.0,
-    448.0,
-    480.0,
-    512.0,
+# Batch size (number of requests in a batch), from a single request up to the
+# largest batch the scheduler forms.
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    1.0, 512.0, 1.5
 )
 
 # Mean speculative-decode acceptance length per batch. Because it is an average
@@ -277,49 +179,16 @@ HISTOGRAM_ACCEPTANCE_LENGTH_BUCKETS: tuple[float, ...] = tuple(
     i * 0.25 for i in range(1, 65)
 )
 
-# Throughput in tokens/second. ~1.5x round-number ladder from slow single
-# request to large prefill batch.
-HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = (
-    10.0,
-    25.0,
-    50.0,
-    100.0,
-    150.0,
-    250.0,
-    400.0,
-    600.0,
-    1_000.0,
-    1_500.0,
-    2_500.0,
-    4_000.0,
-    6_000.0,
-    10_000.0,
-    15_000.0,
-    25_000.0,
-    40_000.0,
-    60_000.0,
-    100_000.0,
-    150_000.0,
-    250_000.0,
-    500_000.0,
-    1_000_000.0,
+# Throughput in tokens/second, from a slow single request to a large prefill
+# batch.
+HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    10.0, 1_000_000.0, 1.5
 )
 
-# Transfer throughput in GiB/s (e.g. NIXL over fast fabric).
-HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = (
-    0.1,
-    0.25,
-    0.5,
-    1.0,
-    2.5,
-    5.0,
-    10.0,
-    25.0,
-    50.0,
-    100.0,
-    200.0,
-    400.0,
-    800.0,
+# Transfer throughput in GiB/s (e.g. NIXL over fast fabric). Coarser steps than
+# the other ladders: this spans four decades and only feeds transfer dashboards.
+HISTOGRAM_GIB_PER_S_BUCKETS: tuple[float, ...] = _log_spaced_buckets(
+    0.1, 800.0, 2.0
 )
 
 # Per-metric histogram bucket boundaries, matched by exact instrument name.
@@ -342,6 +211,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.video.encoding_time_milliseconds": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_read_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.nixl_write_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.dkv.rpc_acquire_latency": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -366,6 +236,10 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.responses_buffered": HISTOGRAM_COUNT_BUCKETS,
     # Batch size
     "maxserve.batch_size": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # MiniMax-M3's video processor samples up to 512 frames per clip
+    # (see max_private/minimax_m3/vision_processor.py); this bucket set's
+    # upper bound (512) matches exactly.
+    "maxserve.video.frames_per_clip": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
     "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
@@ -451,11 +325,18 @@ def configure_logging(
     logging_handlers: list[logging.Handler] = []
 
     # Set up log filtering
+    # ``uvicorn`` owns the HTTP error log: an exception escaping the ASGI app,
+    # a malformed request, and the cancellation of in-flight requests when the
+    # graceful-shutdown drain expires are all reported there and nowhere else.
+    # Dropping them left connection-level failures with no server-side trace at
+    # all. The ``uvicorn`` logger is pinned to WARNING below, so this admits
+    # warnings and errors without the per-request ``uvicorn.access`` stream.
     components_to_log = [
         "root",
         "max._entrypoints",
         "max.pipelines",
         "max.serve",
+        "uvicorn",
     ]
     try:
         if settings.logs_enable_components is not None:
@@ -584,25 +465,106 @@ def configure_logging(
         )
 
 
-def configure_metrics(settings: Settings) -> None:
-    egress_enabled = not settings.disable_telemetry
+def _drop_metrics_matching(
+    metrics_data: MetricsData | None,
+    should_drop: Callable[[Metric], bool],
+) -> MetricsData | None:
+    """Rebuilds the MetricsData tree without metrics matching ``should_drop``.
 
-    meter_readers: list[MetricReader] = [PrometheusMetricReader(True)]
-    if egress_enabled:
-        meter_readers.append(
-            PeriodicExportingMetricReader(
-                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+    MetricsData/ResourceMetrics/ScopeMetrics are frozen dataclasses, so this
+    reconstructs the tree rather than mutating it in place.
+    """
+    if metrics_data is None:
+        return None
+    return dataclasses.replace(
+        metrics_data,
+        resource_metrics=[
+            dataclasses.replace(
+                resource_metrics,
+                scope_metrics=[
+                    dataclasses.replace(
+                        scope_metrics,
+                        metrics=[
+                            m
+                            for m in scope_metrics.metrics
+                            if not should_drop(m)
+                        ],
+                    )
+                    for scope_metrics in resource_metrics.scope_metrics
+                ],
             )
-        )
+            for resource_metrics in metrics_data.resource_metrics
+        ],
+    )
 
+
+class _SkipExponentialHistogramsPrometheusReader(PrometheusMetricReader):
+    """Drops exponential-histogram data points instead of crashing on them.
+
+    The classic Prometheus text exposition format (and this exporter) only
+    knows how to render explicit-bucket histograms:
+    ``_translate_to_prometheus`` assumes every non-``HistogramDataPoint`` has
+    a ``.value`` attribute, which ``ExponentialHistogramDataPoint`` doesn't
+    have, so it would raise ``AttributeError`` and 500 the whole ``/metrics``
+    scrape. The exponential-histogram shadow metrics
+    (metrics.HISTOGRAM_SHADOW_SUFFIX) only exist when
+    ``MAX_SERVE_OTLP_METRICS_ENDPOINT`` is set, and are meant for that
+    endpoint only (see _ExponentialShadowOnlyReader below) — this keeps
+    Prometheus showing exactly the explicit-bucket histograms it always has,
+    unaffected either way.
+    """
+
+    def _receive_metrics(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: object,
+    ) -> None:
+        filtered = _drop_metrics_matching(
+            metrics_data, lambda m: isinstance(m.data, ExponentialHistogram)
+        )
+        if filtered is not None:
+            super()._receive_metrics(filtered, timeout_millis, **kwargs)
+
+
+class _ExponentialShadowOnlyReader(PeriodicExportingMetricReader):
+    """Drops explicit-bucket histogram data points; keeps everything else.
+
+    The complement of _SkipExponentialHistogramsPrometheusReader: the
+    explicit-bucket histograms already reach Prometheus unchanged (above),
+    so this reader — used only for the opt-in
+    ``MAX_SERVE_OTLP_METRICS_ENDPOINT`` — carries just the exponential
+    shadow histograms (plus counters/gauges) to that endpoint, keeping the
+    two histogram representations on separate destinations for MXSERV-258
+    side-by-side comparison rather than duplicating the explicit-bucket one
+    there too.
+    """
+
+    def _receive_metrics(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: object,
+    ) -> None:
+        filtered = _drop_metrics_matching(
+            metrics_data, lambda m: isinstance(m.data, ExplicitHistogramData)
+        )
+        if filtered is not None:
+            super()._receive_metrics(filtered, timeout_millis, **kwargs)
+
+
+def _histogram_views(settings: Settings) -> list[View]:
     # One View per histogram, matched by its exact instrument name, so each
-    # metric gets bucket boundaries tuned to its actual range (latency in ms,
-    # percentages, token/occupancy counts, batch sizes, throughput, ...).
+    # metric gets bucket boundaries tuned to its actual range (latency in
+    # ms, percentages, token/occupancy counts, batch sizes, throughput,
+    # ...). Always active, regardless of MAX_SERVE_OTLP_METRICS_ENDPOINT:
+    # Prometheus keeps showing exactly these, unchanged.
     #
     # Matching by exact name guarantees every Histogram matches at most one
-    # View, so we never get duplicate Prometheus series from overlapping Views.
-    # Any histogram missing from the map falls back to the OTEL SDK default
-    # buckets; test_all_histograms_have_explicit_buckets guards against that.
+    # of these Views, so we never get duplicate Prometheus series from
+    # overlapping Views. Any histogram missing from the map falls back to
+    # the OTEL SDK default buckets; test_all_histograms_have_explicit_buckets
+    # guards against that.
     views: list[View] = [
         View(
             instrument_name=name,
@@ -611,11 +573,57 @@ def configure_metrics(settings: Settings) -> None:
         for name, buckets in HISTOGRAM_BUCKETS_BY_METRIC.items()
     ]
 
+    if settings.otlp_metrics_endpoint:
+        # Exponential shadow of every histogram (metrics.HISTOGRAM_SHADOW_SUFFIX),
+        # matched by name glob so new histograms are covered automatically.
+        # Self-calibrating: no per-metric bucket boundaries to hand-tune, and
+        # (unlike the explicit-bucket histograms above) mergeable across
+        # replicas, so a Datadog-side p99 across the fleet is a mathematically
+        # valid percentile rather than an average/max of independent
+        # per-replica estimates. Reaches only the OTLP endpoint
+        # (_ExponentialShadowOnlyReader), side by side with the
+        # explicit-bucket histograms on Prometheus, for MXSERV-258 comparison.
+        views.append(
+            View(
+                instrument_name="*" + HISTOGRAM_SHADOW_SUFFIX,
+                aggregation=ExponentialBucketHistogramAggregation(),
+            )
+        )
+
+    return views
+
+
+def configure_metrics(settings: Settings) -> None:
+    egress_enabled = not settings.disable_telemetry
+    configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
+
+    meter_readers: list[MetricReader] = [
+        _SkipExponentialHistogramsPrometheusReader(True)
+    ]
+    if egress_enabled:
+        meter_readers.append(
+            PeriodicExportingMetricReader(
+                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+            )
+        )
+    if settings.otlp_metrics_endpoint:
+        meter_readers.append(
+            _ExponentialShadowOnlyReader(
+                OTLPMetricExporter(
+                    endpoint=settings.otlp_metrics_endpoint,
+                    preferred_temporality={
+                        Histogram: AggregationTemporality.DELTA,
+                        Counter: AggregationTemporality.DELTA,
+                    },
+                )
+            )
+        )
+
     set_meter_provider(
         MeterProvider(
             metric_readers=meter_readers,
             resource=metrics_resource,
-            views=views,
+            views=_histogram_views(settings),
         )
     )
 
@@ -624,6 +632,73 @@ def configure_metrics(settings: Settings) -> None:
         logger.info("Metrics disabled.")
     else:
         logger.info("Metrics initialized.")
+
+
+def configure_tracing(settings: Settings) -> None:
+    if not settings.disable_telemetry:
+        # If the user set either standard OTel env var (e.g. for an
+        # in-cluster DD agent), let OTLPSpanExporter resolve the endpoint
+        # itself: its own env-var handling appends the signal-specific
+        # "/v1/traces" path to OTEL_EXPORTER_OTLP_ENDPOINT, which a plain
+        # os.environ.get() read here would not. Only fall back to the shared
+        # Modular telemetry endpoint when neither var is set.
+        user_configured_endpoint = os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+        ) or os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        exporter = (
+            OTLPSpanExporter()
+            if user_configured_endpoint
+            else OTLPSpanExporter(endpoint=otelBaseUrl + "/v1/traces")
+        )
+        provider = TracerProvider(resource=logs_resource)
+        provider.add_span_processor(BatchSpanProcessor(exporter))
+        set_tracer_provider(provider)
+
+    logger = logging.getLogger()
+    if settings.disable_telemetry:
+        logger.info("Tracing disabled.")
+    else:
+        logger.info("Tracing initialized.")
+
+
+_kernel_trace_level = KernelTraceLevel.OFF
+
+
+def batch_spans_enabled() -> bool:
+    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
+    return _kernel_trace_level >= KernelTraceLevel.BATCH
+
+
+def configure_kernel_tracing(settings: Settings) -> None:
+    """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
+
+    Must be called in the model worker process before ``InferenceSession``
+    is constructed so that the libkineto auto-start picks up the enabled
+    flag. Also records the level read by :func:`batch_spans_enabled`, so it
+    must run before the scheduler starts.
+
+    Args:
+        settings: Server settings carrying ``kernel_trace_level``.
+    """
+    global _kernel_trace_level
+    level = settings.kernel_trace_level
+    _kernel_trace_level = level
+    if level < KernelTraceLevel.OP:
+        return
+
+    if level == KernelTraceLevel.KERNEL:
+        # Full libkineto kernel timeline: enable detailed NVTX tracing and
+        # the libkineto auto-start that fires on InferenceSession construction.
+        set_gpu_profiling_state("detailed")
+        os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+    else:
+        # OP level: op-level NVTX user-annotation ranges only.
+        set_gpu_profiling_state("on")
+
+    logging.getLogger("max.serve").info(
+        "Kernel tracing initialized: level=%s", level.value
+    )
 
 
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK

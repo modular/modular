@@ -13,7 +13,7 @@
 
 
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
 from std.utils.index import IndexList

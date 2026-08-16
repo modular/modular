@@ -14,7 +14,7 @@
 from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
 from std.sys.info import _TargetType
 
-from std.algorithm.backend.gpu.reduction import reduce_launch
+from max.algorithm.backend.gpu.reduction import reduce_launch
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -24,7 +24,8 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
+from std.memory import dealloc
 from internal_utils import (
     CacheBustingBuffer,
     get_defined_shape,
@@ -65,26 +66,31 @@ def run_reduce[
     var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
     # Allocate & initialize host data
-    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
+    var expected_vals_alloc = alloc[Scalar[dtype]](
+        {count = out_size, alignment = align}
+    ).into_managed()
+    var expected_vals = expected_vals_alloc.unsafe_ptr()
 
     var in_host = List(length=cb_in.alloc_size(), fill=Scalar[dtype](1))
     var res_host = List(length=out_size, fill=Scalar[dtype](0))
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = Scalar[dtype](shape[axis]) * Scalar[dtype](1)
+        expected_vals.unsafe_offset(i).write(
+            Scalar[dtype](shape[axis]) * Scalar[dtype](1)
+        )
 
     var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
 
     comptime res_layout = Layout.row_major[rank]()
     var res_device = LayoutTensor[dtype, res_layout](
-        res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
+        res_buffer.unsafe_ptr(), RuntimeLayout[res_layout].row_major(out_shape)
     )
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -93,7 +99,7 @@ def run_reduce[
         return reduce_fn[dtype, width](lhs, rhs)
 
     @__copy_capture(res_device)
-    @parameter
+    @__parameter
     def output_fn[
         _dtype: DType, width: SIMDLength, _rank: Int
     ](
@@ -104,39 +110,39 @@ def run_reduce[
             rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
         )
 
-    @parameter
-    @always_inline
-    def bench_func(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
-                cb_in.offset_ptr(iteration),
-                RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_in, mut res_device, imm}:
+        var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
+            cb_in.offset_ptr(iteration),
+            RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+        )
+
+        @__copy_capture(input_lt)
+        @__parameter
+        def input_fn[
+            dtype: DType,
+            width: Int,
+            _rank: Int,
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_lt.load[width=width](rebind[IndexList[rank]](coords))
             )
 
-            @__copy_capture(input_lt)
-            @parameter
-            def input_fn[
-                dtype: DType,
-                width: Int,
-                _rank: Int,
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return rebind[SIMD[dtype, width]](
-                    input_lt.load[width=width](rebind[IndexList[rank]](coords))
-                )
+        reduce_launch[
+            num_reductions,
+            input_fn,
+            output_fn,
+            reduce_wrapper,
+            rank,
+            dtype,
+            reduce_dim=axis,
+        ](shape, StaticTuple[_, num_reductions](init), ctx)
 
-            reduce_launch[
-                num_reductions,
-                input_fn,
-                output_fn,
-                reduce_wrapper,
-                rank,
-                dtype,
-                reduce_dim=axis,
-            ](shape, StaticTuple[_, num_reductions](init), ctx)
-
-        bencher_iter_custom[kernel_launch](b, ctx)
+    @__parameter
+    @always_inline
+    def bench_func(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(
@@ -158,17 +164,17 @@ def run_reduce[
     ctx.enqueue_copy(res_host, res_buffer)
 
     for i in range(out_size):
-        assert_equal(res_host[i], expected_vals[i])
+        assert_equal(res_host[i], expected_vals[unsafe_offset=i])
 
     _ = cb_in
     _ = res_device
 
-    expected_vals.free()
+    dealloc(expected_vals_alloc^)
     _ = in_host^
     _ = res_host^
 
 
-@parameter
+@__parameter
 def reduce_add[
     dtype: DType,
     width: SIMDLength,

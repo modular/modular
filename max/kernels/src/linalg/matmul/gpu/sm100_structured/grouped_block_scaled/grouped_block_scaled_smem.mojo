@@ -22,8 +22,7 @@ Additional SMEM allocations:
 Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
 """
 
-from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TMADescriptor
+from max.gpu.host.nvidia.tma import TMADescriptor
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig

@@ -17,7 +17,7 @@ import std.format._utils as fmt
 
 
 @always_inline
-def _strlen(ptr: Pointer[mut=False, Byte, _]) -> Int:
+def _strlen(ptr: ImmPointer[Byte, _]) -> Int:
     var offset = 0
     while ptr[unsafe_offset=offset]:
         offset += 1
@@ -56,7 +56,7 @@ struct TString[
 
     @always_inline
     def _write_to_impl(
-        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte, _]
+        self, mut writer: Some[Writer], encoded_bytes: ImmSpan[Byte, _]
     ):
         var offset = 0
 
@@ -117,14 +117,15 @@ struct TString[
             Writable
         ]()  # satisfy where clause.
 
-        @parameter
-        def fields(mut writer: Some[Writer]):
-            self._values._write_to[is_repr=True](writer, start="", end="")
+        var self_ptr = Pointer(to=self)
+
+        def fields(mut writer: Some[Writer]) {self_ptr}:
+            self_ptr[]._values._write_to[is_repr=True](writer, start="", end="")
 
         fmt.FormatStruct(writer, "TString").params(
             fmt.Repr(self.format_string),
             fmt.TypeNames[*Self.Ts](),
-        ).fields[FieldsFn=fields]()
+        ).fields(fields)
 
 
 @always_inline
@@ -166,7 +167,7 @@ def _encode_format_string_comptime[format: StringSlice]() -> List[Byte]:
         # Extract at comptime and explicitly materialize to runtime, since
         # `Variant[List[Byte], Error]` is not `ImplicitlyCopyable` (`Error`
         # is only `Copyable`).
-        comptime value = result.take[List[Byte]]()
+        comptime value = result.unwrap[List[Byte]]()
         return materialize[value]()
 
 

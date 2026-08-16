@@ -27,7 +27,7 @@ Compile-time configuration:
 from std.sys import align_of, get_defined_int
 
 from layout import Coord, Idx, TileTensor, row_major
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
@@ -90,7 +90,7 @@ def test_4wave_epilogue[
 
     # Capturing lambda: writes the SIMD into `out_tt` at the supplied
     # global coords. 4wave hits this with `width=c_frag_size=4`.
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tt)
     def epilogue_fn[

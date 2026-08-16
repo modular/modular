@@ -310,7 +310,7 @@ def test_quantized_kv_cache() -> None:
 
 
 def _create_mla_params(tp: int, is_mla: bool = True) -> KVCacheParams:
-    """Create KVCacheParams for MLA with local connector and host swap space."""
+    """Create KVCacheParams for MLA with a tiered connector and host swap space."""
     shared_kwargs = dict(
         dtype=DType.float32,
         head_dim=128,
@@ -319,7 +319,7 @@ def _create_mla_params(tp: int, is_mla: bool = True) -> KVCacheParams:
         data_parallel_degree=1,
         devices=[DeviceRef.GPU(i) for i in range(tp)],
         enable_prefix_caching=True,
-        kv_connector=KVConnectorType.local,
+        kv_connector=KVConnectorType.tiered,
         host_kvcache_swap_space_gb=1,
     )
     if is_mla:

@@ -13,7 +13,7 @@
 
 from std.math import recip
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal, TestSuite
 
 
@@ -22,12 +22,12 @@ def run_func[
 ](val: Scalar[dtype], ref_: Scalar[dtype], ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[dtype](1)
 
-    @parameter
+    @__parameter
     def kernel(
-        out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
+        out_dev: Pointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = recip(lhs)
-        out_dev[0] = result
+        out_dev[unsafe_offset=0] = result
 
     ctx.enqueue_function[kernel](out, val, grid_dim=1, block_dim=1)
     with out.map_to_host() as out_host:

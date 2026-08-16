@@ -14,7 +14,8 @@
 """Shared compile-mode state for the eager interpreter's GC model caches.
 
 The per-op-type GC caches (``matmul_gc``, ``unary_elementwise_gc``, and any
-future one) share process-wide singletons defined here:
+future one) share process-wide singletons defined here (or re-exported from
+``_eager_policy``):
 
 - :func:`should_precompile` — whether to compile the full GC matrix at import
   or compile each target lazily on first dispatch (the default).
@@ -34,13 +35,15 @@ import os
 import platform
 import sys
 import threading
+import time
 from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
-from max import _core, engine
+from max import _core, _eager_policy, engine
+from max._core.engine import get_config_value
 from max._mlir_context import in_default_mlir_context
 from max.driver import (
     Device,
@@ -79,6 +82,46 @@ CPU_FLOAT_DTYPES = [DType.float32, DType.float64]
 GPU_FLOAT_DTYPES = [DType.float16, DType.float32, DType.bfloat16]
 SIGNED_INT_DTYPES = [DType.int8, DType.int16, DType.int32, DType.int64]
 UNSIGNED_INT_DTYPES = [DType.uint8, DType.uint16, DType.uint32, DType.uint64]
+
+_UINT_FOR_SIZE = {
+    1: DType.uint8,
+    2: DType.uint16,
+    4: DType.uint32,
+    8: DType.uint64,
+}
+
+WIDTH_DTYPES = list(_UINT_FOR_SIZE.values())
+"""The four uint widths a pure-copy family sweeps instead of real dtypes."""
+
+MAX_RANK = 5
+"""Historical interpreter rank cap, shared by every rank-capped family."""
+
+
+def uint_view_dtype(dtype: DType) -> DType:
+    """Returns the same-bit-width unsigned int a dtype is bit-cast to for copying.
+
+    Pure-copy ops (shape rearrange, gather, band-part masking) never interpret
+    an element's value, so one graph per width serves every dtype of that
+    width -- including float16, which has no typed CPU kernel, and bool on GPU.
+
+    Args:
+        dtype: The dtype to reinterpret.
+
+    Returns:
+        The unsigned integer dtype of the same bit width.
+
+    Raises:
+        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+            pack multiple elements per byte and so cannot be reinterpreted
+            element-for-element as a whole-byte unsigned int.
+    """
+    bits = dtype.size_in_bits
+    if bits % 8 != 0 or bits // 8 not in _UINT_FOR_SIZE:
+        raise NotImplementedError(
+            f"eager GC copy path does not support sub-byte dtype {dtype}"
+        )
+    return _UINT_FOR_SIZE[bits // 8]
+
 
 _SpecT = TypeVar("_SpecT")
 
@@ -120,6 +163,22 @@ def canonical_rank3(shape: Sequence[int], axis: int) -> tuple[int, int, int]:
     return (prod(shape[:axis]), shape[axis], prod(shape[axis + 1 :]))
 
 
+def flat_index_strides(indexed_shape: Sequence[int]) -> list[int]:
+    """Row-major strides of *indexed_shape* (product of trailing sizes).
+
+    Used by gather_nd/scatter_nd to flatten a multi-dimensional index vector
+    into a single scalar: ``flat_idx = sum(idx[j] * stride[j])``. E.g.
+    ``(4, 3, 2) -> [6, 2, 1]``. Plain Python arithmetic on a list of at most
+    a handful of small ints (bounded by the interpreter's rank cap) --
+    never touches a Buffer.
+    """
+    n = len(indexed_shape)
+    strides = [1] * n
+    for i in range(n - 2, -1, -1):
+        strides[i] = strides[i + 1] * indexed_shape[i + 1]
+    return strides
+
+
 def discover_devices() -> list[Device]:
     """Returns CPU + every accelerator slot in sweep/warm key order."""
     return load_devices([DeviceSpec.cpu()]) + load_devices(
@@ -140,6 +199,19 @@ def device_class_of(device: Device) -> str:
     return "cpu" if device.label == "cpu" else f"gpu:{device.id}"
 
 
+def device_spec_of(device: Device) -> DeviceSpec:
+    """The :class:`~max.driver.DeviceSpec` that reloads *device* elsewhere.
+
+    Lets an out-of-process warm worker rebuild a session over the same
+    devices this process discovered (specs pickle; live devices don't).
+    """
+    return (
+        DeviceSpec.cpu()
+        if device.label == "cpu"
+        else DeviceSpec.accelerator(device.id)
+    )
+
+
 def spec_for(
     op_type: type[_core.Operation], ops_by_name: Mapping[str, _SpecT]
 ) -> _SpecT | None:
@@ -150,62 +222,59 @@ def spec_for(
 
 # Lazy-per-dispatch by default; ``=1`` precompiles the whole matrix at import
 # (MXF-508).
-EAGER_OP_PRECOMPILE_ENV_VAR = "MAX_EAGER_OP_PRECOMPILE"
+# Re-exported so the CLI can consult it before importing this module.
+EAGER_OP_PRECOMPILE_ENV_VAR = _eager_policy.OP_PRECOMPILE_ENV_VAR
+should_precompile = _eager_policy.should_precompile
 
 # Stored in the MEF cache dir (see _cache_dir) so it can't outlive the artifacts
 # it vouches for.
 _WARM_STAMP_NAME = "eager_gc_warm_stamp.json"
 
 
-def should_precompile() -> bool:
-    """Returns whether to precompile the full GC matrix at import.
-
-    Read at call time, not import time: the sweep runs from ``__init__``, which
-    may be imported before a launcher or test harness sets the env var.
-    """
-    return os.environ.get(EAGER_OP_PRECOMPILE_ENV_VAR, "0") == "1"
-
-
 def _derived_root() -> Path | None:
-    """The ``MODULAR_DERIVED_PATH`` root, or None if unset."""
-    derived = os.environ.get("MODULAR_DERIVED_PATH")
+    """The ``MODULAR_DERIVED_PATH`` root, or None if unset or empty."""
+    try:
+        derived = get_config_value("derived_path")
+    except KeyError:
+        return None
     return Path(derived) if derived else None
 
 
 def _cache_dir() -> Path | None:
-    """MEF cache dir the warm stamp lives in, or None if unset.
+    """MEF cache dir the warm stamp lives in, or None if unresolvable.
 
-    Keyed off ``MODULAR_DERIVED_PATH`` — the redirect knob warmer and consumer
-    both set to agree on location (matching ``tools/interpreter_warm_cache``);
-    unset → no stamp → lazy. A config-file ``cache_dir`` would still win in the
-    engine (GEX-3884).
+    Prefers ``MODULAR_DERIVED_PATH``, else asks the engine, which may create
+    the directory as a side effect.
     """
     root = _derived_root()
-    return root / "cache" / ".max_cache" if root else None
+    if root is not None:
+        return root / "cache" / ".max_cache"
+    return _core.engine.max_cache_dir()
 
 
 def _context_signature() -> str:
     """Signature a warm must match before a lazy process adopts it.
 
-    Pins host arch + accelerator count + SKU. ``accelerator_architecture_name``
-    raises on a CPU device, so it's only queried when an accelerator is present.
-    The device *count* is the leading field and is matched as a ceiling, not for
-    equality, by :func:`warm_stamp_matches`.
+    Pins accelerator count + host arch + SKU + MAX version — versioned
+    because the engine prunes sibling version directories beneath the stamp.
     """
     n = accelerator_count()
     accel = accelerator_architecture_name() if n else ""
-    return f"accelerators={n};cpu={platform.machine()};accel={accel}"
+    return (
+        f"accelerators={n};cpu={platform.machine()};accel={accel}"
+        f";version={_core.__version__}"
+    )
 
 
 def _split_device_count(signature: str) -> tuple[int, str]:
-    """Split a context signature into ``(device count, host+accelerator SKU)``.
+    """Split a context signature into ``(device count, everything else)``.
 
-    The SKU (everything after the leading ``accelerators=N`` field) must match
-    exactly between warm and consumer; the count is compared as a ceiling.
+    Everything after the leading ``accelerators=N`` field must match exactly
+    between warm and consumer; only the count is compared as a ceiling.
 
     Example:
-        ``"accelerators=8;cpu=x86_64;accel=sm_100a"`` ->
-        ``(8, "cpu=x86_64;accel=sm_100a")``.
+        ``"accelerators=8;cpu=x86_64;accel=sm_100a;version=26.5.0.dev0"`` ->
+        ``(8, "cpu=x86_64;accel=sm_100a;version=26.5.0.dev0")``.
     """
     head, _, sku = signature.partition(";")
     return int(head.removeprefix("accelerators=")), sku
@@ -213,26 +282,26 @@ def _split_device_count(signature: str) -> tuple[int, str]:
 
 def write_warm_stamp() -> bool:
     """Records a batched warm for this context. Returns False if the cache dir
-    can't be located (the warm is then unadoptable; caller should surface it)."""
+    can't be located (the warm is then unadoptable; caller should surface it).
+
+    Written via a temp file and rename, because concurrent
+    ``MAX_EAGER_OP_PRECOMPILE=1`` processes race here.
+    """
     cache_dir = _cache_dir()
     if cache_dir is None:
         return False
     cache_dir.mkdir(parents=True, exist_ok=True)
-    (cache_dir / _WARM_STAMP_NAME).write_text(
-        json.dumps({"context": _context_signature()})
-    )
+    payload = json.dumps({"context": _context_signature()})
+    tmp = cache_dir / f"{_WARM_STAMP_NAME}.{os.getpid()}.tmp"
+    tmp.write_text(payload)
+    tmp.replace(cache_dir / _WARM_STAMP_NAME)
     return True
 
 
 def warm_stamp_matches() -> bool:
     """Returns whether a warm stamp this process can adopt is present.
 
-    Requires the same host + accelerator SKU, and that this process needs no
-    *more* devices than were warmed. Per-slot single-graph MEFs are device-
-    count-independent, so a warm made for N devices serves any consumer with
-    ``<= N`` devices (it reuses slots ``0..k-1``); a consumer needing more
-    devices than were warmed must not adopt (the extra slots were never
-    compiled) and falls back to per-target lazy compilation.
+    Device count is a ceiling; every other field must match exactly.
     """
     cache_dir = _cache_dir()
     if cache_dir is None:
@@ -346,6 +415,20 @@ def manifest_entry_path(
     return None
 
 
+def provisioned() -> bool:
+    """Returns whether this process can get its eager op models without
+    compiling.
+
+    True when a warm manifest can be force-loaded, or a compatible warm stamp
+    is present — the single definition of "warmed", shared by the
+    import-time gate and ``max warm-interpreter-cache --check``.
+    """
+    manifest = read_manifest()
+    if manifest is not None and manifest_adoptable(manifest):
+        return True
+    return warm_stamp_matches()
+
+
 def adopted_from_manifest(family: str) -> bool:
     """Whether ``family`` sourced its models from the warm manifest this process,
     rather than a cold or lazy compile."""
@@ -413,10 +496,14 @@ class GCFamilySpec(Protocol):
         Every family sweeps the same discovered set by default, so this is a
         concrete, inherited implementation rather than a per-family override
         point -- except for a family whose kernel is restricted to a device
-        subset (e.g. ``group_norm``, GPU-only), which must override this to
-        exclude the devices it never builds for. ``_adopt_from_manifest``
-        requires a manifest entry for every device this returns, so a family
-        that lists a device it never populates fails adoption entirely.
+        subset, which must override this to exclude the devices it never
+        builds for: the ``MO_HostOnly`` families (``resize_gc``,
+        ``nonzero_gc``, ``nms_gc``, ``roi_align_gc``) which are CPU-only,
+        since sweeping an accelerator for a host-only op would only produce
+        an empty per-slot module. ``_adopt_from_manifest`` requires a
+        manifest entry for every device this returns, so a family that lists
+        a device it never populates fails adoption entirely. An empty list
+        (none of the family's devices are present) warms as a no-op.
         """
         return list(DISCOVERED_DEVICES)
 
@@ -453,24 +540,44 @@ class GCOpFamily:
     ) -> Module:
         return self.spec.build_module_for_device(device, module)
 
-    # No build_module passthrough: only compile_sweep uses it, via self.spec.
+    @in_default_mlir_context
+    def build_sweep_module(self) -> Module:
+        """Builds the full sweep matrix module without compiling it.
+
+        Exists so the out-of-process warm can compile the same module
+        :meth:`compile_sweep` builds — its MEF cache key must match a
+        later in-process sweep's.
+        """
+        return self.spec.build_module()
 
     @in_default_mlir_context
-    def compile_sweep(self) -> None:
-        """Force-load an adoptable manifest, else batch-compile every target."""
+    def compile_sweep(self) -> bool:
+        """Force-load an adoptable manifest, else batch-compile every target.
+
+        Returns:
+            True if it batch-compiled; False if it force-loaded the
+            manifest instead, in which case the caller must not stamp.
+        """
         if self._adopt_manifest_if_adoptable():
-            return
-        session = engine.InferenceSession(devices=self.sweep_devices())
+            return False
+        devices = self.sweep_devices()
+        if not devices:
+            # InferenceSession(devices=[]) silently defaults to a CPU session.
+            self.swept = True
+            return True
+        session = engine.InferenceSession(devices=devices)
         self.cache.update(
             session.load_all(self.spec.build_module(), weights_registry={})
         )
         self.swept = True
+        return True
 
     def ensure_swept(self) -> None:
         """Attempt whole-cache adoption once before per-target compilation.
 
-        Force-loads an adoptable manifest; failing that, batch-sweeps a matching
-        warm stamp. A no-op after the first attempt.
+        Force-loads an adoptable manifest, else batch-sweeps a matching warm
+        stamp — the one path that may batch-compile under
+        ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
         """
         if self.swept:
             return
@@ -478,6 +585,7 @@ class GCOpFamily:
             return
         if warm_stamp_matches():
             self.swept = True
+            start = time.perf_counter()
             try:
                 self.compile_sweep()
             except RuntimeError:
@@ -489,6 +597,10 @@ class GCOpFamily:
                     self.name,
                     exc_info=True,
                 )
+            else:
+                _eager_policy.note_batched_adopt_end(
+                    self.name, time.perf_counter() - start
+                )
 
     def model_for(
         self,
@@ -497,11 +609,13 @@ class GCOpFamily:
         build: Callable[[Module], None],
         *,
         unsupported_reason: Callable[[], str | None] | None = None,
-        display_name: str | None = None,
     ) -> engine.Model:
         """Shared lazy-dispatch skeleton every family's ``*_model`` function
-        wraps: cache hit, optional support-guard, precompile-mode hard error,
-        then locked adopt-or-compile.
+        wraps: cache hit, optional support-guard, then a locked adopt, the
+        cold-start policy check, and a per-target compile.
+
+        The policy check runs after adoption, not before: refusing ahead of
+        adoption would leave a warmed machine unable to serve any eager op.
 
         Args:
             key: The cache key for this target (family-specific format).
@@ -512,20 +626,16 @@ class GCOpFamily:
                 cache hit never pays for the support check) to test whether
                 the target is outside the family's supported set; a
                 non-``None`` return is raised as ``KeyError`` verbatim before
-                the precompile check (each family formats its own
+                anything is adopted or compiled (each family formats its own
                 wording/details).
-            display_name: Overrides this family's own ``name`` in the
-                precompile-miss message for families whose historical
-                wording diverges from the registry name (e.g.
-                ``reduce_axis`` -> ``"reduce"``).
 
         Returns:
             The compiled :class:`~max.engine.Model`.
 
         Raises:
-            KeyError: *unsupported_reason*'s message if it returns one;
-                else, with ``MAX_EAGER_OP_PRECOMPILE=1``, if the target was
-                not precompiled.
+            KeyError: *unsupported_reason*'s message if it returns one.
+            EagerLazyCompileDisallowed: if the target is still missing after
+                adoption and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
         """
         model = self.cache.get(key)
         if model is not None:
@@ -534,16 +644,6 @@ class GCOpFamily:
             reason = unsupported_reason()
             if reason is not None:
                 raise KeyError(reason)
-        if should_precompile():
-            # TODO(MXF-510): raise UnsupportedGraphError so executors fall
-            # back.
-            name = display_name if display_name is not None else self.name
-            raise KeyError(
-                f"No pre-compiled {name} model for key {key!r}."
-                f"  Available: {sorted(self.cache)}."
-                f"  Unset {EAGER_OP_PRECOMPILE_ENV_VAR} (the default)"
-                " to compile targets lazily on first use."
-            )
         with COMPILE_LOCK:
             model = self.cache.get(key)
             if model is not None:
@@ -552,7 +652,18 @@ class GCOpFamily:
             model = self.cache.get(key)
             if model is not None:
                 return model
-            return compile_single_target(self, key, device, build)
+            if not _eager_policy.allow_lazy_compile():
+                raise _eager_policy.EagerLazyCompileDisallowed(
+                    _eager_policy.refusal_message(
+                        key, provisioned=provisioned()
+                    )
+                )
+            start = time.perf_counter()
+            model = compile_single_target(self, key, device, build)
+            _eager_policy.record_cold_compile(
+                key, time.perf_counter() - start, provisioned=provisioned()
+            )
+            return model
 
     def _adopt_manifest_if_adoptable(self) -> bool:
         manifest = read_manifest()
@@ -566,6 +677,9 @@ class GCOpFamily:
         # Load the slots for exactly the devices the session spans: both come
         # from the one sweep_devices() call, so they can't diverge.
         devices = self.sweep_devices()
+        if not devices:
+            # Nothing to adopt; avoid the silent default-CPU session.
+            return True
         try:
             session = engine.InferenceSession(devices=devices)
             loaded: dict[str, engine.Model] = {}

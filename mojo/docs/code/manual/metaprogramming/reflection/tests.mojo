@@ -48,7 +48,7 @@ def test_reflect_field_count() raises:
 
 def test_reflect_field_names() raises:
     """Returns field names in order."""
-    comptime names = reflect[Point].field_names()
+    var names = materialize[reflect[Point].field_names()]()
     assert_equal(String(names[0]), "x")
     assert_equal(String(names[1]), "y")
 
@@ -56,7 +56,7 @@ def test_reflect_field_names() raises:
 def test_reflect_field_types() raises:
     """Returns field types iterable with reflect."""
     comptime types = reflect[Point].field_types()
-    comptime first_type_name = reflect[types[0]].name()
+    var first_type_name = reflect[types[0]].name()
     assert_equal(first_type_name, "SIMD[DType.int, 1]")
 
 
@@ -116,7 +116,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
         ref b_val = reflect[T].field_ref[idx](b)
 
         if a_val != b_val:
-            diffs.append(String(names[idx]))
+            diffs.append(String(comptime (names[idx])))
 
     return diffs^
 
@@ -184,9 +184,9 @@ def test_reflection_inequality() raises:
     assert_true(not equal)
 
 
-struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
+struct ConditionalCopyableWrapper[T: Deinitable & Movable](
     Copyable where conforms_to(T, Copyable),
-    ImplicitlyDeletable,
+    Deinitable,
     Movable,
 ):
     var value: Self.T
@@ -200,7 +200,7 @@ struct ConditionalCopyableWrapper[T: ImplicitlyDeletable & Movable](
         self.value = copy.value.copy()
 
 
-# All structs are inherently `ImplicitlyDeletable`
+# All structs are inherently `Deinitable`
 @fieldwise_init
 struct NotCopyable(Movable):
     pass
@@ -246,16 +246,12 @@ trait MakeCopyable:
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
-            comptime if not conforms_to(
-                field_type, Copyable & ImplicitlyDeletable
-            ):
+            comptime if not conforms_to(field_type, Copyable & Deinitable):
                 continue
 
             # TODO(MOCO-4206): Remove redundant assertion after type refinement
             #   following early `continue` is fixed.
-            comptime assert conforms_to(
-                field_type, Copyable & ImplicitlyDeletable
-            )
+            comptime assert conforms_to(field_type, Copyable & Deinitable)
 
             ref p_value = reflect[Self].field_ref[idx](self)
             reflect[Self].field_ref[idx](other) = p_value.copy()
@@ -359,7 +355,7 @@ def first_ref[T: Copyable](ref list: List[T]) -> ref[list[0]] T:
 
 def test_origin_of_first_ref() raises:
     """Ties the returned reference to the input's lifetime."""
-    var l = [1, 2, 3]
+    var l: List = [1, 2, 3]
     var x = first_ref(l)
     assert_equal(x, 1)
 

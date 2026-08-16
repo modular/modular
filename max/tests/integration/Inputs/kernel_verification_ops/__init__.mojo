@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from std.gpu.host import DeviceContext
-from std.gpu.host.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceContext
+from max.gpu.host.device_context import DeviceExternalFunction
 from std.os import abort, getenv
 from extensibility import (
     foreach,
@@ -101,8 +101,8 @@ struct MyIntMemory(Movable):
     def __init__(out self, val: Int):
         self.val = val
 
-    def __del__(deinit self):
-        print("MyInt del")
+    def __deinit__(deinit self):
+        print("MyInt ")
 
 
 @extensibility.register("make_my_int_memory")
@@ -182,7 +182,7 @@ def binary_kernel_with_raises_shape(
 struct MutableInputTensorKernel:
     @staticmethod
     def execute(in_place_tensor: MutableInputTensor) raises:
-        in_place_tensor._ptr.store(0, 0)
+        in_place_tensor._ptr.unsafe_store(0, 0)
 
 
 @extensibility.register("op_with_int_parameter")
@@ -254,10 +254,11 @@ struct ExternalCubinVecAdd:
         ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        var gpu_ctx = ctx
 
+        var external_func: DeviceExternalFunction
         with open(getenv("CUBIN_PATH"), "r") as file:
-            cubin_data = file.read_bytes()
+            var cubin_data = file.read_bytes()
 
             external_func = DeviceExternalFunction(
                 gpu_ctx,
@@ -267,9 +268,9 @@ struct ExternalCubinVecAdd:
                 asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
             )
 
-        length = output.dim_size(0)
-        block_dim = 32
-        grid_dim = (length + block_dim - 1) // block_dim
+        var length = output.dim_size(0)
+        var block_dim = 32
+        var grid_dim = (length + block_dim - 1) // block_dim
 
         # Execute the external cubin kernel
         gpu_ctx.enqueue_function(
@@ -302,7 +303,7 @@ struct IntentionalGpuCrash:
         ctx: DeviceContext,
     ) raises:
         comptime assert target == "gpu"
-        gpu_ctx = ctx
+        var gpu_ctx = ctx
 
         def crash_kernel():
             abort()

@@ -12,21 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 
 
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    in0: UnsafePointer[Float32, MutAnyOrigin],
-    in1: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    in0: Pointer[Float32, MutAnyOrigin],
+    in1: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -51,7 +50,7 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             in0_host[i] = Float32(i)
             in1_host[i] = 2
 
-    @parameter
+    @__parameter
     def add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 
@@ -61,7 +60,7 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         in0,
         in1,
         out,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -76,7 +75,7 @@ def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     ctx.synchronize()
 
     with out.map_to_host() as out_host:
-        expected: List[Float32] = [
+        var expected: List[Float32] = [
             4.5,
             5.5,
             6.5,

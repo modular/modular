@@ -15,11 +15,11 @@
 
 from std.math import ceildiv, exp, inf, log
 
-from std.algorithm.functional import parallelize
+from max.algorithm.functional import parallelize
 from extensibility import register, register_shape_function
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from extensibility import InputTensor, OutputTensor
@@ -245,7 +245,7 @@ struct LogProbabilitiesRagged:
 
         comptime if is_cpu[target]():
 
-            @parameter
+            @__parameter
             def lp_idx_kernel(output_token_index: Int) -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
@@ -264,7 +264,7 @@ struct LogProbabilitiesRagged:
             )
         elif is_gpu[target]():
 
-            @parameter
+            @__parameter
             @__copy_capture(num_output_tokens)
             @__name(t"log_probabilities_l{levels}")
             def raw_lp_kernel():

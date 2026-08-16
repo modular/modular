@@ -12,14 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.reflection import source_location
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
 def test_gpu_print_formattable() raises:
     print("== test_gpu_print_formattable")
 
-    def do_print(x: Int, y: Float64):
+    def do_print(x_dev: Int32, y: Float64):
+        var x = Int(x_dev)
         # ==============================
         # Test printing primitive types
         # ==============================
@@ -40,7 +41,7 @@ def test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:44:30
+        # CHECK: test_print.mojo:45:30
         print(source_location())
 
         # ------------------------------
@@ -81,7 +82,7 @@ def test_gpu_print_formattable() raises:
     with DeviceContext() as ctx:
         comptime kernel = do_print
         ctx.enqueue_function[kernel](
-            Int(42), Float64(7.2), grid_dim=1, block_dim=1
+            Int32(42), Float64(7.2), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.
         ctx.synchronize()

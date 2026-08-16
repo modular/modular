@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceContext
-from std.gpu.host._amdgpu_hip import HIP, hipDevice_t
+from max.gpu.host import DeviceContext
+from max.gpu.host._amdgpu_hip import HIP, hipDevice_t
 from std.testing import TestSuite
 
 

@@ -60,9 +60,9 @@ q-aliased o_smem region, then TMA-store it to gmem. Output partials remain
 in TMEM throughout the combine.
 """
 
-from std.sys import size_of
+from std.sys import size_of, get_defined_bool
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
@@ -249,6 +249,7 @@ struct SM100AttentionSMem[
         splitk_partitions=Self.config.splitk_partitions,
         BM=Self.config.BM,
         use_ws=Self.config.use_ws,
+        crossp=Self.config.crossp_on(),
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[
@@ -259,6 +260,17 @@ struct SM100AttentionSMem[
     comptime tmem_addr_byte_offset: Int = (
         Self.mbar_byte_offset + Self.mbar_bytes
     )
+
+    # BLASST (arXiv 2512.12087) per-warp skip-vote region, placed after
+    # tmem_addr so it's 0 bytes (byte-identical layout) when off. Slot =
+    # (wg*2+phase)*4+warp_in_wg; double-buffered on phase since softmax can run
+    # one block ahead of the MMA's P@V consumption.
+    comptime _enable_blasst: Bool = get_defined_bool["ENABLE_BLASST", False]()
+    comptime blasst_vote_slots: Int = 2 * 2 * 4 if Self._enable_blasst else 0
+    comptime blasst_vote_byte_offset: Int = (
+        Self.tmem_addr_byte_offset + size_of[UInt32]()
+    )
+    comptime blasst_vote_bytes: Int = Self.blasst_vote_slots * size_of[UInt8]()
 
     # ---- element-count offsets (for compatibility with existing callers) ------
 
@@ -381,8 +393,21 @@ struct SM100AttentionSMem[
         """Pointer to the single UInt32 storing the TMEM address."""
         return (self.base + Self.tmem_addr_byte_offset).bitcast[UInt32]()
 
+    @always_inline
+    def blasst_vote_smem(self) -> SharedMemPointer[UInt8]:
+        """Base of the BLASST per-warp skip-vote region (0-sized when off).
+
+        Slot `(wg*2 + phase)*4 + warp_in_wg` holds softmax warp `warp_in_wg`'s
+        skip vote for warp group `wg` at S-consumer phase `phase`.
+        """
+        return (self.base + Self.blasst_vote_byte_offset).bitcast[UInt8]()
+
     @staticmethod
     @always_inline
     def smem_size() -> Int:
         """Total dynamic shared memory bytes required."""
-        return Self.tmem_addr_byte_offset + size_of[UInt32]()
+        return (
+            Self.tmem_addr_byte_offset
+            + size_of[UInt32]()
+            + Self.blasst_vote_bytes
+        )

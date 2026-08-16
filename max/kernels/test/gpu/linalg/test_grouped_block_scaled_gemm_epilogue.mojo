@@ -25,8 +25,8 @@ from std.random import rand, random_float64, seed
 from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from layout import (
@@ -178,7 +178,7 @@ def test_grouped_gemm_epilogue[
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
     # Define epilogue lambda that adds original C value to matmul result
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_add_c[
@@ -367,7 +367,7 @@ def test_grouped_gemm_epilogue[
     # Apply epilogue lambda on CPU to reference
     var c_tensor_host_lt = c_host_original.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_host_lt)
     def epilogue_add_c_host[

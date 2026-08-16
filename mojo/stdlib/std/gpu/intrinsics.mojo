@@ -27,7 +27,6 @@ underlying GPU architecture.
 
 from std.atomic import Ordering
 from std.ffi import external_call
-from std.gpu._utils import to_i32
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -50,12 +49,135 @@ from std.sys.info import (
     _is_amd_rdna4,
 )
 from std.sys.intrinsics import llvm_intrinsic, readfirstlane
-from std.gpu import lane_id
 from std.math.uutils import ufloordiv, umod
+
+from std.gpu._utils import to_i32
+from std.gpu import lane_id
 
 from std.memory.unsafe import bitcast
 
-from .memory.memory import CacheOperation
+# ===-----------------------------------------------------------------------===#
+# CacheOperation
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct CacheOperation(Equatable, TrivialRegisterPassable):
+    """Represents different GPU cache operation policies.
+
+    This struct defines various caching behaviors for GPU memory operations,
+    controlling how data is cached and evicted at different cache levels.
+    The policies affect performance and memory coherency.
+    """
+
+    var _value: Int
+
+    comptime ALWAYS = Self(0)
+    """Cache at all levels. This will be accessed again.
+
+    Best for data that will be frequently reused across multiple threads.
+    Provides fastest subsequent access but uses the most cache space.
+    """
+
+    comptime GLOBAL = Self(1)
+    """Cache at global level.
+
+    Caches data only in the L2 cache, bypassing L1.
+    Good for data shared between different thread blocks.
+    """
+
+    comptime STREAMING = Self(2)
+    """Streaming, this is likely to be accessed once.
+
+    Optimizes for streaming access patterns where data is only read once.
+    May bypass certain cache levels for better throughput.
+    """
+
+    comptime LAST_USE = Self(4)
+    """Indicates the cache line will not be used again.
+
+    Hints to the cache that this data can be evicted after this access.
+    Helps optimize cache utilization.
+    """
+
+    comptime VOLATILE = Self(8)
+    """Don't cache, and fetch again.
+
+    Forces reads/writes to bypass cache and go directly to memory.
+    Useful for memory-mapped I/O or when cache coherency is required.
+    """
+
+    comptime WRITE_BACK = Self(16)
+    """Write back at all coherent levels.
+
+    Updates all cache levels and eventually writes to memory.
+    Most efficient for multiple writes to same location.
+    """
+
+    comptime WRITE_THROUGH = Self(32)
+    """Write through to system memory.
+
+    Immediately writes updates to memory while updating cache.
+    Provides stronger consistency but lower performance than write-back.
+    """
+
+    comptime WORKGROUP = Self(64)
+    """Workgroup level coherency.
+
+    Caches data in the L1 cache and streams it to the wave.
+    """
+
+    def __eq__(self, other: Self) -> Bool:
+        """Tests if two `CacheOperation` instances are equal.
+
+        Args:
+            other: The `CacheOperation` to compare against.
+
+        Returns:
+            True if the operations are equal, False otherwise.
+        """
+        return self._value == other._value
+
+    def __or__(self, other: Self) -> Self:
+        """Returns the bitwise OR of two `CacheOperation` instances.
+
+        Args:
+            other: The other `CacheOperation` to OR with.
+
+        Returns:
+            A new `CacheOperation` representing the bitwise OR of the two values.
+        """
+        return Self(self._value | other._value)
+
+    @always_inline
+    def mnemonic(self) -> StaticString:
+        """Returns the PTX mnemonic string for this cache operation.
+
+        Converts the cache operation into its corresponding PTX assembly
+        mnemonic string used in GPU instructions.
+
+        Returns:
+            A string literal containing the PTX mnemonic for this operation.
+        """
+        if self == Self.ALWAYS:
+            return "ca"
+        if self == Self.GLOBAL:
+            return "cg"
+        if self == Self.STREAMING:
+            return "cs"
+        if self == Self.LAST_USE:
+            return "lu"
+        if self == Self.VOLATILE:
+            return "cv"
+        if self == Self.WRITE_BACK:
+            return "wb"
+        if self == Self.WRITE_THROUGH:
+            return "wt"
+        if self == Self.WORKGROUP:
+            return "wg"
+
+        return "unknown cache operation"
+
 
 # ===-----------------------------------------------------------------------===#
 # ldg
@@ -896,20 +1018,20 @@ struct AMDBufferResource(TrivialRegisterPassable):
 
         # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
         # so the `.ptr.` form of the intrinsic accepts it.
-        var desc_ptr = UnsafePointer[
+        var desc_ptr = Pointer[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
         ].unsafe_dangling()
-        var ptr_to_ptr = UnsafePointer(to=desc_ptr)
-        var ptr_to_simd = UnsafePointer(to=self.desc)
-        ptr_to_ptr[0] = ptr_to_simd.bitcast[
-            UnsafePointer[
+        var ptr_to_ptr = Pointer(to=desc_ptr)
+        var ptr_to_simd = Pointer(to=self.desc)
+        ptr_to_ptr[] = ptr_to_simd.unsafe_bitcast[
+            Pointer[
                 Scalar[DType.bfloat16],
                 MutAnyOrigin,
                 address_space=AddressSpace.BUFFER_RESOURCE,
             ]
-        ]()[0]
+        ]()[]
 
         comptime if not async_copies:
             # No alias-scope metadata — clean `llvm_intrinsic` call path.
@@ -1007,7 +1129,6 @@ struct AMDBufferResource(TrivialRegisterPassable):
         )
 
 
-@parameter
 def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
@@ -1086,7 +1207,6 @@ def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
         return DType.uint32
 
 
-@parameter
 def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 

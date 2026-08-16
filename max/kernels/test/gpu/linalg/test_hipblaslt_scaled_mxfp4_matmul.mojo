@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.memory import bitcast
 from std.random import rand
@@ -42,10 +42,15 @@ def block_scaled_matmul_ref[
     a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     c_ptr: UnsafePointer[Scalar[output_dtype], MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
+
     @always_inline
     def cast_fp2em1x2_to_fp32x2[
         byte_select: Int
@@ -227,9 +232,9 @@ def test_block_scaled_mxfp4_hipblaslt[
         a_scales_device,
         b_scales_device,
         c_device_ref,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )

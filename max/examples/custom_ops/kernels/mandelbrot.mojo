@@ -15,7 +15,7 @@ from std.math import iota
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.complex import ComplexSIMD
 
 from extensibility import OutputTensor, foreach
@@ -43,7 +43,7 @@ struct Mandelbrot:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_mandelbrot[
             width: Int

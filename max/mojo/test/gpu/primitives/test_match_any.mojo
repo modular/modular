@@ -21,7 +21,7 @@ emulation.
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import match_any
 from std.testing import assert_equal, TestSuite
 
@@ -29,11 +29,13 @@ from std.testing import assert_equal, TestSuite
 def _match_any_probe[
     dtype: DType,
 ](
-    values: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    out_masks: UnsafePointer[UInt64, MutAnyOrigin],
+    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = match_any(values[lane]).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = match_any(values[unsafe_offset=lane]).cast[
+        DType.uint64
+    ]()
 
 
 def _check[

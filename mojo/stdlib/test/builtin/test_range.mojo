@@ -46,9 +46,7 @@ def test_range_with_int_params_declaration_order() raises:
 
 def _test_range_iter_bounds[
     I: Iterator
-](var range_iter: I, len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
-):
+](var range_iter: I, len: Int) raises where conforms_to(I.Element, Deinitable):
     var iter = range_iter^
 
     for i in range(len):
@@ -270,7 +268,6 @@ def test_range_reversed() raises:
     )
 
     # Test a reversed range's sum and length compared to the original
-    @parameter
     def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
         var iforward = forward.__iter__()
@@ -368,6 +365,58 @@ def test_range_float_zero_step() raises:
     assert_equal(reverse_count, 0)
 
 
+def _test_range_int_zero_step[dtype: DType]() raises:
+    comptime scalar = Scalar[dtype]
+
+    # A zero step has no direction, so the range is empty whichever way the
+    # bounds point. `start > end` used to step in place forever for signed
+    # dtypes, and `start < end` for unsigned ones.
+    var forward = 0
+    for _ in range(scalar(0), scalar(3), scalar(0)):
+        forward += 1
+    assert_equal(forward, 0)
+
+    var backward = 0
+    for _ in range(scalar(3), scalar(0), scalar(0)):
+        backward += 1
+    assert_equal(backward, 0)
+
+    # `len()` and `bounds()` used to divide by the zero step.
+    assert_equal(range(scalar(3), scalar(0), scalar(0)).__len__(), 0)
+    assert_equal(range(scalar(0), scalar(3), scalar(0)).__len__(), 0)
+    var lower, upper = range(scalar(3), scalar(0), scalar(0)).bounds()
+    assert_equal(lower, 0)
+    assert_equal(upper.value(), 0)
+
+
+def test_range_int_zero_step() raises:
+    comptime for dtype in DTYPES:
+        _test_range_int_zero_step[dtype]()
+
+    var count = 0
+    for _ in range(3, 0, 0):
+        count += 1
+    assert_equal(count, 0)
+
+    # `__reversed__` used to take the modulus of the zero step.
+    var reverse_count = 0
+    for _ in reversed(range(3, 0, 0)):
+        reverse_count += 1
+    assert_equal(reverse_count, 0)
+
+
+def test_range_int_zero_step_comptime() raises:
+    # Unrolling a zero-step range used to hang the compiler forever.
+    var count = 0
+    comptime for _ in range(3, 0, 0):
+        count += 1
+    assert_equal(count, 0)
+
+    comptime for _ in range(0, 3, 0):
+        count += 1
+    assert_equal(count, 0)
+
+
 def test_range_float_grid() raises:
     # On-grid `end` is excluded, no `// + 1` overcount (1.0 = 4 * 0.25).
     var v = List[Float64]()
@@ -411,7 +460,7 @@ def test_range_bounds() raises:
 
 
 def test_scalar_range() raises:
-    r = range(UInt8(2), 16, 4)
+    var r = range(UInt8(2), 16, 4)
     assert_equal(r.start, 2)
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
@@ -420,9 +469,9 @@ def test_scalar_range() raises:
         for value in values:
             list.append(value.copy())
 
-    expected_elements = List[UInt8]()
+    var expected_elements = List[UInt8]()
     append_many(expected_elements, 2, 6, 10, 14)
-    actual_elements = List[UInt8]()
+    var actual_elements = List[UInt8]()
     for e in r:
         actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)

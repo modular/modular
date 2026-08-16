@@ -44,6 +44,11 @@ _R = TypeVar("_R")
 # worker callables (e.g. the multiturn session builder).
 _WORKER_TOK: PreTrainedTokenizerBase | None = None
 
+# Architectures resolved once in the parent and forwarded to each worker via
+# `_init_encoder`, so `_default_loader` can skip the redundant (and noisy)
+# per-worker `AutoConfig` Hub lookup. `None` means "resolve in the worker".
+_WORKER_ARCHITECTURES: list[str] | None = None
+
 
 def _default_loader(
     name_or_path: str,
@@ -59,6 +64,7 @@ def _default_loader(
         revision=revision,
         model_max_length=model_max_length,
         trust_remote_code=trust_remote_code,
+        architectures=_WORKER_ARCHITECTURES,
     )
 
 
@@ -72,6 +78,7 @@ def _init_encoder(
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
+    architectures: list[str] | None,
     loader: _LoaderFn,
     log_queue: mp.Queue[logging.LogRecord],
     log_level: int,
@@ -85,10 +92,27 @@ def _init_encoder(
     root.setLevel(log_level)
     root.handlers.clear()
     root.addHandler(logging.handlers.QueueHandler(log_queue))
+    global _WORKER_ARCHITECTURES
+    _WORKER_ARCHITECTURES = architectures
     global _WORKER_TOK
-    _WORKER_TOK = loader(
-        name_or_path, model_max_length, trust_remote_code, revision
-    )
+    try:
+        _WORKER_TOK = loader(
+            name_or_path, model_max_length, trust_remote_code, revision
+        )
+    except Exception as exc:
+        # A worker's tokenizer load can fail under HF_HUB_OFFLINE (e.g. a
+        # remote-code file this worker's cache race didn't pick up in time).
+        # The pool's worker-handler thread already tolerates a dead worker
+        # by spawning a replacement while survivors drain the task queue, so
+        # let this worker exit -- but via `SystemExit`, which
+        # `BaseProcess._bootstrap` handles without dumping a raw traceback
+        # to stderr, unlike a plain exception escaping the initializer.
+        logging.getLogger(__name__).warning(
+            "Worker failed to load tokenizer %r, exiting worker: %s",
+            name_or_path,
+            exc,
+        )
+        raise SystemExit(1) from None
 
 
 def _encode_len(text: str) -> int:
@@ -201,6 +225,12 @@ class TokenizerPool:
             )
             self._log_listener.start()
             revision = getattr(self.tokenizer, "_resolved_revision", None)
+            # Forward the parent's resolved architectures so workers skip the
+            # redundant (and, when the Hub is unreachable, noisy) AutoConfig
+            # probe. `None` leaves each worker to resolve them itself.
+            architectures = getattr(
+                self.tokenizer, "_resolved_architectures", None
+            )
             # huggingface_hub caches HF_HUB_OFFLINE at import time, so set it
             # before spawning workers (not inside the initializer — too late).
             # Restore the parent's env afterward so we don't leak this global
@@ -216,6 +246,7 @@ class TokenizerPool:
                         self.tokenizer.model_max_length,
                         True,
                         revision,
+                        architectures,
                         self._loader,
                         log_queue,
                         root.level,

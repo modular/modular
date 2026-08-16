@@ -21,7 +21,7 @@ from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -30,7 +30,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -88,7 +88,7 @@ comptime epilogue_func_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -158,7 +158,7 @@ def bench_bmm[
     init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)
     init_vector_launch[a_type](b_device_buffer, b_size, init_type, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device)
     def epilogue_fn[
@@ -185,13 +185,12 @@ def bench_bmm[
             update_val,
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(a_device, b_device, c_device)
     @always_inline
     def bench_func(mut bench: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
                 comptime if has_amd_gpu_accelerator():
                     var c_buffer = TileTensor(
@@ -288,7 +287,7 @@ def bench_bmm[
                         ctx,
                     )
 
-        bencher_iter_custom[kernel_launch](bench, ctx)
+        bencher_iter_custom(bench, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

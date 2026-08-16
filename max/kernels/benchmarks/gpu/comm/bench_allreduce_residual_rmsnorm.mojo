@@ -50,7 +50,7 @@ from comm.allreduce_residual_rmsnorm import (
 )
 from std.collections import Optional
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, coord_to_index_list, row_major
@@ -138,7 +138,7 @@ def _verify_results[
 
     @__copy_capture(ar_ptr_v)
     @always_inline
-    @parameter
+    @__parameter
     def v_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -364,13 +364,13 @@ def _verify_add_results[
 
         @__copy_capture(ar_ptr_i, residual_ptr)
         @always_inline
-        @parameter
+        @__parameter
         def add_epilogue_v[
             _dtype: DType,
             _width: SIMDLength,
             *,
             _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+        ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
             var il = coord_to_index_list(coords)
             var flat_idx = il[0] * num_cols + il[1]
             var res = residual_ptr.load[width=_width, alignment=_alignment](
@@ -398,7 +398,7 @@ def _verify_add_results[
 
     @__copy_capture(ar_ptr_v)
     @always_inline
-    @parameter
+    @__parameter
     def v_ep_fused_in[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -770,14 +770,15 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 1: allreduce only =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -792,7 +793,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_allreduce_iter](
         b,
@@ -804,14 +805,15 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 2: allreduce + fused RMSNorm+FP8 (FP8 only) =====
     comptime if quantize:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @parameter
             @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_tensors, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
                         rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -833,7 +835,7 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @__copy_capture(ar_ptr)
                 @always_inline
-                @parameter
+                @__parameter
                 def fused_in[
                     width: Int, _rank: Int
                 ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -863,7 +865,7 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+            bencher_iter_custom(bench, call_fn, ctx)
 
         bench_multicontext[bench_ar_fused_iter](
             b,
@@ -877,14 +879,15 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -911,7 +914,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fully_fused_iter](
         b,
@@ -925,14 +928,15 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 4: allreduce (add epilogue) + fused RMSNorm+FP8 (FP8) ===
     comptime if quantize:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
         ) raises:
-            @parameter
             @always_inline
-            def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+            def call_fn(
+                ctx_inner: DeviceContext, cache_iter: Int
+            ) raises {mut in_tensors, mut ar_out_dev, imm}:
                 comptime for _j in range(ngpus):
                     in_tensors[_j] = TileTensor(
                         rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -946,13 +950,13 @@ def bench_allreduce_rmsnorm_fp8[
 
                 @__copy_capture(ar_ptr, residual_ptr_base)
                 @always_inline
-                @parameter
+                @__parameter
                 def add_epilogue[
                     _dtype: DType,
                     _width: SIMDLength,
                     *,
                     _alignment: Int,
-                ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
+                ](coords: Coord, val: SIMD[_dtype, length=_width]) -> None:
                     var il = coord_to_index_list(coords)
                     var flat_idx = il[0] * num_cols + il[1]
                     var res = residual_ptr_base.load[
@@ -981,7 +985,7 @@ def bench_allreduce_rmsnorm_fp8[
                 # allreduce + residual).
                 @__copy_capture(ar_ptr)
                 @always_inline
-                @parameter
+                @__parameter
                 def add_fused_in[
                     width: Int, _rank: Int
                 ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:
@@ -1011,7 +1015,7 @@ def bench_allreduce_rmsnorm_fp8[
                     ),
                 )
 
-            bencher_iter_custom[call_fn](bench, ctx)
+            bencher_iter_custom(bench, call_fn, ctx)
 
         bench_multicontext[bench_ar_add_fused_iter](
             b,
@@ -1025,14 +1029,15 @@ def bench_allreduce_rmsnorm_fp8[
 
     # ===== Benchmark 5: fused allreduce+add+RMSNorm (single kernel) =====
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = TileTensor(
                     rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -1067,7 +1072,7 @@ def bench_allreduce_rmsnorm_fp8[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fused_add_iter](
         b,

@@ -13,7 +13,7 @@
 
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TileTensor,
@@ -198,7 +198,7 @@ def test_dynamic[
 
     @__copy_capture(in_ptr)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[in_dtype, width]:

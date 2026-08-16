@@ -22,7 +22,7 @@ from std.python import PythonObject
 from . import ConvertibleToPython
 from std.os import abort
 from std.sys import bit_width_of
-from std.ffi import _CPointer, c_double, c_int, c_long, c_size_t, c_ssize_t
+from std.ffi import c_double, c_int, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
 from std.reflection import reflect
@@ -178,9 +178,7 @@ struct PythonObject(
         self = source^.to_python_object()
 
     @always_inline
-    def __init__[
-        T: Movable & ImplicitlyDeletable
-    ](out self, *, var alloc: T) raises:
+    def __init__[T: Movable & Deinitable](out self, *, var alloc: T) raises:
         """Allocate a new `PythonObject` and store a Mojo value in it.
 
         The newly allocated Python object will contain the provided Mojo `T`
@@ -358,7 +356,10 @@ struct PythonObject(
         var set_ptr = cpy.PySet_New({})
 
         for i in range(len(values)):
-            var errno = cpy.PySet_Add(set_ptr, values[i].steal_data())
+            # PySet_Add doesn't steal the value reference.
+            var value_ptr = values[i].steal_data()
+            var errno = cpy.PySet_Add(set_ptr, value_ptr)
+            cpy.Py_DecRef(value_ptr)
             if errno == -1:
                 raise cpy.unsafe_get_error()
         return PythonObject(from_owned=set_ptr)
@@ -397,7 +398,7 @@ struct PythonObject(
         """
         self = Self(from_borrowed=copy._obj_ptr)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the object.
 
         Decrements the underlying refcount of the pointed-to object.
@@ -465,9 +466,10 @@ struct PythonObject(
             If setting the attribute fails.
         """
         ref cpy = Python().cpython()
-        var errno = cpy.PyObject_SetAttrString(
-            self._obj_ptr, name^, value.steal_data()
-        )
+        # PyObject_SetAttrString doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetAttrString(self._obj_ptr, name^, value_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -567,19 +569,20 @@ struct PythonObject(
         var size = len(args)
         var key_ptr: PyObjectPtr
         if size == 1:
-            key_ptr = cpy.Py_NewRef(args[0].steal_data())
+            key_ptr = cpy.Py_NewRef(args[0]._obj_ptr)
         else:
             key_ptr = cpy.PyTuple_New(size)
 
             for i in range(size):
                 _ = cpy.PyTuple_SetItem(
-                    key_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                    key_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
                 )
 
-        var errno = cpy.PyObject_SetItem(
-            self._obj_ptr, key_ptr, value.steal_data()
-        )
+        # PyObject_SetItem doesn't steal the value reference.
+        var value_ptr = value^.steal_data()
+        var errno = cpy.PyObject_SetItem(self._obj_ptr, key_ptr, value_ptr)
         cpy.Py_DecRef(key_ptr)
+        cpy.Py_DecRef(value_ptr)
         if errno == -1:
             raise cpy.unsafe_get_error()
 
@@ -1288,7 +1291,7 @@ struct PythonObject(
 
         for i in range(size):
             _ = cpy.PyTuple_SetItem(
-                args_ptr, i, cpy.Py_NewRef(args[i].steal_data())
+                args_ptr, i, cpy.Py_NewRef(args[i]._obj_ptr)
             )
         var kwargs_ptr = Python.dict(**kwargs^).steal_data()
         var res_ptr = cpy.PyObject_Call(self._obj_ptr, args_ptr, kwargs_ptr)
@@ -1438,7 +1441,7 @@ struct PythonObject(
         )
 
     def downcast_value_ptr[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](self, *, func: Optional[StaticString] = None) raises -> Pointer[
         T, MutAnyOrigin
     ]:
@@ -1465,7 +1468,8 @@ struct PythonObject(
             If the Python object does not contain an instance of the Mojo `T`
             type.
         """
-        if opt := self._try_downcast_value[T]():
+        var opt = self._try_downcast_value[T]()
+        if opt:
             return opt.unsafe_take()
 
         if func:
@@ -1490,7 +1494,7 @@ struct PythonObject(
             )
 
     def _try_downcast_value[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](var self) raises -> Optional[Pointer[T, MutAnyOrigin]]:
         """Try to get a pointer to the expected contained Mojo value of type `T`.
 
@@ -1517,7 +1521,7 @@ struct PythonObject(
         return None
 
     def unchecked_downcast_value_ptr[
-        mut: Bool, origin: Origin[mut=mut], //, T: ImplicitlyDeletable
+        mut: Bool, origin: Origin[mut=mut], //, T: Deinitable
     ](ref[origin] self) -> Pointer[T, origin]:
         """Get a pointer to the expected Mojo value of type `T`.
 
@@ -1576,7 +1580,7 @@ def _unsafe_alloc[
 
 
 def _unsafe_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](obj_ptr: PyObjectPtr, var mojo_value: T) raises:
     """Initialize a Python object pointer with a Mojo value.
@@ -1599,7 +1603,7 @@ def _unsafe_init[
 
 
 def _unsafe_alloc_init[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     //,
 ](type_obj_ptr: PyTypeObjectPtr, var mojo_value: T) raises -> PythonObject:
     """Allocate a Python object pointer and initialize it with a Mojo value.

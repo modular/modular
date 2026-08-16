@@ -32,49 +32,81 @@ def band_part(
 ) -> TensorValue:
     """Masks out everything except a diagonal band of an input matrix.
 
-    Copies the tensor, setting everything outside the central diagonal band of
-    each matrix to zero. All but the last two axes are treated as batches, and
-    the last two axes define the matrices.
+    Copies a tensor, setting everything outside the central diagonal band of
+    each sub-matrix to zero. All axes except the last two are treated as
+    batch dimensions; the last two axes define the ``M x N`` sub-matrices.
+
+    A sub-matrix element at row ``m`` and column ``n`` is kept when
+    ``(m - n) <= num_lower`` (or ``num_lower`` is ``None``) and
+    ``(n - m) <= num_upper`` (or ``num_upper`` is ``None``). With
+    ``exclude=True`` the selection inverts: elements inside the band are
+    zeroed and elements outside are kept.
 
     .. code-block:: python
 
+        import numpy as np
+        from max.driver import CPU
         from max.dtype import DType
         from max.engine import InferenceSession
-        from max.graph import DeviceRef, Graph, ops
+        from max.graph import DeviceRef, Graph, TensorType, ops
 
-        device = DeviceRef.CPU()
-        with Graph("band_part") as graph:
-            x = ops.constant(
-                [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
-                DType.float32,
-                device=device,
-            )
-            # Keep the main diagonal and one sub-diagonal, producing
-            # [[1, 0, 0], [1, 1, 0], [0, 1, 1]].
-            graph.output(ops.band_part(x, num_lower=1, num_upper=0))
+        input_type = TensorType(
+            DType.float32, [4, 4], device=DeviceRef.CPU()
+        )
+        with Graph("band_part", input_types=[input_type]) as graph:
+            x = graph.inputs[0].tensor
+            # Tridiagonal band: one sub- and one super-diagonal.
+            tridiag = ops.band_part(x, num_lower=1, num_upper=1)
+            # Lower triangle: all sub-diagonals, no super-diagonals.
+            lower = ops.band_part(x, num_lower=None, num_upper=0)
+            graph.output(tridiag, lower)
 
-        model = InferenceSession().load(graph)
-        result = model.execute()[0]
+        model = InferenceSession(devices=[CPU()]).load(graph)
+        mat = np.arange(1, 17, dtype=np.float32).reshape(4, 4)
+        tri_out, lower_out = model.execute(mat)
+        # tri_out:
+        #   [[ 1.,  2.,  0.,  0.],
+        #    [ 5.,  6.,  7.,  0.],
+        #    [ 0., 10., 11., 12.],
+        #    [ 0.,  0., 15., 16.]]
+        # lower_out:
+        #   [[ 1.,  0.,  0.,  0.],
+        #    [ 5.,  6.,  0.,  0.],
+        #    [ 9., 10., 11.,  0.],
+        #    [13., 14., 15., 16.]]
+
+    .. invisible-code-block: python
+
+        rows, cols = np.indices((4, 4))
+
+        tri_mask = (rows - cols <= 1) & (cols - rows <= 1)
+        np.testing.assert_allclose(
+            tri_out.to_numpy(), np.where(tri_mask, mat, 0.0)
+        )
+
+        lower_mask = cols - rows <= 0
+        np.testing.assert_allclose(
+            lower_out.to_numpy(), np.where(lower_mask, mat, 0.0)
+        )
 
     Args:
         x: The input tensor to mask.
-        num_lower: The number of diagonal bands to include below the central
-            diagonal. If ``None`` or ``-1``, includes the entire lower
-            triangle. Defaults to ``None``.
-        num_upper: The number of diagonal bands to include above the central
-            diagonal. If ``None`` or ``-1``, includes the entire upper
-            triangle. Defaults to ``None``.
-        exclude: Whether to invert the selection, zeroing out the elements in
-            the band instead. Defaults to ``False``.
+        num_lower: The number of sub-diagonal bands to keep. If ``None``,
+            the entire lower triangle is kept.
+        num_upper: The number of super-diagonal bands to keep. If ``None``,
+            the entire upper triangle is kept.
+        exclude: If ``True``, invert the band selection so that elements
+            inside the band are zeroed and elements outside are kept.
 
     Returns:
-        A ``TensorValue`` representing ``x`` with the masked-out elements set to
-        zero and the remaining elements copied from ``x``. It has the same shape
-        and dtype as ``x``.
+        A symbolic tensor value with the same shape as ``x``. Elements
+        outside the selected band are zero; all other values are copied
+        from ``x``.
 
     Raises:
-        ValueError: If the input tensor rank is less than 2, or if ``num_lower``
-            or ``num_upper`` are out of bounds for statically known dimensions.
+        ValueError: If the input tensor rank is less than 2, or if
+            ``num_lower`` or ``num_upper`` are out of bounds for a
+            statically known dimension.
     """
     x = TensorValue(x)
     num_lower = -1 if num_lower is None else num_lower

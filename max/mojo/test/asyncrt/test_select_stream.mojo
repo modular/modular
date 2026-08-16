@@ -28,20 +28,17 @@ cheaper to diagnose than a full multi-stream graph:
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
 def add_one(
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    inp: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    inp: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -72,7 +69,9 @@ def _run_select_stream_zero_is_base(ctx: DeviceContext) raises:
     inp.enqueue_fill(2.0)
     var out = view.enqueue_create_buffer[T](length)
     out.enqueue_fill(0.0)
-    view.enqueue_function(func, inp, out, length, grid_dim=length, block_dim=1)
+    view.enqueue_function(
+        func, inp, out, Int32(length), grid_dim=length, block_dim=1
+    )
 
     var host = view.enqueue_create_host_buffer[T](length)
     out.enqueue_copy_to(host)
@@ -107,7 +106,9 @@ def _run_cross_stream_buffer_reuse(ctx: DeviceContext) raises:
     var a = ctx.enqueue_create_buffer[T](length)
     a.enqueue_fill(2.0)
     var b = ctx.enqueue_create_buffer[T](length)
-    ctx.enqueue_function(base_func, a, b, length, grid_dim=length, block_dim=1)
+    ctx.enqueue_function(
+        base_func, a, b, Int32(length), grid_dim=length, block_dim=1
+    )
 
     # Hand `b` to the side stream and compute `c = b + 1 == 4` there. The
     # ownership reassignment makes the side stream wait for the base stream's
@@ -115,7 +116,9 @@ def _run_cross_stream_buffer_reuse(ctx: DeviceContext) raises:
     b.reassign_ownership_to(side)
     var c = ctx.enqueue_create_buffer[T](length)
     c.reassign_ownership_to(side)
-    side.enqueue_function(side_func, b, c, length, grid_dim=length, block_dim=1)
+    side.enqueue_function(
+        side_func, b, c, Int32(length), grid_dim=length, block_dim=1
+    )
 
     var host = side.enqueue_create_host_buffer[T](length)
     c.enqueue_copy_to(host)
@@ -149,7 +152,9 @@ def _run_select_stream_composes(ctx: DeviceContext) raises:
     inp.reassign_ownership_to(v)
     var out = ctx.enqueue_create_buffer[T](length)
     out.reassign_ownership_to(v)
-    v.enqueue_function(func, inp, out, length, grid_dim=length, block_dim=1)
+    v.enqueue_function(
+        func, inp, out, Int32(length), grid_dim=length, block_dim=1
+    )
 
     var host = v.enqueue_create_host_buffer[T](length)
     out.enqueue_copy_to(host)

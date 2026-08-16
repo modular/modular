@@ -32,7 +32,7 @@ from max.pipelines.architectures.qwen2_5vl.model_config import Qwen2_5VLConfig
 from max.pipelines.architectures.qwen2_5vl.tokenizer import (
     Qwen2_5VLTokenizer,
 )
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib import KVCacheConfig, PipelineRuntimeConfig
 from transformers import AutoConfig
 
 CONFIG_DIR = Path(__file__).parent / "configs" / "qwen2_5vl_3b"
@@ -53,7 +53,6 @@ def _mock_pipeline_config(
     model.rope_type = "default"
     model.device_specs = [DeviceSpec.cpu()]
     model.max_length = None
-    model.graph_quantization_encoding = None
     model.use_subgraphs = True
     model.data_parallel_degree = 1
     model.huggingface_config = hf_config
@@ -61,6 +60,9 @@ def _mock_pipeline_config(
     pipeline_config = Mock()
     pipeline_config.model = model
     pipeline_config.lora = None
+    # A real runtime config, not a Mock: the tokenizer sizes its preprocessed
+    # image cache from these budgets, and arithmetic on a Mock raises.
+    pipeline_config.runtime = PipelineRuntimeConfig()
     return pipeline_config
 
 

@@ -16,7 +16,7 @@ from std.sys import get_defined_int
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor, row_major
 from nn.moe import (
@@ -111,11 +111,10 @@ def bench_single_group_router_eplb[
         layer_idx,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             single_group_router_eplb[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -139,7 +138,7 @@ def bench_single_group_router_eplb[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -217,11 +216,10 @@ def bench_moe_create_indices[
         expert_usage_stats,
         topk_ids,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             moe_create_indices[input_type=DType.uint32, target="gpu"](
                 token_expert_order,
                 expert_start_indices,
@@ -232,7 +230,7 @@ def bench_moe_create_indices[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -305,11 +303,10 @@ def bench_router_group_limited[
         expert_bias,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             router_group_limited[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -328,7 +325,7 @@ def bench_router_group_limited[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -402,11 +399,10 @@ def bench_single_group_router[
         expert_bias,
         routed_scaling_factor,
     )
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             single_group_router[
                 scores_type=dtype,
                 bias_type=dtype,
@@ -423,7 +419,7 @@ def bench_single_group_router[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(
@@ -504,11 +500,10 @@ def bench_eplb_remap[
 
     @always_inline
     @__copy_capture(phy, router_idx, logcnt, log2phy, layer_idx)
-    @parameter
+    @__parameter
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             eplb_remap[
                 num_log=num_log,
                 max_replicas=max_replicas,
@@ -524,7 +519,7 @@ def bench_eplb_remap[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     b.bench_function[bench_fn](
         BenchId(

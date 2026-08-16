@@ -25,7 +25,7 @@ Covers two paths:
 from std.collections import Optional
 from std.random import random_si64
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.sys.info import _accelerator_arch
 from std.utils import IndexList
 
@@ -169,9 +169,9 @@ def _run_8x8_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -250,7 +250,7 @@ def _run_8x8_bias_case[
     var bias_ptr = bias_dev.unsafe_ptr()
     var row_stride = N  # output is row_major(M, N)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr, row_stride)
     def bias_epilogue[
@@ -285,9 +285,9 @@ def _run_8x8_bias_case[
         d_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
         block_dim=(NSG * WARP_SIZE,),
     )
@@ -1724,7 +1724,7 @@ def _run_bias_epilogue_test[
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
@@ -1951,7 +1951,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
 
     var d_ptr = d_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr)
     def relu_compose_epilogue[
@@ -2036,7 +2036,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_relu_compose_epilogue[
@@ -2127,7 +2127,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[
@@ -2278,7 +2278,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
     var d_ptr = d_dev.unsafe_ptr()
     var bias_ptr = bias_dev.unsafe_ptr()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d_ptr, bias_ptr)
     def bias_epilogue[

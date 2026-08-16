@@ -17,6 +17,7 @@ from std.sys.info import CompilationTarget, is_64bit
 from std.bit import count_leading_zeros
 from std.memory import alloc, dealloc, ThinAllocation, Layout
 from std.memory.unsafe import bitcast
+from std.builtin._format_float import _write_float
 from std.builtin.simd import _modf
 from std.itertools import product
 from std.random import randn, seed
@@ -252,7 +253,6 @@ def test_to_bits() raises:
 
 # TODO: Use property testing framework to test this.
 def test_from_to_bits_roundtrip_property_test() raises:
-    @parameter
     def properties[dtype: DType, size: Int](simd: SIMD[dtype, size]) raises:
         var bits = simd.to_bits()
         var reconstructed = SIMD[dtype, size](from_bits=bits)
@@ -447,9 +447,7 @@ def test_issue_20421() raises:
         .unsafe_bitcast[Int32]()
         .unsafe_load[width=4, alignment=1]()
     )
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=ptr).unsafe_with_layout(a_layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(a_layout))
     assert_equal(
         av16,
         SIMD[DType.int32, 4](-943274556, -875902520, -808530484, -741158448),
@@ -470,9 +468,8 @@ def test_issue_30237() raises:
         -2.76076847742355e-16,
     ]
 
-    @parameter
     @always_inline
-    def eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval1(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -484,9 +481,8 @@ def test_issue_30237() raises:
 
         return result
 
-    @parameter
     @always_inline
-    def eval2(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    def eval2(x: SIMD[dtype, simd_width]) {imm} -> SIMD[dtype, simd_width]:
         var c_last = coefficients[coefficients_len - 1]
         var c_second_from_last = coefficients[coefficients_len - 2]
 
@@ -534,14 +530,13 @@ def test_truthy() raises:
         DType.uint,
     )
 
-    @parameter
     def test_dtype[dtype: DType]() raises:
         # Scalars of 0-values are false-y, 1-values are truth-y
         assert_false(Scalar[dtype](0))
         assert_true(Scalar[dtype](1))
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = dtypes[i]
+        comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
     test_dtype[DType.bfloat16]()
@@ -914,35 +909,16 @@ def test_mod() raises:
 
 
 def test_divmod() raises:
-    # TODO(MSTDL-1946): test using tuple comparison.
-    var a, b = divmod(Int32(99), Int32(1))
-    assert_equal(a, Int32(99))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(99), Int32(3))
-    assert_equal(a, Int32(33))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(99), Int32(-2))
-    assert_equal(a, Int32(-50))
-    assert_equal(b, Int32(-1))
-    a, b = divmod(Int32(99), Int32(8))
-    assert_equal(a, Int32(12))
-    assert_equal(b, Int32(3))
-    a, b = divmod(Int32(99), Int32(-8))
-    assert_equal(a, Int32(-13))
-    assert_equal(b, Int32(-5))
-    a, b = divmod(Int32(2), Int32(-1))
-    assert_equal(a, Int32(-2))
-    assert_equal(b, Int32(0))
-    a, b = divmod(Int32(2), Int32(-2))
-    assert_equal(a, Int32(-1))
-    assert_equal(b, Int32(0))
+    assert_equal(divmod(Int32(99), Int32(1)), (Int32(99), Int32(0)))
+    assert_equal(divmod(Int32(99), Int32(3)), (Int32(33), Int32(0)))
+    assert_equal(divmod(Int32(99), Int32(-2)), (Int32(-50), Int32(-1)))
+    assert_equal(divmod(Int32(99), Int32(8)), (Int32(12), Int32(3)))
+    assert_equal(divmod(Int32(99), Int32(-8)), (Int32(-13), Int32(-5)))
+    assert_equal(divmod(Int32(2), Int32(-1)), (Int32(-2), Int32(0)))
+    assert_equal(divmod(Int32(2), Int32(-2)), (Int32(-1), Int32(0)))
 
-    var c, d = divmod(UInt32(99), UInt32(3))
-    assert_equal(c, UInt32(33))
-    assert_equal(d, UInt32(0))
-    c, d = divmod(UInt32(99), UInt32(4))
-    assert_equal(c, UInt32(24))
-    assert_equal(d, UInt32(3))
+    assert_equal(divmod(UInt32(99), UInt32(3)), (UInt32(33), UInt32(0)))
+    assert_equal(divmod(UInt32(99), UInt32(4)), (UInt32(24), UInt32(3)))
 
     # fmt: off
     var e = SIMD[DType.float32, 16](
@@ -957,18 +933,19 @@ def test_divmod() raises:
          1.2, -3.2, -2.2, -1.2,
          3.1, -3.1,  3.1, -3.1,
     )
-    var g, h = divmod(e, f)
-    assert_equal(g, SIMD[DType.float32, 16](
-         0.0,  1.0,  2.0, -1.0,
-        -2.0, -3.0, -1.0, -2.0,
-        -3.0,  0.0,  1.0,  2.0,
-         1.0, -1.0, -1.0,  1.0,
-    ))
-    assert_equal(h, SIMD[DType.float32, 16](
-         3.1,         0.89999986,  0.6999998,  -0.10000014,
-        -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
-         0.50000024, -3.1,        -0.89999986, -0.6999998,
-         0.0,         0.0,         0.0,         0.0,
+    assert_equal(divmod(e, f), (
+        SIMD[DType.float32, 16](
+             0.0,  1.0,  2.0, -1.0,
+            -2.0, -3.0, -1.0, -2.0,
+            -3.0,  0.0,  1.0,  2.0,
+             1.0, -1.0, -1.0,  1.0,
+        ),
+        SIMD[DType.float32, 16](
+             3.1,         0.89999986,  0.6999998,  -0.10000014,
+            -1.3000002,  -0.50000024,  0.10000014,  1.3000002,
+             0.50000024, -3.1,        -0.89999986, -0.6999998,
+             0.0,         0.0,         0.0,         0.0,
+        ),
     ))
     # fmt: on
 
@@ -976,9 +953,13 @@ def test_divmod() raises:
     # result is zero.
     var i = SIMD[DType.int32, 4](99, 0, 8, 0)
     var j = SIMD[DType.int32, 4](4, 3, -2, 0)
-    var k, l = divmod(i, j)
-    assert_equal(k, SIMD[DType.int32, 4](24, 0, -4, 0))
-    assert_equal(l, SIMD[DType.int32, 4](3, 0, 0, 0))
+    assert_equal(
+        divmod(i, j),
+        (
+            SIMD[DType.int32, 4](24, 0, -4, 0),
+            SIMD[DType.int32, 4](3, 0, 0, 0),
+        ),
+    )
 
 
 def test_rmod() raises:
@@ -1143,7 +1124,7 @@ def test_shuffle() raises:
     comptime dtype = DType.int32
     comptime width = 4
 
-    vec = SIMD[dtype, width](100, 101, 102, 103)
+    var vec = SIMD[dtype, width](100, 101, 102, 103)
 
     assert_equal(
         vec.shuffle[3, 2, 1, 0](), SIMD[dtype, width](103, 102, 101, 100)
@@ -1186,10 +1167,10 @@ def test_shuffle_dynamic_size_4_uint8() raises:
         0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150
     )
 
-    indices = SIMD[DType.uint8, 4](3, 3, 5, 5)
+    var indices = SIMD[DType.uint8, 4](3, 3, 5, 5)
 
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 4](30, 30, 50, 50)
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 4](30, 30, 50, 50)
     assert_equal(result, expected_result)
 
 
@@ -1199,10 +1180,10 @@ def test_shuffle_dynamic_size_8_uint8() raises:
     )
 
     # Let's use size 8
-    indices = SIMD[DType.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
+    var indices = SIMD[DType.uint8, 8](3, 3, 5, 5, 7, 7, 9, 0)
 
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 8](30, 30, 50, 50, 70, 70, 90, 0)
     assert_equal(result, expected_result)
 
 
@@ -1213,8 +1194,8 @@ def test_shuffle_dynamic_size_16_uint8() raises:
     var indices = SIMD[DType.uint8, 16](
         3, 3, 5, 5, 7, 7, 9, 9, 11, 11, 13, 13, 15, 15, 0, 1
     )
-    result = lookup_table._dynamic_shuffle(indices)
-    expected_result = SIMD[DType.uint8, 16](
+    var result = lookup_table._dynamic_shuffle(indices)
+    var expected_result = SIMD[DType.uint8, 16](
         30, 30, 50, 50, 70, 70, 90, 90, 110, 110, 130, 130, 150, 150, 0, 10
     )
     assert_equal(result, expected_result)
@@ -1231,9 +1212,9 @@ def test_shuffle_dynamic_size_32_uint8() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices)
+    var result = table_lookup._dynamic_shuffle(indices)
 
-    expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[DType.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1254,9 +1235,9 @@ def test_shuffle_dynamic_size_64_uint8() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices.join(indices))
+    var result = table_lookup._dynamic_shuffle(indices.join(indices))
 
-    expected_result = SIMD[DType.uint8, 32](
+    var expected_result = SIMD[DType.uint8, 32](
         30 , 30 , 50 , 50 , 70 , 70 , 90 , 90 ,
         110, 110, 130, 130, 150, 150, 0  , 10 ,
         0  , 10 , 20 , 30 , 40 , 50 , 60 , 70 ,
@@ -1278,9 +1259,9 @@ def test_shuffle_dynamic_size_32_float() raises:
         0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ,
         8 , 9 , 10, 11, 12, 13, 14, 15,
     )
-    result = table_lookup._dynamic_shuffle(indices)
+    var result = table_lookup._dynamic_shuffle(indices)
 
-    expected_result = SIMD[DType.float64, 32](
+    var expected_result = SIMD[DType.float64, 32](
         30. , 30. , 50. , 50. , 70. , 70. , 90. , 90. ,
         110., 110., 130., 130., 150., 150., 0.  , 10. ,
         0.  , 10. , 20. , 30. , 40. , 50. , 60. , 70. ,
@@ -1327,7 +1308,7 @@ def test_join() raises:
     comptime I4 = SIMD[DType.int32, 4]
     assert_equal(I2(5, 6).join(I2(9, 10)), I4(5, 6, 9, 10))
 
-    vec = I4(100, 101, 102, 103)
+    var vec = I4(100, 101, 102, 103)
     assert_equal(
         vec.join(vec),
         SIMD[DType.int32, 8](100, 101, 102, 103, 100, 101, 102, 103),
@@ -1392,7 +1373,6 @@ def test_extract() raises:
 
 
 def test_limits() raises:
-    @parameter
     def test_integral_overflow[dtype: DType]() raises:
         var max_value = Scalar[dtype].MAX
         var min_value = Scalar[dtype].MIN
@@ -1491,7 +1471,6 @@ def test_indexing() raises:
 
 
 def test_reduce() raises:
-    @parameter
     def test_dtype[dtype: DType]() raises:
         comptime X8 = SIMD[dtype, 8]
         comptime X4 = SIMD[dtype, 4]
@@ -2023,7 +2002,6 @@ def test_comparison() raises:
         DType.uint,
     )
 
-    @parameter
     def test_dtype[dtype: DType]() raises:
         comptime X4 = SIMD[dtype, 4]
 
@@ -2218,7 +2196,7 @@ def test_comparison() raises:
             assert_true(mixed_ge[3])
 
     comptime for i in range(dtypes.__len__()):
-        comptime dtype = dtypes[i]
+        comptime dtype = rebind[DType](dtypes[i])
         test_dtype[dtype]()
 
     test_dtype[DType.bfloat16]()
@@ -2674,6 +2652,32 @@ def test_bool_init() raises:
     assert_false(mixed_bool[1])
     assert_true(mixed_bool[2])
     assert_false(mixed_bool[3])
+
+
+def _assert_half_float_writes_like_float32[
+    dtype: DType
+]() raises where dtype.is_half_float() and dtype.is_floating_point():
+    """Exhaustive over all 65536 bit patterns of a 16-bit float."""
+    for bits in range(0, 1 << 16):
+        var value = bitcast[dtype](UInt16(bits))
+        # Calling `_write_float` on the un-widened value is what `_write_scalar`
+        # used to do, so it is the reference text. Comparing against
+        # `String(value.cast[DType.float32]())` instead would compare
+        # `_write_scalar`'s widening against itself and pass no matter what.
+        var reference = String()
+        _write_float(reference, value)
+        assert_equal(String(value), reference)
+
+
+def test_write_half_float_matches_float32() raises:
+    # `_write_scalar` routes half floats through `Float32` so `float16` and
+    # `bfloat16` share one `_write_float` instantiation instead of each getting a
+    # private copy of the formatter. That is only sound because `_write_float`
+    # already widens everything but `float64` and the `float8` variants to
+    # `Float32` before formatting. Pin the equivalence so a future
+    # precision-aware formatter cannot silently change what `print` emits.
+    _assert_half_float_writes_like_float32[DType.float16]()
+    _assert_half_float_writes_like_float32[DType.bfloat16]()
 
 
 def test_float8_e8m0fnu_type_alias() raises:

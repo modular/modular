@@ -24,8 +24,8 @@ Both ``transpose_c`` branches of ``apply_to_fragment`` are exercised
 
 from std.collections import Optional
 from std.sys import align_of, size_of
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
@@ -109,7 +109,7 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def in_bounds_compute_lambda[
@@ -174,7 +174,7 @@ def test_partial_n_tile_compute_epilogue[
 
     var c_host_copy_lt = c_host_copy.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_host_copy_lt)
     def in_bounds_compute_lambda_local[

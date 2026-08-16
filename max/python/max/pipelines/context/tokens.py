@@ -33,13 +33,19 @@ Example:
     token_buffer = TokenBuffer(prompt_tokens)
 
     # Add generated tokens
-    token_buffer.add_token(5)
-    token_buffer.add_token(6)
+    token_buffer.advance_with_token(5)
+    token_buffer.advance_with_token(6)
 
     # Access token sequences
     all_tokens = token_buffer.all  # [1, 2, 3, 4, 5, 6]
     generated = token_buffer.generated  # [5, 6]
     prompt = token_buffer.prompt  # [1, 2, 3, 4]
+
+.. invisible-code-block: python
+
+    assert list(all_tokens) == [1, 2, 3, 4, 5, 6]
+    assert list(generated) == [5, 6]
+    assert list(prompt) == [1, 2, 3, 4]
 """
 
 from __future__ import annotations
@@ -821,6 +827,21 @@ class ImageMetadata:
 
     image_hash: int | None = None
     """Hash of the image, for use in prefix caching"""
+
+    num_embedding_rows: int | None = None
+    """Embedding rows the encoder emits for this entry.
+
+    ``None`` means every token in ``[start_idx, end_idx)`` is a placeholder,
+    so the row count equals the span width. Set by tokenizers whose spans
+    interleave placeholder runs with other tokens (e.g. video timestamp
+    text)."""
+
+    @property
+    def embedding_rows(self) -> int:
+        """Embedding rows for this entry (span width unless overridden)."""
+        if self.num_embedding_rows is not None:
+            return self.num_embedding_rows
+        return self.end_idx - self.start_idx
 
     def __post_init__(self) -> None:
         if self.start_idx < 0:

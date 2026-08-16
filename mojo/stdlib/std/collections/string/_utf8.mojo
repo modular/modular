@@ -148,7 +148,7 @@ def validate_chunk[
     return must23_as_80 ^ sc
 
 
-def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
+def _is_valid_utf8_runtime(span: ImmSpan[Byte, _]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -163,8 +163,8 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
     """
 
-    ptr = span.unsafe_ptr()
-    length = len(span)
+    var ptr = span.unsafe_ptr()
+    var length = len(span)
     comptime simd_size = simd_byte_width()
     var i: Int = 0
     var previous = SIMD[DType.uint8, simd_size]()
@@ -191,7 +191,7 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, _]) -> Bool:
     return all(has_error.eq(0))
 
 
-def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
+def _is_valid_utf8_comptime(span: ImmSpan[Byte, _]) -> Bool:
     var ptr = span.unsafe_ptr()
     var length = Int(len(span))
     var offset = 0
@@ -233,7 +233,7 @@ def _is_valid_utf8_comptime(span: Span[mut=False, Byte, _]) -> Bool:
 
 
 @always_inline("nodebug")
-def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
+def _is_valid_utf8(span: ImmSpan[Byte, _]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -269,7 +269,6 @@ def _is_valid_utf8(span: Span[mut=False, Byte, _]) -> Bool:
 # ===-----------------------------------------------------------------------===#
 
 
-@parameter
 @always_inline
 def _is_utf8_continuation_byte[
     w: SIMDLength
@@ -325,12 +324,7 @@ def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
 @always_inline
 def _is_newline_char_utf8[
     include_r_n: Bool = False
-](
-    p: Pointer[mut=False, Byte, ...],
-    eol_start: Int,
-    b0: Byte,
-    char_len: Int,
-) -> Bool:
+](p: ImmPointer[Byte, ...], eol_start: Int, b0: Byte, char_len: Int,) -> Bool:
     """Returns whether the char is a newline char.
 
     Safety:

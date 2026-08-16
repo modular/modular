@@ -14,8 +14,8 @@
 from std.math import ceildiv, isclose
 from std.random import random_float64
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import A100
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import A100
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
@@ -87,7 +87,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_bf16() raises:
         comptime kernel = matmul_kernel_naive[
             DType.bfloat16,
@@ -102,9 +102,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             c_tt_bf16,
             a_tt_bf16,
             b_tt_bf16,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -136,7 +136,7 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_fp32() raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -151,9 +151,9 @@ def run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
             c_tt_fp32,
             a_tt_fp32,
             b_tt_fp32,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -270,7 +270,7 @@ def run_matmul[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
@@ -285,9 +285,9 @@ def run_matmul[
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -433,9 +433,9 @@ def run_matmul_split_k[
         c_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
@@ -553,7 +553,7 @@ def run_matmul_transpose[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive() raises:
         comptime kernel = matmul_kernel_naive[
             dtype,
@@ -569,9 +569,9 @@ def run_matmul_transpose[
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -673,7 +673,7 @@ def run_batched_matmul(
 
     @always_inline
     @__copy_capture(c_tensor)
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn1[
         c_type: DType,
         width: SIMDLength,
@@ -695,7 +695,7 @@ def run_batched_matmul(
 
     @always_inline
     @__copy_capture(c_tensor_n)
-    @parameter
+    @__parameter
     def elementwise_epilogue_fn2[
         c_type: DType,
         width: SIMDLength,

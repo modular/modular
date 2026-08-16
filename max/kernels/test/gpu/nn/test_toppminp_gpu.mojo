@@ -14,10 +14,10 @@
 from std.math import iota
 from std.random import random_float64
 
-from std.algorithm.functional import parallelize_over_rows
+from max.algorithm.functional import parallelize_over_rows
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Coord,
@@ -25,7 +25,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.softmax import softmax
+from nn.softmax import softmax_inline
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from std.testing import assert_almost_equal, assert_equal
 
@@ -62,20 +62,19 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        bencher_iter_custom[kernel_launch](m, ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
     m.bench_function[bench_func](BenchId(kernel_name))
 
 
-@parameter
+@__parameter
 def fill_random[
     dtype: DType
 ](
@@ -91,7 +90,7 @@ def fill_random[
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-@parameter
+@__parameter
 def fill_iota[
     dtype: DType
 ](
@@ -200,7 +199,7 @@ def test_is_sorted_descending[
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = List(length=batch_size, fill=True)
 
-    @parameter
+    @__parameter
     def process_rows(start_batch: Int, end_batch: Int):
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
@@ -330,7 +329,7 @@ def test_case_sampling[
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.raw_store(i, in_logits.raw_load(i) / temperature)
 
-    softmax[simd_width=1, rank=rank](
+    softmax_inline[simd_width=1, rank=rank](
         in_logits_cpu_test,
         probs_cpu_test,
         axis=1,
@@ -355,7 +354,7 @@ def test_case_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             if is_top_p:
                 top_p_sampling_gpu(

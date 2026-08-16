@@ -15,10 +15,10 @@ from std.collections import OptionalReg
 from std.math import gcd
 from std.sys.info import _current_target, simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.complex import ComplexSIMD
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu
 from layout import (
     Coord,
     CoordLike,
@@ -39,8 +39,8 @@ def _rope[
     freq_dtype: DType,
     width: SIMDLength,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
-    x_re, x_im = val.cast[freq_dtype]().deinterleave()
-    f_re, f_im = freq.deinterleave()
+    var x_re, x_im = val.cast[freq_dtype]().deinterleave()
+    var f_re, f_im = freq.deinterleave()
     var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
     return rebind[SIMD[dtype, width]](r.re.interleave(r.im).cast[dtype]())
 
@@ -110,7 +110,7 @@ def apply_rope[
     comptime if interleaved:
         output_fn[alignment=alignment](idx, res)
     else:
-        output_re, output_im = res.deinterleave()
+        var output_re, output_im = res.deinterleave()
         output_fn[alignment=alignment](pos_re, output_re)
         output_fn[alignment=alignment](pos_im, output_im)
 
@@ -127,6 +127,7 @@ def rope_ragged[
     & def[width: SIMDLength, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) -> None,
+    rope_first: Bool = False,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
         Trait=CoordLike
     ](),
@@ -156,6 +157,20 @@ def rope_ragged[
     comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime unroped_dim = head_size - rope_dim
     comptime has_nope = unroped_dim > 0
+    # `rope_first` puts the rotated columns at the front of each head (the
+    # DSA Indexer layout, where Q and K are chunked as `pe, nope`) rather than
+    # at the back (the MLA layout). It only changes which side of the head the
+    # passthrough columns sit on, so it also moves where `freqs_cis` starts
+    # being indexed.
+    comptime freq_col_offset = 0 if rope_first else unroped_dim
+    # Non-interleaved RoPE pairs column j with j + head_size // 2
+    # (`get_safetensors_idx`), a rotate-half split spanning the whole head.
+    # That only lines up with the roped region when the region is the
+    # trailing half, so a leading roped region would rotate roped columns
+    # against passthrough ones.
+    comptime assert interleaved or not (
+        rope_first and has_nope
+    ), "rope_ragged: rope_first partial RoPE requires interleaved layout"
 
     # Extract the position_ids raw pointer + row stride into primitive locals so
     # they can be `@__copy_capture`'d into the device kernel closure. Capturing
@@ -231,7 +246,11 @@ def rope_ragged[
 
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
-            var is_unroped_region = head_dim_idx < unroped_dim
+            var is_unroped_region: Bool
+            comptime if rope_first:
+                is_unroped_region = head_dim_idx >= rope_dim
+            else:
+                is_unroped_region = head_dim_idx < unroped_dim
 
             var f_c_temp: SIMD[freq_dtype, width]
 
@@ -243,7 +262,7 @@ def rope_ragged[
                         (
                             Scalar[freqs_cis.linear_idx_type](position_ids_idx),
                             Scalar[freqs_cis.linear_idx_type](
-                                head_dim_idx - unroped_dim
+                                head_dim_idx - freq_col_offset
                             ),
                         )
                     )

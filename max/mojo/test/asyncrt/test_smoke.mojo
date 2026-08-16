@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
@@ -73,11 +73,11 @@ def _run_device_info(ctx: DeviceContext) raises:
     print("-")
     print("_run_device_info()")
 
-    (free_before, total_before) = ctx.get_memory_info()
+    var (free_before, total_before) = ctx.get_memory_info()
 
     var buf = ctx.create_buffer_sync[DType.float32](20 * 1024 * 1024)
 
-    (free_after, total_after) = ctx.get_memory_info()
+    var (free_after, total_after) = ctx.get_memory_info()
     print(
         "Memory info (before -> after) - total: ",
         total_before,

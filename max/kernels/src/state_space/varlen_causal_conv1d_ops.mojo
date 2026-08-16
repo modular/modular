@@ -21,8 +21,8 @@ This module registers operations for variable-length causal 1D convolution:
 from std.math import ceildiv
 
 import extensibility
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import InputTensor, OutputTensor
 from std.utils.index import IndexList
@@ -195,10 +195,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -249,10 +249,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -303,10 +303,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -357,10 +357,10 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 ]()
                 gpu_ctx.enqueue_function(
                     compiled_func,
-                    batch,
-                    dim,
-                    seqlen,
-                    state_len,
+                    Int32(batch),
+                    Int32(dim),
+                    Int32(seqlen),
+                    Int32(state_len),
                     x_tt,
                     weight_tt,
                     bias_tt,
@@ -510,10 +510,10 @@ struct CausalConv1DVarlenStates:
             ]()
             gpu_ctx.enqueue_function(
                 compiled_func,
-                total_tokens,
-                dim,
-                batch,
-                state_len,
+                Int32(total_tokens),
+                Int32(dim),
+                Int32(batch),
+                Int32(state_len),
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,

@@ -24,8 +24,8 @@
 from std.math import align_up, ceildiv
 from std.sys import argv, size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.random import rand
 from internal_utils import assert_almost_equal
 from layout import (
@@ -51,7 +51,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from std.random import random_ui64
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -234,7 +234,7 @@ def _test_impl[
 
     var c_device_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device_lt)
     def epilogue_fn[
@@ -318,7 +318,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
+        @__parameter
         @always_inline
         def run[
             MType: CoordLike,
@@ -495,7 +495,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
         comptime small_bn_block_tile = Index(128, 8, BK)
         comptime small_bn_umma = Index(128, 8, MMA_K)
 
-        @parameter
+        @__parameter
         def test_small_bn[N: Int, K: Int]() raises:
             run[
                 dtype,

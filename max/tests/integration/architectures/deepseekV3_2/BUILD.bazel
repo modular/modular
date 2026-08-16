@@ -59,6 +59,18 @@ modular_py_library(
     ],
 )
 
+# Same CPU/GPU-split contract as :mla_sparse_graphs, for the Hadamard transform.
+modular_py_library(
+    name = "hadamard_graphs",
+    srcs = ["_hadamard_graphs.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
+    ],
+)
+
 modular_py_test(
     name = "deepseekV3_2",
     size = "large",
@@ -69,9 +81,12 @@ modular_py_test(
             # Own library targets, not test sources.
             "_mla_sparse_test_utils.py",
             "_mla_sparse_graphs.py",
+            "_hadamard_graphs.py",
             # Own binary/test targets below.
             "precompile_mla_sparse.py",
             "test_mla_sparse_prefill_graph_gpu.py",
+            "precompile_hadamard.py",
+            "test_hadamard_transform.py",
             # Construction-only smoke; runs on CPU (own target below).
             "test_mla_prefill_decode_graph_construction.py",
         ],
@@ -112,7 +127,6 @@ modular_py_test(
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
         requirement("numpy"),
-        requirement("scipy"),
         requirement("torch"),
         requirement("transformers"),
     ],
@@ -203,6 +217,70 @@ modular_py_test(
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:mef_precompile",
         requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# CPU producer: compiles one Hadamard transform graph to a MEF under virtual
+# devices (no GPU). Run only as a build action by the precompiled_mefs macro.
+modular_py_binary(
+    name = "precompile_hadamard_bin",
+    testonly = True,
+    srcs = ["precompile_hadamard.py"],
+    imports = ["."],
+    main = "precompile_hadamard.py",
+    tags = ["manual"],
+    deps = [
+        ":hadamard_graphs",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:mef_precompile",
+    ],
+)
+
+# One CPU build action per spec, merged into one dir. The transform is plain
+# matmul/pad, so the MEFs build for whatever accelerator the GPU lane's mojo
+# toolchain targets -- no arch gate beyond the consumer's own constraints.
+precompiled_mefs(
+    name = "hadamard_mefs",
+    producer = ":precompile_hadamard_bin",
+    specs = [
+        "hadamard_1x2_s1",
+        "hadamard_2x6_s0p5",
+        "hadamard_2x1x3_s1",
+    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+)
+
+# GPU consumer: initializes the CPU-precompiled MEFs and compares against the
+# torch reference. No graph compilation happens here -- that moved to the CPU
+# build actions.
+modular_py_test(
+    name = "test_hadamard_transform",
+    size = "medium",
+    srcs = ["test_hadamard_transform.py"],
+    data = [":hadamard_mefs"],
+    env = {
+        "HADAMARD_MEF_RLOCATIONS": "$(rlocationpaths :hadamard_mefs)",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        ":hadamard_graphs",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/tests/integration/test_common:mef_precompile",
+        requirement("scipy"),
         requirement("torch"),
     ],
 )

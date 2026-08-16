@@ -25,7 +25,7 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from std.gpu.host import (
+from max.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
@@ -174,7 +174,7 @@ def allreduce_test[
 
     # Custom epilogue that negates values to distinguish from default
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
@@ -353,7 +353,7 @@ def allreduce_naive_test() raises -> None:
         out_tensors_capture[i] = TileTensor(out_dev[i], row_major(length))
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensors_capture)
     def outputs_lambda[
         input_index: Int,
@@ -395,7 +395,7 @@ def allreduce_naive_test() raises -> None:
         host_ptrs[i].free()
 
 
-@parameter
+@__parameter
 def run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
     comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
@@ -404,9 +404,9 @@ def run_allreduce_sweep[use_multimem: Bool]() raises:
         range(len(test_lengths)),
         range(2),  # Test both default and custom epilogue
     ):
-        comptime num_gpus = test_gpu_counts[gpu_idx]
-        comptime dtype = test_dtypes[dtype_idx]
-        comptime length = test_lengths[length_idx]
+        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
+        comptime length = rebind[Int](test_lengths[length_idx])
         comptime use_custom_epilogue = epilogue_idx == 1
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
         # Multimem needs N % simd_width == 0; non-multimem tests SIMD tail.

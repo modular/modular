@@ -39,7 +39,7 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 
 from max._core.driver import _release_buffers_to_borrowed
-from max.driver import Buffer
+from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
 from max.experimental.nn.module import CompiledModel
 from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
@@ -81,6 +81,7 @@ def _release_graph_capture_outputs_to_borrowed(
         "num_accepted_draft_tokens",
         "next_tokens",
         "next_draft_tokens",
+        "next_draft_probs_full",
     ):
         value = getattr(outputs, field_name, None)
         if isinstance(value, Buffer):
@@ -266,11 +267,22 @@ class ServeGraphCaptureRunner:
                         )
                         outputs.sampled_tokens = sampled_tokens
                     else:
-                        assert len(output_buffers) == 3, "Expected 3 outputs"
+                        if len(output_buffers) not in (3, 4):
+                            raise RuntimeError(
+                                "spec-decode graph capture returned "
+                                f"{len(output_buffers)} outputs; expected 3 "
+                                "(num_accepted_draft_tokens, next_tokens, "
+                                "next_draft_tokens) or 4 (+ "
+                                "next_draft_probs_full, under "
+                                "draft_proposal='sampled')."
+                            )
                         outputs = UnifiedEagleOutputs(
                             num_accepted_draft_tokens=output_buffers[0],
                             next_tokens=output_buffers[1],
                             next_draft_tokens=output_buffers[2],
+                            next_draft_probs_full=output_buffers[3]
+                            if len(output_buffers) == 4
+                            else None,
                         )
                     # Graph-capture warmup keeps many output handles alive. Drop
                     # Python-side ownership so later captures can reuse the same
@@ -384,11 +396,12 @@ class ServeGraphCaptureRunner:
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
         captured_inputs, outputs = self.graph_entries[replay_graph_key]
 
-        # Refresh captured inputs: group (src, dst) pairs by destination device.
-        # Host-resident destinations copy inline; for each accelerator device a
-        # single batched call collapses all its pairs into one driver submit
-        # (cuMemcpyBatchAsync on CUDA 12.8+, sequential fallback otherwise).
-        device_groups: dict[tuple[str, int], list[tuple[Buffer, Buffer]]] = {}
+        # Refresh captured inputs. Host-resident destinations copy inline; the
+        # rest go into one batched call, which the driver splits into one
+        # submit per destination device (cuMemcpyBatchAsync on CUDA 12.8+,
+        # sequential fallback otherwise).
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
         for src_value, dst_value in zip(
             input_buffers, captured_inputs, strict=True
         ):
@@ -400,17 +413,10 @@ class ServeGraphCaptureRunner:
                 "(single-stream ordering is the correctness premise); "
                 f"got src {src_value.device} -> dst {dst_value.device}."
             )
-            key = (dst_value.device.label, dst_value.device.id)
-            device_groups.setdefault(key, []).append((src_value, dst_value))
+            dsts.append(dst_value)
+            srcs.append(src_value)
 
-        for pairs in device_groups.values():
-            dsts = [p[1] for p in pairs]
-            srcs = [p[0] for p in pairs]
-            # Use the first dst buffer as the context owner. All pairs target
-            # the same device, so stream ordering is preserved identically to
-            # the per-copy path -- cuMemcpyBatchAsync issues on that device's
-            # default stream with CU_MEMCPY_SRC_ACCESS_ORDER_STREAM.
-            dsts[0].batch_inplace_copy_from(dsts, srcs)
+        batch_inplace_copy(dsts, srcs)
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs

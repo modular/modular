@@ -32,10 +32,9 @@ from layout import ComptimeInt, Coord, RowMajorLayout, TileTensor, row_major
 from layout.tile_io import TileCopier
 from layout.tile_layout import TensorLayout
 
-from std.memory import stack_allocation as raw_stack_allocation
+from std.memory import unsafe_stack_allocation as raw_stack_allocation
 
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.index import IndexList
 

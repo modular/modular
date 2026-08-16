@@ -19,6 +19,7 @@ import os
 
 from max.config import ConfigFileModel
 from max.pipelines.diffusion.cache import DenoisingCacheConfig
+from max.pipelines.lib.vision_encoder_cache import VisionCachePlan
 from max.pipelines.modeling.config_enums import PipelineRole
 from pydantic import Field, PrivateAttr
 
@@ -52,6 +53,26 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Maximum batch size to execute with the model. When not specified "
             "(``None``), this value is determined dynamically. For server "
             "launches, set this higher based on server capacity."
+        ),
+    )
+
+    precompiled_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory of compiled-graph artifacts written by an earlier run's "
+            "``--export-mefs``. Every graph is initialized from its artifact "
+            "instead of being compiled, so the compiling and the executing run "
+            "can happen on different machines. The runs must build the same "
+            "graphs; a mismatch is an error rather than a silent recompile."
+        ),
+    )
+
+    export_mefs: str | None = Field(
+        default=None,
+        description=(
+            "Directory to write a compiled-graph artifact into for every graph "
+            "this run compiles, for a later run to reuse via "
+            "``--precompiled-mefs``. Compilation itself is unaffected."
         ),
     )
 
@@ -90,8 +111,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     eplb_profile: bool = Field(
-        default_factory=lambda: os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
-        in ("1", "true", "yes"),
+        default_factory=lambda: (
+            os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
+            in ("1", "true", "yes")
+        ),
         description=(
             "When True, enables expert-parallel load balancing (EPLB) MoE "
             "routing histogram profiling in the pipeline. Mirrors "
@@ -156,16 +179,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "per GPU; total redundant slots = k * ep_size (so num_redundant "
             "is always a multiple of the device count, which the rebalance "
             "algorithm requires)."
-        ),
-    )
-
-    max_num_steps: int = Field(
-        default=1,
-        description=(
-            "Deprecated. Multi-step pipeline execution is no longer supported; "
-            "the pipeline always runs single-step decode. Values other than "
-            "``1`` (including the legacy default ``-1``) are ignored after "
-            "logging a warning."
         ),
     )
 
@@ -278,16 +291,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    kvcache_ce_watermark: float = Field(
-        default=0.95,
-        description=(
-            "Projected cache usage threshold for scheduling CE requests, "
-            "considering current and incoming requests. CE is scheduled if "
-            "either projected usage stays below this threshold or no active "
-            "requests exist. Higher values can cause more preemptions."
-        ),
-    )
-
     decode_stall_timeout_s: float | None = Field(
         default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
         if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ
@@ -353,7 +356,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     """Occupancy threshold (0-1) that schedules CE work without deferral."""
 
     dp_ce_balance_enable_dynamic_chunk_size: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Whether a below-threshold CE step with work on 2+ replicas "
             "runs immediately with each replica's chunk size reduced to "
@@ -460,6 +463,22 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    experimental_vision_cache_utilization: float = Field(
+        default=float(
+            os.environ.get("MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION", "0")
+        ),
+        description=(
+            "Fraction of the KV cache pool budget (not total device "
+            "memory) reserved for the experimental block-based vision "
+            "encoder cache; the remainder stays with the KV cache. "
+            "Greater than 0 activates block mode on architectures whose "
+            "memory planner reports a vision row spec; 0 (the default) "
+            "keeps the entry-count cache. Set via the "
+            "MAX_EXPERIMENTAL_VISION_CACHE_UTILIZATION environment "
+            "variable. Only used by VLMs."
+        ),
+    )
+
     max_vision_cache_entries: int = Field(
         default=256,
         description=(
@@ -469,6 +488,64 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "to disable caching. Only used by VLMs."
         ),
     )
+
+    max_vision_preprocess_cache_bytes: int = Field(
+        default=10 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed image "
+            "tensors in the tokenizer. A hit skips the resize, rescale and "
+            "patchify for a repeated image -- for example the same image "
+            "resent on every turn of a conversation -- which the vision "
+            "encoder cache cannot avoid, because it is consulted only after "
+            "preprocessing has already run. This is a ceiling on resident "
+            "host memory in the API server process, not a reservation: the "
+            "cache grows to it under load and evicts least-recently-used "
+            "entries to stay within it. Set to ``0`` to disable. Only used "
+            "by VLMs."
+        ),
+    )
+
+    max_video_preprocess_cache_bytes: int = Field(
+        default=10 * 1024**3,
+        description=(
+            "Host-memory budget, in bytes, for caching preprocessed video "
+            "tensors in the tokenizer. Unlike images, videos are not decoded "
+            "at admission, so a hit skips the whole decode -- sampling, "
+            "resize and patchify of every sampled frame. Budgeted "
+            "separately from ``max_vision_preprocess_cache_bytes`` because a "
+            "video entry is an order of magnitude larger than an image one, "
+            "so a shared budget would let a single video evict many images. "
+            "Set to ``0`` to disable. Only used by VLMs that accept video."
+        ),
+    )
+
+    max_media_preprocess_cache_idle_seconds: float = Field(
+        default=300.0,
+        description=(
+            "How long a preprocessed image or video may go unused before it "
+            "becomes eligible to be dropped from the tokenizer's cache. This "
+            "is a reclaim policy rather than a lifetime: sweeps are periodic, "
+            "so an entry can outlive its deadline, and a request that arrives "
+            "meanwhile is served from it and resets the clock -- an entry is "
+            "keyed on media content, so it never goes stale. Without this, the "
+            "byte budget is the only bound, so a burst of distinct media holds "
+            "its whole "
+            "resident set for the rest of the process's life -- host memory "
+            "the model worker's own allocations compete for. An entry is only "
+            "worth keeping while the conversation that sent it might send the "
+            "next turn, which is seconds to minutes, and re-preprocessing a "
+            "wrongly dropped image costs a few milliseconds. Set to ``0`` to "
+            "keep entries until the budget evicts them. Only used by VLMs."
+        ),
+    )
+
+    _vision_cache_plan: VisionCachePlan | None = PrivateAttr(default=None)
+    """Resolved block-mode vision cache reservation.
+
+    Set by memory estimation when ``experimental_vision_cache_utilization``
+    reserves a block budget: the per-device byte grant plus the memory
+    planner's ``(hidden_size, dtype)`` row spec. ``None`` keeps the legacy
+    entry-count cache."""
 
     denoising_cache: DenoisingCacheConfig = Field(
         default_factory=DenoisingCacheConfig,

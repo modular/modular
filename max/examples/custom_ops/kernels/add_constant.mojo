@@ -13,7 +13,7 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from extensibility import InputTensor, OutputTensor, foreach
 
@@ -33,7 +33,7 @@ struct AddConstant[value: Int]:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def add_constant[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[output.dtype](Self.value)

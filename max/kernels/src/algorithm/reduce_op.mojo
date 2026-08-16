@@ -1338,6 +1338,23 @@ struct MinMax[
 
 
 @always_inline
+def _in_range_index(idx: Int64) -> Int64:
+    """Folds the `Int64.MAX` identity index to an in-range value.
+
+    `ArgMax`/`ArgMin` use `Int64.MAX` as the identity so a padded or empty
+    lane loses every tie-break, but the identity survives whenever no
+    candidate ever wins: an empty row, a row of pure identity values, or an
+    all-NaN row (every ordered compare against NaN is false). Emitting it
+    hands a downstream consumer a `2**63-1` index -- a `gather` on that index
+    is an out-of-bounds device access, which turns a numerical problem into a
+    dead worker. Report index 0 instead, which is the contract
+    `nn/argmaxmin_gpu` already documents and tests for an all-NaN row, so the
+    identity never escapes as a tensor value.
+    """
+    return 0 if idx == Int64.MAX else idx
+
+
+@always_inline
 def _argmax_identity[dtype: DType]() -> Scalar[dtype]:
     """Returns the ArgMax identity — `-inf` for floating dtypes, `MIN`
     for integer dtypes. Never wins against any finite value under the
@@ -1447,9 +1464,14 @@ struct ArgMax[
             _argmax_identity[Self.dtype](),
         ](val)
         var idx_padded = Self.pad[Self.W, DType.int64, Int64.MAX](idx)
-        var keep = val_padded.le(self.acc_values)
-        self.acc_values = keep.select(self.acc_values, val_padded)
-        self.acc_indices = keep.select(self.acc_indices, idx_padded)
+        # Strict `gt` (not `!le`): the two agree for every ordered pair, but
+        # for a NaN candidate `gt` is false, so the accumulator is kept and
+        # the NaN is skipped. `le` took it, poisoning the accumulator and
+        # making every later compare false. Skipping matches the contract
+        # `nn/argmaxmin_gpu` already documents and tests (`TopK_2.insert`).
+        var take = val_padded.gt(self.acc_values)
+        self.acc_values = take.select(val_padded, self.acc_values)
+        self.acc_indices = take.select(idx_padded, self.acc_indices)
 
     @always_inline
     def join(mut self, other: Self):
@@ -1510,7 +1532,7 @@ struct ArgMax[
         r.best = self.best
         r.best_idx = self.best_idx
         r.acc_values[0] = acc_max
-        r.acc_indices[0] = masked_idx.reduce_min()
+        r.acc_indices[0] = _in_range_index(masked_idx.reduce_min())
         return r
 
     @always_inline
@@ -1544,7 +1566,7 @@ struct ArgMax[
         )
         self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
         reducer.generic(self)
-        self.acc_indices[0] = Int64(self.best_idx)
+        self.acc_indices[0] = _in_range_index(Int64(self.best_idx))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1623,9 +1645,11 @@ struct ArgMin[
             _argmin_identity[Self.dtype](),
         ](val)
         var idx_padded = Self.pad[Self.W, DType.int64, Int64.MAX](idx)
-        var keep = val_padded.ge(self.acc_values)
-        self.acc_values = keep.select(self.acc_values, val_padded)
-        self.acc_indices = keep.select(self.acc_indices, idx_padded)
+        # Strict `lt` (not `!ge`) so a NaN candidate is skipped rather than
+        # taken; see the note in `ArgMax.accumulate`.
+        var take = val_padded.lt(self.acc_values)
+        self.acc_values = take.select(val_padded, self.acc_values)
+        self.acc_indices = take.select(idx_padded, self.acc_indices)
 
     @always_inline
     def join(mut self, other: Self):
@@ -1683,7 +1707,7 @@ struct ArgMin[
         r.best = self.best
         r.best_idx = self.best_idx
         r.acc_values[0] = acc_min
-        r.acc_indices[0] = masked_idx.reduce_min()
+        r.acc_indices[0] = _in_range_index(masked_idx.reduce_min())
         return r
 
     @always_inline
@@ -1713,4 +1737,4 @@ struct ArgMin[
         )
         self.acc_indices = SIMD[DType.int64, Self.W](Int64.MAX)
         reducer.generic(self)
-        self.acc_indices[0] = Int64(self.best_idx)
+        self.acc_indices[0] = _in_range_index(Int64(self.best_idx))

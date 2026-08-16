@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -29,10 +29,14 @@ from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -41,12 +45,20 @@ from typing_extensions import Self, override
 class DeepseekV3Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV3 models."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
+
     # MAX specific fields
     dtype: DType
     kv_params: KVCacheParamInterface
     devices: list[DeviceRef]
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
+    quantization_encoding: SupportedEncoding | None = None
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -74,8 +86,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     max_position_embeddings: int = 4096
     """Maximum positional embeddings as defined by the original model."""
-    max_seq_len: int = 163840
-    """Maximum sequence length as defined by the MAX Engine pipeline configuration."""
+    max_seq_len: int
+    """Maximum sequence length as defined by the MAX Engine pipeline
+    configuration. Required so that a subclass ``initialize`` that forgets to
+    resolve it fails at construction instead of inheriting another model's
+    limit."""
 
     rms_norm_eps: float = 1e-6
     tie_word_embeddings: bool = False
@@ -180,7 +195,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             speculative_method=pipeline_config.speculative.speculative_method
             if pipeline_config.speculative
             else None,
-            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative
             else 0,
         )
@@ -218,9 +235,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "Please ensure the model repository contains a valid config.json file."
             )
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -284,4 +301,5 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            quantization_encoding=quantization_encoding,
         )

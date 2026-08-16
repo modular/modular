@@ -41,6 +41,7 @@ from max.pipelines.context import (
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import (
     TextAndVisionTokenizer,
+    VisionPreprocessCache,
     max_tokens_to_generate,
 )
 from max.pipelines.lib.config import PipelineConfig
@@ -215,6 +216,10 @@ def qwen3vl_image_preprocessing(
     return flatten_patches, image_grid_thw
 
 
+# One image's patchified pixels and its (t, h, w) grid, as cached.
+_PreprocessedImage = tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]
+
+
 class Qwen3VLImageProcessor:
     """Custom image processor for Qwen3VL that handles image processing without PyTorch dependencies.
 
@@ -373,6 +378,10 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             max_pixels=16777216,  # Qwen3VL default longest_edge
         )
 
+        self._preprocess_cache: VisionPreprocessCache[_PreprocessedImage] = (
+            VisionPreprocessCache.for_images(pipeline_config.runtime)
+        )
+
         # Initialize EOS token IDs
         eos_token_id = self.delegate.eos_token_id
         self._eos_token_ids = (
@@ -469,6 +478,39 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         assert isinstance(templated_message, str)
         return templated_message
 
+    def _preprocess_image(
+        self, image_hash: int | None, image: Image.Image
+    ) -> _PreprocessedImage:
+        """Preprocesses one image, reusing a cached result when available.
+
+        The cache key is the digest of the raw encoded bytes plus the
+        resolution size class -- the same key ``new_context`` hands to the
+        vision encoder cache, computed once and shared by both. Hitting here
+        skips the smart-resize, rescale and patchify that the encoder cache
+        cannot skip, since it is consulted only after that work has run.
+
+        ``Qwen3VLImageProcessor`` calls :func:`qwen3vl_image_preprocessing`
+        once per image with no cross-image state and only stacks at the end, so
+        preprocessing one image at a time and stacking afterwards is
+        bit-identical to the batched call it replaces.
+
+        Args:
+            image_hash: The image's content digest, or ``None`` when no media
+                caching needs one.
+            image: The decoded image to preprocess.
+
+        Returns:
+            The image's patchified pixels and its ``(t, h, w)`` grid.
+        """
+
+        def preprocess() -> _PreprocessedImage:
+            _, image_grid_thw, pixel_values_list = self.img_processor(
+                images=[image], return_tensors="pt"
+            )
+            return pixel_values_list[0], image_grid_thw[0]
+
+        return self._preprocess_cache.get_or_preprocess(image_hash, preprocess)
+
     async def new_context(
         self, request: TextGenerationRequest
     ) -> Qwen3VLTextAndVisionContext:
@@ -550,9 +592,39 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         pixel_values_list: list[npt.NDArray[np.float32]] = []
         image_grid_thw: npt.NDArray[np.int32] | None = None
         pixel_values: npt.NDArray[np.float32] | None = None
+        image_hashes: list[int | None] = []
         if image_inputs:
-            pixel_values, image_grid_thw, pixel_values_list = (
-                self.img_processor(images=image_inputs, return_tensors="pt")
+            # Key each image on its raw encoded bytes (+ the resolution size
+            # class), not on hash_image(pixel_values): the raw-byte key is
+            # byte-identical across torch/BLAS/device so a separate encoder can
+            # reproduce it for cache-aware routing, whereas the post-resize
+            # float hash cannot. smart_resize is deterministic from the encoded
+            # bytes + fixed config, so the process-wide max-pixels resolution
+            # bound is the size tier. request.images is 1:1 with image_inputs.
+            #
+            # One digest per image, shared by the preprocessed-tensor cache
+            # here and the vision encoder cache downstream, so the bytes are
+            # hashed once rather than twice.
+            image_hashes = (
+                [
+                    hash_image(raw_bytes, self.img_processor.max_pixels)
+                    for raw_bytes in request.images
+                ]
+                if self.enable_prefix_caching or self._preprocess_cache.enabled
+                else [None] * len(image_inputs)
+            )
+            per_image = [
+                self._preprocess_image(image_hash, image)
+                for image_hash, image in zip(
+                    image_hashes, image_inputs, strict=True
+                )
+            ]
+            pixel_values_list = [pixels for pixels, _ in per_image]
+            # Reassembles exactly what the batched call returned, so every
+            # caller downstream sees the same arrays it always did.
+            pixel_values = np.vstack(pixel_values_list)
+            image_grid_thw = np.array(
+                [grid for _, grid in per_image], dtype=np.int32
             )
 
             # Expand <|image_pad|> placeholders using image_grid_thw and merge_size**2
@@ -707,28 +779,23 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             start_and_end_idxs = find_contiguous_ranges(
                 encoded_prompt, [self.image_token_id]
             )
-            # Key each image on its raw encoded bytes (+ the resolution size
-            # class), not on hash_image(pixel_values): the raw-byte key is
-            # byte-identical across torch/BLAS/device so a separate encoder can
-            # reproduce it for cache-aware routing, whereas the post-resize
-            # float hash cannot. smart_resize is deterministic from the encoded
-            # bytes + fixed config, so the process-wide max-pixels resolution
-            # bound is the size tier. request.images is 1:1 with
-            # pixel_values_list (one processed entry per input image).
-            image_size_tier = self.img_processor.max_pixels
+            # Reuses the digests computed above for the preprocessed-tensor
+            # cache (see there for why the key is the raw encoded bytes rather
+            # than the post-resize pixels); computing them again here would
+            # hash every image's bytes twice.
             images = [
                 ImageMetadata(
                     start_idx=start_idx,
                     end_idx=end_idx,
                     pixel_values=pixel_values,
-                    image_hash=hash_image(raw_bytes, image_size_tier)
+                    image_hash=image_hash
                     if self.enable_prefix_caching
                     else None,
                 )
-                for (start_idx, end_idx), pixel_values, raw_bytes in zip(
+                for (start_idx, end_idx), pixel_values, image_hash in zip(
                     start_and_end_idxs,
                     pixel_values_list,
-                    request.images,
+                    image_hashes,
                     strict=True,
                 )
             ]
@@ -783,6 +850,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             decoder_position_ids=decoder_position_ids,
             vision_data=vision_data,
             vocab_size=self.tokenizer_vocab_size,
+            cache_salt=request.cache_salt,
         )
 
         return context

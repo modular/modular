@@ -24,11 +24,12 @@ inserted by the NanCheckPass compiler pass. The architecture is:
    diagnostic error if any are non-zero.
 """
 
-from std.algorithm import elementwise
-from std.gpu import barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_cpu
-from std.memory import alloc, dealloc, stack_allocation
+from max.algorithm import elementwise
+from std.gpu import block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_cpu
+from std.memory import alloc, dealloc, unsafe_stack_allocation
 from std.memory.alloc import Layout as AllocLayout
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -46,15 +47,15 @@ def _nan_check_gpu_kernel[
     dtype: DType,
 ](
     src_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    total_elements: Int,
+    total_elements: Int32,
     out_nan: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
     out_inf: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
 ):
     """GPU kernel: count NaN/Inf values via parallel reduction."""
-    var nan_local = stack_allocation[
+    var nan_local = unsafe_stack_allocation[
         1, Int32, address_space=AddressSpace.SHARED
     ]()
-    var inf_local = stack_allocation[
+    var inf_local = unsafe_stack_allocation[
         1, Int32, address_space=AddressSpace.SHARED
     ]()
     if thread_idx.x == 0:
@@ -62,10 +63,11 @@ def _nan_check_gpu_kernel[
         inf_local[0] = Int32(0)
     barrier()
 
+    var _total_elements = Int(total_elements)
     var tid = block_idx.x * block_dim.x + thread_idx.x
     var my_nan = Int32(0)
     var my_inf = Int32(0)
-    if tid < total_elements:
+    if tid < _total_elements:
         var val = src_ptr.load(tid)
         if isnan(val):
             my_nan = Int32(1)
@@ -108,10 +110,10 @@ def nan_check_count[
         # CPU path: vectorized scan using elementwise with atomic accumulators.
         var nan_acc = alloc(
             AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_deletable()
+        ).into_managed()
         var inf_acc = alloc(
             AllocLayout[Scalar[DType.int32]](count=1)
-        ).into_deletable()
+        ).into_managed()
 
         var nan_acc_ptr = nan_acc.unsafe_ptr()
         var inf_acc_ptr = inf_acc.unsafe_ptr()
@@ -143,7 +145,7 @@ def nan_check_count[
         var out_nan_ptr = nan_count_out.unsafe_ptr()
         var out_inf_ptr = inf_count_out.unsafe_ptr()
 
-        @parameter
+        @__parameter
         @__name(t"nan_check_zero_counts")
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
@@ -156,13 +158,19 @@ def nan_check_count[
             out_nan_ptr, out_inf_ptr, grid_dim=1, block_dim=1
         )
 
+        # `ceildiv(0, BLOCK) == 0`, and a zero-sized grid launch is rejected.
+        if total == 0:
+            return
+
         comptime BLOCK = 256
         var grid = ceildiv(total, BLOCK)
 
         comptime kernel = _nan_check_gpu_kernel[dtype]
         gpu_ctx.enqueue_function[kernel](
-            input.unsafe_ptr(),
-            total,
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                input.unsafe_ptr()
+            ),
+            Int32(total),
             out_nan_ptr,
             out_inf_ptr,
             grid_dim=grid,

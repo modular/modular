@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
@@ -124,7 +124,7 @@ def _run_fake_memcpy(
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64, MutUntrackedOrigin]
+    var out_ptr: Pointer[Int64, MutUntrackedOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
@@ -133,7 +133,7 @@ def _run_fake_memcpy(
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr = out_ptr + half_length
+    var interior_out_ptr = out_ptr.unsafe_offset(half_length)
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )

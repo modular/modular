@@ -85,14 +85,12 @@ def libm_call[
     """
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:
         return external_call[fn_fp32, Scalar[result_type]](arg)
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         input_type: DType, result_type: DType
     ](arg: Scalar[input_type]) -> Scalar[result_type]:

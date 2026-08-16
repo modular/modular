@@ -60,7 +60,7 @@ end-to-end correctness coverage.
 from std.math import ceildiv
 from std.utils import Index
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import TileTensor
 
@@ -359,7 +359,7 @@ def amd_4wave_conv[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_kernel[config: MatmulKernelConfig]() raises:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
@@ -392,7 +392,7 @@ def amd_4wave_conv[
                 b,
                 c,
                 source_ptr,
-                source_row_stride,
+                Int32(source_row_stride),
                 beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),
@@ -403,7 +403,7 @@ def amd_4wave_conv[
                 b,
                 c,
                 source_ptr,
-                source_row_stride,
+                Int32(source_row_stride),
                 beta,
                 grid_dim=(num_blocks_n * num_blocks_m,),
                 block_dim=config.num_threads(),

@@ -20,14 +20,20 @@ from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.reflection import reflect
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
 from std.os import abort
 from std.sys import size_of
 
-from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
+from std.memory.alloc import (
+    alloc,
+    dealloc,
+    Allocation,
+    ThinAllocation,
+    Layout,
+)
 from std.memory import (
     Pointer,
     unsafe_destroy_n,
@@ -101,7 +107,7 @@ struct _ListIter[
 
 
 @fieldwise_init
-struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
+struct _ListIterOwned[T: Movable & Deinitable](
     IterableOwned, Iterator, Movable
 ):
     """An owning iterator for List.
@@ -117,7 +123,7 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
     var _index: Int
 
     @always_inline
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         # Destroy the remaining elements that have not yet been
         # iterated over.
         unsafe_destroy_n(
@@ -148,18 +154,18 @@ struct _ListIterOwned[T: Movable & ImplicitlyDeletable](
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `List` of"
-    " non-`ImplicitlyDeletable` elements"
+    " non-`Deinitable` elements"
 )
 @stable(since="1.0")
 struct List[T: Movable, /](
     Boolable,
     Copyable where conforms_to(T, Copyable),
     Defaultable,
+    Deinitable where conforms_to(T, Deinitable),
     Equatable where conforms_to(T, Equatable),
     Hashable where conforms_to(T, Hashable),
-    ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable),
     Iterable,
-    IterableOwned where conforms_to(T, ImplicitlyDeletable),
+    IterableOwned where conforms_to(T, Deinitable),
     Movable,
     Sized,
     Writable where conforms_to(T, Writable),
@@ -352,9 +358,9 @@ struct List[T: Movable, /](
         iterable_origin: The origin of the iterable.
     """
 
-    comptime IteratorOwnedType: Iterator = _ListIterOwned[
-        downcast[Self.T, ImplicitlyDeletable]
-    ]
+    comptime IteratorOwnedType: Iterator where conforms_to(
+        Self.T, Deinitable
+    ) = _ListIterOwned[Self.T]
     """The owned iterator type for this list."""
 
     # asan annotation methods
@@ -525,13 +531,13 @@ struct List[T: Movable, /](
         if self._capacity > 0:
             self._annotate_delete()
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    Layout[Self.T](count=self._capacity)
+                )
             )
 
     @stable(since="1.0")
-    def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):
+    def __deinit__(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroy all elements in the list and free its memory."""
         unsafe_destroy_n(
             self._data,
@@ -542,7 +548,7 @@ struct List[T: Movable, /](
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this list and deinitializes its values using the provided closure.
 
-        This can be used to destroy a `List` of non-`ImplicitlyDeletable` values.
+        This can be used to destroy a `List` of non-`Deinitable` values.
 
         Args:
             deinit_func: The deinitializing closure called on each `List` element.
@@ -561,6 +567,7 @@ struct List[T: Movable, /](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
+    @stable(since="1.0")
     @always_inline
     def __eq__(
         self, other: Self, /
@@ -605,6 +612,7 @@ struct List[T: Movable, /](
         for element in self:
             element.__hash__(hasher)
 
+    @stable(since="1.0")
     def __contains__(
         self, value: Self.T, /
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -630,7 +638,7 @@ struct List[T: Movable, /](
 
     def __mul__(
         self, x: Int
-    ) -> Self where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) -> Self where conforms_to(Self.T, Copyable & Deinitable):
         """Multiplies the list by x and returns a new list.
 
         Args:
@@ -648,8 +656,8 @@ struct List[T: Movable, /](
 
     def __imul__(
         mut self, x: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable & Copyable) and conforms_to(
-        Self, ImplicitlyDeletable & Copyable
+    ) where conforms_to(Self.T, Deinitable & Copyable) and conforms_to(
+        Self, Deinitable & Copyable
     ):
         """Appends the original elements of this list x-1 times or clears it if
         x is <= 0.
@@ -699,16 +707,13 @@ struct List[T: Movable, /](
 
     def __iter__(
         var self,
-    ) -> Self.IteratorOwnedType where conforms_to(Self.T, ImplicitlyDeletable):
+    ) -> Self.IteratorOwnedType where conforms_to(Self.T, Deinitable):
         """Consume `self`, returning an owned iterator over its elements.
 
         Returns:
             An iterator of owned elements.
         """
-        return {
-            rebind_var[List[downcast[Self.T, ImplicitlyDeletable]]](self^),
-            0,
-        }
+        return {self^, 0}
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
@@ -775,11 +780,10 @@ struct List[T: Movable, /](
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
-        @parameter
-        def iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration {mut iterator}:
             f(iterator.__next__(), w)
 
-        fmt.write_sequence_to[ElementFn=iterate](writer)
+        fmt.write_sequence_to(writer, iterate)
         _ = iterator^
 
     @no_inline
@@ -803,13 +807,14 @@ struct List[T: Movable, /](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self._write_self_to[f=fmt.write_repr_to[Self.T]](w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[]._write_self_to[f=fmt.write_repr_to[Self.T]](w)
 
         fmt.FormatStruct(writer, "List").params(
             fmt.TypeNames[Self.T](),
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -850,9 +855,9 @@ struct List[T: Movable, /](
         if self._capacity > 0:
             self._annotate_delete()
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._data
-                ).unsafe_with_layout(Layout[Self.T](count=self._capacity))
+                ThinAllocation(unsafe_owned_ptr=self._data).unsafe_with_layout(
+                    Layout[Self.T](count=self._capacity)
+                )
             )
         self._data = new_data
         self._capacity = new_capacity
@@ -874,7 +879,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = [1, 2, 3, 4, 5]
+        var list = [1, 2, 3, 4, 5]
         list.append(6)
         print(list) # [1, 2, 3, 4, 5, 6]
         ```
@@ -897,7 +902,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = ["one", "three"]
+        var list = ["one", "three"]
         list.insert(1, "two")
         print(list) # ['one', 'two', 'three']
         ```
@@ -931,8 +936,8 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = ["one", "two", "three"]
-        more = ["four", "five"]
+        var list = ["one", "two", "three"]
+        var more = ["four", "five"]
         list.extend(more^) # more's values are consumed
         # print(more)      # Error: use of initialized value
         print(list)        # ['one', 'two', 'three', 'four', 'five']
@@ -970,8 +975,8 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        numbers = [1, 2, 3]
-        more = [4, 5, 6]
+        var numbers = [1, 2, 3]
+        var more = [4, 5, 6]
         numbers.extend(Span(more))
         print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
@@ -1005,24 +1010,24 @@ struct List[T: Movable, /](
             value: The value to append.
 
         Notes:
-            If there is no capacity left, resizes to `len(self) + value.size`.
+            If there is no capacity left, resizes to `len(self) + value.length`.
 
         Examples:
 
         ```mojo
         from std.collections import List
 
-        numbers: List[Int64] = [1, 2]
-        more = SIMD[DType.int64, 2](3, 4)
+        var numbers: List[Int64] = [1, 2]
+        var more = SIMD[DType.int64, 2](3, 4)
         numbers.extend(more)
         print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        self.reserve(self._len + value.size)
-        self._annotate_increase(value.size)
+        self.reserve(self._len + value.length)
+        self._annotate_increase(value.length)
         self._unsafe_next_uninit_ptr().unsafe_store(value)
-        self._len += value.size
+        self._len += value.length
 
     @__allow_legacy_custom_self_type
     def extend[
@@ -1036,7 +1041,7 @@ struct List[T: Movable, /](
         Args:
             value: The value to append.
             count: The amount of items to append. Must be less than or equal to
-                `value.size`.
+                `value.length`.
 
         Notes:
             If there is no capacity left, resizes to `len(self) + count`.
@@ -1046,14 +1051,14 @@ struct List[T: Movable, /](
         ```mojo
         from std.collections import List
 
-        numbers: List[Int64] = [1, 2]
-        more = SIMD[DType.int64, 4](3, 4, 5, 6)
+        var numbers: List[Int64] = [1, 2]
+        var more = SIMD[DType.int64, 4](3, 4, 5, 6)
         numbers.extend(more, count=2)
         print(numbers) # [SIMD[DType.int64, 1](1), SIMD[DType.int64, 1](2),
                        #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
         ```
         """
-        assert count <= value.size, "count must be <= value.size"
+        assert count <= value.length, "count must be <= value.length"
         self.reserve(self._len + count)
         self._annotate_increase(count)
         var v_ptr = Pointer(to=value).unsafe_bitcast[Scalar[dtype]]()
@@ -1071,9 +1076,9 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        numbers = ["1", "2", "3", "4", "5"]
-        value = numbers.pop(); print(value)   # 5
-        print("length", len(numbers))         # length 4
+        var numbers = ["1", "2", "3", "4", "5"]
+        var value = numbers.pop(); print(value)   # 5
+        print("length", len(numbers))             # length 4
         ```
         """
         return self.pop(len(self) - 1)
@@ -1091,9 +1096,9 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        numbers = ["1", "2", "3", "4", "5"]
-        value = numbers.pop(2); print(value)  # 3
-        print(numbers)                        # ['1', '2', '4', '5']
+        var numbers = ["1", "2", "3", "4", "5"]
+        var value = numbers.pop(2); print(value)  # 3
+        print(numbers)                            # ['1', '2', '4', '5']
         ```
         """
         check_bounds(i, len(self))
@@ -1125,7 +1130,7 @@ struct List[T: Movable, /](
     @stable(since="1.0")
     def resize(
         mut self, length: Int, fill: Self.T
-    ) where conforms_to(Self.T, Copyable & ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Copyable & Deinitable):
         """Resizes the list to the given new length.
 
         Args:
@@ -1140,7 +1145,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = ["z", "y", "x", "w"]
+        var list = ["z", "y", "x", "w"]
         list.resize(3, "v")
         print(list)                  # ['z', 'y', 'x']
         list.resize(6, "v")
@@ -1165,7 +1170,7 @@ struct List[T: Movable, /](
 
     def resize(
         mut self, *, unsafe_uninit_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Resizes the list to the given new size leaving any new elements
         uninitialized.
 
@@ -1179,7 +1184,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = [1, 2, 3]
+        var list = [1, 2, 3]
         list.resize(unsafe_uninit_length=5) # Indices 3 and 4 are uninitialized memory
         print(len(list))                    # 5
         list[3] = 10; list[4] = 20
@@ -1193,9 +1198,7 @@ struct List[T: Movable, /](
             self._annotate_increase(unsafe_uninit_length - self._len)
             self._len = unsafe_uninit_length
 
-    def shrink(
-        mut self, new_length: Int
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    def shrink(mut self, new_length: Int) where conforms_to(Self.T, Deinitable):
         """Resizes to the given new length which must be <= the current size.
 
         Args:
@@ -1205,10 +1208,12 @@ struct List[T: Movable, /](
             With no new value provided, the new length must be smaller than or
             equal to the current one. Elements at the end are discarded.
 
+            Calls abort() if the new length is larger than the current length.
+
         Examples:
 
         ```mojo
-        numbers = [1, 2, 3, 4, 5, 6]
+        var numbers = [1, 2, 3, 4, 5, 6]
         numbers.shrink(2); print(numbers) # [1, 2]
         # numbers.shrink(8)               # Error: new size is bigger than current
         ```
@@ -1236,7 +1241,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = ["o", "l", "l", "e", "H"]
+        var list = ["o", "l", "l", "e", "H"]
         list.reverse()
         print("".join(list)) # Hello
         ```
@@ -1343,13 +1348,13 @@ struct List[T: Movable, /](
 
     def clear(
         mut self,
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Clears the elements in the list.
 
         Examples:
 
         ```mojo
-        list = ["o", "l", "l", "e", "H"]
+        var list = ["o", "l", "l", "e", "H"]
         print(len(list))  # 5
         list.clear()
         print(len(list))  # 0
@@ -1360,31 +1365,47 @@ struct List[T: Movable, /](
         self._len = 0
         self._annotate_shrink(old_size)
 
-    def steal_data(mut self) -> UnsafePointer[Self.T, MutUntrackedOrigin]:
-        """Take ownership of the underlying pointer from the list.
+    def unsafe_take_allocation(mut self) -> Allocation[Self.T]:
+        """Take ownership of the underlying storage from the list.
 
         Returns:
-            The underlying data.
+            The `Allocation` that owns the list's backing storage, carrying the
+            `Layout` it was allocated with.
+
+        Safety:
+
+        The list's elements are handed over still initialized, and deallocating
+        the storage does not run their destructors. Destroy any initialized
+        elements yourself (for example with `unsafe_destroy_n`) before
+        deallocating if `T` needs it.
+
+        A list that never allocated has no storage to hand over, so the
+        returned `Allocation` wraps a dangling pointer and a `Layout` with a
+        `count` of zero. Check `layout().count()` before deallocating it.
 
         Examples:
 
         ```mojo
         from std.collections import List
+        from std.memory.alloc import dealloc
 
-        list: List[Int64] = [1, 2, 3, 4]
-        ptr = list.steal_data() # list is no longer available
+        var list: List[Int64] = [1, 2, 3, 4]
+        var allocation = list.unsafe_take_allocation() # list is now empty
+        var ptr = allocation.unsafe_ptr()
         for idx in range(4):
-            print(ptr[idx], end=" ")
+            print(ptr[unsafe_offset=idx], end=" ")
         print() # Output: 1 2 3 4
-        # Free the pointer data
+        # Free the storage.
+        dealloc(allocation^)
         ```
         """
         self._annotate_delete()
+        var layout = Layout[Self.T](count=self._capacity)
         var ptr = self._data
         self._data = Self._PointerType.unsafe_dangling()
         self._len = 0
         self._capacity = 0
-        return ptr
+        return ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(layout)
 
     def __getitem__(
         self, slice: StridedSlice
@@ -1411,12 +1432,17 @@ struct List[T: Movable, /](
 
     @__unsafe_nested_origins_read_only
     @stable(since="1.0")
+    @always_inline
     def __getitem__[
         origin: Origin, //
     ](ref[origin] self, slice: ContiguousSlice) -> Span[
         Self.T, origin_of(self)._get_owned_interior["element"]
     ]:
         """Gets the sequence of elements at the specified positions.
+
+        Aborts if `slice`'s start or end index is out of bounds (valid range
+        is `0` to `len(self)`, inclusive), or if start is greater than end.
+        Negative indices are not supported and always abort.
 
         Parameters:
             origin: The origin of `List`.
@@ -1429,9 +1455,9 @@ struct List[T: Movable, /](
             derived from `self`, so any subsequent mutation of the list
             (`append`, `pop`, and similar) invalidates it at compile time.
         """
-        var start, end = slice.indices(len(self))
+        var start, end = check_slice_bounds(slice, len(self))
         return Span[Self.T, origin_of(self)._get_owned_interior["element"]](
-            unsafe_ptr=UnsafePointer(
+            unsafe_ptr=Pointer(
                 to=self.unsafe_ptr()
                 .unsafe_offset(start)
                 ._get_ref_with_unsafe_interior_origin[
@@ -1444,7 +1470,7 @@ struct List[T: Movable, /](
     @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
-        ref self, idx: IntLiteral
+        ref self, idx: IntLiteral, /
     ) -> ref[self.unsafe_get(index(idx))] Self.T:
         """Gets the list element at the given index.
 
@@ -1457,6 +1483,27 @@ struct List[T: Movable, /](
         comptime assert (
             IntLiteral[idx.value]() >= 0
         ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        check_bounds(idx, len(self))
+        return self.unsafe_get(index(idx))
+
+    @stable(since="1.0")
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __getitem__(
+        ref self, idx: Int, /
+    ) -> ref[self.unsafe_get(index(idx))] Self.T:
+        """Gets the list element at the given index.
+
+        Unlike when subscripting using slices negative indices are
+        considered out of bounds. They will be checked in the same situations
+        as "off the end" indexing.
+
+        Args:
+            idx: The index of the element.
+
+        Returns:
+            A reference to the element at the given index.
+        """
         check_bounds(idx, len(self))
         return self.unsafe_get(index(idx))
 
@@ -1513,7 +1560,7 @@ struct List[T: Movable, /](
     @always_inline
     def unsafe_set(
         mut self, idx: Int, var value: Self.T
-    ) where conforms_to(Self.T, ImplicitlyDeletable):
+    ) where conforms_to(Self.T, Deinitable):
         """Write a value to a given location without checking index bounds.
 
         Args:
@@ -1547,7 +1594,7 @@ struct List[T: Movable, /](
         Examples:
 
         ```mojo
-        list = ["a", "b", "c", "b", "b", "a", "c"]
+        var list = ["a", "b", "c", "b", "b", "a", "c"]
         print(list.count("b")) # 3
         ```
         """

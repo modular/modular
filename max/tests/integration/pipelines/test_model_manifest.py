@@ -13,6 +13,7 @@
 
 """Tests for ModelManifest."""
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -54,6 +55,28 @@ def _make_config(
     if quantization_encoding is not None:
         kwargs["quantization_encoding"] = quantization_encoding
     return MAXModelConfig.model_construct(**kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally so real-repo tests keep
+    working; uncached/placeholder repos get a fake path.
+    """
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=lambda repo_id, revision=None: f"/fake/cache/{repo_id}",
+        ),
+        # Some tests force HF_HUB_OFFLINE=False (online path); keep the eager
+        # config-existence probe offline so it doesn't hit the network.
+        patch("huggingface_hub.file_exists", return_value=False),
+    ):
+        yield
 
 
 @patch(VALIDATE_HF_ACCESS_HFUTILS_TARGET)
@@ -1042,7 +1065,6 @@ _COMPUTED_FIELDS = {
     "huggingface_model_repo",
     "huggingface_config",
     "model_name",
-    "graph_quantization_encoding",
     "generation_config",
     "sampling_params_defaults",
 }

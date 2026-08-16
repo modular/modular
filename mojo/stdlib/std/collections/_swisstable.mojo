@@ -31,9 +31,9 @@ from std.memory import (
     unsafe_memcpy,
     unsafe_memset,
     pack_bits,
-    is_trivially_deletable,
 )
 from std.memory.alloc import Layout
+from std.traits import IsTriviallyDeinitable
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
@@ -211,22 +211,10 @@ struct Group(Copyable, Movable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    """Return whether every type in `Ts` is trivially destructible.
-
-    Returns `False` for any type that is not `ImplicitlyDeletable` (for example
-    `@explicit_destroy` types) or that has a non-trivial destructor.
-    """
-    comptime for i in range(Ts.length):
-        if not is_trivially_deletable[Ts[i]]():
-            return False
-    return True
-
-
 @fieldwise_init
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `SwissTableEntry` with"
-    " non-`ImplicitlyDeletable` keys or values"
+    " non-`Deinitable` keys or values"
 )
 struct SwissTableEntry[
     K: KeyElement,
@@ -234,9 +222,7 @@ struct SwissTableEntry[
     H: Hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
-    ImplicitlyDeletable where conforms_to(
-        K, ImplicitlyDeletable
-    ) and conforms_to(V, ImplicitlyDeletable),
+    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
     Movable,
 ):
     """Store a key-value pair entry inside a Swiss Table-based collection.
@@ -248,11 +234,6 @@ struct SwissTableEntry[
             entry copy construction.
         H: The type of the hasher used to hash the key.
     """
-
-    # TODO(MOCO-4228)
-    comptime __del__is_trivial = _all_trivial_del[Self.K, Self.V]()
-    """The explicit `__del__` below would otherwise mark this type
-    non-trivially-destructible even when `K` and `V` are trivial."""
 
     var _hash: UInt64
     """`key.__hash__()`, stored so hashing isn't re-computed during lookup."""
@@ -291,22 +272,6 @@ struct SwissTableEntry[
         self.key = key^
         self.value = value^
 
-    # TODO(MOCO-4228): Let the compiler synthesize this method
-    def __del__(
-        deinit self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
-        """Destroy the entry's key and value.
-
-        Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
-            the entry has no implicit destructor and must be torn down with
-            `deinit_with()`.
-        """
-        # The key and value are destroyed member-wise; `hash` is trivial.
-        pass
-
     def deinit_with(
         deinit self, deinit_func: Some[def(var Self.K, var Self.V)]
     ):
@@ -319,11 +284,11 @@ struct SwissTableEntry[
 
     def reap_key(
         deinit self,
-    ) -> Self.K where conforms_to(Self.V, ImplicitlyDeletable):
+    ) -> Self.K where conforms_to(Self.V, Deinitable):
         """Take the key from an owned entry, discarding hash and value.
 
         Constraints:
-            `V` must be `ImplicitlyDeletable`, since the value is discarded.
+            `V` must be `Deinitable`, since the value is discarded.
 
         Returns:
             The key of the entry.
@@ -332,11 +297,11 @@ struct SwissTableEntry[
 
     def reap_value(
         deinit self,
-    ) -> Self.V where conforms_to(Self.K, ImplicitlyDeletable):
+    ) -> Self.V where conforms_to(Self.K, Deinitable):
         """Take the value from an owned entry.
 
         Constraints:
-            `K` must be `ImplicitlyDeletable`, since the key is discarded.
+            `K` must be `Deinitable`, since the key is discarded.
 
         Returns:
             The value of the entry.
@@ -351,7 +316,7 @@ struct SwissTableEntry[
 
 @explicit_destroy(
     "Use `deinit_with()` to explicitly destroy a `SwissTable` with"
-    " non-`ImplicitlyDeletable` keys or values"
+    " non-`Deinitable` keys or values"
 )
 struct SwissTable[
     K: KeyElement,
@@ -359,9 +324,7 @@ struct SwissTable[
     H: Hasher = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
-    ImplicitlyDeletable where conforms_to(
-        K, ImplicitlyDeletable
-    ) and conforms_to(V, ImplicitlyDeletable),
+    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
     Movable,
 ):
     """Raw Swiss Table providing the hash table core for Dict and HashMap.
@@ -479,15 +442,13 @@ struct SwissTable[
                     copy=(copy._slots.unsafe_offset(i))[]
                 )
 
-    def __del__(
+    def __deinit__(
         deinit self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         """Destroy all entries and free memory.
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`. When either is not,
+            Both `K` and `V` must be `Deinitable`. When either is not,
             the table has no implicit destructor and must be torn down with
             `deinit_with()`.
         """
@@ -500,7 +461,7 @@ struct SwissTable[
         """Deinitializes all entries with a caller-provided closure, then free memory.
 
         Use this to tear down a `SwissTable` whose keys or values are not
-        `ImplicitlyDeletable`. The closure is called once per occupied entry.
+        `Deinitable`. The closure is called once per occupied entry.
 
         Args:
             deinit_func: A closure that consumes each entry's key and value.
@@ -512,26 +473,24 @@ struct SwissTable[
         """Free the control and slot arrays without touching entry contents.
 
         The caller must have already destroyed or moved out every occupied
-        entry (see `__del__` and `deinit_with`).
+        entry (see `__deinit__` and `deinit_with`).
         """
         if self._capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._ctrl
-                ).unsafe_with_layout({count = self._capacity + GROUP_WIDTH})
+                ThinAllocation(unsafe_owned_ptr=self._ctrl).unsafe_with_layout(
+                    {count = self._capacity + GROUP_WIDTH}
+                )
             )
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=self._slots
-                ).unsafe_with_layout({count = self._capacity})
+                ThinAllocation(unsafe_owned_ptr=self._slots).unsafe_with_layout(
+                    {count = self._capacity}
+                )
             )
 
     @always_inline
     def _delete_occupied_entries(
         mut self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         """Run destructors on every occupied slot.
 
         Skips the loop entirely when the entry type is trivially destructible.
@@ -539,15 +498,15 @@ struct SwissTable[
         This leaves `_ctrl`, `_len`, and `_capacity` unchanged, so the table is
         in an invalid state afterward: the caller must either reset the control
         bytes (see `clear`) or be about to free the backing storage (see
-        `__del__`).
+        `__deinit__`).
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`, since entries are
+            Both `K` and `V` must be `Deinitable`, since entries are
             destroyed in place.
         """
-        comptime if not is_trivially_deletable[
+        comptime if not IsTriviallyDeinitable[
             SwissTableEntry[Self.K, Self.V, Self.H]
-        ]():
+        ]:
             for i in range(self._capacity):
                 if is_occupied(self._ctrl[unsafe_offset=i]):
                     (self._slots.unsafe_offset(i)).unsafe_deinit_pointee()
@@ -601,6 +560,33 @@ struct SwissTable[
             matching slot. If not found, slot_index is the first EMPTY slot
             suitable for insertion.
         """
+
+        return self.find_slot_matching(
+            hash,
+            lambda (stored_key: Self.K) {imm key} -> Bool: (stored_key == key),
+        )
+
+    @always_inline
+    def find_slot_matching(
+        self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
+    ) -> Tuple[Bool, Int]:
+        """Find a slot whose stored key satisfies `key_matches`.
+
+        Like `find_slot`, but probes with a predicate instead of a concrete
+        `Self.K`, so callers can look up a heterogeneous key (such as a
+        `StringSpan` against `String` keys) without building a `Self.K`.
+
+        Args:
+            hash: The hash of the lookup key, from `Self.H`. Any key that
+                `key_matches` accepts must hash to this value.
+            key_matches: Returns `True` when the stored key equals the lookup
+                key.
+
+        Returns:
+            A tuple of (found, slot_index). If found, slot_index is the
+            matching slot. If not found, slot_index is the first EMPTY slot
+            suitable for insertion.
+        """
         # Lazy state: no buffers allocated yet. Slot index is meaningless but
         # safe for lookups (callers check `found`). Insert paths must go
         # through `_ensure_capacity` first, which allocates; callers assert
@@ -620,7 +606,7 @@ struct SwissTable[
                 if (
                     self._slots.unsafe_offset(slot_idx)
                 )[]._hash == hash and likely(
-                    (self._slots.unsafe_offset(slot_idx))[].key == key
+                    key_matches((self._slots.unsafe_offset(slot_idx))[].key)
                 ):
                     return (True, slot_idx)
                 match_mask &= match_mask - 1
@@ -724,13 +710,11 @@ struct SwissTable[
 
     def clear(
         mut self,
-    ) where conforms_to(Self.K, ImplicitlyDeletable) and conforms_to(
-        Self.V, ImplicitlyDeletable
-    ):
+    ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
         """Remove all elements, destroying occupied entries.
 
         Constraints:
-            Both `K` and `V` must be `ImplicitlyDeletable`, since every entry is
+            Both `K` and `V` must be `Deinitable`, since every entry is
             destroyed in place.
         """
         if self._capacity == 0:
@@ -815,14 +799,14 @@ struct SwissTable[
 
         if old_capacity > 0:
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=old_ctrl
-                ).unsafe_with_layout({count = old_capacity + GROUP_WIDTH})
+                ThinAllocation(unsafe_owned_ptr=old_ctrl).unsafe_with_layout(
+                    {count = old_capacity + GROUP_WIDTH}
+                )
             )
             dealloc(
-                ThinAllocation(
-                    unsafe_assume_ownership=old_slots
-                ).unsafe_with_layout({count = old_capacity})
+                ThinAllocation(unsafe_owned_ptr=old_slots).unsafe_with_layout(
+                    {count = old_capacity}
+                )
             )
 
         return relocations^

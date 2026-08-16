@@ -39,10 +39,10 @@ from max.nn.kv_cache import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     KVConnectorTransfer,
     TransferDirection,
 )
-from max.pipelines.kv_cache.memory_tier import MemoryTier
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_pool import BlockPool
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import KVCacheBlock
@@ -87,10 +87,10 @@ class _ControllableTransfer:
 class _AsyncConnector:
     """A fake external-tier connector that returns in-flight transfers.
 
-    ``num_host_blocks`` is positive so the block manager runs its host-onload
-    path; ``num_blocks_to_load`` controls how many of a ``load``'s requested
-    hashes are reported as found. Every returned transfer is recorded so a test
-    can flip it complete and then drive ``poll_transfers``.
+    ``host_block_count.total`` is positive so the block manager runs its
+    host-onload path; ``num_blocks_to_load`` controls how many of a ``load``'s
+    requested hashes are reported as found. Every returned transfer is
+    recorded so a test can flip it complete and then drive ``poll_transfers``.
     """
 
     def __init__(self) -> None:
@@ -123,7 +123,6 @@ class _AsyncConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         event = _ControllableTransfer(
@@ -146,20 +145,12 @@ class _AsyncConnector:
     def reset_prefix_cache(self) -> None: ...
 
     @property
-    def num_host_blocks(self) -> int:
-        return 1024
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=1024, total=1024)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
     def metrics(self) -> KVCacheMetrics:
@@ -171,7 +162,6 @@ class _AsyncConnector:
 def _make_block_manager() -> tuple[BlockManager, _AsyncConnector]:
     connector = _AsyncConnector()
     bm = BlockManager(
-        device_memory_tier=MemoryTier.MEMORY_TIER_CPU,
         total_num_blocks=64,
         block_size=16,
         connector=connector,
@@ -180,9 +170,15 @@ def _make_block_manager() -> tuple[BlockManager, _AsyncConnector]:
     return bm, connector
 
 
-def _make_ctx(request_id: RequestID) -> TextContext:
-    """Minimal ctx stub: the host-onload path reads only ``ctx.request_id``."""
-    return cast(TextContext, SimpleNamespace(request_id=request_id))
+def _make_ctx(bm: BlockManager, request_id: RequestID) -> TextContext:
+    """Minimal claimed ctx stub.
+
+    The host-onload path reads only ``ctx.request_id``, but the claim is what
+    pins which replica's pool the request resolves against.
+    """
+    ctx = cast(TextContext, SimpleNamespace(request_id=request_id))
+    bm.claim(ctx)
+    return ctx
 
 
 def _commit_device_block(pool: BlockPool, block_hash: int) -> KVCacheBlock:
@@ -215,7 +211,7 @@ def test_async_onload_defers_commit_and_pins_blocks() -> None:
     rid = RequestID("req-onload")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 2
     assert not event.is_complete()
@@ -238,7 +234,7 @@ def test_poll_transfers_is_noop_while_onload_incomplete() -> None:
     rid = RequestID("req-poll-incomplete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    _, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    _, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
     assert not event.is_complete()
 
     bm.poll_transfers()
@@ -256,7 +252,7 @@ def test_poll_transfers_commits_and_unpins_on_completion() -> None:
     rid = RequestID("req-poll-complete")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     # Complete the transfer, then drain.
     event.synchronize()
@@ -285,7 +281,7 @@ def test_partial_onload_frees_surplus_blocks() -> None:
     rid = RequestID("req-partial")
     bm.req_to_hashes[rid] = [_b(1), _b(2)]
 
-    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(rid))
+    blocks, event = bm.get_full_blocks_from_prefix_cache(_make_ctx(bm, rid))
 
     assert len(blocks) == 1
     assert len(event.g0_blocks) == 1
@@ -309,7 +305,7 @@ def test_async_offload_pins_source_blocks_without_commit() -> None:
     blk1 = _commit_device_block(pool, 111)
     blk2 = _commit_device_block(pool, 222)
     assert blk1.ref_cnt == 0 and blk2.ref_cnt == 0
-    bm._pending_offloads = [[(None, [_b(111), _b(222)])]]
+    bm._pending_offloads = [[[_b(111), _b(222)]]]
 
     bm.offload()
 

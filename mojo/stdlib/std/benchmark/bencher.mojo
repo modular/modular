@@ -20,14 +20,13 @@ and both CPU and GPU kernel benchmarking.
 
 from . import Report, Unit
 import std.time
+from std.benchmark import black_box
 from std.collections import Dict, Optional
 import std.format._utils as fmt
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import get_defined_bool
 from std.sys.arg import argv
-
-from std.gpu.host import DeviceContext
 
 from std.utils.numerics import FlushDenormals
 
@@ -395,7 +394,7 @@ struct BenchConfig(Copyable):
         self.verbose_metric_names = True
 
         # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
-        @parameter
+        @__parameter
         def argparse() raises:
             """Parse cmd line args to define benchmark configuration."""
 
@@ -558,7 +557,7 @@ struct Bench(Writable):
         Format,
     )
     from std.utils import IndexList
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     from std.pathlib import Path
 
     def example_kernel():
@@ -567,10 +566,10 @@ struct Bench(Writable):
     var shape = IndexList[2](1024, 1024)
     var bench = Bench(BenchConfig(max_iters=100))
 
-    @parameter
+    @__parameter
     @always_inline
     def example(mut b: Bencher, shape: IndexList[2]) capturing raises:
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function[example_kernel](
@@ -642,7 +641,7 @@ struct Bench(Writable):
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
-        @parameter
+        @__parameter
         def argparse():
             """Parse cmd line args to define benchmark configuration."""
 
@@ -686,11 +685,11 @@ struct Bench(Writable):
             var split = stem.split(".")
             if len(split) > 1:
                 current_suffix = String(split[len(split) - 1])
-                var new_stem = String(".".join(split[:-1]))
+                var new_stem = String(".".join(split[: len(split) - 1]))
                 stem = new_stem^
 
             self.config.out_file = Path(
-                ".".join(Span[String]([stem + suffix, current_suffix^]))
+                ".".join([stem + suffix, current_suffix^])
             )
 
     def bench_with_input[
@@ -717,7 +716,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
@@ -749,7 +748,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher):
             func(b, input)
 
@@ -779,7 +778,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
@@ -811,7 +810,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def input_closure(mut b: Bencher):
             func(b, input)
 
@@ -840,10 +839,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 try:
@@ -912,10 +911,10 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_iter(mut b: Bencher):
-            @parameter
+            @__parameter
             @always_inline
             def call_func():
                 bench_fn()
@@ -946,7 +945,7 @@ struct Bench(Writable):
             If the operation fails.
         """
 
-        @parameter
+        @__parameter
         def bench_with_abort_on_err(mut b: Bencher):
             # TODO: if we don't catch the exception here we have to overload
             # almost every function in stdlib benchmark and stdlib time.
@@ -1264,6 +1263,7 @@ struct Bench(Writable):
             ref result = run.result
 
             # TODO: remove when kbench adds the spec column
+            var name: String
             if self.config.format == Format.csv:
                 name = String(t'"{run.name}"')
             else:
@@ -1460,6 +1460,17 @@ struct Bencher(RegisterPassable):
             f()
         var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)
+
+    def _iter_setup[
+        T: Movable
+    ](mut self, *, setup: Some[def() -> T], benchmark: Some[def(var T)]):
+        """Run the benchmark function using the output from setup."""
+        for _ in range(self.num_iters):
+            var setup = black_box(take=setup())
+            var start = std.time.perf_counter_ns()
+            benchmark(setup^)
+            var stop = std.time.perf_counter_ns()
+            self.elapsed += Int(stop - start)
 
     def iter[IterFn: def() raises](mut self, f: IterFn) raises:
         """Returns the total elapsed time by running a raising target closure a

@@ -18,23 +18,24 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import fence_async_view_proxy, external_memory
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.memory import fence_async_view_proxy, external_memory
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
     CoordLike,
@@ -509,8 +510,9 @@ def kernel_7[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -543,7 +545,7 @@ def kernel_7[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = rebind[
+    var base_ptr_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -613,9 +615,9 @@ def kernel_7[
     var compute_barrier_base = mma_mbar_ptr + num_pipeline_stages
     var ptr_tmem_addr = (compute_barrier_base + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var compute_barrier = compute_barrier_base.bitcast[SharedMemBarrier]()
 
     var warp_id = get_warp_id()
     var elect_one_warp = warp_id == 0
@@ -648,7 +650,7 @@ def kernel_7[
     var consumer_phase = PipelineState[num_pipeline_stages]()
     var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     var mma_op = MmaOpSM100_SS[
         c_type,
@@ -802,11 +804,11 @@ def blackwell_kernel_7[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -878,7 +880,7 @@ def blackwell_kernel_7[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        K // BK,
+        Int32(K // BK),
         grid_dim=(
             align_up(ceildiv(M, BM), Int(cluster_shape[0])),
             align_up(ceildiv(N, MMA_N), Int(cluster_shape[1])),
@@ -991,7 +993,7 @@ def test_blackwell_kernel_7[
         comptime num_warmup = 100
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_7[
                 transpose_b=transpose_b,

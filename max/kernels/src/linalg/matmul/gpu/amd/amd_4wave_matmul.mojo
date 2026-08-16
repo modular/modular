@@ -48,10 +48,10 @@ from std.gpu import (
     lane_id,
     warp_id,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import MI355X
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.sync import schedule_barrier, s_waitcnt
+from max.gpu.sync import schedule_barrier, s_waitcnt
 
 from layout import TensorLayout, TileTensor
 from layout.swizzle import Swizzle
@@ -983,19 +983,23 @@ struct AMD4WaveMatmul[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_a[stage: Int, which: Int](k: Int):
             a_loader.load_tile(
-                a_load_tiles[stage][which],
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BM,
                 k_offset=k,
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -1013,7 +1017,7 @@ struct AMD4WaveMatmul[
         # ====================================================
         # Body: framework-driven via Pipeline4Wave.
         # ====================================================
-        @parameter
+        @__parameter
         @always_inline
         def _emit_framework_body():
             # `Pipeline4Wave.__init__` forces IDENTITY +
@@ -1072,7 +1076,7 @@ struct AMD4WaveMatmul[
                 sched_config, target
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _bind[entry: ScheduleEntry](k_base: Int):
                 # Framework-level infrastructure tags (BARRIER / WAIT_* /
@@ -1100,11 +1104,19 @@ struct AMD4WaveMatmul[
                         load_b[entry.op.stage, entry.op.subtile](k)
                     elif entry.op.tag == MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
-                            a_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(a_mma_tiles[0][0])](
+                                rebind[type_of(a_mma_tiles[0])](
+                                    a_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
-                            b_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(b_mma_tiles[0][0])](
+                                rebind[type_of(b_mma_tiles[0])](
+                                    b_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
@@ -1251,7 +1263,7 @@ struct AMD4WaveMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
         source_ptr: UnsafePointer[Scalar[Self.c_type], ImmutAnyOrigin],
-        source_row_stride: Int,
+        source_row_stride: Int32,
         beta: Float32,
     ):
         """Runs the 4-wave kernel as a 2D convolution via implicit-GEMM.
@@ -1306,6 +1318,7 @@ struct AMD4WaveMatmul[
             beta: Residual scale. Unused when `has_residual=False`.
         """
         Self.validate_config()
+        var _source_row_stride = Int(source_row_stride)
 
         comptime BM = Self.BM
         comptime BN = Self.BN
@@ -1591,22 +1604,26 @@ struct AMD4WaveMatmul[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_a[stage: Int, which: Int](k: Int):
             # `m_anchor=pid_m*BM` baked into the loader at construction;
             # callsite only carries the within-block `which*half_BM`
             # offset — same shape as the matmul's load_a / load_b.
             a_loader.load_tile(
-                a_load_tiles[stage][which],
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BM,
                 k_offset=k,
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -1624,7 +1641,7 @@ struct AMD4WaveMatmul[
         # ====================================================
         # Body: framework-driven via Pipeline4Wave.
         # ====================================================
-        @parameter
+        @__parameter
         @always_inline
         def _emit_framework_body():
             # `Pipeline4Wave.__init__` forces IDENTITY +
@@ -1669,7 +1686,7 @@ struct AMD4WaveMatmul[
                 sched_config, target
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _bind[entry: ScheduleEntry](k_base: Int):
                 # Framework-level infrastructure tags (BARRIER / WAIT_* /
@@ -1697,11 +1714,19 @@ struct AMD4WaveMatmul[
                         load_b[entry.op.stage, entry.op.subtile](k)
                     elif entry.op.tag == MMA_LOAD_A:
                         mma_op.load_a_quadrant[entry.op.subtile](
-                            a_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(a_mma_tiles[0][0])](
+                                rebind[type_of(a_mma_tiles[0])](
+                                    a_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA_LOAD_B:
                         mma_op.load_b_quadrant[entry.op.subtile](
-                            b_mma_tiles[entry.op.stage][entry.op.subtile]
+                            rebind[type_of(b_mma_tiles[0][0])](
+                                rebind[type_of(b_mma_tiles[0])](
+                                    b_mma_tiles[entry.op.stage]
+                                )[entry.op.subtile]
+                            )
                         )
                     elif entry.op.tag == MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
@@ -1808,7 +1833,7 @@ struct AMD4WaveMatmul[
             # this fix replaces), making workgroups with
             # `pid_m >= num_pid_m/2` read OOB → SRD-clamped to 0.
             # Keep both expressed in elements.
-            var src_size_elem = M * source_row_stride
+            var src_size_elem = M * _source_row_stride
             var src_bc = AMDBufferResource(
                 readfirstlane(source_ptr), readfirstlane(src_size_elem)
             )
@@ -1832,7 +1857,7 @@ struct AMD4WaveMatmul[
                         + lane_group * c_frag_size
                     )
                     var elem_off = Int32(
-                        m_logical * source_row_stride + n_global
+                        m_logical * _source_row_stride + n_global
                     )
                     prefetched[m_mma * num_n_mmas + n_mma] = src_bc.load[
                         Self.c_type, c_frag_size
@@ -2026,7 +2051,7 @@ def structured_4wave_matmul[
     var M = Int(c.dim[0]())
 
     @always_inline
-    @parameter
+    @__parameter
     def run_kernel[config: MatmulKernelConfig]() raises:
         comptime kernel = AMD4WaveMatmul[
             a_type,

@@ -16,11 +16,11 @@ from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.math import isfinite
-import std.gpu.primitives.block as block
-from std.algorithm.functional import elementwise
+import max.gpu.primitives.block as block
+from max.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -287,7 +287,7 @@ def update_frequency_data[
     comptime if is_gpu[target]():
         comptime block_size = 128
 
-        dev_ctx = ctx
+        var dev_ctx = ctx
         comptime kernel = update_frequency_data_kernel[
             freq_data_origin=compressed_frequency_data.origin,
             FreqDataLayoutType=compressed_frequency_data.LayoutType,

@@ -15,58 +15,58 @@
 from std.random import random_float64
 
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 from std.testing import assert_equal, TestSuite
 
 
 def simd_add_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32, MutAnyOrigin],
-    b_span: UnsafePointer[Float32, MutAnyOrigin],
-    c_span: UnsafePointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, MutAnyOrigin],
+    b_span: Pointer[Float32, MutAnyOrigin],
+    c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
     var vector_c = vector_a + vector_b
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def simd_mult_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32, MutAnyOrigin],
-    b_span: UnsafePointer[Float32, MutAnyOrigin],
-    c_span: UnsafePointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, MutAnyOrigin],
+    b_span: Pointer[Float32, MutAnyOrigin],
+    c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
     var vector_c = vector_a * vector_b
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def simd_fma_kernel[
     width: Int
 ](
-    a_span: UnsafePointer[Float32, MutAnyOrigin],
-    b_span: UnsafePointer[Float32, MutAnyOrigin],
-    c_span: UnsafePointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, MutAnyOrigin],
+    b_span: Pointer[Float32, MutAnyOrigin],
+    c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
     var idx = (thread_idx.x + block_idx.x * block_dim.x) * width
 
-    var vector_a = a_span.load[width=width](idx)
-    var vector_b = b_span.load[width=width](idx)
-    var vector_c = c_span.load[width=width](idx)
+    var vector_a = a_span.unsafe_load[width=width](idx)
+    var vector_b = b_span.unsafe_load[width=width](idx)
+    var vector_c = c_span.unsafe_load[width=width](idx)
     vector_c = vector_a.fma(vector_b, vector_c)
 
-    c_span.store[width=width](idx, vector_c)
+    c_span.unsafe_store[width=width](idx, vector_c)
 
 
 def host_elementwise_add(

@@ -17,12 +17,12 @@ from std.random import rand
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx, warp_id
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
 from std.gpu.primitives import warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
@@ -67,10 +67,14 @@ def gemv_tma_kernel[
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
     a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
     b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
-    M: Int,
-    N: Int,
-    K: Int,
+    M_dev: Int32,
+    N_dev: Int32,
+    K_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var M = Int(M_dev)
+    var N = Int(N_dev)
+    var K = Int(K_dev)
     var bidx = block_idx.x
     var block_row = bidx * BLOCK_SIZE_M
 
@@ -288,9 +292,9 @@ def gemv_tma[
         c,
         a,
         b,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_SIZE_M)),
         block_dim=(THREAD_NUM),
         shared_mem_bytes=smem_use,
@@ -368,7 +372,7 @@ def test_gemv_tma[
         comptime num_warmup = 10
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             gemv_tma(
                 c_device,

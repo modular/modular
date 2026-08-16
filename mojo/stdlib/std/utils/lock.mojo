@@ -39,7 +39,7 @@ struct SpinWaiter(Defaultable):
             OpaquePointer[MutUntrackedOrigin],
         ]()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
             self.storage
@@ -57,16 +57,16 @@ struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 
-    comptime UNLOCKED = -1
+    comptime UNLOCKED: Int64 = -1
     """Non-zero means locked, -1 means unlocked."""
 
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
     """The atomic counter implementing the spin lock."""
 
     def __init__(out self):
         """Default constructor."""
 
-        self.counter = Atomic[DType.int64](Self.UNLOCKED)
+        self.counter = Atomic[Int64](Self.UNLOCKED)
 
     def lock(mut self, owner: Int):
         """Acquires the lock.

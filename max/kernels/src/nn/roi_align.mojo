@@ -165,10 +165,11 @@ def roi_align_nhwc[
     var spatial_scale = in_spatial_scale.cast[DType.float32]()
     var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
 
-    var n_regions = rois.static_shape[0]
-    var height = input.static_shape[1]
-    var width = input.static_shape[2]
-    var channels = input.static_shape[3]
+    # Runtime extents: `static_shape` reports -1 for a symbolic dim.
+    var n_regions = Int(rois.dim[0]())
+    var height = Int(input.dim[1]())
+    var width = Int(input.dim[2]())
+    var channels = Int(input.dim[3]())
 
     var pooled_height = output_height
     var pooled_width = output_width
@@ -207,7 +208,7 @@ def roi_align_nhwc[
         var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
         # Pooling init/update/finalize functions parameterized by mode
-        @parameter
+        @__parameter
         @always_inline
         def init_fn[dtype: DType]() -> Scalar[dtype]:
             comptime if mode == "AVG":
@@ -215,7 +216,7 @@ def roi_align_nhwc[
             else:
                 return min_or_neg_inf[dtype]()
 
-        @parameter
+        @__parameter
         @always_inline
         def update_fn[
             dtype: DType
@@ -225,7 +226,7 @@ def roi_align_nhwc[
             else:
                 return max(a, b)
 
-        @parameter
+        @__parameter
         @always_inline
         def reduce_fn[
             dtype: DType

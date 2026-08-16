@@ -42,8 +42,8 @@ in-place register epilogue; prefill cases take the cooperative
 config as well.
 """
 from std.math import align_up, ceildiv
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 from std.random import seed, rand

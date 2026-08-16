@@ -30,16 +30,17 @@ correctness is its own `wait_on_dependent_grids`. The signal buffers must be
 sentinel-initialized once (`lamport_init`) before the first call.
 """
 
-from std.math import rsqrt
+from std.math import align_down, rsqrt
 from std.sys import align_of, size_of
 
 from std.atomic import Atomic
 from std.collections import Array
 
-from std.gpu import WARP_SIZE, barrier, block_idx, grid_dim, thread_idx
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
-from std.gpu.primitives.grid_controls import (
+from std.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -70,13 +71,16 @@ def _allreduce_lamport_rmsnorm_kernel[
     src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     gamma: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    rows: Int,
-    cols: Int,
+    rows_dev: Int32,
+    cols_dev: Int32,
     epsilon: Scalar[dtype],
-    my_rank: Int,
+    my_rank_dev: Int32,
 ):
     """Row-blocked fused Lamport allreduce + RMSNorm; one 128-bit pack per thread.
     """
+    var rows = Int(rows_dev)
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
     comptime accum_type = get_accum_type[dtype]()
     # Pin to the 128-bit single-copy-atomic pack the sentinel protocol needs.
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
@@ -279,7 +283,7 @@ def lamport_allreduce_rmsnorm[
     ), "lamport_allreduce_rmsnorm requires a floating-point dtype"
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
-    comptime BLOCK_SIZE = (max_tpb // WARP_SIZE) * WARP_SIZE
+    comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
 
     if cols % atomic_width != 0:
         raise Error(
@@ -307,10 +311,10 @@ def lamport_allreduce_rmsnorm[
         src,
         gamma,
         rank_sigs,
-        rows,
-        cols,
+        Int32(rows),
+        Int32(cols),
         epsilon,
-        my_rank,
+        Int32(my_rank),
         grid_dim=grid,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),

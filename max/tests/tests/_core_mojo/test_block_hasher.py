@@ -15,8 +15,36 @@
 import hashlib
 
 import numpy as np
+import pytest
 from max._core_mojo import block_hasher
 from pytest_benchmark.fixture import BenchmarkFixture
+
+
+def test_seed_default_matches_unseeded() -> None:
+    """Omitting `seed` must match passing an explicit all-zero seed."""
+    block_size = 32
+    tokens = np.arange(256, dtype=np.int32)
+
+    default = block_hasher(tokens, block_size, b"\x00" * 8)
+    explicit_zero = block_hasher(tokens, block_size, b"\x00" * 8, b"\x00" * 32)
+    assert default == explicit_zero
+
+
+def test_seed_isolation() -> None:
+    """Different seeds on the same tokens must produce disjoint hash lists."""
+    block_size = 32
+    tokens = np.arange(256, dtype=np.int32)
+
+    a = block_hasher(tokens, block_size, b"\x00" * 8, b"\x00" * 32)
+    b = block_hasher(tokens, block_size, b"\x00" * 8, b"\x01" * 32)
+    assert a != b
+    assert all(x != y for x, y in zip(a, b, strict=False))
+
+
+def test_invalid_seed_length_raises() -> None:
+    tokens = np.arange(128, dtype=np.int32)
+    with pytest.raises(ValueError):
+        block_hasher(tokens, 32, b"\x00" * 8, b"\x00" * 16)
 
 
 def test_block_hasher() -> None:

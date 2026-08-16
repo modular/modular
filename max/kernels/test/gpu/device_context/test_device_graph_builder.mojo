@@ -13,43 +13,61 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DeviceGraph, DeviceGraphBuilder
-from std.runtime.async_value import AnyAsyncValueRef
-from std.testing import assert_equal
+from max.gpu.host import DeviceContext
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceGraph,
+    DeviceGraphBuilder,
+    DeviceGraphCache,
+    DeviceGraphInput,
+)
+from max.runtime.async_value import AnyAsyncValueRef
 
 
 def vec_add(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    in0: UnsafePointer[Float32, ImmutAnyOrigin],
-    in1: UnsafePointer[Float32, ImmutAnyOrigin],
-    length: Int,
+    output: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
+    length_dev: Int32,
 ):
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
-    output[tid] = in0[tid] + in1[tid]
+    output[unsafe_offset=tid] = in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
 
 
 def fill_constant(
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    val: Int,
-    length: Int,
+    output: Pointer[Float32, MutAnyOrigin],
+    val_dev: Int32,
+    length_dev: Int32,
 ):
+    var val = Int(val_dev)
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
-    output[tid] = Float32(val)
+    output[unsafe_offset=tid] = Float32(val)
 
 
 def add_in_place(
-    buf: UnsafePointer[Float32, MutAnyOrigin],
-    delta: Int,
-    length: Int,
+    buf: Pointer[Float32, MutAnyOrigin],
+    delta_dev: Int32,
+    length_dev: Int32,
 ):
+    var delta = Int(delta_dev)
+    var length = Int(length_dev)
     var tid = global_idx.x
     if tid >= length:
         return
-    buf[tid] += Float32(delta)
+    buf[unsafe_offset=tid] += Float32(delta)
 
 
 def test_vec_add_kernel_node(ctx: DeviceContext) raises:
@@ -74,7 +92,7 @@ def test_vec_add_kernel_node(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -118,7 +136,7 @@ def test_parameterized_kernel_node(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -152,24 +170,27 @@ def test_capturing_parameterized_kernel_node(ctx: DeviceContext) raises:
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         # Captures `scale` from the enclosing scope while also taking runtime
         # arguments, exercising the capturing parameter-based overload.
-        @parameter
+        @__parameter
         @__copy_capture(scale)
         def scaled_vec_add(
-            output: UnsafePointer[Float32, MutAnyOrigin],
-            in0: UnsafePointer[Float32, ImmutAnyOrigin],
-            in1: UnsafePointer[Float32, ImmutAnyOrigin],
-            length: Int,
+            output: Pointer[Float32, MutAnyOrigin],
+            in0: Pointer[Float32, ImmutAnyOrigin],
+            in1: Pointer[Float32, ImmutAnyOrigin],
+            length_dev: Int32,
         ):
+            var length = Int(length_dev)
             var tid = global_idx.x
             if tid >= length:
                 return
-            output[tid] = (in0[tid] + in1[tid]) * scale
+            output[unsafe_offset=tid] = (
+                in0[unsafe_offset=tid] + in1[unsafe_offset=tid]
+            ) * scale
 
         _ = builder.add_function[scaled_vec_add](
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -206,7 +227,9 @@ def test_closure_node(ctx: DeviceContext) raises:
         var tid = global_idx.x
         if tid >= length:
             return
-        out_ptr[tid] = (in0_ptr[tid] + in1_ptr[tid]) * scale
+        out_ptr[unsafe_offset=tid] = (
+            in0_ptr[unsafe_offset=tid] + in1_ptr[unsafe_offset=tid]
+        ) * scale
 
     def build(mut builder: DeviceGraphBuilder) raises {imm}:
         _ = builder.add_function(
@@ -354,7 +377,7 @@ def test_add_output(ctx: DeviceContext) raises:
             out_dev,
             in0_dev,
             in1_dev,
-            length,
+            Int32(length),
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,
         )
@@ -395,16 +418,16 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         var a0 = builder.add_function(
             func,
             buf_a,
-            1,
-            length,
+            Int32(1),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
         var a1 = builder.add_function(
             func,
             buf_a,
-            2,
-            length,
+            Int32(2),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[a0],
@@ -412,8 +435,8 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         _ = builder.add_function(
             func,
             buf_a,
-            3,
-            length,
+            Int32(3),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[a1],
@@ -424,16 +447,16 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         var b0 = builder.add_function(
             func,
             buf_b,
-            4,
-            length,
+            Int32(4),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
         var b1 = builder.add_function(
             func,
             buf_b,
-            5,
-            length,
+            Int32(5),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[b0],
@@ -441,8 +464,8 @@ def test_add_function_with_dependencies(ctx: DeviceContext) raises:
         _ = builder.add_function(
             func,
             buf_b,
-            6,
-            length,
+            Int32(6),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[b1],
@@ -541,7 +564,7 @@ def test_add_copy_with_dependencies(ctx: DeviceContext) raises:
     #        assert_equal(host_b[i], UInt32(0xBBBBBBBB))
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = UnsafePointer(to=host_a1).as_unsafe_any_origin()[]
+    _ = Pointer(to=host_a1).as_unsafe_any_origin()[]
 
 
 def test_region(ctx: DeviceContext) raises:
@@ -644,8 +667,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
             _ = b.add_function(
                 fill,
                 buf,
-                5,
-                length,
+                Int32(5),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -660,8 +683,8 @@ def test_region_with_dependencies(ctx: DeviceContext) raises:
             _ = b.add_function(
                 incr,
                 buf,
-                10,
-                length,
+                Int32(10),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -700,8 +723,8 @@ def test_region_passthrough_dependencies(
             _ = b.add_function(
                 fill,
                 buf,
-                5,
-                length,
+                Int32(5),
+                Int32(length),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 dependencies=[],
@@ -723,8 +746,8 @@ def test_region_passthrough_dependencies(
         _ = builder.add_function(
             incr,
             buf,
-            10,
-            length,
+            Int32(10),
+            Int32(length),
             grid_dim=grid_dim,
             block_dim=block_dim,
             dependencies=[passthrough],
@@ -739,9 +762,374 @@ def test_region_passthrough_dependencies(
             assert_equal(host[i], Float32(15))
 
 
+def test_as_context_kernel_chain(ctx: DeviceContext) raises:
+    print(
+        "Test recording a two-kernel chain through DeviceGraphBuilder"
+        ".recording_context() using the ordinary enqueue_function API."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+    comptime grid_dim = ceildiv(length, block_dim)
+
+    var buf = ctx.enqueue_create_buffer[DType.float32](length)
+
+    var fill = ctx.compile_function[fill_constant]()
+    var incr = ctx.compile_function[add_in_place]()
+
+    # Record fill(=5) then incr(+10) on the same buffer through the recording
+    # context. The facade chains each enqueue after the previous one, so a
+    # correct final value of 15 proves the launches recorded AND stayed ordered
+    # (incr must observe fill's write, which on CUDA/HIP relies on the recorded
+    # dependency edge rather than any implicit stream FIFO).
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        with builder.recording_context() as rec:
+            rec.enqueue_function(
+                fill,
+                buf,
+                Int32(5),
+                Int32(length),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+            rec.enqueue_function(
+                incr,
+                buf,
+                Int32(10),
+                Int32(length),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+            )
+
+    var graph = DeviceGraph.create(ctx, build)
+
+    graph.replay()
+    ctx.synchronize()
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+            # Zero out so the second replay must recompute from scratch.
+            host[i] = 0.0
+
+    graph.replay()
+    ctx.synchronize()
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(15))
+
+
+def test_create_buffer(ctx: DeviceContext) raises:
+    print("Test allocating graph-owned device and host buffers.")
+    comptime length = 1024
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        # A device allocation is graph-scoped, so the graph copies it out to
+        # storage the test owns rather than handing back the buffer itself.
+        var dev_buf = builder.create_buffer[DType.uint8](length, is_host=False)
+        var memset = builder.add_memset(dev_buf, UInt8(0x5A))
+        _ = builder.add_copy(host_dst, dev_buf, dependencies=[memset])
+
+        # A host allocation comes from the pool's other memory manager: writing
+        # through it here would fault if it had been served as device memory.
+        var pool_host = builder.create_buffer[DType.uint8](length, is_host=True)
+        var ptr = pool_host.unsafe_ptr()
+
+        # Slightly questionable way to check that this is a host allocation.
+        for i in range(length):
+            ptr[unsafe_offset=i] = UInt8(i % 251)
+
+        for i in range(length):
+            assert_equal(ptr[unsafe_offset=i], UInt8(i % 251))
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x5A))
+
+
+@fieldwise_init
+struct _TaggedInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A graph input whose cache key is just its tag.
+
+    Deliberately writes a bare, undelimited integer: framing is
+    `make_key`'s job, so this is the adversarial case for it.
+    """
+
+    var tag: Int
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(self.tag)
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        # Backed by no memory, so there is nothing to give a stable location.
+        return Self(copy=self)
+
+
+@fieldwise_init
+struct _BufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A graph input backed by a device buffer, for exercising `add_input`."""
+
+    var buf: DeviceBuffer[DType.uint8]
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(t"BufferInput({len(self.buf)})")
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        return Self(
+            builder.create_input_buffer[DType.uint8](
+                len(self.buf), is_host=False
+            )
+        )
+
+
+@fieldwise_init
+struct _InPlaceBufferInput(DeviceGraphInput, ImplicitlyCopyable, Movable):
+    """A mutable graph input recorded at the caller's live address.
+
+    Models a buffer the graph writes in place (a KV cache): `allocate_stable`
+    registers an in-place marker and returns an alias of the caller's buffer,
+    and the buffer's address joins the cache key so a moved buffer forces a
+    rebuild instead of replaying stale addresses.
+    """
+
+    var buf: DeviceBuffer[DType.uint8]
+
+    def write_graph_key(self, mut writer: Some[Writer]):
+        writer.write(
+            t"InPlaceBufferInput({len(self.buf)}, {Int(self.buf.unsafe_ptr())})"
+        )
+
+    def allocate_stable(self, mut builder: DeviceGraphBuilder) raises -> Self:
+        builder.register_in_place_input()
+        return Self(copy=self)
+
+
+def test_add_input(ctx: DeviceContext) raises:
+    print("Test add_input gives the graph a stable location to record against.")
+    comptime length = 64
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    var caller_buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        assert_equal(builder.num_inputs(), 0)
+        var stable = builder.add_input(_BufferInput(caller_buf.copy()))
+        assert_equal(builder.num_inputs(), 1)
+
+        # The stable location is the graph's own allocation, not the caller's.
+        assert_true(stable.buf.unsafe_ptr() != caller_buf.unsafe_ptr())
+
+        # Record against the stable location and copy it out, so the readback
+        # observes what the graph actually wrote.
+        var memset = builder.add_memset(stable.buf, UInt8(0x7E))
+        _ = builder.add_copy(host_dst, stable.buf, dependencies=[memset])
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x7E))
+
+
+def test_add_in_place_input(ctx: DeviceContext) raises:
+    print("Test in-place inputs alias the caller's buffer with no stable twin.")
+    comptime length = 64
+
+    var host_dst = ctx.enqueue_create_host_buffer[DType.uint8](length)
+    for i in range(length):
+        host_dst[i] = 0
+
+    var caller_buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    with caller_buf.map_to_host() as host_view:
+        for i in range(length):
+            host_view[i] = 0x7E
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        assert_equal(builder.num_inputs(), 0)
+        var in_place = builder.add_input(_InPlaceBufferInput(caller_buf.copy()))
+        # The marker occupies an input position like a stable buffer would,
+        # keeping the positional pairing with execute operands intact.
+        assert_equal(builder.num_inputs(), 1)
+
+        # The returned handle aliases the caller's buffer: the graph records
+        # the live address rather than a graph-private twin.
+        assert_true(in_place.buf.unsafe_ptr() == caller_buf.unsafe_ptr())
+
+        _ = builder.add_copy(host_dst, in_place.buf)
+
+    var graph = DeviceGraph.create(ctx, build)
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x7E))
+
+    # Mutate the caller's buffer and replay: the graph reads through the live
+    # address, so the readback must see the new contents (a private snapshot
+    # would keep returning the old pattern).
+    with caller_buf.map_to_host() as host_view:
+        for i in range(length):
+            host_view[i] = 0x3C
+
+    graph.replay()
+    ctx.synchronize()
+
+    for i in range(length):
+        assert_equal(host_dst[i], UInt8(0x3C))
+
+
+def test_cache_key_separates_inputs() raises:
+    print("Test cache keys keep adjacent input contributions apart.")
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        return
+
+    # Undelimited, these two would both spell "...123".
+    var a = DeviceGraphCache.make_key(build, _TaggedInput(1), _TaggedInput(23))
+    var b = DeviceGraphCache.make_key(build, _TaggedInput(12), _TaggedInput(3))
+    assert_not_equal(a, b)
+
+    # Equal inputs still agree, or nothing would ever hit.
+    assert_equal(
+        a, DeviceGraphCache.make_key(build, _TaggedInput(1), _TaggedInput(23))
+    )
+
+    # Arity is part of the key too: one input must not look like two.
+    assert_not_equal(a, DeviceGraphCache.make_key(build, _TaggedInput(1)))
+
+    # A different work function keys a different graph even with equal inputs.
+    def other_build(mut builder: DeviceGraphBuilder) raises {imm}:
+        return
+
+    assert_not_equal(
+        a,
+        DeviceGraphCache.make_key(
+            other_build, _TaggedInput(1), _TaggedInput(23)
+        ),
+    )
+
+
+def test_cache_reuses_graph(ctx: DeviceContext) raises:
+    print("Test a cache hit returns the prior graph without rebuilding it.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    # Counted through a pointer so the closure can stay `imm`-capturing.
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x5A))
+
+    var first = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # Same closure and same (empty) input list, so the key matches and the build
+    # body must not run a second time.
+    var second = DeviceGraph.create(ctx, build, cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # The graph handed back on a hit is a fully usable graph, not a husk.
+    second.replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x5A))
+
+
+def test_cache_distinguishes_inputs(ctx: DeviceContext) raises:
+    print("Test inputs writing different cache keys do not share a graph.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x11))
+
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(1), cache=Pointer(to=cache))
+    assert_equal(build_count, 1)
+
+    # A different key must miss and rebuild.
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(2), cache=Pointer(to=cache))
+    assert_equal(build_count, 2)
+
+    # Returning to the first key must hit the entry stored by the first call.
+    _ = DeviceGraph.create(ctx, build, _TaggedInput(1), cache=Pointer(to=cache))
+    assert_equal(build_count, 2)
+
+
+def test_cache_without_cache_always_builds(ctx: DeviceContext) raises:
+    print("Test omitting the cache rebuilds the graph on every call.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+
+    var build_count = 0
+    var count = Pointer(to=build_count)
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        count[] += 1
+        _ = builder.add_memset(buf, UInt8(0x22))
+
+    _ = DeviceGraph.create(ctx, build)
+    _ = DeviceGraph.create(ctx, build)
+    assert_equal(build_count, 2)
+
+
+def test_cache_lookup_and_add(ctx: DeviceContext) raises:
+    print("Test DeviceGraphCache lookup/add semantics directly.")
+    comptime length = 64
+
+    var buf = ctx.enqueue_create_buffer[DType.uint8](length)
+    var cache = DeviceGraphCache()
+
+    assert_false(Bool(cache.lookup("absent")))
+
+    def build(mut builder: DeviceGraphBuilder) raises {imm}:
+        _ = builder.add_memset(buf, UInt8(0x33))
+
+    _ = cache.cache("key", DeviceGraph.create(ctx, build))
+
+    var found = cache.lookup("key")
+    assert_true(Bool(found))
+
+    # The looked-up graph is an independent handle on the same graph, so it
+    # replays even though the cache still holds its own reference.
+    found.take().replay()
+    ctx.synchronize()
+
+    with buf.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], UInt8(0x33))
+
+    # A second add under the same key replaces the entry rather than failing.
+    _ = cache.cache("key", DeviceGraph.create(ctx, build))
+    assert_true(Bool(cache.lookup("key")))
+    assert_false(Bool(cache.lookup("other")))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_vec_add_kernel_node(ctx)
+        test_as_context_kernel_chain(ctx)
         test_parameterized_kernel_node(ctx)
         test_capturing_parameterized_kernel_node(ctx)
         test_closure_node(ctx)
@@ -757,3 +1145,11 @@ def main() raises:
         test_region_empty(ctx)
         test_region_with_dependencies(ctx)
         test_region_passthrough_dependencies(ctx)
+        test_create_buffer(ctx)
+        test_cache_reuses_graph(ctx)
+        test_cache_distinguishes_inputs(ctx)
+        test_cache_without_cache_always_builds(ctx)
+        test_cache_lookup_and_add(ctx)
+        test_cache_key_separates_inputs()
+        test_add_input(ctx)
+        test_add_in_place_input(ctx)

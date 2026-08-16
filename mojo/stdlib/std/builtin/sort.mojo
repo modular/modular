@@ -35,8 +35,7 @@ def _insertion_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     """Sort the array[start:end] slice"""
     var array = span.as_ref().as_unsafe_any_origin()
     var size = len(span)
@@ -63,8 +62,7 @@ def _quicksort_partition_right[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]) -> Int:
     var size = len(span)
 
     var left = 1
@@ -92,8 +90,7 @@ def _quicksort_partition_left[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]) -> Int:
     var size = len(span)
 
     var left = 1
@@ -118,8 +115,7 @@ def _heap_sort_fix_down[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin], idx: Int):
+](span: Span[T, origin], idx: Int, cmp_fn: Some[def(T, T) -> Bool]):
     var size = len(span)
     var i = idx
     var j = i * 2 + 1
@@ -141,17 +137,16 @@ def _heap_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     var size = len(span)
     # heapify
     for i in range(size // 2 - 1, -1, -1):
-        _heap_sort_fix_down[cmp_fn](span, i)
+        _heap_sort_fix_down(span, i, cmp_fn)
     # sort
     while size > 1:
         size -= 1
         span.unsafe_swap_elements(0, size)
-        _heap_sort_fix_down[cmp_fn](span, 0)
+        _heap_sort_fix_down(span, 0, cmp_fn)
 
 
 @always_inline
@@ -170,29 +165,28 @@ def _delegate_small_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     var size = len(span)
     if size == 2:
-        _small_sort[2, T, cmp_fn](span)
+        _small_sort[2](span, cmp_fn)
 
         return
     if size == 3:
-        _small_sort[3, T, cmp_fn](span)
+        _small_sort[3](span, cmp_fn)
         return
 
     if size == 4:
-        _small_sort[4, T, cmp_fn](span)
+        _small_sort[4](span, cmp_fn)
         return
 
     if size == 5:
-        _small_sort[5, T, cmp_fn](span)
+        _small_sort[5](span, cmp_fn)
         return
 
 
 # FIXME (MSTDL-808): Using _Pair over Span results in 1-3% improvement
 # struct _Pair[T: AnyType]:
-#     var ptr: UnsafePointer[T]
+#     var ptr: Pointer[T]
 #     var len: Int
 
 
@@ -201,10 +195,9 @@ def _quicksort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
     *,
     do_smallsort: Bool = False,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     var size = len(span)
     if size == 0:
         return
@@ -217,15 +210,15 @@ def _quicksort[
 
         comptime if do_smallsort:
             if len <= 5:
-                _delegate_small_sort[cmp_fn](interval)
+                _delegate_small_sort(interval, cmp_fn)
                 continue
 
         if len < insertion_sort_threshold:
-            _insertion_sort[cmp_fn](interval)
+            _insertion_sort(interval, cmp_fn)
             continue
 
         # pick median of 3 as pivot
-        _sort3[T, cmp_fn](interval, len >> 1, 0, len - 1)
+        _sort3(interval, len >> 1, 0, len - 1, cmp_fn)
 
         # if ptr[-1] == pivot_value, then everything in between will
         # be the same, so no need to recurse that interval
@@ -234,7 +227,7 @@ def _quicksort[
         if interval_ptr > span.unsafe_ptr() and not cmp_fn(
             interval_ptr[unsafe_offset=-1], interval_ptr[unsafe_offset=0]
         ):
-            var pivot = _quicksort_partition_left[cmp_fn](interval)
+            var pivot = _quicksort_partition_left(interval, cmp_fn)
             if len > pivot + 2:
                 stack.append(
                     interval.unsafe_subspan(
@@ -243,7 +236,7 @@ def _quicksort[
                 )
             continue
 
-        var pivot = _quicksort_partition_right[cmp_fn](interval)
+        var pivot = _quicksort_partition_right(interval, cmp_fn)
 
         if len > pivot + 2:
             stack.append(
@@ -269,11 +262,11 @@ def _merge[
     span_origin: MutOrigin,
     result_origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
 ](
     span1: Span[T, span_origin],
     span2: Span[T, span_origin],
     result: Span[T, result_origin],
+    cmp_fn: Some[def(T, T) -> Bool],
 ):
     """Merge span1 and span2 into result using the given cmp_fn. The function
     will crash if result is not large enough to hold both span1 and span2.
@@ -284,12 +277,12 @@ def _merge[
         T: Type of the spans.
         span_origin: Origin of the input spans.
         result_origin: Origin of the result Span.
-        cmp_fn: Comparison functor of (type, type) capturing [_] -> Bool type.
 
     Args:
         span1: The first span to be merged.
         span2: The second span to be merged.
         result: The output span.
+        cmp_fn: The comparison function.
     """
     var span1_size = len(span1)
     var span2_size = len(span2)
@@ -337,17 +330,21 @@ def _stable_sort_impl[
     span_life: MutOrigin,
     tmp_life: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, span_life], temp_buff: Span[T, tmp_life]):
+](
+    span: Span[T, span_life],
+    temp_buff: Span[T, tmp_life],
+    cmp_fn: Some[def(T, T) -> Bool],
+):
     var size = len(span)
     if size <= 1:
         return
     var i = 0
     while i < size:
-        _insertion_sort[cmp_fn](
+        _insertion_sort(
             span.unsafe_subspan(
                 offset=i, length=min(insertion_sort_threshold, size - i)
-            )
+            ),
+            cmp_fn,
         )
         i += insertion_sort_threshold
     var merge_size = insertion_sort_threshold
@@ -359,7 +356,7 @@ def _stable_sort_impl[
                 offset=j + merge_size,
                 length=min(merge_size, max(size - (j + merge_size), 0)),
             )
-            _merge[cmp_fn](span1, span2, temp_buff)
+            _merge(span1, span2, temp_buff, cmp_fn)
             for i in range(merge_size + len(span2)):
                 Pointer(to=span.unsafe_get(j + i)).unsafe_write_move_from(
                     Pointer(to=temp_buff.unsafe_get(i))
@@ -372,12 +369,11 @@ def _stable_sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     var layout = Layout[T](count=len(span))
     var temp_buff = alloc(layout)
     var temp_buff_span = temp_buff.unsafe_span()
-    _stable_sort_impl[cmp_fn](span, temp_buff_span)
+    _stable_sort_impl(span, temp_buff_span, cmp_fn)
     dealloc(temp_buff^)
 
 
@@ -391,8 +387,7 @@ def _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]) -> Int:
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]) -> Int:
     var size = len(span)
     if size <= 1:
         return 0
@@ -423,10 +418,9 @@ def _partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](var span: Span[T, origin], var k: Int):
+](var span: Span[T, origin], var k: Int, cmp_fn: Some[def(T, T) -> Bool]):
     while True:
-        var pivot = _partition[cmp_fn](span)
+        var pivot = _partition(span, cmp_fn)
         if pivot == k:
             return
         elif k < pivot:
@@ -441,8 +435,7 @@ def partition[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin], k: Int):
+](span: Span[T, origin], k: Int, cmp_fn: Some[def(T, T) -> Bool]):
     """Partition the input buffer inplace such that first k elements are the
     largest (or smallest if cmp_fn is < operator) elements.
     The ordering of the first k elements is undefined.
@@ -450,14 +443,14 @@ def partition[
     Parameters:
         T: Type of the underlying data.
         origin: Origin of span.
-        cmp_fn: Comparison functor of (T, T) capturing [_] -> Bool type.
 
     Args:
         span: Input buffer.
         k: Index of the partition element.
+        cmp_fn: The comparison function.
     """
 
-    _partition[cmp_fn](span, k)
+    _partition(span, k, cmp_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -470,51 +463,46 @@ def _sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
     *,
     stable: Bool = False,
     do_smallsort: Bool = False,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     comptime if do_smallsort:
         if len(span) <= 5:
-            _delegate_small_sort[cmp_fn](span)
+            _delegate_small_sort(span, cmp_fn)
             return
 
     if len(span) < insertion_sort_threshold:
-        _insertion_sort[cmp_fn](span)
+        _insertion_sort(span, cmp_fn)
         return
 
     comptime if stable:
-        _stable_sort[cmp_fn](span)
+        _stable_sort(span, cmp_fn)
     else:
-        _quicksort[cmp_fn, do_smallsort=do_smallsort](span)
+        _quicksort[do_smallsort=do_smallsort](span, cmp_fn)
 
 
 def sort[
     T: Copyable,
     origin: MutOrigin,
     //,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
     *,
     stable: Bool = False,
-    __disambiguate: NoneType = None,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     """Sort a span in-place.
     The function doesn't return anything, the span is updated in-place.
 
     Parameters:
         T: Type of the underlying data.
         origin: Origin of span.
-        cmp_fn: The comparison function.
         stable: Whether the sort should be stable.
-        __disambiguate: Give the Scalar overload higher priority. Do not pass explicitly.
-
 
     Args:
         span: The span to be sorted.
+        cmp_fn: The comparison function.
     """
 
-    _sort[cmp_fn, stable=stable](span)
+    _sort[stable=stable](span, cmp_fn)
 
 
 def sort[
@@ -535,11 +523,10 @@ def sort[
         span: The span to be sorted.
     """
 
-    @parameter
     def _cmp_fn(a: T, b: T) -> Bool:
         return a < b
 
-    sort[_cmp_fn, stable=stable](span)
+    sort[stable=stable](span, _cmp_fn)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -549,34 +536,48 @@ def sort[
 
 @always_inline
 def _sort2[
+    T: Copyable,
     origin: MutOrigin,
     //,
-    T: Copyable,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin], offset0: Int, offset1: Int,):
+](
+    span: Span[T, origin],
+    offset0: Int,
+    offset1: Int,
+    cmp_fn: Some[def(T, T) -> Bool],
+):
     if not cmp_fn(span.unsafe_get(offset0), span.unsafe_get(offset1)):
         span.unsafe_swap_elements(offset0, offset1)
 
 
 @always_inline
 def _sort3[
+    T: Copyable,
     origin: MutOrigin,
     //,
-    T: Copyable,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int,):
-    _sort2[T, cmp_fn](span, offset0, offset1)
-    _sort2[T, cmp_fn](span, offset1, offset2)
-    _sort2[T, cmp_fn](span, offset0, offset1)
+](
+    span: Span[T, origin],
+    offset0: Int,
+    offset1: Int,
+    offset2: Int,
+    cmp_fn: Some[def(T, T) -> Bool],
+):
+    _sort2(span, offset0, offset1, cmp_fn)
+    _sort2(span, offset1, offset2, cmp_fn)
+    _sort2(span, offset0, offset1, cmp_fn)
 
 
 @always_inline
 def _sort_partial_3[
+    T: Copyable,
     origin: MutOrigin,
     //,
-    T: Copyable,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin], offset0: Int, offset1: Int, offset2: Int):
+](
+    span: Span[T, origin],
+    offset0: Int,
+    offset1: Int,
+    offset2: Int,
+    cmp_fn: Some[def(T, T) -> Bool],
+):
     """Sorts [a, b, c] assuming [b, c] is already sorted."""
     if cmp_fn(span.unsafe_get(offset0), span.unsafe_get(offset1)):
         return
@@ -588,34 +589,33 @@ def _sort_partial_3[
 
 @always_inline
 def _small_sort[
+    T: Copyable,
     origin: MutOrigin,
     //,
     n: Int,
-    T: Copyable,
-    cmp_fn: def(T, T) capturing[_] -> Bool,
-](span: Span[T, origin]):
+](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
     comptime if n == 2:
-        _sort2[T, cmp_fn](span, 0, 1)
+        _sort2(span, 0, 1, cmp_fn)
         return
 
     comptime if n == 3:
-        _sort2[T, cmp_fn](span, 1, 2)
-        _sort_partial_3[T, cmp_fn](span, 0, 1, 2)
+        _sort2(span, 1, 2, cmp_fn)
+        _sort_partial_3(span, 0, 1, 2, cmp_fn)
         return
 
     comptime if n == 4:
-        _sort2[T, cmp_fn](span, 0, 2)
-        _sort2[T, cmp_fn](span, 1, 3)
-        _sort2[T, cmp_fn](span, 0, 1)
-        _sort2[T, cmp_fn](span, 2, 3)
-        _sort2[T, cmp_fn](span, 1, 2)
+        _sort2(span, 0, 2, cmp_fn)
+        _sort2(span, 1, 3, cmp_fn)
+        _sort2(span, 0, 1, cmp_fn)
+        _sort2(span, 2, 3, cmp_fn)
+        _sort2(span, 1, 2, cmp_fn)
         return
 
     comptime if n == 5:
-        _sort2[T, cmp_fn](span, 0, 1)
-        _sort2[T, cmp_fn](span, 3, 4)
-        _sort_partial_3[T, cmp_fn](span, 2, 3, 4)
-        _sort2[T, cmp_fn](span, 1, 4)
-        _sort_partial_3[T, cmp_fn](span, 0, 2, 3)
-        _sort_partial_3[T, cmp_fn](span, 1, 2, 3)
+        _sort2(span, 0, 1, cmp_fn)
+        _sort2(span, 3, 4, cmp_fn)
+        _sort_partial_3(span, 2, 3, 4, cmp_fn)
+        _sort2(span, 1, 4, cmp_fn)
+        _sort_partial_3(span, 0, 2, 3, cmp_fn)
+        _sort_partial_3(span, 1, 2, 3, cmp_fn)
         return

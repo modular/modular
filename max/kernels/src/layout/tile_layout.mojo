@@ -18,19 +18,19 @@ definitions while maintaining performance through compile-time specialization.
 
 Key components:
 
-- [`TensorLayout`](/docs/layout/tile_layout/TensorLayout): Trait
+- [`TensorLayout`](/api/mojo/layout/tile_layout/TensorLayout): Trait
   defining the interface for all mixed layouts.
-- [`Layout`](/docs/layout/tile_layout/Layout): Primary struct
+- [`Layout`](/api/mojo/layout/tile_layout/Layout): Primary struct
   implementing a layout with mixed compile-time and runtime dimensions.
-- [`row_major`](/docs/layout/tile_layout/row_major): Create a
+- [`row_major`](/api/mojo/layout/tile_layout/row_major): Create a
   row-major layout from a shape.
-- [`col_major`](/docs/layout/tile_layout/col_major): Create a
+- [`col_major`](/api/mojo/layout/tile_layout/col_major): Create a
   column-major layout from a shape.
-- [`blocked_product`](/docs/layout/tile_layout/blocked_product):
+- [`blocked_product`](/api/mojo/layout/tile_layout/blocked_product):
   Create a hierarchical blocked layout from block and tiler layouts.
-- [`zipped_divide`](/docs/layout/tile_layout/zipped_divide): Divide
+- [`zipped_divide`](/api/mojo/layout/tile_layout/zipped_divide): Divide
   a layout into inner and outer components by a tile shape.
-- [`coalesce`](/docs/layout/tile_layout/coalesce): Simplify a
+- [`coalesce`](/api/mojo/layout/tile_layout/coalesce): Simplify a
   layout by merging dimensions with contiguous strides.
 
 You can import these APIs from the `layout` package:
@@ -506,12 +506,12 @@ struct Layout[
                     var coord_val = _mod_by_shape[
                         Self.shape_types[i].ParamListType[j]
                     ](divided, Int(sub_shape[j].value()))
-                    UnsafePointer(to=sub_result[j]).unsafe_write(
+                    UnsafePointer(to=sub_result[j]).write(
                         rebind[SubResultType.element_types[j]](
                             Scalar[out_dtype](coord_val)
                         )
                     )
-                UnsafePointer(to=result[i]).unsafe_write(
+                UnsafePointer(to=result[i]).write(
                     rebind[ResultType.element_types[i]](sub_result)
                 )
             else:
@@ -521,7 +521,7 @@ struct Layout[
                 var coord_val = _mod_by_shape[Self.shape_types[i]](
                     divided, Int(shape_t[i].value())
                 )
-                UnsafePointer(to=result[i]).unsafe_write(
+                UnsafePointer(to=result[i]).write(
                     rebind[ResultType.element_types[i]](
                         Scalar[out_dtype](coord_val)
                     )
@@ -939,7 +939,7 @@ comptime _RowMajorMapperIdx[
 
 
 comptime _AnyTuple[*element_types: CoordLike] = (
-    not element_types.all_satisfies[_IsNotTuplePredicate]()
+    not element_types.all[_IsNotTuplePredicate]()
 )
 """True iff `element_types` contains at least one tuple element."""
 
@@ -999,19 +999,19 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
         comptime if i == 0:
             # Rightmost dimension always has stride 1.
             comptime StrideType = RowMajorTypes[idx]
-            stride_ptr.unsafe_write(rebind[StrideType](Idx[1]))
+            stride_ptr.write(rebind[StrideType](Idx[1]))
         else:
             # stride[i] = shape[i+1] * stride[i+1]
             comptime StrideType = RowMajorTypes[idx]
 
             comptime if StrideType.is_static_value:
                 comptime stride_val = StrideType.static_value
-                stride_ptr.unsafe_write(rebind[StrideType](Idx[stride_val]))
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
                 var stride_val = Int(shape[idx + 1].value()) * Int(
                     strides[idx + 1].value()
                 )
-                stride_ptr.unsafe_write(
+                stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
@@ -1055,19 +1055,19 @@ def row_major[
         comptime if i == 0:
             # Rightmost dimension always has stride 1.
             comptime StrideType = RowMajorTypes[idx]
-            stride_ptr.unsafe_write(rebind[StrideType](Idx[1]))
+            stride_ptr.write(rebind[StrideType](Idx[1]))
         else:
             # stride[i] = shape[i+1] * stride[i+1]
             comptime StrideType = RowMajorTypes[idx]
 
             comptime if StrideType.is_static_value:
                 comptime stride_val = StrideType.static_value
-                stride_ptr.unsafe_write(rebind[StrideType](Idx[stride_val]))
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
                 var stride_val = Int(elements[idx + 1].value()) * Int(
                     strides[idx + 1].value()
                 )
-                stride_ptr.unsafe_write(
+                stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
@@ -1127,7 +1127,7 @@ def row_major_nested(
         comptime idx = rank - 1 - i
         var stride_ptr = UnsafePointer(to=strides[idx])
         comptime StrideType = RowMajorTypes[idx]
-        stride_ptr.unsafe_write(rebind[StrideType](StrideType()))
+        stride_ptr.write(rebind[StrideType](StrideType()))
 
     return {shape, Coord(strides^)}
 
@@ -1268,19 +1268,19 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
         comptime if i == 0:
             # Leftmost dimension always has stride 1.
             comptime StrideType = ColMajorTypes[i]
-            stride_ptr.unsafe_write(rebind[StrideType](Idx[1]))
+            stride_ptr.write(rebind[StrideType](Idx[1]))
         else:
             # stride[i] = shape[i-1] * stride[i-1]
             comptime StrideType = ColMajorTypes[i]
 
             comptime if StrideType.is_static_value:
                 comptime stride_val = StrideType.static_value
-                stride_ptr.unsafe_write(rebind[StrideType](Idx[stride_val]))
+                stride_ptr.write(rebind[StrideType](Idx[stride_val]))
             else:
                 var stride_val = Int(shape[i - 1].value()) * Int(
                     strides[i - 1].value()
                 )
-                stride_ptr.unsafe_write(
+                stride_ptr.write(
                     rebind[StrideType](
                         Scalar[StrideType.DTYPE](
                             Scalar[StrideType.DTYPE](stride_val)
@@ -1341,7 +1341,7 @@ def col_major_nested(
     comptime for i in range(rank):
         var stride_ptr = UnsafePointer(to=strides[i])
         comptime StrideType = ColMajorTypes[i]
-        stride_ptr.unsafe_write(rebind[StrideType](StrideType()))
+        stride_ptr.write(rebind[StrideType](StrideType()))
 
     return Layout(shape, Coord[*ColMajorTypes](strides^))
 
@@ -1716,14 +1716,14 @@ def blocked_product[
 
     comptime for i in range(outer_shape.rank):
         comptime if OuterStrideTypes[i].is_static_value:
-            UnsafePointer(to=outer_stride[i]).unsafe_write(
+            UnsafePointer(to=outer_stride[i]).write(
                 rebind[OuterStrideTypes[i]](
                     ComptimeInt[OuterStrideTypes[i].static_value]()
                 )
             )
         else:
             var block_cosize = Int(block.shape_coord().product())
-            UnsafePointer(to=outer_stride[i]).unsafe_write(
+            UnsafePointer(to=outer_stride[i]).write(
                 rebind[OuterStrideTypes[i]](
                     Scalar[OuterStrideTypes[i].DTYPE](
                         Int(tiler.stride_coord()[i].value()) * block_cosize
@@ -1737,12 +1737,12 @@ def blocked_product[
     var result_stride = Coord[*ResultType._stride_types]()
 
     comptime for i in range(inner_shape.rank):
-        UnsafePointer(to=result_shape[i]).unsafe_write(
+        UnsafePointer(to=result_shape[i]).write(
             rebind[ResultType._shape_types[i]](
                 Coord(inner_shape[i], outer_shape[i])
             )
         )
-        UnsafePointer(to=result_stride[i]).unsafe_write(
+        UnsafePointer(to=result_stride[i]).write(
             rebind[ResultType._stride_types[i]](
                 Coord(inner_stride[i], outer_stride[i])
             )
@@ -1976,9 +1976,9 @@ def upcast[
 
         # Compute new_stride[i] = shape_div(stride[i], factor).
         comptime if ResultStrideTypes[i].is_static_value:
-            UnsafePointer(to=new_stride[i]).unsafe_write(ResultStrideTypes[i]())
+            UnsafePointer(to=new_stride[i]).write(ResultStrideTypes[i]())
         else:
-            UnsafePointer(to=new_stride[i]).unsafe_write(
+            UnsafePointer(to=new_stride[i]).write(
                 rebind[ResultStrideTypes[i]](
                     Scalar[ResultStrideTypes[i].DTYPE](
                         _runtime_shape_div(
@@ -1990,9 +1990,9 @@ def upcast[
 
         # Compute new_shape[i] = shape_div(shape[i], shape_div(factor, stride[i])).
         comptime if ResultShapeTypes[i].is_static_value:
-            UnsafePointer(to=new_shape[i]).unsafe_write(ResultShapeTypes[i]())
+            UnsafePointer(to=new_shape[i]).write(ResultShapeTypes[i]())
         else:
-            UnsafePointer(to=new_shape[i]).unsafe_write(
+            UnsafePointer(to=new_shape[i]).write(
                 rebind[ResultShapeTypes[i]](
                     Scalar[ResultShapeTypes[i].DTYPE](
                         _runtime_shape_div(
@@ -2249,30 +2249,21 @@ comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
 
 
 comptime _BoolIsTrue[a: Bool]: Bool = a
-comptime _TwoCoordLikePredicate = __mlir_type[
-    `!lit.generator<<"LHS": `,
-    +CoordLike,
-    `, "RHS": `,
-    +CoordLike,
-    `> `,
-    +Bool,
-    `>`,
-]
 
 comptime _tabulatePredicate[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
     idx: Int,
 ]: Bool = pred[a[idx], b[idx]]
 
 comptime _AllEltsSatisfy[
     a: TypeList[Trait=CoordLike, ...],
     b: TypeList[Trait=CoordLike, ...],
-    pred: _TwoCoordLikePredicate,
+    pred: __generator_type[LHS: CoordLike, RHS: CoordLike] Bool,
 ]: Bool = a.length == b.length and ParameterList.tabulate[
     a.length, _tabulatePredicate[a, b, pred, _]
-]().all_satisfies[
+]().all[
     _BoolIsTrue,
 ]()
 

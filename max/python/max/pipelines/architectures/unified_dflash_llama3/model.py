@@ -50,6 +50,7 @@ from .batch_processor import UnifiedDflashLlama3BatchProcessor
 from .model_config import (
     UnifiedDflashLlama3Config,
     parse_dflash_draft_hf_config,
+    resolve_dflash_num_speculative_tokens,
 )
 from .unified_dflash_llama3 import (
     UnifiedDflashLlama3 as UnifiedDflashLlama3Module,
@@ -111,6 +112,11 @@ class UnifiedDflashLlama3Model(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
+        # The drafter's trained width, resolved from the draft checkpoint;
+        # exposed for the overlap pipeline's spec-decode buffers.
+        self.resolved_num_speculative_tokens = (
+            resolve_dflash_num_speculative_tokens(pipeline_config)
+        )
         super().__init__(
             pipeline_config,
             session,
@@ -133,12 +139,20 @@ class UnifiedDflashLlama3Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return Llama3Config.construct_kv_params(
-            huggingface_config,
-            pipeline_config,
-            devices,
-            kv_cache_config,
-            cache_dtype,
+        # The KV bake in ``PipelineModelWithKVCache.__init__`` reads the raw
+        # speculative section, where the unset width would bake
+        # num_draft_tokens=0; rebake at the drafter's trained width.
+        return replace(
+            Llama3Config.construct_kv_params(
+                huggingface_config,
+                pipeline_config,
+                devices,
+                kv_cache_config,
+                cache_dtype,
+            ),
+            num_draft_tokens=resolve_dflash_num_speculative_tokens(
+                pipeline_config, warn=False
+            ),
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -173,6 +187,9 @@ class UnifiedDflashLlama3Model(
         assert target_hf_config is not None
         assert self.pipeline_config.speculative is not None
 
+        resolved_spec = self.resolved_num_speculative_tokens
+        assert resolved_spec is not None
+
         target_config = Llama3Config.initialize(self.pipeline_config)
         target_config.finalize(
             huggingface_config=target_hf_config,
@@ -181,6 +198,11 @@ class UnifiedDflashLlama3Model(
             return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
         )
         target_config.target_layer_ids = list(dflash_hf.target_layer_ids)
+        # Both configs derive KV from the raw pipeline config, where the
+        # unset width would bake num_draft_tokens=0.
+        target_config.kv_params = replace(
+            target_config.kv_params, num_draft_tokens=resolved_spec
+        )
 
         draft_config = Llama3Config.initialize_from_config(
             self.pipeline_config, draft_hf_config, draft_model_config
@@ -191,7 +213,9 @@ class UnifiedDflashLlama3Model(
         draft_config.devices = target_config.devices
         draft_config.sliding_window = draft_model_config.sliding_window
         draft_config.kv_params = replace(
-            draft_config.kv_params, devices=target_config.devices
+            draft_config.kv_params,
+            devices=target_config.devices,
+            num_draft_tokens=resolved_spec,
         )
         draft_config.finalize(
             huggingface_config=draft_hf_config,

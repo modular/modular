@@ -23,7 +23,7 @@
 # Target: any GPU (single-aggregate TileTensor captures only; index rebuilt
 # in-kernel from the `IndexList` arg, so no bare-`Coord`-across-launch trap).
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import align_up
 from std.sys import simd_width_of
 from std.testing import assert_equal

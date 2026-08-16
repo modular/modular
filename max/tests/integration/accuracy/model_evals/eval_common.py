@@ -81,7 +81,7 @@ class GenParams:
     seed: int | None = None
 
 
-def make_client(base_url: str) -> OpenAI:
+def make_client(base_url: str, api_key: str | None = None) -> OpenAI:
     """Builds the OpenAI-compatible client used by every eval.
 
     No client timeout: a request must only ever end by the server hitting
@@ -89,10 +89,16 @@ def make_client(base_url: str) -> OpenAI:
     longest-reasoning problems and inflate accuracy). ``max_retries=0``: a retry
     opens a new request while the original generation keeps running and holding
     KV cache, piling the server up toward OOM.
+
+    Args:
+        base_url: Server base URL; ``/v1`` is appended.
+        api_key: Credential for an authenticated endpoint. Falls back to
+            ``$OPENAI_API_KEY``, then to ``"dummy"`` — a local MAX Serve
+            ignores it, but an authenticated deployment 401s without it.
     """
     return OpenAI(
         base_url=base_url.rstrip("/") + "/v1",
-        api_key="dummy",
+        api_key=api_key or os.environ.get("OPENAI_API_KEY") or "dummy",
         timeout=None,
         max_retries=0,
     )
@@ -325,11 +331,48 @@ def dump_jsonl(out_dir: str, results: list[dict[str, Any]]) -> None:
         f.write("\n".join(json.dumps(r) for r in results))
 
 
+#: Fraction of samples that may error before the score stops meaning anything.
+#: Errors count as incorrect, so an endpoint that rejects every request scores
+#: 0.0 and, without this, reports success. Override for a deliberately lossy
+#: run; 0 disables the check.
+MAX_ERROR_RATE = float(os.environ.get("EVAL_MAX_ERROR_RATE") or 0.10)
+
+
+def enforce_error_budget(summary: dict[str, Any]) -> None:
+    """Exits nonzero when too many samples errored to trust the score.
+
+    Hooked into :func:`dump_score` so it covers every eval that writes its
+    summary there. Summaries reporting no error count are left alone rather
+    than guessed at, which is also how SciCode escapes it: it writes
+    ``score.json`` itself and discards the count :func:`run_parallel` returns.
+    """
+    total = summary.get("total")
+    errors = summary.get("errors", summary.get("errored"))
+    if not isinstance(total, int) or not isinstance(errors, int) or total <= 0:
+        return
+    if MAX_ERROR_RATE <= 0:
+        return
+    rate = errors / total
+    if rate <= MAX_ERROR_RATE:
+        return
+    print(
+        f"::error::{errors}/{total} samples errored ({rate:.1%}), above the "
+        f"{MAX_ERROR_RATE:.0%} budget. Errors score as incorrect, so this run's "
+        f"score reflects infrastructure, not model quality."
+    )
+    raise SystemExit(1)
+
+
 def dump_score(out_dir: str, summary: dict[str, Any]) -> None:
-    """Writes ``score.json`` (pretty-printed) into ``out_dir``."""
+    """Writes ``score.json`` (pretty-printed) into ``out_dir``.
+
+    Writes before enforcing the error budget so a rejected run still leaves its
+    artifacts behind for diagnosis.
+    """
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "score.json"), "w") as f:
         json.dump(summary, f, indent=2)
+    enforce_error_budget(summary)
 
 
 def append_github_env(
@@ -396,23 +439,24 @@ def is_hf_access_error(exc: BaseException) -> bool:
 def load_gated(
     loader: Callable[[], list[dict[str, Any]]], *, label: str, dataset_id: str
 ) -> list[dict[str, Any]]:
-    """Runs ``loader`` for a gated dataset, skipping the eval on access denial.
+    """Runs ``loader`` for a gated dataset, failing the eval on access denial.
 
-    On an HF gated-access error, prints a ``::warning::`` and raises
-    ``SystemExit(0)`` so the CI step is skipped (not failed); other errors
-    propagate.
+    Exits nonzero rather than skipping: the suite qualifies a release branch on
+    all its datasets having run, so a lane that silently disappears reads as a
+    pass when nothing was measured. Fix the token's gated-repo access instead.
+    Other errors propagate.
     """
     try:
         return loader()
     except Exception as e:
         if is_hf_access_error(e):
             print(
-                f"::warning::{label} skipped — HF token does not have access to "
-                f"{dataset_id} (gated). Visit "
+                f"::error::{label} could not run — HF token does not have "
+                f"access to {dataset_id} (gated). Visit "
                 f"https://huggingface.co/datasets/{dataset_id} "
                 f"to request access and enable gated-repo permissions on your token."
             )
-            raise SystemExit(0) from None
+            raise SystemExit(1) from None
         raise
 
 

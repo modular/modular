@@ -21,7 +21,8 @@ Uses DecodeStreamingKVBuffer for single-buffer, per-strip DRAM→SMEM staging
 
 from std.math import ceildiv
 from std.sys.intrinsics import readfirstlane
-from std.gpu import barrier, block_idx
+from std.gpu import block_idx
+from max.gpu.sync import barrier
 from std.gpu import warp_id as get_warp_id
 from std.memory import bitcast
 from std.utils import IndexList
@@ -92,7 +93,7 @@ __extension Attention:
         ]
 
         # Split-K range for this block.
-        start, end = get_start_and_end_for_partitions[Self.BN](
+        var start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 

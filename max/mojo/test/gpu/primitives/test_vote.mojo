@@ -21,10 +21,10 @@ reference, exercising all three backends: NVIDIA's `vote.ballot.sync`, AMD's
 
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import GPUInfo
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import GPUInfo
 from std.gpu.primitives.warp import vote
-from std.sys.info import Vendor, _accelerator_arch
+from std.sys.info import _accelerator_arch
 from std.testing import assert_equal, TestSuite
 
 # WARP_SIZE-appropriate mask type: NVIDIA/Apple SIMD-groups are 32 lanes
@@ -39,17 +39,19 @@ comptime _MASK = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
 # kernel would still be instantiated -- tripping `vote`'s NVIDIA uint32-only
 # constraint. `_accelerator_arch()` reflects the build's accelerator flag (the
 # same mechanism `WARP_SIZE` resolves through), so it is correct in host code.
-comptime _TARGET_VENDOR = GPUInfo.from_name[_accelerator_arch()]().vendor
+comptime _TARGET_API = GPUInfo.from_name[_accelerator_arch()]().api
 
 
 def _vote_probe[
     ret_type: DType
 ](
-    preds: UnsafePointer[Scalar[DType.uint8], MutAnyOrigin],
-    out_masks: UnsafePointer[UInt64, MutAnyOrigin],
+    preds: Pointer[Scalar[DType.uint8], MutAnyOrigin],
+    out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
-    out_masks[lane] = vote[ret_type](preds[lane] != 0).cast[DType.uint64]()
+    out_masks[unsafe_offset=lane] = vote[ret_type](
+        preds[unsafe_offset=lane] != 0
+    ).cast[DType.uint64]()
 
 
 def _check[
@@ -129,7 +131,7 @@ def test_vote_uint64_high_bits_masked() raises:
     # Force a `uint64` return on backends where WARP_SIZE < 64 and assert no
     # bit `>= WARP_SIZE` survives (exact equality against a low-bits-only
     # reference). Gated off NVIDIA, which supports only a 32-bit return.
-    comptime if _TARGET_VENDOR != Vendor.NVIDIA_GPU and WARP_SIZE < 64:
+    comptime if _TARGET_API != "cuda" and WARP_SIZE < 64:
         with DeviceContext() as ctx:
             _check[DType.uint64](
                 ctx, "u64_all_true", List[Int](length=WARP_SIZE, fill=1)

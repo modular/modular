@@ -14,8 +14,8 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
 from std.utils import IndexList

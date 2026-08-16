@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,37 +17,37 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
     cluster_wait,
     cluster_arrive_relaxed,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import CoordLike, TileTensor
 from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_layout import row_major as tt_row_major
@@ -1240,7 +1240,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = tmem_addr_storage.unsafe_ptr()
 
-    clc_response = clc_response_storage.unsafe_ptr()
+    var clc_response = clc_response_storage.unsafe_ptr()
     var clc_full_mbar: UnsafePointer[
         SharedMemBarrier,
         origin_of(clc_mbars_full_storage),
@@ -1252,7 +1252,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
         address_space=AddressSpace.SHARED,
     ] = clc_mbars_empty_storage.unsafe_ptr()
 
-    tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_storage.unsafe_ptr()
 
     # hardcode to float32 for now as we only support FP32 accumulation for block scaled matmul
     # TODO: (KERN-2238) replace with get_accum_type[a_type]() when KERN-2238 is fixed and we can return FP32 for FP4-E2M1
@@ -1564,7 +1564,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                     )
 
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
 
@@ -1585,7 +1585,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
             # non blocking, arrives and proceeds
             named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-            tmem_addr = ptr_tmem_addr[0]
+            var tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
                 config.num_accum_pipeline_stages * MMA_N
             )
@@ -1595,7 +1595,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             while work_info.is_valid():
                 # scheduler fetch next work
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 clc_pipe_consumer_state.step()
@@ -1668,7 +1668,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
         var tile_writer = TileWriterType(Pointer(to=c_tma_op))
 
         var tile_idx = 0
@@ -1698,7 +1698,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 )
                 mma_output_pipeline.consumer_step()
 
-                next_work_info = scheduler.fetch_next_work(
+                var next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
                 )
                 work_info = next_work_info
@@ -2117,7 +2117,7 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # TMA create_tensor_tile reads .layout.shape[i]() and .layout.stride[i]()
     # from the TileTensor, so we need a proper row_major 5D layout with the
     # right runtime/comptime dims.
-    @parameter
+    @__parameter
     def _scales_5d_shape(
         scales: TileTensor,
     ) -> Coord[

@@ -29,7 +29,7 @@ Covers every 1x1x1 case in the WAN VAE (`post_quant_conv`, per-block
 the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
@@ -153,7 +153,7 @@ def dispatch_1x1x1_matmul_conv3d[
     comptime if maybe_epilogue_func:
         comptime epilogue_5d = maybe_epilogue_func.value()
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[

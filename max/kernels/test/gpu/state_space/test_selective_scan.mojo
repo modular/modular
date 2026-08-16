@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -437,11 +437,11 @@ def run_selective_scan_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        total_batch_dim,
-        batch,
-        dim,
-        seqlen,
-        group_size,
+        Int32(total_batch_dim),
+        Int32(batch),
+        Int32(dim),
+        Int32(seqlen),
+        Int32(group_size),
         delta_softplus_int8,
         output_gpu_tt,
         x_gpu_tt,
@@ -731,10 +731,10 @@ def run_selective_scan_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            total_batch_dim,
-            batch,
-            dim,
-            group_size,
+            Int32(total_batch_dim),
+            Int32(batch),
+            Int32(dim),
+            Int32(group_size),
             Int8(1) if delta_softplus else Int8(0),
             state_out_device_tt,
             output_device_tt,

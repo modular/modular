@@ -35,16 +35,15 @@ from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import is_gpu
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import is_gpu
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_group,
@@ -302,7 +301,7 @@ def multistage_mma_q[
     comptime b_idx_t = b_iter_arg.linear_idx_type
 
     @always_inline
-    @parameter
+    @__parameter
     def _async_copy_a_tile(
         dst: LayoutTensor[
             mut=True, a_type, address_space=AddressSpace.SHARED, ...
@@ -322,7 +321,7 @@ def multistage_mma_q[
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def _async_copy_b_tile(
         dst: LayoutTensor[
             mut=True, b_type, address_space=AddressSpace.SHARED, ...
@@ -402,7 +401,7 @@ def multistage_mma_q[
                             ](),
                             dst_fragments.ptr.address_space_cast[
                                 AddressSpace.SHARED
-                            ]().mut_cast[True](),
+                            ]().unsafe_mut_cast[True](),
                         )
 
                     scales_iter._incr()
@@ -636,7 +635,7 @@ def multistage_mma_q[
                                     ](),
                                     dst_fragments.ptr.address_space_cast[
                                         AddressSpace.SHARED
-                                    ]().mut_cast[True](),
+                                    ]().unsafe_mut_cast[True](),
                                 )
 
                             scales_iter._incr()
@@ -901,7 +900,7 @@ def multistage_qgemm_kernel[
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     @always_inline
-    @parameter
+    @__parameter
     def apply_epilogue():
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
@@ -1217,7 +1216,7 @@ def repack_Q4_0_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[DType.uint8, _]) -> Scalar[scales_type]:
@@ -1294,7 +1293,9 @@ def repack_Q4_0_for_sm8x[
         )
         q_gmem_iter._incr()
         barrier()
-        q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
+        var q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
+            warp_x, warp_y
+        )
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
             var frag_0: SIMD[DType.uint8, 16] = 0
@@ -1424,7 +1425,7 @@ def repack_GPTQ_for_sm8x[
     comptime uint_BK = BK // pack_factor
 
     @always_inline
-    @parameter
+    @__parameter
     def convert_bytes_to_bf16[
         scales_type: DType
     ](input_bytes: SIMD[raw_scales_type, _]) -> Scalar[scales_type]:

@@ -15,8 +15,8 @@ from std.collections import Optional
 from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 
 # Additional imports for testing
@@ -114,7 +114,7 @@ def test_matmul_sm100_fallback[
 
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_fn[

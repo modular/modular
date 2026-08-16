@@ -22,8 +22,8 @@ kernel should check once per simdgroup, not per load.
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import lane_id
-from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from std.gpu.memory import build_edge_mask, gmem_edge_masked_load
+from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.math import divmod
 from std.sys.info import align_of
 
@@ -33,7 +33,7 @@ from layout.coord import Coord
 
 @fieldwise_init
 struct ConvIm2colParams(
-    Copyable, DevicePassable, ImplicitlyCopyable, ImplicitlyDeletable, Movable
+    Copyable, Deinitable, DevicePassable, ImplicitlyCopyable, Movable
 ):
     """Runtime conv geometry for the online im2col A-operand loader.
 
@@ -981,4 +981,4 @@ struct MmaOpApple[
                 accum[mi * Self.num_n_mmas + ni] = self.load_fragment[
                     Self.out_type
                 ](sub)
-        return accum
+        return accum^

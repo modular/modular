@@ -22,10 +22,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
+    KVCacheParamInterface,
     KVCacheParams,
     KVConnectorType,
     MHAKVCacheParams,
     MLAKVCacheParams,
+    MultiKVCacheParams,
 )
 from max.pipelines.context import (
     GenerationStatus,
@@ -33,7 +35,11 @@ from max.pipelines.context import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.kv_cache import (
+    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
+)
+from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.modeling.types import (
     BatchType,
     CompletedBatchStats,
@@ -79,12 +85,23 @@ def create_kv_cache(
     page_size: int,
     enable_prefix_caching: bool = False,
     kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     dp: int = 1,
     device: Device = CPU(),
     num_speculative_tokens: int = 0,
     is_mla: bool = False,
     tp_per_replica: int = 1,
+    multi_kv: bool = False,
 ) -> PagedKVCacheManager:
+    """Builds a ``PagedKVCacheManager`` for scheduler tests.
+
+    Args:
+        multi_kv: Build a ``MultiKVCacheParams`` tree with ``target`` and
+            ``draft`` children instead of a flat leaf, mirroring production
+            speculative decoding. The children are deliberately
+            different-shaped so the per-child NIXL grouping in
+            ``KVTransferEngine.from_paged_kv_cache`` is exercised.
+    """
     dtype = DType.float32
 
     if tp_per_replica > 1:
@@ -106,39 +123,57 @@ def create_kv_cache(
         device_refs = [DeviceRef.from_device(device) for _ in range(dp)]
         session_devices = [device]
 
-    kv_params: KVCacheParams
-    if is_mla:
-        kv_params = MLAKVCacheParams(
+    def make_leaf_params(num_layers: int, head_dim: int) -> KVCacheParams:
+        if is_mla:
+            return MLAKVCacheParams(
+                dtype=dtype,
+                num_layers=num_layers,
+                head_dim=head_dim,
+                page_size=page_size,
+                enable_prefix_caching=enable_prefix_caching,
+                kv_connector=kv_connector,
+                kv_connector_config=kv_connector_config,
+                host_kvcache_swap_space_gb=999,
+                data_parallel_degree=dp,
+                devices=device_refs,
+                speculative_method="eagle"
+                if num_speculative_tokens > 0
+                else None,
+                num_draft_tokens=num_speculative_tokens,
+                # num_q_heads must be divisible by the per-replica device count
+                # (TP shards) when MLA is enabled.
+                num_q_heads=tp_per_replica,
+            )
+        return MHAKVCacheParams(
             dtype=dtype,
-            num_layers=1,
-            head_dim=1,
+            num_layers=num_layers,
+            n_kv_heads=1,
+            head_dim=head_dim,
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
             kv_connector=kv_connector,
+            kv_connector_config=kv_connector_config,
             host_kvcache_swap_space_gb=999,
             data_parallel_degree=dp,
             devices=device_refs,
             speculative_method="eagle" if num_speculative_tokens > 0 else None,
             num_draft_tokens=num_speculative_tokens,
-            # num_q_heads must be divisible by the per-replica device count
-            # (TP shards) when MLA is enabled.
-            num_q_heads=tp_per_replica,
+        )
+
+    kv_params: KVCacheParamInterface
+    if multi_kv:
+        # Production spec decode pairs a deep target cache with a shallow
+        # (typically 1-layer Eagle) draft. Differing num_layers/head_dim keeps
+        # the two NIXL groups shape-heterogeneous, which is the property the
+        # transfer engine's per-child grouping has to get right.
+        kv_params = MultiKVCacheParams.from_params(
+            {
+                "target": make_leaf_params(num_layers=2, head_dim=2),
+                "draft": make_leaf_params(num_layers=1, head_dim=1),
+            }
         )
     else:
-        kv_params = MHAKVCacheParams(
-            dtype=dtype,
-            num_layers=1,
-            n_kv_heads=1,
-            head_dim=1,
-            page_size=page_size,
-            enable_prefix_caching=enable_prefix_caching,
-            kv_connector=kv_connector,
-            host_kvcache_swap_space_gb=999,
-            data_parallel_degree=dp,
-            devices=device_refs,
-            speculative_method="eagle" if num_speculative_tokens > 0 else None,
-            num_draft_tokens=num_speculative_tokens,
-        )
+        kv_params = make_leaf_params(num_layers=1, head_dim=1)
 
     session = InferenceSession(devices=session_devices)
 
@@ -155,7 +190,7 @@ def create_kv_cache(
     )
 
     assert all(
-        kv_manager.get_num_pages(replica_idx=replica_idx) == num_blocks
+        kv_manager.block_count(replica_idx=replica_idx).total == num_blocks
         for replica_idx in range(dp)
     )
     return kv_manager
@@ -171,10 +206,10 @@ def create_paged_scheduler(
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
     kv_connector: KVConnectorType | None = None,
+    kv_connector_config: KVConnectorConfig | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),
-    kvcache_ce_watermark: float = 1.0,
     num_speculative_tokens: int = 0,
     max_pending_requests: int | None = None,
 ) -> tuple[
@@ -189,6 +224,7 @@ def create_paged_scheduler(
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         kv_connector=kv_connector,
+        kv_connector_config=kv_connector_config,
         dp=dp,
         device=device,
         num_speculative_tokens=num_speculative_tokens,
@@ -204,7 +240,6 @@ def create_paged_scheduler(
         max_batch_total_tokens=max_batch_total_tokens,
         data_parallel_degree=dp,
         num_speculative_tokens=num_speculative_tokens,
-        kvcache_ce_watermark=kvcache_ce_watermark,
     )
     token_pipeline = FakeTokenGeneratorPipeline(
         kv_manager=kv_cache,
@@ -234,7 +269,7 @@ class FakeTokenGeneratorPipeline(
 ):
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 42,
         num_speculative_tokens: int = 0,
@@ -258,16 +293,12 @@ class FakeTokenGeneratorPipeline(
         # Claim cache rows for context.
         for replica_idx, batch in enumerate(inputs.batches):
             for context in batch:
-                if not self.kv_manager.contains(
-                    context.request_id, replica_idx=replica_idx
-                ):
-                    self.kv_manager.claim(
-                        context.request_id, replica_idx=replica_idx
-                    )
+                if not self.kv_manager.contains(context):
+                    self.kv_manager.claim(context, replica_idx=replica_idx)
 
-        for replica_idx, batch in enumerate(inputs.batches):
+        for batch in inputs.batches:
             for ctx in batch:
-                self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+                self.kv_manager.alloc(ctx)
         self.kv_manager.runtime_inputs(inputs.batches)
 
         # Generate the responses
@@ -289,7 +320,8 @@ class FakeTokenGeneratorPipeline(
                 responses[req_id] = output
 
         # Step the kv cache manager
-        self.kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self.kv_manager.step(ctx)
 
         # If num spec tokens, populate the draft tokens for the reqs
         if self.num_speculative_tokens > 0:
@@ -334,7 +366,7 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
 
     def __init__(
         self,
-        kv_manager: PagedKVCacheManager,
+        kv_manager: PagedKVCacheManagerInterface,
         max_seq_len: int,
         start_token_id: int = 99,  # test sentinel; no semantic meaning
         num_speculative_tokens: int = 0,
@@ -404,15 +436,11 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
         if inputs:
             for replica_idx, batch in enumerate(inputs.batches):
                 for context in batch:
-                    if not self.kv_manager.contains(
-                        context.request_id, replica_idx=replica_idx
-                    ):
-                        self.kv_manager.claim(
-                            context.request_id, replica_idx=replica_idx
-                        )
-            for replica_idx, batch in enumerate(inputs.batches):
+                    if not self.kv_manager.contains(context):
+                        self.kv_manager.claim(context, replica_idx=replica_idx)
+            for batch in inputs.batches:
                 for ctx in batch:
-                    self.kv_manager.alloc(ctx, replica_idx=replica_idx)
+                    self.kv_manager.alloc(ctx)
             self.kv_manager.runtime_inputs(inputs.batches)
 
             # Generate real tokens now but defer their release to the next call.
@@ -437,7 +465,8 @@ class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
                         123
                     ] * self.num_speculative_tokens
 
-            self.kv_manager.step(inputs.batches)
+            for ctx in inputs.flat_batch:
+                self.kv_manager.step(ctx)
             self._pending_outputs = new_outputs
             self._pending_contexts = list(inputs.flat_batch)
             self._pending_inputs = inputs
@@ -576,8 +605,51 @@ def run_until_completion(
     else:
         batch_infos = output_list
 
+    batch_constructor = scheduler.batch_constructor
+    kv_cache = batch_constructor.kv_cache
     for _ in range(max_num_iters):
         batch_info = create_batch_and_execute(scheduler)
+        # An asynchronous KV connector can produce an empty batch for two
+        # distinct reasons, both meaning "not ready yet", not "done":
+        #  - A candidate request is cordoned in the batch constructor's own
+        #    ``_onloading_reqs`` until its onload's ``is_complete()`` flips
+        #    (``construct_batch`` re-admits it automatically once it does).
+        #  - A pending offload (or a completed-but-not-yet-drained transfer)
+        #    keeps a device block pinned in the block manager's
+        #    ``_pending_transfers``, starving a new allocation with
+        #    ``InsufficientBlocksError`` even with no cordoned request in
+        #    sight. Neither condition alone catches both cases, so check
+        #    both.
+        #
+        # Rather than spin-polling a bounded tick count, block on the actual
+        # transfer handles: under real GPU contention (several GPU tests
+        # sharing one device in CI) an H2D/D2H copy can take far longer than
+        # any reasonable poll budget, so a fixed retry count is inherently
+        # flaky (confirmed directly: it landed anywhere from 1 to 49+ retries
+        # across repeated runs on a loaded GPU). Progress here is strictly
+        # serialized -- num_gpu_blocks admits one request at a time -- so
+        # there is nothing else useful this loop could do meanwhile.
+        poll_iters = 0
+        while (
+            batch_info.batch_size == 0
+            and (
+                batch_constructor._onloading_reqs
+                or kv_cache.pending_transfers_exist()
+            )
+            and poll_iters < max_num_iters
+        ):
+            for onloading in list(batch_constructor._onloading_reqs.values()):
+                onloading.event.synchronize()
+            # KVConnector pending-transfer bookkeeping is legacy-manager-only
+            # (Jenga doesn't support KVConnector), so narrow before reaching
+            # into internals this helper's synchronization actually needs.
+            assert isinstance(kv_cache, PagedKVCacheManager)
+            for pending_list in kv_cache._block_manager._pending_transfers:
+                for pending in list(pending_list):
+                    pending.event.synchronize()
+            kv_cache.poll_transfers()
+            batch_info = create_batch_and_execute(scheduler)
+            poll_iters += 1
         batch_infos.append(batch_info)
         if batch_info.batch_size == 0:
             break

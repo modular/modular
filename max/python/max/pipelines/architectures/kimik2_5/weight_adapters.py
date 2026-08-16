@@ -30,7 +30,7 @@ Both adapters share :func:`_convert_merged_state_dict`, which processes
 vision and language keys in a single loop over the raw checkpoint.
 
 For MXFP4 checkpoints the model calls
-:func:`~max.pipelines.weights.mxfp4_preshuffle.preshuffle_mxfp4_b_experts`
+:func:`~max.pipelines.weights.block_scaled_preshuffle.preshuffle_block_scaled_b_experts`
 on the post-adapter state dict to lay expert ``B`` bytes out in
 ``Shuffler.b_5d_grouped_layout`` for the AMD preb grouped-matmul kernel.
 The preshuffle is pure-numpy on CPU.

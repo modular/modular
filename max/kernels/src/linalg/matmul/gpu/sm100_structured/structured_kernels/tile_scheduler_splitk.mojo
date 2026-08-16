@@ -29,9 +29,10 @@ from structured_kernels.tile_types import (
     _StridedLayout,
     _strided_layout,
 )
-from std.gpu import WARP_SIZE, grid_dim, lane_id, NamedBarrierSemaphore
+from std.gpu import WARP_SIZE, grid_dim, lane_id
+from max.gpu.sync import NamedBarrierSemaphore
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
 from std.utils.index import Index, IndexList
@@ -641,7 +642,7 @@ struct TileScheduler[
         ],
         MutAnyOrigin,
     ]:
-        @parameter
+        @__parameter
         def _get_current_width(widths: Array[Int, 4], curr_stage: Int) -> Int:
             var width = 0
             for i in range(curr_stage):

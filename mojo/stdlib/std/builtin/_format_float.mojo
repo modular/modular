@@ -219,7 +219,7 @@ def _write_float[
             return
 
         # Upcast the float16 types to float32
-        casted = value.cast[
+        var casted = value.cast[
             DType.float64 if dtype == DType.float64 else DType.float32
         ]()
 

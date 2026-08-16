@@ -17,7 +17,32 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/weights",
+        "//max/tests/integration/test_common:fake_weights",
         "//max/tests/integration/test_common:mocks",
+        requirement("huggingface-hub"),
+    ],
+)
+
+modular_py_test(
+    name = "test_modulev3_lora_manager",
+    size = "small",
+    srcs = ["test_modulev3_lora_manager.py"],
+    # Import-bound: ~80% of the wall time is importing the max stack, not the
+    # 13 assertions themselves. That startup cost starves on contended macOS
+    # workers and trips the timeout, and the LoRA manager logic under test is
+    # platform-independent, so macOS coverage buys nothing here.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lora",
+        requirement("numpy"),
     ],
 )
 
@@ -25,6 +50,12 @@ modular_py_test(
     name = "test_model_config_encoding_resolution",
     size = "medium",
     srcs = ["test_model_config_encoding_resolution.py"],
+    # These are offline unit tests: a stray hub lookup for a gated repo turns
+    # into a 401 instead of a cache miss. Linux CI passes HF_HUB_OFFLINE=1 for
+    # the whole invocation (ci/default/test.sh); the macOS lane does not, so
+    # pin it per target.
+    env = {"HF_HUB_OFFLINE": "1"},
+    tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/graph",
@@ -32,7 +63,7 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
-        requirement("pydantic"),
+        "//max/tests/integration/test_common:fake_weights",
     ],
 )
 
@@ -50,6 +81,7 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/sampling",
+        "//max/tests/integration/test_common:fake_weights",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
     ],
@@ -72,6 +104,10 @@ modular_py_test(
 modular_py_test(
     name = "test_model_manifest",
     srcs = ["test_model_manifest.py"],
+    # See test_model_config_encoding_resolution above: offline unit tests that
+    # rely on HF_HUB_OFFLINE, which only Linux CI sets invocation-wide.
+    env = {"HF_HUB_OFFLINE": "1"},
+    tags = ["skip-external-ci"],
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
@@ -133,6 +169,7 @@ modular_py_test(
         exclude = [
             "**/*_gpu.py",
             "test_autoconfig_error_propagation.py",
+            "test_modulev3_lora_manager.py",
             "test_device_graph_capture_release.py",
             "test_model_config_encoding_resolution.py",
             "test_model_config_subfolder.py",
@@ -159,7 +196,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/support",
         "//max/tests/integration:hf_repo_lock",
@@ -167,7 +203,6 @@ modular_py_test(
         "//max/tests/integration/test_common:numerics",
         requirement("av"),
         requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 
@@ -267,6 +302,7 @@ modular_py_test(
         exclude = [
             "test_attention_dispatch_resolver_gpu.py",
             "test_mla_probe_strategy_gpu.py",
+            "test_smollm2_lora_modulev3_gpu.py",
             "test_structured_output_spec_decode_gpu.py",
         ],
     ),
@@ -292,10 +328,41 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common:graph_utils",
-        "//max/tests/integration/test_common:lora_utils",
         "//max/tests/integration/test_common:registry",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_smollm2_lora_modulev3_gpu",
+    size = "large",
+    srcs = ["test_smollm2_lora_modulev3_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = [
+        # Neither is imported directly: the arch is resolved by a registry
+        # string lookup and registry is loaded as a pytest plugin.
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/tests/integration/test_common:registry",
+    ],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    # The ModuleV3 LoRA SGMV kernels are validated on B200 only.
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lora",
+        "//max/python/max/pipelines/modeling",
+        "//max/tests/integration/test_common:lora_utils",
+        "//max/tests/integration/test_common:registry",
         requirement("pytest-asyncio"),
     ],
 )

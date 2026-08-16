@@ -43,7 +43,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
@@ -202,7 +202,7 @@ def bench_dequant_mxfp4[
     var b_fp8_tt = TileTensor(b_fp8_device, row_major((Idx[N], Idx[K])))
 
     @__copy_capture(b_fp8_tt, b_packed_tt, b_scales_tt)
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         dequant_mxfp4(
@@ -214,7 +214,7 @@ def bench_dequant_mxfp4[
             num_cols=K,
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
         bencher_iter_custom[kernel_launch](bencher, ctx)
@@ -253,12 +253,12 @@ def bench_cast_bf16_to_fp8[
     from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
     @__copy_capture(a_fp8_tt, a_tt)
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         _cast_bf16_to_fp8(ctx, a_fp8_tt, a_tt, M, K)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
         bencher_iter_custom[kernel_launch](bencher, ctx)
@@ -314,14 +314,14 @@ def bench_fp8_matmul[
     from linalg.matmul.gpu import _matmul_gpu
 
     @__copy_capture(c_tt, a_fp8_tt, b_fp8_tt)
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         _matmul_gpu[use_tensor_core=True, transpose_b=True](
             c_tt, a_fp8_tt, b_fp8_tt, ctx
         )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
         bencher_iter_custom[kernel_launch](bencher, ctx)
@@ -363,7 +363,7 @@ def bench_mxfp4_matmul[
     var c_tt = TileTensor(c_device, row_major((M, Idx[N])))
 
     @__copy_capture(c_tt, a_tt, b_packed_tt, b_scales_tt)
-    @parameter
+    @__parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
         mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
@@ -371,7 +371,7 @@ def bench_mxfp4_matmul[
 
     if run_benchmark:
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
             bencher_iter_custom[kernel_launch](bencher, ctx)

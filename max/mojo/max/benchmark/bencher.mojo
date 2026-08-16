@@ -23,8 +23,8 @@ from std.benchmark import (
     BenchmarkInfo,
     Report,
 )
-from std.gpu.host import DeviceContext
-from std.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
 
 
 # ===----------------------------------------------------------------------=== #
@@ -108,9 +108,9 @@ def bench_multicontext[
     var results_b = List[BenchmarkInfo](length=num_ctxs, fill=default_info)
 
     # This closure runs in parallel on the host, 1 host thread per context.
-    @parameter
+    @__parameter
     def per_gpu(i: Int) raises:
-        @parameter
+        @__parameter
         def context_closure(mut b: Bencher) raises:
             func(b, list_of_ctx[i], i)
 

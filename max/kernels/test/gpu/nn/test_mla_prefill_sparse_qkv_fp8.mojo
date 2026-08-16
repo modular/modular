@@ -37,8 +37,8 @@ from std.random import randn
 from std.sys import has_nvidia_gpu_accelerator, size_of
 
 from std.gpu import *
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

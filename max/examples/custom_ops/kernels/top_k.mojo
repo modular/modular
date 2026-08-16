@@ -13,21 +13,21 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import iota
 from std.sys import align_of, size_of
 
-from std.algorithm import parallelize_over_rows
+from max.algorithm import parallelize_over_rows
 from std.bit import log2_floor
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
+from max.gpu.sync import barrier
 from std.gpu.primitives import warp
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from std.collections import Span
 
 from extensibility import InputTensor, OutputTensor
@@ -84,7 +84,7 @@ struct TopK:
         var out_idxs_tensor = out_idxs.to_layout_tensor()
         var in_vals_tensor = in_vals.to_layout_tensor()
 
-        @parameter
+        @__parameter
         def top_k_gpu[
             K: Int,
         ](
@@ -103,12 +103,14 @@ struct TopK:
             ]()
 
             # Threads put their corresponding index and value into shared memory
-            top_k_sram[tid] = TopKElement(Int32(tid), in_vals[bid, tid][0])
+            top_k_sram[unsafe_offset=tid] = TopKElement(
+                Int32(tid), in_vals[bid, tid][0]
+            )
             # Finish packing the values across threads in this block
             barrier()
 
             comptime for i in range(K):
-                var reduced = top_k_sram[tid]
+                var reduced = top_k_sram[unsafe_offset=tid]
                 comptime limit = log2_floor(WARP_SIZE)
 
                 # TODO(KERN-1544): `gpu.shuffle.warp_max` support index/value
@@ -134,7 +136,9 @@ struct TopK:
 
                     # Remove found maximum from consideration in the next iter
                     var index = reduced.idx % Int32(block_dim.x)
-                    top_k_sram[index].val = min_or_neg_inf[dtype]()
+                    top_k_sram[unsafe_offset=index].val = min_or_neg_inf[
+                        dtype
+                    ]()
 
         comptime if target == "gpu":
             dev_ctx.enqueue_function[top_k_gpu[K]](
@@ -147,23 +151,28 @@ struct TopK:
             )
         else:
 
-            @parameter
+            @__parameter
             def top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K
-                    iota(out_idxs.unsafe_ptr() + offset, K)
+                    iota(out_idxs.unsafe_ptr().unsafe_offset(offset), K)
 
-                    @parameter
-                    def val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
+                    def val_greater_than(
+                        lhs: Int32, rhs: Int32
+                    ) {in_vals, row_idx} -> Bool:
                         return (
                             in_vals[row_idx, Int(lhs)]
                             > in_vals[row_idx, Int(rhs)]
                         )
 
-                    sort[val_greater_than](
+                    sort(
                         Span(
-                            unsafe_ptr=out_idxs.unsafe_ptr() + offset, length=K
-                        )
+                            unsafe_ptr=out_idxs.unsafe_ptr().unsafe_offset(
+                                offset
+                            ),
+                            length=K,
+                        ),
+                        val_greater_than,
                     )
 
                     for i in range(K):

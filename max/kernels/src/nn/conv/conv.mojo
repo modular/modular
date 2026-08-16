@@ -21,6 +21,7 @@ for 1D, 2D, and 3D convolutions in NHWC/NDHWC layouts.
 from std.collections import Optional
 from std.math import align_down, ceildiv
 from std.math.uutils import udivmod
+from std.memory import ThinAllocation, dealloc
 
 
 from std.os import abort, getenv
@@ -87,22 +88,25 @@ from _miopen.types import (
 )
 from _miopen.utils import check_error as check_miopen_error
 from std.algorithm import (
-    elementwise,
-    sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     unswitch,
     vectorize,
+)
+
+from max.algorithm import (
+    elementwise,
+    sync_parallelize,
 )
 from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
 from std.gpu import block_dim, block_idx, thread_idx
-from std.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
-from std.gpu.host._amdgpu_hip import HIP
-from std.gpu.host._nvidia_cuda import CUDA
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host import get_gpu_target, DeviceBuffer, DeviceContext
+from max.gpu.host._amdgpu_hip import HIP
+from max.gpu.host._nvidia_cuda import CUDA
+from max.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -118,8 +122,8 @@ from layout import (
 )
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.sys import (
     has_amd_gpu_accelerator,
@@ -159,8 +163,8 @@ from layout import lt_to_tt
 @fieldwise_init
 struct Naive2dConvolution[
     output_origin: Origin[mut=True],
-    input_origin: Origin[mut=False],
-    filter_origin: Origin[mut=False],
+    input_origin: ImmOrigin,
+    filter_origin: ImmOrigin,
     //,
     output_type: DType,
     input_type: DType,
@@ -392,7 +396,7 @@ def _reduce_output[
     var buf_size = num_rows * F
 
     # Reduce from the output scratch buffer to the actual output.
-    @parameter
+    @__parameter
     @always_inline
     def reduce_task(tid: Int):
         # Use all threads in reduction.
@@ -435,8 +439,8 @@ def _reduce_output[
 @fieldwise_init
 struct ConvDirectNHWC[
     conv_attr_rank: Int,
-    input_origin: Origin[mut=False],
-    filter_origin: Origin[mut=False],
+    input_origin: ImmOrigin,
+    filter_origin: ImmOrigin,
     output_origin: Origin[mut=True],
     //,
     input_layout: Layout,
@@ -571,7 +575,9 @@ struct ConvDirectNHWC[
         var output_size = output.size()
         var scratch_size = num_partitions[1] * output_size
         if num_partitions[1] > 1:
-            output_ptr = alloc[Scalar[Self.output_type]](scratch_size)
+            output_ptr = alloc[Scalar[Self.output_type]](
+                {count = scratch_size}
+            ).unsafe_leak()
         # Wrap the pointer inside LayoutTensor so it can be properly captured by async closure.
         var output_scratch = LayoutTensor[
             Self.output_type, Layout.row_major(UNKNOWN_VALUE)
@@ -585,7 +591,7 @@ struct ConvDirectNHWC[
         @__copy_capture(
             num_partitions, cf_tile_size, output_scratch, output_size
         )
-        @parameter
+        @__parameter
         @always_inline
         def task_func(task_id: Int):
             var partition = get_partition(
@@ -653,7 +659,11 @@ struct ConvDirectNHWC[
                 num_threads,
                 ctx,
             )
-            output_ptr.free()
+            dealloc(
+                ThinAllocation(unsafe_owned_ptr=output_ptr).unsafe_with_layout(
+                    {count = scratch_size}
+                )
+            )
         else:
             # Use sync to work around #12624
             sync_parallelize[task_func](num_tasks, ctx)
@@ -663,7 +673,7 @@ struct ConvDirectNHWC[
         merged and partitioned for parallelism."""
 
         @always_inline
-        @parameter
+        @__parameter
         def body[padded: Bool]():
             for ng in range(
                 self.partition.ng_offset,
@@ -687,7 +697,7 @@ struct ConvDirectNHWC[
         # fmt: on
 
         @always_inline
-        @parameter
+        @__parameter
         def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             # Only apply static shape optimizations to shapes with padding since
             # there is a fast path for pointwise (no padding) conv with strides.
@@ -753,7 +763,7 @@ struct ConvDirectNHWC[
         ) and Self.input_layout.rank() == 4
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             comptime if not merge_output_space_loops:
                 self.output_space_loop[
@@ -1237,10 +1247,10 @@ struct ConvDirectNHWC[
         comptime micro_kernel_width = micro_kernel_f_size // simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def iteration[tile_size: Int](output_flat_coord: Int):
             @always_inline
-            @parameter
+            @__parameter
             def body[c_fully_cached: Bool]():
                 self.update_output_tile_no_padding[
                     tile_size,  # micro kernel height
@@ -1429,7 +1439,7 @@ struct ConvDirectNHWC[
         # Points output to the start of the row
         var output_base = output
 
-        @parameter
+        @__parameter
         @always_inline
         def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
             conv1d_update_wo_tile[
@@ -1513,7 +1523,7 @@ struct ConvDirectNHWC[
                 output + self.conv_shape.f * self.conv_shape.wo() * ho
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                 conv2d_update_wo_tile[
@@ -1607,7 +1617,7 @@ struct ConvDirectNHWC[
                     * (ho + self.conv_shape.ho() * do)
                 )
 
-                @parameter
+                @__parameter
                 @always_inline
                 def work_fn[height: Int, effected_by_padding: Bool](wo: Int):
                     conv3d_update_wo_tile[
@@ -1667,7 +1677,7 @@ struct ConvDirectNHWC[
         ) * simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self._h_loop_static[
                 micro_kernel_shape[0],
@@ -1821,7 +1831,7 @@ struct ConvDirectNHWC[
                 # Update middle points if any. They aren't effected by padding.
                 @__copy_capture(filter_base)
                 @always_inline
-                @parameter
+                @__parameter
                 def update_middle[height: Int](wo: Int):
                     self._inner_loops_static[
                         height,
@@ -3122,7 +3132,7 @@ def pack_filter_lt[
 
         @always_inline
         @__copy_capture(group_start, F_per_group, F)
-        @parameter
+        @__parameter
         def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = group_start + f_tile_start * outer_dims_prod
 
@@ -3196,7 +3206,10 @@ def pack_filter_from_fcrs(
     var total_elems = filter_lt.size()
 
     # Allocate temporary buffer for RSCF-ordered data (actual dtype).
-    var rscf_buf = alloc[Scalar[filter.dtype]](total_elems)
+    var rscf_buf_alloc = alloc[Scalar[filter.dtype]](
+        {count = total_elems}
+    ).into_managed()
+    var rscf_buf = rscf_buf_alloc.unsafe_ptr()
 
     # Transpose FCRS→RSCF or FCQRS→QRSCF and create a TileTensor for packing.
     comptime if filter_lt.rank == 4:
@@ -3269,7 +3282,7 @@ def pack_filter_from_fcrs(
         )
         pack_filter(rscf_tile, packed_filter, num_groups)
 
-    rscf_buf.free()
+    dealloc(rscf_buf_alloc^)
 
 
 @always_inline
@@ -3520,20 +3533,18 @@ def conv_nhwc_direct[
     ), "Filter and input ranks mismatch."
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         return ";".join(
-            Span(
-                [
-                    trace_arg("input", input_lt.runtime_layout.shape.value),
-                    trace_arg("filter", filter_lt.runtime_layout.shape.value),
-                    trace_arg("output", output_lt.runtime_layout.shape.value),
-                    "group=" + String(num_groups),
-                    "stride=" + "x".join(Span([stride])),
-                    "padding_h=" + "x".join(Span([pad_h])),
-                    "padding_w=" + "x".join(Span([pad_w])),
-                ]
-            )
+            [
+                trace_arg("input", input_lt.runtime_layout.shape.value),
+                trace_arg("filter", filter_lt.runtime_layout.shape.value),
+                trace_arg("output", output_lt.runtime_layout.shape.value),
+                "group=" + String(num_groups),
+                "stride=" + "x".join([stride]),
+                "padding_h=" + "x".join([pad_h]),
+                "padding_w=" + "x".join([pad_w]),
+            ]
         )
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")](
@@ -3554,7 +3565,7 @@ def conv_nhwc_direct[
 
         # The closure updates a row segment of the output.
         @always_inline
-        @parameter
+        @__parameter
         def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
@@ -3616,7 +3627,7 @@ def conv2d_gpu_naive_nhwc_rscf[
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
-    num_groups: Int,
+    num_groups: Int32,
 ):
     """Naive GPU kernel for 2D NHWC convolution with RSCF filter layout.
 
@@ -3648,6 +3659,7 @@ def conv2d_gpu_naive_nhwc_rscf[
         num_groups: Number of convolution groups for grouped
             convolution.
     """
+    var _num_groups = Int(num_groups)
     var N = input.dim[0]()
     var H = input.dim[1]()
     var W = input.dim[2]()
@@ -3658,7 +3670,7 @@ def conv2d_gpu_naive_nhwc_rscf[
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
     var C_out = output.dim[3]()  # channel_out or #F
-    var F_per_group = C_out // num_groups
+    var F_per_group = C_out // _num_groups
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3774,7 +3786,7 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
         self.ptr_conv_desc = ptr_conv_desc.value()
         self.ptr_output_desc = ptr_output_desc.value()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         try:
             check_cudnn_error(
                 cudnnDestroyTensorDescriptor(self.ptr_output_desc)
@@ -3802,7 +3814,7 @@ def _get_cudnn_meta(
     IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
 
     ```mojo
-    from std.gpu.host import DeviceContext
+    from max.gpu.host import DeviceContext
     var ctx = DeviceContext()
     with ctx.push_context():
         ptr_meta = _get_cudnn_meta(ctx)
@@ -3820,12 +3832,13 @@ def _get_cudnn_meta(
     var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
 
     # Get or create the per-device cache dictionary.
-    if ptr_meta := _get_global_or_null(cache_key):
-        var ptr = ptr_meta.unsafe_value().bitcast[CuDNNConvMeta]()
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
+        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[CuDNNConvMeta]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = alloc[CuDNNConvMeta](1)
+    var new_ptr_meta = alloc[CuDNNConvMeta]({count = 1}).unsafe_leak()
     new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -3948,12 +3961,15 @@ def _get_cached_cudnn_meta_nhwc_full(
 ) raises -> UnsafePointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
     var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
 
-    if ptr_meta := _get_global_or_null(cache_key):
-        var ptr = ptr_meta.unsafe_value().bitcast[CachedCuDNNMetaNHWCFull]()
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
+        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
+            CachedCuDNNMetaNHWCFull
+        ]()
         check_cudnn_error(cudnnSetStream(ptr[].ptr_handle, CUDA(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
+    var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull]({count = 1}).unsafe_leak()
     new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -4108,7 +4124,8 @@ def _conv_cudnn[
         # layout (Int8 enums vs C's 4-byte int enums). We bypass it by
         # allocating a raw 48-byte buffer matching the C ABI layout and
         # reading the algo Int32 at offset 0.
-        var perf_buf = alloc[UInt8](48)
+        var perf_buf_alloc = alloc[UInt8]({count = 48}).into_managed()
+        var perf_buf = UnsafePointer(perf_buf_alloc.unsafe_ptr())
         var requested_count: Int16 = 1
         var returned_count: Int16 = 0
 
@@ -4133,8 +4150,6 @@ def _conv_cudnn[
             ptr_meta[].best_algo = (
                 cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
             )
-
-        perf_buf.free()
 
         # Query workspace size
         var ws_size: Int = 0
@@ -4323,12 +4338,17 @@ def _get_cached_miopen_meta[
         "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.id())
     )
 
-    if ptr_meta := _get_global_or_null(cache_key):
-        var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta[conv_rank]]()
+    var ptr_meta = _get_global_or_null(cache_key)
+    if ptr_meta:
+        var ptr = ptr_meta.unsafe_value().unsafe_bitcast[
+            CachedMIOpenMeta[conv_rank]
+        ]()
         check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
         return ptr.as_unsafe_any_origin()
 
-    var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](1)
+    var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](
+        {count = 1}
+    ).unsafe_leak()
     new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
@@ -4485,7 +4505,7 @@ def _conv_miopen[
         shape[1] = UInt64(tensor.dim[tensor_rank - 1]())
         comptime for i in range(conv_rank):
             shape[2 + i] = UInt64(tensor.dim[1 + i]())
-        return shape
+        return shape^
 
     var input_shape = image_shape_from_tensor(input)
     var output_shape = image_shape_from_tensor(output)
@@ -4499,7 +4519,7 @@ def _conv_miopen[
             array[i] = Int32(list[i])
             if Int(array[i]) != list[i]:
                 raise Error(t"{name} value is too large: ", list[i])
-        return array
+        return array^
 
     var padding = int32_array_from_list["padding"](padding_list)
     var stride = int32_array_from_list["stride"](stride_list)
@@ -4532,7 +4552,7 @@ def _conv_miopen[
                 product *= shape[i]
             strides[1] = 1
             strides[0] = product
-            return strides
+            return strides^
 
         var input_strides = strides_from_shape(input_shape)
         var filter_strides = strides_from_shape(filter_shape)
@@ -4638,12 +4658,12 @@ def _conv_miopen[
         # Update cache state
         ptr_meta[].is_set = True
         ptr_meta[].input_dtype = input_type
-        ptr_meta[].input_shape = input_shape
-        ptr_meta[].filter_shape = filter_shape
-        ptr_meta[].output_shape = output_shape
-        ptr_meta[].padding = padding
-        ptr_meta[].stride = stride
-        ptr_meta[].dilation = dilation
+        ptr_meta[].input_shape = input_shape.copy()
+        ptr_meta[].filter_shape = filter_shape.copy()
+        ptr_meta[].output_shape = output_shape.copy()
+        ptr_meta[].padding = padding.copy()
+        ptr_meta[].stride = stride.copy()
+        ptr_meta[].dilation = dilation.copy()
 
     # Run forward convolution
     var forward_workspace = ctx.enqueue_create_buffer[DType.uint8](
@@ -4797,7 +4817,9 @@ def conv_gpu[
     filter_is_fcrs: Bool = False,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, address_space=AddressSpace.GENERIC, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
         mut=True, output_type, address_space=AddressSpace.GENERIC, ...
@@ -5034,7 +5056,7 @@ def conv_gpu[
                 )
             ):
 
-                @parameter
+                @__parameter
                 @always_inline
                 def _sm100_dispatch[
                     _epilogue: Optional[elementwise_epilogue_type] = None,
@@ -5063,7 +5085,7 @@ def conv_gpu[
                     var out_w = output_lt.dim[2]()
                     var hw = out_h * out_w
 
-                    @parameter
+                    @__parameter
                     @always_inline
                     @__copy_capture(hw, out_w)
                     def sm100_void_epilogue[
@@ -5204,7 +5226,7 @@ def conv_gpu[
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
             from linalg.utils import elementwise_epilogue_type as _ew_2d_t
 
-            @parameter
+            @__parameter
             @always_inline
             def _amd_4wave_dispatch[
                 _epilogue_2d: Optional[_ew_2d_t] = None,
@@ -5251,7 +5273,7 @@ def conv_gpu[
             # residual path and the 4-wave kernel does the residual add
             # in-kernel. We pull `source_ptr`'s contents to host along
             # with the other two buffers and combine them in the loop.
-            @parameter
+            @__parameter
             @always_inline
             def _audit_amd_4wave_vs_miopen() raises:
                 if getenv("MODULAR_CONV_AUDIT_MIOPEN", "0") != "1":
@@ -5401,7 +5423,7 @@ def conv_gpu[
                 var _amd_4wave_out_w = output_lt.dim[2]()
                 var _amd_4wave_hw = _amd_4wave_out_h * _amd_4wave_out_w
 
-                @parameter
+                @__parameter
                 @always_inline
                 @__copy_capture(_amd_4wave_hw, _amd_4wave_out_w)
                 def _amd_4wave_void_epilogue[
@@ -5533,7 +5555,7 @@ def conv_gpu[
                     _width: Int, alignment: Int = 1
                 ](coords: Coord) {var}:
                     var idx = rebind[IndexList[4]](coord_to_index_list(coords))
-                    vec = output_tmp_lt.load[width=_width](idx)
+                    var vec = output_tmp_lt.load[width=_width](idx)
                     epilogue(idx, vec)
 
                 elementwise[simd_width_of[output_type](), target="gpu"](
@@ -5580,7 +5602,7 @@ def conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
-                num_groups,
+                Int32(num_groups),
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -5667,7 +5689,7 @@ def conv_gpu[
                     var _amd_3d_HW = _amd_3d_H_out * _amd_3d_W_out
                     var _amd_3d_DHW = _amd_3d_D_out * _amd_3d_HW
 
-                    @parameter
+                    @__parameter
                     @always_inline
                     @__copy_capture(_amd_3d_DHW, _amd_3d_HW, _amd_3d_W_out)
                     def amd_3d_void_epilogue[
@@ -5757,7 +5779,7 @@ def conv_gpu[
                 stride,
                 dilation,
                 symmetric_padding,
-                num_groups,
+                Int32(num_groups),
                 grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                 block_dim=(block_size, block_size),
             )
@@ -5782,7 +5804,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     stride: IndexList[3],
     dilation: IndexList[3],
     padding: IndexList[3],
-    num_groups: Int,
+    num_groups: Int32,
 ):
     """Naive GPU kernel for 3D NDHWC convolution with QRSCF filter layout.
 
@@ -5814,6 +5836,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
             width)`.
         num_groups: Number of convolution groups for grouped convolution.
     """
+    var _num_groups = Int(num_groups)
     var N = input.dim[0]()
     var D = input.dim[1]()  # depth
     var H = input.dim[2]()
@@ -5823,13 +5846,13 @@ def conv3d_gpu_naive_ndhwc_qrscf[
     var Q = filter.dim[0]()
     var R = filter.dim[1]()
     var S = filter.dim[2]()
-    var C_per_group = filter.dim[3]()  # C_in / num_groups
+    var C_per_group = filter.dim[3]()  # C_in / _num_groups
 
     var D_out = output.dim[1]()  # depth
     var H_out = output.dim[2]()
     var W_out = output.dim[3]()
     var C_out = output.dim[4]()  # channel_output
-    var F_per_group = C_out // num_groups
+    var F_per_group = C_out // _num_groups
 
     var pad_d = padding[0]
     var pad_h = padding[1]
@@ -6004,12 +6027,18 @@ def _conv3d_cudnn_depth_tiled[
     var ptr_meta = _get_cudnn_meta(ctx)
 
     # Descriptor arrays (reused across tiles).
-    var input_dims = alloc[Int32](5)
-    var output_dims = alloc[Int32](5)
-    var filter_dims = alloc[Int32](5)
-    var pad_a = alloc[Int32](3)
-    var stride_a = alloc[Int32](3)
-    var dilation_a = alloc[Int32](3)
+    var input_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var input_dims = input_dims_alloc.unsafe_ptr()
+    var output_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var output_dims = output_dims_alloc.unsafe_ptr()
+    var filter_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var filter_dims = filter_dims_alloc.unsafe_ptr()
+    var pad_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var pad_a = pad_a_alloc.unsafe_ptr()
+    var stride_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var stride_a = stride_a_alloc.unsafe_ptr()
+    var dilation_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var dilation_a = dilation_a_alloc.unsafe_ptr()
 
     # Filter dims (constant across tiles).
     filter_dims[0] = Int32(filter.dim[0]())
@@ -6187,24 +6216,24 @@ def _conv3d_cudnn_depth_tiled[
         _ = workspace_buffer^
 
         if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
-            input_dims.free()
-            output_dims.free()
-            filter_dims.free()
-            pad_a.free()
-            stride_a.free()
-            dilation_a.free()
+            dealloc(input_dims_alloc^)
+            dealloc(output_dims_alloc^)
+            dealloc(filter_dims_alloc^)
+            dealloc(pad_a_alloc^)
+            dealloc(stride_a_alloc^)
+            dealloc(dilation_a_alloc^)
             ctx.synchronize()
             raise String("conv3d tiled forward failed: ", fwd_status)
 
         d_out_start += this_d_out
 
     # Clean up.
-    input_dims.free()
-    output_dims.free()
-    filter_dims.free()
-    pad_a.free()
-    stride_a.free()
-    dilation_a.free()
+    dealloc(input_dims_alloc^)
+    dealloc(output_dims_alloc^)
+    dealloc(filter_dims_alloc^)
+    dealloc(pad_a_alloc^)
+    dealloc(stride_a_alloc^)
+    dealloc(dilation_a_alloc^)
 
 
 def _conv3d_cudnn[
@@ -6263,7 +6292,8 @@ def _conv3d_cudnn[
 
     # --- Set up cuDNN descriptors (required every call — shared state) ---
     # Input: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
-    var input_dims = alloc[Int32](5)
+    var input_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var input_dims = input_dims_alloc.unsafe_ptr()
     input_dims[0] = Int32(input.dim[0]())  # N
     input_dims[1] = Int32(input.dim[4]())  # C
     input_dims[2] = Int32(input.dim[1]())  # D
@@ -6281,7 +6311,8 @@ def _conv3d_cudnn[
     )
 
     # Filter: FCQRS layout [F, C/groups, Q, R, S], described as NCHW format.
-    var filter_dims = alloc[Int32](5)
+    var filter_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var filter_dims = filter_dims_alloc.unsafe_ptr()
     filter_dims[0] = Int32(filter.dim[0]())  # F (out_channels)
     filter_dims[1] = Int32(filter.dim[1]())  # C (in_channels / groups)
     filter_dims[2] = Int32(filter.dim[2]())  # Q (depth)
@@ -6299,17 +6330,20 @@ def _conv3d_cudnn[
     )
 
     # Convolution: 3 spatial dimensions.
-    var pad_a = alloc[Int32](3)
+    var pad_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var pad_a = pad_a_alloc.unsafe_ptr()
     pad_a[0] = Int32(padding[0])
     pad_a[1] = Int32(padding[1])
     pad_a[2] = Int32(padding[2])
 
-    var stride_a = alloc[Int32](3)
+    var stride_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var stride_a = stride_a_alloc.unsafe_ptr()
     stride_a[0] = Int32(stride[0])
     stride_a[1] = Int32(stride[1])
     stride_a[2] = Int32(stride[2])
 
-    var dilation_a = alloc[Int32](3)
+    var dilation_a_alloc = alloc[Int32]({count = 3}).into_managed()
+    var dilation_a = dilation_a_alloc.unsafe_ptr()
     dilation_a[0] = Int32(dilation[0])
     dilation_a[1] = Int32(dilation[1])
     dilation_a[2] = Int32(dilation[2])
@@ -6333,7 +6367,8 @@ def _conv3d_cudnn[
     )
 
     # Output: NDHWC in memory, described as NHWC format with dims [N,C,D,H,W].
-    var output_dims = alloc[Int32](5)
+    var output_dims_alloc = alloc[Int32]({count = 5}).into_managed()
+    var output_dims = output_dims_alloc.unsafe_ptr()
     output_dims[0] = Int32(output.dim[0]())  # N
     output_dims[1] = Int32(output.dim[4]())  # C (out_channels)
     output_dims[2] = Int32(output.dim[1]())  # D_out
@@ -6408,9 +6443,12 @@ def _conv3d_cudnn[
     var algo: cudnnConvolutionFwdAlgo_t
     var workspace_size_var: Int
 
-    if ptr_cached := _get_global_or_null(cache_key):
+    var ptr_cached = _get_global_or_null(cache_key)
+    if ptr_cached:
         # Cache hit — reuse previously selected algorithm.
-        var entry = ptr_cached.unsafe_value().bitcast[_Conv3dAlgoCacheEntry]()
+        var entry = ptr_cached.unsafe_value().unsafe_bitcast[
+            _Conv3dAlgoCacheEntry
+        ]()
         algo = entry[].algo()
         workspace_size_var = entry[].workspace_size
     else:
@@ -6425,7 +6463,10 @@ def _conv3d_cudnn[
         # the correct C struct size and read fields at proper offsets.
         comptime C_PERF_STRUCT_SIZE = 48  # sizeof(cudnnConvolutionFwdAlgoPerf_t)
         comptime MAX_ALGOS = 8
-        var perf_bytes = alloc[UInt8](MAX_ALGOS * C_PERF_STRUCT_SIZE)
+        var perf_bytes_alloc = alloc[UInt8](
+            {count = MAX_ALGOS * C_PERF_STRUCT_SIZE}
+        ).into_managed()
+        var perf_bytes = perf_bytes_alloc.unsafe_ptr()
 
         # returned_algo_count is int* in C (4 bytes), not Int16*.
         # Use Int32 and bitcast the pointer.
@@ -6442,7 +6483,7 @@ def _conv3d_cudnn[
             output.ptr.bitcast[NoneType](),
             Int16(MAX_ALGOS),
             UnsafePointer(to=returned_count_i32).bitcast[Int16](),
-            perf_bytes.bitcast[cudnnConvolutionFwdAlgoPerfStruct](),
+            perf_bytes.unsafe_bitcast[cudnnConvolutionFwdAlgoPerfStruct](),
             find_ws.unsafe_ptr().bitcast[NoneType](),
             FIND_WS_CAP,
         )
@@ -6465,10 +6506,14 @@ def _conv3d_cudnn[
         var find_status_val = rebind[Int32](find_status)
         if find_status_val == 0:  # CUDNN_STATUS_SUCCESS
             for i in range(returned_count):
-                var base = perf_bytes + i * C_PERF_STRUCT_SIZE
-                var algo_val = base.bitcast[Int32]()[]  # offset 0
-                var status_val = (base + 4).bitcast[Int32]()[]  # offset 4
-                var memory_val = (base + 16).bitcast[Int]()[]  # offset 16
+                var base = perf_bytes.unsafe_offset(i * C_PERF_STRUCT_SIZE)
+                var algo_val = base.unsafe_bitcast[Int32]()[]  # offset 0
+                var status_val = base.unsafe_offset(4).unsafe_bitcast[
+                    Int32
+                ]()[]  # offset 4
+                var memory_val = base.unsafe_offset(16).unsafe_bitcast[
+                    Int
+                ]()[]  # offset 16
                 if status_val == 0 and memory_val <= FIND_WS_CAP:
                     algo = rebind[cudnnConvolutionFwdAlgo_t](Int8(algo_val))
                     workspace_size_var = memory_val
@@ -6489,8 +6534,6 @@ def _conv3d_cudnn[
                 input.dim[3](),
                 "]",
             )
-        perf_bytes.free()
-
         # Fallback: if FindEx found nothing useful, try PRECOMP_GEMM via
         # workspace size query (cheaper than FindEx).
         if (
@@ -6519,7 +6562,7 @@ def _conv3d_cudnn[
                 workspace_size_var = ws_size
 
         # Store result in global cache.
-        var ptr_entry = alloc[_Conv3dAlgoCacheEntry](1)
+        var ptr_entry = alloc[_Conv3dAlgoCacheEntry]({count = 1}).unsafe_leak()
         ptr_entry.unsafe_write(
             _Conv3dAlgoCacheEntry(
                 algo_value=rebind[Int8](algo),
@@ -6528,7 +6571,7 @@ def _conv3d_cudnn[
         )
         external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
             StringSlice(cache_key),
-            ptr_entry.bitcast[NoneType](),
+            ptr_entry.unsafe_bitcast[NoneType](),
         )
 
     # --- Execute convolution with cached/selected algorithm ---
@@ -6556,13 +6599,7 @@ def _conv3d_cudnn[
     # Free workspace BEFORE sync to release the buffer back to the pool.
     _ = workspace_buffer^
 
-    # Free temporary descriptor arrays.
-    input_dims.free()
-    filter_dims.free()
-    pad_a.free()
-    stride_a.free()
-    dilation_a.free()
-    output_dims.free()
+    # The temporary descriptor arrays free themselves (ManagedAllocation).
 
     # Retry with IMPLICIT_GEMM + zero workspace on allocation failures.
     # cuDNN may allocate internal scratch beyond what GetWorkspaceSize
@@ -6604,7 +6641,9 @@ def _conv3d_cudnn[
             # Persist the safer algorithm for this shape so subsequent
             # calls skip the OOM-prone pick. InsertGlobal overwrites the
             # existing entry keyed by cache_key.
-            var retry_entry = alloc[_Conv3dAlgoCacheEntry](1)
+            var retry_entry = alloc[_Conv3dAlgoCacheEntry](
+                {count = 1}
+            ).unsafe_leak()
             retry_entry.unsafe_write(
                 _Conv3dAlgoCacheEntry(
                     algo_value=rebind[Int8](algo),
@@ -6613,7 +6652,7 @@ def _conv3d_cudnn[
             )
             external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
                 StringSlice(cache_key),
-                retry_entry.bitcast[NoneType](),
+                retry_entry.unsafe_bitcast[NoneType](),
             )
 
     if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:

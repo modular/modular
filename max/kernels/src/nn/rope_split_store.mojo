@@ -18,10 +18,10 @@ K/V to the paged KV cache, and writes roped Q to the output buffer, all
 in a single GPU kernel to eliminate intermediate tensor round-trips.
 """
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_gpu
 from std.math import gcd
 from std.sys import align_of
 from std.sys.info import _current_target, simd_width_of
@@ -128,7 +128,7 @@ def _rope_split_store_ragged_impl[
     # fail codegen when stored into a unified closure ('pop.store' pointer
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
-    @parameter
+    @__parameter
     @__copy_capture(
         q_dim,
         qk_offset,
@@ -405,7 +405,7 @@ def _rope_split_store_ragged[
         context: DeviceContext for GPU.
     """
 
-    @parameter
+    @__parameter
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int
     ) -> Int:
@@ -557,7 +557,7 @@ def _rope_split_store_ragged_with_position_ids[
     var pos_ids_ptr = position_ids.ptr
     var pos_ids_stride = Int(position_ids.dim[1]())
 
-    @parameter
+    @__parameter
     @__copy_capture(pos_ids_ptr, pos_ids_stride)
     def get_freq_pos(
         dim_idx: Int, global_token_idx: Int, cache_pos: Int

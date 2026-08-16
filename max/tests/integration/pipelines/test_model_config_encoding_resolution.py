@@ -15,30 +15,43 @@
 
 All tests use fake local safetensors/GGUF repos with no network access.
 
-Encoding/weight-path inference for LLM models happens during
-architecture-level validation (``validate_and_resolve_quantization_encoding_weight_path()``
-/ ``validate_and_resolve_with_resolved_quantization_encoding()``), called by
-``PipelineConfig``/the registry -- not inside ``MAXModelConfig.resolve()``,
-which only validates device_specs and parses weight-path identity. Most
-tests below call those methods directly rather than going through the
-full ``PipelineConfig``/registry machinery, to keep the setup narrow.
+Encoding/weight-path resolution for LLM models happens at construction:
+``PipelineConfig.from_args`` calls ``_populate_weights_and_encoding()``
+once the architecture is known, which selects the effective encoding and
+discovers weight files. Most tests below drive that resolver (or the pure
+``_select_quantization_encoding()`` helper) directly rather than going
+through the full ``PipelineConfig``/registry machinery, to keep the setup
+narrow.
 """
 
 import json
 import os
-import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import get_args
 from unittest.mock import patch
 
 import pytest
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.config.model_config import (
+    _populate_weights_and_encoding,
+    _select_quantization_encoding,
+)
 from max.pipelines.modeling.config_enums import SupportedEncoding
-from max.pipelines.weights.hf_utils import HuggingFaceRepo
+from max.pipelines.weights.hf_utils import (
+    HuggingFaceRepo,
+)
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
+from test_common.fake_weights import (
+    write_fake_safetensors,
+    write_mixed_safetensors,
+)
 
 _DEFAULT_ENCODING: SupportedEncoding = "bfloat16"
 
@@ -51,40 +64,6 @@ CPU_DEVICE_SPEC = DeviceSpec(id=0, device_type="cpu")
 # ---------------------------------------------------------------------------
 
 
-def _write_fake_safetensors(path: str, dtype: str = "BF16") -> None:
-    """Write a minimal safetensors file with a single tensor of the given dtype."""
-    header = {"weight": {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]}}
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00\x00")
-
-
-def _write_mixed_safetensors(path: str, tensors: dict[str, str]) -> None:
-    """Write a safetensors file with multiple tensors of different dtypes.
-
-    Args:
-        path: File path to write.
-        tensors: Mapping of tensor name to safetensors dtype string,
-            e.g. {"model.layers.0.weight": "U8", "model.norm.weight": "BF16"}.
-    """
-    header: dict[str, dict[str, object]] = {}
-    offset = 0
-    for name, dtype in tensors.items():
-        header[name] = {
-            "dtype": dtype,
-            "shape": [1],
-            "data_offsets": [offset, offset + 2],
-        }
-        offset += 2
-    header_bytes = json.dumps(header).encode("utf-8")
-    with open(path, "wb") as f:
-        f.write(struct.pack("<Q", len(header_bytes)))
-        f.write(header_bytes)
-        f.write(b"\x00" * offset)
-
-
 def _make_local_repo(
     tmpdir: str,
     safetensors_files: dict[str, dict[str, str]] | None = None,
@@ -95,7 +74,7 @@ def _make_local_repo(
     Args:
         tmpdir: Root temp directory.
         safetensors_files: Mapping of relative path to {tensor_name: dtype}.
-            If the dict has one entry, uses _write_fake_safetensors for simplicity.
+            If the dict has one entry, uses write_fake_safetensors for simplicity.
         gguf_files: List of relative GGUF filenames to create as empty files.
 
     Returns:
@@ -107,9 +86,9 @@ def _make_local_repo(
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             if len(tensors) == 1:
                 _, dtype = next(iter(tensors.items()))
-                _write_fake_safetensors(full_path, dtype=dtype)
+                write_fake_safetensors(full_path, dtype=dtype)
             else:
-                _write_mixed_safetensors(full_path, tensors)
+                write_mixed_safetensors(full_path, tensors)
     if gguf_files:
         for rel_path in gguf_files:
             full_path = os.path.join(tmpdir, rel_path)
@@ -158,29 +137,30 @@ def _resolve_encoding(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
 ) -> None:
-    """Resolves quantization_encoding the way a caller (architecture-level
-    validation) does, rather than via resolve()'s best-effort pass.
+    """Resolves quantization_encoding the way a consumer (an
+    ``ArchConfig.initialize``) does: via the pure
+    :func:`_select_quantization_encoding` helper. Writes the result back onto
+    the config so tests can keep asserting on ``config.quantization_encoding``.
     """
-    config.validate_and_resolve_quantization_encoding_weight_path(
-        default_encoding=default_encoding
-    )
+    encoding = _select_quantization_encoding(config, default_encoding)
+    config.quantization_encoding = encoding
 
 
 def _resolve_encoding_and_weight_path(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding = _DEFAULT_ENCODING,
-    supported_encodings: set[SupportedEncoding] | None = None,
     default_weights_format: WeightsFormat = WeightsFormat.safetensors,
 ) -> None:
-    """Resolves both encoding and weight_path via the same two
-    architecture-validation entry points ``_validate_model_config_against_arch()``
-    calls in production, in the same order.
+    """Resolves both encoding and weight_path via
+    :func:`_populate_weights_and_encoding`, the resolver
+    ``PipelineConfig.from_args`` runs. Every encoding is treated as
+    architecture-supported so these tests exercise inference/discovery, not
+    the supported-encodings gate.
     """
-    _resolve_encoding(config, default_encoding=default_encoding)
-    assert config.quantization_encoding is not None
-    config.validate_and_resolve_with_resolved_quantization_encoding(
-        supported_encodings=supported_encodings
-        or {config.quantization_encoding},
+    _populate_weights_and_encoding(
+        config,
+        default_encoding=default_encoding,
+        supported_encodings=set(get_args(SupportedEncoding)),
         default_weights_format=default_weights_format,
     )
 
@@ -188,6 +168,31 @@ def _resolve_encoding_and_weight_path(
 # ---------------------------------------------------------------------------
 # Category A: Single-Encoding Repos — Encoding Inference
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    def _gen(repo_id: str, revision: str) -> str:
+        try:
+            return _real_generate_local_model_path(repo_id, revision)
+        except Exception:
+            return f"/fake/cache/{repo_id}"
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_gen,
+        ),
+    ):
+        yield
 
 
 class TestSingleEncodingInference:
@@ -465,7 +470,7 @@ class TestEncodingFromExplicitWeightPath:
         """Encoding should be parsed from filename when a hint is present."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fp = os.path.join(tmpdir, "model-bf16.safetensors")
-            _write_fake_safetensors(fp, dtype="BF16")
+            write_fake_safetensors(fp, dtype="BF16")
             explicit = [Path(fp)]
             config = _make_config(
                 tmpdir, device_specs=[GPU_DEVICE_SPEC], weight_path=explicit
@@ -689,19 +694,15 @@ class TestPipelineArgsWriteThroughRegressions:
             == "bartowski/Meta-Llama-3-8B-Instruct-GGUF"
         )
 
-    def test_multi_component_manifest_rejects_nested_runtime_kwarg(
+    def test_multi_component_manifest_accepts_nested_runtime_kwarg(
         self,
     ) -> None:
-        """Regression guard for the FLUX/QUA-727 crash.
+        """`PipelineArgs` accepts nested `runtime=PipelineRuntimeConfig(...)`.
 
-        Unlike PipelineConfig, PipelineArgs has no `runtime` field -- its
-        runtime knobs (`prefer_module_v3`, `denoising_cache`, etc.) are flat
-        top-level fields. `create_pipelines.py`'s FLUX oracle used to pass
-        `runtime=PipelineRuntimeConfig(...)` (a leftover from the pre-
-        PipelineArgs `PipelineConfig(models=..., runtime=...)` pattern),
-        which raises "Extra inputs are not permitted" since ConfigFileModel
-        forbids extra fields -- a hard crash for every multi-component
-        (diffusion) pipeline that set prefer_module_v3 or denoising_cache.
+        Nested is the canonical shape shared with recipes and
+        `PipelineConfig`; runtime knobs like `prefer_module_v3` and
+        `denoising_cache` live on the `runtime` sub-config, including for
+        multi-component (diffusion) manifests.
         """
         from max.pipelines.diffusion.cache import DenoisingCacheConfig
         from max.pipelines.lib import (
@@ -709,7 +710,6 @@ class TestPipelineArgsWriteThroughRegressions:
             PipelineArgs,
             PipelineRuntimeConfig,
         )
-        from pydantic import ValidationError
 
         with tempfile.TemporaryDirectory() as tmpdir:
             _make_local_repo(tmpdir, {"model.safetensors": {"w": "BF16"}})
@@ -721,17 +721,12 @@ class TestPipelineArgsWriteThroughRegressions:
                 }
             )
 
-            with pytest.raises(ValidationError, match="runtime"):
-                PipelineArgs(
-                    models=models,
-                    runtime=PipelineRuntimeConfig(prefer_module_v3=True),
-                )
-
-            # The correct pattern: pass runtime knobs as flat fields.
             args = PipelineArgs(
                 models=models,
-                prefer_module_v3=True,
-                denoising_cache=DenoisingCacheConfig(taylorseer=True),
+                runtime=PipelineRuntimeConfig(
+                    prefer_module_v3=True,
+                    denoising_cache=DenoisingCacheConfig(taylorseer=True),
+                ),
             )
-            assert args.prefer_module_v3 is True
-            assert args.denoising_cache.taylorseer is True
+            assert args.runtime.prefer_module_v3 is True
+            assert args.runtime.denoising_cache.taylorseer is True

@@ -31,17 +31,31 @@ from std.math import ceildiv, exp2, log2, max, min
 from std.math.constants import log2e
 
 import std.gpu.primitives.warp as warp
-from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, warp_id
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
-from std.gpu.primitives.grid_controls import (
+from std.gpu import WARP_SIZE, block_idx, lane_id, warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
+from std.sys import get_defined_bool
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+
+
+# The kernels below already wait on dependent grids and the decode producer
+# already triggers them, but neither has an effect unless the consumer launch
+# opts in. Opting in makes that whole contract live for the first time, and a
+# rare illegal-address abort at context teardown tracks with it, so the level
+# stays off until the mechanism is settled. Enabling it is a source edit: the
+# define cannot be set through the build, because the package that reads it is
+# precompiled and `mojo precompile` takes no `-D`.
+comptime MLA_DECODE_COMBINE_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
+    "MLA_DECODE_COMBINE_PDL", False
+]() else PDLLevel.OFF
 
 
 # ===----------------------------------------------------------------------=== #
@@ -705,17 +719,17 @@ def mla_combine_kernel_split_parallel[
     # Shared memory for tree reduction.
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
-    var smem_result = stack_allocation[
+    var smem_result = unsafe_stack_allocation[
         NUM_WARPS * head_dim,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_m = stack_allocation[
+    var smem_m = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,
     ]()
-    var smem_l = stack_allocation[
+    var smem_l = unsafe_stack_allocation[
         NUM_WARPS,
         DType.float32,
         address_space=AddressSpace.SHARED,
@@ -1052,7 +1066,7 @@ def launch_mla_combine_kernel_split_parallel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
     )
 
 
@@ -1182,7 +1196,7 @@ def launch_mla_combine_kernel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
     )
 
 

@@ -36,13 +36,13 @@ from layout import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     global_idx,
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
 
@@ -280,10 +280,14 @@ def matmul_naive(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     var x = global_idx.x
     var y = global_idx.y
 
@@ -424,12 +428,11 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
         NUM_THREADS=K10_NUM_THREADS,
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_matmul_10(mut b: Bencher):
-        @parameter
         @always_inline
-        def run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[sgemm_type](
                 c_buffer,
                 a_buffer,
@@ -440,7 +443,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
                 block_dim=(K10_NUM_THREADS,),
             )
 
-        bencher_iter_custom[run_func](b, ctx)
+        bencher_iter_custom(b, run_func, ctx)
 
     m.bench_function[bench_matmul_10](
         BenchId("matmul_sgemm_10"),
@@ -455,24 +458,23 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host_naive)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_naive(mut b: Bencher):
-        @parameter
         @always_inline
-        def run_func_naive(ctx: DeviceContext) raises:
+        def run_func_naive(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[matmul_naive](
                 a_device,
                 b_device,
                 c_device,
-                M,
-                N,
-                K,
+                Int32(M),
+                Int32(N),
+                Int32(K),
                 grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )
 
-        bencher_iter_custom[run_func_naive](b, ctx)
+        bencher_iter_custom(b, run_func_naive, ctx)
 
     m.bench_function[bench_naive](
         BenchId("matmul_naive"),

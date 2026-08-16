@@ -22,7 +22,7 @@ from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
 )
 from max.pipelines.lib import (
@@ -78,7 +78,7 @@ class PrefillScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         dispatcher: PrefillDispatcherServer,
     ) -> None:
         self.pipeline = pipeline
@@ -109,7 +109,12 @@ class PrefillScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.PREFILL_FIRST,
-            get_inflight_kv_transfer_count=lambda: len(self.active_transfers),
+            # Requests parked in _pending_first_token are pre-active_transfers
+            # state on the same block-release path: they already hold KV
+            # blocks and will free them once their deferred first token
+            # resolves into a transfer. Counting them prevents a false-fatal
+            # InsufficientBlocksError during the one-batch overlap lag.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self.dispatcher = dispatcher
@@ -170,15 +175,10 @@ class PrefillScheduler(Scheduler):
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
                 blocks_released = len(
-                    self.kv_cache.get_req_blocks(
-                        active.context.request_id,
-                        replica_idx=active.replica_idx,
-                    )
+                    self.kv_cache.get_req_blocks(active.context)
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
-                self.kv_cache.release(
-                    active.context.request_id, replica_idx=active.replica_idx
-                )
+                self.kv_cache.release(active.context)
                 # Pipeline release handles special cases (spec decoding draft model KV cache)
                 # For regular pipelines, release() is a no-op
                 self.pipeline.release(active.context.request_id)
@@ -194,6 +194,18 @@ class PrefillScheduler(Scheduler):
         for id in to_be_deleted:
             del self.active_transfers[id]
 
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of active_transfers + _pending_first_token entries holding
+        blocks on this replica -- a transfer on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for active in self.active_transfers.values()
+            if active.replica_idx == replica_idx
+        ) + sum(
+            1 for _, r in self._pending_first_token.values() if r == replica_idx
+        )
+
     def initiate_transfer_and_send_reply(
         self, context: TextContext, src_replica_idx: int
     ) -> None:
@@ -206,9 +218,19 @@ class PrefillScheduler(Scheduler):
         req_id = context.request_id
         identity, transfer_dest = self.request_id_to_reply_context.pop(req_id)
 
-        # If cancelled, throw away result.
+        # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
+            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            self.kv_cache.release(context)
+            self.pipeline.release(req_id)
+            logger.warning(
+                "Dropping cancelled request %s before KV transfer: released "
+                "%d blocks on replica %d.",
+                req_id,
+                blocks_held,
+                src_replica_idx,
+            )
             return
 
         # Get Remote Metadata.
@@ -218,9 +240,7 @@ class PrefillScheduler(Scheduler):
 
         # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(
-            req_id, replica_idx=src_replica_idx
-        )
+        src_idxs = self.kv_cache.get_req_blocks(context)
         dst_idxs = transfer_dest.dst_block_ids
         assert len(src_idxs) == len(dst_idxs)
 
@@ -243,9 +263,10 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(rid, replica_idx=at.replica_idx))
-            for rid, at in self.active_transfers.items()
+            len(self.kv_cache.get_req_blocks(at.context))
+            for at in self.active_transfers.values()
         )
+        block_count = self.kv_cache.block_count(src_replica_idx)
         logger.debug(
             "KV transfer started for request %s: blocks pinned on prefill "
             "pending transfer completion. Active in-flight transfers: %d, "
@@ -253,8 +274,8 @@ class PrefillScheduler(Scheduler):
             req_id,
             len(self.active_transfers),
             transfer_pinned,
-            self.kv_cache.num_free_blocks(src_replica_idx),
-            self.kv_cache.total_num_blocks(src_replica_idx),
+            block_count.free,
+            block_count.total,
         )
 
         assert context.tokens.generated_length != 0, (
@@ -386,6 +407,17 @@ class PrefillScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
+        # The DI protocol has no failure reply, so the decode node is not
+        # notified; route-side validation makes this unreachable in practice.
+        for failed_id, error in self.batch_constructor.take_grammar_failed():
+            self.request_id_to_reply_context.pop(failed_id, None)
+            logger.error(
+                "Dropping prefill request %s: grammar build failed after "
+                "route-side validation passed: %s",
+                failed_id,
+                error,
+            )
+
         # With the overlap pipeline, a pending _prev_batch must be drained
         # even when the current batch is empty (last-batch flush).
         has_pending_outputs = (
@@ -418,12 +450,15 @@ class PrefillScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
-            batch_execution_time_is_previous=is_overlap_active,
+            overlap_active=is_overlap_active,
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
             else None,
             batch_vision_metrics=self.pipeline.batch_vision_metrics()
             if hasattr(self.pipeline, "batch_vision_metrics")
+            else None,
+            batch_video_metrics=self.pipeline.batch_video_metrics()
+            if hasattr(self.pipeline, "batch_video_metrics")
             else None,
         )
 

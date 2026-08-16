@@ -17,6 +17,7 @@ Placeholder file for any configs (runtime, models, pipelines, etc)
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from enum import Enum
@@ -52,6 +53,41 @@ class MetricRecordingMethod(Enum):
     ASYNCIO = "ASYNCIO"
     # Send metric observations to a separate process for recording
     PROCESS = "PROCESS"
+
+
+@functools.total_ordering
+class KernelTraceLevel(Enum):
+    """Controls GPU kernel-trace capture depth.
+
+    Members are declared in increasing capture depth and compare in that
+    order, so gates can be written as e.g. ``level >= BATCH``. Each level
+    includes everything at the levels below it. All levels above ``off`` add
+    overhead to the model worker process. Use the minimum level that
+    satisfies your observability needs.
+    """
+
+    OFF = "off"
+    """No ``max.batch`` spans and no libkineto capture (default). Request and
+    phase spans are governed by the tracing exporter config, not this flag."""
+
+    BATCH = "batch"
+    """Emit a ``max.batch`` OTel span per forward pass (requires tracing to
+    be configured, see ``disable_telemetry``). No per-kernel GPU detail.
+    Minimal overhead."""
+
+    OP = "op"
+    """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation
+    ranges around each model op. Moderate overhead."""
+
+    KERNEL = "kernel"
+    """Full GPU kernel timeline via libkineto. Records every CUDA kernel
+    launch and NVTX range. Highest overhead; use for deep profiling only."""
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, KernelTraceLevel):
+            return NotImplemented
+        members = list(KernelTraceLevel)
+        return members.index(self) < members.index(other)
 
 
 class Settings(BaseSettings):
@@ -102,6 +138,21 @@ class Settings(BaseSettings):
         description="Port to use for the metrics endpoint",
         default=8001,
         alias="MAX_SERVE_METRICS_ENDPOINT_PORT",
+    )
+
+    http_keepalive_timeout_s: int = Field(
+        description=(
+            "Seconds an idle HTTP connection is held open before the server "
+            "closes it. Keep this above the idle-connection timeout of every "
+            "client that pools connections to MAX Serve. Whichever side closes "
+            "first wins the race, and a server-side close landing just as a "
+            "pooled client writes its next request reaches that client as a "
+            "TCP reset instead of a response -- the client cannot replay a "
+            "POST body, so it surfaces as a user-visible error rather than a "
+            "retry. Go's default client-side idle timeout is 90 seconds."
+        ),
+        default=120,
+        alias="MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S",
     )
 
     max_queue_size: int | None = Field(
@@ -175,6 +226,12 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_GENERATED_MEDIA_STORAGE_MB",
     )
 
+    use_client_cache_salt: bool = Field(
+        description="If True, honor cache_salt from clients (header or body). Off by default",
+        default=False,
+        alias="MAX_SERVE_USE_CLIENT_CACHE_SALT",
+    )
+
     # Telemetry and logging configuration
     logs_console_level: str | None = Field(
         default="INFO",
@@ -211,6 +268,36 @@ class Settings(BaseSettings):
         default=False,
         description="Disable remote telemetry",
         alias="MAX_SERVE_DISABLE_TELEMETRY",
+    )
+
+    otlp_metrics_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "Optional OTLP endpoint (e.g. a Datadog Agent OTLP receiver or "
+            "any OTel collector) to push histogram metrics to. When set, "
+            "histogram instruments switch from hand-tuned explicit bucket "
+            "boundaries to a self-calibrating exponential-histogram "
+            "aggregation, exported to this endpoint with delta "
+            "temporality. The local Prometheus endpoint continues serving "
+            "counters and gauges as before, but histograms stop appearing "
+            "there (the classic Prometheus text format cannot carry "
+            "exponential histograms). Leave unset to keep today's "
+            "explicit-bucket histograms on the local Prometheus endpoint, "
+            "unchanged."
+        ),
+        alias="MAX_SERVE_OTLP_METRICS_ENDPOINT",
+    )
+
+    kernel_trace_level: KernelTraceLevel = Field(
+        default=KernelTraceLevel.OFF,
+        description=(
+            "GPU kernel-trace capture depth. 'off' (default) adds zero "
+            "overhead. 'batch' enables per-forward-pass max.batch OTel "
+            "spans (when tracing is enabled) with no GPU capture. 'op' "
+            "adds NVTX op-level ranges. 'kernel' enables full libkineto "
+            "GPU kernel timeline capture (highest overhead)."
+        ),
+        alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
     )
 
     # Model worker configuration
@@ -416,6 +503,9 @@ class Settings(BaseSettings):
             f"    metric_recording       : {self.metric_recording.value}"
         )
         logger.info(f"    disable_telemetry      : {self.disable_telemetry}")
+        logger.info(
+            f"    kernel_trace_level     : {self.kernel_trace_level.value}"
+        )
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:

@@ -40,7 +40,7 @@ def make_string[
         filename: The name of the file inside the `./data` directory.
     """
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length == 0:
@@ -67,7 +67,7 @@ def make_string[
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_count_graphemes[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -81,7 +81,7 @@ def bench_count_graphemes[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_count_codepoints[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -95,7 +95,7 @@ def bench_count_codepoints[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -111,7 +111,7 @@ def bench_grapheme_iter[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_slice[
     length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
@@ -146,10 +146,10 @@ def main() raises:
     comptime lengths = (100, 1000, 10_000, 100_000, 1_000_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
+            comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", fname, ",", length, "]")
             m.bench_function[bench_count_codepoints[length, fname]](
                 BenchId(String("bench_count_codepoints", suffix))

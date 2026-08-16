@@ -18,15 +18,15 @@ from std.math import align_down, align_up, ceildiv, divmod
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from std.algorithm.functional import (
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     dual_elementwise,
     elementwise,
     sync_parallelize,
 )
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Coord,
     TensorLayout,
@@ -36,7 +36,7 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils import IndexList, StaticTuple, product
 
@@ -56,7 +56,7 @@ comptime elementwise_epilogue_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def preferred_simd_width[dtype: DType]() -> Int:
     """SIMD scalar count for fused GPU concat vectorization.
 
@@ -252,7 +252,7 @@ def _concat_parallel[
     @__copy_capture(
         total_output_bytes, output_h, output_c, output_data, output_wc
     )
-    @parameter
+    @__parameter
     def do_chunk(chunk_index: Int) raises:
         # "Amount" refers to byte-offsets into logical copy order, not into
         # output buffer.
@@ -524,7 +524,7 @@ def _concat_cpu[
     _check_input_consistency[dtype](axis, inputs)
 
     @always_inline
-    @parameter
+    @__parameter
     def dispatch_serial(unused_thread_idx: Int) raises:
         _concat_serial[dtype, epilogue_fn](output, axis, inputs)
 
@@ -571,7 +571,7 @@ def concat_shape[
     # extract hyper parameters
     var normalized_axis = normalize_neg_index(axis, InputLayoutType.rank)
 
-    @parameter
+    @__parameter
     @always_inline
     def shape_equal_ignore_axis(
         s1: IndexList[InputLayoutType.rank],
@@ -705,9 +705,9 @@ def _concat_gpu_flat_kernel[
         TileTensor[dtype, InputLayoutType, input_origin, Storage=InputStorage],
         num_inputs,
     ],
-    inner_size: Int,
-    total_concat_dim: Int,
-    total_vec_items: Int,
+    inner_size: Int32,
+    total_concat_dim: Int32,
+    total_vec_items: Int32,
 ):
     """Flat-indexing GPU kernel for concat.
 
@@ -715,15 +715,18 @@ def _concat_gpu_flat_kernel[
     uses flat pointer arithmetic to avoid multi-dimensional index decomposition
     and TileTensor coordinate-to-offset conversion overhead.
     """
+    var _inner_size = Int(inner_size)
+    var _total_concat_dim = Int(total_concat_dim)
+    var _total_vec_items = Int(total_vec_items)
     var tid = block_idx.x * block_size + thread_idx.x
-    if tid >= total_vec_items:
+    if tid >= _total_vec_items:
         return
 
     var vec_idx = tid * vec_width
 
     # Decompose flat index into (outer, concat, inner) coordinates.
-    var remaining, inner_idx = divmod(vec_idx, inner_size)
-    var outer_idx, concat_idx = divmod(remaining, total_concat_dim)
+    var remaining, inner_idx = divmod(vec_idx, _inner_size)
+    var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
 
     # Find which input this concat_idx belongs to and compute source offset.
     # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
@@ -736,7 +739,7 @@ def _concat_gpu_flat_kernel[
             var local_concat = concat_idx - acc
             var in_offset = (
                 outer_idx * input_concat_dim + local_concat
-            ) * inner_size + inner_idx
+            ) * _inner_size + inner_idx
             output.raw_store[alignment=vec_width](
                 vec_idx,
                 inputs[i].raw_load[
@@ -873,7 +876,7 @@ def _concat_gpu_elementwise[
         comptime _vec_width = 16 // size_of[dtype]()
         comptime _block_size = 256
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch_flat[_vw: Int]() raises:
             comptime kernel_fn = _concat_gpu_flat_kernel[
@@ -894,9 +897,9 @@ def _concat_gpu_elementwise[
             ctx.enqueue_function[kernel_fn](
                 output,
                 inputs,
-                inner_size,
-                total_concat_dim,
-                total_vec_items,
+                Int32(inner_size),
+                Int32(total_concat_dim),
+                Int32(total_vec_items),
                 grid_dim=(ceildiv(total_vec_items, _block_size),),
                 block_dim=(_block_size,),
             )
@@ -1003,7 +1006,7 @@ def _concat_gpu[
         # Use input[0], all dims should be equal except axis.
         outer_dims *= Int(inputs[0].dim(i))
 
-    @parameter
+    @__parameter
     @always_inline
     def _concat_buffers_contiguously() raises:
         var input_size = 0
@@ -1433,7 +1436,7 @@ def _fused_dual_concat_gpu_elementwise[
     elementwise infrastructure handles iteration, SIMD width, and grid sizing.
     """
 
-    @parameter
+    @__parameter
     @always_inline
     def per_output_elem_0[
         simd_width: Int, alignment: Int = 1
@@ -1454,7 +1457,7 @@ def _fused_dual_concat_gpu_elementwise[
                 return
             in_index[axis] -= input_shape[axis]
 
-    @parameter
+    @__parameter
     @always_inline
     def per_output_elem_1[
         simd_width: Int, alignment: Int = 1

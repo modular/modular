@@ -18,16 +18,15 @@ from std.sys import align_of, size_of
 from std.sys.info import simd_width_of
 
 from std.gpu import (
-    barrier,
     block_dim,
     block_idx,
     global_idx,
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.memory import AddressSpace
-from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import (
     Layout,
     PointerStorage,
@@ -54,7 +53,7 @@ from std.utils.index import IndexList
 
 # Function to handle AMD-specific scheduling
 @always_inline
-# @parameter
+# @__parameter
 def amd_scheduling_hints[
     input_type: DType,
     output_type: DType,
@@ -188,7 +187,7 @@ def copy_local_to_dram_32_32_8[
                 dst_idx += dst_fragments.runtime_layout(i)
 
             var src_element = Element[index_type=src_lt.linear_idx_type].load(
-                src_lt.ptr + src_idx,
+                src_lt.ptr.unsafe_offset(src_idx),
                 src_lt.runtime_element_layout,
             )
 
@@ -593,9 +592,9 @@ def max_reduce_kernel[
     layout: TensorLayout,
 ](
     relative_error: TileTensor[dtype, layout, MutAnyOrigin],
-    elements: Int,
-    offset: Int,
-    max_idx: Int,
+    elements_dev: Int32,
+    offset_dev: Int32,
+    max_idx_dev: Int32,
 ):
     """
     GPU kernel that computes the maximum relative error in a subset of a tensor.
@@ -606,16 +605,22 @@ def max_reduce_kernel[
 
     Args:
         relative_error: The relative error tensor to reduce.
-        elements: The number of elements per block to reduce.
-        offset: The stride/offset for accessing elements.
-        max_idx: Maximum valid index to prevent out-of-bounds access.
+        elements_dev: The number of elements per block to reduce.
+        offset_dev: The stride/offset for accessing elements.
+        max_idx_dev: Maximum valid index to prevent out-of-bounds access.
     """
+
+    var elements = Int(elements_dev)
+    var offset = Int(offset_dev)
+    var max_idx = Int(max_idx_dev)
 
     # Get thread and block indices
     var tid = thread_idx.x
     var bid = block_idx.x
 
-    var local_relative_error = relative_error._storage[offset * elements * bid]
+    var local_relative_error = relative_error._storage[
+        unsafe_offset=offset * elements * bid
+    ]
 
     # Parallel reduction loop: for(int i = elements >> 1; i > 0; i = i >> 1)
     var i = elements >> 1
@@ -703,9 +708,9 @@ def compare_equal[
         comptime reduce_kernel = max_reduce_kernel[dtype, layout]
         gpu_ctx.enqueue_function[reduce_kernel](
             max_relative_error,
-            num_elements,
-            offset,
-            m * n,
+            Int32(num_elements),
+            Int32(offset),
+            Int32(m * n),
             grid_dim=(num_threadblocks, 1),
             block_dim=(512, 1),
         )

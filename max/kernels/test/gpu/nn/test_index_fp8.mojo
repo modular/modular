@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand
@@ -217,6 +217,33 @@ def main() raises:
         test_index_fp8[num_heads=32, depth=128](1, 4, 64, ctx)
         test_index_fp8[num_heads=32, depth=128](4, 5, 200, ctx)
         test_index_fp8[num_heads=32, depth=128](3, 200, 200, ctx)
+        # Alternate-N-tile route (`N_TOKENS_ALT=3` from `nn/index_fp8.mojo`).
+        # Reached only when the key range is deep enough to open the key-split arm
+        # (>= 64 key tiles = 8192 keys) AND 3 divides seq_len while the default 4
+        # does not, with the alt tile's own block count inside
+        # `_KEYSPLIT_MAX_TOKEN_TILES`. That last clause confines this to speculative
+        # widths: at nh=32 it admits exactly seq_len 3, 6 and 9, so no prefill shape
+        # can reach the tile. These two are therefore the ONLY cases covering the
+        # MMA_N=96 kernel. 8192 is BM_key-aligned; 8300 leaves a 108-key tail, so a
+        # dropped or over-run final tile cannot pass on tolerance alone. 8192 is also
+        # exactly `_KEYSPLIT_MIN_KEY_TILES * BM_key`, so raising that threshold would
+        # silently demote the seq_len 6 cell to a third negative control -- check the
+        # tile is still reached rather than trusting a pass.
+        #
+        # Both cells are UNIFORM, so every token on the alt tile is live: the
+        # epilogue's per-token liveness guard is covered here only on the default
+        # tile (by the two negative controls, which do carry partial blocks). The
+        # ragged dead-token case on the alt tile lives in `test_mla_index_fp8`,
+        # whose `seq_lens=[6, 4]` cells put two dead tokens in the second block.
+        # Negative controls first, at the same key depth, so that poisoning the
+        # alternate tile (a comptime factor gated on `MMA_N != 128`) reaches every
+        # one of them before the first expected failure: 3 divides neither 2 nor
+        # 5, so both stay on the default 4-token tile -- which also keeps the
+        # 256-thread tile covered on the key-split arm.
+        test_index_fp8[num_heads=32, depth=128](3, 2, 8300, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 5, 8300, ctx)
+        test_index_fp8[num_heads=32, depth=128](2, 6, 8192, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 9, 8300, ctx)
 
         # TP-head-sharded indexer counts exist only on the SM100 tensor-core
         # path (the scalar fallback's [16, 8] thread layout copies nothing

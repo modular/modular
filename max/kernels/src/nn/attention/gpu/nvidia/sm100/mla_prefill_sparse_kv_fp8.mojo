@@ -29,30 +29,29 @@ from std.gpu import (
     warp_id,
     thread_idx,
     WARP_SIZE,
-    barrier,
 )
+from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
-from std.gpu.primitives import elect_one_sync
-from std.gpu.primitives.cluster import cluster_sync
+from max.gpu.primitives.cluster import elect_one_sync
+from max.gpu.primitives.cluster import cluster_sync
 import std.gpu.primitives.warp as warp
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
     fence_async_view_proxy,
 )
-from std.gpu.sync import (
+from max.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -88,7 +87,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     fma_ftz,
     exp2_emulation,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
     mma_arrive_multicast,
@@ -120,7 +119,7 @@ from layout.tma_async import (
     _gather4_box_width,
     _default_desc_shape,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -1815,13 +1814,13 @@ def mla_prefill_sparse_fp8[
     var num_q_rows = q_num_matrix_view_rows(q)
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
-    q_tma_op = create_tensor_tile[
+    var q_tma_op = create_tensor_tile[
         Index(1, config.num_q_heads // config.cta_group, q_depth),
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
 
     # FP8 K TMA: INT64-packed, SWIZZLE_NONE, 72 INT64 elems per 576-byte row.
-    k_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
+    var k_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
         tile_width=config.qk_depth // 8,
         tile_stride=config.qk_depth // 8,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1830,7 +1829,7 @@ def mla_prefill_sparse_fp8[
     ](ctx)
 
     # FP8 V TMA: INT64-packed, SWIZZLE_NONE.  tile_width = V_BMN_PER_ATOM / 8.
-    v_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
+    var v_tma_op_fp8 = kv_operand.create_gather4_tma_tile[
         tile_width=config.v_depth // 2 // config.cta_group // 8,
         tile_stride=config.qk_depth // 8,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1842,7 +1841,7 @@ def mla_prefill_sparse_fp8[
         output.ptr,
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
-    o_tma_op_fp8 = create_tensor_tile[
+    var o_tma_op_fp8 = create_tensor_tile[
         Index(config.num_q_heads // config.cta_group, config.v_depth),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         __desc_shape=Index(config.num_q_heads // config.cta_group, 64),

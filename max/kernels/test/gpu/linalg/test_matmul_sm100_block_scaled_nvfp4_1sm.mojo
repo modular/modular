@@ -14,8 +14,8 @@ from std.math import align_up
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand
 from internal_utils import assert_almost_equal
@@ -41,7 +41,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:

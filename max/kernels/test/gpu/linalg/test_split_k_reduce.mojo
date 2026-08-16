@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     TileTensor,
     Coord,
@@ -86,7 +86,7 @@ def test_split_k_reduce_rank3[
         row_major(Coord(Int(M), Int(N))),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c, epilogue_buffer)
     def epilogue_fn[

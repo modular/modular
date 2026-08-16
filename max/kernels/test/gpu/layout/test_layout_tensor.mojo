@@ -190,7 +190,7 @@ def test_different_layouts_arithmetic() raises:
 
 
 def test_flatten() raises:
-    var stack = Array[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](
         stack
     ).flatten()
@@ -200,14 +200,14 @@ def test_flatten() raises:
 
 
 def test_get_shape() raises:
-    var stack = Array[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout.row_major(4, 4)](stack)
     assert_equal(4, tensor.get_shape()[0])
     assert_equal(4, tensor.get_shape()[1])
 
 
 def test_reshape() raises:
-    var stack = Array[Int8, 16]()
+    var stack = Array[Int8, 16](fill=0)
     var tensor = LayoutTensor[DType.int8, Layout(16)](stack).reshape[
         Layout.row_major[2]()
     ](RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](4, 4)))
@@ -260,3 +260,6 @@ def main() raises:
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
     test_aligned_load()
+    test_flatten()
+    test_get_shape()
+    test_reshape()

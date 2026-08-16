@@ -17,7 +17,7 @@ from std.sys import argv
 
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -255,7 +255,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask3d, mask4d, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
@@ -642,7 +642,7 @@ def test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 128, 256, 512]
+        comptime depths = [64, 80, 128, 256, 512]
 
         comptime for i in range(len(depths)):
             comptime depth = depths[i]

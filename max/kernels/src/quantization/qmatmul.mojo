@@ -16,8 +16,10 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
-from std.algorithm import sync_parallelize, tile
-from std.gpu.host import DeviceContext
+from std.algorithm import tile
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -37,11 +39,11 @@ from std.memory import (
     alloc,
     bitcast,
     dealloc,
-    stack_allocation,
+    unsafe_stack_allocation,
 )
 from std.memory.alloc import Layout as AllocLayout
 
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index
 
@@ -175,7 +177,7 @@ def _quantize_a_buffer[
 
         var am_ptr = a.ptr + ko
 
-        @parameter
+        @__parameter
         @always_inline
         def process_rows[tile_m: Int](m: Int):
             for row in range(tile_m):
@@ -362,7 +364,7 @@ def _scale_and_accumulate[
             col * simd_width
         ).cast[DType.float32]()
 
-    @parameter
+    @__parameter
     @always_inline
     def apply_a_scale[row: Int](a_scale: Float32):
         comptime for col in range(tile_n):
@@ -1028,7 +1030,7 @@ def _matmul_qint4_m_1[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @parameter
+    @__parameter
     @__copy_capture(N, K, k_groups, work_count, num_workers)
     def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
@@ -1037,7 +1039,7 @@ def _matmul_qint4_m_1[
 
         var b_ptr = b.ptr.bitcast[Int8]()
 
-        @parameter
+        @__parameter
         @always_inline
         def process_cols[tile_n: Int](n_idx: Int):
             var n = task_n_start + n_idx * simd_width
@@ -1117,7 +1119,7 @@ def _matmul_qint4_m_any[
     var work_count = ceildiv(N, grain_size)
     var num_workers = min(work_count, parallelism_level(ctx))
 
-    @parameter
+    @__parameter
     @__copy_capture(M, N, K, k_groups, work_count, num_workers)
     def task_func(task_id: Int):
         var block_range = partition_work(task_id, num_workers, work_count, 1)
@@ -1130,19 +1132,19 @@ def _matmul_qint4_m_any[
             var ko_count = min(K_BATCH_SIZE, K - ko)
             var ko_group = ko // group_size
 
-            @parameter
+            @__parameter
             @always_inline
             def process_cols[tile_n: Int](n_idx: Int):
                 var n = task_n_start + n_idx * simd_width
 
                 comptime k_batch_groups = K_BATCH_SIZE // group_size
 
-                var b_s8_buf = stack_allocation[
+                var b_s8_buf = unsafe_stack_allocation[
                     K_BATCH_SIZE * tile_n * simd_width,
                     DType.int8,
                     alignment=alignment,
                 ]()
-                var b_scale_buf = stack_allocation[
+                var b_scale_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.float32,
                     alignment=alignment,
@@ -1153,7 +1155,7 @@ def _matmul_qint4_m_any[
                 # accumulator.
                 comptime needs_correction = aq_type.is_unsigned()
 
-                var b_correction_buf = stack_allocation[
+                var b_correction_buf = unsafe_stack_allocation[
                     k_batch_groups * tile_n * simd_width,
                     DType.int32,
                     alignment=alignment,
@@ -1180,7 +1182,7 @@ def _matmul_qint4_m_any[
                 var ak_ptr = a_quant.ptr + ko * M
                 var ak_scale_ptr = a_scale.ptr + ko_group * M
 
-                @parameter
+                @__parameter
                 @always_inline
                 def process_rows[tile_m: Int](m: Int):
                     var c_ptr = c.ptr + c._offset(Index(m, n))
@@ -1350,7 +1352,7 @@ def matmul_qint4[
     var b = b_tt.to_layout_tensor()
     var c = c_tt.to_layout_tensor()
 
-    @parameter
+    @__parameter
     def kernel_dispatch[kernel: _MatmulQInt4Kernel]():
         return _matmul_qint4[
             kernel,

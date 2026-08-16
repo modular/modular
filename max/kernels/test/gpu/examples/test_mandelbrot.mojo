@@ -17,7 +17,7 @@ from std.sys.info import simd_width_of
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 from std.sys import has_apple_gpu_accelerator
@@ -97,7 +97,7 @@ def run_mandelbrot(ctx: DeviceContext) raises:
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
-    @parameter
+    @__parameter
     def run_mandelbrot(ctx: DeviceContext) raises:
         ctx.enqueue_function[mandelbrot](
             out_device,

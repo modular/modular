@@ -8,8 +8,14 @@ This page describes how you can accelerate your MAX development with
 popular AI coding assistants (Cursor, Claude Code, GitHub Copilot, Windsurf,
 and others). Mojo language documentation is hosted separately at
 [mojolang.org](https://mojolang.org); use
-[mojolang.org/llms.txt](https://mojolang.org/llms.txt) for Mojo-specific AI
+[Mojo AI skills](https://mojolang.org/docs/tools/skills/) for Mojo-specific
 context. This page covers resources available on docs.modular.com:
+
+- **MAX skills**: Reusable AI agent skills that follow the Agent Skills
+  Standard, equipping coding agents with standard workflows to build MAX
+  projects, [bring up new model
+  architectures](/develop/model-bringup-skills/), and profile and benchmark
+  model performance.
 
 - **Documentation files** (`llms.txt`): Raw text files that AI tools use for
 website navigation hints and direct access to up-to-date API documentation.
@@ -28,10 +34,37 @@ and project structure.
   activate based on the files you're editing, providing consistent guidance for
   MAX development (and Mojo when using rules from the Modular repository).
 
-- **Modular skills**: Reusable AI agent skills that follow the Agent Skills
-  Standard, equipping coding agents with standard workflows to build Mojo
-  projects, write optimized GPU kernels, profile model performance, and [bring
-  new model architectures to MAX](/max/develop/model-bringup-skills/).
+## Install MAX skills {#skills}
+
+MAX skills are AI agent skills that capture best practices and step-by-step
+workflows for working with MAX. They allow AI coding agents to become fluent
+in developing new MAX projects, from model bring-up to benchmarking.
+
+The skills follow the [Agent Skills
+Standard](https://agentskills.io/specification), so any AI coding agent can
+use them.
+
+Add the Modular plugin marketplace to Claude Code and install the skills
+plugin:
+
+```text
+/plugin marketplace add modular/skills
+/plugin install skills@modular
+```
+
+The `skills` plugin installs both the MAX and Mojo skills. If you want only
+the MAX-specific skills, install `max-skills@modular` instead; for only the
+Mojo skills, install `mojo-skills@modular`.
+
+With Codex and other agents, install the skills with
+[Node.js](https://nodejs.org/en/download):
+
+```sh
+npx skills add modular/skills
+```
+
+For details on available skills, installation, and usage examples, see the
+[Modular Skills repository](https://github.com/modular/skills).
 
 ## Giving our docs to your AI assistant
 
@@ -45,12 +78,10 @@ that are optimized for different use cases:
   development, deployment, and inference guides
 - <a href="/llms-python.txt"><code>llms-python.txt</code></a> for MAX Python
   APIs, pipelines, or graph construction
-- <a href="/llms-kernels.txt"><code>llms-kernels.txt</code></a> for MAX AI
-  kernels API reference (top-level package indexes)
+- <a href="/llms-accelerator-api.txt"><code>llms-accelerator-api.txt</code></a>
+  for MAX accelerator library API reference (top-level package indexes)
 - <a href="/llms-c-api.txt"><code>llms-c-api.txt</code></a> for MAX C API
   reference
-- <a href="/llms-glossary.txt"><code>llms-glossary.txt</code></a> for glossary
-  terms
 - <a href="https://mojolang.org/llms.txt"><code>mojolang.org/llms.txt</code></a>
   for Mojo language documentation (hosted on
   [mojolang.org](https://mojolang.org), not docs.modular.com)
@@ -171,9 +202,8 @@ standard, providing LLM-friendly documentation files:
 | <a href="/llms.txt" target="_blank">llms.txt</a>                                  | Compact index linking to segment files | Starting point for all agents |
 | <a href="/llms-max-guides.txt" target="_blank">llms-max-guides.txt</a>            | MAX guides (develop, serve, deploy)    | Application development       |
 | <a href="/llms-python.txt" target="_blank">llms-python.txt</a>                    | MAX Python API indexes                 | Python-based MAX development  |
-| <a href="/llms-kernels.txt" target="_blank">llms-kernels.txt</a>                  | MAX AI kernels API (package indexes)   | Kernel and GPU development    |
+| <a href="/llms-accelerator-api.txt" target="_blank">llms-accelerator-api.txt</a>  | MAX accelerator library API indexes    | Kernel and GPU development    |
 | <a href="/llms-c-api.txt" target="_blank">llms-c-api.txt</a>                      | MAX C API reference                    | C API integration             |
-| <a href="/llms-glossary.txt" target="_blank">llms-glossary.txt</a>                | Glossary terms (full content)          | Terminology lookup            |
 | <a href="https://mojolang.org/llms.txt" target="_blank">mojolang.org/llms.txt</a> | Mojo language docs (external)          | Mojo development              |
 
 ### Modular Cursor rules
@@ -220,24 +250,3 @@ To ensure compatibility with other tools, we provide both `CLAUDE.md` and
 [`AGENTS.md`](https://github.com/modular/modular/blob/main/AGENTS.md) file is
 just a symlink to the
 [`CLAUDE.md`](https://github.com/modular/modular/blob/main/CLAUDE.md) file.
-
-### Skills
-
-Modular skills are official AI agent skills that encapsulate modern
-best-practices for working with the Modular Platform, including MAX and Mojo.
-They allow AI coding agents to become fluent in developing new Mojo projects,
-writing correct Mojo syntax, programming GPUs, profiling model performance,
-evaluating model accuracy, and
-[importing new model architectures into MAX](/max/develop/model-bringup-skills/).
-
-To get started, install the skills:
-
-```sh
-npx skills add modular/skills
-```
-
-The skills are structured to follow the
-[Agent Skills Standard](https://agentskills.io/specification).
-
-For details on available skills, installation, and usage examples, see the
-[Modular Skills repository](https://github.com/modular/skills).

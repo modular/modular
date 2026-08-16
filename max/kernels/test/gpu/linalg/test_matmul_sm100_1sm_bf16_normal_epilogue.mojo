@@ -14,8 +14,8 @@
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
@@ -174,7 +174,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     var c_device_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device_lt)
     def epilogue_fn[

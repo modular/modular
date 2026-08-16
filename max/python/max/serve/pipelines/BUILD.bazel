@@ -42,6 +42,7 @@ modular_py_library(
         "//max/python/max/serve/telemetry",
         "//max/python/max/serve/worker_interface",
         requirement("numpy"),
+        requirement("opentelemetry-api"),
         requirement("uvloop"),
     ],
 )

@@ -24,7 +24,7 @@ The swapAB version just does it via: (B @ A^T)^T stored transposed = A @ B^T
 from std.math import ceildiv
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, TileTensor, row_major
@@ -109,19 +109,19 @@ def test_matmul_sm90_swapAB_comparison[
     # Host allocations
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
+    ).into_managed()
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
+    ).into_managed()
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_normal_host_ptr: UnsafePointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_swapAB_host_ptr: UnsafePointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
@@ -371,10 +371,10 @@ def test_matmul_sm90_swapAB_comparison[
     print("=== SwapAB comparison test PASSED ===\n")
 
     # Cleanup host pointers
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_normal_host_alloc^.into_allocation())
-    dealloc(c_swapAB_host_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_normal_host_alloc^)
+    dealloc(c_swapAB_host_alloc^)
 
     # Consume device buffers
     _ = a_dev_buffer^
@@ -523,19 +523,19 @@ def test_matmul_sm90_swapAB_comparison_v2[
     # Host allocations
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
+    ).into_managed()
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
+    ).into_managed()
     var c_normal_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_normal_host_ptr: UnsafePointer[
         Scalar[c_type], origin_of(c_normal_host_alloc)
     ] = c_normal_host_alloc.unsafe_ptr()
     var c_swapAB_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_swapAB_host_ptr: UnsafePointer[
         Scalar[c_type], origin_of(c_swapAB_host_alloc)
     ] = c_swapAB_host_alloc.unsafe_ptr()
@@ -680,7 +680,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     # =========================================================================
     # Set up epilogue functions if requested
     # =========================================================================
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
@@ -693,7 +693,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
             idx, rebind[SIMD[c_type, width]](val)
         )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[
@@ -881,10 +881,10 @@ def test_matmul_sm90_swapAB_comparison_v2[
     print("=== SwapAB comparison test V2 PASSED ===\n")
 
     # Cleanup host pointers
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_normal_host_alloc^.into_allocation())
-    dealloc(c_swapAB_host_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_normal_host_alloc^)
+    dealloc(c_swapAB_host_alloc^)
 
     # Consume device buffers
     _ = a_dev_buffer^

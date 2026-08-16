@@ -144,7 +144,6 @@ def _read_write_to_tensors[
     # Allocate and populate tensor to encode
     # Buffer with the original data
     var data_matrix_backing = Array[Float32, num_elements](uninitialized=True)
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var data_matrix_ptr: UnsafePointer[
         Float32, origin_of(data_matrix_backing)
     ] = data_matrix_backing.unsafe_ptr()

@@ -36,7 +36,7 @@ MLA vs naive reference convention).
 
 from std.math import ceildiv, rsqrt
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from layout import LayoutTensor, Layout, TileTensor, UNKNOWN_VALUE
@@ -147,8 +147,8 @@ def _mha_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         sink_weights_ptr,
         grid_dim=(
             config.num_heads,

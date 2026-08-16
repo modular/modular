@@ -47,7 +47,7 @@ from layout import (
 )
 from layout.tensor_storage import TensorStorage
 from layout.tile_io import copy_sram_to_dram
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import RegTile
 from structured_kernels.smem_types import reg_tile_to_tile_tensor
@@ -55,7 +55,7 @@ from layout.swizzle import Swizzle
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from std.gpu.compute.mma import st_matrix
+from max.gpu.compute.mma import st_matrix
 from std.memory import bitcast
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
@@ -999,7 +999,7 @@ struct RegisterToGMemWriter[
                         Self.c_type
                     ]()
 
-                    @parameter
+                    @__parameter
                     def epilogue_coordinates() -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed

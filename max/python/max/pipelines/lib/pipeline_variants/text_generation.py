@@ -53,10 +53,11 @@ from max.pipelines.context.exceptions import (  # noqa: F401 (for docstring)
     InputError,
 )
 from max.pipelines.kv_cache import (
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     load_kv_manager,
 )
 from max.pipelines.lib.vision_encoder_cache import (
+    SupportsPooledVisionMetrics,
     SupportsVisionEncoding,
     VisionEncoderCache,
     as_vision_context_batches,
@@ -95,7 +96,7 @@ from ..interfaces import (
 from ..interfaces.generate import GenerateMixin
 from ..memory_estimation import _MemoryPlan
 from ..utils import CompilationTimer
-from ..vision_encoder_cache import VisionEncoderMetrics
+from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
 
 logger = logging.getLogger("max.pipelines")
 
@@ -126,7 +127,7 @@ class TextGenerationPipelineInterface(
 
     @property
     @abstractmethod
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -179,7 +180,7 @@ class TextGenerationPipeline(
                 "Please ensure the model repository contains a valid config.json file."
             )
 
-        self._devices = load_devices(model_config.device_specs)
+        self._devices = load_devices(list(memory_plan.require_device_specs()))
         self._tokenizer = tokenizer
 
         self.batch_info_output_fname = environ.get(
@@ -203,16 +204,17 @@ class TextGenerationPipeline(
         self.vocab_size = self._structured_output.vocab_size
 
         # Initialize Session.
-        session = InferenceSession(devices=[*self._devices])
+        session = InferenceSession(
+            devices=[*self._devices],
+            precompiled_mefs=pipeline_config.runtime.precompiled_mefs,
+            export_mefs=pipeline_config.runtime.export_mefs,
+        )
         self.session = session
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
         # Load model.
-        if not model_config.quantization_encoding:
-            raise ValueError("quantization_encoding must not be None")
-
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = model_config.resolved_weight_paths()
 
@@ -249,7 +251,8 @@ class TextGenerationPipeline(
         if isinstance(self._pipeline_model, SupportsVisionEncoding):
             self._encoder_cache = VisionEncoderCache[TextAndVisionContext](
                 max_entries=pipeline_config.runtime.max_vision_cache_entries,
-                n_devices=len(self._devices),
+                plan=pipeline_config.runtime._vision_cache_plan,
+                devices=self._devices,
             )
 
         # Device the sampler runs on. ``sample_on_host`` routes sampling to the
@@ -625,7 +628,8 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._kv_manager.step(inputs.batches)
+        for ctx in inputs.flat_batch:
+            self._kv_manager.step(ctx)
 
         return res
 
@@ -668,7 +672,7 @@ class TextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 
@@ -677,8 +681,24 @@ class TextGenerationPipeline(
 
         Returns ``None`` for text-only models and for batches that did no
         vision encoding (e.g. decode steps). The metrics come from the
-        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one.
+        pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
+        otherwise, for a model that owns its encoder cache internally, from
+        :class:`SupportsPooledVisionMetrics`.
         """
-        if self._encoder_cache is None:
-            return None
-        return self._encoder_cache.pop_metrics()
+        if self._encoder_cache is not None:
+            return self._encoder_cache.pop_metrics()
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_vision_metrics()
+        return None
+
+    def batch_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns video encoder metrics for the most recent batch.
+
+        Returns ``None`` for models with no video support and for batches
+        that did no video encoding. Video encoding has no pipeline-owned
+        cache equivalent to :class:`VisionEncoderCache`, so this only ever
+        comes from a model implementing :class:`SupportsPooledVisionMetrics`.
+        """
+        if isinstance(self._pipeline_model, SupportsPooledVisionMetrics):
+            return self._pipeline_model.pop_video_metrics()
+        return None

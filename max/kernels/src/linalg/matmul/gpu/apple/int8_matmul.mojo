@@ -42,13 +42,14 @@ the `K % 16 == 0` interior takes a width-16 int8 K-repartition; the K-tail and
 tiles take the bounded path. See KB `kernels/apple-m5-int8-matmul`.
 """
 
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.compute.arch.mma_apple import _mma_apple_transposable
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace, build_edge_mask, gmem_edge_masked_load
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
+from max.gpu.host import DeviceContext
+from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
-from std.math import round
-from std.memory import stack_allocation
+from std.math import ceildiv, round
+from std.memory import unsafe_stack_allocation
 from std.utils import IndexList
 
 from layout import TileTensor
@@ -112,7 +113,7 @@ struct Int8DequantWriter[
 
     Parameters:
         c_origin: Mutable `MutOrigin` of the C output write view (inferred).
-        s_origin: Immutable `ImmutOrigin` shared by the scale and bias read
+        s_origin: Immutable `ImmOrigin` shared by the scale and bias read
             views (inferred).
         c_type: Output element type (`bf16` / `fp16` / `fp32`).
         c_layout: `TensorLayout` of the C output `TileTensor`.
@@ -711,8 +712,8 @@ struct AppleM5Int8MatMul[
         comptime SG_M_i = Int32(Self.SG_M)
         comptime SG_N_i = Int32(Self.SG_N)
 
-        var grid_m = (m + BM_i - 1) // BM_i
-        var grid_n = (n + BN_i - 1) // BN_i
+        var grid_m = ceildiv(m, BM_i)
+        var grid_n = ceildiv(n, BN_i)
 
         var tile_mn = Self.morton_decode_2d_rect(
             UInt32(block_idx.x), log2_grid_m, log2_grid_n
@@ -879,8 +880,8 @@ def enqueue_apple_int8_matmul[
         "Apple int8 matmul: K and N must fit in UInt16",
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0
@@ -976,8 +977,9 @@ struct AppleInt8ActQuant[in_type: DType = DType.bfloat16, *, THREADS: Int = 64]:
         q: TileTensor[DType.int8, q_layout, MutAnyOrigin],
         a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin],
         a_scale: TileTensor[DType.float32, s_layout, MutAnyOrigin],
-        K: Int,
+        K_arg: Int32,
     ):
+        var K = Int(K_arg)
         var row = Int(block_idx.x)
         var tid = Int(thread_idx.x)
 
@@ -1014,7 +1016,7 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     broadcasts the max back through SMEM. `nthreads` is small (64) so the linear
     reduction is cheap and needs no tree.
     """
-    var s = stack_allocation[
+    var s = unsafe_stack_allocation[
         nthreads, Float32, address_space=AddressSpace.SHARED
     ]()
     var tid = Int(thread_idx.x)
@@ -1068,7 +1070,7 @@ def enqueue_apple_int8_quantize_activation[
         q,
         a.as_immut(),
         a_scale,
-        k,
+        Int32(k),
         grid_dim=(m),
         block_dim=(QK.THREADS),
     )

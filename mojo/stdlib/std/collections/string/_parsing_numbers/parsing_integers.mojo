@@ -28,13 +28,13 @@ def standardize_string_slice(
     var x_len = x.byte_length()
     unsafe_memcpy(
         dest=std_x_ptr.unsafe_offset(CONTAINER_SIZE - x_len),
-        src=x.unsafe_ptr(),
+        src=x.as_bytes().unsafe_ptr(),
         count=x_len,
     )
     return standardized_x^
 
 
-# The idea is to end up with a Array of size
+# The idea is to end up with an Array of size
 # 24, which is enough to store the largest integer
 # that can be represented in unsigned 64 bits (size 20), and
 # is also SIMD friendly because divisible by 8, 4, 2, 1.
@@ -89,13 +89,15 @@ def to_integer(standardized_x: Array[Byte, CONTAINER_SIZE]) raises -> UInt64:
 
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
-    # We use memcmp to check that the number is not too large.
+    # We use unsafe_memcmp to check that the number is not too large.
     comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
         CONTAINER_SIZE, "0"
     )
     var too_large = (
         unsafe_memcmp(
-            std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE
+            std_x_ptr,
+            max_standardized_x.as_bytes().unsafe_ptr(),
+            CONTAINER_SIZE,
         )
         == 1
     )

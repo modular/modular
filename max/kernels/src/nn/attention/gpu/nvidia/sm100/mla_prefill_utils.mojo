@@ -48,16 +48,16 @@ from layout.tensor_core_async import (
 
 from linalg.arch.sm100.mma import smem_descriptor
 
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from std.gpu.memory import fence_async_view_proxy
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from max.gpu.memory import fence_async_view_proxy
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
 )
 import std.gpu.primitives.warp as warp
-from std.gpu.sync import named_barrier
+from max.gpu.sync import named_barrier
 
 from std.utils.index import Index
 
@@ -489,6 +489,8 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> Tuple[UInt32, UInt32]:
+        var num_keys: UInt32
+        var start_pos: UInt32
         comptime if _ndbuffer_mha_operand:
             num_keys = UInt32(
                 warp.broadcast(
@@ -517,10 +519,10 @@ struct MLAPositionSummary(TrivialRegisterPassable):
         //,
         _ndbuffer_mha_operand: Bool,
     ](k_rope_lut: KRopeType, seq_info: SeqInfo,) -> MLAPositionSummary:
-        num_keys, start_pos = Self.get_num_keys_and_start_pos[
+        var num_keys, start_pos = Self.get_num_keys_and_start_pos[
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](k_rope_lut, seq_info)
-        score_row = Self.get_score_row(seq_info, start_pos)
+        var score_row = Self.get_score_row(seq_info, start_pos)
         return {num_keys, score_row}
 
 
@@ -732,6 +734,7 @@ def cvt_block_fp8_to_bf16_with_scale[
     # make sure all the fp8_regs are loaded
     named_barrier[64](6)
 
+    var scale: Scalar[KRopeType.scale_dtype]
     comptime for i in range(num_regs // 4):
         var row = UInt32(i * 2) + t_row
         var col = t_col * 4
@@ -907,6 +910,11 @@ struct SM100MLA[
         # omitted param defaults to literal `False`, a DIFFERENT type from the
         # `config.fa4_config.use_ws` expression, and the two would not convert.
         use_ws=Self.config.fa4_config.use_ws,
+        # Same expression as SM100AttentionSMem.MiscMBarsType, for the same
+        # type-identity reason as use_ws above. MLA always resolves this to
+        # False (rope_depth() > 0), which is what keeps MLA's mbar accounting
+        # byte-identical to cross-P-off.
+        crossp=Self.config.fa4_config.crossp_on(),
     ]
 
     @staticmethod

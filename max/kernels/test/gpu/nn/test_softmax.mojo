@@ -17,7 +17,7 @@ from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator, simd_width_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
     Idx,
@@ -78,14 +78,14 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     rand[type](in_host_ptr.as_span())
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device)
     def input_fn_device[
         _simd_width: Int
     ](coords: Coord) -> SIMD[type, _simd_width]:
         return in_device.load[width=_simd_width](coord_to_index_list(coords))
 
-    @parameter
+    @__parameter
     @__copy_capture(in_host)
     def input_fn_host[
         _simd_width: Int
@@ -179,7 +179,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_device_test_ptr, in_host_test_ptr)
     ctx.enqueue_copy(in_device_ref_ptr, in_host_ref_ptr)
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device_ref)
     def input_fn_ref[
         _simd_width: Int
@@ -188,7 +188,7 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
             coord_to_index_list(coords)
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device_test)
     def input_fn_test[
         _simd_width: Int
@@ -277,7 +277,7 @@ def test_gpu_softmax_warp_short_axis[
 
     ctx.enqueue_copy(in_device_test_ptr, in_host_test_ptr)
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device_test)
     def input_fn_device[
         _simd_width: Int
@@ -286,7 +286,7 @@ def test_gpu_softmax_warp_short_axis[
             coord_to_index_list(coords)
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_host_test)
     def input_fn_host[
         _simd_width: Int
@@ -407,7 +407,7 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     var in_device_ref = in_ref.device_tensor()
     var in_device_test = in_test.device_tensor()
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device_ref)
     def input_fn_ref[
         _simd_width: Int
@@ -416,7 +416,7 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
             coord_to_index_list(coords)
         )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device_test)
     def input_fn_test[
         _simd_width: Int
@@ -512,14 +512,14 @@ def test_gpu_softmax_masked_split[test_type: DType](ctx: DeviceContext) raises:
     var out_device_ptr = ctx.enqueue_create_buffer[test_type](length)
     var out_ref_ptr = alloc[Scalar[ref_type]](length)
 
-    @parameter
+    @__parameter
     @__copy_capture(in_device)
     def input_fn_device[
         _simd_width: Int
     ](coords: Coord) -> SIMD[test_type, _simd_width]:
         return in_device.load[width=_simd_width](coord_to_index_list(coords))
 
-    @parameter
+    @__parameter
     @__copy_capture(in_host)
     def input_fn_host[
         _simd_width: Int
@@ -641,7 +641,7 @@ def test_gpu_online_softmax[
         block_dim=num_threads,
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_host)
     def input_fn_host[
         _simd_width: Int
@@ -673,7 +673,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
     comptime type = DType.float32
     comptime rank = 3
 
-    @parameter
+    @__parameter
     def _test_shape(shape: IndexList[rank]) raises:
         var in_host_ptr = ctx.enqueue_create_host_buffer[type](
             shape.flattened_length()
@@ -704,7 +704,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
         rand[type](in_host_ptr.as_span())
         ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
-        @parameter
+        @__parameter
         @__copy_capture(in_device)
         def input_fn_device[
             _simd_width: Int
@@ -713,7 +713,7 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
                 coord_to_index_list(coords)
             )
 
-        @parameter
+        @__parameter
         @__copy_capture(in_host)
         def input_fn_host[
             _simd_width: Int
@@ -843,7 +843,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         ref_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(scaled_host)
     def input_fn_cpu[
         _simd_width: Int

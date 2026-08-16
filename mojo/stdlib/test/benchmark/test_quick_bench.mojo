@@ -318,12 +318,8 @@ def test_custom() raises:
     )
 
     qb.dump_report()
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=x).unsafe_with_layout(xy_layout)
-    )
-    dealloc(
-        ThinAllocation(unsafe_assume_ownership=y).unsafe_with_layout(xy_layout)
-    )
+    dealloc(ThinAllocation(unsafe_owned_ptr=x).unsafe_with_layout(xy_layout))
+    dealloc(ThinAllocation(unsafe_owned_ptr=y).unsafe_with_layout(xy_layout))
 
 
 def test_all() raises:

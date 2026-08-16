@@ -14,7 +14,7 @@
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 from std.sys import has_apple_gpu_accelerator
 
@@ -61,17 +61,14 @@ struct OneS(DevicePassable):
 
 
 def vec_func(
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[S, MutAnyOrigin],
-    in1: UnsafePointer[S, MutAnyOrigin],
-    output: UnsafePointer[S, MutAnyOrigin],
+    in0: Pointer[S, MutAnyOrigin],
+    in1: Pointer[S, MutAnyOrigin],
+    output: Pointer[S, MutAnyOrigin],
     s: TwoS,
-    len: Int,
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -109,7 +106,7 @@ def _run_test_function_checked(ctx: DeviceContext) raises:
         in1,
         out,
         ones,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -159,7 +156,7 @@ def _run_test_function_experimental(ctx: DeviceContext) raises:
         in1,
         out,
         ones,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

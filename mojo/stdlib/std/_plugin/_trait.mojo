@@ -14,21 +14,42 @@
 from std.collections import OptionalReg
 from std.reflection.location import SourceLocation
 from std.sys.info import _TargetType, _current_target
-from std.gpu import PDLLevel
-from std.gpu.host import DeviceContext
 
 from std.utils.index import IndexList
 from std.math.math import _ExpPluginHookFnType, _TanhPluginHookFnType
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.memory.unsafe_pointer import _UnsafeDanglingPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType
-from std.algorithm.reduction import _ReduceGeneratorPluginHookFnType
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _get_kgen_string,
 )
+from std.utils import StaticTuple
+
+from .selector import Plugin
+
+comptime _ReduceGeneratorPluginHookFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
+"""Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""
 
 
-trait PluginHooks:
+trait PluginHooks(Plugin):
     """Compile-time hook interface for pluggable stdlib behavior.
 
     Most hooks are `comptime OptionalReg[Callable]` fields; call sites invoke
@@ -103,7 +124,7 @@ trait PluginHooks:
     comptime unsafe_dangling_fn: OptionalReg[
         _UnsafeDanglingPluginHookFnType
     ] = None
-    """`UnsafePointer.unsafe_dangling()` address override.
+    """`Pointer.unsafe_dangling()` address override.
 
     Parameters:
         alignment: The natural alignment of the pointee type, which the
@@ -155,42 +176,6 @@ trait PluginHooks:
     fallback's transitive `OptionalReg.value()` → `debug_assert` recurses
     back through `_debug_assert_msg` and deadlocks instantiation when
     assertions are enabled."""
-
-    @staticmethod
-    def elementwise_fn[
-        rank: Int,
-        simd_width: Int,
-        *,
-        pdl_level: PDLLevel = PDLLevel.ON,
-    ](
-        func: Some[
-            def[
-                width: Int, rank: Int, alignment: Int = 1
-            ](IndexList[rank]) -> None
-        ],
-        shape: IndexList[rank, ...],
-        ctx: DeviceContext,
-    ) raises:
-        """Per-target plugin hook for `elementwise[...]`.
-
-        Parameters:
-            rank: The rank of the work domain.
-            simd_width: The SIMD lane count for bulk invocations.
-            pdl_level: PDL level for overlap control.
-
-        Args:
-            func: The body closure to invoke per index.
-            shape: The shape of the work domain.
-            ctx: The device context to dispatch on.
-
-        Only invoked when `_handles_elementwise` is `True`; the default
-        is never called and is a no-op.
-        """
-        pass
-
-    comptime _handles_elementwise: Bool = False
-    """If `True` for this backend, `_elementwise_impl` dispatches to
-    `elementwise_fn[...]`."""
 
 
 # ===-----------------------------------------------------------------------===#

@@ -13,12 +13,12 @@
 
 """KVConnector shim over the Rust ``kv_tier_connector`` extension.
 
-The performant, CUDA-only replacement for the deprecated Python
-:class:`~.local_connector.LocalConnector` / :class:`~.tiered_connector.TieredConnector`,
-selected with ``--kv-connector rust_tiered``. All of the host block pool, disk
-tier, and copy engine live in Rust and run on Rust OS threads with the GIL
-released, so the connector never contends for the GIL on the hot path (the
-Python lanes' GIL contention was starving GPU utilization).
+The only host/disk tiered connector: it backs ``--kv-connector rust_tiered``
+as well as the retired ``tiered`` alias, whose Python implementation it
+replaced. All of the host block pool, disk tier, and copy engine live in Rust
+and run on Rust OS threads with the GIL released, so the connector never
+contends for the GIL on the hot path (the Python lanes' GIL contention was
+starving GPU utilization).
 
 How it works:
 
@@ -46,9 +46,15 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NamedTuple
 
-from max.driver import Buffer
+import psutil
+from max.driver import (
+    Buffer,
+    _unsafe_alloc_fast_pinned_buffer,
+    _unsafe_free_fast_pinned_buffer,
+)
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import (
     KVCacheMemory,
@@ -57,16 +63,28 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
 
-from ..kv_connector import KVConnectorTransfer
-from ..paged_kv_cache.block_copy_engine import (
-    _unsafe_alloc_fast_pinned_buffer,
-    _unsafe_free_fast_pinned_buffer,
-)
+from ..kv_connector import BlockCount, KVConnectorTransfer
+from ..paged_kv_cache.block_copy_engine import _check_host_memory_capacity
 from ..paged_kv_cache.block_manager import (
     _resolve_only_use_kv_connector_last_level_cache,
 )
 
 logger = logging.getLogger("max.pipelines")
+
+
+def _check_disk_capacity(
+    cache_dir: Path | str, max_disk_size_bytes: int
+) -> None:
+    """Raises when a disk offload budget exceeds free space at cache_dir."""
+    available_bytes = psutil.disk_usage(str(cache_dir)).free
+    if max_disk_size_bytes > available_bytes:
+        raise RuntimeError(
+            "disk_offload_max_gb requests "
+            f"{max_disk_size_bytes / (1024**3):.1f} GiB at "
+            f"{cache_dir} but only "
+            f"{available_bytes / (1024**3):.1f} GiB is available. Reduce "
+            "disk_offload_max_gb or free space on the target filesystem."
+        )
 
 
 # A device KV buffer endpoint the Rust connector copies to/from. These are
@@ -108,6 +126,16 @@ class RustTierConnector:
         max_disk_size_gb: float = 50.0,
         num_disk_workers: int = 32,
     ) -> None:
+        """Initializes the connector over ``replica_kv_memory``'s device buffers.
+
+        Args:
+            replica_kv_memory: Per-DP-replica offload-ready KV memory units.
+            total_num_host_blocks: Size of the shared host block pool.
+            disk_cache_dir: Directory backing the disk last level.
+            kv_hash_algo: Hash algo the caller computes block hashes with.
+            max_disk_size_gb: Disk budget.
+            num_disk_workers: Disk I/O worker threads.
+        """
         # Lazy import: OSS MAX can import this module without the extension.
         from kv_tier_connector import (  # type: ignore[import-not-found]
             TierConnector,
@@ -139,7 +167,11 @@ class RustTierConnector:
         # The shared pinned host buffer the Rust lanes copy to/from. It is not
         # GC-managed (see `_unsafe_alloc_fast_pinned_buffer`), so it must be
         # explicitly freed in `shutdown`.
-        total_gib = total_num_host_blocks * bytes_per_page / (1024**3)
+        total_bytes = total_num_host_blocks * bytes_per_page
+        _check_host_memory_capacity(total_bytes)
+        Path(disk_cache_dir).mkdir(parents=True, exist_ok=True)
+        _check_disk_capacity(disk_cache_dir, int(max_disk_size_gb * (1024**3)))
+        total_gib = total_bytes / (1024**3)
         start = time.perf_counter()
         self._host_buffer = _unsafe_alloc_fast_pinned_buffer(
             DType.uint8, [total_num_host_blocks, bytes_per_page], gpu0
@@ -218,7 +250,6 @@ class RustTierConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         return self._rust.offload(block_ids, list(block_hashes), replica_idx)
@@ -262,20 +293,18 @@ class RustTierConnector:
         _unsafe_free_fast_pinned_buffer(self._host_buffer)
 
     @property
-    def num_host_blocks(self) -> int:
-        return self._rust.num_host_blocks()
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._rust.num_free_host_blocks(),
+            total=self._rust.num_host_blocks(),
+        )
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return self._rust.num_used_host_blocks()
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return self._rust.num_disk_blocks()
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return self._rust.num_used_disk_blocks()
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(
+            free=self._rust.num_free_disk_blocks(),
+            total=self._rust.num_disk_blocks(),
+        )
 
     def reset_prefix_cache(self) -> None:
         self._rust.reset_prefix_cache()

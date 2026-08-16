@@ -14,7 +14,7 @@
 from std.math import sqrt
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal
@@ -77,14 +77,14 @@ def run_rms_norm_gpu[
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
@@ -117,8 +117,68 @@ def run_rms_norm_gpu[
     _ = gamma_d
 
 
+def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
+    """A zero-row shape must be a no-op, not a rejected zero-sized launch.
+
+    A rank owns an empty shard when rows < TP group size (bs=1 decode at TP4).
+    """
+    print("== run_rms_norm_gpu_zero_rows")
+
+    comptime cols = 128
+    comptime sentinel = Scalar[dtype](-7.0)
+
+    var data_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+    for i in range(cols):
+        data_h[i] = sentinel
+        gamma_h[i] = Scalar[dtype](1.0)
+
+    var data_d = ctx.enqueue_create_buffer[dtype](cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+
+    var data_buf = TileTensor(data_d, row_major(Coord(Index(0, cols))))
+    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @__parameter
+    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+        return data_buf.raw_load[width=width](data_buf.layout(coords))
+
+    @always_inline
+    @__copy_capture(data_buf)
+    @__parameter
+    def identity_output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) -> None:
+        data_buf.raw_store[width=width, alignment=alignment](
+            data_buf.layout(coords), val
+        )
+
+    rms_norm_gpu[2, input_fn, identity_output_fn, multiply_before_cast=True](
+        Coord(Index(0, cols)),
+        gamma,
+        Float32(0.001),
+        Scalar[dtype](0.0),
+        ctx,
+    )
+    var res = ctx.enqueue_create_host_buffer[dtype](cols)
+    ctx.enqueue_copy(res, data_d)
+    ctx.synchronize()
+
+    for i in range(cols):
+        assert_almost_equal(res[i], sentinel)
+
+    _ = data_d
+    _ = gamma_d
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        run_rms_norm_gpu_zero_rows[DType.bfloat16](ctx)
+        run_rms_norm_gpu_zero_rows[DType.float32](ctx)
         run_rms_norm_gpu[DType.float32](ctx, Index(5))
         run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
         run_rms_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))

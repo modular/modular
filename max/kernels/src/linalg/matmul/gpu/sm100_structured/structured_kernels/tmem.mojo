@@ -24,8 +24,8 @@ shared memory. This module provides type-safe abstractions:
 from layout import Layout
 from std.sys import size_of
 
-from std.gpu import syncwarp
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.sync import syncwarp
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -35,7 +35,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
-from std.gpu.primitives.cluster import block_rank_in_cluster
+from max.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier
 from linalg.structuring import SMemArray
 from structured_kernels.pipeline import SM100_PIPELINE_WAIT_TICKS

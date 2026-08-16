@@ -19,7 +19,7 @@ from nn.concat import (
 )
 from std.sys.info import is_gpu
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils import IndexList, StaticTuple
 
@@ -94,7 +94,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     )
     var input_shapes_1 = StaticTuple[IndexList[rank], 2](in_shape_0, in_shape_0)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(a0, a1, a2)
     def input_fn_0[
@@ -108,7 +108,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         else:
             return rebind[SIMD[dtype, width]](a2.load[width=width](coord))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out0)
     def output_0_fn[
@@ -116,7 +116,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         out0.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(b0, b1)
     def input_fn_1[
@@ -128,7 +128,7 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         else:
             return rebind[SIMD[dtype, width]](b1.load[width=width](coord))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out1)
     def output_1_fn[
@@ -267,7 +267,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
         IndexList[rank](2, 6, 4),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c0, c1)
     def input_fn_0[
@@ -279,7 +279,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
         else:
             return rebind[SIMD[dtype, width]](c1.load[width=width](coord))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out0)
     def output_0_fn[
@@ -287,7 +287,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         out0.store[width=width](Coord(indices), rebind[SIMD[dtype, width]](val))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(d0, d1)
     def input_fn_1[
@@ -299,7 +299,7 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
         else:
             return rebind[SIMD[dtype, width]](d1.load[width=width](coord))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out1)
     def output_1_fn[
@@ -454,7 +454,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     var b0 = TileTensor(b0_buf, in_layout)
     var b1 = TileTensor(b1_buf, in_layout)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(a0, a1, a2)
     def input_fn_0[
@@ -468,7 +468,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
         else:
             return rebind[SIMD[dtype, width]](a2.load[width=width](coord))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(b0, b1)
     def input_fn_1[
@@ -484,7 +484,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     var out0_static = TileTensor(out0_static_buf, static_out_layout_0)
     var out1_static = TileTensor(out1_static_buf, static_out_layout_1)
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out0_static)
     def output_0_static_fn[
@@ -494,7 +494,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
             Coord(indices), rebind[SIMD[dtype, width]](val)
         )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out1_static)
     def output_1_static_fn[
@@ -531,7 +531,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
         out1_dyn_buf, row_major(Coord(IndexList[rank](d0, d1, d2, size_1)))
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out0_dyn)
     def output_0_dyn_fn[
@@ -541,7 +541,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
             Coord(indices), rebind[SIMD[dtype, width]](val)
         )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out1_dyn)
     def output_1_dyn_fn[

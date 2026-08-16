@@ -33,7 +33,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution, conv_gpu
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.conv.gpu.im2col_matmul_2d import (
@@ -130,7 +130,7 @@ def test_conv2d_fused_apple_dynamic_round(
     var HW_out_i = H_out * W_out
     var C_out_i = C_out
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_ptr, W_out_i, HW_out_i, C_out_i)
     def round_epilogue[
@@ -324,7 +324,7 @@ def test_conv2d_im2col_direct[
     var handled: Bool
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
@@ -484,7 +484,7 @@ def test_conv2d_fused_apple[
     var handled: Bool
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[
@@ -639,7 +639,7 @@ def test_conv2d_gpu_dispatch[
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output_lt)
     def scale_epilogue[

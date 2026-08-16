@@ -31,8 +31,8 @@ from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.collections.set import Set
 
 from ...tile_scheduler import RasterOrder
@@ -374,11 +374,9 @@ def build_sm100_matmul_configs[
         _get_tuning_list_swiglu_bf16(), "swiglu_bf16_tuning"
     )
 
-    @always_inline
-    def rule_nk(x: TuningConfigSwiGLU) {} -> Bool:
-        return x.N == N and x.K == K
-
-    comptime nk_configs = tuning_table.find(rule=rule_nk)
+    comptime nk_configs = tuning_table.find(
+        rule=lambda (x: TuningConfigSwiGLU) -> Bool: x.N == N and x.K == K
+    )
 
     # Tuned shape: build directly from each tuning table entry.
     # For untuned (N, K) shapes the set is empty; dispatch falls back to its
@@ -470,7 +468,7 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             var N_aligned = align_up(N, 16)
@@ -574,14 +572,14 @@ def build_sm100_swiglu_heuristic_configs[
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):
-        config = choose_swiglu_config[
+        var config = choose_swiglu_config[
             a_type, b_type, c_type, transpose_b, has_bias, register_swiglu
         ](m, N, K)
         if config not in set:

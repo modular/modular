@@ -87,6 +87,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+cc_import(
+    name = "CompilerRT_lib",
+    shared_library = glob(["modular/lib/libKGENCompilerRTShared.*"])[0],
+    visibility = ["//visibility:public"],
+)
+
 INDIRECT_DEPENDENCIES = [
     "AsyncRTMojoBindings",
     "AsyncRTRuntimeGlobals",
@@ -99,6 +105,7 @@ INDIRECT_DEPENDENCIES = [
     cc_import(
         name = "{}_lib".format(lib_name),
         shared_library = glob(["modular/lib/lib{}.*".format(lib_name)])[0],
+        visibility = ["//visibility:public"],
     )
     for lib_name in INDIRECT_DEPENDENCIES
 ]
@@ -198,6 +205,26 @@ alias(
         "@//:linux_aarch64": "@module_platlib_linux_aarch64//:max_lib",
         "@//:linux_x86_64": "@module_platlib_linux_x86_64//:max_lib",
         "@platforms//os:macos": "@module_platlib_macos_arm64//:max_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "AsyncRTMojoBindings_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:AsyncRTMojoBindings_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:AsyncRTMojoBindings_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:AsyncRTMojoBindings_lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "CompilerRT_lib",
+    actual = select({
+        "@//:linux_aarch64": "@module_platlib_linux_aarch64//:CompilerRT_lib",
+        "@//:linux_x86_64": "@module_platlib_linux_x86_64//:CompilerRT_lib",
+        "@platforms//os:macos": "@module_platlib_macos_arm64//:CompilerRT_lib",
     }),
     visibility = ["//visibility:public"],
 )

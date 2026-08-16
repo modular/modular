@@ -301,7 +301,7 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
         if self._entry_wait_wrap() > 0:
             b.emit(OpDesc.schedule_barrier())
 
-        @parameter
+        @__parameter
         @always_inline
         def emit_sync_section():
             if self._pre_mma_sync_wrap() > 0:
@@ -314,7 +314,7 @@ struct MMABlockSpec(ImplicitlyCopyable, Movable):
             if self._pre_mma_sync_wrap() > 0:
                 b.emit(OpDesc.schedule_barrier())
 
-        @parameter
+        @__parameter
         @always_inline
         def emit_load_section():
             if self.global_before_frag:

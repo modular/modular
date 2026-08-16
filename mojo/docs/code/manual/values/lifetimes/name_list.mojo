@@ -30,7 +30,7 @@ struct NameList:
 
 
 def main() raises:
-    list = NameList("Thor", "Athena", "Dana", "Vrinda")
+    var list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)
     name += "?"

@@ -39,14 +39,14 @@ from comm.sync import enable_p2p
 from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
 
 
 @always_inline
-@parameter
+@__parameter
 def _chunk_value[dtype: DType](dp_idx: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based value that includes the DP replica index.
 
@@ -178,14 +178,15 @@ def bench_scatter[
         )
         list_of_ctx[gpu_idx].synchronize()
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_iter(
         mut bencher: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut tt_in_bufs, imm}:
             # Update input pointers to the cache-busted offset.
             comptime for dp_idx in range(dp_size):
                 tt_in_bufs[dp_idx] = TileTensor(
@@ -200,7 +201,7 @@ def bench_scatter[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bencher, ctx)
+        bencher_iter_custom(bencher, call_fn, ctx)
 
     bench_multicontext[bench_iter](
         b,

@@ -138,7 +138,7 @@ def random_ui64(min: UInt64, max: UInt64) -> UInt64:
 def randint[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     low: Int,
     high: Int,
 ) where dtype.is_integral():
@@ -161,7 +161,7 @@ def randint[
 def randint[
     dtype: DType
 ](
-    ptr: Pointer[mut=True, Scalar[dtype], _],
+    ptr: MutPointer[Scalar[dtype], _],
     size: Int,
     low: Int,
     high: Int,
@@ -208,7 +208,7 @@ def randint[
 def rand[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     /,
     *,
     min: Float64 = 0.0,
@@ -238,7 +238,7 @@ def rand[
 def rand[
     dtype: DType
 ](
-    ptr: Pointer[mut=True, Scalar[dtype], ...],
+    ptr: MutPointer[Scalar[dtype], ...],
     size: Int,
     /,
     *,
@@ -342,7 +342,7 @@ def randn_float64(
 def randn[
     dtype: DType
 ](
-    span: Span[mut=True, Scalar[dtype], _],
+    span: MutSpan[Scalar[dtype], _],
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,
 ):
@@ -365,7 +365,7 @@ def randn[
 def randn[
     dtype: DType
 ](
-    ptr: Pointer[mut=True, Scalar[dtype], ...],
+    ptr: MutPointer[Scalar[dtype], ...],
     size: Int,
     mean: Float64 = 0.0,
     standard_deviation: Float64 = 1.0,

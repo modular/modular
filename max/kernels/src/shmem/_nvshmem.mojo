@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import argv, size_of
@@ -24,8 +24,8 @@ from std.ffi import (
 )
 from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from std.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUmodule, CUstream
+from max.gpu.host import DeviceContext
+from max.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 from .shmem_api import SHMEMScope
@@ -56,7 +56,8 @@ def _init_nvshmem_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/libnvshmem_host.so.3
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
     try:
         return OwnedDLHandle(path=lib)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -56,8 +56,8 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         comptime assert len(items) > 0, "empty list in _max"
-        items_dyn = materialize[items]()
-        max_item = items_dyn[0]
+        var items_dyn = materialize[items]()
+        var max_item = items_dyn[0]
         for i in range(1, len(items_dyn)):
             if items_dyn[i] > max_item:
                 max_item = items_dyn[i]
@@ -79,22 +79,18 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
 
     # Construct backing buffer and the KV cache itself.
-    kv_cache_block_buffer = List[Scalar[dtype]](
+    var kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    # TODO(MOCO-4334): a safe `Pointer` from `unsafe_ptr()` collapses to an
-    # immutable origin in the tensor ctor; pin to a mutable `UnsafePointer`.
-    var kv_cache_block_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(kv_cache_block_buffer)
-    ] = kv_cache_block_buffer.unsafe_ptr()
-    kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
+    var kv_cache_block_ptr = kv_cache_block_buffer.unsafe_ptr()
+    var kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_cache_block_ptr,
         RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
     )
 
     # Initialize KV cache block buffer with golden values.
-    start_positions_dyn = materialize[start_positions]()
-    k_cache_input_buffer = k_cache_input[dtype]()
+    var start_positions_dyn = materialize[start_positions]()
+    var k_cache_input_buffer = k_cache_input[dtype]()
     var k_cache_input_buffer_ptr: UnsafePointer[
         k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
     ] = k_cache_input_buffer.unsafe_ptr()
@@ -115,7 +111,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         )
 
     # Create the actual KV cache type.
-    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+    var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=kv_cache_block,
         cache_lengths=LayoutTensor[
             mut=False, DType.uint32, Layout(UNKNOWN_VALUE)
@@ -138,30 +134,30 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
 
     # Create and initialize query buffer.
-    q_buffer = q_input[dtype]()
+    var q_buffer = q_input[dtype]()
     assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Create query tensor as a view of the query buffer.
-    q = TileTensor(
+    var q = TileTensor(
         q_buffer, row_major[batch_size, seq_len, num_heads, head_dim]()
     )
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
-    freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
+    var freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
     assert (
         len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
     ), "invalid freqs_cis_table init"
-    freqs_cis_table = TileTensor(
+    var freqs_cis_table = TileTensor(
         freqs_cis_table_buffer, row_major[max_seq_len, head_dim]()
     )
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[dtype]()
+    var expected_q_out_buffer = q_out_golden[dtype]()
     assert len(expected_q_out_buffer) == len(
         q_buffer
     ), "invalid expected q out init"
-    expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
-    expected_k_out_buffer = k_out_golden[dtype]()
+    var expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
+    var expected_k_out_buffer = k_out_golden[dtype]()
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
@@ -170,8 +166,8 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     ] = expected_k_out_buffer.unsafe_ptr()
 
     # Create output buffer.
-    q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
+    var q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
+    var q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
 
     # Create valid_lengths buffer - all sequences have full seq_len valid
     var valid_lengths_buffer = List[UInt32](

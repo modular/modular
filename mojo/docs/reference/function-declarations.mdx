@@ -8,16 +8,16 @@ description: >
   arguments, effects, return types, and special methods.
 ---
 
-<!-- VERIFIED: TokenKinds.def, Signatures.h, Signatures.cpp,
+{/* VERIFIED: TokenKinds.def, Signatures.h, Signatures.cpp,
      ParserStmts.cpp, ParserBase.h, ParserBase.cpp, ASTDecl.h,
      ASTDecl.cpp, ExprNode.h, OverloadFitness.h, OverloadFitness.cpp,
      OverloadSet.h, OverloadSet.cpp, ParamInf.h, ParamInf.cpp,
      DeclResolution.cpp (return-type-only redefinition diagnostic).
      Consulted: ExprNodes.h, ExprNodes.cpp, ParserExprs.cpp,
-     ASTType.h, MojoDiags.h -->
+     ASTType.h, MojoDiags.h */}
 
-<!-- NOT VERIFIED:
-"Copy constructors can't raise" — likely enforced via trait/IR; no specific
+{/* NOT VERIFIED:
+"Copy initializers can't raise" — likely enforced via trait/IR; no specific
 error string surfaced.
 "out arguments can't have defaults" — doc claim at line 365; no specific
 compiler error found, but plausible.
@@ -28,7 +28,7 @@ produce `invalid redefinition of '<name>': cannot overload with this
 non-function definition`, not silent shadowing as the existing manual
 claims. Reference text was corrected accordingly. The aliased-import
 workaround was also confirmed to compile.
--->
+*/}
 
 A *function declaration* introduces a named, callable unit
 of code. Every function in Mojo starts with the `def`
@@ -62,7 +62,7 @@ def main():
 
 ## Function signatures
 
-<!-- VERIFIED: From ParserStmts.cpp, Signatures.h -->
+{/* VERIFIED: From ParserStmts.cpp, Signatures.h */}
 
 ```text
 def name(argument-list) -> ReturnType:
@@ -112,7 +112,7 @@ zones that control how callers pass values:
 
 | Marker | Arguments       | Parameters      |
 |--------|-----------------|-----------------|
-| `//`   | No              | Inferred        |
+| `//`   | No              | Infer-only      |
 | `/`    | Positional-only | Positional-only |
 | `*`    | Keyword-only    | Keyword-only    |
 
@@ -127,8 +127,8 @@ PEP 3102.
 
 ### Infer-only marker (`//`, parameters only)
 
-`//` separates inferred parameters from named parameters. The
-compiler deduces inferred parameters from call-site arguments:
+`//` separates infer-only parameters from named parameters. The
+compiler deduces infer-only parameters from call-site arguments:
 
 ```mojo
 def inferred_type[T: Writable, //](value: T):
@@ -142,8 +142,8 @@ def main():
 Infer-only parameters can't be specified positionally:
 
 ```mojo
-# Error because 'inferred_type' expects 0 positional parameters,
-# but 1 was specified
+# Error because 'inferred_type' got 1 positional parameter
+# but expected none.
 inferred_type[Int](5)
 ```
 
@@ -187,7 +187,7 @@ div(a=10, b=3)   # Error
 ### Keyword-only marker (`*`)
 
 Everything after `*` is keyword-only. Callers must pass
-values by name:
+values by name, whether parameters or arguments:
 
 ```mojo
 def configure(*, verbose: Bool, retries: Int):
@@ -203,7 +203,7 @@ that follow it:
 ```mojo
 def sum(*values: Int, name: String) -> Int:
     print(name, end=": ")
-    total = 0
+    var total = 0
     for value in values:
         total += value
     return total
@@ -323,6 +323,10 @@ def wrong(x: Int where x > 0):
     pass
 ```
 
+A [`thin`](#thin) function *type* can carry its own trailing `where` clauses,
+constraining the parameters that type declares. See
+[Constrained function types](#constrained-function-types).
+
 ## Argument conventions
 
 An *argument convention* controls how an argument value passes to a function. It
@@ -392,14 +396,13 @@ def wrong(out result: Int) -> Int:
 ### `deinit`
 
 The function takes ownership and destroys the value. Required
-for `self` in `__del__` and the `existing` argument in move
-constructors:
+for `self` in `__deinit__()` and the argument in move initializers:
 
 ```mojo
 struct Resource:
     var handle: Int
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         _release(self.handle)
 ```
 
@@ -451,7 +454,7 @@ def sum_all(*values: Int) -> Int:
 
 ### Variadic packs
 
-`*` before both the name and the type annotation creates a
+`*` before both the name *and* the type annotation creates a
 *variadic pack* that accepts arguments of different types (heterogeneous
 arguments):
 
@@ -466,7 +469,7 @@ def main():
 ```
 
 :::note Why not `len(args)`?
-`args` has a `VariadicPack` type, and `VariadicPack.__len__` is a
+`args` has a `VariadicPack` type, and `VariadicPack.__len__()` is a
 `@staticmethod`, so `args.__len__()` is the same as
 `type_of(args).__len__()`. The compiler can evaluate it at compile time.
 
@@ -514,19 +517,20 @@ A function can specify at most one error type after `raises`.
 
 ### `thin` {#thin}
 
-Declares that a function type doesn't capture values from its defining
-scope. A thin function is a function pointer and not a closure.
+Used only in function *types*, `thin` indicates a function pointer type
+(not a closure) and ensures the function value doesn't capture values from
+its defining scope. Don't use `thin` in function declarations.
 
 ```mojo
 def map[
     T: Copyable, U: Copyable
-](f: def(T) thin -> U, input: List[T]) -> List[U]:
+](f: def(T) thin -> U, input: List[T]) -> List[U]:  # Used as type
     var result: List[U] = []
     for item in input:
         result.append(f(item))
     return result^
 
-# `square` doesn't capture any values, so it is `thin`
+# `square` doesn't capture values. It can be passed to a thin type
 def square(x: Int) -> Int:
     return x * x
 
@@ -536,10 +540,44 @@ def main():
     print(squares)  # Output: [1, 4, 9]
 ```
 
+#### Constrained function types {#constrained-function-types}
+
+A `thin` function type that declares parameters can constrain them with
+trailing `where` clauses, written after the result type. The constraint is part
+of the type: callers must prove it holds for the parameters they bind.
+
+```mojo
+comptime Kernel = def[w: Int](Int) thin -> None where (
+    w > 0, "width must be positive"
+)
+
+def apply[F: Kernel](x: Int):
+    F[4](x)     # ok
+    F[0](x)     # error: violated constraint
+```
+
+Constraints are contravariant. A function satisfies the type when its own
+`where` clause is implied by the type's, or when it has none — the type
+promises its callers more than the function demands. A function that demands
+more than the type promises is rejected.
+
+Only `thin` function types accept a `where` clause. The clause binds to the
+innermost function type, so a declaration-level `where` that follows a
+function-type result needs that result parenthesized:
+
+```mojo
+# The `where` clause constrains the returned function type.
+def inner_constraint[n: Int]() -> def() thin -> None where n > 0: ...
+
+# The `where` clause constrains `outer_constraint` itself.
+def outer_constraint[n: Int]() -> (def() thin -> None) where n > 0: ...
+```
+
 ### `abi("C")` {#abi-c}
 
 Declares that a function uses the C calling convention. Because C has no
-closure mechanism, `abi("C")` always appears together with `thin`:
+closure mechanism, `abi("C")` normally appears together with `thin` in
+function types:
 
 ```mojo
 # `add` is compiled with the C calling convention, so it can be called
@@ -553,12 +591,16 @@ def main():
 ```
 
 :::caution
-You may not combine non-Mojo `abi()` effects with raising functions.
-Raising functions change calling conventions in a non-obvious ways.
+Don't combine non-Mojo `abi()` effects with raising functions.
+Raising functions change calling conventions in non-obvious ways.
+
 The Mojo compiler:
 
 - accepts `def (String) abi("Mojo") raises`
 - rejects `def (String) abi("C") raises`
+
+`abi("Mojo")` is already the default. You don't need to specify it.
+
 :::
 
 ## Return type
@@ -578,7 +620,7 @@ Without `->`, the function returns `None`.
 Certain method names have enforced signatures. The compiler
 checks argument count, conventions, and return types.
 
-### `__init__`
+### Initializers
 
 An initializer must have an `out self` result:
 
@@ -601,10 +643,9 @@ def __init__(self):
     pass
 ```
 
-### Copy constructor
+### Copy initializers
 
-A copy constructor is an `__init__` with a single
-keyword-only argument named `copy`:
+A copy initializer uses a single keyword-only argument named `copy`:
 
 ```mojo
 def __init__(out self, *, copy: Self):
@@ -612,14 +653,27 @@ def __init__(out self, *, copy: Self):
     self.y = copy.y
 ```
 
-The `copy` argument must use the default convention of a readable immutable
-reference. Copy constructors can't raise. Trivial types can't define a copy
-constructor.
+Copy a value with `Type.__init__(copy=value)`, `Type(copy=value)`, or
+`value.copy()`:
 
-### Move constructor
+- The `copy` argument must use the default convention of a readable
+  immutable reference.
+- Copy initializers can't raise.
+- Trivial types can't define a copy initializer.
+- Conforming to `Copyable` or `ImplicitlyCopyable` automatically generates
+  a copy initializer if one isn't already defined.
+- If the type isn't compatible with copying, the compiler rejects the
+  conformance.
 
-A move constructor is an `__init__` with a single
-keyword-only argument named `move`:
+Don't confuse copying with casting. `Type(value)` casts in Mojo.
+`Type(copy=value)` and `value.copy()` copy.
+
+Prefer the explicit `.copy()` call over the `copy` keyword argument form
+for idiomatic Mojo style.
+
+### Move initializers
+
+A move initializer uses a single keyword-only argument named `move`:
 
 ```mojo
 def __init__(out self, *, deinit move: Self):
@@ -627,40 +681,44 @@ def __init__(out self, *, deinit move: Self):
     self.y = move.y
 ```
 
-The `move` argument must use the `deinit` convention. Move
-constructors can't raise.
+Call `Type.__init__(move=value)` or `Type(move=value)`:
 
-:::note
-`RegisterPassable` types can't define a move constructor.
-They're always movable by copying a register.
-:::
+- The `move` argument must use the `deinit` convention.
+- Move initializers can't raise.
+- `RegisterPassable` types can't define a move initializer.
+  They're always movable by copying a register.
 
-### `__del__()`
+### Deinitializers
 
-The destructor takes `deinit self`:
+A deinitializer takes `deinit self`:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     _release(self.handle)
 ```
 
-Destructors can't raise. Trivial types can't define a
-destructor.
+- Deinitializers can't raise.
+- Trivial types can't define a deinitializer.
+
+You can call `value.__deinit__()` explicitly but the compiler calls it
+automatically at the value's last use, via ASAP destruction. Prefer
+custom deinitializers for [explicit
+destruction](/docs/manual/lifecycle/death/#explicitly-destroyed-types).
 
 ## Nested functions
 
 Functions can be defined inside other functions. Nested
-functions capture values from the enclosing scope:
+functions can capture values from the enclosing scope as *closures*:
 
 ```mojo
 def outer(x: Int) -> Int:
-    def inner() {imm} -> Int:
+    def inner() {imm} -> Int:  # Read-only references (`imm`) to outer scope
         return x + 1
     return inner()
 ```
 
-The compiler resolves nested function bodies immediately so
-captures bind correctly.
+The compiler resolves nested function bodies immediately so captures bind
+correctly.
 
 ## Static methods
 
@@ -682,14 +740,14 @@ def main():
 
 ## Function overloads {#function-overloads}
 
-<!-- VERIFIED: OverloadFitness::isBetter in OverloadFitness.cpp,
+{/* VERIFIED: OverloadFitness::isBetter in OverloadFitness.cpp,
      filterForBestCandidates in OverloadSet.cpp, ParamInf.cpp.
      "Cannot overload on return type only" diagnostic:
      DeclResolution.cpp around the `redefinition of function` emit.
      Raises-only redefinition behavior: verified by experiment to
      emit `redefinition of function '<name>' with identical
      signature` from the same DeclResolution.cpp path; `raises` is
-     not part of the signature for overload-set purposes. -->
+     not part of the signature for overload-set purposes. */}
 
 A *function overload* is one of two or more function declarations
 that share a name but differ in their signature. The compiler picks
@@ -753,7 +811,7 @@ Overload resolution looks at:
 - The type of each argument and each compile-time parameter.
 - The argument conventions on each argument.
 - Whether the candidate is an instance method or `@staticmethod`.
-- Whether a constructor is `@implicit`.
+- Whether a deinitializer is `@implicit`.
 
 Overload resolution doesn't look at the return type or any other
 context surrounding the call.
@@ -792,8 +850,8 @@ tiebreakers:
 5. Pick the candidate that is an instance method over a
    `@staticmethod` with the same name.
 
-6. Pick the candidate that is a non-`@implicit` constructor
-   over an `@implicit` one.
+6. Pick the candidate that is a non-implicit deinitializer
+   over an implicit one.
 
 If two candidates are equally good after these steps, the call
 is ambiguous. The compiler rejects it.
@@ -852,9 +910,9 @@ def main():
 
 :::caution Sharp edge
 For `TrivialRegisterPassable` types, the transfer operator `^` is a no-op.
-As a result, when using a trivial register type like `Int`, `Float64`, or
-similar, `(c^).which()` becomes `c.which()`, so `ref self` always wins. The
-compiler will warn you but won't reject your code.
+When using a trivial register type like `Int`, `Float64`, or similar,
+`(c^).which()` becomes `c.which()`. The compiler will warn you but won't
+reject your code.
 
 The compile-time conformance check in the `where` clause above makes a
 non-trivial constraint explicit. It filters the `var self` overload out for
@@ -960,10 +1018,8 @@ def main():
     take_param[1, 2]()
 ```
 
-Resolve by binding one parameter to a literal type that only one
-overload accepts (for example, `take_param[1, "hi"]()` against a
-`b: String` overload), by adding a non-overlapping parameter, or
-by giving the overloads distinct names.
+To resolve, remove the ambiguity or remove the overload by renaming one
+version.
 
 ### Return types don't disambiguate
 
@@ -1007,9 +1063,9 @@ raising version take a different argument shape.
 - Use overloads when each version implements the same
   operation on a different shape of input. Don't overload to mean
   different things under the same name.
-- Don't rely on two `@implicit` constructors being reachable from the
-  same source type. Cast at the call site or make one constructor
-  non-`@implicit`.
+- Don't rely on two implicit initializers being reachable from the
+  same source type. Cast at the call site or make one initializer
+  non-implicit.
 - Prefer overloading on argument *type* over overloading on
   convention. Convention-based overloads work, but they're easy to
   misread.

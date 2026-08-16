@@ -46,9 +46,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Module, TensorType
 
-MAX_RANK = (
-    5  # Matches op_utils.MAX_RANK; sweep ranks 1..MAX_RANK for linear/nearest.
-)
+MAX_RANK = gc_compile.MAX_RANK  # Sweep ranks 1..MAX_RANK for linear/nearest.
 
 # Resize is CPU-only, so gc_compile.CPU_FLOAT_DTYPES *is* its dtype set --
 # same policy as matmul_gc/unary_elementwise_gc/elementwise_binary_gc/
@@ -273,8 +271,9 @@ def resize_model(
 
     Raises:
         KeyError: If the target is outside the supported set (non-CPU device,
-            unsupported dtype, or rank > 5); or, with
-            ``MAX_EAGER_OP_PRECOMPILE=1``, if a supported target was not swept.
+            unsupported dtype, or rank > 5).
+        EagerLazyCompileDisallowed: If a supported target is not already
+            compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """
     key = _graph_name(op_type, device, dtype, rank, variant)
     model = _FAMILY.cache.get(key)

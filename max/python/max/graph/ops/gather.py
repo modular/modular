@@ -103,15 +103,30 @@ def gather_nd(
         from max.graph import DeviceRef, Graph, TensorType, ops
 
         device = DeviceRef.CPU()
-        input_type = TensorType(DType.float32, [2, 3, 4, 5, 6], device)
-        indices_type = TensorType(DType.int64, [2, 7, 3], device)
-        with Graph(
-            "gather_nd", input_types=[input_type, indices_type]
-        ) as graph:
-            input, indices = (value.tensor for value in graph.inputs)
+        input_shape = ["a", "b", "c", "d", "e"]
+        indices_shape = ["a", "f", 3]
+        input_type = TensorType(DType.bfloat16, input_shape, device=device)
+        indices_type = TensorType(DType.int32, indices_shape, device=device)
+        with Graph("gather_nd", input_types=[input_type, indices_type]) as graph:
+            input, indices = graph.inputs
             gathered = ops.gather_nd(input, indices, batch_dims=1)
-            graph.output(gathered)
-        # gathered.shape == [2, 7, 6]
+            # gathered.type has shape ["a", "f", "e"]
+
+    .. invisible-code-block: python
+
+        assert gathered.type.shape == ["a", "f", "e"]
+        assert gathered.type.dtype == DType.bfloat16
+
+    In this example:
+
+    - ``batch_dims`` is 1, so ``input`` and ``indices`` share the leading
+      "a" dimension.
+    - ``indices`` has an additional dimension "f" which becomes part of
+      the output.
+    - The last dimension of ``indices`` (size 3) is the index vector;
+      each value selects into "b", "c", and "d" of ``input``.
+    - Since ``batch_dims (1) + index size (3) < input.rank (5)``, the
+      remaining dimension "e" is sliced into the output.
 
     Args:
         input: The input symbolic tensor to gather from.

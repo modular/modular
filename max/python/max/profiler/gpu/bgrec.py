@@ -297,7 +297,7 @@ class BackgroundRecorder:
 
         with BackgroundRecorder() as recorder:
             # Run your GPU workload here
-            run_inference_session()
+            sum(range(1_000_000))
 
         # Access collected time-series data
         for i, snapshot in enumerate(recorder.stats):

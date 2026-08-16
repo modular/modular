@@ -15,9 +15,9 @@ from std.math import ceildiv
 from std.random import random_si64
 
 from std.gpu import WARP_SIZE, block_idx
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import mma
-from std.gpu.compute.mma_util import (
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import mma
+from max.gpu.compute.mma_util import (
     load_matrix_a,
     load_matrix_b,
     store_matrix_d,
@@ -34,10 +34,13 @@ def mma_kernel_fp32_tf32(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 8
     comptime mma_k = 8
@@ -71,10 +74,13 @@ def mma_kernel_fp32_bf16(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 8
     comptime mma_k = 8
@@ -108,10 +114,13 @@ def mma_kernel_fp32_bf16_2(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 8
     comptime mma_k = 16
@@ -145,10 +154,13 @@ def mma_kernel_fp32_fp16(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 8
     comptime mma_k = 8
@@ -182,10 +194,13 @@ def mma_kernel_fp16_fp16(
     c_ptr: UnsafePointer[Float16, MutAnyOrigin],
     a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var m = Int(m_dev)
+    var n = Int(n_dev)
+    var k = Int(k_dev)
     comptime mma_m = 16
     comptime mma_n = 8
     comptime mma_k = 8
@@ -263,16 +278,16 @@ def run_mma_fp32_tf32(
     comptime MMA_K = 8
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_tf32
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
@@ -315,7 +330,7 @@ def run_mma_fp32_tf32(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -330,9 +345,9 @@ def run_mma_fp32_tf32(
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -434,16 +449,16 @@ def run_mma_fp32_bf16(
     comptime MMA_K = 8
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
@@ -483,7 +498,7 @@ def run_mma_fp32_bf16(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -498,9 +513,9 @@ def run_mma_fp32_bf16(
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -601,16 +616,16 @@ def run_mma_fp32_bf16_2(
     comptime MMA_K = 8
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_bf16_2
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
@@ -650,7 +665,7 @@ def run_mma_fp32_bf16_2(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -665,9 +680,9 @@ def run_mma_fp32_bf16_2(
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -768,16 +783,16 @@ def run_mma_fp32_fp16(
     comptime MMA_K = 8
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp32_fp16
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
@@ -817,7 +832,7 @@ def run_mma_fp32_fp16(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -832,9 +847,9 @@ def run_mma_fp32_fp16(
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -935,16 +950,16 @@ def run_mma_fp16_fp16(
     comptime MMA_K = 8
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_mma(ctx: DeviceContext) raises:
         comptime kernel = mma_kernel_fp16_fp16
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
         )
@@ -984,7 +999,7 @@ def run_mma_fp16_fp16(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -999,9 +1014,9 @@ def run_mma_fp16_fp16(
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )

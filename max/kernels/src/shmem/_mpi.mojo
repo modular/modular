@@ -43,7 +43,8 @@ def _init_mpi_dylib() -> OwnedDLHandle:
     #   export MODULAR_SHMEM_LIB_DIR="/path/to/venv/lib"
     # will dlopen the library from:
     #   /path/to/venv/lib/libmpi.so
-    if dir_name := getenv("MODULAR_SHMEM_LIB_DIR"):
+    var dir_name = getenv("MODULAR_SHMEM_LIB_DIR")
+    if dir_name:
         lib = String(Path(dir_name) / lib)
 
     var flags = RTLD.NOW | RTLD.GLOBAL
@@ -199,7 +200,7 @@ def get_mpi_comm_world() raises -> MPIComm:
     """
     var handle = MPI_LIBRARY.get_or_create_ptr()[].borrow()
     var comm_world_ptr = handle.get_symbol[OpaquePointer[MutUntrackedOrigin]](
-        cstr_name="ompi_mpi_comm_world".as_c_string_slice().unsafe_ptr()
+        cstr_name="ompi_mpi_comm_world".as_c_string_slice()
     )
     if not comm_world_ptr:
         raise Error("symbol ompi_mpi_comm_world not found in MPI library")

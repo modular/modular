@@ -208,9 +208,22 @@ struct _StridedRange[dtype: DType = DType.int](
         step: Scalar[Self.dtype],
         idx: Int = 0,
     ):
-        self.start = start
-        self.end = end
-        self.step = step
+        comptime if Self.dtype.is_integral():
+            # A zero step has no direction, so the range is empty. Collapsing it
+            # to a canonical empty range here keeps `__next__` from stepping in
+            # place forever, and keeps `__len__`, `bounds()`, and `__reversed__`
+            # from dividing by the step. Doing it once at construction also
+            # keeps the check out of the iteration loop.
+            var degenerate = step == 0
+            self.start = select(degenerate, Scalar[Self.dtype](0), start)
+            self.end = select(degenerate, Scalar[Self.dtype](0), end)
+            self.step = select(degenerate, Scalar[Self.dtype](1), step)
+        else:
+            # A zero float step is already empty by `_fp_range_count`, and the
+            # `fma` cursor needs the values as given.
+            self.start = start
+            self.end = end
+            self.step = step
         self.idx = idx
 
     @always_inline
@@ -585,10 +598,8 @@ def range[
         print(t)
     ```
 
-    **A zero step yields an empty float range.** For integer element types a
-    zero step can still iterate forever when the bounds and step disagree (a
-    signed range with `end < start`, or an unsigned range with `start < end`),
-    so pass a nonzero step for integer ranges.
+    **A zero step yields an empty range.** A step of zero has no direction, so
+    the range has no elements regardless of the bounds.
 
     Parameters:
         dtype: The `DType` of the sequence elements. Inferred from the arguments.
@@ -598,8 +609,7 @@ def range[
             inclusive upper bound when stepping backward.
         end: The exclusive bound in the direction of the step.
         step: The increment per iteration. A positive step counts up, and a
-            negative step counts down. A zero step yields an empty float range;
-            avoid it for integer ranges.
+            negative step counts down. A zero step yields an empty range.
 
     Returns:
         A strided scalar range over `[start, end)` by `step`.

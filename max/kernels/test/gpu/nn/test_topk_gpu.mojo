@@ -14,7 +14,7 @@
 from std.math import ceildiv, iota, nan
 from std.random import random_float64
 
-from std.algorithm.reduction import max as reduce_max
+from max.algorithm.reduction import max as reduce_max
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
@@ -23,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from layout import (
     Coord,
@@ -53,15 +53,14 @@ comptime PRINT_OUTPUT = False
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        bencher_iter_custom[kernel_launch](m, ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(
@@ -188,7 +187,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             _topk_gpu[sampling=sampling, largest=largest](
                 ctx,
@@ -268,7 +267,7 @@ def test_case_batched[
         comptime if DEBUG_BENCH:
 
             @always_inline
-            @parameter
+            @__parameter
             def run_func_cpu(ctx: DeviceContext) raises:
                 _top_k_cpu[
                     dtype=dtype,
@@ -487,7 +486,7 @@ def test_case_multi_rank[
     _ = K_device_buffer^
 
 
-@parameter
+@__parameter
 def fill_random[
     dtype: DType
 ](
@@ -503,7 +502,7 @@ def fill_random[
         buffer.raw_store(i, random_value.cast[dtype]())
 
 
-@parameter
+@__parameter
 def fill_constant[
     dtype: DType
 ](
@@ -519,7 +518,7 @@ def fill_constant[
             buffer.raw_store(i, 0.0)
 
 
-@parameter
+@__parameter
 def fill_nan[
     dtype: DType
 ](
@@ -535,7 +534,7 @@ def fill_nan[
         buffer.raw_store(i, nan_val)
 
 
-@parameter
+@__parameter
 def fill_iota[
     dtype: DType
 ](

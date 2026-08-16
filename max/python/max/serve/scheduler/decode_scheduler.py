@@ -28,7 +28,7 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
-    PagedKVCacheManager,
+    PagedKVCacheManagerInterface,
     TransferReqData,
 )
 from max.pipelines.lib import (
@@ -94,7 +94,7 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        kv_cache: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManagerInterface,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
@@ -134,6 +134,15 @@ class DecodeScheduler(Scheduler):
             kv_cache=kv_cache,
             batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
             dp_padder=dp_padder,
+            # A prefill_reqs entry doesn't free its own blocks on
+            # resolution -- it converts into a tg_reqs reservation on the
+            # same blocks -- but that reservation is then preemptible like
+            # any other TG request, so its presence still means a stuck
+            # allocation isn't necessarily a dead end. inflight_transfers
+            # is a strict subset of prefill_reqs (an entry only exists
+            # there once its matching prefill_reqs entry does), so
+            # counting prefill_reqs alone covers both.
+            get_inflight_kv_transfer_count=self._inflight_kv_transfer_count,
         )
         self.scheduler_logger = SchedulerLogger()
         self._last_batch_activity: float = time.monotonic()
@@ -268,9 +277,7 @@ class DecodeScheduler(Scheduler):
             and (
                 self.kv_cache is None
                 or any(
-                    self.kv_cache.get_num_used_pages(replica_idx)
-                    / self.kv_cache.get_num_pages(replica_idx)
-                    < 0.9
+                    self.kv_cache.block_count(replica_idx).used_pct < 90
                     for replica_idx in range(
                         self.scheduler_config.data_parallel_degree
                     )
@@ -286,7 +293,7 @@ class DecodeScheduler(Scheduler):
             replica_idx = self.batch_constructor.get_next_replica_idx(
                 external_requests_per_replica=self.prefill_reqs_per_replica
             )
-            self.kv_cache.claim(req_id, replica_idx=replica_idx)
+            self.kv_cache.claim(context, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
@@ -294,10 +301,7 @@ class DecodeScheduler(Scheduler):
             # the prefill node generates extra KV entries for draft tokens,
             # so we must allocate matching blocks on the decode side.
             try:
-                load_event = self.kv_cache.alloc(
-                    context,
-                    replica_idx=replica_idx,
-                )
+                load_event = self.kv_cache.alloc(context)
                 # TODO: cordon the request (like the CE batch constructor) so the
                 # onload overlaps GPU execution instead of blocking here.
                 load_event.synchronize()
@@ -305,13 +309,11 @@ class DecodeScheduler(Scheduler):
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.kv_cache.release(req_id, replica_idx=replica_idx)
+                self.kv_cache.release(context)
                 break
 
             # Send to the Prefill Node
-            dst_idxs = self.kv_cache.get_req_blocks(
-                req_id, replica_idx=replica_idx
-            )
+            dst_idxs = self.kv_cache.get_req_blocks(context)
             self.prefill_reqs[req_id] = PendingPrefill(
                 context=context,
                 replica_idx=replica_idx,
@@ -338,7 +340,7 @@ class DecodeScheduler(Scheduler):
 
                 # Release the KV cache blocks that were allocated on the
                 # decode GPU before sending this request to prefill
-                self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
+                self.kv_cache.release(data)
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -397,7 +399,7 @@ class DecodeScheduler(Scheduler):
         for req_id in expired_prefill:
             pending = self.prefill_reqs.pop(req_id)
             self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-            self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+            self.kv_cache.release(pending.context)
             self._send_cancel_to_prefill(req_id, pending.context)
             self.response_queue.put_nowait(
                 {req_id: SchedulerResult.cancelled()}
@@ -430,7 +432,7 @@ class DecodeScheduler(Scheduler):
             if req_id in self.prefill_reqs:
                 pending = self.prefill_reqs.pop(req_id)
                 self.prefill_reqs_per_replica[pending.replica_idx] -= 1
-                self.kv_cache.release(req_id, replica_idx=pending.replica_idx)
+                self.kv_cache.release(pending.context)
                 self._send_cancel_to_prefill(req_id, pending.context)
             self.response_queue.put_nowait(
                 {req_id: SchedulerResult.cancelled()}
@@ -494,6 +496,18 @@ class DecodeScheduler(Scheduler):
 
         # Manage for cancelled requests
         self._handle_cancelled_requests()
+
+    def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
+        """Count of prefill_reqs entries on this replica -- inflight_transfers
+        is a strict subset (an entry only exists there once its matching
+        prefill_reqs entry does), so counting the superset covers both.
+        Scoped to replica_idx: a reservation on a different replica's
+        device pool can't free blocks on this one."""
+        return sum(
+            1
+            for pending in self.prefill_reqs.values()
+            if pending.replica_idx == replica_idx
+        )
 
     @traced
     def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
@@ -629,7 +643,7 @@ class DecodeScheduler(Scheduler):
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
             else None,
-            batch_execution_time_is_previous=is_overlap_active,
+            overlap_active=is_overlap_active,
             completed_batch_stats=self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
             else None,

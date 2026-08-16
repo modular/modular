@@ -25,17 +25,22 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
-from std.gpu.host.info import is_cpu, is_gpu
+from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, row_major
+from nn.normalization import (
+    rms_norm_fused_quantize_dynamic_scaled_fp8,
+)
+from std.utils.coord import ComptimeInt
+from std.utils.index import IndexList
 from linalg.fp8_quantization import (
     quantize_dynamic_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
-from linalg.fp4_quantization import (
+from linalg.block_scaled_quantization import (
     quantize_dynamic_block_scaled,
     grouped_quantize_dynamic_scaled_fp4_async,
     block_scales_interleave,
@@ -43,13 +48,15 @@ from linalg.fp4_quantization import (
 )
 from linalg.matmul.gpu.amd import (
     Shuffler,
-    mxfp4_grouped_matmul_amd,
+    block_scaled_grouped_matmul_amd,
 )
 from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.fp6_utils import FP6Format
+from linalg.fp6_quantization import quantize_mxfp6_amd
+from linalg.mxfp6_dequant import dequant_mxfp6
 from nn.bicubic import resize_bicubic
 from nn.kv_cache import generic_get_paged_cache
 from nn.kv_cache_ragged import unfused_qkv_matmul_ragged_paged_gguf_quantized
-from nn.normalization import rms_norm_fused_fp8
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -121,32 +128,79 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        @parameter
+        var out_t = output.to_tile_tensor[DType.int64]()
+
+        # The scale output holds one value per input row, laid out
+        # [1, rows]. View it as rank-1 and index it by row number.
+        var in_shape = input.shape()
+        var rows = in_shape.flattened_length() // in_shape[rank - 1]
+        var scale_t = TileTensor(
+            scales.to_tile_tensor[DType.int64]()._storage,
+            row_major(Coord(rows)),
+        )
+
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            input_dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        rms_norm_fused_fp8[
-            input_dtype,
-            output_dtype,
-            scale_dtype,
-            rank,
-            input_fn,
-            target=target,
-        ](
-            input.shape(),
-            output.to_tile_tensor[DType.int64](),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-            scale_ub,
-            scales.to_tile_tensor[DType.int64](),
-        )
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {var out_t}:
+            out_t.store_linear[width=width, alignment=alignment](
+                rebind[IndexList[out_t.rank]](coords), val
+            )
+
+        @always_inline
+        def scale_fn[
+            coord_rank: Int
+        ](coords: IndexList[coord_rank], val: Scalar[scale_dtype]) {
+            var scale_t, var in_shape
+        }:
+            var row = 0
+            comptime for i in range(rank - 1):
+                row = row * in_shape[i] + coords[i]
+            scale_t.store_linear[width=1, alignment=1](IndexList[1](row), val)
+
+        # Static row width (when known) enables the register-cached row path.
+        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if cols != UNKNOWN_VALUE:
+            rms_norm_fused_quantize_dynamic_scaled_fp8[
+                input_dtype, output_dtype, scale_dtype, rank, target=target
+            ](
+                input_fn,
+                output_fn,
+                scale_fn,
+                input.shape_coord(),
+                ComptimeInt[cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                weight_offset,
+                scale_ub,
+                ctx,
+            )
+        else:
+            rms_norm_fused_quantize_dynamic_scaled_fp8[
+                input_dtype, output_dtype, scale_dtype, rank, target=target
+            ](
+                input_fn,
+                output_fn,
+                scale_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                weight_offset,
+                scale_ub,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function(
@@ -901,6 +955,93 @@ struct Struct_dequant_mxfp4:
         )
 
 
+@extensibility.register("mo.quantize.dynamic.block.scaled.mxfp6")
+struct Struct_quantize_dynamic_block_scaled_mxfp6:
+    """Registers the `mo.quantize.dynamic.block.scaled.mxfp6` graph op."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        in_dtype: DType,
+        //,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), (
+            "MXFP6 quantization requires a GPU with native block-scaled support"
+        )
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+
+        quantize_mxfp6_amd[FP6Format(FP6_FORMAT)](
+            context,
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+        )
+
+
+@extensibility.register("mo.dequant.mxfp6")
+struct Struct_dequant_mxfp6:
+    """Registers the `mo.dequant.mxfp6` graph op with the graph compiler."""
+
+    @always_inline
+    @staticmethod
+    def execute[
+        out_type: DType,
+        in_type: DType,
+        scales_type: DType,
+        //,
+        FP6_FORMAT: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        input: InputTensor[dtype=in_type, rank=2, ...],
+        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "MXFP6 dequant only supports GPUs"
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "MXFP6 dequant output must be bfloat16 or float8_e4m3fn"
+        comptime assert (
+            in_type == DType.uint8
+        ), "MXFP6 dequant input must be uint8 (packed FP6)"
+        comptime assert (
+            scales_type == DType.float8_e8m0fnu
+        ), "MXFP6 dequant scales must be float8_e8m0fnu"
+        comptime assert FP6_FORMAT in (
+            0,
+            1,
+        ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
+
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var scales_tt = scales.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[DType.int64]()
+
+        var num_rows = Int(in_tt.dim[0]())
+        var num_cols = (Int(in_tt.dim[1]()) * 8) // 6
+
+        dequant_mxfp6[FP6Format(FP6_FORMAT)](
+            context,
+            out_tt,
+            in_tt,
+            scales_tt,
+            num_rows=num_rows,
+            num_cols=num_cols,
+        )
+
+
 @extensibility.register("mo.interleave.block.scales")
 struct Struct_interleave_block_scales:
     """Registers the `mo.interleave.block.scales` graph op with the graph compiler.
@@ -930,12 +1071,12 @@ struct Struct_interleave_block_scales:
         )
 
 
-@extensibility.register("mo.mxfp4.preshuffle.b.5d")
-struct Struct_mxfp4_preshuffle_b_5d:
+@extensibility.register("mo.block.scaled.preshuffle.b.5d")
+struct Struct_block_scaled_preshuffle_b_5d:
     """Run the AMD CDNA4 MXFP4 B 5D preshuffle as a custom op.
 
     Used to pre-bake weights into `Shuffler[E].b_5d_grouped_layout` (the
-    layout the `mxfp4_grouped_matmul_amd_preb` reader expects) without
+    layout the `block_scaled_grouped_matmul_amd_preb` reader expects) without
     paying the >1 h CPU-side numpy shuffle on every model load.
     """
 
@@ -950,7 +1091,7 @@ struct Struct_mxfp4_preshuffle_b_5d:
     ) raises:
         comptime assert is_gpu[
             target
-        ](), "mo.mxfp4.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
+        ](), "mo.block.scaled.preshuffle.b.5d is GPU-only (AMD CDNA4 consumer)"
 
         var raw_tt = input.to_tile_tensor[DType.int64]()
         var dst_tt = output.to_tile_tensor[DType.int64]()
@@ -962,14 +1103,14 @@ struct Struct_mxfp4_preshuffle_b_5d:
         )
 
 
-@extensibility.register("mo.mxfp4.preshuffle.scale.4d_per_expert")
-struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
+@extensibility.register("mo.block.scaled.preshuffle.scale.4d_per_expert")
+struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     """Per-step A-scale preshuffle for the AMD CDNA4 preb grouped matmul.
 
     Takes row-major E8M0 A-scales `[total_tokens, K_SCALES]` and writes
     cell-packed scales into per-expert fixed-stride slots of size
     `max_padded_M = align_up(max_num_tokens_per_expert, 32)`. The
-    `mxfp4_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
+    `block_scaled_grouped_matmul_amd_preb` kernel reads slot `e * max_padded_M`
     for expert slot `e`. Inactive slots and pad rows are left untouched
     by this kernel; the matmul's per-expert tight V# bound guards
     out-of-range reads.
@@ -989,7 +1130,7 @@ struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
     ) raises:
         comptime assert is_gpu[
             target
-        ](), "mo.mxfp4.preshuffle.scale.4d_per_expert is GPU-only"
+        ](), "mo.block.scaled.preshuffle.scale.4d_per_expert is GPU-only"
 
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
         # byte-level). Bitcast the input/output tile pointers so dtype
@@ -997,10 +1138,10 @@ struct Struct_mxfp4_preshuffle_scale_4d_per_expert:
         var raw_e8 = input.to_tile_tensor[DType.int64]()
         var dst_e8 = output.to_tile_tensor[DType.int64]()
         var raw_tt = TileTensor[mut=False](
-            raw_e8.ptr.bitcast[Scalar[DType.uint8]](), raw_e8.layout
+            raw_e8._storage.bitcast[Scalar[DType.uint8]](), raw_e8.layout
         )
         var dst_tt = TileTensor[mut=True](
-            dst_e8.ptr.bitcast[Scalar[DType.uint8]](), dst_e8.layout
+            dst_e8._storage.bitcast[Scalar[DType.uint8]](), dst_e8.layout
         )
         var a_off_tt = expert_start_indices.to_tile_tensor[DType.int64]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
@@ -1169,7 +1310,7 @@ struct QuantizeDynamicScaledFloat8:
     """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
-    @parameter
+    @__parameter
     @always_inline
     @staticmethod
     def execute[

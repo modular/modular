@@ -24,7 +24,7 @@ reference (and differs from the input -- the identity-collapse signature).
 
 from std.math import cos, sin
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
 from std.testing import assert_almost_equal, assert_true

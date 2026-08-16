@@ -21,7 +21,7 @@ from std.math import sqrt
 from std.random import rand, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.normalization import *
 from std.utils.index import Index
@@ -101,14 +101,14 @@ def run_one_case(
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
         var idx = data_buf.layout(coords)
         return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
-    @parameter
+    @__parameter
     def identity_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[rn_type, width]) -> None:

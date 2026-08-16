@@ -37,13 +37,16 @@ from _cudnn.infer import (
     cudnnTensorFormat_t,
 )
 from std.algorithm import (
-    elementwise,
-    sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from std.gpu.host import DeviceContext
+
+from max.algorithm import (
+    elementwise,
+    sync_parallelize,
+)
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     TensorLayout,
@@ -56,8 +59,8 @@ from layout.tensor_storage import TensorStorage
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
-from std.runtime.asyncrt import parallelism_level
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.runtime.asyncrt import parallelism_level
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.utils.index import Index, IndexList
 
@@ -268,7 +271,7 @@ def conv_transpose_shape[
     output_shape[0] = batch_size
     output_shape[input.rank - 1] = output_channels
 
-    @parameter
+    @__parameter
     @always_inline
     def compute_output_spatial_dim(
         input_spatial_dim: Int,
@@ -552,7 +555,7 @@ struct ConvTransposedPacked[
         var num_tasks = num_partitions.flattened_length()
 
         @__copy_capture(num_partitions, cf_tile_size)
-        @parameter
+        @__parameter
         def task_func(task_id: Int):
             var partition = get_partition(
                 task_id,
@@ -638,7 +641,7 @@ struct ConvTransposedPacked[
         """Loop over C tiles."""
 
         @always_inline
-        @parameter
+        @__parameter
         def c_tile_iteration(c_tile_offset: Int, c_tile_size: Int):
             self._f_tile_loop[False](n, g, c_tile_offset, c_tile_size)
 
@@ -672,7 +675,7 @@ struct ConvTransposedPacked[
         comptime micro_kernel_f_size = micro_kernel_width * simd_size
 
         @always_inline
-        @parameter
+        @__parameter
         def f_tile_iteration[size: Int](f_tile_offset: Int, f_tile_size: Int):
             self.input_space_loop[
                 micro_kernel_height, size // simd_size, False, last_c_tile
@@ -840,9 +843,9 @@ struct ConvTransposedPacked[
         last_c_tile: Bool,
     ](
         self,
-        output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmUnsafePointer[Scalar[input_dt], _],
-        filter: ImmUnsafePointer[Scalar[filter_dt], _],
+        output: UnsafePointer[mut=True, Scalar[output_dt], _],
+        input: UnsafePointer[Scalar[input_dt], _],
+        filter: UnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -870,7 +873,7 @@ struct ConvTransposedPacked[
                 -self.conv_shape.pad_w[0] + self.conv_shape.wo() * ho
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                 update_w_tile_2d[
@@ -921,9 +924,9 @@ struct ConvTransposedPacked[
         filter_dt: DType,
     ](
         self,
-        output: MutUnsafePointer[Scalar[output_dt], _],
-        input: ImmUnsafePointer[Scalar[input_dt], _],
-        filter: ImmUnsafePointer[Scalar[filter_dt], _],
+        output: UnsafePointer[mut=True, Scalar[output_dt], _],
+        input: UnsafePointer[Scalar[input_dt], _],
+        filter: UnsafePointer[Scalar[filter_dt], _],
         n: Int,
         first_c_tile_in_group: Bool,
         c_tile_size: Int,
@@ -958,7 +961,7 @@ struct ConvTransposedPacked[
                     + self.conv_shape.wo() * (ho + self.conv_shape.ho() * do)
                 )
 
-                @parameter
+                @__parameter
                 @always_inline
                 def work_fn[height: Int, effected_by_padding: Bool](w: Int):
                     update_w_tile_3d[
@@ -1168,9 +1171,9 @@ def update_w_tile_3d[
     input_dt: DType,
     filter_dt: DType,
 ](
-    output: MutUnsafePointer[Scalar[output_dt], _],
-    input: ImmUnsafePointer[Scalar[input_dt], _],
-    filter: ImmUnsafePointer[Scalar[filter_dt], _],
+    output: UnsafePointer[mut=True, Scalar[output_dt], _],
+    input: UnsafePointer[Scalar[input_dt], _],
+    filter: UnsafePointer[Scalar[filter_dt], _],
     _init_output: Bool,
     c_tile_size: Int,
     f_tile_offset: Int,
@@ -1456,7 +1459,7 @@ def pack_filter(
 
         @always_inline
         @__copy_capture(group_start, C, F_per_group, F)
-        @parameter
+        @__parameter
         def pack[f_tile_size: Int](f_tile_start: Int):
             var packed_filter_ptr = (
                 group_start + f_tile_start * window_dims_prod * C
@@ -1567,7 +1570,7 @@ def conv_transposed_cpu[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def description_fn() -> String:
         # fmt: off
         return String(
@@ -1637,7 +1640,7 @@ def conv_transposed_cpu[
 
         # The closure updates a row segment of the output.
         @always_inline
-        @parameter
+        @__parameter
         def elementwise_epilogue[
             rank: Int
         ](coords: IndexList[rank], f_size: Int):
@@ -1673,7 +1676,7 @@ def conv_transposed_cpu[
         comptime if not filter_packed:
             dealloc(
                 ThinAllocation(
-                    unsafe_assume_ownership=packed_filter_ptr
+                    unsafe_owned_ptr=packed_filter_ptr
                 ).unsafe_with_layout(packed_filter_alloc_layout)
             )
 
@@ -1751,7 +1754,7 @@ def conv_transposed_gpu[
         ](coords: Coord) {var}:
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout(coords)
-            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
+            var vec = output_tmp.raw_load[width=_width, alignment=align](idx)
             epilogue(coord_to_index_list(coords), vec)
 
         elementwise[simd_width_of[output_type](), target="gpu"](

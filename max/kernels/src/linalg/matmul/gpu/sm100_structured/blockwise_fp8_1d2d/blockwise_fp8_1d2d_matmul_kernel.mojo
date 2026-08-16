@@ -31,14 +31,14 @@ from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
 from std.gpu import WARP_SIZE, thread_idx
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import (
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.sync import named_barrier, syncwarp
+from max.gpu.sync import named_barrier, syncwarp
 from layout import TensorLayout, TileTensor
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -477,7 +477,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # C tensor for bounds-checked stores
         c_device: Self.CDeviceTile,
         # Number of active experts
-        num_active_experts: Int,
+        num_active_experts: Int32,
         # K dimension for iteration
         K: UInt32,
     ):
@@ -505,6 +505,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             K: K contraction dimension; the inner reduction axis length used
                 to compute `ceildiv(K, BK)` K iterations.
         """
+        var _num_active_experts = Int(num_active_experts)
         Self.validate_config()
 
         # ===== Shared Memory Setup =====
@@ -573,7 +574,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== TMA LOAD WARP =====
         if Self.WarpRole.is_load():
             var load_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             with input_pipeline.producer() as producer:
@@ -607,7 +608,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # epilogue reads TMEM per-K to accumulate in registers).
         if Self.WarpRole.is_mma():
             var mma_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
 
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
@@ -638,7 +639,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         # ===== EPILOGUE WARPS =====
         if Self.WarpRole.is_epilogue():
             var epi_iter = Self.WorkIterator(
-                num_active_experts, a_offsets, expert_ids, expert_scales
+                _num_active_experts, a_offsets, expert_ids, expert_scales
             )
             Self.MmaEpilogueSync.wait()
 

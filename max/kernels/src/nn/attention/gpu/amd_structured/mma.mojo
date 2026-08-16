@@ -21,7 +21,7 @@ shared-memory-to-register load logic for the two sequential attention
 GEMMs (P = Q @ K^T and O += P @ V).
 """
 
-from std.gpu.compute.mma import mma as gpu_mma
+from max.gpu.compute.mma import mma as gpu_mma
 from std.gpu import lane_id, WARP_SIZE
 from std.gpu.intrinsics import ds_read_tr16_b64
 from std.math.uutils import ufloordiv, umod
@@ -504,7 +504,7 @@ struct KVMmaOp[
                         Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
                     ](bk_tile, Int(k), Int(i))
 
-                    @parameter
+                    @__parameter
                     def _read_half[half_idx: Int]() -> SIMD[Self.in_type, 4]:
                         comptime half_off = (
                             half_idx * (Self.MMA_K // 2) * Self.BK

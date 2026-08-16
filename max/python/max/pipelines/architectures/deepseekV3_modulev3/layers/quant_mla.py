@@ -46,20 +46,24 @@ from typing_extensions import Self
 
 from . import quant_ops
 from .quant_linear import QuantizedLinear
-from .quant_ops import QuantAwareTensor
-from .quant_tensor import FP8BlockTensor
+from .quant_tensor import FP8BlockTensor, NVFP4Tensor, QuantAwareTensor
 
 
-def _data(weight: Tensor | FP8BlockTensor) -> Tensor:
-    """Underlying data tensor of a weight (``.data`` for FP8, else itself)."""
-    return weight.data if isinstance(weight, FP8BlockTensor) else weight
+def _data(weight: QuantAwareTensor) -> Tensor:
+    """Underlying data tensor of a weight (``.data`` when quantized, else itself)."""
+    if isinstance(weight, (FP8BlockTensor, NVFP4Tensor)):
+        return weight.data
+    assert isinstance(weight, Tensor)
+    return weight
 
 
-def _scale(weight: Tensor | FP8BlockTensor) -> Tensor | None:
-    """Per-block inverse scales of a weight, or ``None`` for bf16 weights."""
-    return (
-        weight.weight_scale_inv if isinstance(weight, FP8BlockTensor) else None
-    )
+def _scale(weight: QuantAwareTensor) -> Tensor | None:
+    """Per-block weight scales, or ``None`` for bf16 weights."""
+    if isinstance(weight, FP8BlockTensor):
+        return weight.weight_scale_inv
+    if isinstance(weight, NVFP4Tensor):
+        return weight.weight_scale
+    return None
 
 
 class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
@@ -82,6 +86,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         buffer_size: int = 16384,
         graph_mode: str | None = None,
         quant_config: QuantConfig | None = None,
+        quantize_o_proj: bool = True,
     ) -> None:
         super().__init__()
         _role = graph_mode or "auto"
@@ -92,21 +97,6 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             )
 
         self.graph_mode = _role
-        self.quant_config = quant_config
-        self.quantized = quant_ops.is_block_quantized(quant_config)
-        if self.quantized:
-            assert quant_config is not None
-            if not quant_config.input_scale.is_block:
-                raise ValueError(
-                    "Input scale must be block-wise for FP8 "
-                    "QuantizedLatentAttentionWithRope"
-                )
-            assert quant_config.weight_scale.block_size is not None
-            self.weight_block_size: tuple[int, int] | None = (
-                quant_config.weight_scale.block_size
-            )
-        else:
-            self.weight_block_size = None
 
         self.n_heads = num_attention_heads
         self.kv_params = kv_params
@@ -128,8 +118,30 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             scale if scale is not None else math.sqrt(1.0 / self.qk_head_dim)
         )
 
-        def _weight(out_dim: int, in_dim: int) -> Tensor | FP8BlockTensor:
-            return quant_ops.quantized_weight(out_dim, in_dim, quant_config)
+        # In NVFP4 quantized checkpoints, ``q``/``kv`` projections stay bf16
+        # (only ``o_proj`` may be quantized)
+        self.quant_config = quant_config
+        self.quantized = quant_ops.is_fp8_block_quantized(quant_config)
+        if self.quantized:
+            assert quant_config is not None
+            if not quant_config.input_scale.is_block:
+                raise ValueError(
+                    "Input scale must be block-wise for FP8 "
+                    "QuantizedLatentAttentionWithRope"
+                )
+            assert quant_config.weight_scale.block_size is not None
+            self.weight_block_size: tuple[int, int] | None = (
+                quant_config.weight_scale.block_size
+            )
+        else:
+            self.weight_block_size = None
+
+        weight_quant_config = quant_config if self.quantized else None
+
+        def _weight(out_dim: int, in_dim: int) -> QuantAwareTensor:
+            return quant_ops.quantized_weight(
+                out_dim, in_dim, weight_quant_config
+            )
 
         if self.q_lora_rank is not None:
             self.q_a_proj = _weight(self.q_lora_rank, self.hidden_size)
@@ -155,7 +167,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             in_dim=self.n_heads * self.v_head_dim,
             out_dim=self.hidden_size,
             bias=False,
-            quant_config=quant_config,
+            quant_config=quant_config if quantize_o_proj else None,
         )
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
@@ -235,7 +247,7 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         return w_k, w_k_scale
 
     @property
-    def wqkv(self) -> Tensor | FP8BlockTensor:
+    def wqkv(self) -> QuantAwareTensor:
         """Fused ``q_a_proj || kv_a_proj_with_mqa`` (bf16 or FP8)."""
         q = self.q_a_proj if self.q_lora_rank is not None else self.q_proj
         return quant_ops.concat_weights(q, self.kv_a_proj_with_mqa, axis=0)
@@ -304,7 +316,8 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
             )
             attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
             buffer_lengths = mla_prefill_metadata.buffer_lengths
-            attn_kwargs["buffer_length"] = buffer_lengths.to(CPU())
+            buffer_lengths = buffer_lengths.to(CPU())
+            attn_kwargs["buffer_length"] = buffer_lengths
             w_k, w_k_scale = self.w_k
             w_uv, w_uv_scale = self.w_uv
             attn_kwargs["w_k"] = w_k
@@ -382,7 +395,13 @@ def _assign_quant_aware(
     if isinstance(weight, FP8BlockTensor):
         assign(weight.data)
         assign(weight.weight_scale_inv)
+    elif isinstance(weight, NVFP4Tensor):
+        assign(weight.data)
+        assign(weight.weight_scale)
+        assign_replicated_mapping(weight.weight_scale_2)
+        assign_replicated_mapping(weight.input_scale)
     else:
+        assert isinstance(weight, Tensor)
         assign(weight)
 
 

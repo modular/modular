@@ -25,11 +25,11 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from std.algorithm import elementwise
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.algorithm import elementwise
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from layout import (
     Coord,
     Idx,
@@ -183,9 +183,9 @@ def small_MN_gemms[
             c,
             a.as_immut(),
             b.as_immut(),
-            m,
-            n,
-            k,
+            Int32(m),
+            Int32(n),
+            Int32(k),
             grid_dim=(ceildiv(m, config.tile_m), ceildiv(n, config.tile_n)),
             block_dim=config.num_threads,
             attributes=pdl_launch_attributes(pdl_level),
@@ -435,7 +435,7 @@ def matmul_dispatch_sm100[
     comptime if has_precise_f32_gemv:
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
-        @parameter
+        @__parameter
         def _dispatch_split_k[tile_m: Int]() raises:
             gemv_gpu_dispatch[
                 transpose_b=transpose_b,
@@ -655,7 +655,7 @@ def matmul_dispatch_sm100_fp8[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
@@ -672,26 +672,21 @@ def matmul_dispatch_sm100_fp8[
             pdl_level=pdl_level,
         ](c, a, b, ctx)
 
-    @parameter
+    @__parameter
     @always_inline("nodebug")
     def _search[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
-        @always_inline
-        def get_m(x: TuningConfigSM100) {} -> Int:
-            return x.M
-
-        comptime m_values = T.query_values[Int, domain=domain](rule=get_m)
+        comptime m_values = T.query_values[Int, domain=domain](
+            rule=lambda (x: TuningConfigSM100) -> Int: x.M
+        )
 
         comptime for static_m in m_values:
-
-            @always_inline
-            def rule_eq_m(x: TuningConfigSM100) {} -> Bool:
-                return x.M == static_m
-
             if m <= static_m:
-                comptime idx_list = T.query_index[domain=domain](rule=rule_eq_m)
+                comptime idx_list = T.query_index[domain=domain](
+                    rule=lambda (x: TuningConfigSM100) -> Bool: x.M == static_m
+                )
 
                 comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
@@ -707,11 +702,10 @@ def matmul_dispatch_sm100_fp8[
     comptime tuning_list = _get_tuning_list_sm100_fp8[mma_k=MMA_K, bk=BK]()
     comptime tuning_table = Table(tuning_list, "tuning_table_sm100_fp8")
 
-    @always_inline
-    def rule_eq_nk(x: TuningConfigSM100) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
-    comptime nk_idx_list = tuning_table.query_index(rule=rule_eq_nk)
+    comptime nk_idx_list = tuning_table.query_index(
+        rule=lambda (x: TuningConfigSM100) -> Bool: x.K == static_K
+        and x.N == static_N
+    )
 
     # TODO: Re-enable the following tuning dispatch.
     # Make sure `domain(nk_idx_list)` is not empty.
@@ -1108,12 +1102,9 @@ def matmul_dispatch_sm100_bf16[
         _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
     )
 
-    @always_inline
-    def small_MN_gemms_rule(x: TuningConfigSmallMNGemms) {} -> Bool:
-        return x.K == static_K and x.N == static_N
-
     comptime small_MN_gemms_configs = small_MN_gemms_table.find(
-        rule=small_MN_gemms_rule
+        rule=lambda (x: TuningConfigSmallMNGemms) -> Bool: x.K == static_K
+        and x.N == static_N
     )
 
     comptime if small_MN_gemms_configs and c_type in (DType.bfloat16,):
@@ -1285,9 +1276,9 @@ def _vendor_blas_matmul_sm100[
                 c,
                 a,
                 b,
-                m,
-                n,
-                k,
+                Int32(m),
+                Int32(n),
+                Int32(k),
                 grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
             )

@@ -14,7 +14,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from std.atomic import Atomic
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
@@ -22,16 +22,16 @@ def _bump_counter(user_data: OpaquePointer[MutAnyOrigin]):
     """Host-side CUDA callback: atomically increments the counter behind
     `user_data`. Runs on a driver thread with no GIL / CUDA context.
     """
-    var counter_ptr = user_data.bitcast[Scalar[DType.int32]]()
-    _ = Atomic[DType.int32].fetch_add(counter_ptr, 1)
+    var counter_ptr = user_data.unsafe_bitcast[Scalar[DType.int32]]()
+    _ = Atomic[Int32].fetch_add(counter_ptr, 1)
 
 
 def test_enqueue_host_func() raises:
     var ctx = create_test_device_context()
     var stream = ctx.stream()
 
-    var counter = Atomic[DType.int32](0)
-    var counter_ptr = Pointer(to=counter.value).unsafe_bitcast[NoneType]()
+    var counter = Atomic[Int32](0)
+    var counter_ptr = Pointer(to=counter).unsafe_bitcast[NoneType]()
     var counter_opaque = rebind[OpaquePointer[MutAnyOrigin]](counter_ptr)
 
     comptime N = 4

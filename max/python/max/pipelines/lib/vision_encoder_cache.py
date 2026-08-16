@@ -19,10 +19,17 @@ unique image, regardless of how many chunks or requests reference it.
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict, defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
+from typing import (
+    TYPE_CHECKING,
+    Generic,
+    Protocol,
+    TypeVar,
+    runtime_checkable,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -30,6 +37,7 @@ from max.driver import (
     Buffer,
     Device,
     DevicePinnedBuffer,
+    batch_inplace_copy,
     copy_pinned_to_destinations,
 )
 from max.dtype import DType
@@ -39,10 +47,45 @@ from max.pipelines.context import (
     TextContext,
     VLMContextType,
 )
-from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.pipelines.lib.vlm_utils import (
+    compute_multimodal_merge_indices,
+    compute_windowed_merge_indices,
+)
 from max.pipelines.request import RequestID
 from max.profiler import traced
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.interfaces.pipeline_model import ModelInputs
+
+logger = logging.getLogger("max.pipelines")
+
+DEFAULT_VISION_CACHE_BLOCK_TOKENS = 128
+"""Rows per fixed-size block in the block-mode vision encoder cache.
+
+Sized so a typical image (a few hundred merged tokens) spans a handful of
+blocks while a video spans many; per-entry internal fragmentation is at most
+one block.
+"""
+
+
+@dataclass(frozen=True)
+class VisionCachePlan:
+    """Resolved block-mode vision encoder cache reservation.
+
+    Produced by memory estimation when a block budget is reserved and
+    consumed by pipeline construction, which hands it to
+    :class:`VisionEncoderCache` so the block pool allocates exactly what
+    was reserved.
+    """
+
+    bytes_per_device: int
+    """Per-device byte grant, already rounded down to whole blocks."""
+
+    hidden_size: int
+    """Width of one cached embedding row."""
+
+    dtype: DType
+    """Element type of one cached embedding row."""
 
 
 def concat_device_buffers(bufs: list[Buffer]) -> Buffer:
@@ -102,6 +145,144 @@ def _owned_row_slice(src: Buffer, start: int, count: int) -> Buffer:
     )
     slot.inplace_copy_from(src[start : start + count, :])
     return slot
+
+
+class _VisionBlockPool:
+    """Fixed-size block storage backing the vision encoder cache.
+
+    One preallocated ``[num_blocks * block_tokens, hidden]`` Buffer per
+    device, allocated at construction from the memory planner's row spec.
+    Capacity is a byte budget: an entry maps to a span of blocks, so a
+    video spans many blocks and an image a few.
+    """
+
+    def __init__(
+        self,
+        budget_bytes_per_device: int,
+        block_tokens: int,
+        hidden_size: int,
+        dtype: DType,
+        devices: Sequence[Device],
+    ) -> None:
+        assert budget_bytes_per_device > 0
+        assert block_tokens > 0
+        row_bytes = hidden_size * dtype.size_in_bytes
+        num_blocks = budget_bytes_per_device // (block_tokens * row_bytes)
+        if num_blocks <= 0:
+            raise ValueError(
+                f"Vision cache byte budget {budget_bytes_per_device} cannot "
+                f"fit one {block_tokens}-token block "
+                f"({block_tokens * row_bytes} bytes)."
+            )
+        self._block_tokens = block_tokens
+        self._hidden_size = hidden_size
+        self._dtype = dtype
+        self._num_blocks = int(num_blocks)
+        self._pools = [
+            Buffer(
+                shape=[self._num_blocks * block_tokens, hidden_size],
+                dtype=dtype,
+                device=device,
+            )
+            for device in devices
+        ]
+        self._free: list[int] = list(range(self._num_blocks))
+
+    @property
+    def block_tokens(self) -> int:
+        return self._block_tokens
+
+    @property
+    def num_blocks(self) -> int:
+        """Total blocks in the pool."""
+        return self._num_blocks
+
+    @property
+    def num_free_blocks(self) -> int:
+        return len(self._free)
+
+    def blocks_for(self, num_tokens: int) -> int:
+        """Blocks needed to hold ``num_tokens`` rows (ceiling division)."""
+        return -(-num_tokens // self._block_tokens)
+
+    def matches(self, reference: Buffer) -> bool:
+        """Whether a buffer's rows match the pool's planner-provided spec."""
+        return (
+            int(reference.shape[1]) == self._hidden_size
+            and reference.dtype == self._dtype
+        )
+
+    def allocate(self, n: int) -> list[int] | None:
+        """Take ``n`` free blocks, or return None (no side effects) if short."""
+        if n == 0:
+            return []
+        if n > len(self._free):
+            return None
+        ids = self._free[-n:]
+        del self._free[-n:]
+        return ids
+
+    def free(self, block_ids: list[int]) -> None:
+        self._free.extend(block_ids)
+
+    def _spans(
+        self, block_ids: Sequence[int], row_lo: int, row_hi: int
+    ) -> Iterator[tuple[int, int, int]]:
+        """Yield ``(pool_row, chunk_rows, slice_row)`` per overlapping block.
+
+        ``slice_row`` is relative to ``row_lo``.
+        """
+        bt = self._block_tokens
+        slice_row = 0
+        for i in range(row_lo // bt, -(-row_hi // bt)):
+            lo = max(row_lo, i * bt)
+            hi = min(row_hi, (i + 1) * bt)
+            yield block_ids[i] * bt + (lo - i * bt), hi - lo, slice_row
+            slice_row += hi - lo
+
+    def write_rows(
+        self,
+        block_ids: Sequence[int],
+        src: Sequence[Buffer],
+        start: int,
+        num_tokens: int,
+    ) -> None:
+        """Copy ``src[d][start:start + num_tokens]`` into the given blocks."""
+        assert self.matches(src[0]), (
+            "vision encoder output does not match the memory planner's "
+            "get_vision_cache_row_spec"
+        )
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
+        for pool, s in zip(self._pools, src, strict=True):
+            for base, chunk, row in self._spans(block_ids, 0, num_tokens):
+                dsts.append(pool[base : base + chunk, :])
+                srcs.append(s[start + row : start + row + chunk, :])
+        batch_inplace_copy(dsts, srcs)
+
+    def copy_out(
+        self,
+        out: Sequence[Buffer],
+        out_row: int,
+        block_ids: Sequence[int],
+        row_lo: int,
+        row_hi: int,
+    ) -> None:
+        """Copy entry rows ``[row_lo, row_hi)`` to ``out[d]`` at ``out_row``."""
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
+        for pool, o in zip(self._pools, out, strict=True):
+            for base, chunk, row in self._spans(block_ids, row_lo, row_hi):
+                dsts.append(o[out_row + row : out_row + row + chunk, :])
+                srcs.append(pool[base : base + chunk, :])
+        batch_inplace_copy(dsts, srcs)
+
+    def rows_view(
+        self, device_idx: int, block_id: int, row_lo: int, row_hi: int
+    ) -> Buffer:
+        """Block-relative zero-copy view of rows ``[row_lo, row_hi)``."""
+        base = block_id * self._block_tokens
+        return self._pools[device_idx][base + row_lo : base + row_hi, :]
 
 
 @dataclass
@@ -175,6 +356,27 @@ class SupportsVisionEncoding(Protocol[PackedVisionInputsT]):
         ...
 
 
+@runtime_checkable
+class SupportsPooledVisionMetrics(Protocol):
+    """A pipeline model that owns its vision/video encoder cache internally.
+
+    Most models encode images through :class:`SupportsVisionEncoding`, so the
+    pipeline owns the :class:`VisionEncoderCache` and drains its metrics
+    directly. A model that instead builds and drives its own cache (e.g. to
+    handle video, which :class:`SupportsVisionEncoding` doesn't cover)
+    implements this protocol so the pipeline's ``batch_vision_metrics``/
+    ``batch_video_metrics`` can still reach it.
+    """
+
+    def pop_vision_metrics(self) -> VisionEncoderMetrics | None:
+        """Returns and clears this model's per-batch image encoder metrics."""
+        ...
+
+    def pop_video_metrics(self) -> VideoEncoderMetrics | None:
+        """Returns and clears this model's per-batch video encoder metrics."""
+        ...
+
+
 def derive_counts_from_spans(
     selection: Sequence[tuple[VLMContextType, Sequence[ImageMetadata]]],
 ) -> list[int]:
@@ -231,9 +433,14 @@ def validate_vision_encode_counts(
 
 @dataclass
 class VisionEncoderCacheEntry:
-    """Cached vision encoder output for a single image."""
+    """Cached vision encoder output for a single image.
 
-    embeddings: list[Buffer]
+    Exactly one of ``embeddings`` / ``block_ids`` is set: owned per-device
+    buffers in entry-count mode (and for transient or oversized-fallback
+    entries), or a span of pool blocks in block mode.
+    """
+
+    embeddings: list[Buffer] | None
     """Per-device embeddings, each shape [num_tokens, hidden_size]."""
 
     num_tokens: int
@@ -241,6 +448,9 @@ class VisionEncoderCacheEntry:
 
     ref_count: int = 0
     """Number of active requests referencing this entry."""
+
+    block_ids: list[int] | None = None
+    """Pool blocks holding this entry's rows, in row order (block mode)."""
 
 
 @dataclass
@@ -276,6 +486,45 @@ class VisionEncoderMetrics:
         return self.num_images_cached / self.num_images_total
 
 
+@dataclass
+class VideoEncoderMetrics:
+    """Per-iteration video encoder statistics for one batch.
+
+    Populated by a pipeline model that caches video clips (by content hash,
+    same LRU semantics as :class:`VisionEncoderCache`) and surfaced via
+    :class:`SupportsPooledVisionMetrics` so video encoder cost is attributed
+    separately from the language model forward pass, mirroring
+    :class:`VisionEncoderMetrics`.
+    """
+
+    num_clips_total: int = 0
+    """Clips referenced by video requests in this batch (hits + misses)."""
+
+    num_clips_encoded: int = 0
+    """Clips the video encoder actually ran on this batch (cache misses)."""
+
+    num_clips_cached: int = 0
+    """Clips served from the video encoder cache this batch (cache hits)."""
+
+    frame_counts: list[int] = field(default_factory=list)
+    """Sampled frame count per newly-encoded clip this batch (cache misses
+    only), one entry per clip so callers can observe the distribution rather
+    than only a batch-level total."""
+
+    num_tokens_encoded: int = 0
+    """Merged video tokens produced by the encoder this batch."""
+
+    encoding_time_ms: float = 0.0
+    """Wall-clock time spent running the video encoder this batch."""
+
+    @property
+    def cache_hit_rate(self) -> float:
+        """Fraction of clips served from cache (0.0 when no clips)."""
+        if self.num_clips_total == 0:
+            return 0.0
+        return self.num_clips_cached / self.num_clips_total
+
+
 class VisionEncoderCache(Generic[VLMContextType]):
     """Reference-counted LRU cache for vision encoder outputs.
 
@@ -298,14 +547,51 @@ class VisionEncoderCache(Generic[VLMContextType]):
         )
     """
 
-    def __init__(self, max_entries: int = 256, n_devices: int = 1) -> None:
+    def __init__(
+        self,
+        max_entries: int = 256,
+        n_devices: int = 1,
+        plan: VisionCachePlan | None = None,
+        block_tokens: int = DEFAULT_VISION_CACHE_BLOCK_TOKENS,
+        devices: Sequence[Device] | None = None,
+    ) -> None:
+        """Initializes the cache, allocating any block pool up front.
+
+        Args:
+            max_entries: Entry cap for the legacy entry-count mode; ``0``
+                disables that mode.
+            n_devices: Device count when no ``devices`` list is given.
+            plan: Resolved block reservation from memory estimation;
+                ``None`` keeps the legacy entry-count LRU.
+            block_tokens: Rows per fixed-size block.
+            devices: Devices to allocate one pool on each. Required when a
+                plan is given.
+
+        Raises:
+            ValueError: If a plan is given without ``devices``, or its
+                budget cannot fit one block.
+        """
         self._cache: OrderedDict[int, VisionEncoderCacheEntry] = OrderedDict()
         self._max_entries = max_entries
-        self._n_devices = n_devices
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
         self._empty_indices_cache: list[Buffer] | None = None
         self._scatter_buffers: dict[int, list[Buffer]] = {}
+
+        self._pool: _VisionBlockPool | None = None
+        if plan is not None:
+            if devices is None:
+                raise ValueError(
+                    "A block-mode vision encoder cache requires devices."
+                )
+            self._pool = _VisionBlockPool(
+                plan.bytes_per_device,
+                block_tokens,
+                plan.hidden_size,
+                plan.dtype,
+                devices,
+            )
+        self._n_devices = len(devices) if devices is not None else n_devices
 
         # Per-batch vision encoder metrics, populated during batch
         # preparation and drained by the scheduler once per iteration via
@@ -330,8 +616,8 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
     @property
     def enabled(self) -> bool:
-        """Whether caching is enabled (max_entries > 0)."""
-        return self._max_entries > 0
+        """Whether caching is enabled (a block byte budget or max_entries > 0)."""
+        return self._pool is not None or self._max_entries > 0
 
     @traced
     def insert(
@@ -354,6 +640,12 @@ class VisionEncoderCache(Generic[VLMContextType]):
         )
         if not self.enabled:
             return entry
+        if self._pool is not None:
+            block_entry = self._store_blocks(embeddings, 0, num_tokens)
+            if block_entry is not None:
+                entry = block_entry
+            self._cache[image_hash] = entry
+            return entry
         while len(self._cache) >= self._max_entries:
             if not self._evict_lru():
                 break
@@ -370,6 +662,16 @@ class VisionEncoderCache(Generic[VLMContextType]):
         if entry is not None:
             entry.ref_count += 1
         refs.add(image_hash)
+
+    def _release_ref(self, request_id: RequestID, image_hash: int) -> None:
+        """Release one (request, image) ref, if held."""
+        refs = self._request_refs.get(request_id)
+        if refs is None or image_hash not in refs:
+            return
+        refs.discard(image_hash)
+        entry = self._cache.get(image_hash)
+        if entry is not None:
+            entry.ref_count = max(0, entry.ref_count - 1)
 
     @traced
     def release_request(self, request_id: RequestID) -> None:
@@ -394,10 +696,55 @@ class VisionEncoderCache(Generic[VLMContextType]):
     def _evict_lru(self) -> bool:
         """Evict the least-recently-used entry with ref_count == 0."""
         for key in list(self._cache.keys()):
-            if self._cache[key].ref_count == 0:
+            entry = self._cache[key]
+            if entry.ref_count == 0:
+                if entry.block_ids is not None:
+                    assert self._pool is not None
+                    self._pool.free(entry.block_ids)
                 del self._cache[key]
                 return True
         return False
+
+    def _evict_until_free(self, needed: int) -> bool:
+        """Evict zero-ref LRU entries until ``needed`` pool blocks are free."""
+        assert self._pool is not None
+        if needed > self._pool.num_blocks:
+            return False
+        while self._pool.num_free_blocks < needed:
+            if not self._evict_lru():
+                return False
+        return True
+
+    def _store_blocks(
+        self, src: Sequence[Buffer], start: int, count: int
+    ) -> VisionEncoderCacheEntry | None:
+        """Store rows ``[start, start + count)`` of ``src`` into pool blocks.
+
+        Returns None when the entry cannot fit — larger than the whole pool,
+        or not enough blocks reclaimable behind referenced entries — and
+        callers fall back to an owned entry so an active image is never
+        dropped.
+        """
+        pool = self._pool
+        assert pool is not None
+        needed = pool.blocks_for(count)
+        if not self._evict_until_free(needed):
+            logger.warning(
+                "Vision cache cannot free %d block(s) for a %d-token entry "
+                "(%d total, %d free); storing an owned buffer outside the "
+                "block pool.",
+                needed,
+                count,
+                pool.num_blocks,
+                pool.num_free_blocks,
+            )
+            return None
+        block_ids = pool.allocate(needed)
+        assert block_ids is not None
+        pool.write_rows(block_ids, src, start, count)
+        return VisionEncoderCacheEntry(
+            embeddings=None, num_tokens=count, block_ids=block_ids
+        )
 
     @staticmethod
     def _ensure_image_hashes(
@@ -427,6 +774,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
         not), refs for the cached images are acquired immediately and
         the context is returned.
 
+        Refs for images whose tokens are fully processed are released
+        here: their embeddings live on in the KV cache, so an entry only
+        needs to survive until its consuming chunk completes.
+
         Callers can check ``self.lookup(img.image_hash)`` to distinguish
         cached from uncached images within the returned contexts.
 
@@ -449,6 +800,10 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
             for img in ctx.images:
                 assert img.image_hash is not None
+                if img.end_idx <= ctx.tokens.processed_length:
+                    # Evictable: these tokens now live in the KV cache.
+                    self._release_ref(ctx.request_id, img.image_hash)
+                    continue
                 if self.lookup(img.image_hash) is not None:
                     cached_in_ctx.append(img.image_hash)
                 else:
@@ -471,6 +826,40 @@ class VisionEncoderCache(Generic[VLMContextType]):
         metrics = self._batch_metrics
         self._batch_metrics = None
         return metrics
+
+    @property
+    def total_num_blocks(self) -> int:
+        """Total pool blocks (0 in entry-count mode or before lazy init)."""
+        return self._pool.num_blocks if self._pool is not None else 0
+
+    @property
+    def num_free_or_evictable_blocks(self) -> int:
+        """Blocks free now plus blocks held by unreferenced entries.
+
+        The admission-probe view for a vision-aware scheduler: an allocation
+        of at most this many blocks is guaranteed to succeed.
+        """
+        if self._pool is None:
+            return 0
+        evictable = sum(
+            len(entry.block_ids)
+            for entry in self._cache.values()
+            if entry.ref_count == 0 and entry.block_ids is not None
+        )
+        return self._pool.num_free_blocks + evictable
+
+    def blocks_needed(self, images: Sequence[ImageMetadata]) -> int:
+        """Pool blocks required to cache the not-yet-resident ``images``.
+
+        A pure probe: touches neither LRU order nor ref counts.
+        """
+        if self._pool is None:
+            return 0
+        return sum(
+            self._pool.blocks_for(img.end_idx - img.start_idx)
+            for img in images
+            if img.image_hash is None or img.image_hash not in self._cache
+        )
 
     @traced
     def _cache_and_split(
@@ -499,6 +888,24 @@ class VisionEncoderCache(Generic[VLMContextType]):
             # the current forward uses the encoder output directly, so skipping
             # is output-neutral).
             if not img_hash:
+                continue
+            if self._pool is not None:
+                if img_hash in self._cache:
+                    self._cache.move_to_end(img_hash)
+                else:
+                    # Rows go straight from the encoder output into pool
+                    # blocks; no intermediate owned copy.
+                    entry = self._store_blocks(vision_outputs, start, count)
+                    if entry is None:
+                        entry = VisionEncoderCacheEntry(
+                            embeddings=[
+                                _owned_row_slice(dev_tensor, start, count)
+                                for dev_tensor in vision_outputs
+                            ],
+                            num_tokens=count,
+                        )
+                    self._cache[img_hash] = entry
+                self.acquire(req_id, img_hash)
                 continue
             # Allocate owned copies rather than views so the cache entry does
             # not pin the (variable-size) vision-encoder output buffer.  This
@@ -581,7 +988,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
             embeddings = self._assemble_embeddings(
                 context_batch, n_devices, empty_embeddings
             )
-            indices = compute_multimodal_merge_indices(context_batch)
+            indices = compute_windowed_merge_indices(context_batch)
             return embeddings, indices
 
         # Record an event and synchronize so the vision encoder output
@@ -607,21 +1014,31 @@ class VisionEncoderCache(Generic[VLMContextType]):
             vision_embeds, per_image_token_counts, hashes, req_ids
         )
 
-        # every vision context was a miss and every image
-        # was uncached, so the encoder output is already in order.
+        # A straddling image is encoded in full but indexed only in-window,
+        # so it must take the assembly path.
         n_vision = sum(
             1
             for ctx in context_batch
             if getattr(ctx, "needs_vision_encoding", False)
         )
-        if len(uncached_contexts) == n_vision and all_uncached:
+        fully_in_window = all(
+            ctx.tokens.processed_length <= img.start_idx
+            and img.end_idx <= ctx.tokens.current_position
+            for ctx in uncached_contexts
+            for img in ctx.images
+        )
+        if (
+            len(uncached_contexts) == n_vision
+            and all_uncached
+            and fully_in_window
+        ):
             embeddings = vision_embeds
         else:
             embeddings = self._assemble_embeddings(
                 context_batch, n_devices, empty_embeddings
             )
 
-        indices = compute_multimodal_merge_indices(context_batch)
+        indices = compute_windowed_merge_indices(context_batch)
         return embeddings, indices
 
     @traced
@@ -631,51 +1048,87 @@ class VisionEncoderCache(Generic[VLMContextType]):
         n_devices: int,
         empty_embeddings: list[Buffer],
     ) -> list[Buffer]:
-        """Build final image_embeddings tensor from cache.
+        """Build the active-window image_embeddings tensor from cache.
 
-        Must be called after _cache_and_split() so all images are cached.
-        Concatenates in the same order as image_token_indices:
-        all images from ctx[0], then ctx[1], etc.
+        Emits the rows whose placeholder positions fall inside each
+        context's window ``[processed_length, current_position)``, ordered
+        to match
+        :func:`~max.pipelines.lib.vlm_utils.compute_windowed_merge_indices`.
+        Call after ``_cache_and_split()`` so in-window images are resident.
 
         Returns:
-            Per-device buffers, each [total_image_tokens, hidden_size].
+            Per-device buffers, each ``[window_image_tokens, hidden_size]``.
         """
-        all_device_bufs: list[list[Buffer]] = [[] for _ in range(n_devices)]
-
+        spans: list[tuple[VisionEncoderCacheEntry, int, int]] = []
         for ctx in context_batch:
             if not getattr(ctx, "needs_vision_encoding", False):
                 continue
+            win_lo = ctx.tokens.processed_length
+            win_hi = ctx.tokens.current_position
+            positions = np.asarray(ctx.image_token_indices)
             for img in ctx.images:
+                if img.end_idx <= win_lo or img.start_idx >= win_hi:
+                    continue
+                img_lo = int(np.searchsorted(positions, img.start_idx))
+                img_positions = positions[img_lo : img_lo + img.embedding_rows]
+                row_lo = int(np.searchsorted(img_positions, win_lo))
+                row_hi = int(np.searchsorted(img_positions, win_hi))
+                if row_lo == row_hi:
+                    continue
                 assert img.image_hash is not None
                 entry = self.lookup(img.image_hash)
-                if entry is None:
-                    assert (
-                        img.end_idx <= ctx.tokens.processed_length
-                        or img.start_idx >= ctx.tokens.current_position
-                    ), f"Active in-window image {img.image_hash} not in cache"
-                    count = img.end_idx - img.start_idx
-                    for d in range(n_devices):
-                        base = empty_embeddings[d]
-                        all_device_bufs[d].append(
-                            Buffer.zeros(
-                                shape=[count, int(base.shape[1])],
-                                dtype=base.dtype,
-                                device=base.device,
-                            )
-                        )
-                else:
-                    for d in range(n_devices):
-                        all_device_bufs[d].append(entry.embeddings[d])
+                assert entry is not None, (
+                    f"Active in-window image {img.image_hash} not in cache"
+                )
+                spans.append((entry, row_lo, row_hi))
 
-        if not any(len(dl) > 0 for dl in all_device_bufs):
+        if not spans:
             return empty_embeddings
 
-        # single image return directly, no copy.
-        if all(len(dl) == 1 for dl in all_device_bufs):
-            return [dl[0] for dl in all_device_bufs]
+        # The entry's ref count keeps these rows resident while the
+        # forward reads them.
+        if len(spans) == 1:
+            entry, row_lo, row_hi = spans[0]
+            if entry.embeddings is not None:
+                if row_lo == 0 and row_hi == entry.num_tokens:
+                    return entry.embeddings
+                return [e[row_lo:row_hi, :] for e in entry.embeddings]
+            assert entry.block_ids is not None
+            assert self._pool is not None
+            bt = self._pool.block_tokens
+            if row_lo // bt == (row_hi - 1) // bt:
+                block_id = entry.block_ids[row_lo // bt]
+                lo = row_lo % bt
+                return [
+                    self._pool.rows_view(
+                        d, block_id, lo, lo + (row_hi - row_lo)
+                    )
+                    for d in range(n_devices)
+                ]
 
-        # allocate on device and copy slices in.
-        return [concat_device_buffers(dl) for dl in all_device_bufs]
+        total_rows = sum(hi - lo for _, lo, hi in spans)
+        out = [
+            Buffer(
+                shape=[total_rows, int(base.shape[1])],
+                dtype=base.dtype,
+                device=base.device,
+            )
+            for base in empty_embeddings
+        ]
+        row = 0
+        for entry, row_lo, row_hi in spans:
+            count = row_hi - row_lo
+            if entry.embeddings is not None:
+                for d in range(n_devices):
+                    out[d][row : row + count, :].inplace_copy_from(
+                        entry.embeddings[d][row_lo:row_hi, :]
+                    )
+            else:
+                assert entry.block_ids is not None
+                assert self._pool is not None
+                self._pool.copy_out(out, row, entry.block_ids, row_lo, row_hi)
+            row += count
+        return out
 
     @traced
     def select(
@@ -698,25 +1151,29 @@ class VisionEncoderCache(Generic[VLMContextType]):
         scatter positions OOB-masked.
 
         ``get_uncached_contexts`` scans ``ctx.images`` (all images) rather than
-        ``next_images`` to decide which contexts to return. That is consistent
-        because a fully-processed image (in ``ctx.images`` but not
-        ``next_images``) is always cache-resident: a request holds a ref on
-        every image it has encoded, so the entry can't be evicted while the
-        request is live, and the ``ctx.images`` scan sees it as a hit.
+        ``next_images`` to decide which contexts are candidates, so a context
+        can be a candidate solely because of an uncached image ahead of the
+        window (e.g. a later chunk's image) while every in-window image is a
+        cache hit. Such contexts have an empty miss set and are excluded from
+        the returned selection: there is nothing to encode for them this
+        iteration, and assembly reads their in-window hits from the cache and
+        zero-fills out-of-window images from ``context_batch`` directly.
+        Fully-processed images (in ``ctx.images`` but not ``next_images``)
+        are skipped by that scan and their refs released — their embeddings
+        live on in the KV cache, and assembly zero-fills their rows if the
+        entry is later evicted.
         """
         uncached = self.get_uncached_contexts(context_batch)
-        return [
-            (
-                ctx,
-                [
-                    img
-                    for img in ctx.next_images_in_window
-                    if img.image_hash is None
-                    or self.lookup(img.image_hash) is None
-                ],
-            )
-            for ctx in uncached
-        ]
+        selection: list[tuple[VLMContextType, list[ImageMetadata]]] = []
+        for ctx in uncached:
+            misses = [
+                img
+                for img in ctx.next_images_in_window
+                if img.image_hash is None or self.lookup(img.image_hash) is None
+            ]
+            if misses:
+                selection.append((ctx, misses))
+        return selection
 
     @traced
     def cache_vision_embeddings(

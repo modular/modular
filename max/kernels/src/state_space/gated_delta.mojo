@@ -101,13 +101,12 @@ Outputs:
 
 import std.math
 from std.gpu import (
-    barrier,
     block_idx,
     thread_idx,
 )
-from std.gpu.memory import AddressSpace
+from max.gpu.sync import barrier
 from std.math import rsqrt
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from layout import TensorLayout, TileTensor
 
 
@@ -129,10 +128,10 @@ def gated_delta_recurrence_fwd_gpu[
     slot_idx_LT: TensorLayout,
     input_row_offsets_LT: TensorLayout,
 ](
-    batch_size: Int,
-    num_value_heads: Int,  # nv
-    num_key_heads: Int,  # nk; heads_expansion_ratio = nv / nk
-    key_dim: Int,  # num_key_heads * key_head_dim
+    batch_size: Int32,
+    num_value_heads: Int32,  # nv
+    num_key_heads: Int32,  # nk; heads_expansion_ratio = nv / nk
+    key_dim: Int32,  # num_key_heads * key_head_dim
     recurrence_output: TileTensor[
         work_dtype, recurrence_output_LT, MutUntrackedOrigin
     ],
@@ -244,6 +243,10 @@ def gated_delta_recurrence_fwd_gpu[
         recurrence_output_valuedim_stride: Stride between consecutive
             value-dim elements in `recurrence_output`.
     """
+    var _batch_size = Int(batch_size)
+    var _num_value_heads = Int(num_value_heads)
+    var _num_key_heads = Int(num_key_heads)
+    var _key_dim = Int(key_dim)
     comptime assert (
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
@@ -252,25 +255,29 @@ def gated_delta_recurrence_fwd_gpu[
     var block = Int(block_idx.x)
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
-    var batch_item_idx = block // num_value_heads
-    var value_head_idx = block % num_value_heads
-    if batch_item_idx >= batch_size:
+    var batch_item_idx = block // _num_value_heads
+    var value_head_idx = block % _num_value_heads
+    if batch_item_idx >= _batch_size:
         return
 
     # GQA: map value head to key head.
-    var heads_expansion_ratio = num_value_heads // num_key_heads
+    var heads_expansion_ratio = _num_value_heads // _num_key_heads
     var key_head_idx = value_head_idx // heads_expansion_ratio
 
     # Read the pool slot for this batch item exactly once. The caller
     # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
-    var slot = Int(slot_idx.ptr[batch_item_idx])
+    var slot = Int(slot_idx._storage[batch_item_idx])
 
     # Shared memory: raw Q and K for the current token (one element per kd).
-    var q_raw_s = stack_allocation[
-        KEY_HEAD_DIM, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    var q_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
-    var k_raw_s = stack_allocation[
-        KEY_HEAD_DIM, Scalar[DType.float32], address_space=AddressSpace.SHARED
+    var k_raw_s = unsafe_stack_allocation[
+        KEY_HEAD_DIM,
+        Scalar[DType.float32],
+        address_space=AddressSpace.SHARED,
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
@@ -282,17 +289,21 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        state_col[kd] = Scalar[DType.float32](recurrent_state.ptr[off])
+        state_col[kd] = Scalar[DType.float32](recurrent_state._storage[off])
 
-    var sequence_start_flat_idx = Int(input_row_offsets.ptr[batch_item_idx])
-    var sequence_end_flat_idx = Int(input_row_offsets.ptr[batch_item_idx + 1])
+    var sequence_start_flat_idx = Int(
+        input_row_offsets._storage[batch_item_idx]
+    )
+    var sequence_end_flat_idx = Int(
+        input_row_offsets._storage[batch_item_idx + 1]
+    )
     var sequence_length = sequence_end_flat_idx - sequence_start_flat_idx
 
     # Precompute constant channel offsets for Q, K, V in the conv_dim layout.
     var query_channel_base = UInt32(key_head_idx * KEY_HEAD_DIM)
-    var key_channel_base = UInt32(key_dim + key_head_idx * KEY_HEAD_DIM)
+    var key_channel_base = UInt32(_key_dim + key_head_idx * KEY_HEAD_DIM)
     var value_channel = UInt32(
-        2 * key_dim + value_head_idx * VALUE_HEAD_DIM + tid
+        2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
     )
     var query_scale = Float32(1.0) / std.math.sqrt(Float32(KEY_HEAD_DIM))
 
@@ -316,8 +327,8 @@ def gated_delta_recurrence_fwd_gpu[
             token_qkv_row_offset
             + (key_channel_base + UInt32(tid)) * qkv_conv_output_channel_stride
         )
-        q_raw_s[tid] = Float32(qkv_conv_output.ptr[q_off])
-        k_raw_s[tid] = Float32(qkv_conv_output.ptr[k_off])
+        q_raw_s[tid] = Float32(qkv_conv_output._storage[q_off])
+        k_raw_s[tid] = Float32(qkv_conv_output._storage[k_off])
         barrier()
 
         # ── L2 norms from SMEM (shared across all vd-threads of this head) ─
@@ -334,7 +345,7 @@ def gated_delta_recurrence_fwd_gpu[
 
         # ── V element (only this thread's vd column) ──────────────────────
         var value_element = Float32(
-            qkv_conv_output.ptr[
+            qkv_conv_output._storage[
                 token_qkv_row_offset
                 + value_channel * qkv_conv_output_channel_stride
             ]
@@ -345,8 +356,8 @@ def gated_delta_recurrence_fwd_gpu[
             UInt32(flat_token_idx) * per_token_seqlen_stride
             + UInt32(value_head_idx) * per_token_head_stride
         )
-        var decay_value = Float32(decay_per_token.ptr[head_token_offset])
-        var beta_value = Float32(beta_per_token.ptr[head_token_offset])
+        var decay_value = Float32(decay_per_token._storage[head_token_offset])
+        var beta_value = Float32(beta_per_token._storage[head_token_offset])
 
         # ── Step 1+2: decay state, accumulate kv_memory ───────────────────
         # kv_memory = key_inv_norm * Σ_k (decay·state_col[k]) · k_raw[k].
@@ -378,7 +389,7 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(value_head_idx * VALUE_HEAD_DIM + tid)
             * recurrence_output_valuedim_stride
         )
-        recurrence_output.ptr[recurrence_output_flat_offset] = Scalar[
+        recurrence_output._storage[recurrence_output_flat_offset] = Scalar[
             work_dtype
         ](output_value)
 
@@ -394,4 +405,4 @@ def gated_delta_recurrence_fwd_gpu[
             + UInt32(kd) * recurrent_state_key_dim_stride
             + UInt32(tid) * recurrent_state_value_dim_stride
         )
-        recurrent_state.ptr[off] = Scalar[state_dtype](state_col[kd])
+        recurrent_state._storage[off] = Scalar[state_dtype](state_col[kd])

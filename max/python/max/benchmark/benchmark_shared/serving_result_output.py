@@ -27,6 +27,7 @@ import re
 import statistics
 from collections.abc import Sequence
 from datetime import datetime
+from typing import NamedTuple
 
 import numpy as np
 import yaml
@@ -49,10 +50,17 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     LoRAMetrics,
+    PercentileMetrics,
     SpecDecodeStats,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    json_safe,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
+from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +295,46 @@ def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     print_action_section("unload", metrics.unload_times_ms)
 
 
+# Metric containers exposing the six percentile fields consumed by the summary
+# table. ``StandardPercentileMetrics`` (and its ``RatePercentileMetrics``
+# subclass) and ``ThroughputMetrics`` delegate the fields to an inner
+# ``PercentileMetrics`` via ``__getattr__``.
+_PercentileLike = (
+    PercentileMetrics | StandardPercentileMetrics | ThroughputMetrics
+)
+
+
+class PercentileRow(NamedTuple):
+    """A labeled metric to render as one row of the percentile summary table."""
+
+    label: str
+    metrics: _PercentileLike
+
+
+def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
+    """Render per-metric percentile stats as one table, one row per metric."""
+    headers = ["Metric", "Mean", "Std", "P50", "P90", "P95", "P99"]
+    table = [
+        [
+            row.label,
+            f"{row.metrics.mean:.2f}",
+            f"{row.metrics.std:.2f}",
+            f"{row.metrics.p50:.2f}",
+            f"{row.metrics.p90:.2f}",
+            f"{row.metrics.p95:.2f}",
+            f"{row.metrics.p99:.2f}",
+        ]
+        for row in rows
+    ]
+    return tabulate(
+        table,
+        headers=headers,
+        tablefmt="simple_outline",
+        colalign=("left", *("right",) * (len(headers) - 1)),
+        disable_numparse=True,
+    )
+
+
 def print_benchmark_summary(
     metrics: BenchmarkResult,
     request_rate: float,
@@ -354,29 +402,16 @@ def print_benchmark_summary(
             )
         )
 
+    # Collect every available percentile metric into one table so the console
+    # output stays compact. Order groups latency, then throughput, then rates.
+    percentile_rows: list[PercentileRow] = []
     if metrics.text_data is not None:
         t = metrics.text_data
         print_section(title="Client Experience Metrics")
-        if t.input_throughput is not None:
-            print(
-                t.input_throughput.format_with_prefix(
-                    prefix="input token throughput", unit="tok/s"
-                )
-            )
-        if t.output_throughput is not None:
-            print(
-                t.output_throughput.format_with_prefix(
-                    prefix="output token throughput", unit="tok/s"
-                )
-            )
-        total_tpm = (
-            (t.total_input + t.total_output) * 60.0 / agg.duration
-            if agg.duration > 0
-            else float("nan")
-        )
         print(
             "{:<40} {:<10.2f}".format(
-                "Total TPM (input+output, whole bench):", total_tpm
+                "Total TPM (input+output, whole bench):",
+                t.aggregate_tokens_per_minute,
             )
         )
         print(
@@ -387,44 +422,62 @@ def print_benchmark_summary(
             + "%"
         )
         if t.ttft_ms is not None:
-            print_section(title="Time to First Token")
-            print(t.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+            percentile_rows.append(PercentileRow("TTFT (ms)", t.ttft_ms))
         if t.tpot_ms is not None:
-            print_section(title="Time per Output Token")
-            print("[(latency - TTFT) / (output_tokens - 1), per request]")
-            print(t.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+            percentile_rows.append(PercentileRow("TPOT (ms)", t.tpot_ms))
         if t.step_tpot_ms is not None:
-            print_section(title="Time per Output Token (step-based)")
-            print("[ITL / tokens_per_step, per decode step]")
-            print(
-                t.step_tpot_ms.format_with_prefix(prefix="Step TPOT", unit="ms")
+            percentile_rows.append(
+                PercentileRow("Step TPOT (ms)", t.step_tpot_ms)
             )
         if t.itl_ms is not None:
-            print_section(title="Inter-token Latency")
-            print(t.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
-        if t.per_turn_cached_token_rate is not None:
-            print_section(title="Per-Turn Cached Token Rate")
-            print(
-                t.per_turn_cached_token_rate.format_with_prefix(
-                    prefix="Per-Turn Cached Token Rate", unit="%"
-                )
-            )
-
-        if t.per_turn_cache_retention is not None:
-            print_section(title="Per-Turn KV Cache Retention")
-            print(
-                t.per_turn_cache_retention.format_with_prefix(
-                    prefix="Per-Turn Cache Retention", unit="%"
-                )
-            )
+            percentile_rows.append(PercentileRow("ITL (ms)", t.itl_ms))
 
     if agg.latency_ms is not None:
-        print_section(title="Per-Request E2E Latency")
-        print(
-            agg.latency_ms.format_with_prefix(
-                prefix="Request Latency", unit="ms"
-            )
+        percentile_rows.append(
+            PercentileRow("Request Latency (ms)", agg.latency_ms)
         )
+
+    if metrics.text_data is not None:
+        t = metrics.text_data
+        if t.input_throughput is not None:
+            percentile_rows.append(
+                PercentileRow("Input throughput (tok/s)", t.input_throughput)
+            )
+        if t.output_throughput is not None:
+            percentile_rows.append(
+                PercentileRow("Output throughput (tok/s)", t.output_throughput)
+            )
+        if t.per_turn_cached_token_rate is not None:
+            percentile_rows.append(
+                PercentileRow(
+                    "Per-Turn Cached Token Rate (%)",
+                    t.per_turn_cached_token_rate,
+                )
+            )
+        if t.per_turn_cache_retention is not None:
+            percentile_rows.append(
+                PercentileRow(
+                    "Per-Turn Cache Retention (%)", t.per_turn_cache_retention
+                )
+            )
+
+    if percentile_rows:
+        print_section(title="Latency & Throughput Percentiles")
+        print(format_percentile_table(percentile_rows))
+        td = metrics.text_data
+        if td is not None:
+            if td.tpot_ms is not None:
+                print("  TPOT = (latency - TTFT) / (output_tokens - 1)")
+            if td.step_tpot_ms is not None:
+                print("  Step TPOT = ITL / tokens_per_step, per decode step")
+            if (
+                td.input_throughput is not None
+                or td.output_throughput is not None
+            ):
+                print(
+                    "  Throughput P90/P95/P99 are reversed"
+                    " (bottom 10/5/1%; higher is better)"
+                )
 
     if metrics.text_data is not None:
         t = metrics.text_data
@@ -587,7 +640,9 @@ def save_result_json(
         )
         os.rename(result_filename, f"{result_filename}.orig")
     with open(result_filename, "w") as outfile:
-        json.dump(result_json, outfile)
+        # NaN latencies are real in partially-failed runs; scrub to null so
+        # the file stays consumable by strict JSON parsers (jq, JSON.parse).
+        json.dump(json_safe(result_json), outfile, allow_nan=False)
 
 
 def save_output_lengths(

@@ -53,8 +53,17 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
-from max.serve.telemetry.common import configure_logging, configure_metrics
-from max.serve.telemetry.gc_utils import freeze_gc_heap, install_gc_debugger
+from max.serve.telemetry.common import (
+    configure_kernel_tracing,
+    configure_logging,
+    configure_metrics,
+    configure_tracing,
+)
+from max.serve.telemetry.gc_utils import (
+    _release_free_host_memory,
+    freeze_gc_heap,
+    install_gc_debugger,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -234,6 +243,8 @@ class ModelWorker:
                 can dominate first-run startup on cold filesystem caches.
         """
         configure_logging(settings)
+        configure_tracing(settings)
+        configure_kernel_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
@@ -265,7 +276,9 @@ class ModelWorker:
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
-            # Use any model's device_specs — all components share the same device.
+            # Use any model's device_specs — all components share the same
+            # device. Reads the raw field, which may name a GPU the model was
+            # downcast off of; priming an unused GPU is harmless.
             prime_start_s = time.monotonic()
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])
@@ -318,6 +331,10 @@ class ModelWorker:
                 unaccounted_init_s,
                 other_s,
             )
+
+            if os.getenv("MODULAR_MAX_RELEASE_FREE_HOST_MEMORY"):
+                with Tracer("release_free_host_memory"):
+                    _release_free_host_memory()
 
             warmup_duration_s = 0.0
             with Tracer("graph_capture_warmup"):

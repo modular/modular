@@ -70,13 +70,14 @@ from std.math import exp2, recip, isnan
 from std.random import randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.sync import named_barrier
-from std.gpu.compute.arch.tcgen05 import (
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory
+from max.gpu.sync import named_barrier
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -228,7 +229,7 @@ def combine_kernel[
     )
 
     # ---- (C) Level 2: cross-WG reduce-scatter + normalize -> o_smem (WG0) ----
-    fa4_ws_level2_reduce_scatter_write[M_PACK, ROWS, depth, use_fma=True](
+    _ = fa4_ws_level2_reduce_scatter_write[M_PACK, ROWS, depth, use_fma=True](
         UInt32(row),
         UInt32(g),
         UInt32(wg),

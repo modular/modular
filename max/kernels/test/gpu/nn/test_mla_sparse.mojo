@@ -36,10 +36,9 @@ from std.random import randn, seed
 from std.sys import argv, has_nvidia_gpu_accelerator, size_of
 
 from std.gpu import *
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,

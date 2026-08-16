@@ -21,6 +21,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnectorTransfer,
@@ -28,7 +29,7 @@ from max.pipelines.kv_cache.kv_connector import (
 )
 from max.pipelines.modeling.types import RequestID
 
-from .cache_manager import PagedKVCacheManager
+from .cache_manager import BlockCount, PagedKVCacheManager
 
 
 class DummyKVCache(PagedKVCacheManager):
@@ -45,13 +46,7 @@ class DummyKVCache(PagedKVCacheManager):
             devices=[DeviceRef.CPU()],
         )
 
-    def get_pct_used_blocks_after_allocation(
-        self, *args: Any, **kwargs: Any
-    ) -> float:
-        """Returns a fixed low percentage (0.01)."""
-        return 0.01
-
-    def claim(self, request_id: RequestID, replica_idx: int) -> None:
+    def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """No-op."""
         pass
 
@@ -63,37 +58,25 @@ class DummyKVCache(PagedKVCacheManager):
         """No-op."""
         pass
 
-    def contains(self, request_id: RequestID, replica_idx: int) -> bool:
+    def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
         return True
 
-    def release(self, request_id: RequestID, replica_idx: int) -> None:
+    def release(self, ctx: TextContext) -> None:
         """No-op."""
         pass
 
-    def get_num_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns a single block; this cache never allocates, so it stays free."""
+        return BlockCount(free=1, total=1)
 
-    def get_num_used_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def host_block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns a single, permanently used block."""
+        return BlockCount(free=0, total=1)
 
-    def get_num_host_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_used_host_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_disk_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
-
-    def get_num_used_disk_pages(self, replica_idx: int) -> int:
-        """Returns 1."""
-        return 1
+    def disk_block_count(self, replica_idx: int = 0) -> BlockCount:
+        """Returns a single, permanently used block."""
+        return BlockCount(free=0, total=1)
 
     def get_metrics_aggregated(self) -> KVCacheMetrics:
         """Returns empty aggregated metrics."""

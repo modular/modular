@@ -34,10 +34,11 @@ Usage:
 from std.math import align_up, ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext, Dim, FuncAttribute
-from std.gpu.host.info import B200
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext, Dim, FuncAttribute
+from max.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile, TmaOpType
@@ -53,6 +54,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     MXFP4_SF_DTYPE,
     MXFP8_SF_DTYPE,
+    _is_packed_fp4,
 )
 from structured_kernels.trace_buf import NullTrace, TraceBuf
 from ..structured_kernels.config import BlockScaledMatmulConfig
@@ -201,16 +203,56 @@ def grouped_matmul_block_scaled[
     comptime num_experts = type_of(_b_device).static_shape[0]
     comptime N = type_of(c_device).static_shape[1]
     comptime expert_n = N
-    comptime K = type_of(a_device).static_shape[1]
+    # W4A8 stores the weights nibble-packed, so their row is half as many
+    # bytes as the activations'. The FP4 TMA copy unpacks them on the way into
+    # shared memory, so every K extent the kernel sees is in ELEMENTS and the
+    # two operands agree again; only the weights' GMEM row stays halved.
+    comptime a_packed_fp4 = _is_packed_fp4[a_device.dtype, _b_device.dtype]()
+    comptime b_packed_fp4 = _is_packed_fp4[_b_device.dtype, a_device.dtype]()
+    # Under `kind::mxf8f6f4` a `uint8` operand is read padded, and only the
+    # W4A8 pair gets the padded TMA copy that produces that layout. Two `uint8`
+    # operands encode a legal descriptor under this kind but leave both copies
+    # dense, so the tensor cores would read one nibble-packed byte per element
+    # and the K arithmetic below would count bytes as elements. The FP4-only
+    # kinds want exactly that dense layout, hence the kind guard.
+    comptime assert config.scaling_kind != UMMAKind.KIND_MXF8F6F4 or (
+        (a_device.dtype != DType.uint8 or a_packed_fp4)
+        and (_b_device.dtype != DType.uint8 or b_packed_fp4)
+    ), String(
+        (
+            "kind::mxf8f6f4 accepts a nibble-packed operand only as the W4A8"
+            " pair (E4M3 activations, E2M1 weights), but got a="
+        ),
+        a_device.dtype,
+        " b=",
+        _b_device.dtype,
+    )
+    comptime K = type_of(a_device).static_shape[1] * (2 if a_packed_fp4 else 1)
+    comptime K_WEIGHT_BYTES = type_of(_b_device).static_shape[2]
+    comptime assert K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1) == K, (
+        "activations and weights must span the same number of K elements, but"
+        " got "
+        + String(K)
+        + " and "
+        + String(K_WEIGHT_BYTES * (2 if b_packed_fp4 else 1))
+    )
     comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
+        "Due to TMA limitations, K must be a multiple of 16 elements"
         + " but got K = "
         + String(K)
     )
+    # `cuTensorMapEncodeTiled` rejects an ALIGN16B packed-FP4 descriptor whose
+    # innermost extent is not a multiple of 128. The descriptor helper only
+    # `debug_assert`s that, which is compiled out at the default assert level,
+    # so gate it here where K is comptime.
+    comptime assert not (a_packed_fp4 or b_packed_fp4) or K % 128 == 0, (
+        "packed FP4 requires K to be a multiple of 128 elements but got K = "
+        + String(K)
+    )
 
-    # Reshape B from (num_experts, N, K) to (num_experts * N, K)
+    # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
     var b_device = _b_device.reshape(
-        row_major(Coord(Idx[num_experts * N], Idx[K]))
+        row_major(Coord(Idx[num_experts * N], Idx[K_WEIGHT_BYTES]))
     )
 
     comptime if config.cta_group == 2:
@@ -398,6 +440,7 @@ def grouped_matmul_block_scaled[
             KernelType.ADescLayout,
             Index(BM // cluster_shape[1], BK),
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
@@ -408,6 +451,7 @@ def grouped_matmul_block_scaled[
                 BK, BN // (cluster_shape[0] // config.cta_group)
             ),
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         # C TMA descriptor is only consumed on the non-fused (BF16 store)
         # path. When `fuse_swiglu`, the epilogue writes through `swiglu_out`
@@ -452,14 +496,14 @@ def grouped_matmul_block_scaled[
             _to_1d[DType.int32](expert_ids),
             _to_1d[DType.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # AB_swapped: SFB data comes from a_scales.
             rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
                 a_scales._storage
             ),
-            Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
-            Int(a_scales.layout.shape[1]().value()),
+            Int32(Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(a_scales.layout.shape[1]().value())),
             swiglu_out,
             trace_buf,
             grid_dim=grid_dim,
@@ -479,6 +523,7 @@ def grouped_matmul_block_scaled[
             KernelType.ADescLayout,
             Index(BM // cluster_shape[1], BK),
             swizzle_mode=config.a_swizzle,
+            unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
@@ -489,6 +534,7 @@ def grouped_matmul_block_scaled[
                 BK, BN // (cluster_shape[0] // config.cta_group)
             ),
             swizzle_mode=config.b_swizzle,
+            unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         # See the AB_swapped branch: the C TMA op is unused on the fused path.
         var c_tma_op = TmaOpType[
@@ -525,14 +571,14 @@ def grouped_matmul_block_scaled[
             _to_1d[DType.int32](expert_ids),
             _to_1d[DType.float32](expert_scales),
             c_device,
-            num_active_experts,
+            Int32(num_active_experts),
             UInt32(K),
             # Non-swapped: SFB data comes from _b_scales.
             rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
                 _b_scales._storage
             ),
-            Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
-            Int(_b_scales.layout.shape[2]().value()),
+            Int32(Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS),
+            Int32(Int(_b_scales.layout.shape[2]().value())),
             swiglu_out,
             trace_buf,
             grid_dim=grid_dim,

@@ -13,7 +13,7 @@
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext, Dim
+from max.gpu.host import DeviceContext, Dim
 from layout import *
 
 comptime NUM_KERNELS_PER_ITERATION = 128
@@ -44,17 +44,16 @@ def small_kernel(ptr: UnsafePointer[UInt64, MutAnyOrigin]):
 
 
 def bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_empty_launch(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def launch(ctx: DeviceContext) raises:
+        def launch(ctx: DeviceContext) raises {imm}:
             ctx.enqueue_function[empty_kernel](
                 grid_dim=Dim(1), block_dim=Dim(1)
             )
 
-        bencher_iter_custom[launch](b, ctx)
+        bencher_iter_custom(b, launch, ctx)
 
     m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
 
@@ -74,10 +73,10 @@ def bench_empty_launch_many_params_caller(
         Layout([1, 2], [3, 3]),
     ]
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_empty_launch_many_params(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         def launch() raises:
             ctx.enqueue_function[func_alias](grid_dim=Dim(1), block_dim=Dim(1))
 
@@ -100,10 +99,10 @@ def bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
         )
 
     # Benchmark Mojo function
-    @parameter
+    @__parameter
     @always_inline
     def bench_gpu_kernel_enqueue(mut b: Bencher) raises:
-        @parameter
+        @__parameter
         def launch() raises:
             for _ in range(NUM_KERNELS_PER_ITERATION):
                 ctx.enqueue_function[small_kernel](

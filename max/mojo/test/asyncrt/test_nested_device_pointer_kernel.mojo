@@ -15,9 +15,9 @@
 
 `DevicePointerStorage` (in `layout/tensor_storage.mojo`) is a `TensorStorage`
 whose handle is a `DevicePointer`. At the kernel boundary the `DevicePointer`
-encodes to a bare device `UnsafePointer` (`DevicePointer._to_device_type` ->
+encodes to a bare device `Pointer` (`DevicePointer._to_device_type` ->
 `encode_device_ptr`), and the device-side operations reinterpret the handle's
-first `size_of[UnsafePointer]` bytes as that pointer. This file validates that
+first `size_of[Pointer]` bytes as that pointer. This file validates that
 underlying stdlib mechanism directly, without the `layout` dependency the
 `TileTensor`-level probe (`test_device_pointer_tile_storage_kernel`) carries.
 
@@ -30,7 +30,7 @@ A. A host-side struct containing a `DevicePointer` can be the host type of a
    to it).
 
 B. On the device, code can reinterpret the struct's first
-   `size_of[UnsafePointer]` bytes as an `UnsafePointer` and use it — the cast
+   `size_of[Pointer]` bytes as a `Pointer` and use it — the cast
    pattern `DevicePointerStorage.load`/`store` use on device.
 
 This stays in the OneS/TwoS pattern (distinct host and device types, manual
@@ -41,11 +41,11 @@ conversion in `_to_device_type`) — the host struct keeps the full
 from asyncrt_test_utils import create_test_device_context
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext, DevicePointer
+from max.gpu.host import DeviceContext, DevicePointer
 from std.testing import TestSuite, assert_equal
 
 
-# Device-side view: bare `UnsafePointer` followed by a sentinel. This is what
+# Device-side view: bare `Pointer` followed by a sentinel. This is what
 # the kernel actually receives. Both fields are `TrivialRegisterPassable`, so
 # the struct as a whole is a valid kernel-argument type. The struct is
 # parameterized on `origin` because a field may not expose an `Any` origin
@@ -54,9 +54,7 @@ from std.testing import TestSuite, assert_equal
 struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
     DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable
 ):
-    # TODO(MSTDL-2875): Stays `UnsafePointer` — this device-side view mirrors a
-    # DeviceBuffer's `device_type`, which a safe `Pointer` won't match yet.
-    var raw_ptr: UnsafePointer[Float32, Self.origin]
+    var raw_ptr: Pointer[Float32, Self.origin]
     var sentinel: Int32
 
     comptime device_type: AnyType = Self
@@ -72,7 +70,7 @@ struct DevicePtrAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
 
 
 # Host-side wrapper: holds a `DevicePointer` (host-only) plus a sentinel.
-# `_to_device_type` manually peels off the `UnsafePointer` view and writes the
+# `_to_device_type` manually peels off the `Pointer` view and writes the
 # device-side struct. This is the OneS/TwoS pattern; it does NOT use
 # `encode_fields` because the host and device structs differ in shape.
 struct DevicePointerAndSentinel[mut: Bool, //, origin: Origin[mut=mut]](
@@ -111,7 +109,7 @@ def write_sentinel_via_direct_field(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     the device-side struct.
 
     If this fails, the host->device translation itself is broken (the encoded
-    `UnsafePointer` didn't land where the device-side struct expects it, or
+    `Pointer` didn't land where the device-side struct expects it, or
     `sentinel` is at the wrong offset).
     """
     if global_idx.x != 0:
@@ -120,12 +118,12 @@ def write_sentinel_via_direct_field(arg: DevicePtrAndSentinel[MutAnyOrigin]):
 
 
 def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
-    """Probe path: reinterpret the first `size_of[UnsafePointer]` bytes of the
-    struct as an `UnsafePointer` and write through it, instead of using the
+    """Probe path: reinterpret the first `size_of[Pointer]` bytes of the
+    struct as a `Pointer` and write through it, instead of using the
     named field.
 
     This is the cast pattern `DevicePointerStorage.load`/`store` use on device
-    — the struct's static type wouldn't necessarily expose an `UnsafePointer`
+    — the struct's static type wouldn't necessarily expose a `Pointer`
     field, but its first bytes ARE one.
 
     If this fails but `write_sentinel_via_direct_field` succeeds, the
@@ -134,8 +132,8 @@ def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     """
     if global_idx.x != 0:
         return
-    var reinterpreted = UnsafePointer(to=arg).unsafe_bitcast[
-        UnsafePointer[Float32, MutAnyOrigin]
+    var reinterpreted = Pointer(to=arg).unsafe_bitcast[
+        Pointer[Float32, MutAnyOrigin]
     ]()[]
     reinterpreted[unsafe_offset=0] = Float32(arg.sentinel)
 
@@ -159,7 +157,7 @@ def test_kernel_receives_encoded_pointer_and_sibling() raises:
 
 def test_kernel_reinterpret_first_bytes_as_unsafe_pointer() raises:
     """Precondition B: on the device side, the wrapper's first bytes can be
-    reinterpreted as an `UnsafePointer` and used to write through."""
+    reinterpreted as a `Pointer` and used to write through."""
     var ctx = create_test_device_context()
     comptime expected: Int32 = 0xC0DE
 

@@ -19,12 +19,10 @@ import os
 import signal
 import sys
 import threading
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from types import TracebackType
 from typing import Any, BinaryIO, Literal, cast
 from unittest import mock
 
@@ -39,33 +37,6 @@ from max._core.engine import TensorSpec as TensorSpec
 from max._core.engine import read as _read
 from max._core.mlrt import AsyncValue as _AsyncValue
 from max._core.profiler import (
-    kineto_disable as _kineto_disable,
-)
-from max._core.profiler import (
-    kineto_enable as _kineto_enable,
-)
-from max._core.profiler import (
-    kineto_is_enabled as _kineto_is_enabled,
-)
-from max._core.profiler import (
-    kineto_is_recording as _kineto_is_recording,
-)
-from max._core.profiler import (
-    kineto_last_trace_error as _kineto_last_trace_error,
-)
-from max._core.profiler import (
-    kineto_range_begin as _kineto_range_begin,
-)
-from max._core.profiler import (
-    kineto_range_end as _kineto_range_end,
-)
-from max._core.profiler import (
-    kineto_state as _kineto_state,
-)
-from max._core.profiler import (
-    kineto_wait_for_trace as _kineto_wait_for_trace,
-)
-from max._core.profiler import (
     set_gpu_profiling_state,
 )
 from max.driver import CPU, Buffer, Device, DLPackArray, is_virtual_device_mode
@@ -73,6 +44,8 @@ from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
+
+from ._precompiled_mefs import MefStore
 
 # Manually define dlpack compatible types since MyPy isn't aware that ndarray
 
@@ -85,7 +58,7 @@ CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
 :class:`InferenceSession`.
 
 It may be a single path or a sequence of paths, where each path is a ``str``
-or :class:`~pathlib.Path` pointing to a compiled ``.mojoc``/``.mojopkg`` custom ops
+or :class:`~pathlib.Path` pointing to a compiled ``.mojoc`` custom ops
 library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
 it's automatically compiled into a package before loading.
 """
@@ -490,210 +463,6 @@ def read(source: str | os.PathLike[str] | BinaryIO) -> CompiledModel:
     return CompiledModel(compiled=artifact, expected_weights=None)
 
 
-class ProfilingError(Exception):
-    """Raised when the libkineto profiler fails to serialize its trace.
-
-    The most common causes are an unwritable
-    :attr:`InferenceSession.debug.profiling_output_path`, a missing parent
-    directory, or libkineto failing to flush its in-memory ring buffer (the
-    underlying I/O error appears on libkineto's stderr).  For write
-    failures, the exception message includes the resolved output path so
-    the failure can be diagnosed without rerunning the workload.
-
-    Raised by :meth:`InferenceSession.profiling.wait_for_trace`.
-    """
-
-
-class _ProfilingNamespace:
-    """Runtime control surface for the libkineto-backed MAX profiler.
-
-    Exposes the on-demand profiling lifecycle (start, stop, wait, state)
-    that produces HTA-compatible Chrome trace JSON. Configuration lives on
-    the ``ProfilingConfig`` model in
-    ``max.pipelines.lib.config.profiling_config`` (e.g.
-    ``profiling_output_path``).
-
-    .. note::
-
-       libkineto's profiler state is **process-global**. Calling
-       :meth:`start` on one ``InferenceSession`` enables the profiler for the
-       whole process, including any other live sessions.  Single-host
-       tensor-parallel serving is one process driving multiple devices, so
-       one :meth:`start` covers every device.  In a multi-process multi-rank
-       deployment (one OS process per rank, e.g. an MPI-launched run),
-       enabling all ranks means calling :meth:`start` on each rank's own
-       session.  Use a ``{rank}``-templated
-       :attr:`~InferenceSession.debug.profiling_output_path` so the per-rank
-       traces don't collide.
-
-       For the same reason, ``with session.profiling:`` blocks **must not be
-       nested**: an inner ``__exit__`` will call :meth:`stop` and disable the
-       profiler for any enclosing scope.
-
-    This namespace is created automatically as ``session.profiling`` and
-    should not be instantiated by user code.
-
-    Example:
-
-    .. code-block:: python
-
-        session = InferenceSession(devices=[Accelerator()])
-        model = session.load(my_graph)
-        session.profiling.start()
-        model.execute(input_data)
-        session.profiling.stop()
-        session.profiling.wait_for_trace()
-    """
-
-    def start(self) -> None:
-        """Enable libkineto and begin recording.
-
-        Subscribes to CUPTI activity callbacks. Idempotent — calling
-        :meth:`start` while already enabled is a no-op.
-
-        On builds without libkineto (it is linked only in
-        ``--config=kineto`` builds on Linux x86_64) or hosts without a
-        live CUDA primary context, this is a safe no-op:
-        ``state`` will still report ``"warmup"`` but no trace file is
-        written by the matching :meth:`stop`.
-        """
-        _kineto_enable()
-
-    def stop(self) -> None:
-        """Disable libkineto and flush the trace.
-
-        Unregisters CUPTI callbacks and finalizes the trace file; use
-        :meth:`wait_for_trace` if you need to ensure serialization is
-        complete before reading it.
-
-        This method does not raise on a serialization failure — the error is
-        recorded and surfaced by :meth:`wait_for_trace`, so call that to
-        observe whether the trace was written.
-        """
-        _kineto_disable()
-
-    def wait_for_trace(self) -> None:
-        """Block until the most recent :meth:`stop` finishes serializing.
-
-        Raises:
-            ProfilingError: If libkineto could not write the trace file —
-                most commonly an unwritable
-                :attr:`InferenceSession.debug.profiling_output_path` or a
-                missing parent directory.  For write failures, the
-                exception message includes the resolved output path.
-        """
-        _kineto_wait_for_trace()
-        err = _kineto_last_trace_error()
-        if err:
-            raise ProfilingError(err)
-
-    @property
-    def state(self) -> Literal["idle", "warmup", "active", "flushing"]:
-        """Current profiler state.
-
-        Returns:
-            One of ``"idle"``, ``"warmup"``, ``"active"``, or ``"flushing"``.
-        """
-        return cast(
-            Literal["idle", "warmup", "active", "flushing"], _kineto_state()
-        )
-
-    @property
-    def is_enabled(self) -> bool:
-        """``True`` between :meth:`start` and :meth:`stop`.
-
-        Equivalent to ``state in {"warmup", "active"}``; ``False`` in
-        ``"idle"`` and ``"flushing"``.  Reflects only this session API's
-        enable intent — it stays ``False`` during Dynolog daemon-driven
-        on-demand traces, when :meth:`range` annotations do record; gate
-        hot-path annotation work on :attr:`is_recording` instead.
-
-        Cheap relative to constructing a trace name you would otherwise skip,
-        but still crosses the Python/C++ FFI boundary on every call — cache
-        the result if you need it inside a tight loop.
-        """
-        return _kineto_is_enabled()
-
-    @property
-    def is_recording(self) -> bool:
-        """``True`` while a trace is live and :meth:`range` spans record.
-
-        Covers traces of either origin — :meth:`start` via this API or a
-        Dynolog daemon-driven on-demand request — so it is the right gate
-        for eliding expensive range-name construction on the hot path:
-        unlike :attr:`is_enabled`, it does not opt the caller out of
-        daemon-trace annotation.  A single relaxed atomic load behind the
-        FFI boundary.
-        """
-        return _kineto_is_recording()
-
-    @contextmanager
-    def range(self, name: str, color: int = 0) -> Iterator[None]:
-        """Annotate a semantic CPU range in the trace.
-
-        Opens a named span on the calling thread for the duration of the
-        ``with`` block. The span is recorded by libkineto as a Chrome-trace
-        CPU activity and correlated to the GPU kernels launched inside it,
-        so it shows up as a labeled bar above the kernel timeline in
-        Perfetto/HTA. Use it to mark application-level phases — the
-        runtime already records every kernel launch automatically:
-
-        .. code-block:: python
-
-            session.profiling.start()
-            with session.profiling.range("prefill"):
-                model.execute(input_data)
-            session.profiling.stop()
-
-        Ranges may be nested. When the profiler is not recording, the
-        underlying begin/end calls reduce to a single predicted branch in
-        the runtime, so leaving these annotations in production code is
-        safe; only the Python-side overhead of entering a context manager
-        remains.
-
-        Args:
-            name: Label shown on the span in the trace viewer.
-            color: Reserved for a future color hint; currently not carried
-                into the trace (libkineto activities have no color channel).
-        """
-        _kineto_range_begin(name, color)
-        try:
-            yield
-        finally:
-            _kineto_range_end()
-
-    def __enter__(self) -> _ProfilingNamespace:
-        """Enter a profiling context: equivalent to calling :meth:`start`.
-
-        Lets callers write::
-
-            with session.profiling:
-                model.execute(input_data)
-
-        and have :meth:`stop` invoked automatically on scope exit, even if
-        the body raises.  The returned object is the namespace itself, so
-        ``state`` / ``is_enabled`` remain accessible from inside the block.
-        """
-        self.start()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        """Exit the profiling context: calls :meth:`stop`.
-
-        Does NOT wait for the trace to serialize — callers that need the
-        file on disk before reading it should call :meth:`wait_for_trace`
-        after the ``with`` block.  This matches the rule that ``stop()``
-        and ``wait_for_trace()`` are split so callers can interleave other
-        cleanup between them.
-        """
-        self.stop()
-
-
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
@@ -702,8 +471,29 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        model = session.load(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        model = session.load(graph)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     For workflows that need to separate compilation from weight binding,
     use :meth:`compile` followed by :meth:`init` or :meth:`init_all`.
@@ -711,9 +501,30 @@ class InferenceSession:
 
     .. code-block:: python
 
-        session = engine.InferenceSession(devices=[CPU()])
-        compiled = session.compile(model_path)
+        from max.driver import CPU, Accelerator, accelerator_count
+        from max.dtype import DType
+        from max.engine import InferenceSession
+        from max.graph import DeviceRef, Graph, ops
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+        with Graph("add") as graph:
+            graph.output(
+                ops.add(
+                    ops.constant([1.0, 2.0], DType.float32, device=device_ref),
+                    ops.constant([3.0, 4.0], DType.float32, device=device_ref),
+                )
+            )
+
+        session = InferenceSession(devices=[device])
+        compiled = session.compile(graph)
         model = session.init(compiled)
+
+    .. invisible-code-block: python
+
+        import numpy as np
+
+        assert np.allclose(model.execute()[0].to_numpy(), [4.0, 6.0])
 
     Args:
         devices: A list of devices on which to run inference. The host CPU
@@ -721,8 +532,16 @@ class InferenceSession:
         num_threads: The number of execution threads. Defaults to ``None``,
             which lets the runtime choose automatically.
         custom_extensions: The extensions to load for the model. Supports
-            paths to a ``.mojoc``/``.mojopkg`` custom ops library or a
-            ``.mojo`` source file.
+            paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
+        precompiled_mefs: A directory of compiled-graph artifacts written by an
+            earlier session's ``export_mefs``. Every graph this session loads is
+            initialized from its artifact instead of being compiled, which lets
+            the compiling and the executing run happen on different machines.
+            Raises if a graph does not match the artifact recorded for it.
+        export_mefs: A directory to write a compiled-graph artifact into for
+            every graph this session loads, alongside a manifest describing
+            them. Pass the same directory as another session's
+            ``precompiled_mefs`` to reuse them. Mutually exclusive with it.
     """
 
     _impl: _InferenceSession
@@ -731,11 +550,6 @@ class InferenceSession:
     # ``session.debug`` return the same underlying object, and any
     # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
     debug: DebugConfig = _InferenceSession.debug
-    # libkineto's profiler state is process-global (see _ProfilingNamespace
-    # docstring), so a single shared instance — matching ``debug`` above —
-    # accurately reflects that scope. The namespace carries no per-session
-    # state.
-    profiling: _ProfilingNamespace = _ProfilingNamespace()
 
     def __init__(
         self,
@@ -743,7 +557,22 @@ class InferenceSession:
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
+        precompiled_mefs: str | Path | None = None,
+        export_mefs: str | Path | None = None,
     ) -> None:
+        if precompiled_mefs is not None and export_mefs is not None:
+            raise ValueError(
+                "pass at most one of precompiled_mefs and export_mefs: a "
+                "session either reuses artifacts or produces them"
+            )
+        # Taken at construction rather than settable later because the store
+        # tracks its position through the graphs this session loads.
+        self._mef_store: MefStore | None = None
+        if precompiled_mefs is not None:
+            self._mef_store = MefStore.for_import(precompiled_mefs)
+        elif export_mefs is not None:
+            self._mef_store = MefStore.for_export(export_mefs)
+
         self.num_threads = num_threads
 
         # Process the provided iterable `devices`.
@@ -849,7 +678,7 @@ class InferenceSession:
                 file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -913,7 +742,7 @@ class InferenceSession:
                 example, a ``.mef`` file), or a single :class:`Graph`.
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojoc``/``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             weights_registry: A mapping from model weight names to their
                 values. The values should be DLPack arrays. If an array is a
@@ -934,6 +763,23 @@ class InferenceSession:
         Raises:
             RuntimeError: If the path provided is invalid.
         """
+        # Reuse or produce artifacts when the session was constructed to, so a
+        # caller need not hold an accelerator to compile. See
+        # `_precompiled_mefs`.
+        store = self._mef_store
+        if store is not None and isinstance(model, Graph):
+            if store.exporting:
+                compiled = self.compile(
+                    model,
+                    custom_extensions=custom_extensions,
+                    tile_based_fusion=tile_based_fusion,
+                )
+                compiled.export_mef(store.claim_export(model))
+                store.write_manifest()
+            else:
+                compiled = self.compile(store.claim_import(model))
+            return self.init_all(compiled, weights_registry=weights_registry)
+
         compiled = self.compile(
             model,
             custom_extensions=custom_extensions,
@@ -967,7 +813,7 @@ class InferenceSession:
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             tile_based_fusion: When ``True``, compile the graph under the tile-based
                 programming model, in which the graph compiler selects
@@ -1059,7 +905,7 @@ class InferenceSession:
                 saved model file (for example, a ``.mef`` file).
 
             custom_extensions: The extensions to load for the model.
-                Supports paths to ``.mojopkg`` custom ops.
+                Supports paths to ``.mojoc`` custom ops.
 
             tile_based_fusion: When ``True``, compile the graph under the tile-based
                 programming model, in which the graph compiler selects
@@ -1411,10 +1257,13 @@ class InferenceSession:
         For example, to enable detailed profiling for Nsight Systems
         analysis, call :meth:`gpu_profiling` before :meth:`load`:
 
+        .. Skipped: requires a GPU accelerator; enabling GPU profiling injects GPU tracing that can't compile on a CPU-only CI host.
+        .. skip: next
+
         .. code-block:: python
 
-            from max.engine import InferenceSession
             from max.driver import Accelerator
+            from max.engine import InferenceSession
 
             session = InferenceSession(devices=[Accelerator()])
             session.gpu_profiling("detailed")

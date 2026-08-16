@@ -15,8 +15,8 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (
@@ -186,7 +186,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     var c_tensor = c_device_nd
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor, M, N)
     def epilogue_fn[

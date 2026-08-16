@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 When importing a Hugging Face model into MAX as a custom architecture, you're
 responsible for building the graph that the model's `config.json` describes.
 This makes reading and interpreting the config your job. It's the entry point
-of your [model bring-up workflow](/max/develop/model-bringup-workflow/) and
+of your [model bring-up workflow](/develop/model-bringup-workflow/) and
 the file you consult most frequently.
 
 ## What is a model config?
@@ -242,11 +242,10 @@ requiring graph changes:
 
 TinyLlama represents this simpler class of configuration. You declare these
 fields in `model_config.py` (see
-[Map config fields](/max/develop/model-bringup-workflow/#map-config-fields)).
-Four of these parameters (`num_key_value_heads`, `head_dim`,
-`num_hidden_layers`, and `max_seq_len`) also size the KV cache that MAX
-allocates at startup (see
-[the cache parameters](/max/develop/model-bringup-workflow/#connect-to-the-kv-cache)).
+[Map config fields](/develop/model-bringup-workflow/#map-config-fields)). Four
+of these parameters (`num_key_value_heads`, `head_dim`, `num_hidden_layers`, and
+`max_seq_len`) also size the KV cache that MAX allocates at startup (see
+[the cache parameters](/develop/model-bringup-workflow/#connect-to-the-kv-cache)).
 
 The `model_config.py` file defines a typed configuration dataclass and
 implements an `initialize_from_config()` classmethod to parse the Hugging Face
@@ -374,7 +373,7 @@ Structural fields signal that the model departs from a standard transformer
 architecture and requires custom layer logic. When you identify these fields,
 prepare to declare or extend custom layers in the model's graph implementation
 file (such as `llama3.py` or `deepseekV3.py`) using
-[MAX modules](/max/develop/modules/):
+[MAX modules](/develop/modules/):
 
 - **Grouped-query or multi-query attention** (`num_key_value_heads` below
   `num_attention_heads`, or `multi_query`) shares keys and values across query
@@ -392,7 +391,7 @@ file (such as `llama3.py` or `deepseekV3.py`) using
   the block.
 - **Quantized weights** (`quantization_config`) need a dequantization path for
   the released checkpoint (see
-  [Extend the compute graph](/max/develop/model-bringup-workflow/#extend-the-compute-graph)).
+  [Extend the compute graph](/develop/model-bringup-workflow/#extend-the-compute-graph)).
 
 Often, the closest baseline MAX architecture already implements some of these
 mechanisms. The following three examples show what it looks like to implement
@@ -429,7 +428,7 @@ rope = Llama3RotaryEmbedding(
   </TabItem>
   <TabItem value="qwen3" label="Qwen3">
 
-Qwen3 applies a [`RMSNorm`](/max/api/python/generated/max.nn.RMSNorm/) to the query and key projections before the RoPE calculation. To implement this
+Qwen3 applies a [`RMSNorm`](/api/python/generated/max.nn.RMSNorm/) to the query and key projections before the RoPE calculation. To implement this
 in the compute graph, define two additional normalization layers in
 [`qwen3/layers/attention.py`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/qwen3/layers/attention.py)
 and apply them to query and key projections in the block forward pass:
@@ -494,7 +493,7 @@ graph.
 
 For example, a `vision_config` field implies the model is multimodal and needs
 a separate vision tower (like
-[Pixtral](/max/api/python/pipelines.architectures.pixtral/)) to embed images
+[Pixtral](/api/python/pipelines.architectures.pixtral/)) to embed images
 before passing them to the transformer. An encoder-decoder structure (like T5)
 breaks the standard decoder-only block sequence entirely. If a parameter alters
 how blocks are wired together or what inputs they accept, you must write a new
@@ -507,14 +506,14 @@ Once you map the configuration fields to config properties and compute graph
 requirements, you can proceed with the remaining integration steps. The
 remainder of the model port involves registering your new architecture, mapping
 checkpoint weights, and validating output logits against the source framework.
-The [model bring-up workflow](/max/develop/model-bringup-workflow/) provides an
+The [model bring-up workflow](/develop/model-bringup-workflow/) provides an
 end-to-end view of this sequence.
 
 These pages go deeper on the steps that follow:
 
-- [Serve custom model architectures](/max/develop/serve-custom-model-architectures/):
+- [Serve custom model architectures](/develop/serve-custom-model-architectures/):
   Register your architecture package and serve it with `max serve`.
-- [Quantization](/max/graph/quantize/): Work with quantized weight encodings
+- [Quantization](/develop/quantize/): Work with quantized weight encodings
   when a checkpoint's `quantization_config` calls for them.
 
 {/* TODO(docs): link these once the pages exist: choose an implementation

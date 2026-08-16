@@ -37,12 +37,17 @@ class KVCacheMetrics:
     """Number of tokens processed as new input (cache misses)."""
     cache_tokens: int = 0
     """Number of tokens retrieved from cache (cache hits)."""
+    device_blocks_served: int = 0
+    """Number of cache blocks served directly from the local device prefix
+    cache, with no host/disk promotion or cross-replica copy needed."""
     h2d_blocks_copied: int = 0
     """Number of cache blocks copied from host to device."""
     d2h_blocks_copied: int = 0
     """Number of cache blocks copied from device to host."""
     cross_replica_blocks_copied: int = 0
     """Number of cache blocks copied device-to-device across DP replicas."""
+    cross_replica_bytes_copied: int = 0
+    """Bytes moved by device-to-device copies across DP replicas."""
     disk_blocks_written: int = 0
     """Number of cache blocks written to disk."""
     disk_blocks_read: int = 0
@@ -190,10 +195,14 @@ class KVCacheMetrics:
         return type(self)(
             input_tokens=self.input_tokens + other.input_tokens,
             cache_tokens=self.cache_tokens + other.cache_tokens,
+            device_blocks_served=self.device_blocks_served
+            + other.device_blocks_served,
             h2d_blocks_copied=self.h2d_blocks_copied + other.h2d_blocks_copied,
             d2h_blocks_copied=self.d2h_blocks_copied + other.d2h_blocks_copied,
             cross_replica_blocks_copied=self.cross_replica_blocks_copied
             + other.cross_replica_blocks_copied,
+            cross_replica_bytes_copied=self.cross_replica_bytes_copied
+            + other.cross_replica_bytes_copied,
             disk_blocks_written=self.disk_blocks_written
             + other.disk_blocks_written,
             disk_blocks_read=self.disk_blocks_read + other.disk_blocks_read,

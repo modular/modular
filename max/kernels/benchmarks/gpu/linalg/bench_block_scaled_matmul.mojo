@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,14 +28,14 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from linalg.fp4_quantization import block_scaled_matmul
+from linalg.block_scaled_quantization import block_scaled_matmul
 
 from layout import (
     CoordLike,
@@ -64,7 +64,7 @@ from linalg.fp4_utils import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 from std.utils import IndexList
-from std.gpu.primitives import block
+from max.gpu.primitives import block
 
 
 def _verify_buffers_gpu[
@@ -72,7 +72,7 @@ def _verify_buffers_gpu[
 ](
     output: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
     reference: UnsafePointer[Scalar[c_type], ImmutAnyOrigin],
-    length: Int,
+    length: Int32,
     atol: Float32,
     rtol: Float32,
     result: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -96,7 +96,7 @@ def _verify_buffers_gpu[
     # Grid-stride loop
     var i = global_idx.x
     var stride = grid_dim.x * block_dim.x
-    while i < length:
+    while i < Int(length):
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -263,7 +263,7 @@ def verify_matmul[
     ctx.enqueue_function[kernel](
         c_device,
         c_device_ref,
-        c_size,
+        Int32(c_size),
         atol,
         rtol,
         result_device,
@@ -470,7 +470,7 @@ def bench_matmul[
     cb_b_scales.init_scales_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    @parameter
+    @__parameter
     @__copy_capture(a_scales_shape, b_scales_shape)
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -491,9 +491,12 @@ def bench_matmul[
             c_row_major=True,
         )
 
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {
+        mut cb_a, mut cb_b, mut cb_c, mut cb_a_scales, mut cb_b_scales, imm
+    }:
         var a = TileTensor(cb_a.offset_ptr(iteration), row_major(shape_a))
         var b = TileTensor(cb_b.offset_ptr(iteration), row_major(shape_b))
         var c = TileTensor(cb_c.offset_ptr(iteration), row_major(shape_c))
@@ -505,7 +508,7 @@ def bench_matmul[
             cb_b_scales.offset_ptr(iteration), row_major(b_scales_shape)
         )
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c)
         def test_lambda_add_coords_prod[
@@ -542,10 +545,10 @@ def bench_matmul[
                 ctx,
             )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut b: Bencher) raises:
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -676,10 +679,10 @@ def bench_mxfp4_amd[
 ) raises:
     """Benchmark native MXFP4 block-scaled matmul on AMD CDNA4.
 
-    Uses mxfp4_block_scaled_matmul_amd with simple 2D scale tensors
+    Uses block_scaled_matmul_amd with simple 2D scale tensors
     [rows, K//32] in float8_e8m0fnu. Output is float32.
     """
-    from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+    from linalg.matmul.gpu.amd import block_scaled_matmul_amd
 
     comptime K_ELEMS = KType.static_value
     comptime K_PACKED = K_ELEMS // 2
@@ -722,7 +725,7 @@ def bench_mxfp4_amd[
 
     # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
     # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
-    @parameter
+    @__parameter
     @always_inline
     def run_vendor_blas(
         ctx: DeviceContext,
@@ -765,9 +768,10 @@ def bench_mxfp4_amd[
                 c_row_major=True,
             )
 
-    @parameter
     @always_inline
-    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+    def kernel_launch(
+        ctx: DeviceContext, iteration: Int
+    ) raises {mut cb_a, mut cb_b, mut cb_c, mut cb_sfa, mut cb_sfb, imm}:
         var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
         var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)
         var c_tt = TileTensor[mut=True](cb_c.offset_ptr(iteration), c_shape)
@@ -780,12 +784,12 @@ def bench_mxfp4_amd[
         comptime if use_vendor_blas:
             run_vendor_blas(ctx, c_tt, a_tt, b_tt, sfa_tt, sfb_tt)
         else:
-            mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+            block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut bencher: Bencher) raises:
-        bencher_iter_custom[kernel_launch](bencher, ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
@@ -823,9 +827,7 @@ def bench_mxfp4_amd[
             var c_tt0 = TileTensor[mut=True](cb_c.offset_ptr(0), c_shape)
 
             # Fresh FP4 kernel run into iter-0 output slot.
-            mxfp4_block_scaled_matmul_amd(
-                c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx
-            )
+            block_scaled_matmul_amd(c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx)
 
             # hipBLASLt reference into a separate buffer.
             var c_ref_buf = ctx.enqueue_create_buffer[DType.float32](c_size)
@@ -848,7 +850,7 @@ def bench_mxfp4_amd[
             ctx.enqueue_function[verify_kernel](
                 c_tt0.ptr,
                 c_ref_tt.ptr,
-                c_size,
+                Int32(c_size),
                 atol,
                 rtol,
                 result_device,

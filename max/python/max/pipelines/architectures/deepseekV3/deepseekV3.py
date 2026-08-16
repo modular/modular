@@ -131,6 +131,7 @@ def deepseek_logits_postprocess(
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
     capture_hidden_states: list[list[TensorValue]] | None = None,
+    emit_last_token_logits: bool = True,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
 
@@ -139,8 +140,14 @@ def deepseek_logits_postprocess(
     variable / all logits computation, logits scaling, and hidden-states
     extraction.
 
+    When ``emit_last_token_logits`` is False, the last-token norm + full-vocab
+    lm_head projection (and, under DP attention, its last-token allgather) is
+    skipped and ``last_logits`` is omitted from the output tuple. Callers that
+    consume only the VARIABLE logits (e.g. the unified MTP graph) set this to
+    avoid an unused vocab-sized GEMM + collective per step.
+
     Returns:
-        ``(last_logits, [logits, offsets], [hidden_states])`` — the optional
+        ``([last_logits], [logits, offsets], [hidden_states])`` — the optional
         segments are present only when the corresponding mode is active.
     """
     if is_data_parallel_attention:
@@ -150,22 +157,31 @@ def deepseek_logits_postprocess(
             last_token_indices = input_row_offsets[dev_idx][1:] - 1
             last_token_h = ops.gather(h0, last_token_indices, axis=0)
             last_token_per_dev.append(last_token_h)
-        last_token_distributed = ops.allgather(
-            last_token_per_dev, signal_buffers
-        )
+        # ``last_token_distributed`` is only consumed by the last-token lm_head
+        # below and by ``extract_hs`` for the LAST / LAST_PER_DEVICE modes;
+        # callers that suppress ``last_logits`` pair it with ALL /
+        # ALL_NORMALIZED hidden states, so the allgather is skipped too.
+        if emit_last_token_logits:
+            last_token_distributed = ops.allgather(
+                last_token_per_dev, signal_buffers
+            )
+        else:
+            last_token_distributed = last_token_per_dev
     else:
         last_token_distributed = [
             ops.gather(h_i, offsets_i[1:] - 1, axis=0)
             for h_i, offsets_i in zip(h, input_row_offsets, strict=True)
         ]
 
-    norm_last_token = forward_sharded_layers(
-        norm_shards, last_token_distributed
-    )
-    last_logits = ops.cast(
-        lm_head(norm_last_token, signal_buffers)[0],
-        DType.float32,
-    )
+    last_logits: TensorValue | None = None
+    if emit_last_token_logits:
+        norm_last_token = forward_sharded_layers(
+            norm_shards, last_token_distributed
+        )
+        last_logits = ops.cast(
+            lm_head(norm_last_token, signal_buffers)[0],
+            DType.float32,
+        )
 
     logits = None
     offsets = None
@@ -232,11 +248,17 @@ def deepseek_logits_postprocess(
         )
 
     if logits_scaling != 1.0:
-        last_logits = last_logits / logits_scaling
+        if last_logits is not None:
+            last_logits = last_logits / logits_scaling
         if logits is not None:
             logits = logits / logits_scaling
 
-    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    assert last_logits is not None or logits is not None, (
+        "skipping last_logits requires VARIABLE/ALL logits to be emitted"
+    )
+    ret_val: tuple[TensorValue, ...] = (
+        () if last_logits is None else (last_logits,)
+    )
     if logits is not None and offsets is not None:
         ret_val += (logits, offsets)
 

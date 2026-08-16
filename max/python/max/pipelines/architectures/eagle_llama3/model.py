@@ -126,7 +126,6 @@ class EagleLlama3Model(LlamaModelBase):
             "eagle_llama3",
             input_types=single_model.input_types(
                 self.kv_params,
-                self._lora_manager,
                 needs_hidden_state_input=True,
             ),
         ) as graph:

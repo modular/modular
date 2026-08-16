@@ -62,7 +62,7 @@ accumulators.
 """
 
 from std.gpu import WARP_SIZE, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
 
@@ -277,7 +277,7 @@ struct Matmul2dFp8[
         # does), which the TileTensor-idioms-only rule forbids here. `_write4`
         # reaches the same 2-vector-store result.
         @always_inline
-        @parameter
+        @__parameter
         def _apply_epilogue[bounded: Bool]():
             var c_sub = c.tile[SG_M, SG_N](Int(sg_row_idx), Int(sg_col_idx))
             # 4 contiguous out cols = one SIMD unit; element alignment only (the
@@ -286,7 +286,7 @@ struct Matmul2dFp8[
             var c_vec = c_sub.vectorize[1, 4]()
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int, lcol: Int, acol: Int, v: SIMD[DType.float32, 4]
             ):
@@ -342,8 +342,8 @@ struct Matmul2dFp8[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         a_offsets: TileTensor[mut=False, DType.uint32, ao_layout, MutAnyOrigin],
         expert_ids: TileTensor[mut=False, DType.int32, ei_layout, MutAnyOrigin],
-        N: Int,
-        K: Int,
+        N_arg: Int32,
+        K_arg: Int32,
     ):
         """Grouped (MoE) W8A16 kernel entry: one expert group per `block_idx.z`.
 
@@ -370,6 +370,8 @@ struct Matmul2dFp8[
         element access inside `_gemm_body` is TileTensor-indexed (MMA fragment
         loaders + guarded `c.store`).
         """
+        var N = Int(N_arg)
+        var K = Int(K_arg)
         var z = Int(block_idx.z)
         var a_start = Int(a_offsets[z])
         var M = Int(a_offsets[z + 1]) - a_start
@@ -573,8 +575,8 @@ def enqueue_grouped_matmul2d_fp8[
         b.as_immut(),
         a_offsets,
         expert_ids,
-        n,
-        k,
+        Int32(n),
+        Int32(k),
         grid_dim=(grid_n, grid_m, num_active_experts),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

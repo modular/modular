@@ -37,11 +37,8 @@ olmo2_arch = SupportedArchitecture(
         "allenai/OLMo-2-1124-7B-GGUF",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float32",
-    },
+    default_encoding=Olmo2Config.DEFAULT_ENCODING,
+    supported_encodings=Olmo2Config.SUPPORTED_ENCODINGS,
     pipeline_model=Olmo2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,

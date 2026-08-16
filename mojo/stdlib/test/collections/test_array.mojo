@@ -15,11 +15,11 @@ from std.sys.info import size_of
 
 from std.compile import compile_info
 from std.hashlib import hash
-from std.memory import (
-    UnsafeMaybeUninit,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
+from std.memory import MaybeUninit
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from test_utils import (
     CopyCounter,
@@ -94,20 +94,18 @@ def test_array_int() raises:
     var arr3: Array[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
-    @parameter
     def test_init_fill[
         size: Int, batch_size: Int, dt: DType
-    ](arg: Scalar[dt]) raises:
+    ](arg: Scalar[dt]) raises {imm}:
         var arr = Array[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )
         for i in range(size):
             assert_equal(arr[i], arg)
 
-    @parameter
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
-    ]() raises:
+    ]() raises {imm}:
         comptime for current_batch_size in range(len(batch_sizes)):
             comptime for current_size in range(len(sizes)):
                 comptime for current_type in range(dts.size):
@@ -167,6 +165,16 @@ def test_array_String() raises:
     assert_equal(arr3[0], "hi")
 
 
+def test_array_default_init() raises:
+    var arr = Array[Int, 5]()
+    for i in range(5):
+        assert_equal(arr[i], Int())
+
+    var arr2 = Array[String, 3]()
+    for i in range(3):
+        assert_equal(arr2[i], String())
+
+
 def test_array_int_pointer() raises:
     var arr: Array[Int, 3] = [0, 10, 20]
 
@@ -192,12 +200,12 @@ def test_array_int_pointer() raises:
 
 
 def test_array_unsafe_assume_initialized_constructor_string() raises:
-    var maybe_uninitialized_arr = Array[UnsafeMaybeUninit[String], 3](
+    var maybe_uninitialized_arr = Array[MaybeUninit[String], 3](
         uninitialized=True
     )
-    maybe_uninitialized_arr[0].init_from("hello")
-    maybe_uninitialized_arr[1].init_from("mojo")
-    maybe_uninitialized_arr[2].init_from("world")
+    maybe_uninitialized_arr[0].unsafe_write("hello")
+    maybe_uninitialized_arr[1].unsafe_write("mojo")
+    maybe_uninitialized_arr[2].unsafe_write("world")
 
     var initialized_arr = Array[String, 3](
         unsafe_assume_initialized=maybe_uninitialized_arr^
@@ -231,19 +239,19 @@ def test_array_contains() raises:
     assert_true(not "greetings" in arr)
 
 
-def test_inline_array_runs_destructors() raises:
+def test_array_runs_destructors() raises:
     """Ensure we delete the right number of elements."""
     var destructor_recorder = List[Int]()
-    var ptr = UnsafePointer(to=destructor_recorder).as_imm()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
     comptime capacity = 32
-    var inline_list: Array[DelRecorder[ptr.origin], 4] = [
+    var arr: Array[DelRecorder[ptr.origin], 4] = [
         DelRecorder(0, ptr),
         DelRecorder(10, ptr),
         DelRecorder(20, ptr),
         DelRecorder(30, ptr),
     ]
-    _ = inline_list
-    # This is the last use of the inline list, so it should be destroyed here,
+    _ = arr
+    # This is the last use of the array, so it should be destroyed here,
     # along with each element.
     assert_equal(len(destructor_recorder), 4)
     assert_equal(destructor_recorder[0], 0)
@@ -267,8 +275,8 @@ def _test_size_of_array[current_type: Copyable, capacity: Int]() raises:
     """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
-        current_type: The type of the elements of the `InlineList`.
-        capacity: The capacity of the `InlineList`.
+        current_type: The type of the elements of the `Array`.
+        capacity: The capacity of the `Array`.
     """
     comptime size_of_current_type = size_of[current_type]()
     assert_equal(
@@ -317,7 +325,7 @@ def test_move() raises:
     # === 3. Check that the destructor is not called when moving. ===
 
     var del_counter = List[Int]()
-    var del_counter_ptr = UnsafePointer(to=del_counter).as_imm()
+    var del_counter_ptr = Pointer(to=del_counter).as_imm()
     var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
     var arr3: Array[DelRecorder[del_counter_ptr.origin], 1] = [del_recorder]
 
@@ -382,14 +390,14 @@ def test_write_repr_to() raises:
     )
 
 
-def test_inline_array_triviality() raises:
-    assert_true(is_trivially_deletable[Array[Int, 1]]())
-    assert_true(is_trivially_copyable[Array[Int, 1]]())
-    assert_true(is_trivially_movable[Array[Int, 1]]())
+def test_array_triviality() raises:
+    assert_true(IsTriviallyDeinitable[Array[Int, 1]])
+    assert_true(IsTriviallyCopyable[Array[Int, 1]])
+    assert_true(IsTriviallyMovable[Array[Int, 1]])
 
-    assert_false(is_trivially_deletable[Array[String, 1]]())
-    assert_false(is_trivially_copyable[Array[String, 1]]())
-    assert_true(is_trivially_movable[Array[String, 1]]())
+    assert_false(IsTriviallyDeinitable[Array[String, 1]])
+    assert_false(IsTriviallyCopyable[Array[String, 1]])
+    assert_true(IsTriviallyMovable[Array[String, 1]])
 
 
 def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
@@ -401,7 +409,7 @@ def _return_array[copy: Bool = False]() -> Array[Int32, 4]:
         return arr^
 
 
-def test_inline_array_copy_and_move_llvm_ir() raises:
+def test_array_copy_and_move_llvm_ir() raises:
     def _test(ir: StringSlice) raises:
         assert_true("initializes((0, 16))" in ir)
         assert_false('asm sideeffect "nop"' in ir)
@@ -416,7 +424,7 @@ def test_inline_array_copy_and_move_llvm_ir() raises:
     _test(copy_info.asm)
 
 
-def test_inline_array_iter() raises:
+def test_array_iter() raises:
     var arr: Array[Int, 3] = [0, 1, 2]
     var s = 0
     for el in arr:
@@ -428,7 +436,7 @@ def test_inline_array_iter() raises:
     assert_equal(s, 0)
 
 
-def test_inline_array_iter_mut() raises:
+def test_array_iter_mut() raises:
     var arr: Array[Int, 3] = [0, 1, 2]
     for ref el in arr:
         el += 1
@@ -439,10 +447,10 @@ def test_inline_array_iter_mut() raises:
     assert_equal(s, 6)
 
 
-def _test_inline_array_iter_bounds[
+def _test_array_iter_bounds[
     I: Iterator
 ](var array_iter: I, array_len: Int) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = array_iter^
 
@@ -469,13 +477,26 @@ struct NonMovable(Movable where False):
     var value: Int
 
 
-struct LinearNonMovable(ImplicitlyDeletable where False, Movable where False):
-    """A fully linear type: neither `Movable` nor `ImplicitlyDeletable`."""
+struct LinearNonMovable(Deinitable where False, Movable where False):
+    """A fully linear type: neither `Movable` nor `Deinitable`."""
 
     var value: Int
 
 
-def test_inline_array_eq() raises:
+struct NonDefaultable:
+    pass
+
+
+struct DefaultableNonMovable(Defaultable, Movable where False):
+    """A `Defaultable` type that is not `Movable`."""
+
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+def test_array_eq() raises:
     var a: Array[Int, 3] = [1, 2, 3]
     var b: Array[Int, 3] = [1, 2, 3]
     var c: Array[Int, 3] = [1, 2, 4]
@@ -511,7 +532,7 @@ def test_inline_array_eq() raises:
     assert_true(g != i)
 
 
-def test_inline_array_hash() raises:
+def test_array_hash() raises:
     var a: Array[Int, 3] = [1, 2, 3]
     var b: Array[Int, 3] = [1, 2, 3]
     var c: Array[Int, 3] = [1, 2, 4]
@@ -523,17 +544,16 @@ def test_inline_array_hash() raises:
     assert_true(hash(a) != hash(c))
 
 
-def test_inline_array_conditional_conformances() raises:
+def test_array_conditional_conformances() raises:
     assert_true(conforms_to(Array[Int, 3], Writable))
     assert_true(conforms_to(Array[Int, 3], Equatable))
     assert_true(conforms_to(Array[Int, 3], Hashable))
     assert_true(conforms_to(Array[Int, 3], Copyable))
-    assert_true(conforms_to(Array[Int, 3], ImplicitlyCopyable))
-    assert_true(conforms_to(Array[Int, 3], ImplicitlyDeletable))
+    assert_true(conforms_to(Array[Int, 3], Deinitable))
     # An array of explicitly-destroyed elements is not implicitly deletable.
-    assert_false(conforms_to(Array[ExplicitDestroy, 3], ImplicitlyDeletable))
+    assert_false(conforms_to(Array[ExplicitDestroy, 3], Deinitable))
     assert_false(conforms_to(Array[NonWritable, 3], Writable))
-    # Owned iteration requires `Movable & ImplicitlyDeletable` elements, but
+    # Owned iteration requires `Movable & Deinitable` elements, but
     # not `Copyable`: a consuming iterator moves elements out rather than
     # copying them.
     assert_true(conforms_to(Array[Int, 3], IterableOwned))
@@ -547,20 +567,24 @@ def test_inline_array_conditional_conformances() raises:
     # accepted, and the array's `Movable` conformance follows the element.
     assert_true(conforms_to(Array[Int, 3], Movable))
     assert_false(conforms_to(Array[NonMovable, 3], Movable))
-    assert_true(conforms_to(Array[NonMovable, 3], ImplicitlyDeletable))
-    # A fully linear element (neither `Movable` nor `ImplicitlyDeletable`)
+    assert_true(conforms_to(Array[NonMovable, 3], Deinitable))
+    # A fully linear element (neither `Movable` nor `Deinitable`)
     # yields an array that is likewise neither.
     assert_false(conforms_to(Array[LinearNonMovable, 3], Movable))
-    assert_false(conforms_to(Array[LinearNonMovable, 3], ImplicitlyDeletable))
+    assert_false(conforms_to(Array[LinearNonMovable, 3], Deinitable))
+
+    assert_true(conforms_to(Array[Int, 3], Defaultable))
+    assert_true(conforms_to(Array[DefaultableNonMovable, 3], Defaultable))
+    assert_false(conforms_to(Array[NonDefaultable, 3], Defaultable))
 
 
-def test_inline_array_iter_bounds() raises:
+def test_array_iter_bounds() raises:
     var arr: Array[Int, 3] = [1, 2, 3]
-    _test_inline_array_iter_bounds(iter(arr), len(arr))
-    _test_inline_array_iter_bounds(reversed(arr), len(arr))
+    _test_array_iter_bounds(iter(arr), len(arr))
+    _test_array_iter_bounds(reversed(arr), len(arr))
 
 
-def test_inline_array_iter_owned() raises:
+def test_array_iter_owned() raises:
     var arr: Array[Int, 3] = [10, 20, 30]
     var result = List[Int]()
     for elem in arr^:
@@ -572,8 +596,8 @@ def test_inline_array_iter_owned() raises:
     assert_equal(result[2], 30)
 
 
-def test_inline_array_iter_owned_move_only() raises:
-    # Consuming iteration only requires `Movable & ImplicitlyDeletable`, not
+def test_array_iter_owned_move_only() raises:
+    # Consuming iteration only requires `Movable & Deinitable`, not
     # `Copyable`: each element is moved out of the array, not copied.
     var arr: Array[MoveOnly[Int], 3] = [
         MoveOnly[Int](0),
@@ -588,13 +612,13 @@ def test_inline_array_iter_owned_move_only() raises:
     assert_equal(total, 3)
 
 
-def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
+def test_array_iter_owned_destroys_elements_if_not_consumed() raises:
     # Verify that creating and immediately dropping the iterator doesn't crash.
     var arr: Array[Int, 3] = [1, 2, 3]
     var _ = arr^.__iter__()
 
 
-def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raises:
+def test_array_iter_owned_destroys_elements_if_partially_consumed() raises:
     # Verify partial consumption followed by dropping doesn't crash.
     var arr: Array[Int, 3] = [1, 2, 3]
     var it = arr^.__iter__()
@@ -602,7 +626,7 @@ def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raise
     _ = it^  # drop iterator with remaining elements
 
 
-def test_inline_array_iter_owned_bounds() raises:
+def test_array_iter_owned_bounds() raises:
     var arr: Array[Int, 3] = [1, 2, 3]
     var it = arr^.__iter__()
     assert_equal(it.bounds()[0], 3)
@@ -614,7 +638,7 @@ def test_inline_array_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 0)
 
 
-def test_inline_array_move_only() raises:
+def test_array_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
     # conformance path of `Array[T: Movable, size]`.
     assert_false(conforms_to(Array[MoveOnly[Int], 2], Copyable))
@@ -633,7 +657,7 @@ def test_inline_array_move_only() raises:
     assert_equal(arr.unsafe_get(2), MoveOnly[Int](2))
 
 
-def test_inline_array_literal_size_inference() raises:
+def test_array_literal_size_inference() raises:
     # The array length is inferred from the element count of the literal.
     var arr: Array[Int, _] = [1, 2, 3]
     comptime assert type_of(arr).length == 3
@@ -659,7 +683,7 @@ def test_inline_array_literal_size_inference() raises:
     assert_equal(move_only[1], MoveOnly[Int](1))
 
 
-def test_inline_array_with_explicit_destroy_type() raises:
+def test_array_with_explicit_destroy_type() raises:
     var arr: Array[ExplicitDestroy, 3] = [
         ExplicitDestroy(0),
         ExplicitDestroy(1),
@@ -680,5 +704,5 @@ def test_inline_array_with_explicit_destroy_type() raises:
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
     # TODO: skipped to work around MOCO-3749
-    suite.skip[test_inline_array_copy_and_move_llvm_ir]()
+    suite.skip[test_array_copy_and_move_llvm_ir]()
     suite^.run()

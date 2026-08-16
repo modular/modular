@@ -27,13 +27,14 @@ MI355X (gfx950) only.
 """
 
 from std.atomic import Atomic, Ordering, fence
-from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.numerics import isnan, nan
 
 comptime DEVICE_SCOPE = "agent"
-comptime _flag_atomic = Atomic[DType.int32, scope=DEVICE_SCOPE]
+comptime _flag_atomic = Atomic[Int32, scope=DEVICE_SCOPE]
 comptime DATA_READY = Int32(1024)
 
 comptime N_ITERS = 100

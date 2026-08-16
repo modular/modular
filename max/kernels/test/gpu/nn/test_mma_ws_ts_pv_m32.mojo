@@ -76,16 +76,17 @@ from std.memory import bitcast
 from std.random import randn, seed
 from std.sys import size_of
 
-from std.gpu import barrier, thread_idx, warp_id as get_warp_id
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from std.gpu import thread_idx, warp_id as get_warp_id
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAKind,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,

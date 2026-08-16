@@ -30,7 +30,7 @@ from std.sys import size_of
 from std.random import random_float64
 from std.memory import bitcast
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 
 from layout import Coord, TileTensor, row_major
 
@@ -94,14 +94,14 @@ def _run_rms_norm_unfused(
 
     @always_inline
     @__copy_capture(in_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(out_view)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:

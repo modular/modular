@@ -26,12 +26,11 @@ The mask application in MHA prefill is performed by
 Both `_apply_causal_mask_fast` and `_fill_dst_neg_inf` write
 `-3.4028235e38` (FP32 min) for masked positions. The per-element
 `mask_functor.mask(...)` path used for `ChunkedMask`,
-`SlidingWindowCausalMask`, etc., writes `MASK_VALUE = -10_000`
-(see `mha_mask.mojo` line 337 + comment "TODO(KERN-782): -10000
-should be -inf but softmax saturates with NaNs"). The two values
-both produce `exp2(value - max_score) == 0.0` in FP32 for the
-ranges encountered by softmax — `exp2(-10000) ≈ 0` and
-`exp2(-FP32_MIN) == 0`.
+`SlidingWindowCausalMask`, etc., writes `MASK_VALUE` (see
+`mha_mask.mojo` + comment "TODO(KERN-782): MASK_VALUE should be -inf
+but softmax saturates with NaNs"). Both values produce
+`exp2(value - max_score) == 0.0` in FP32 for the ranges encountered
+by softmax.
 
 The motivating bug (BUG#1): the MHA kernel BF16 with `CausalMask` was
 producing softmax outputs whose `norm_vec` looked like masked
@@ -40,7 +39,7 @@ write itself produces values that flush `exp2` to exactly 0.0.
 """
 
 from std.gpu import lane_id
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 
@@ -279,9 +278,6 @@ def kernel_mask_unit(
 
 # `_apply_causal_mask_fast` and `_fill_dst_neg_inf` both write this value.
 comptime FP32_NEG_INF_FILLER = Float32(-3.4028235e38)
-# `mask_functor.mask(...)` path (used by ChunkedMask / SlidingWindow generic
-# path) writes this. See `mha_mask.mojo` line 337.
-comptime MASK_VALUE_NEG10K = Float32(-10000.0)
 
 
 def _idx(case_idx: Int, lane: Int, p: Int) -> Int:

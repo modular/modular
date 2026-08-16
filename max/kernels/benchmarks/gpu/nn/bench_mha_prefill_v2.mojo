@@ -35,7 +35,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import StaticTuple
 from std.utils.numerics import min_or_neg_inf
 
@@ -138,13 +138,12 @@ def run_mha_prefill_v2[
 
     if bench:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = (
                     cb_q.offset_ptr(iteration)
                     .bitcast[Scalar[DType.bfloat16]]()
@@ -253,7 +252,7 @@ def run_mha_prefill_v2[
                         ctx,
                     )
 
-            bencher_iter_custom[_kernel_launch](b, ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
         def compute_flops() {imm} -> Int:
             # Causal-mask: half the tiles. Matches bench_hk_mha_exact's

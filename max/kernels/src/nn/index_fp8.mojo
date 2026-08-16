@@ -27,13 +27,14 @@ from layout import (
 )
 from layout.tile_layout import row_major
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.sync import barrier
-from std.gpu.memory import external_memory
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.sync import barrier
+from max.gpu.memory import external_memory
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.attention.gpu.nvidia.common import q_tma
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
+    SPEC_DECODE_N_TOKENS_ALT,
     fp8_index_score_sm100,
 )
 from std.utils.index import Index, IndexList
@@ -149,7 +150,9 @@ def fp8_index_kernel[
         return
 
     ref smem_ptr = external_memory[
-        Scalar[DType.uint8], address_space=AddressSpace.SHARED, alignment=128
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
     ]().bitcast[IndexSmemStorage[dtype, num_heads, depth, BN]]()[]
 
     ref q_smem = smem_ptr.q_smem
@@ -281,10 +284,10 @@ def fp8_index_kernel[
             )
             k_s_reg = ks_ptr[0].cast[DType.float32]()
 
-        q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
+        var q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
             thread_idx.y, 0
         )
-        k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
+        var k_smem_frag = k_smem_tile.tile[BN // thread_dim_x, depth](
             thread_idx.x, 0
         )
 
@@ -421,6 +424,25 @@ def fp8_index[
             num_heads,
             depth,
             _is_cache_length_accurate=True,
+            # GLM 5.x MTP decodes 6 tokens (num_draft_tokens + 1), which the
+            # default 4-token N-tile at nh=32 covers with two blocks spending 256
+            # MMA columns on 192 live ones. 3 divides 6, so it tiles the step
+            # exactly at 96 columns -- and unlike 6, its TMEM footprint still
+            # leaves room for two co-resident CTAs. Inert wherever 3 tokens are
+            # not a legal UMMA N or the default already divides the step (nh=64).
+            #
+            # This is a speculative-decode tile and nothing else. The bound is
+            # arithmetic, not a threshold: a 3-token tile needs `msl // 3` blocks
+            # where the default needs `ceildiv(msl, 4)`, and
+            # `msl // 3 <= ceildiv(msl, 4)` iff `msl <= 9`, so the gap grows
+            # without bound and only max_seq_len in {3, 6, 9} survives at nh=32
+            # (12 is excluded because the default tile already divides it). A
+            # 2-token hint was tried first, back when only 64 columns could be
+            # hoisted without spilling -- but it needs THREE blocks to cover the
+            # step, so it pays 1.5x the CTA prologues to reach the same hoist. Once
+            # the index arithmetic was narrowed to 32-bit, every width hoists at
+            # zero spill and 3 tokens is simply the exact divisor.
+            N_TOKENS_ALT=SPEC_DECODE_N_TOKENS_ALT,
         ](
             output,
             q,
@@ -499,7 +521,7 @@ def _index_matmul_max[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ],
     k_lut: k_type,
-    max_seq_len: Int,
+    max_seq_len: Int32,
 ):
     comptime num_heads = q_layout.shape[1].value()
     comptime depth = q_layout.shape[2].value()
@@ -747,7 +769,7 @@ def fp8_index_naive[
         k_lt,
         valid_length_lt,
         k_operand,
-        max_seq_len,
+        Int32(max_seq_len),
         grid_dim=(
             ceildiv(max_seq_len, 16),
             ceildiv(max_num_keys, 16),

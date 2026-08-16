@@ -21,8 +21,10 @@ from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys.info import align_of, simd_width_of
 
-from std.algorithm import sync_parallelize, tile, vectorize
-from std.gpu.host import DeviceContext
+from std.algorithm import tile, vectorize
+
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -31,7 +33,7 @@ from layout import (
 from layout.tile_layout import TensorLayout, row_major
 from std.memory import alloc, dealloc, Allocation
 from std.memory.alloc import Layout as AllocLayout
-from std.runtime.asyncrt import parallelism_level
+from max.runtime.asyncrt import parallelism_level
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -65,7 +67,7 @@ from .vnni import Inner_matmul_vnni
 # - _run_inner_loop_i8mm()
 
 
-trait InnerMatmulKernel(ImplicitlyCopyable, ImplicitlyDeletable):
+trait InnerMatmulKernel(Deinitable, ImplicitlyCopyable):
     """Trait for CPU matmul microkernels operating on pre-packed tiles.
 
     Conforming types implement `__inner_matmul__`, which accumulates a
@@ -365,7 +367,7 @@ struct TiledMatmul[
         )
 
         @__copy_capture(sub_tile_n_k, b_packed_tile)
-        @parameter
+        @__parameter
         @always_inline
         def row_iteration[tile_kernel_rows: Int](row_offset: Int):
             var skip_boundary_check = knm_bounds[1] > sub_tile_n
@@ -425,7 +427,7 @@ struct TiledMatmul[
         )
         var tile_n: Int = self.tile_n_k[0]
 
-        @parameter
+        @__parameter
         @always_inline
         def m_loop[secondary_tile_size: Int](col_idx: Int, tile_size_n: Int):
             self._outer_m_loop[secondary_tile_size](
@@ -438,7 +440,7 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         comptime if not Self.b_packed:
-            comptime secondary_tiles = [
+            comptime secondary_tiles: List[Int] = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
@@ -452,7 +454,9 @@ struct TiledMatmul[
                 primary_cleanup_tile=Self.config.simd_size,
             )
         else:
-            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
+            comptime secondary_tiles_packed_b: List[Int] = [
+                Self.config.kernel_cols
+            ]
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
                 0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )
@@ -465,7 +469,7 @@ struct TiledMatmul[
 
         # Each tiled iteration on the k dimension.
         @always_inline
-        @parameter
+        @__parameter
         def k_iteration(k_offset: Int, k_tile_size: Int):
             var last_k_tile = (
                 k_offset + k_tile_size + self.global_tile_offset.K
@@ -559,7 +563,7 @@ def _matmul_cpu_impl[
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
-        @parameter
+        @__parameter
         def pack_task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
@@ -581,7 +585,7 @@ def _matmul_cpu_impl[
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, mh, kh)
-        @parameter
+        @__parameter
         def task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
                 a.dtype,
@@ -712,7 +716,7 @@ def matmul[
             AllocLayout[Scalar[scratch_type]](
                 count=scratch_m * scratch_n, alignment=scratch_align
             )
-        ).into_deletable()
+        ).into_managed()
         var scratch_ptr: UnsafePointer[
             Scalar[scratch_type], origin_of(scratch_alloc)
         ] = scratch_alloc.unsafe_ptr()
@@ -720,7 +724,7 @@ def matmul[
             scratch_ptr, row_major(Coord(scratch_m, scratch_n))
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def cast_epilogue[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1

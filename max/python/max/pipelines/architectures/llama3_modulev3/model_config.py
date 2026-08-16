@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
@@ -33,12 +33,19 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -48,6 +55,12 @@ from .layers.rotary_embedding import LongRoPERotaryEmbedding
 @dataclass(kw_only=True)
 class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
 
     hidden_size: int
     num_attention_heads: int
@@ -77,6 +90,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    quantization_encoding: SupportedEncoding | None = None
 
     @classmethod
     def construct_kv_params(
@@ -98,7 +112,9 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             speculative_method=pipeline_config.speculative.speculative_method
             if pipeline_config.speculative
             else None,
-            num_draft_tokens=pipeline_config.speculative.num_speculative_tokens
+            num_draft_tokens=(
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
             if pipeline_config.speculative
             else 0,
         )
@@ -140,19 +156,15 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
 
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
         )
 
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and (model_config.rope_type or "normal") == "normal"
-        )
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -243,6 +255,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

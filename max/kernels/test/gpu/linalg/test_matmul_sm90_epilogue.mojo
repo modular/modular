@@ -15,7 +15,7 @@ from std.collections import Optional
 from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from linalg.utils import elementwise_compute_lambda_type
@@ -166,7 +166,7 @@ def main() raises:
             default_epilogue=True,
         ](ctx, Int(91), Idx[111], Idx[588])
 
-        @parameter
+        @__parameter
         @always_inline
         def test_lambda_fn_square[
             _dtype: DType,
@@ -192,7 +192,7 @@ def main() raises:
             default_epilogue=True,
         ](ctx, Int(277), Idx[2560], Idx[128])
 
-        @parameter
+        @__parameter
         @always_inline
         def test_lambda_add_coords[
             _dtype: DType,

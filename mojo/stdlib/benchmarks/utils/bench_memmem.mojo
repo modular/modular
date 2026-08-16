@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import _memchr, _memmem
+from std.collections.string.string_span import _memchr, _memmem
 from std.math import align_down
 from std.sys import simd_width_of
 
@@ -149,9 +149,9 @@ from std.benchmark import black_box, keep
 def _memmem_baseline[
     dtype: DType
 ](
-    haystack: Span[mut=False, Scalar[dtype], _],
-    needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+    haystack: ImmSpan[Scalar[dtype], _],
+    needle: ImmSpan[Scalar[dtype], _],
+) -> Optional[Pointer[Scalar[dtype], haystack.origin]]:
     if not needle:
         return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
@@ -203,14 +203,14 @@ def _memmem_baseline[
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         keep(
             _memmem_baseline(
@@ -222,14 +222,14 @@ def bench_find_baseline(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_find_optimized(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn():
         keep(
             _memmem(

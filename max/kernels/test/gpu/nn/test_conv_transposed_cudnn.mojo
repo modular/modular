@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.host import DeviceContext
-from std.sys import Vendor
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
@@ -218,7 +217,7 @@ def test_conv_transposed_cudnn[
 def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
-        if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
+        if ctx.default_device_info.api != "cuda":
             print("Skipping cuDNN tests - not running on NVIDIA GPU")
             return
 

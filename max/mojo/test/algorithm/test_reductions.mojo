@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm import (
+from max.algorithm import (
     cumsum,
     mean,
     product,
     sum,
     variance,
 )
-from std.algorithm.reduction import _reduce_generator, max, min
+from max.algorithm.reduction import _reduce_generator, max, min
 from std.math.math import max as _max, min as _min
 from std.testing import TestSuite
 
@@ -75,7 +75,7 @@ def test_fused_reductions_inner() raises:
 
     @always_inline
     @__copy_capture(vector)
-    @parameter
+    @__parameter
     def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
@@ -87,7 +87,7 @@ def test_fused_reductions_inner() raises:
     var out = StaticTuple[Scalar[test_type], num_reductions]()
 
     @always_inline
-    @parameter
+    @__parameter
     def output_fn[
         dtype: DType, width: SIMDLength, rank: Int
     ](
@@ -101,7 +101,7 @@ def test_fused_reductions_inner() raises:
         out = rebind[StaticTuple[Scalar[test_type], num_reductions]](val)
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_fn[
         ty: DType,
         width: SIMDLength,
@@ -159,7 +159,7 @@ def test_fused_reductions_outer() raises:
 
     @always_inline
     @__copy_capture(vector)
-    @parameter
+    @__parameter
     def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
@@ -169,7 +169,7 @@ def test_fused_reductions_outer() raises:
         return loaded_val._refine[dtype]()
 
     @always_inline
-    @parameter
+    @__parameter
     def reduce_fn[
         ty: DType,
         width: SIMDLength,
@@ -192,7 +192,7 @@ def test_fused_reductions_outer() raises:
     var shape = Coord((50, 2))
 
     @always_inline
-    @parameter
+    @__parameter
     def output_fn[
         dtype: DType, width: SIMDLength, rank: Int
     ](

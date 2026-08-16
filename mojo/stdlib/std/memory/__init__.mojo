@@ -28,49 +28,34 @@ automatic memory management.
 from .alloc import Allocation, ThinAllocation, alloc, dealloc, Layout
 from .arc_pointer import ArcPointer
 from .memory import (
-    memcmp,
     unsafe_memcmp,
-    memcpy,
     unsafe_memcpy,
     # TODO(MSTDL-2918): Remove this export once the `memmove` deprecation is
     # dropped; callers should use `unsafe_memmove`.
     memmove,
     unsafe_memmove,
-    memset,
     unsafe_memset,
-    memset_zero,
     unsafe_memset_zero,
-    destroy_n,
     unsafe_destroy_n,
     is_trivially_copyable,
     is_trivially_deletable,
     is_trivially_movable,
-    uninit_copy_n,
-    uninit_move_n,
     unsafe_uninit_copy_n,
     unsafe_uninit_move_n,
     forget_deinit,
 )
-from .stack_allocation import stack_allocation
+from .stack_allocation import stack_allocation, unsafe_stack_allocation
 from .owned_pointer import OwnedPointer
+from .address_space import AddressSpace
 from .pointer import (
-    AddressSpace,
+    ImmOpaquePointer,
     ImmPointer,
-    ImmutPointer,
+    MutOpaquePointer,
     MutPointer,
+    OpaquePointer,
+    OptionalPointer,
     Pointer,
 )
 from .unsafe import bitcast, pack_bits
-from .unsafe_pointer import (
-    ImmOpaquePointer,
-    ImmutOpaquePointer,
-    MutOpaquePointer,
-    OpaquePointer,
-    OptionalPointer,
-    OptionalUnsafePointer,
-    ImmUnsafePointer,
-    ImmutUnsafePointer,
-    MutUnsafePointer,
-    UnsafePointer,
-)
-from .unsafe_maybe_uninit import UnsafeMaybeUninit
+from .unsafe_pointer import UnsafePointer
+from .maybe_uninit import MaybeUninit

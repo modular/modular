@@ -20,9 +20,9 @@
 from std.math import align_down, ceildiv, iota
 from std.sys.info import simd_width_of
 
-from std.algorithm import sync_parallelize
-from std.algorithm.functional import _get_num_workers
-from std.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
+from max.algorithm.functional import _get_num_workers
+from max.gpu.host import DeviceContext
 from std.math.math import min as _min
 from layout import TileTensor
 
@@ -97,9 +97,9 @@ def _argn[
     @__copy_capture(
         axis_size, chunk_size, output_stride, input_stride, parallel_size
     )
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
-        @parameter
+        @__parameter
         @always_inline
         def cmpeq[
             dtype: DType, simd_width: SIMDLength
@@ -111,7 +111,7 @@ def _argn[
             else:
                 return a.ge(b)
 
-        @parameter
+        @__parameter
         @always_inline
         def cmp[
             dtype: DType, simd_width: SIMDLength

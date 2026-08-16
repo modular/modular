@@ -13,17 +13,17 @@
 
 from std.sys.info import align_of
 
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu import thread_idx
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
-from std.memory import stack_allocation
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 
 def test_external_shared_mem(ctx: DeviceContext) raises:
     def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
-        var sram = stack_allocation[
+        var sram = unsafe_stack_allocation[
             16,
             Float32,
             address_space=AddressSpace.SHARED,

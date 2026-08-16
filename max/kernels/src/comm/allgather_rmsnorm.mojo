@@ -23,7 +23,7 @@ of `reducescatter_rmsnorm.mojo` -- keep in sync. One block per GLOBAL row so eac
 row's `block.sum` runs parallel across blocks, not `ngpus` serial within one.
 """
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
@@ -38,8 +38,8 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.primitives import block
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.primitives import block
 from layout import Coord, TensorLayout, TileTensor
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
@@ -85,19 +85,23 @@ def _allgather_rmsnorm_kernel[
     ngpus: Int,
     simd_width: Int,
     threads_per_block: Int,
+    quant_epilogue: Optional[
+        def[
+            width: Int
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) capturing -> None
+    ] = None,
+    domain_id: Int = 0,
 ](
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
-    in_lengths: StaticTuple[Int, ngpus],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
+    in_lengths: StaticTuple[Int32, ngpus],
     gamma: TileTensor[in_dtype, GammaLayoutType, origin],
     normed_out: TileTensor[mut=True, in_dtype, NormedLayoutType, normed_origin],
     sum_out: TileTensor[mut=True, in_dtype, SumLayoutType, sum_origin],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    cols: Int,
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    my_rank: Int,
+    cols_dev: Int32,
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    my_rank_dev: Int32,
 ):
     """Gather every source-GPU row into `[rows, cols]` and RMSNorm it in registers.
 
@@ -105,6 +109,8 @@ def _allgather_rmsnorm_kernel[
     `[prefix(g), prefix(g)+in_lengths[g])`; `normed_out`/`sum_out` are the full
     replicated outputs, indexed by GLOBAL row.
     """
+    var cols = Int(cols_dev)
+    var my_rank = Int(my_rank_dev)
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     # 2D stores below use Coord(grow, col_idx).
     comptime assert normed_out.flat_rank >= 2
@@ -132,10 +138,10 @@ def _allgather_rmsnorm_kernel[
     var rows = 0
     comptime for g in range(ngpus):
         row_starts[g] = rows
-        rows += in_lengths[g]
+        rows += Int(in_lengths[g])
 
     # Start barrier: we P2P-read peers' shards, so all ranks must be ready.
-    _multi_gpu_barrier[ngpus, is_start=True](
+    _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
@@ -171,16 +177,24 @@ def _allgather_rmsnorm_kernel[
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
+        # (x * norm) * gamma in f32, cast to in_dtype last: mbc=True.
+        # Outside `is_valid` because `quant_epilogue` may reduce across lanes.
+        var normalized = (reduced_f * norm_factor) * gamma_vec
+        var normed = normalized.cast[in_dtype]()
         if is_valid:
-            # (x * norm) * gamma in f32, cast to in_dtype last: mbc=True.
-            var normalized = (reduced_f * norm_factor) * gamma_vec
-            normed_out.store[width=simd_width](
-                Coord(grow, col_idx), normalized.cast[in_dtype]()
-            )
+            normed_out.store[width=simd_width](Coord(grow, col_idx), normed)
+        # Same bf16 a standalone quantize would read back from `normed_out`, so
+        # folding one in is byte-identical.
+        comptime if quant_epilogue:
+            comptime epilogue = quant_epilogue.value()
+            epilogue[width=simd_width](grow, col_idx, normed)
 
-    # No end barrier (like the AR/RS+norm kernels): local consumers rely on
-    # stream order (a remote one adds its own). Peers P2P-read this rank's
-    # shard, so don't reuse it before the next collective's start barrier.
+    # End barrier: peers P2P-read this rank's shard, so it must not be reused
+    # until every peer is done. Deferring to the next collective's start barrier
+    # breaks once a second grouped op shares the domain (`domain_id`).
+    _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+        rank_sigs, rank_sigs[my_rank], my_rank
+    )
 
 
 # --- Launcher ---
@@ -191,23 +205,34 @@ def _allgather_rmsnorm_launch[
     in_dtype: DType,
     ngpus: Int,
     threads_per_block: Int,
+    quant_epilogue: Optional[
+        def[
+            width: Int
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) capturing -> None
+    ] = None,
+    domain_id: Int = 0,
 ](
     rows: Int,
     cols: Int,
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
-    ],
+    src_ptrs: Array[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus],
     in_lengths: StaticTuple[Int, ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     my_rank: Int,
     ctx: DeviceContext,
 ) raises:
     """Launch the fused all-gather + RMSNorm kernel."""
+    # A DP replica can legitimately get an empty batch, and a zero grid is
+    # rejected by `enqueue_function`. Skipping the barrier pair is group-uniform
+    # because `rows` sums the group's whole shard list, identical on every rank,
+    # so no peer is stranded at the start barrier.
+    if rows == 0:
+        return
+
     comptime sm_version = get_sm_version()
     var payload_bytes = rows * cols * size_of[in_dtype]()
     # All-gather table (CDNA4 = 128), not allreduce (64): the norm is free only at
@@ -235,18 +260,23 @@ def _allgather_rmsnorm_launch[
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
+        quant_epilogue=quant_epilogue,
+        domain_id=domain_id,
     ]
+    var in_lengths_dev = StaticTuple[Int32, ngpus](0)
+    comptime for i in range(ngpus):
+        in_lengths_dev[i] = Int32(in_lengths[i])
     ctx.enqueue_function[kernel](
         src_ptrs,
-        in_lengths,
+        in_lengths_dev,
         gamma,
         normed_out,
         sum_out,
         epsilon,
         weight_offset,
-        cols,
+        Int32(cols),
         rank_sigs,
-        my_rank,
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=block_dim,
     )
@@ -261,17 +291,77 @@ def allgather_rmsnorm[
     in_layout: TensorLayout,
     in_origin: Origin,
     //,
+    domain_id: Int = 0,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
+    local_rank: Optional[Int] = None,
+) raises:
+    """Fused all-gather + RMSNorm across `ngpus` GPUs (bf16 in/out).
+
+    The bf16-only entry point: no quantized copy of the normed stream. See
+    `_allgather_rmsnorm_impl`.
+
+    Parameters:
+        in_dtype: Input/output data type (bf16).
+        ngpus: Number of GPUs participating.
+        in_layout: Layout of the input shard TileTensors.
+        in_origin: Origin of the input shard TileTensors.
+        domain_id: Barrier counter bank; see `_allgather_rmsnorm_impl`.
+
+    Args:
+        input_buffers: Per-GPU input row-shards as TileTensors.
+        normed_out: This GPU's full normed output `[rows, cols]`.
+        sum_out: This GPU's full gathered residual `[rows, cols]`.
+        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
+        epsilon: RMSNorm epsilon for numerical stability.
+        weight_offset: Additive offset for gamma weights.
+        rank_sigs: Per-GPU signal pointers for synchronization.
+        ctx: Device context for this GPU.
+        local_rank: Optional group-local rank of THIS GPU.
+    """
+
+    _allgather_rmsnorm_impl[domain_id=domain_id](
+        input_buffers,
+        normed_out,
+        sum_out,
+        gamma,
+        epsilon,
+        weight_offset,
+        rank_sigs,
+        ctx,
+        local_rank,
+    )
+
+
+def _allgather_rmsnorm_impl[
+    in_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    //,
+    quant_epilogue: Optional[
+        def[
+            width: Int
+        ](row: Int, col: Int, val: SIMD[in_dtype, width]) capturing -> None
+    ] = None,
+    domain_id: Int = 0,
+](
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
+    normed_out: TileTensor[mut=True, in_dtype, ...],
+    sum_out: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    local_rank: Optional[Int] = None,
 ) raises:
     """Fused all-gather + RMSNorm across `ngpus` GPUs (bf16 in/out).
 
@@ -286,11 +376,23 @@ def allgather_rmsnorm[
         ngpus: Number of GPUs participating.
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
+        quant_epilogue: Optional. Receives each normed value already cast
+            to `in_dtype`, so a folded-in quantize is byte-identical. Called on
+            ALL lanes (invalid ones carry 0), so it must guard its own stores.
+            `None` elides it entirely.
+        domain_id: Barrier counter bank (0 for full-world, nonzero for a
+            grouped collective so its counters never poison the full-world
+            bank). Ops of the same width deliberately share a bank, which
+            requires every rank in the domain to issue the same barrier
+            sequence -- see `NUM_BARRIER_DOMAINS` in `sync.mojo` for the full
+            invariant. Enforced here by the `rows == 0` guard and
+            `_dispatch_ag_norm`'s group-invariant fuse gate.
 
     Args:
         input_buffers: Per-GPU input row-shards as TileTensors (peer access
             required); shard `i` becomes global rows
-            `[prefix(i), prefix(i)+shard_i)`.
+            `[prefix(i), prefix(i)+shard_i)`. Grouped collectives pass only
+            their own group's shards, so `rows` is the group's gathered total.
         normed_out: This GPU's full normed output `[rows, cols]`.
         sum_out: This GPU's full gathered residual `[rows, cols]`.
         gamma: RMSNorm gamma weights (1D TileTensor of length cols).
@@ -298,11 +400,15 @@ def allgather_rmsnorm[
         weight_offset: Additive offset for gamma weights.
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
+        local_rank: Optional rank of THIS GPU within the collective's group.
+            Defaults to the physical device id for full-world collectives.
+            Grouped collectives MUST pass it: `input_buffers`/`rank_sigs` are
+            group-local, so a global device id indexes them out of range.
 
     Note:
-        No end barrier: outputs are safe to read only on the local GPU (a remote
-        consumer adds its own), and peers P2P-read the input shards, so callers
-        must not overwrite them before the next collective's start barrier.
+        An end barrier is issued, so the P2P-read input shards are free to be
+        reused once this op retires. Outputs are still safe to read only on the
+        local GPU; a remote consumer must add its own barrier.
     """
     comptime assert ngpus >= 2, "allgather_rmsnorm requires at least 2 GPUs"
     comptime assert (
@@ -317,13 +423,13 @@ def allgather_rmsnorm[
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
 
-    var src_ptrs = InlineArray[
+    var src_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
     var in_lengths = StaticTuple[Int, ngpus](0)
     var rows = 0
     comptime for i in range(ngpus):
-        src_ptrs[i] = input_buffers[i].ptr.as_imm().as_unsafe_any_origin()
+        src_ptrs[i] = input_buffers[i]._storage.as_imm().as_unsafe_any_origin()
         var len_i = input_buffers[i].num_elements() // cols
         in_lengths[i] = len_i
         rows += len_i
@@ -355,7 +461,69 @@ def allgather_rmsnorm[
             )
         )
 
-    _allgather_rmsnorm_launch[simd_width, in_dtype, ngpus, threads_per_block](
+    # The caller-supplied rank indexes group-local arrays, so a global device
+    # id is out of range. Only the first `ngpus` `rank_sigs` slots are
+    # initialized: reading past them faults on-device, far from the call site.
+    var my_rank = local_rank.value() if local_rank else Int(ctx.id())
+    if not 0 <= my_rank < ngpus:
+        raise Error(
+            String(
+                "allgather_rmsnorm: local_rank (",
+                my_rank,
+                ") must be the GROUP-local rank in [0, ",
+                ngpus,
+                (
+                    "); a global device id indexes the group-local peer and"
+                    " signal arrays out of range"
+                ),
+            )
+        )
+
+    # Both outputs hold the GROUP's gathered tensor, replicated. Sizing them
+    # from the whole world instead is the natural TP-within-DP mistake, and the
+    # kernel writes by global row, so it would overrun with correct values.
+    var expected_numel = rows * cols
+    if normed_out.num_elements() != expected_numel:
+        raise Error(
+            String(
+                "allgather_rmsnorm: normed_out holds ",
+                normed_out.num_elements(),
+                " elements, expected ",
+                expected_numel,
+                " (",
+                rows,
+                " gathered rows over ",
+                ngpus,
+                " shards x ",
+                cols,
+                " cols)",
+            )
+        )
+    if sum_out.num_elements() != expected_numel:
+        raise Error(
+            String(
+                "allgather_rmsnorm: sum_out holds ",
+                sum_out.num_elements(),
+                " elements, expected ",
+                expected_numel,
+                " (",
+                rows,
+                " gathered rows over ",
+                ngpus,
+                " shards x ",
+                cols,
+                " cols)",
+            )
+        )
+
+    _allgather_rmsnorm_launch[
+        simd_width,
+        in_dtype,
+        ngpus,
+        threads_per_block,
+        quant_epilogue=quant_epilogue,
+        domain_id=domain_id,
+    ](
         rows,
         cols,
         src_ptrs,
@@ -366,8 +534,67 @@ def allgather_rmsnorm[
         epsilon,
         weight_offset,
         rank_sigs,
-        Int(ctx.id()),
+        my_rank,
         ctx,
+    )
+
+
+def allgather_rmsnorm_quant[
+    in_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    //,
+    quant_epilogue: def[width: Int](
+        row: Int, col: Int, val: SIMD[in_dtype, width]
+    ) capturing -> None,
+    domain_id: Int = 0,
+](
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
+    normed_out: TileTensor[mut=True, in_dtype, ...],
+    sum_out: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    local_rank: Optional[Int] = None,
+) raises:
+    """`allgather_rmsnorm` that also hands each normed value to an epilogue.
+
+    The epilogue sees the bf16 that lands in `normed_out`, so a folded-in
+    quantizer emits the same bytes one launch fewer. Caller-supplied because
+    `comm` cannot depend on `linalg` (which already depends on `comm`).
+
+    Parameters:
+        in_dtype: Input/output data type (bf16).
+        ngpus: Number of GPUs participating.
+        in_layout: Layout of the input shard TileTensors.
+        in_origin: Origin of the input shard TileTensors.
+        quant_epilogue: Normed-value epilogue; see `_allgather_rmsnorm_impl`.
+        domain_id: Barrier counter bank; see `_allgather_rmsnorm_impl`.
+
+    Args:
+        input_buffers: Per-GPU input row-shards as TileTensors.
+        normed_out: This GPU's full normed output `[rows, cols]`.
+        sum_out: This GPU's full gathered residual `[rows, cols]`.
+        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
+        epsilon: RMSNorm epsilon for numerical stability.
+        weight_offset: Additive offset for gamma weights.
+        rank_sigs: Per-GPU signal pointers for synchronization.
+        ctx: Device context for this GPU.
+        local_rank: Optional group-local rank of THIS GPU.
+    """
+    _allgather_rmsnorm_impl[quant_epilogue=quant_epilogue, domain_id=domain_id](
+        input_buffers,
+        normed_out,
+        sum_out,
+        gamma,
+        epsilon,
+        weight_offset,
+        rank_sigs,
+        ctx,
+        local_rank,
     )
 
 
@@ -381,18 +608,18 @@ def _dispatch_ag_norm[
     in_origin: Origin,
     //,
     two_launch: def() raises capturing -> None,
+    domain_id: Int = 0,
 ](
-    input_buffers: InlineArray[
-        TileTensor[in_dtype, in_layout, in_origin], ngpus
-    ],
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
     normed_out: TileTensor[mut=True, in_dtype, ...],
     sum_out: TileTensor[mut=True, in_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
     weight_offset: Scalar[in_dtype],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     threshold: Int = AG_NORM_FUSE_THRESHOLD,
+    local_rank: Optional[Int] = None,
 ) raises:
     """Runtime-select the fused kernel vs a caller-supplied two-launch path.
 
@@ -405,6 +632,10 @@ def _dispatch_ag_norm[
         in_layout: Layout of the input shard TileTensors.
         in_origin: Origin of the input shard TileTensors.
         two_launch: Caller-supplied standalone all-gather + RMSNorm closure.
+        domain_id: Barrier counter bank for the fused kernel (0 for full-world;
+            nonzero for grouped collectives, which deliberately share a bank per
+            width). See `allgather_rmsnorm` for the invariant a shared bank
+            requires, and `_multi_gpu_barrier`.
 
     Args:
         input_buffers: Per-GPU input row-shards as TileTensors.
@@ -417,6 +648,8 @@ def _dispatch_ag_norm[
         ctx: Device context for this GPU.
         threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
             `two_launch`. Defaults to `AG_NORM_FUSE_THRESHOLD`.
+        local_rank: Optional rank of THIS GPU within the collective's group;
+            defaults to the physical device id. Required when grouped.
     """
     # Threshold is bf16-row-count in bytes; another element size fuses a diverging
     # shape. Fail loud.
@@ -424,9 +657,10 @@ def _dispatch_ag_norm[
         in_dtype == DType.bfloat16
     ), "_dispatch_ag_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
 
-    # Gates on the full (replicated) row count, identical on every rank --
-    # required: fused/two-launch issue different barriers on shared `rank_sigs`,
-    # so all ranks must pick the same path.
+    # Gates on the full replicated row count, identical on every rank: the two
+    # paths issue different barriers on shared `rank_sigs`, so disagreement
+    # deadlocks. Invariance is per-GROUP -- sibling groups may legitimately
+    # diverge, their `rank_sigs` being disjoint, so do not widen this gate.
     comptime last_dim_idx = in_layout.rank - 1
     var cols = Int(input_buffers[0].dim[last_dim_idx]())
     # Fuse only at the calibrated H (else the byte threshold maps to the wrong
@@ -445,7 +679,7 @@ def _dispatch_ag_norm[
     var full_bytes = rows * cols * size_of[in_dtype]()
 
     if full_bytes <= threshold:
-        allgather_rmsnorm(
+        allgather_rmsnorm[domain_id=domain_id](
             input_buffers,
             normed_out,
             sum_out,
@@ -454,6 +688,105 @@ def _dispatch_ag_norm[
             weight_offset,
             rank_sigs,
             ctx,
+            local_rank,
         )
     else:
         two_launch()
+
+
+def _dispatch_ag_norm_quant[
+    in_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    //,
+    two_launch_with_quant: def() raises capturing -> None,
+    quant_epilogue: def[width: Int](
+        row: Int, col: Int, val: SIMD[in_dtype, width]
+    ) capturing -> None,
+    domain_id: Int = 0,
+](
+    input_buffers: Array[TileTensor[in_dtype, in_layout, in_origin], ngpus],
+    normed_out: TileTensor[mut=True, in_dtype, ...],
+    sum_out: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    ctx: DeviceContext,
+    threshold: Int = AG_NORM_FUSE_THRESHOLD,
+    local_rank: Optional[Int] = None,
+) raises:
+    """`_dispatch_ag_norm` whose fused branch also runs `quant_epilogue`.
+
+    `two_launch_with_quant` MUST also quantize: above the threshold it is the
+    whole computation. The name is deliberately not `two_launch` -- that
+    bf16-only closure has an identical type and would fit here silently.
+
+    Parameters:
+        in_dtype: Input/output data type (bf16).
+        ngpus: Number of GPUs participating.
+        in_layout: Layout of the input shard TileTensors.
+        in_origin: Origin of the input shard TileTensors.
+        two_launch_with_quant: Standalone all-gather + RMSNorm + quantize
+            closure.
+        quant_epilogue: Fused-path normed-value epilogue; see
+            `allgather_rmsnorm_quant`.
+        domain_id: Barrier counter bank for the fused kernel; see
+            `_dispatch_ag_norm`.
+
+    Args:
+        input_buffers: Per-GPU input row-shards as TileTensors.
+        normed_out: This GPU's full normed output `[rows, cols]`.
+        sum_out: This GPU's full gathered residual `[rows, cols]`.
+        gamma: RMSNorm gamma weights (1D TileTensor of length cols).
+        epsilon: RMSNorm epsilon for numerical stability.
+        weight_offset: Additive offset for gamma weights.
+        rank_sigs: Per-GPU signal pointers for synchronization.
+        ctx: Device context for this GPU.
+        threshold: Full-`[rows, cols]`-bytes fuse threshold; fuse at/below, else
+            `two_launch_with_quant`. Defaults to `AG_NORM_FUSE_THRESHOLD`. MUST
+            be group-uniform -- see the deadlock note below.
+        local_rank: Optional group-local rank of THIS GPU; defaults to the
+            physical device id. Required when grouped.
+    """
+    comptime assert in_dtype == DType.bfloat16, (
+        "_dispatch_ag_norm_quant fuse threshold is bf16-calibrated (bf16 in/out"
+        " only)"
+    )
+
+    # Gates on the full replicated row count, identical on every rank: the two
+    # paths issue different barriers on shared `rank_sigs`, so disagreement
+    # deadlocks. Invariance is per-GROUP -- sibling groups may legitimately
+    # diverge, their `rank_sigs` being disjoint, so do not widen this gate.
+    comptime last_dim_idx = in_layout.rank - 1
+    var cols = Int(input_buffers[0].dim[last_dim_idx]())
+    debug_assert(
+        cols == AG_NORM_CALIBRATED_COLS,
+        (
+            "allgather_rmsnorm auto-fuse threshold is calibrated for"
+            " H=6144; recalibrate AG_NORM_FUSE_THRESHOLD before fusing"
+            " another H"
+        ),
+    )
+    var rows = 0
+    comptime for i in range(ngpus):
+        rows += input_buffers[i].num_elements() // cols
+    var full_bytes = rows * cols * size_of[in_dtype]()
+
+    if full_bytes <= threshold:
+        allgather_rmsnorm_quant[
+            quant_epilogue=quant_epilogue, domain_id=domain_id
+        ](
+            input_buffers,
+            normed_out,
+            sum_out,
+            gamma,
+            epsilon,
+            weight_offset,
+            rank_sigs,
+            ctx,
+            local_rank,
+        )
+    else:
+        two_launch_with_quant()

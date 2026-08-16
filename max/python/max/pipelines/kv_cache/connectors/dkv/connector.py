@@ -37,7 +37,7 @@ import math
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import msgspec
 from max.driver import Buffer, Device
@@ -51,7 +51,14 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -252,6 +259,83 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 _DEFAULT_ADMISSION_TIMEOUT_S = 120.0
 _ADMISSION_INITIAL_BACKOFF_S = 1.0
 _ADMISSION_MAX_BACKOFF_S = 10.0
+
+
+# Env-var overrides for the Rust client's background heartbeat poller, mapped to
+# the constructor keywords they feed. Every one is optional: an unset variable is
+# omitted from the call so the Rust default applies, which keeps the poller on the
+# timings it has always used. A shorter interval detects a dKV restart sooner at
+# the cost of one more probe per interval from every replica.
+_HEARTBEAT_ENV_KWARGS = {
+    "MODULAR_DKV_HEARTBEAT_INTERVAL_MS": "heartbeat_interval_ms",
+    "MODULAR_DKV_HEARTBEAT_REQUEST_TIMEOUT_MS": "heartbeat_request_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_TIMEOUT_MS": "heartbeat_reconnect_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_COOLDOWN_MS": (
+        "heartbeat_reconnect_cooldown_ms"
+    ),
+    "MODULAR_DKV_HEARTBEAT_MAX_FAILURES": "heartbeat_max_failures",
+    "MODULAR_DKV_HEARTBEAT_DEGRADED_WARN_EVERY": (
+        "heartbeat_degraded_warn_every"
+    ),
+}
+
+
+def _heartbeat_overrides() -> dict[str, int]:
+    """Collects the heartbeat-poller overrides set in the environment.
+
+    Returns:
+        The Rust client constructor keywords for the variables in
+        :data:`_HEARTBEAT_ENV_KWARGS` that are set, keyed by keyword name. An
+        unset variable is absent, leaving the Rust default in place.
+
+    Raises:
+        ValueError: If a variable is set to something other than a non-negative
+            integer. Failing model load beats silently polling on an unintended
+            cadence, and a negative value is worth catching here rather than at
+            the extension, whose keywords are unsigned and so reject it with an
+            ``OverflowError`` about converting a negative int that names no
+            variable. Which non-negative values are meaningful is deliberately
+            not checked here, because that is per-field and belongs to
+            ``HeartbeatConfig::validate`` on the Rust side, where the reasons
+            live: a zero cooldown means no spacing between reconnects and is
+            legitimate, while a zero interval would spin the poll loop.
+    """
+    overrides: dict[str, int] = {}
+    for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_var} must be an integer number, got {raw!r}"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{env_var} must not be negative, got {value}")
+
+        overrides[keyword] = value
+
+    return overrides
+
+
+def _nixl_backend_override() -> NixlBackendType | None:
+    """The validated NIXL transfer backend override, or ``None`` when unset.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
+    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
+    ``auto`` mean auto-select (``None`` here) — the dKV server's own
+    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
+    must not crash the MAX pod — and anything else goes through the same
+    validator as the KV transfer engine, so a typo fails model load with the
+    accepted set rather than surfacing as a handshake mismatch. The default
+    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
+    the connector auto-selects.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    return validate_nixl_backend(raw)
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -597,13 +681,22 @@ class DKVConnector:
         # provided dkv_connector extension to be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
+        # The Rust client creates a NIXL agent, which dlopens the transport
+        # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
+        # for the verbs flavors, rdma-core) symbols that must already be
+        # RTLD_GLOBAL in this process or the plugin faults as it loads. The
+        # libfabric flavor links its stack and needs none of this, but the
+        # preload skips absent libraries, so it stays backend-agnostic here
+        # rather than duplicating the backend dispatch.
+        preload_nixl_plugin_deps()
+
         if not replica_kv_memory or not all(replica_kv_memory):
             raise ValueError(
                 "DKVConnector requires at least one KV cache buffer per replica"
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        backend = _nixl_backend_override()
 
         # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
         # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
@@ -674,6 +767,13 @@ class DKVConnector:
             )
         )
 
+        heartbeat_overrides = _heartbeat_overrides()
+        if heartbeat_overrides:
+            _logger.info(
+                "dKV heartbeat poller overridden from the environment: %s",
+                heartbeat_overrides,
+            )
+
         # Each client's connect + handshake ("admission") is retried on transient
         # failures (dKV still starting); model readiness is gated on ALL clients
         # admitting, so a client whose retry budget is exhausted raises here and
@@ -716,6 +816,7 @@ class DKVConnector:
                 replica_id=replica_id,
                 tenant_gpu_count=tenant_gpu_count,
                 tenant_gpu_device_ids=tenant_gpu_device_ids,
+                heartbeat_overrides=heartbeat_overrides,
             )
             self._clients.append(
                 _admit_with_retry(
@@ -776,6 +877,7 @@ class DKVConnector:
         replica_id: int,
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
+        heartbeat_overrides: Mapping[str, int],
     ) -> object:
         # Group the flat to_memory() units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -840,6 +942,7 @@ class DKVConnector:
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            **heartbeat_overrides,
         )
 
     @property
@@ -884,7 +987,6 @@ class DKVConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
@@ -893,11 +995,10 @@ class DKVConnector:
         contract as :meth:`load` (truncated to its first 8 bytes at the
         dkv boundary; see :func:`_to_dkv_u64`).
 
-        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
-        chain blocks under a parent, so the Rust client builds the keys
-        (and the NUMA striping plan) from the hashes alone.
+        The dKV store dedups by composite key ``(tp_shard_id, group,
+        seq_hash)`` and does not chain blocks under a parent, so the Rust
+        client builds the keys (and the NUMA striping plan) from the hashes
+        alone.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set).
@@ -988,22 +1089,14 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
+    def host_block_count(self) -> BlockCount:
+        # BlockManager gates the load path on host_block_count.total > 0. dKV
+        # capacity is managed externally by the dKV service.
+        return BlockCount(free=sys.maxsize, total=sys.maxsize)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""

@@ -24,21 +24,22 @@ A custom kernel's entry-point signature uses these:
 The decorators that register a kernel (`register`, `register_internal`,
 `view_kernel`) live next to this file in `register.mojo`.
 """
-import std.algorithm.functional
+from max.algorithm.functional import elementwise
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Optional
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import is_cpu
-from std.gpu.host.info import is_gpu as _is_gpu
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import is_cpu
+from max.gpu.host.info import is_gpu as _is_gpu
 from std.math import ceil, fma
 from std.memory import AddressSpace
-from std.runtime.tracing import trace_arg
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import strided_load, strided_store
 from std.utils import IndexList, StaticTuple, product
 from std.utils._serialize import _serialize
+
+from max.runtime.tracing import trace_arg
 
 from layout import (
     Coord,
@@ -824,7 +825,7 @@ struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@parameter
+@__parameter
 @always_inline
 def _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
@@ -874,34 +875,36 @@ def simd_store_into_managed_tensor_slice[
     ].static_value
 
     # Stride = 1
-    @parameter
+    @__parameter
     @always_inline
     def store_stride1():
         comptime if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
-            tensor._ptr.bitcast[UInt8]().store(flat_index, v)
+            tensor._ptr.unsafe_bitcast[UInt8]().unsafe_store(flat_index, v)
         else:
-            tensor._ptr.store[alignment=max_alignment](flat_index, value)
+            tensor._ptr.unsafe_store[alignment=max_alignment](flat_index, value)
 
     # Stride > 1
-    @parameter
+    @__parameter
     @always_inline
     def store_strided(stride: Int):
         comptime if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
-                tensor._ptr.bitcast[UInt8]() + flat_index,
+                tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
                 stride,
             )
         else:
-            return strided_store(value, tensor._ptr + flat_index, stride)
+            return strided_store(
+                value, tensor._ptr.unsafe_offset(flat_index), stride
+            )
 
     comptime if not _last_stride_is_static:
         var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
         if stride == 0:
-            tensor._ptr.store[alignment=max_alignment](0, value)
+            tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
         elif stride == 1:
             store_stride1()
         else:
@@ -909,7 +912,7 @@ def simd_store_into_managed_tensor_slice[
     else:
         # static stride
         comptime if _last_stride_value == 0:
-            tensor._ptr.store[alignment=max_alignment](0, value)
+            tensor._ptr.unsafe_store[alignment=max_alignment](0, value)
         elif _last_stride_value == 1:
             store_stride1()
         else:
@@ -927,7 +930,7 @@ def simd_store_into_tensor_pointer[
     simd_width: SIMDLength,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: Pointer[Scalar[dtype], MutAnyOrigin],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -976,7 +979,7 @@ def simd_load_from_tensor_pointer[
     simd_width: Int,
     element_alignment: Int = 1,
 ](
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    ptr: Pointer[Scalar[dtype], MutAnyOrigin],
     shape: IndexList[rank],
     strides: IndexList[rank],
     indices: IndexList[rank],
@@ -1041,40 +1044,40 @@ def simd_load_from_managed_tensor_slice[
     comptime invariant = not tensor.io_spec.mut
 
     # Stride = 1
-    @parameter
+    @__parameter
     @always_inline
     def load_stride1() -> SIMD[dtype, simd_width]:
         comptime if dtype == DType.bool:
-            var v = tensor._ptr.bitcast[UInt8]().load[
+            var v = tensor._ptr.unsafe_bitcast[UInt8]().unsafe_load[
                 width=simd_width,
                 invariant=invariant,
             ](flat_index)
             return v.cast[dtype]()
         else:
-            return tensor._ptr.load[
+            return tensor._ptr.unsafe_load[
                 width=simd_width, alignment=max_alignment, invariant=invariant
             ](flat_index)
 
     # Stride > 1
-    @parameter
+    @__parameter
     @always_inline
     def load_strided(stride: Int) -> SIMD[dtype, simd_width]:
         comptime if dtype == DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
-                tensor._ptr.bitcast[UInt8]() + flat_index,
+                tensor._ptr.unsafe_bitcast[UInt8]().unsafe_offset(flat_index),
                 stride,
             )
             return v.cast[dtype]()
         else:
             return strided_load[simd_width, invariant=invariant](
-                tensor._ptr + flat_index, stride
+                tensor._ptr.unsafe_offset(flat_index), stride
             )
 
     comptime if not _last_stride_is_static:
         var stride = tensor.stride_length[rank - 1]()
         # Dynamic stride
         if stride == 0:
-            return tensor._ptr.load[invariant=invariant](flat_index)
+            return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
         elif stride == 1:
             return load_stride1()
         else:
@@ -1082,7 +1085,7 @@ def simd_load_from_managed_tensor_slice[
     else:
         # Static stride
         comptime if _last_stride_value == 0:
-            return tensor._ptr.load[invariant=invariant](flat_index)
+            return tensor._ptr.unsafe_load[invariant=invariant](flat_index)
         elif _last_stride_value == 1:
             return load_stride1()
         else:
@@ -1242,7 +1245,7 @@ struct ManagedTensorSlice[
         stride_types=Self.static_spec.static_layout._stride_types,
     ]
 
-    var _ptr: UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var _ptr: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
     var _runtime_layout: Self.RuntimeLayout
     var in_fusion: Self.InFusion
     var out_fusion: Self.OutFusion
@@ -1342,7 +1345,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], _],
         shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -1363,7 +1366,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], _],
         shape: IndexList[Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -1383,7 +1386,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        ptr: Pointer[mut=True, Scalar[Self.dtype], _],
         shape: Coord[*Self.RuntimeLayout.shape_types],
         strides: Coord[*Self.RuntimeLayout.stride_types],
     ):
@@ -1418,7 +1421,7 @@ struct ManagedTensorSlice[
             not Self._has_input_fusion
         ), "Direct load on fused tensor is forbidden"
         var offset = self._compute_offset(indices)
-        return self._ptr[offset]
+        return self._ptr[unsafe_offset=offset]
 
     @always_inline
     def __getitem__(self, *indices: Int) -> Scalar[Self.dtype]:
@@ -1470,7 +1473,7 @@ struct ManagedTensorSlice[
             not Self._has_output_store_fusion
         ), "Direct store on fused tensor is forbidden"
         var offset = self._compute_offset(indices)
-        self._ptr[offset] = val
+        self._ptr[unsafe_offset=offset] = val
 
     @always_inline
     def shape(self) -> IndexList[Self.rank]:
@@ -1631,7 +1634,7 @@ struct ManagedTensorSlice[
     @always_inline
     def unsafe_ptr[
         _dtype: DType = Self.dtype
-    ](self) -> UnsafePointer[Scalar[_dtype], MutAnyOrigin]:
+    ](self) -> Pointer[Scalar[_dtype], MutAnyOrigin]:
         """Get the pointer stored in this tensor slice.
 
         Since this method obtains the pointer stored in this tensor slice, it
@@ -1639,12 +1642,12 @@ struct ManagedTensorSlice[
         behavior. It should be used with caution.
 
         Parameters:
-            _dtype: The type of the `UnsafePointer` in this tensor slice.
+            _dtype: The type of the `Pointer` in this tensor slice.
 
         Returns:
-            The `UnsafePointer` which contains the data for this tensor slice.
+            The `Pointer` which contains the data for this tensor slice.
         """
-        return rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
+        return rebind[Pointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
 
     @always_inline
     def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
@@ -2041,9 +2044,7 @@ struct ManagedTensorSlice[
         self,
         new_runtime_shape: IndexList[new_layout.rank],
         new_runtime_strides: IndexList[new_layout.rank],
-        offset_ptr: Optional[
-            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        ] = None,
+        offset_ptr: Optional[Pointer[Scalar[Self.dtype], MutAnyOrigin]] = None,
         out result: ManagedTensorSlice[
             rank=new_layout.rank,
             io_spec=Self.io_spec,
@@ -2293,7 +2294,7 @@ struct ManagedTensorSlice[
         """
         writer.write("ManagedTensorSlice(")
 
-        @parameter
+        @__parameter
         def serialize[T: Writable](val: T):
             writer.write(val)
 
@@ -2410,7 +2411,7 @@ struct VariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], MutUntrackedOrigin], Self.size
+            Pointer[Scalar[Self.dtype], MutUntrackedOrigin], Self.size
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
     ):
@@ -2516,7 +2517,7 @@ struct _FusedInputVariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
+            Pointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
@@ -2607,7 +2608,7 @@ struct _FusedOutputVariadicTensors[
     def __init__(
         out self,
         ptrs: StaticTuple[
-            UnsafePointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
+            Pointer[Scalar[Self.dtype], origin=MutUntrackedOrigin],
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
@@ -2760,7 +2761,7 @@ def foreach[
         var val = func[width](index)
         tensor._fused_store[element_alignment=alignment](index, val)
 
-    std.algorithm.functional.elementwise[
+    elementwise[
         simd_width,
         target=target,
         _trace_description=_trace_name,

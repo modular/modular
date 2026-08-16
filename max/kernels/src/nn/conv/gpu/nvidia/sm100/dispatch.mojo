@@ -23,8 +23,8 @@ from std.collections import OptionalReg
 from std.math import ceildiv
 from std.sys import size_of
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -41,20 +41,24 @@ def _transpose_rscf_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
 ):
     """GPU kernel: transpose filter RSCF [R,S,C,F] -> KRSC [K,R,S,C]."""
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
     var tid = global_idx.x
-    if tid >= R * S * C * F:
+    if tid >= _R * _S * _C * _F:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = r * S * C * F + s * C * F + c * F + k
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = r * _S * _C * _F + s * _C * _F + c * _F + k
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -64,20 +68,24 @@ def _transpose_fcrs_to_krsc[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
 ):
     """GPU kernel: transpose filter FCRS [F,C,R,S] -> KRSC [K,R,S,C]."""
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
     var tid = global_idx.x
-    if tid >= F * C * R * S:
+    if tid >= _F * _C * _R * _S:
         return
-    var k, rem = divmod(tid, R * S * C)
+    var k, rem = divmod(tid, _R * _S * _C)
     var r: Int
-    r, rem = divmod(rem, S * C)
-    var s, c = divmod(rem, C)
-    var src_idx = k * C * R * S + c * R * S + r * S + s
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+    var src_idx = k * _C * _R * _S + c * _R * _S + r * _S + s
     dst_ptr.store(tid, src_ptr.load(src_idx))
 
 
@@ -122,7 +130,9 @@ def dispatch_sm100_conv2d[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     has_residual: Bool = False,
 ](
-    input: TileTensor[input_type, ...],
+    input: TileTensor[
+        mut=True, input_type, address_space=AddressSpace.GENERIC, ...
+    ],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
@@ -202,10 +212,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_fcrs_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                F,
-                C,
-                R,
-                S,
+                Int32(F),
+                Int32(C),
+                Int32(R),
+                Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -217,10 +227,10 @@ def dispatch_sm100_conv2d[
             ctx.enqueue_function[_transpose_rscf_to_krsc[filter_type]](
                 filter.ptr,
                 filter_krsc_ptr,
-                R,
-                S,
-                C,
-                F,
+                Int32(R),
+                Int32(S),
+                Int32(C),
+                Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
             )
@@ -257,7 +267,7 @@ def dispatch_sm100_conv2d[
         # compiles a separately-instantiated kernel.
         var in_c_bytes = in_c * size_of[input_type]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _launch[
             swizzle: TensorMapSwizzle,

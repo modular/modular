@@ -31,13 +31,13 @@ from .._multistage_gemm_gpu import (
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.sync import (
+from max.gpu.sync import barrier
+from max.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
@@ -273,7 +273,7 @@ struct AMDMatmul[
         var k_counter = 0
 
         @always_inline
-        @parameter
+        @__parameter
         def load_tiles_from_dram():
             var a_block = a_blockrow.tile[BM, BK](0, k_counter)
             var b_block = b_blockrow.tile[BN, BK](0, k_counter)
@@ -282,7 +282,7 @@ struct AMDMatmul[
             k_counter += 1
 
         @always_inline
-        @parameter
+        @__parameter
         def copy_tiles_to_smem():
             comptime thread_layout = row_major[
                 load_thread_rows, load_thread_cols
@@ -321,7 +321,7 @@ struct AMDMatmul[
             b_loads_per_thread=b_loads_per_thread,
         ]()
 
-        @parameter
+        @__parameter
         @always_inline
         def _bind[entry: ScheduleEntry]():
             comptime if entry.op.tag == LOAD_DRAM:

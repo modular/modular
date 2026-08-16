@@ -13,21 +13,18 @@
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
 def vec_func(
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[Float32, MutAnyOrigin],
-    in1: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    in0: Pointer[Float32, MutAnyOrigin],
+    in1: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -57,26 +54,26 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
-    in1_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev1 = ctx1.enqueue_create_buffer[T](length)
     in1_dev1.enqueue_fill(1.0)
-    in1_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev2 = ctx1.enqueue_create_buffer[T](length)
     in1_dev2.enqueue_fill(2.0)
-    in1_dev3 = ctx1.enqueue_create_buffer[T](length)
+    var in1_dev3 = ctx1.enqueue_create_buffer[T](length)
     in1_dev3.enqueue_fill(3.0)
 
     # Initialize the device outputs with known bad values.
-    out_dev1 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev1 = ctx1.enqueue_create_buffer[T](length)
     out_dev1.enqueue_fill(101.0)
-    out_dev2 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev2 = ctx1.enqueue_create_buffer[T](length)
     out_dev2.enqueue_fill(102.0)
-    out_dev3 = ctx1.enqueue_create_buffer[T](length)
+    var out_dev3 = ctx1.enqueue_create_buffer[T](length)
     out_dev3.enqueue_fill(103.0)
     # Initialize the result buffer on a second queue with known bad values.
-    out_host1 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host1 = ctx2.enqueue_create_host_buffer[T](length)
     out_host1.enqueue_fill(0.1)
-    out_host2 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host2 = ctx2.enqueue_create_host_buffer[T](length)
     out_host2.enqueue_fill(0.2)
-    out_host3 = ctx2.enqueue_create_host_buffer[T](length)
+    var out_host3 = ctx2.enqueue_create_host_buffer[T](length)
     out_host3.enqueue_fill(0.3)
 
     for i in range(10):
@@ -98,7 +95,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev1,
         in1_dev1,
         out_dev1,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -109,7 +106,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev2,
         in1_dev2,
         out_dev2,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -120,7 +117,7 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in0_dev3,
         in1_dev3,
         out_dev3,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -223,7 +220,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev1,  # in0 - last use
         in_dev4,  # in1 - last use
         out_dev1,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -242,7 +239,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev2,  # in0 - last use
         out_dev1,  # in1 - last use
         out_dev2,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -251,7 +248,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         in_dev3,  # in0 - last use
         in_dev5,  # in1 - last use
         out_dev3,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
@@ -266,7 +263,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         out_dev2,  # in0 - last use
         out_dev3,  # in1 - last use
         out_dev4,  # output
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

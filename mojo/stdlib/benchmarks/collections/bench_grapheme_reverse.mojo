@@ -27,7 +27,7 @@ def make_string[
     length: Int = 0
 ](filename: String = "UN_charter_EN.txt") -> String:
     try:
-        directory = _dir_of_current_file() / "data"
+        var directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
         comptime if length == 0:
@@ -48,7 +48,7 @@ def make_string[
     abort(String())
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_forward[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -64,7 +64,7 @@ def bench_grapheme_iter_forward[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_reversed[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -80,7 +80,7 @@ def bench_grapheme_iter_reversed[
     b.iter(call_fn)
 
 
-@parameter
+@__parameter
 def bench_grapheme_iter_alternating[
     length: Int, filename: StaticString
 ](mut b: Bencher) raises:
@@ -115,10 +115,10 @@ def main() raises:
     comptime lengths = (1_000, 10_000, 100_000)
 
     comptime for i in range(len(lengths)):
-        comptime length = lengths[i]
+        comptime length = rebind[Int](lengths[i])
 
         comptime for j in range(len(filenames)):
-            comptime fname = filenames[j]
+            comptime fname = rebind[StaticString](filenames[j])
             comptime suffix = String("[", length, ",", fname, "]")
             m.bench_function[bench_grapheme_iter_forward[length, fname]](
                 BenchId(String("forward", suffix))

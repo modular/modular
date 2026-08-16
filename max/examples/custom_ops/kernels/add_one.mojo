@@ -15,7 +15,7 @@
 
 import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from extensibility import InputTensor, OutputTensor, foreach
 
@@ -35,7 +35,7 @@ struct AddOne:
         # the context is needed for some GPU calls
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def elementwise_add_one[width: Int](idx: Coord) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1

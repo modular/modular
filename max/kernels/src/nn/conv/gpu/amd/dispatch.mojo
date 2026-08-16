@@ -41,7 +41,7 @@ Mirrors the structure of `nn.conv.gpu.amd.rdna.dispatch` and
 """
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import simd_width_of
 from std.sys.info import _accelerator_arch
@@ -65,32 +65,37 @@ def _transpose_rscf_to_frsc_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    R: Int,
-    S: Int,
-    C: Int,
-    F: Int,
-    K_padded: Int,
+    R: Int32,
+    S: Int32,
+    C: Int32,
+    F: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter RSCF `[R*S*C, F]` -> FRSC `[F, K_padded]`.
 
     `K_padded >= R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = R * S * C
-    var total = F * K_padded
+    var _R = Int(R)
+    var _S = Int(S)
+    var _C = Int(C)
+    var _F = Int(F)
+    var _K_padded = Int(K_padded)
+    var K_real = _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var r = k // (S * C)
-    var sc = k - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # RSCF source index: ((r * S + s) * C + c) * F + f.
-    var rscf_idx = ((r * S + s) * C + c) * F + f
+    var r = k // (_S * _C)
+    var sc = k - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # RSCF source index: ((r * _S + s) * _C + c) * _F + f.
+    var rscf_idx = ((r * _S + s) * _C + c) * _F + f
     dst_ptr.store(tid, src_ptr.load(rscf_idx))
 
 
@@ -100,32 +105,37 @@ def _transpose_fcrs_to_frsc_kpad[
 ](
     src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    F: Int,
-    C: Int,
-    R: Int,
-    S: Int,
-    K_padded: Int,
+    F: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
+    K_padded: Int32,
 ):
     """GPU kernel: filter FCRS `[F, C, R, S]` -> FRSC `[F, K_padded]`.
 
     `K_padded >= R*S*C`; padded trailing columns are zero-filled.
     """
-    var K_real = R * S * C
-    var total = F * K_padded
+    var _F = Int(F)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
+    var _K_padded = Int(K_padded)
+    var K_real = _R * _S * _C
+    var total = _F * _K_padded
     var tid = global_idx.x
     if tid >= total:
         return
-    var f = tid // K_padded
-    var k = tid - f * K_padded
+    var f = tid // _K_padded
+    var k = tid - f * _K_padded
     if k >= K_real:
         dst_ptr.store(tid, Scalar[dtype](0))
         return
-    var r = k // (S * C)
-    var sc = k - r * (S * C)
-    var s = sc // C
-    var c = sc - s * C
-    # FCRS source index: f*C*R*S + c*R*S + r*S + s.
-    var fcrs_idx = f * C * R * S + c * R * S + r * S + s
+    var r = k // (_S * _C)
+    var sc = k - r * (_S * _C)
+    var s = sc // _C
+    var c = sc - s * _C
+    # FCRS source index: f*_C*_R*_S + c*_R*_S + r*_S + s.
+    var fcrs_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
     dst_ptr.store(tid, src_ptr.load(fcrs_idx))
 
 
@@ -173,7 +183,7 @@ def _launch_amd_4wave_conv2d_runtime[
     row stride is `C_out` (NHWC contiguous).
     """
 
-    @parameter
+    @__parameter
     @always_inline
     def _launch[stride_v: Int, pad_v: Int]() raises:
         var _rt_N = Int(input.dim[0]())
@@ -401,11 +411,11 @@ def dispatch_amd_4wave_conv2d[
             ctx.enqueue_function[_transpose_fcrs_to_frsc_kpad[filter_type]](
                 filter.ptr,
                 filter_frsc_ptr,
-                _C_out,
-                _C_in,
-                _R,
-                _S,
-                _K_padded,
+                Int32(_C_out),
+                Int32(_C_in),
+                Int32(_R),
+                Int32(_S),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )
@@ -413,11 +423,11 @@ def dispatch_amd_4wave_conv2d[
             ctx.enqueue_function[_transpose_rscf_to_frsc_kpad[filter_type]](
                 filter.ptr,
                 filter_frsc_ptr,
-                _R,
-                _S,
-                _C_in,
-                _C_out,
-                _K_padded,
+                Int32(_R),
+                Int32(_S),
+                Int32(_C_in),
+                Int32(_C_out),
+                Int32(_K_padded),
                 grid_dim=transpose_grid,
                 block_dim=_transpose_block,
             )
@@ -435,7 +445,7 @@ def dispatch_amd_4wave_conv2d[
             Scalar[output_type], ImmutAnyOrigin
         ].unsafe_dangling()
 
-        @parameter
+        @__parameter
         @always_inline
         def _src_immut() -> UnsafePointer[Scalar[output_type], ImmutAnyOrigin]:
             comptime if has_residual:
@@ -453,7 +463,7 @@ def dispatch_amd_4wave_conv2d[
         # -------- Static vs runtime-HW dispatch --------------------
         comptime if _all_hw_static:
 
-            @parameter
+            @__parameter
             @always_inline
             def _launch_static[stride_v: Int, pad_v: Int]() raises -> Bool:
                 comptime _eff_R = _R

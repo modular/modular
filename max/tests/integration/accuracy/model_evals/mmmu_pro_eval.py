@@ -57,6 +57,7 @@ from eval_common import (
     ChatClient,
     GenParams,
     build_chat_kwargs,
+    dump_score,
     make_client,
     run_parallel,
     select_rows,
@@ -327,7 +328,7 @@ def run_config(
             "error": str(exc),
         }
 
-    results, _ = run_parallel(
+    results, errors = run_parallel(
         indexed_dataset, fn, on_error, workers, hf_config, out_dir=str(out_dir)
     )
 
@@ -344,17 +345,17 @@ def run_config(
         if "completion_tokens" in r and "error" not in r
     ]
     mean_output_tokens, p50_output_tokens = token_stats(results)
-    json.dump(
+    dump_score(
+        str(out_dir),
         {
             "config": hf_config,
             "accuracy": accuracy,
             "correct": correct,
             "total": total,
+            "errors": errors,
             "mean_output_tokens": mean_output_tokens,
             "p50_output_tokens": p50_output_tokens,
         },
-        open(out_dir / "score.json", "w"),
-        indent=2,
     )
     print(
         f"{hf_config}: {accuracy:.4f} ({correct}/{total}) "

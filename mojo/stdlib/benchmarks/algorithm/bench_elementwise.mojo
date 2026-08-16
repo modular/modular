@@ -13,9 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm import elementwise
+from max.algorithm import elementwise
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.utils.coord import Coord
 from std.utils.index import IndexList
@@ -24,14 +24,14 @@ from std.utils.index import IndexList
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
-@parameter
+@__parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = Array[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     def call_fn() raises {mut vector}:
         @always_inline
-        @parameter
+        @__parameter
         def func[simd_width: Int, alignment: Int = 1](idx: Coord):
             vector[Int(idx[0].value())] = 42
 

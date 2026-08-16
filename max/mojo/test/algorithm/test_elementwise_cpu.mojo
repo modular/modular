@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm.functional import (
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 
@@ -62,7 +62,7 @@ def test_elementwise() raises:
 
         @always_inline
         @__copy_capture(buffer1, buffer2, out_buffer, shape)
-        @parameter
+        @__parameter
         def func[simd_width: Int, alignment: Int = 1](idx: Coord):
             var index = rebind[IndexList[outer_rank]](coord_to_index_list(idx))
             var linear_idx = _linear_index(index, shape)
@@ -105,7 +105,7 @@ def test_elementwise_implicit_runtime() raises:
 
     @always_inline
     @__copy_capture(vector)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx: Coord):
         vector.unsafe_ptr()[unsafe_offset=idx[0].value()] = 42
 

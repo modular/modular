@@ -14,9 +14,10 @@
 from std.math import ceildiv
 from std.atomic import Atomic
 
-from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import AddressSpace, stack_allocation
+from std.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import AddressSpace, unsafe_stack_allocation
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
@@ -36,13 +37,12 @@ struct FillStrategy(Equatable, ImplicitlyCopyable):
 
 
 def reduce_add(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -52,13 +52,12 @@ def reduce_add(
 
 
 def reduce_add_via_cas(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -68,28 +67,27 @@ def reduce_add_via_cas(
     # failure just costs one extra loop iteration.
     var expected = Atomic.load(res_add)
     while True:
-        var desired = expected + vec[tid]
+        var desired = expected + vec[unsafe_offset=tid]
         if Atomic.compare_exchange[weak=True](res_add, expected, desired):
             return
 
 
 def reduce_add_via_shared_cas(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_add: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    res_add: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
     """Same CAS-retry-loop reduction as `reduce_add_via_cas`, but on
     threadgroup (`AddressSpace.SHARED`) memory, to exercise Apple GPU's
     local-address-space `cmpxchg` path."""
-    var shared = stack_allocation[
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
+    var shared = unsafe_stack_allocation[
         1, Float32, address_space=AddressSpace.SHARED
     ]()
 
     if thread_idx.x == 0:
-        shared[0] = 0
+        shared[unsafe_offset=0] = 0
 
     barrier()
 
@@ -97,25 +95,24 @@ def reduce_add_via_shared_cas(
     if tid < len:
         var expected = Atomic.load(shared)
         while True:
-            var desired = expected + vec[tid]
+            var desired = expected + vec[unsafe_offset=tid]
             if Atomic.compare_exchange[weak=True](shared, expected, desired):
                 break
 
     barrier()
 
     if thread_idx.x == 0:
-        _ = Atomic.fetch_add(res_add, shared[0])
+        _ = Atomic.fetch_add(res_add, shared[unsafe_offset=0])
 
 
 def reduce_min_max(
-    # TODO(MSTDL-2875): Kernel entry params stay `UnsafePointer` — a
-    # DeviceBuffer's `device_type` is `UnsafePointer` and `enqueue_function`
-    # matches the declared param type exactly, so a safe `Pointer` won't match.
-    res_min: UnsafePointer[Float32, MutAnyOrigin],
-    res_max: UnsafePointer[Float32, MutAnyOrigin],
-    vec: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    res_min: Pointer[Float32, MutAnyOrigin],
+    res_max: Pointer[Float32, MutAnyOrigin],
+    vec: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
 
     if tid >= len:
@@ -158,7 +155,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add](
         res_add_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
@@ -179,7 +176,7 @@ def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             res_min_device,
             res_max_device,
             vec_device,
-            n,
+            Int32(n),
             grid_dim=ceildiv(n, BLOCK_SIZE),
             block_dim=BLOCK_SIZE,
         )
@@ -237,7 +234,7 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add_via_cas](
         res_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )
@@ -247,7 +244,7 @@ def run_reduce_via_cas(ctx: DeviceContext) raises:
     ctx.enqueue_function[reduce_add_via_shared_cas](
         res_shared_device,
         vec_device,
-        n,
+        Int32(n),
         grid_dim=ceildiv(n, BLOCK_SIZE),
         block_dim=BLOCK_SIZE,
     )

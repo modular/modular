@@ -52,8 +52,6 @@ from std.gpu.intrinsics import permlane_shuffle
 from std.gpu.globals import WARP_SIZE
 from std.memory import bitcast
 
-from ..compute.tensor_ops import tc_reduce
-
 # TODO (#24457): support shuffles with width != 32
 comptime _WIDTH_MASK = WARP_SIZE - 1
 comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
@@ -914,7 +912,7 @@ def lane_group_reduce[
             from std.gpu.primitives.warp import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
-            @parameter
+            @__parameter
             def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[DType.float32, 16](42.0)
@@ -967,7 +965,7 @@ def reduce[
         from std.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
-        @parameter
+        @__parameter
         def add[dtype: DType, width: SIMDLength](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
@@ -1051,7 +1049,7 @@ def lane_group_sum[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
+    @__parameter
     def _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
@@ -1204,7 +1202,7 @@ def lane_group_max[
     ):
         return _redux_f32_max_min["max"](val)
 
-    @parameter
+    @__parameter
     def _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
@@ -1269,7 +1267,7 @@ def lane_group_min[
     ):
         return _redux_f32_max_min["min"](val)
 
-    @parameter
+    @__parameter
     def _reduce_min(x: SIMD, y: type_of(x)) -> type_of(x):
         return _min(x, y)
 

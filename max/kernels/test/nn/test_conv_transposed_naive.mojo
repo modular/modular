@@ -40,7 +40,6 @@ def test_convtranspose_pads():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var input_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
@@ -52,7 +51,6 @@ def test_convtranspose_pads():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var filter_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
@@ -63,7 +61,6 @@ def test_convtranspose_pads():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var output_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
@@ -124,7 +121,6 @@ def test_convtranspose():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var input_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
@@ -136,7 +132,6 @@ def test_convtranspose():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var filter_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
@@ -147,7 +142,6 @@ def test_convtranspose():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var output_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
@@ -203,7 +197,6 @@ def test_convtranspose_dilation():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var input_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
@@ -222,7 +215,6 @@ def test_convtranspose_dilation():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var filter_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
@@ -236,7 +228,6 @@ def test_convtranspose_dilation():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var output_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()
@@ -306,7 +297,6 @@ def test_convtranspose_attributes():
     var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var input_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(input_stack)
     ] = input_stack.unsafe_ptr()
@@ -318,7 +308,6 @@ def test_convtranspose_attributes():
     var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var filter_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(filter_stack)
     ] = filter_stack.unsafe_ptr()
@@ -329,7 +318,6 @@ def test_convtranspose_attributes():
     var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    # TODO(MOCO-4334): pin the mutable origin the TileTensor ctor would collapse.
     var output_stack_ptr: UnsafePointer[
         Scalar[type], origin_of(output_stack)
     ] = output_stack.unsafe_ptr()

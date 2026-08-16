@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements C string interoperability utilities."""
 
-from std.collections.string.string_slice import _unsafe_strlen
-from std.memory import UnsafeMaybeUninit
+from std.collections.string.string_span import _unsafe_strlen
+from std.memory import MaybeUninit
 from std.sys import size_of
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
@@ -56,13 +56,13 @@ struct CStringSlice[origin: ImmOrigin](
         *,
         unsafe_from_ptr: Pointer[Int8, Self.origin],
     ):
-        """Construct a `CStringSlice` from an `UnsafePointer`.
+        """Construct a `CStringSlice` from a `Pointer`.
 
         Args:
-            unsafe_from_ptr: The `UnsafePointer` to construct the `CStringSlice` from.
+            unsafe_from_ptr: The `Pointer` to construct the `CStringSlice` from.
 
         Safety:
-            The `UnsafePointer` must be a valid nul-terminated C string.
+            The `Pointer` must be a valid nul-terminated C string.
             The pointer cannot be null. To represent nullability, use
             `Optional[CStringSlice]`.
 
@@ -116,7 +116,7 @@ struct CStringSlice[origin: ImmOrigin](
         """
         _validate_bytes(slice.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = slice.unsafe_ptr().unsafe_bitcast[Int8]()
+        self._data = slice.as_bytes().unsafe_ptr().unsafe_bitcast[Int8]()
 
     @always_inline
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -261,21 +261,17 @@ struct CStringSlice[origin: ImmOrigin](
     @staticmethod
     @doc_hidden
     @always_inline
-    def write_niche[
-        index: Int
-    ](memory: Pointer[mut=True, UnsafeMaybeUninit[Self], _]):
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         Self._PointerType.write_niche[index](
-            memory.unsafe_bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )
 
     @staticmethod
     @doc_hidden
     @always_inline
-    def classify_niche(
-        memory: Pointer[mut=False, UnsafeMaybeUninit[Self], _]
-    ) -> NicheIndex:
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
         comptime assert size_of[Self]() == size_of[Self._PointerType]()
         return Self._PointerType.classify_niche(
-            memory.unsafe_bitcast[UnsafeMaybeUninit[Self._PointerType]]()
+            memory.unsafe_bitcast[MaybeUninit[Self._PointerType]]()
         )

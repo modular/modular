@@ -212,7 +212,13 @@ struct Bool(
             writer: The object to write to.
         """
 
-        writer.write("True" if self else "False")
+        # `write_string` rather than `write` so the literal reaches the writer
+        # without becoming a `String`. The arms name `StaticString` because the
+        # two literals have distinct types, and a conditional over the bare
+        # literals unifies them through `String`.
+        writer.write_string(
+            StaticString("True") if self else StaticString("False")
+        )
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -234,16 +240,6 @@ struct Bool(
             1 if the Bool is True, 0 otherwise.
         """
         return select[Int](self, 1, 0)
-
-    @always_inline("builtin")
-    def __as_int__(self) -> Int:
-        """Implicitly convert to an integral representation of the value,
-        wherever an `Int` is expected.
-
-        Returns:
-            The integral representation of the value.
-        """
-        return self.__int__()
 
     @always_inline("nodebug")
     def __float__(self) -> Float64:
@@ -495,7 +491,7 @@ def any[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDeletable,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 
@@ -538,7 +534,7 @@ def all[
     IterableType: Iterable
 ](iterable: IterableType) -> Bool where conforms_to(
     IterableType.IteratorType[origin_of(iterable)].Element,
-    Boolable & ImplicitlyDeletable,
+    Boolable & Deinitable,
 ):
     """Checks if **all** elements in the list are truthy.
 

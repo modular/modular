@@ -24,13 +24,13 @@ from std.gpu import (
     global_idx,
     grid_dim,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -60,7 +60,7 @@ comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else Addres
 
 comptime elementwise_epilogue_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int
-](Coord, SIMD[dtype, size=width]) capturing -> None
+](Coord, SIMD[dtype, length=width]) capturing -> None
 
 
 @always_inline
@@ -279,9 +279,9 @@ def _reducescatter_kernel[
     ],
     out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
     rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    axis_size: Int,
-    unit_numel: Int,
-    my_rank: Int,
+    axis_size: Int32,
+    unit_numel: Int32,
+    my_rank: Int32,
 ):
     """Reduce-scatter kernel with axis-aware slicing.
 
@@ -292,16 +292,19 @@ def _reducescatter_kernel[
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    var my_sig = rank_sigs[my_rank]
+    var _my_rank = Int(my_rank)
+    var _axis_size = Int(axis_size)
+    var _unit_numel = Int(unit_numel)
+    var my_sig = rank_sigs[_my_rank]
     var threads_per_gpu = grid_dim.x * BLOCK_SIZE
 
     var config = ReduceScatterConfig[dtype, ngpus](
-        axis_size, unit_numel, threads_per_gpu
+        _axis_size, _unit_numel, threads_per_gpu
     )
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
         # Round-robin access pattern to balance NVLink traffic across GPUs.
@@ -310,11 +313,11 @@ def _reducescatter_kernel[
         ](uninitialized=True)
 
         comptime for i in range(num_buffers):
-            reordered[i] = in_bufs[circular_add[num_buffers](my_rank, i)]
+            reordered[i] = in_bufs[circular_add[num_buffers](_my_rank, i)]
 
-        var u_start = config.rank_unit_start(my_rank)
-        var n_units = config.rank_units(my_rank)
-        var n_elements = config.rank_num_elements(my_rank)
+        var u_start = config.rank_unit_start(_my_rank)
+        var n_units = config.rank_units(_my_rank)
+        var n_elements = config.rank_num_elements(_my_rank)
 
         comptime if in_layout.rank == 1:
             # Flat: construct sliced 1D tiles from input TileTensors (any rank).
@@ -379,7 +382,7 @@ def _reducescatter_kernel[
             ](sliced_tiles, out_buf, n_elements, config.stride)
 
         _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, my_rank
+            rank_sigs, my_sig, _my_rank
         )
 
 
@@ -475,16 +478,16 @@ def _reducescatter_p2p[
         kernel_in_bufs,
         output_buffer,
         rank_sigs,
-        axis_size,
-        unit_numel,
-        my_rank,
+        Int32(axis_size),
+        Int32(unit_numel),
+        Int32(my_rank),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),
     )
 
 
-@parameter
+@__parameter
 def reducescatter[
     dtype: DType,
     ngpus: Int,
@@ -649,7 +652,7 @@ def reducescatter[
 
     # Default epilogue: store directly to output buffer
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(output_buffer)
     def default_output_lambda[
         _dtype: DType,

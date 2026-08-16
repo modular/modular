@@ -654,14 +654,15 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             writer: The object to write to.
         """
 
-        @parameter
-        def write_fields(mut w: Some[Writer]):
-            self.write_to(w)
+        var self_ptr = Pointer(to=self)
+
+        def write_fields(mut w: Some[Writer]) {self_ptr}:
+            self_ptr[].write_to(w)
 
         fmt.FormatStruct(writer, "IndexList").params(
             Self.size,
             Self.element_type,
-        ).fields[FieldsFn=write_fields]()
+        ).fields(write_fields)
 
     @always_inline
     def cast[
@@ -755,7 +756,9 @@ def Index[
 
 
 @always_inline
-def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
+def product[
+    size: Int
+](tuple: IndexList[size, element_type=_], end_idx: Int = size) -> Int:
     """Computes a product of values in the tuple up to the given index.
 
     Parameters:
@@ -774,7 +777,7 @@ def product[size: Int](tuple: IndexList[size, ...], end_idx: Int = size) -> Int:
 @always_inline
 def product[
     size: Int
-](tuple: IndexList[size, ...], start_idx: Int, end_idx: Int) -> Int:
+](tuple: IndexList[size, element_type=_], start_idx: Int, end_idx: Int) -> Int:
     """Computes a product of values in the tuple in the given index range.
 
     Parameters:

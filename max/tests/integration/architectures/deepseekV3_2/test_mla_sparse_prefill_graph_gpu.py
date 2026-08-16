@@ -65,8 +65,8 @@ def test_prefill_from_precompiled_mef(spec: PrefillSpec) -> None:
         max_batch_size=MAX_BATCH_SIZE,
     )
     context = create_text_context(np.empty(PREFILL_LEN))
-    kv_manager.claim(context.request_id, replica_idx=0)
-    kv_manager.alloc(context, replica_idx=0)
+    kv_manager.claim(context)
+    kv_manager.alloc(context)
     kv_ri_pref = kv_manager.runtime_inputs([[context]])
     assert isinstance(kv_ri_pref, MultiKVCacheInputs)
 
@@ -132,8 +132,8 @@ def test_prefill_only_matches_auto(num_heads: int) -> None:
             max_batch_size=MAX_BATCH_SIZE,
         )
         context = create_text_context(np.empty(PREFILL_LEN))
-        kv_manager.claim(context.request_id, replica_idx=0)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.claim(context)
+        kv_manager.alloc(context)
         kv_ri = kv_manager.runtime_inputs([[context]])
         assert isinstance(kv_ri, MultiKVCacheInputs)
         out_buf = model.execute(hidden_prefill, row_prefill, *kv_ri.flatten())[

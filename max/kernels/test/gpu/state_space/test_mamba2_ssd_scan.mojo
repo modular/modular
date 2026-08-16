@@ -20,7 +20,7 @@ final-state output, and (crucially) varlen no-cross-sequence-bleed equivalence:
 a packed ragged batch must equal independent per-sequence runs.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from std.random import rand
 from state_space.mamba2_ssd_scan import (
@@ -31,7 +31,7 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
-from std.gpu.host.info import B200
+from max.gpu.host.info import B200
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -239,11 +239,11 @@ def run_mamba2_ssd_fwd_gpu_vs_cpu[
     ]()
     ctx.enqueue_function(
         compiled,
-        nheads,
-        head_dim,
-        ngroups,
-        nheads_ngroups_ratio,
-        batch,
+        Int32(nheads),
+        Int32(head_dim),
+        Int32(ngroups),
+        Int32(nheads_ngroups_ratio),
+        Int32(batch),
         dt_sp_int8,
         x_gtt,
         dt_gtt,
@@ -929,11 +929,11 @@ def run_mamba2_ssd_inplace_vs_functional[
         ]()
         ctx.enqueue_function(
             compiled_split,
-            nheads,
-            head_dim,
-            ngroups,
-            nheads_ngroups_ratio,
-            batch,
+            Int32(nheads),
+            Int32(head_dim),
+            Int32(ngroups),
+            Int32(nheads_ngroups_ratio),
+            Int32(batch),
             Int8(1),
             x_gtt,
             dt_gtt,
@@ -988,11 +988,11 @@ def run_mamba2_ssd_inplace_vs_functional[
         ]()
         ctx.enqueue_function(
             compiled_apple,
-            nheads,
-            head_dim,
-            ngroups,
-            nheads_ngroups_ratio,
-            batch,
+            Int32(nheads),
+            Int32(head_dim),
+            Int32(ngroups),
+            Int32(nheads_ngroups_ratio),
+            Int32(batch),
             Int8(1),
             x_gtt,
             dt_gtt,
@@ -1043,11 +1043,11 @@ def run_mamba2_ssd_inplace_vs_functional[
         ]()
         ctx.enqueue_function(
             compiled_inplace,
-            nheads,
-            head_dim,
-            ngroups,
-            nheads_ngroups_ratio,
-            batch,
+            Int32(nheads),
+            Int32(head_dim),
+            Int32(ngroups),
+            Int32(nheads_ngroups_ratio),
+            Int32(batch),
             Int8(1),
             x_gtt,
             dt_gtt,

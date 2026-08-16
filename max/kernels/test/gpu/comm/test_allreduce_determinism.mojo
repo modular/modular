@@ -50,7 +50,7 @@ from comm.allreduce import allreduce, allreduce_tuning_table
 from comm.device_query import dispatch_select_comm_config
 from comm.sync import enable_p2p, init_signal_buffer
 from layout import TileTensor, row_major
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
 
 # DeepEP reruns 20x; reruns inside one process are cheap.
@@ -280,15 +280,15 @@ def run_determinism_sweep() raises -> None:
 
     comptime for d in range(len(dtypes)):
         comptime for g in range(len(gpu_counts)):
-            comptime dtype = dtypes[d]
-            comptime ngpus = gpu_counts[g]
+            comptime dtype = rebind[DType](dtypes[d])
+            comptime ngpus = rebind[Int](gpu_counts[g])
             if DeviceContext.number_of_devices() < ngpus:
                 continue
             var ctx = List[DeviceContext]()
             for i in range(ngpus):
                 ctx.append(DeviceContext(device_id=i))
             comptime for li in range(len(lengths)):
-                comptime length = lengths[li]
+                comptime length = rebind[Int](lengths[li])
                 allreduce_determinism_test[dtype=dtype, ngpus=ngpus](
                     ctx, length
                 )

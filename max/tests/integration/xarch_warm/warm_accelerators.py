@@ -91,11 +91,6 @@ def main(target: str, cpu_target: str, family: str | None) -> None:
     set_virtual_device_target_arch(device_arch)
     set_virtual_device_count(WARM_DEVICE_COUNT)
 
-    print(
-        f"XARCH_WARM_ACCELERATORS: warming {device_arch} x{WARM_DEVICE_COUNT} "
-        f"(GPU slots only, family={family or 'all'}) + host {cpu_target}",
-        flush=True,
-    )
     derived = os.environ["MODULAR_DERIVED_PATH"]
     entries = warm_lib.export_slots(
         derived,
@@ -121,11 +116,6 @@ def main(target: str, cpu_target: str, family: str | None) -> None:
     }
     warm_lib.write_manifest(envelope, entries)
     # The device classes below never include "cpu", the dedup guarantee.
-    print(
-        f"XARCH_WARM_ACCELERATORS: wrote {len(entries)} accelerator MEFs + "
-        f"manifest fragment ({sorted(set(e['device_class'] for e in entries))})",
-        flush=True,
-    )
 
 
 if __name__ == "__main__":

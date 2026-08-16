@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from std.sys import has_amd_gpu_accelerator
 import std.gpu.primitives.warp as warp
-from std.gpu import barrier, thread_idx
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
@@ -72,7 +73,7 @@ def _shuffle_idx_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         comptime src_lane = 0
         return shuffle_idx(val, src_lane)
@@ -133,7 +134,7 @@ def _shuffle_up_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_up(val, UInt32(offset))
 
@@ -203,7 +204,7 @@ def _shuffle_down_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_down(val, UInt32(offset))
 
@@ -273,7 +274,7 @@ def _shuffle_xor_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @parameter
+    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_xor(val, UInt32(offset))
 
@@ -336,14 +337,14 @@ def _warp_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = 1
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return warp.reduce[shuffle_down, reduce_add](val)
 
@@ -383,7 +384,7 @@ def _warp_sum_launch_helper[
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
-    @parameter
+    @__parameter
     def do_warp_sum(val: SIMD[dtype, 1]) -> SIMD[dtype, 1]:
         return warp.sum(val)
 
@@ -419,7 +420,7 @@ def _lane_group_sum_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -479,7 +480,7 @@ def _lane_group_max_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -531,14 +532,14 @@ def _lane_group_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @parameter
+    @__parameter
     def do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
@@ -609,7 +610,7 @@ def _lane_group_min_broadcast_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @parameter
+    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:

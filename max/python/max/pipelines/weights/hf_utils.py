@@ -400,37 +400,34 @@ class HuggingFaceRepo:
     trust_remote_code: bool = False
     """Whether to trust remote code."""
 
-    repo_type: RepoType | None = None
-    """The type of repo. This is inferred from the repo_id."""
-
     subfolder: str | None = None
     """Optional subdirectory within the repo to scope weight discovery to."""
 
-    _hub_repo_id: str | None = field(default=None, compare=False, repr=False)
-    """Original Hugging Face hub id, preserved only when ``repo_id`` is
-    rewritten to a local snapshot directory under ``HF_HUB_OFFLINE``. Used by
-    :attr:`config_repo_id`; not part of equality/hashing."""
+    repo_type: RepoType = field(init=False)
+    """The type of repo, inferred from ``repo_id``."""
+
+    _local_path: str | None = field(
+        default=None, init=False, compare=False, repr=False
+    )
+    """Cache snapshot directory resolved under ``HF_HUB_OFFLINE``. Used by
+    :attr:`local_path`; not part of equality/hashing."""
 
     def __post_init__(self) -> None:
         # Get repo type.
-        if not self.repo_type:
-            if os.path.exists(self.repo_id):
-                object.__setattr__(self, "repo_type", "local")
-            elif huggingface_hub.constants.HF_HUB_OFFLINE:
-                # Respect HF_HUB_OFFLINE, resolve from local cache. Preserve the
-                # original hub id first: transformers 5.12's trust_remote_code
-                # loader breaks when handed a local HF-cache snapshot directory
-                # (it resolves the snapshot symlink into ``blobs/`` and then
-                # cannot find sibling relative imports), so config loading uses
-                # the hub id instead via `config_repo_id`.
-                object.__setattr__(self, "_hub_repo_id", self.repo_id)
-                local_path = generate_local_model_path(
-                    self.repo_id, self.revision
-                )
-                object.__setattr__(self, "repo_id", local_path)
-                object.__setattr__(self, "repo_type", "local")
-            else:
-                object.__setattr__(self, "repo_type", "online")
+        if os.path.exists(self.repo_id):
+            object.__setattr__(self, "repo_type", "local")
+        elif huggingface_hub.constants.HF_HUB_OFFLINE:
+            # Respect HF_HUB_OFFLINE, resolve from local cache. Resolution
+            # stays eager so an uncached repo raises FileNotFoundError at
+            # construction, which _repo_exists_with_retry relies on.
+            object.__setattr__(
+                self,
+                "_local_path",
+                generate_local_model_path(self.repo_id, self.revision),
+            )
+            object.__setattr__(self, "repo_type", "local")
+        else:
+            object.__setattr__(self, "repo_type", "online")
 
         if self.repo_type == "online":
             validate_hf_repo_access(
@@ -455,17 +452,22 @@ class HuggingFaceRepo:
         )
 
     @property
-    def config_repo_id(self) -> str:
-        """Identifier to pass to transformers ``*.from_pretrained``.
+    def local_path(self) -> str:
+        """Returns the filesystem directory backing this local repo.
 
-        For repos resolved from the offline HF cache, ``repo_id`` was rewritten
-        to a local snapshot directory; this returns the original hub id instead,
-        keeping transformers on its hub/cache code path. transformers 5.12's
-        ``trust_remote_code`` loader otherwise resolves the snapshot symlink into
-        ``blobs/`` and fails to find sibling relative imports. For all other
-        repos this is just ``repo_id``.
+        For a hub id resolved under ``HF_HUB_OFFLINE`` this is the local
+        cache snapshot directory; otherwise it is the on-disk path itself.
+
+        Raises:
+            ValueError: If the repo is online.
         """
-        return self._hub_repo_id or self.repo_id
+        if self.repo_type != "local":
+            raise ValueError(
+                f"local_path is not available for online repo '{self.repo_id}'."
+            )
+        if self._local_path is not None:
+            return self._local_path
+        return self.repo_id
 
     @cached_property
     def info(self) -> huggingface_hub.ModelInfo:
@@ -494,16 +496,15 @@ class HuggingFaceRepo:
         safetensor_search_pattern = "**/*.safetensors"
         gguf_search_pattern = "**/*.gguf"
 
-        # Scope search to subfolder when set.
-        if self.subfolder is not None:
-            local_base = os.path.join(self.repo_id, self.subfolder)
-            remote_base = f"{self.repo_id}/{self.subfolder}"
-        else:
-            local_base = self.repo_id
-            remote_base = self.repo_id
-
         weight_files = {}
         if self.repo_type == "local":
+            # Scope search to subfolder when set.
+            local_root = self.local_path
+            local_base = (
+                os.path.join(local_root, self.subfolder)
+                if self.subfolder is not None
+                else local_root
+            )
             safetensor_paths = glob.glob(
                 os.path.join(local_base, safetensor_search_pattern),
                 recursive=True,
@@ -512,7 +513,14 @@ class HuggingFaceRepo:
                 os.path.join(local_base, gguf_search_pattern),
                 recursive=True,
             )
+            # Strip the globbed root so paths are repo-relative.
+            strip_prefix = f"{local_root}/"
         elif self.repo_type == "online":
+            remote_base = (
+                f"{self.repo_id}/{self.subfolder}"
+                if self.subfolder is not None
+                else self.repo_id
+            )
             fs = huggingface_hub.HfFileSystem()
             safetensor_paths = cast(
                 list[str],
@@ -521,11 +529,9 @@ class HuggingFaceRepo:
             gguf_paths = cast(
                 list[str], fs.glob(f"{remote_base}/{gguf_search_pattern}")
             )
+            strip_prefix = f"{self.repo_id}/"
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
-
-        # Strip the repo_id prefix so paths are repo-relative.
-        strip_prefix = f"{self.repo_id}/"
 
         if safetensor_paths:
             if len(safetensor_paths) == 1:
@@ -595,9 +601,8 @@ class HuggingFaceRepo:
                 )
 
             # Workaround for FP8/FP4 models that don't have proper
-            # safetensors metadata.  Check the path for fp8/fp4 hints
-            # (works for both local paths and HF cache paths since cache
-            # paths preserve the model name: models--org--model-FP8/...).
+            # safetensors metadata.  Check the repo id for fp8/fp4 hints;
+            # hub ids and user-provided paths carry the model name.
             # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
             # do not have safetensors metadata populated.
             if safetensors_info is None:
@@ -616,6 +621,12 @@ class HuggingFaceRepo:
                     # Discard that false-positive and keep float8_e4m3fn.
                     supported_encodings.discard("float4_e2m1fnx2")
                     supported_encodings.add("float8_e4m3fn")
+                elif quant_config.get("quant_method") == "mxfp6":
+                    # MXFP6 packs both weights and scales as uint8, so the scan
+                    # above cannot tell it from MXFP4 -- on disk the two differ
+                    # only by this config entry.
+                    supported_encodings.discard("float4_e2m1fnx2")
+                    supported_encodings.add("float6_e2m3fn")
 
         return list(supported_encodings)
 
@@ -664,7 +675,7 @@ class HuggingFaceRepo:
             try:
                 if self.repo_type == "local":
                     with open(
-                        os.path.join(self.repo_id, weight_file), "rb"
+                        os.path.join(self.local_path, weight_file), "rb"
                     ) as f:
                         encodings.update(self._get_safetensors_encoding(f))
                 elif fs is not None:
@@ -684,10 +695,11 @@ class HuggingFaceRepo:
                 if config := self.info.config:
                     return config.get("quantization_config")
             elif self.repo_type == "local":
-                config_path = os.path.join(self.repo_id, "config.json")
+                local_root = self.local_path
+                config_path = os.path.join(local_root, "config.json")
                 if self.subfolder is not None:
                     config_path = os.path.join(
-                        self.repo_id, self.subfolder, "config.json"
+                        local_root, self.subfolder, "config.json"
                     )
                 if os.path.isfile(config_path):
                     with open(config_path) as f:
@@ -747,7 +759,7 @@ class HuggingFaceRepo:
     def file_exists(self, filename: str) -> bool:
         """Returns whether the given file exists in the repo."""
         if self.repo_type == "local":
-            return os.path.exists(os.path.join(self.repo_id, filename))
+            return os.path.exists(os.path.join(self.local_path, filename))
         return huggingface_hub.file_exists(self.repo_id, filename)
 
     @property
@@ -778,6 +790,7 @@ class HuggingFaceRepo:
             if len(supported) > 1:
                 for candidate in (
                     "float4_e2m1fnx2",
+                    "float6_e2m3fn",
                     "float8_e4m3fn",
                     "bfloat16",
                     "float32",

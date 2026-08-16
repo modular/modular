@@ -30,12 +30,11 @@ Types:
 
 from std.sys import align_of, size_of
 
-from std.gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import SharedMemBarrier
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 
 comptime SMemTile[
@@ -214,7 +213,7 @@ struct SMemTileArray[
     @always_inline
     @staticmethod
     def stack_allocation() -> Self:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.storage_size,
             Self.dtype,
             alignment=Self.alignment,
@@ -282,7 +281,7 @@ struct SMemArray[type: TrivialRegisterPassable, size: Int](
     @always_inline
     @staticmethod
     def stack_allocation[alignment: Int = align_of[Self.type]()]() -> Self:
-        var ptr = stack_allocation[
+        var ptr = unsafe_stack_allocation[
             Self.len(),
             Self.type,
             alignment=alignment,

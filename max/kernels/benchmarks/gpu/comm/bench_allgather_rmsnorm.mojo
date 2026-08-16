@@ -53,7 +53,7 @@ from comm.allgather import allgather
 from comm.reducescatter import ReduceScatterConfig
 from comm.allgather_rmsnorm import allgather_rmsnorm, _dispatch_ag_norm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor, row_major
@@ -92,13 +92,13 @@ def _launch_norm_full[
 
     @always_inline
     @__copy_capture(in_buf)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[in_dtype, width]:
         return in_buf.raw_load[width=width](in_buf.layout(coords))
 
     @always_inline
     @__copy_capture(out_buf)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) -> None:
@@ -120,7 +120,7 @@ def _verify_results[
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
     cb_shards: List[CacheBustingBuffer[in_dtype]],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[in_dtype],
     gamma_host: List[Scalar[in_dtype]],
     epsilon: Float32,
@@ -145,7 +145,7 @@ def _verify_results[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_shards = InlineArray[ShardType, ngpus](uninitialized=True)
+    var in_shards = Array[ShardType, ngpus](uninitialized=True)
     comptime for i in range(ngpus):
         in_shards[i] = ShardType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -206,7 +206,7 @@ def _verify_results[
         var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
             ag_r[i].unsafe_ptr()
         )
-        var out_views = InlineArray[FullType, ngpus](uninitialized=True)
+        var out_views = Array[FullType, ngpus](uninitialized=True)
         comptime for src in range(ngpus):
             out_views[src] = FullType(
                 out_base + config.rank_unit_start(src) * num_cols,
@@ -319,7 +319,7 @@ def bench_allgather_rmsnorm[
     var sum_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var ag_full = List[DeviceBuffer[in_dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
 
@@ -400,9 +400,9 @@ def bench_allgather_rmsnorm[
     comptime GammaType = TileTensor[
         in_dtype, type_of(row_major(Coord(Index(0)))), ImmutAnyOrigin
     ]
-    var in_shards = InlineArray[ShardType, ngpus](uninitialized=True)
-    var normed_views = InlineArray[FullType, ngpus](uninitialized=True)
-    var sum_views = InlineArray[FullType, ngpus](uninitialized=True)
+    var in_shards = Array[ShardType, ngpus](uninitialized=True)
+    var normed_views = Array[FullType, ngpus](uninitialized=True)
+    var sum_views = Array[FullType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_shards[i] = ShardType(
             rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -426,13 +426,13 @@ def bench_allgather_rmsnorm[
     )
 
     # Per-GPU ptrs captured once for the timed closures.
-    var cold_ptrs = InlineArray[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var ag_ptrs = InlineArray[
-        UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var normed_ptrs = InlineArray[
+    var cold_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var ag_ptrs = Array[UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var normed_ptrs = Array[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     var gamma_ptr = rebind[UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin]](
@@ -458,13 +458,13 @@ def bench_allgather_rmsnorm[
     )
 
     # Rebuild per-rank all-gather output views (into ag_full) for the timed AG.
-    @parameter
+    @__parameter
     @always_inline
-    def _ag_out_views(ctx_idx: Int) -> InlineArray[FullType, ngpus]:
+    def _ag_out_views(ctx_idx: Int) -> Array[FullType, ngpus]:
         var out_base = rebind[UnsafePointer[Scalar[in_dtype], MutAnyOrigin]](
             ag_full[ctx_idx].unsafe_ptr()
         )
-        var views = InlineArray[FullType, ngpus](uninitialized=True)
+        var views = Array[FullType, ngpus](uninitialized=True)
         comptime for src in range(ngpus):
             views[src] = FullType(
                 out_base + config.rank_unit_start(src) * num_cols,
@@ -472,7 +472,7 @@ def bench_allgather_rmsnorm[
             )
         return views^
 
-    @parameter
+    @__parameter
     @always_inline
     def _rebuild_shards(cache_iter: Int):
         comptime for _j in range(ngpus):
@@ -484,12 +484,12 @@ def bench_allgather_rmsnorm[
             )
 
     # ===== Variant 1: all-gather only -> t_AG =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_ag_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -506,12 +506,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 2: standalone RMSNorm on a cold full tensor -> t_norm =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             if num_rows > 0:
@@ -535,12 +535,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 3: AG then RMSNorm on the live gathered output -> t_chained =
-    @parameter
+    @__parameter
     @always_inline
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -567,12 +567,12 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 4: fused all-gather + RMSNorm kernel -> t_fused =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
@@ -597,23 +597,23 @@ def bench_allgather_rmsnorm[
     )
 
     # ===== Variant 5: shape-gated dispatch =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             _rebuild_shards(cache_iter)
 
-            @parameter
+            @__parameter
             @always_inline
             def two_launch() raises:
                 var out_base = rebind[
                     UnsafePointer[Scalar[in_dtype], MutAnyOrigin]
                 ](sum_full[ctx_idx].unsafe_ptr())
-                var out_views = InlineArray[FullType, ngpus](uninitialized=True)
+                var out_views = Array[FullType, ngpus](uninitialized=True)
                 comptime for src in range(ngpus):
                     out_views[src] = FullType(
                         out_base + config.rank_unit_start(src) * num_cols,

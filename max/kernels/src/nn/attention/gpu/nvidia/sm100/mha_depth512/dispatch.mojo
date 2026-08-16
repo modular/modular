@@ -20,9 +20,9 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
+from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -151,7 +151,10 @@ def mha_sm100_depth512_dispatch[
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
-    var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
+    var q = q_arg.bitcast[Scalar[KVType.dtype]]().unsafe_origin_cast[
+        q_arg.origin
+    ]()
+
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
 
@@ -182,7 +185,7 @@ def mha_sm100_depth512_dispatch[
     )
 
     # Q: BM per CTA (not halved like 2Q).
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
         depth=d512_config.qk_depth,
@@ -209,7 +212,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BN // 2,
         page_size=KVType.page_size,
     ]()
-    k_tma_op = k.create_tma_tile[
+    var k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
         BN=k_sub_BN,
         depth=d512_config.qk_depth,
@@ -234,7 +237,7 @@ def mha_sm100_depth512_dispatch[
         smem_BN=d512_config.BK1,
         page_size=KVType.page_size,
     ]()
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=v_sub_BN,
         depth=d512_config.ov_depth,
@@ -256,12 +259,12 @@ def mha_sm100_depth512_dispatch[
 
     # ---- Nested closure dispatch (no sink) -----------------------------------
 
-    @parameter
+    @__parameter
     @always_inline
     def with_kv_offsets[
         KVRowOffsetsType: OptionalPointer
     ](kv_row_offsets: KVRowOffsetsType) raises:
-        @parameter
+        @__parameter
         @always_inline
         def with_valid_length[
             ValidLengthType: OptionalPointer

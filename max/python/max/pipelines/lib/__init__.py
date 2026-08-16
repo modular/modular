@@ -20,7 +20,6 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
-from max.pipelines.lora import LoRAManager
 from max.pipelines.sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -106,6 +105,7 @@ from .tokenizer import (
     max_tokens_to_generate,
 )
 from .utils import CompilationTimer, upper_bounded_default
+from .vision_preprocess_cache import VisionPreprocessCache
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -123,7 +123,6 @@ __all__ = [
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
-    "LoRAManager",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
@@ -159,6 +158,7 @@ __all__ = [
     "TextTokenizer",
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
+    "VisionPreprocessCache",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

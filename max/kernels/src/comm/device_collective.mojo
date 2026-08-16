@@ -13,8 +13,10 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
-from std.gpu.host import DeviceContext, DeviceContextArray
-from std.runtime.asyncrt import TaskGroup, task_id_for_device
+from std.runtime._asyncrt import TaskGroup
+
+from max.gpu.host import DeviceContext, DeviceContextArray
+from max.runtime.asyncrt import task_id_for_device
 
 
 @always_inline
@@ -30,7 +32,7 @@ def _launch_device_collective[
 
     # Wrap the launch function in a Mojo async function which does not raise.
     @always_inline
-    @parameter
+    @__parameter
     async def wrapper[index: Int]() -> None:
         try:
             func[index]()
@@ -70,5 +72,7 @@ def _launch_device_collective[
 
     _launch_device_collective[num_devices](
         func,
-        rebind[Array[DeviceContext, num_devices]](dev_ctxs.device_contexts^),
+        rebind[Array[DeviceContext, num_devices]](
+            dev_ctxs.device_contexts^
+        ).copy(),
     )

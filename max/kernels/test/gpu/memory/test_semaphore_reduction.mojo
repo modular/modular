@@ -14,8 +14,8 @@
 from std.random import rand
 
 from std.gpu import block_dim, block_idx, grid_dim, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.sync.semaphore import Semaphore
+from max.gpu.host import DeviceContext
+from max.gpu.sync.semaphore import Semaphore
 from std.memory import unsafe_memset_zero
 from std.testing import assert_equal
 

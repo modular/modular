@@ -19,37 +19,37 @@ from std.math.uutils import umod, ufloordiv
 from std.memory import bitcast
 from std.sys import align_of, simd_width_of, size_of
 from std.bit import next_power_of_two
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import (
     block_id_in_cluster,
     thread_idx,
     lane_id,
     warp_id as get_warp_id,
 )
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import (
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
     Idx,
@@ -60,6 +60,8 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_tensor import TileTensor
+
+from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
 from layout.tile_layout import col_major as tl_col_major
 from layout.tensor_core_async import tile_layout_k_major_typed
@@ -491,11 +493,25 @@ def load_AB_cuda_core[
     comptime a_rows_per_thread = BM // WARP_SIZE
     comptime a_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[a_rows_per_thread]))
 
+    # SIMD widths must be powers of two: odd K rows are gathered with a
+    # masked load into the next power-of-two width, whose padded lanes are
+    # never read by the scatter below.
+    comptime K_padded = next_power_of_two(K_actual)
+
     comptime for v in range(a_rows_per_thread):
         var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
-        var vec = a_gmem.load[K_actual, a_row_align](
-            Int(a_row0 + m), Int(a_col0)
-        )
+        var vec: SIMD[a_type, K_padded]
+        comptime if K_actual == K_padded:
+            vec = a_gmem.load[K_padded, a_row_align](
+                Int(a_row0 + m), Int(a_col0)
+            )
+        else:
+            vec = partial_simd_load[K_padded](
+                a_gmem.ptr_at_offset(Index(Int(a_row0 + m), Int(a_col0))),
+                0,
+                K_actual,
+                0,
+            )
         comptime for k in range(BK):
             var smem_off = a_sw(m * Int32(BK) + Int32(k))
             comptime if k < K_actual:
@@ -511,9 +527,18 @@ def load_AB_cuda_core[
 
     comptime for v in range(b_rows_per_thread):
         var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
-        var vec = b_gmem.load[K_actual, b_row_align](
-            Int(b_row0 + n), Int(b_col0)
-        )
+        var vec: SIMD[b_type, K_padded]
+        comptime if K_actual == K_padded:
+            vec = b_gmem.load[K_padded, b_row_align](
+                Int(b_row0 + n), Int(b_col0)
+            )
+        else:
+            vec = partial_simd_load[K_padded](
+                b_gmem.ptr_at_offset(Index(Int(b_row0 + n), Int(b_col0))),
+                0,
+                K_actual,
+                0,
+            )
         comptime for k in range(BK):
             var smem_off = b_sw(n * Int32(BK) + Int32(k))
             comptime if k < K_actual:
@@ -1448,7 +1473,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
 
-    base_ptr_smem = external_memory[
+    var base_ptr_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -1497,11 +1522,11 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
 
     comptime accum_type = get_accum_type[a_type]()
 
@@ -1566,7 +1591,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     var num_active_experts = Int(expert_usage_stats[1])
 
     comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    b_offsets_tensor = LayoutTensor[
+    var b_offsets_tensor = LayoutTensor[
         DType.uint32,
         _offsets_layout,
         ImmutAnyOrigin,
@@ -1691,7 +1716,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while not work_info.is_done():
             if (
@@ -1701,7 +1726,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 work_info = scheduler.fetch_next_work()
                 continue
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work()
+            var next_work_info = scheduler.fetch_next_work()
             # DO MMA
             if elect_one_cta:
                 var accum_index = accum_pipeline_producer_state.index()
@@ -1755,7 +1780,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         # while work_info.is_valid():
         while not work_info.is_done():
@@ -1843,7 +1868,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             )
             accum_pipeline_consumer_state.step()
 
-            next_work_info = scheduler.fetch_next_work()
+            var next_work_info = scheduler.fetch_next_work()
             work_info = next_work_info
 
         comptime if cta_group == 2:
@@ -2084,11 +2109,11 @@ def _grouped_matmul_sm100_persistent[
     if M == 0:
         return
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(BM // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a_device)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             BN // (cluster_shape[0] // cta_group), BK
         ) if transpose_b else Index(BK, BN // (cluster_shape[0] // cta_group)),

@@ -718,7 +718,7 @@ class TestPerLayerBuffers:
             devices=[DeviceRef.GPU()],
             page_size=128,
             per_layer_buffers=True,
-            kv_connector=KVConnectorType.local,
+            kv_connector=KVConnectorType.tiered,
             enable_prefix_caching=True,
             host_kvcache_swap_space_gb=1.0,
         )

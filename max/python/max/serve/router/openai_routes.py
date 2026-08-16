@@ -36,6 +36,7 @@ from typing import (
     overload,
 )
 
+import opentelemetry.trace as otel_trace
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from jinja2.exceptions import UndefinedError
@@ -130,6 +131,7 @@ from max.serve.schemas.openai import (
     TopLogprob,
     UnloadLoraRequest,
 )
+from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 from max.serve.worker_interface import RequestQueueFull
@@ -150,6 +152,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
+from opentelemetry import propagate as otel_propagate
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -159,8 +162,42 @@ _T = TypeVar("_T")
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger("max.serve")
+_tracer = otel_trace.get_tracer("max.serve")
 
-_CLIENT_DISCONNECTED_STATUS_CODE = 499
+
+def _batch_id(
+    chunks: Sequence[TokenGeneratorOutput], *, last: bool = False
+) -> int | None:
+    """Return the first -- or with ``last``, the last -- non-None batch_id.
+
+    Scans from whichever end is being asked for so ``next`` short-circuits on
+    the first hit, rather than walking every chunk of a long generation.
+    """
+    return next(
+        (
+            c.batch_id
+            for c in (reversed(chunks) if last else chunks)
+            if c.batch_id is not None
+        ),
+        None,
+    )
+
+
+def _set_batch_id_attributes(
+    span: otel_trace.Span, chunks: Sequence[TokenGeneratorOutput]
+) -> None:
+    """Tag ``span`` with the batch ids bounding ``chunks``, when known.
+
+    Only for handlers that retain the whole chunk list; the streaming
+    handlers track the two ids as they go rather than holding every chunk.
+    """
+    first_id = _batch_id(chunks)
+    last_id = _batch_id(chunks, last=True)
+    if first_id is not None:
+        span.set_attribute("max.first_batch_id", first_id)
+    if last_id is not None:
+        span.set_attribute("max.last_batch_id", last_id)
+
 
 # Default tool-name charset (OpenAI's); a parser may widen it via VALID_TOOL_NAME_RE.
 _DEFAULT_VALID_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -239,10 +276,6 @@ def _merge_tool_call_deltas(
         if delta.arguments is not None:
             acc.arguments.append(delta.arguments)
     return [acc.to_chunk() for acc in merged.values()]
-
-
-class _ClientDisconnectedError(RuntimeError):
-    """Raised when a non-streaming request disconnects before completion."""
 
 
 def record_request_start() -> None:
@@ -563,6 +596,14 @@ class OpenAIChatResponseGenerator(
     ) -> AsyncGenerator[str | JSONResponse, None]:
         self.logger.debug("Streaming: Start: %s", request)
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            context=request_trace_ctx.get(),
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
@@ -589,8 +630,15 @@ class OpenAIChatResponseGenerator(
         self._think_opened = False
         self._think_closed = False
 
+        _first_batch_id: int | None = None
+        _last_batch_id: int | None = None
+
         try:
             async for chunk in token_generator:
+                if chunk.batch_id is not None:
+                    if _first_batch_id is None:
+                        _first_batch_id = chunk.batch_id
+                    _last_batch_id = chunk.batch_id
                 self.logger.debug(
                     "Streaming: %s, TOKENS: %d, %s%s",
                     request.request_id,
@@ -738,11 +786,35 @@ class OpenAIChatResponseGenerator(
                         n_reasoning_tokens += chunk.reasoning_token_count or 0
                         n_tokens += chunk.token_count
                         continue
-                    reasoning_kwargs = {self._reasoning_field: reasoning}
-                    choices = [
-                        ChatCompletionStreamResponseChoice(
-                            index=0,
-                            delta=ChatCompletionStreamResponseDelta(
+                    # CENG-892: never emit reasoning and content in the same
+                    # delta, and emit content only after the reasoning
+                    # fragment. A boundary chunk can carry both a reasoning
+                    # tail and the first content tokens; some downstream
+                    # consumers can't parse a delta with both fields set, so
+                    # split it into an ordered reasoning-then-content pair.
+                    deltas: list[ChatCompletionStreamResponseDelta] = []
+                    if reasoning:
+                        # Pass the non-reasoning fields explicitly so the
+                        # dynamic reasoning-key unpacking type-checks: with
+                        # them fixed, mypy can only route the dict into
+                        # reasoning / reasoning_content (both str | None).
+                        deltas.append(
+                            ChatCompletionStreamResponseDelta(
+                                role="assistant",
+                                content=None,
+                                function_call=None,
+                                refusal=None,
+                                tool_calls=None,
+                                **{self._reasoning_field: reasoning},
+                            )
+                        )
+                    # Content (with any tool-call fragment) is emitted last so
+                    # a terminal finish_reason / logprobs ride the content
+                    # delta. Emit it even when empty if there was no reasoning
+                    # delta, so a bare finish_reason chunk is still produced.
+                    if content or tool_call_chunks or not deltas:
+                        deltas.append(
+                            ChatCompletionStreamResponseDelta(
                                 content=content,
                                 function_call=None,
                                 role="assistant",
@@ -750,11 +822,23 @@ class OpenAIChatResponseGenerator(
                                 tool_calls=tool_call_chunks
                                 if tool_call_chunks
                                 else None,
-                                **reasoning_kwargs,
-                            ),
-                            logprobs=logprobs_response,
-                            finish_reason=finish_reason,
+                            )
                         )
+                    # finish_reason and logprobs belong on the final delta
+                    # only; the earlier reasoning delta is non-terminal.
+                    last_idx = len(deltas) - 1
+                    choices = [
+                        ChatCompletionStreamResponseChoice(
+                            index=0,
+                            delta=delta,
+                            logprobs=logprobs_response
+                            if i == last_idx
+                            else None,
+                            finish_reason=finish_reason
+                            if i == last_idx
+                            else None,
+                        )
+                        for i, delta in enumerate(deltas)
                     ]
                 elif chunk.status.is_done:
                     # Terminal chunk with no visible delta — emit the final
@@ -787,29 +871,34 @@ class OpenAIChatResponseGenerator(
                     n_tokens += chunk.token_count
                     continue
 
-                # Each chunk is expected to have the same id
-                # https://platform.openai.com/docs/api-reference/chat/streaming
-                # Don't include usage in regular chunks when streaming
-                # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
-                response = CreateChatCompletionStreamResponse(
-                    id=str(request.request_id),
-                    choices=choices,
-                    created=int(datetime.now().timestamp()),
-                    model=request.model_name,
-                    object="chat.completion.chunk",
-                    system_fingerprint=None,
-                    usage=None,
-                    service_tier=None,
-                )
                 n_reasoning_tokens += chunk.reasoning_token_count or 0
                 n_tokens += chunk.token_count
-                # Omit unset (None) fields so each delta carries only what
-                # changed, matching the OpenAI streaming spec. Without this a
-                # delta serializes tool_calls/function_call/refusal as null on
-                # every chunk, so a client reading the first tool_calls-bearing
-                # delta sees null instead of the real tool-call fragment.
-                payload = response.model_dump_json(exclude_none=True)
-                yield payload
+                # A boundary chunk yields an ordered reasoning-then-content
+                # pair (see CENG-892 above); every other case yields one
+                # choice. Emit each as its own SSE chunk so a single delta
+                # never carries both reasoning and content.
+                for choice in choices:
+                    # Each chunk is expected to have the same id
+                    # https://platform.openai.com/docs/api-reference/chat/streaming
+                    # Don't include usage in regular chunks when streaming
+                    # https://platform.openai.com/docs/api-reference/chat/create#chat_create-stream_options
+                    response = CreateChatCompletionStreamResponse(
+                        id=str(request.request_id),
+                        choices=[choice],
+                        created=int(datetime.now().timestamp()),
+                        model=request.model_name,
+                        object="chat.completion.chunk",
+                        system_fingerprint=None,
+                        usage=None,
+                        service_tier=None,
+                    )
+                    # Omit unset (None) fields so each delta carries only what
+                    # changed, matching the OpenAI streaming spec. Without this
+                    # a delta serializes tool_calls/function_call/refusal as
+                    # null on every chunk, so a client reading the first
+                    # tool_calls-bearing delta sees null instead of the real
+                    # tool-call fragment.
+                    yield response.model_dump_json(exclude_none=True)
 
             # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
             logger.debug(
@@ -883,6 +972,23 @@ class OpenAIChatResponseGenerator(
             )
             yield error_response.model_dump_json()
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            if final_finish_reason is not None:
+                request_span.set_attribute(
+                    "gen_ai.response.finish_reasons", [final_finish_reason]
+                )
+            if _first_batch_id is not None:
+                request_span.set_attribute(
+                    "max.first_batch_id", _first_batch_id
+                )
+            if _last_batch_id is not None:
+                request_span.set_attribute("max.last_batch_id", _last_batch_id)
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -900,11 +1006,20 @@ class OpenAIChatResponseGenerator(
             )
         request = requests[0]
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            context=request_trace_ctx.get(),
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
+        completed_outputs: list[TokenGeneratorOutput] = []
 
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
@@ -1064,21 +1179,17 @@ class OpenAIChatResponseGenerator(
                             reasoning_message,
                         )
 
-            usage = None
-            if n_reasoning_tokens > 0 or n_tokens > 0:
-                usage = CompletionUsage(
-                    prompt_tokens=n_prompt_tokens,
-                    completion_tokens=n_reasoning_tokens + n_tokens,
-                    total_tokens=n_prompt_tokens
-                    + n_reasoning_tokens
-                    + n_tokens,
-                    prompt_tokens_details=PromptTokensDetails(
-                        cached_tokens=n_cached_prompt_tokens,
-                    ),
-                    completion_tokens_details=CompletionTokensDetails(
-                        reasoning_tokens=n_reasoning_tokens,
-                    ),
-                )
+            usage = CompletionUsage(
+                prompt_tokens=n_prompt_tokens,
+                completion_tokens=n_reasoning_tokens + n_tokens,
+                total_tokens=n_prompt_tokens + n_reasoning_tokens + n_tokens,
+                prompt_tokens_details=PromptTokensDetails(
+                    cached_tokens=n_cached_prompt_tokens,
+                ),
+                completion_tokens_details=CompletionTokensDetails(
+                    reasoning_tokens=n_reasoning_tokens,
+                ),
+            )
 
             response = CreateChatCompletionResponse(
                 id=str(request.request_id),
@@ -1093,6 +1204,14 @@ class OpenAIChatResponseGenerator(
 
             return response
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            _set_batch_id_attributes(request_span, completed_outputs)
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -1199,6 +1318,14 @@ class OpenAIEmbeddingsResponseGenerator:
 
         record_request_start()
         metrics_req = requests[0]
+        request_span = _tracer.start_span(
+            "max.request",
+            context=request_trace_ctx.get(),
+            attributes={
+                "gen_ai.request.model": self.pipeline.model_name,
+                "max.request_id": str(metrics_req.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=metrics_req.timestamp_ns)
 
         try:
@@ -1226,6 +1353,7 @@ class OpenAIEmbeddingsResponseGenerator:
             )
             return response
         finally:
+            request_span.end()
             record_request_end(
                 metrics_req.request_path,
                 request_timer.elapsed_ms,
@@ -1477,10 +1605,14 @@ async def openai_parse_chat_completion_request(
                     else:
                         message_content.append(dict(content_part))
                 elif part_type == "text":
-                    if wrap_content:
-                        message_content.append(
-                            TextContentPart(text=content_part["text"])
+                    text = content_part.get("text")
+                    if text is None:
+                        raise InputError(
+                            "Content part of type 'text' must include a "
+                            "'text' field."
                         )
+                    if wrap_content:
+                        message_content.append(TextContentPart(text=text))
                     else:
                         message_content.append(dict(content_part))
             messages.append(
@@ -1584,6 +1716,52 @@ def _get_target_endpoint(
 
     # Fall back to body parameter
     return body_target_endpoint
+
+
+_CACHE_SALT_MAX_LEN = 512
+
+
+def _get_cache_salt(
+    request: Request,
+    body_cache_salt: str | None,
+    use_client_cache_salt: bool,
+) -> str | None:
+    """Extract cache_salt from header or body.
+
+    Header takes precedence over body parameter.
+    Uses the header name 'X-Cache-Salt'. Not authenticated by MAX Serve --
+    a trusted gateway must set it from session identity, not raw clients.
+    Ignored entirely unless use_client_cache_salt is True.
+
+    Args:
+        request: FastAPI Request object
+        body_cache_salt: cache_salt from the request body
+        use_client_cache_salt: whether to honor cache_salt at all
+
+    Returns:
+        cache_salt value from header if present, otherwise from body,
+        or None if use_client_cache_salt is False
+
+    Raises:
+        HTTPException: if the header value exceeds _CACHE_SALT_MAX_LEN
+            (the body field enforces the same cap via its pydantic schema).
+    """
+    if not use_client_cache_salt:
+        return None
+
+    header_cache_salt = request.headers.get("X-Cache-Salt")
+    if header_cache_salt:
+        if len(header_cache_salt) > _CACHE_SALT_MAX_LEN:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"X-Cache-Salt header exceeds {_CACHE_SALT_MAX_LEN} "
+                    "characters."
+                ),
+            )
+        return header_cache_salt
+
+    return body_cache_salt
 
 
 def _resolve_grammar_constraints(
@@ -1699,6 +1877,7 @@ async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
@@ -1757,7 +1936,10 @@ async def openai_create_chat_completion(
                 completion_request.tools, valid_tool_name_re
             )
 
-        response_format = _create_response_format(
+        # Off the event loop: validation compiles the schema, which can take
+        # seconds and would freeze in-flight streaming responses.
+        response_format = await asyncio.to_thread(
+            _create_response_format,
             completion_request.response_format,
             enable_response_format_schema=pipeline_config.sampling.enable_structured_output,
             grammar_validator=request.app.state.grammar_validator,
@@ -1855,7 +2037,10 @@ async def openai_create_chat_completion(
             and response_format.grammar is not None
         ):
             try:
-                grammar_validator.check_tool_grammar(response_format.grammar)
+                await asyncio.to_thread(
+                    grammar_validator.check_tool_grammar,
+                    response_format.grammar,
+                )
             except InputError:
                 METRICS.structured_output_grammar_rejection("tool_grammar")
                 raise
@@ -1954,30 +2139,13 @@ async def openai_create_chat_completion(
                     " field."
                 )
 
-        # Map OpenRouter's ``reasoning`` toggle onto the chat-template thinking
-        # flags. Templates are inconsistent about the key name, so set both
-        # ``enable_thinking`` and ``thinking``.
-        if completion_request.reasoning is not None:
-            reasoning = completion_request.reasoning
-            enable_thinking = (
-                reasoning.enabled
-                if reasoning.enabled is not None
-                else reasoning.effort is not None
-            )
-            chat_template_kwargs = dict(
-                completion_request.chat_template_kwargs or {}
-            )
-            chat_template_kwargs.setdefault("enable_thinking", enable_thinking)
-            chat_template_kwargs.setdefault("thinking", enable_thinking)
-            completion_request.chat_template_kwargs = chat_template_kwargs
-
         # When the orchestrator has already tokenized the prompt for
         # KV cache-aware routing, pass the token IDs directly so MAX Serve
         # skips re-tokenization. ``messages`` and ``prompt`` are mutually
         # exclusive on TextGenerationRequest, so omit ``messages`` in that
         # case. If both are sent on the wire, ``prompt_tokens`` wins.
         prompt_token_ids = completion_request.prompt_tokens
-        chat_template_options = completion_request.chat_template_kwargs
+        chat_template_options = completion_request.resolved_chat_template_kwargs
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
@@ -1996,7 +2164,11 @@ async def openai_create_chat_completion(
                 request, completion_request.target_endpoint
             ),
             dkv_cache_hint=completion_request.dkv_cache_hint,
-            cache_salt=completion_request.cache_salt,
+            cache_salt=_get_cache_salt(
+                request,
+                completion_request.cache_salt,
+                request.app.state.settings.use_client_cache_salt,
+            ),
             chat_template_options=chat_template_options,
         )
 
@@ -2011,9 +2183,6 @@ async def openai_create_chat_completion(
 
         response = await response_generator.complete([token_request])
         return response
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -2222,6 +2391,7 @@ async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # First try-catch: request parsing (client fault → 400)
     try:
@@ -2262,9 +2432,6 @@ async def openai_create_embeddings(
             )
             for idx, input_text in enumerate(embedding_inputs)
         ]
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.warning("JSONDecodeError in request %s: %s", request_id, e)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -2292,9 +2459,6 @@ async def openai_create_embeddings(
     try:
         response = await response_generator.encode(embedding_requests)
         return response
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", request_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except RequestQueueFull:
         # Admission was rejected (full worker queue); let the central handler
         # map it to HTTP 429 rather than the generic 500 below.
@@ -2498,13 +2662,28 @@ class OpenAICompletionResponseGenerator(
     ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            context=request_trace_ctx.get(),
+            attributes={
+                "gen_ai.request.model": request.model_name,
+                "max.request_id": str(request.request_id),
+            },
+        )
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
+        final_finish_reason: str | None = None
+        _first_batch_id: int | None = None
+        _last_batch_id: int | None = None
         try:
             async for chunk in token_generator:
+                if chunk.batch_id is not None:
+                    if _first_batch_id is None:
+                        _first_batch_id = chunk.batch_id
+                    _last_batch_id = chunk.batch_id
                 chunk_total_tokens = (
                     chunk.reasoning_token_count or 0
                 ) + chunk.token_count
@@ -2540,13 +2719,14 @@ class OpenAICompletionResponseGenerator(
                         )
                     ]
                 elif chunk.status.is_done:
+                    final_finish_reason = get_finish_reason_from_status(
+                        chunk.status, allow_none=False
+                    )
                     choices = [
                         CompletionResponseStreamChoice(
                             index=0,
                             text="",
-                            finish_reason=get_finish_reason_from_status(
-                                chunk.status, allow_none=False
-                            ),
+                            finish_reason=final_finish_reason,
                         )
                     ]
                 else:
@@ -2629,6 +2809,23 @@ class OpenAICompletionResponseGenerator(
                 content={"detail": "Value error", "message": str(e)},
             )
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            if final_finish_reason is not None:
+                request_span.set_attribute(
+                    "gen_ai.response.finish_reasons", [final_finish_reason]
+                )
+            if _first_batch_id is not None:
+                request_span.set_attribute(
+                    "max.first_batch_id", _first_batch_id
+                )
+            if _last_batch_id is not None:
+                request_span.set_attribute("max.last_batch_id", _last_batch_id)
+            request_span.end()
             record_request_end(
                 request.request_path,
                 request_timer.elapsed_ms,
@@ -2642,11 +2839,20 @@ class OpenAICompletionResponseGenerator(
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
         record_request_start()
+        request_span = _tracer.start_span(
+            "max.request",
+            context=request_trace_ctx.get(),
+            attributes={
+                "gen_ai.request.model": requests[0].model_name,
+                "max.request_id": str(requests[0].request_id),
+            },
+        )
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=requests[0].timestamp_ns)
+        req_output_list: list[list[TokenGeneratorOutput]] = []
 
         try:
             req_output_list = await asyncio.gather(
@@ -2708,6 +2914,15 @@ class OpenAICompletionResponseGenerator(
             )
             return response
         finally:
+            request_span.set_attribute(
+                "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
+            )
+            request_span.set_attribute(
+                "gen_ai.usage.input_tokens", n_prompt_tokens
+            )
+            all_outputs = [c for req in req_output_list for c in req]
+            _set_batch_id_attributes(request_span, all_outputs)
+            request_span.end()
             record_request_end(
                 requests[0].request_path,
                 request_timer.elapsed_ms,
@@ -2766,6 +2981,7 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
+    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, http_req_id, CreateCompletionRequest
@@ -2865,7 +3081,11 @@ async def openai_create_completion(
                     request, completion_request.target_endpoint
                 ),
                 dkv_cache_hint=completion_request.dkv_cache_hint,
-                cache_salt=completion_request.cache_salt,
+                cache_salt=_get_cache_salt(
+                    request,
+                    completion_request.cache_salt,
+                    request.app.state.settings.use_client_cache_salt,
+                ),
             )
             token_requests.append(tgr)
 
@@ -2891,9 +3111,6 @@ async def openai_create_completion(
         # the wrong id.  Overwrite with the http id.
         resp.id = http_req_id
         return resp
-    except _ClientDisconnectedError:
-        logger.info("Client disconnected for request %s", http_req_id)
-        return Response(status_code=_CLIENT_DISCONNECTED_STATUS_CODE)
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError for request %s", http_req_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e

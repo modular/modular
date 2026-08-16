@@ -18,6 +18,7 @@ _LIT_TESTS = [
             "//conditions:default": [],
         }),
         deps = [
+            "//max:max_mojo",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -28,16 +29,11 @@ _LIT_TESTS = [
     )
 ]
 
-filegroup(
-    name = "test-sources",
-    srcs = glob(["**/*.mojo"]),
-    visibility = ["//utils/debugging/gpu-build-benchmarking:__subpackages__"],
-)
-
 lit_tests(
     name = "lit_tests",
     srcs = _LIT_TESTS,
     mojo_deps = [
+        "//max:max_mojo",
         "@mojo//:std",
     ],
     target_compatible_with = select({

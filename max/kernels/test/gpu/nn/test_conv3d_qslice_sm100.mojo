@@ -32,7 +32,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import Naive2dConvolution
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
 from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (
@@ -145,7 +145,7 @@ def test_conv3d_qslice_direct[
 
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(output_lt)
         def scale_epilogue[

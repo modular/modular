@@ -14,10 +14,10 @@
 from std.math import exp, sqrt
 from std.random import rand
 from std.collections import Array
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
@@ -49,25 +49,27 @@ def flashattention_forward_kernel(
     Q: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     K: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     V: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
     scaling: Float32,
     out_D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     out_O: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var T_r = N // B_r
     var T_c = N // B_c
 
-    var KT_j = stack_allocation[
+    var KT_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var S_i = stack_allocation[
+    var S_i = unsafe_stack_allocation[
         B_r * B_c,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var V_j = stack_allocation[
+    var V_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -312,7 +314,7 @@ def main() raises:
         d_Q,
         d_K,
         d_V,
-        N,
+        Int32(N),
         scaling,
         d_D_out,
         d_O,

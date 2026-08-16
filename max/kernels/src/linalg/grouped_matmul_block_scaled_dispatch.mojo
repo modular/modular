@@ -17,9 +17,9 @@ input dtype and target GPU architecture. Currently supports NVFP4, MXFP4,
 and MXFP8 on SM100.
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (

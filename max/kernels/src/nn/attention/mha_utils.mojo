@@ -36,8 +36,8 @@ from std.sys.info import _accelerator_arch
 
 from std.bit import prev_power_of_two
 from std.gpu import WARP_SIZE, lane_id
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace
+from max.gpu.host import DeviceBuffer
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
@@ -49,13 +49,14 @@ from nn.attention.mha_mask import (
     MaterializedMask,
     MHAMask,
     NullMask,
+    RelativeLogitsMask,
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -239,8 +240,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         return ufloordiv(self.swizzle_mode.bytes(), size_of[self.dtype]())
 
     def q_smem_size(self, fa3: Bool = False, persistent: Bool = False) -> Int:
-        q_size = self.block_m() * self.padded_depth
-        num_q = 2 if fa3 and persistent else 1
+        var q_size = self.block_m() * self.padded_depth
+        var num_q = 2 if fa3 and persistent else 1
         return num_q * q_size
 
     def kv_smem_size(self, fa3: Bool = False) -> Int:
@@ -259,7 +260,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if fa3:
             return self.kv_smem_size(True)
         else:
-            BN = self.block_n()
+            var BN = self.block_n()
             return BN * BN
 
     def p_smem_size(self) -> Int:
@@ -278,8 +279,9 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         comptime persistent = (
             get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
         ) and sm_90
-        sm_90_fa3 = sm_90 and (self.algorithm == 3)
+        var sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
+        var num_smem_elements: Int
         comptime if shared_kv:
             num_smem_elements = (
                 self.q_smem_size(sm_90_fa3, persistent)
@@ -297,7 +299,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
             num_smem_elements += self.p_smem_size()
 
-        num_smem_bytes = size_of[self.dtype]() * num_smem_elements
+        var num_smem_bytes = size_of[self.dtype]() * num_smem_elements
         if sm_90_fa3:
             comptime i64_size = size_of[DType.int64]()
             num_smem_bytes += (2 * self.num_pipeline_stages) * i64_size + (
@@ -342,7 +344,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         ):
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(128)
-            reg_per = 224 if self.num_queries_per_block > 64 else 256
+            var reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
                 self.num_keys_per_block = num_keys_per_block.value()
             # FIXME: for depth == 64, larger num_keys_per_block values currently
@@ -357,11 +359,11 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # reg_per >= 16*BN//32 + 16*depth//32 + 16*BN//64 + 4
                 # (reg_per - depth//2 - 4) >= 3*BN//4
                 # BN <= (4*reg_per - 2*depth - 16)//3
-                reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
+                var reg_upper_bound = (4 * reg_per - 2 * depth - 16) // 3
                 comptime persistent: Bool = (
                     get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
-                smem_total = 227000
+                var smem_total = 227000
                 # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
                 #                 + 16*pipeline_stages + 40*persistent
                 # smem_total - 2*BM*depth*(1+persistent) - 16*pipeline_stages - 40*persistent
@@ -428,6 +430,30 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
         writer.write(",depth = ", self.depth)
         writer.write(",padded_depth = ", self.padded_depth)
         writer.write(",num_attention_heads = ", self.num_heads)
+
+
+@always_inline
+def indexer_key_bound(
+    num_keys: Int, seq_len: Int, tok_local: Int, causal: Int
+) -> Int:
+    """Keys the sparse indexer defines for token `tok_local` of a row.
+
+    `num_keys` is the row's total key count (`cache_len + seq_len`); the
+    result is all of them without a causal mask, `cache_len + tok_local + 1`
+    with one. Branchless multiply form: a branch in the scorer
+    epilogues' unrolled token loop measured +4-9% on the non-causal path from
+    codegen alone.
+
+    Read side of the indexer's write/read contract: the SM100 scorers
+    (`sparse_index_fp8_sm100[_prefill].mojo`) write score slots `[0, bound)`
+    for each token and nothing else, computing this same bound inline in
+    their store guards (their operands are `Int32`), and the bounded top-k
+    (`topk_row_bounds_kernel` in `mla_index_fp8.mojo` feeding
+    `persistent_topk_block_split`) reads exactly that range with no `-inf`
+    prefill between them. If either side drifts, the top-k reads score slots
+    the scorer never wrote.
+    """
+    return num_keys - (seq_len - 1 - tok_local) * causal
 
 
 @always_inline
@@ -730,7 +756,7 @@ def dispatch_mask[
     """
 
     @always_inline
-    @parameter
+    @__parameter
     def outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
         return callback_fn(mask)
 
@@ -799,6 +825,47 @@ def dispatch_materialized_mask[
 
     var mask = MaterializedMask(mask_nd, start_pos_nd)
     return callback_fn(mask)
+
+
+@always_inline
+def dispatch_relative_logits_mask[
+    dtype: DType,
+    layout: Layout,
+    //,
+    callback_fn: callback_fn_type,
+    local_window_size: Int = -1,
+](
+    bias_nd: LayoutTensor[mut=False, dtype, layout, _],
+    cache_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+    input_row_offsets: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+) raises -> None:
+    """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
+
+    Like `dispatch_materialized_mask`, this carries runtime state (the bias
+    table plus the tensors that recover its ragged-flat row), so it lives
+    outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
+    picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
+    "no window" value) -> `CausalMask`, else
+    `SlidingWindowCausalMask[local_window_size]`. The mask structs
+    themselves report "no window" as `sliding_window_size() == 0`; this
+    function is where the two conventions meet.
+    """
+    comptime if local_window_size <= 0:
+        return callback_fn(
+            RelativeLogitsMask[visibility=CausalMask()](
+                bias_nd, cache_lengths, input_row_offsets
+            )
+        )
+    else:
+        return callback_fn(
+            RelativeLogitsMask[
+                visibility=SlidingWindowCausalMask[local_window_size]()
+            ](bias_nd, cache_lengths, input_row_offsets)
+        )
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`
@@ -880,6 +947,91 @@ def _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
+trait OptionalPointer(Copyable, TrivialRegisterPassable):
+    """Abstracts over nullable pointers, providing a uniform interface for `NonNullPointer` and `NullPointer`.
+    """
+
+    comptime dtype: DType
+    comptime is_null: Bool
+    comptime address_space: AddressSpace
+
+    @always_inline
+    def value(
+        self,
+    ) -> UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]:
+        ...
+
+
+struct NonNullPointer[
+    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
+](OptionalPointer):
+    """A pointer with a compile-time guarantee of being non-null.
+
+    Parameters:
+        dtype_: Element type of the pointed-to values.
+        address_space_: GPU address space of the pointer (defaults to
+            `AddressSpace.GENERIC`).
+    """
+
+    comptime dtype: DType = Self.dtype_
+    comptime is_null: Bool = False
+    comptime address_space: AddressSpace = Self.address_space_
+    comptime PtrType = UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]
+
+    @__allow_legacy_any_origin_fields
+    var ptr: Self.PtrType
+
+    @always_inline
+    def __init__(out self, ptr: Self.PtrType):
+        self.ptr = ptr
+
+    @always_inline
+    def __init__(out self, ptr: DeviceBuffer[Self.dtype]):
+        comptime assert Self.address_space == AddressSpace.GENERIC
+        self.ptr = rebind[Self.PtrType](ptr.unsafe_ptr())
+
+    @always_inline
+    def value(self) -> Self.PtrType:
+        assert Int(self.ptr) != 0, (
+            "NonNullPointer is supposed to provide a compile-time guarantee"
+            " of being non-null"
+        )
+        return self.ptr
+
+
+struct NullPointer[
+    dtype_: DType, address_space_: AddressSpace = AddressSpace.GENERIC
+](OptionalPointer):
+    """A pointer known at compile time to be null, used when an optional pointer argument is absent.
+
+    Parameters:
+        dtype_: Element type of the pointed-to values.
+        address_space_: GPU address space of the pointer (defaults to
+            `AddressSpace.GENERIC`).
+    """
+
+    comptime dtype: DType = Self.dtype_
+    comptime is_null: Bool = True
+    comptime address_space: AddressSpace = Self.address_space_
+    comptime PtrType = UnsafePointer[
+        Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
+    ]
+
+    @always_inline
+    def __init__(out self):
+        pass
+
+    @always_inline
+    def value(self) -> Self.PtrType:
+        # NullPointer.value() should never be called at runtime — it exists
+        # only for trait conformance. Return dangling as a safe sentinel.
+        return Self.PtrType.unsafe_dangling()
+
+
 trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     """Trait describing how the key-value sequence is partitioned for split-K decoding.
 
@@ -892,6 +1044,9 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
 
     comptime do_partition: Bool
     comptime accum_dtype: DType
+    # Null exactly when `do_partition` is False, so a scheme that owns no
+    # partial-statistics buffer cannot hand out a pointer to one.
+    comptime LSEPointerType: OptionalPointer
 
     @always_inline
     def num_partitions(self) -> UInt32:
@@ -906,10 +1061,12 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
     def max_num_partitions(self) -> UInt32:
         ...
 
+    # Base of the partial softmax statistics buffer. Callers that need to write
+    # through it must first establish `do_partition` (see
+    # `MHAPosition.exp_sum_qk_max_ptr`), which is what makes the mutability
+    # laundering at those sites sound.
     @always_inline
-    def get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
+    def lse_pointer(self) -> Self.LSEPointerType:
         ...
 
 
@@ -928,6 +1085,7 @@ struct NoPartition[dtype: DType](
 
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
+    comptime LSEPointerType = NullPointer[Self.accum_dtype]
 
     @always_inline
     def __init__(out self):
@@ -942,12 +1100,8 @@ struct NoPartition[dtype: DType](
         return 1
 
     @always_inline
-    def get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[
-            Scalar[Self.accum_dtype], MutAnyOrigin
-        ].unsafe_dangling()
+    def lse_pointer(self) -> Self.LSEPointerType:
+        return {}
 
 
 struct SplitKPartition[dtype: DType](
@@ -968,6 +1122,7 @@ struct SplitKPartition[dtype: DType](
 
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
+    comptime LSEPointerType = NonNullPointer[Self.accum_dtype]
 
     @__allow_legacy_any_origin_fields
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
@@ -994,7 +1149,5 @@ struct SplitKPartition[dtype: DType](
         return self.max_num_partitions_value
 
     @always_inline
-    def get_exp_sum_qk_max_pointer(
-        self,
-    ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return self.ptr
+    def lse_pointer(self) -> Self.LSEPointerType:
+        return {self.ptr.as_imm().as_unsafe_any_origin()}

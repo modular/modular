@@ -33,16 +33,16 @@ from std.math import ceildiv
 from std.sys import align_of, size_of
 
 from std.memory import UnsafePointer
-from std.gpu import WARP_SIZE, barrier, warp_id as get_warp_id
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, warp_id as get_warp_id
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import block_idx, lane_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_group,
@@ -50,14 +50,14 @@ from std.gpu.memory import (
     fence_mbarrier_init,
     CacheEviction,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.primitives.grid_controls import (
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from std.gpu.sync import async_copy_arrive, syncwarp
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.sync import async_copy_arrive, syncwarp
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     ComptimeInt,
     Coord,
@@ -1698,7 +1698,7 @@ struct BlackwellMatmulSM100Kernel[
         rank_sigs: Optional[
             Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS]
         ] = None,
-        my_rank: Int = 0,
+        my_rank_dev: Int32 = 0,
     ):
         """Main kernel entry point for SM100 matrix multiplication.
 
@@ -1720,9 +1720,10 @@ struct BlackwellMatmulSM100Kernel[
             workspace: Workspace buffer for profiling and scheduling state.
             rank_sigs: Per-rank signal pointers for multi-GPU
                 reduce-scatter synchronization (defaults to `None`).
-            my_rank: Rank index of this GPU for multi-GPU reduce-scatter
+            my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter
                 (defaults to 0).
         """
+        var my_rank = Int(my_rank_dev)
         Self.validate_constraints()
 
         # Access shared memory via bitcast
@@ -1960,12 +1961,16 @@ struct BlackwellMatmulSM100Kernel[
 
                         producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            # Implies each SM will only process initial work, there is no
-            # more work to schedule.
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # With no CLC pipeline stages each SM only processes its initial work, so
+        # there is nothing to schedule. KERN-3311: fold that into the condition
+        # rather than `return`ing -- a return would skip the cluster exit barrier
+        # at the end of this function, leaving it divergent (undefined behavior).
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             # Scheduler warp uses its own iterator that manages both
             # producer and consumer state, plus throttle signaling
             var sched_iter = scheduler.scheduler_iterator()
@@ -2026,6 +2031,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 UInt32(i),
                                                 0,
                                             )
+
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
 
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
@@ -2167,6 +2191,20 @@ struct BlackwellMatmulSM100Kernel[
                                     )
 
                         tile_idx += 1
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     @staticmethod
     @always_inline
@@ -2338,10 +2376,14 @@ struct BlackwellMatmulSM100Kernel[
 
                     producer.drain()  # wait for consumer before CTA exits
 
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            comptime if Self.config.num_clc_pipeline_stages == 0:
-                return
-
+        # See run(): fold rather than `return`, so the cluster exit barrier below
+        # is reached by every thread.
+        comptime has_clc_scheduling = Self.config.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -2387,6 +2429,25 @@ struct BlackwellMatmulSM100Kernel[
                                                 k_start,
                                             )
 
+                    # cta_group=2: the peer CTA (elect_one_cta == False) never
+                    # issues MMA -- the leader's single MMA multicasts its
+                    # commit into both CTAs' TMEM -- so it skips producer()
+                    # above. Unlike this CTA's own epilogue, which waits on the
+                    # multicast accumulator barrier before reading TMEM, the
+                    # peer's MMA warp would otherwise reach the TMEM dealloc
+                    # handshake having never observed a hardware-backed signal
+                    # that the leader's MMA completed, relying only on that
+                    # barrier's cross-CTA arrive bookkeeping. Wait on the same
+                    # barrier the epilogue uses. Gated to
+                    # num_clc_pipeline_stages == 0, where exactly one tile
+                    # (accumulator stage 0) is produced per cluster launch.
+                    comptime if (
+                        Self.cta_group == 2
+                        and Self.config.num_clc_pipeline_stages == 0
+                    ):
+                        if not ctx.elect_one_cta:
+                            mma_ctx.output_pipeline.pipeline.wait_producer()
+
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
@@ -2421,6 +2482,20 @@ struct BlackwellMatmulSM100Kernel[
                             )
 
                     tile_idx += 1
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue signals its peer through cluster-mapped `arrive_cluster`
+        # (structured_kernels/tmem.mojo), which requires that peer to still be
+        # resident; if one CTA retires first the arrive targets a departed block
+        # and TMEM is then freed for a pair that no longer jointly owns it. The
+        # `cluster_sync()` during setup only orders mbarrier initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is the
+        # cluster-mapped arrive in `signal_peer()`, which only exists for
+        # cta_group == 2. A 1-SM config with a multicast cluster has no
+        # cross-CTA arrive and must not pay for this barrier. cta_group == 2
+        # implies a 2-CTA cluster.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
 
 # ============================================================================
@@ -2554,7 +2629,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         c: TileTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
-        num_iters: Int,
+        num_iters: Int32,
     ):
         """Run the fallback matmul kernel.
 
@@ -2564,6 +2639,7 @@ struct BlackwellMatmulSM100FallbackKernel[
             c: Output tensor C (TileTensor, direct global memory writes).
             num_iters: Number of K-dimension iterations.
         """
+        var _num_iters = Int(num_iters)
         Self.validate_constraints()
 
         # Setup shared memory for A and B tiles
@@ -2632,7 +2708,7 @@ struct BlackwellMatmulSM100FallbackKernel[
         ]()
 
         # Main loop over K dimension
-        for i in range(num_iters):
+        for i in range(_num_iters):
             # Only one thread per CTA does the copy
             if elect_one_thread:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))

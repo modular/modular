@@ -82,19 +82,40 @@ modular_py_binary(
     name = "aa_omniscience_eval",
     testonly = True,
     srcs = ["aa_omniscience_eval.py"],
-    # AA-Omniscience-Public carries an image column; the datasets loader decodes
-    # it via Pillow at runtime even though nothing here imports it statically.
-    ignore_extra_deps = [
-        requirement("pillow"),
-    ],
     imports = ["."],
     main = "aa_omniscience_eval.py",
     deps = [
         ":eval_common",
         requirement("click"),
         requirement("datasets"),
-        requirement("pillow"),
     ],
+)
+
+modular_py_binary(
+    name = "scicode_eval",
+    testonly = True,
+    srcs = ["scicode_eval.py"],
+    imports = ["."],
+    main = "scicode_eval.py",
+    # scicode + h5py are NOT deps here: the generated code's tests run in a
+    # separate interpreter (--test-python) that has them installed.
+    deps = [
+        ":eval_common",
+        requirement("click"),
+        requirement("datasets"),
+    ],
+)
+
+# One-command local runner: provisions the scicode/h5py harness venv +
+# test_data.h5, then runs scicode_eval with --test-python/--test-data injected.
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:scicode_eval_local -- \
+#     --base-url http://localhost:8000 --model MiniMaxAI/MiniMax-M3-MXFP8 --sample-size 2
+sh_binary(
+    name = "scicode_eval_local",
+    testonly = True,
+    srcs = ["run_scicode_local.sh"],
+    data = [":scicode_eval"],
+    tags = ["manual"],
 )
 
 # One command to run all five non-agentic text evals in sequence against a
@@ -110,6 +131,32 @@ sh_binary(
         ":gpqa_eval",
         ":hle_eval",
     ],
+    tags = ["manual"],
+)
+
+modular_py_library(
+    name = "omnidocbench_prep",
+    testonly = True,
+    srcs = ["omnidocbench_prep.py"],
+    imports = ["."],
+    deps = [
+        requirement("huggingface-hub"),
+    ],
+)
+
+# One-command local runner: provisions the pinned third-party OmniDocBench
+# harness (checkout + Python 3.11 venv + dataset + LaTeX deps), points it at an
+# endpoint, runs inference and scores. Unlike the other evals this is a shell
+# runner because the scorer is a third-party subprocess with its own interpreter.
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:omnidocbench_eval_local -- \
+#     --limit 4 --workers 4
+sh_binary(
+    name = "omnidocbench_eval_local",
+    testonly = True,
+    srcs = ["run_omnidocbench_local.sh"],
+    # The library target, not the raw source: a file may belong to only one
+    # rule, and omnidocbench_prep.py is already this package's py_library.
+    data = [":omnidocbench_prep"],
     tags = ["manual"],
 )
 
@@ -144,5 +191,14 @@ modular_py_test(
     srcs = ["test_collect_scores.py"],
     deps = [
         ":collect_scores",
+    ],
+)
+
+modular_py_test(
+    name = "test_eval_common",
+    size = "small",
+    srcs = ["test_eval_common.py"],
+    deps = [
+        ":eval_common",
     ],
 )

@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -148,6 +148,15 @@ def run_varlen_causal_conv1d_fwd_gpu[
         # kernels) is actually exercised, not just the all-zero default.
         rand[dtype](conv_states_h._storage, batch * dim * state_len)
 
+    # The seed, kept separately: the CPU reference call below overwrites
+    # `conv_states_h` in place, and the write-back check needs what the pool
+    # held BEFORE the kernel ran.
+    var conv_states_seed_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    for i in range(batch * dim * state_len):
+        conv_states_seed_heap[i] = conv_states_h.raw_load(i)
+
     # output: (dim, total_seqlen)
     var output_gpu_heap = List(length=dim * total_seqlen, fill=Scalar[dtype](0))
     var output_gpu_h = TileTensor(output_gpu_heap, row_major(dim, total_seqlen))
@@ -280,9 +289,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -336,9 +345,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -392,9 +401,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -448,9 +457,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            dim,
-            total_seqlen,
-            batch,
+            Int32(dim),
+            Int32(total_seqlen),
+            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -503,6 +512,34 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ctx.enqueue_copy(conv_states_serial_h.ptr, conv_states_device)
     ctx.synchronize()
 
+    # Check the state against the CONTRACT, not against the other kernel: after
+    # consuming a chunk the pool holds the last `state_len` tokens of everything
+    # seen, so entries the chunk is too short to supply come from the seed. The
+    # seq-parallel-vs-serial comparison further down cannot see a violation both
+    # kernels share, which is exactly how a missing carry-over survived here.
+    if nonzero_initial_state:
+        for b in range(batch):
+            var seq_start = Int(query_start_loc_h.raw_load(b))
+            var seqlen = Int(query_start_loc_h.raw_load(b + 1)) - seq_start
+            for d in range(dim):
+                for s in range(state_len):
+                    var offset = seqlen - state_len + s
+                    var expected: Scalar[dtype]
+                    if offset >= 0:
+                        expected = x_h.raw_load(
+                            UInt32(d) * UInt32(total_seqlen)
+                            + UInt32(seq_start + offset)
+                        )
+                    else:
+                        expected = conv_states_seed_heap[
+                            (b * dim + d) * state_len + state_len + offset
+                        ]
+                    assert_almost_equal(
+                        conv_states_serial_h.ptr[(b * dim + d) * state_len + s],
+                        expected,
+                        rtol=rtol,
+                    )
+
     # Fresh device buffers so the seq-parallel run starts from the same
     # (still-unmutated) initial conv_states as the serial run above.
     var conv_states_seqpar_device = ctx.enqueue_create_buffer[dtype](
@@ -524,7 +561,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     comptime TILE_SEQ = 128
 
-    @parameter
+    @__parameter
     @always_inline
     def launch_seqpar_gpu[kWidth: Int]() raises:
         var compiled_func = ctx.compile_function[
@@ -553,9 +590,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                dim,
-                total_seqlen,
-                batch,
+                Int32(dim),
+                Int32(total_seqlen),
+                Int32(batch),
                 x_device_tt,
                 weight_device_tt,
                 bias_device_tt,
@@ -955,10 +992,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1009,10 +1046,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1063,10 +1100,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1117,10 +1154,10 @@ def run_varlen_causal_conv1d_update_gpu[
         ]()
         ctx.enqueue_function(
             compiled_func,
-            batch,
-            dim,
-            seqlen,
-            state_len,
+            Int32(batch),
+            Int32(dim),
+            Int32(seqlen),
+            Int32(state_len),
             x_upd_device_tt,
             weight_upd_device_tt,
             bias_upd_device_tt,
@@ -1375,6 +1412,45 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_nonzero_initial_state() raises
         dim=8,
         seq_lengths=Index(4032, 256),
         width=4,
+        ctx=ctx,
+        nonzero_initial_state=True,
+    )
+
+
+def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
+    """Chunks too short to supply the whole new state, with a state to continue.
+
+    The regime every decode step is in, and the one the long-sequence
+    `nonzero_initial_state` cases above never reach: with `seqlen < width - 1`
+    the pool's older entries can only come from the state being continued.
+    `Index(1, 1)` is pure decode (the serial kernel in production);
+    `Index(2, 2)` keeps `total_seqlen > batch`, so it is the seq-parallel
+    kernel's version of the same partial write.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+        batch=2,
+        dim=8,
+        seq_lengths=Index(1, 1),
+        width=4,
+        ctx=ctx,
+        nonzero_initial_state=True,
+    )
+    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+        batch=2,
+        dim=8,
+        seq_lengths=Index(2, 2),
+        width=4,
+        ctx=ctx,
+        nonzero_initial_state=True,
+    )
+    run_varlen_causal_conv1d_fwd_gpu[DType.float32, "none"](
+        batch=3,
+        dim=8,
+        seq_lengths=Index(1, 1, 1),
+        width=3,
         ctx=ctx,
         nonzero_initial_state=True,
     )

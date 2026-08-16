@@ -15,6 +15,7 @@ mojo_test(
     name = "test_gpu_target_plugin.mojo.test",
     srcs = ["test_gpu_target_plugin.mojo"],
     deps = [
+        "//max:max_mojo",
         "@mojo//:std",
         "@mojo//:test_utils",
     ],

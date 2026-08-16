@@ -17,24 +17,25 @@ Wraps the Apple Accelerate `cblas_sgemm` routine to provide single-precision mat
 
 from std.collections import Optional
 from std.math import fma
-from std.memory import alloc
+from std.memory.alloc import ManagedAllocation, alloc, dealloc
 from std.sys import CompilationTarget, simd_width_of
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 
-from std.algorithm import elementwise, vectorize
-from std.algorithm.functional import (
+from std.algorithm import vectorize
+
+from max.algorithm import elementwise
+from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList
 from std.utils.index import Index
 
 from ...bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
-from std.gpu.memory import AddressSpace
 from layout import Coord, Idx, TileTensor, row_major
 from ...packing import pack_b_ndbuffer
 from ...utils import (
@@ -81,7 +82,7 @@ def _on_error_msg() -> Error:
             "the XCode package is installed and that the library path is "
             "correctly set in one of the following paths ["
         ),
-        ", ".join(Span([LIB_ACC_PATH])),
+        ", ".join([LIB_ACC_PATH]),
         "].",
     )
 
@@ -301,9 +302,7 @@ def apple_gemv[
     var K = Int(a.dim[1]()) if b_packed else Int(b.dim[0]())
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
-    var transposed_b_ptr = Optional[
-        UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin]
-    ]()
+    var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
         row_major(Coord(Int(0), Int(0))),
@@ -313,10 +312,13 @@ def apple_gemv[
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
-        var allocated_ptr = alloc[Scalar[b.dtype]](b.num_elements())
-        transposed_b_ptr = allocated_ptr
+        transposed_b_alloc = alloc[Scalar[b.dtype]](
+            {count = b.num_elements()}
+        ).into_managed()
         transposed_b = TileTensor(
-            allocated_ptr,
+            transposed_b_alloc.unsafe_value()
+            .unsafe_ptr()
+            .unsafe_origin_cast[MutUntrackedOrigin](),
             row_major(
                 Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
             ),
@@ -340,7 +342,7 @@ def apple_gemv[
 
     @always_inline
     @__copy_capture(c, a, b, K)
-    @parameter
+    @__parameter
     def process_rows(start_row: Int, end_row: Int):
         for var n in range(start_row, end_row):
             var acc_vector = SIMD[c.dtype, simd_width]()
@@ -387,8 +389,7 @@ def apple_gemv[
         IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
-    if transposed_b_ptr:
-        transposed_b_ptr.unsafe_value().free()
+    _ = transposed_b_alloc^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -590,7 +591,7 @@ def apple_batched_matmul[
             batch, c_shape_idx
         )
 
-        @parameter
+        @__parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
             c_type: DType, width: SIMDLength, *, alignment: Int = 1

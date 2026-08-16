@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Generates tensors filled with values drawn from a normal (Gaussian) distribution for CPU and GPU."""
 
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext
+from std.math import ceildiv
 from std.random import NormalRandom
 from extensibility import _dot_prod
 
@@ -93,8 +94,8 @@ def random_normal[
         comptime MAX_GRID = (
             info.sm_count * (info.threads_per_multiprocessor // BLOCK_SIZE)
         )
-        var nblocks = (numel + BLOCK_SIZE - 1) // BLOCK_SIZE
-        var grid_x = MAX_GRID if nblocks > MAX_GRID else nblocks
+        var nblocks = ceildiv(numel, BLOCK_SIZE)
+        var grid_x = min(nblocks, MAX_GRID)
         grid_block = grid_x * BLOCK_SIZE
     else:
         grid_block = numel

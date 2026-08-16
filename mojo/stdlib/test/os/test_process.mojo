@@ -64,7 +64,9 @@ def test_process_run_missing() raises:
     print("== test_process_run_missing")
     # CHECK-LABEL: == test_process_run_missing
     # CHECK-NEXT: Failed to execute ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN, EINT error code: 2
-    missing_executable_file = "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
+    var missing_executable_file = (
+        "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
+    )
 
     # verify that the test file does not exist before starting the test
     assert_false(

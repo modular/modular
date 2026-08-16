@@ -37,7 +37,12 @@
 #                     passes $github.run_number so each night explores new
 #                     cases yet a given run reproduces exactly.
 #   FUZZ_TIMEOUT      per-case wall-clock seconds; exceeding it = HANG (default 120).
-#   FUZZ_GPU          CUDA device index to pin the search to (default 0).
+#   FUZZ_GPU          device index to pin the search to (default 0).
+#   FUZZ_VENDOR       "nvidia" (default) or "amd". Only affects the per-oracle
+#                     DEFAULT target list (below) when no explicit <target> is
+#                     given -- AMD drops targets whose kernel has no CDNA4/MI355
+#                     implementation. Ignored once an explicit <target> list is
+#                     passed on the command line.
 #   FUZZ_RESULTS_DIR  where to collect the corpus + JSONL run logs for upload
 #                     (default .derived/fuzz-findings).
 #
@@ -71,6 +76,7 @@ FUZZ_BUDGET="${FUZZ_BUDGET:-24}"
 FUZZ_SEED="${FUZZ_SEED:-$(date +%Y%m%d)}"
 FUZZ_TIMEOUT="${FUZZ_TIMEOUT:-120}"
 FUZZ_GPU="${FUZZ_GPU:-0}"
+FUZZ_VENDOR="${FUZZ_VENDOR:-nvidia}"
 RESULTS="${FUZZ_RESULTS_DIR:-$WORKDIR/.derived/fuzz-findings}/$ORACLE"
 mkdir -p "$RESULTS"
 
@@ -79,17 +85,45 @@ mkdir -p "$RESULTS"
 # always-red positive-control canaries (oob_canary / numeric_canary), are
 # deliberately omitted so a red run means a real, new candidate finding rather
 # than known noise.
+#
+# On AMD (FUZZ_VENDOR=amd), redzone/ref/contract additionally drop every target
+# whose kernel is SM100-only (no CDNA4/MI355 implementation exists yet), plus
+# attn_res_mix -- that kernel is portable, but its fuzz target arms PDL on every
+# shape and has only ever been run on B200, so an AMD lane would be claiming
+# coverage nobody has measured. Add it once it runs green on MI355. memcheck and
+# initcheck have no AMD entry at all -- compute-sanitizer (the oracle tool
+# itself, not the targets) has no AMD equivalent wired into fuzz.py. determinism
+# has no AMD entry either: its only two targets (matmul, gemv_split_k) are both
+# SM100-only, so there is nothing AMD-safe to run under that oracle yet.
 default_targets() {
   case "$1" in
-    memcheck)    echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 ;;
+    memcheck)    echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 mla_decode fused_rope_rmsnorm fused_qkv_matmul_mxfp8 fused_qkv_index_matmul_mxfp8 attn_res_mix ;;
     initcheck)   echo moe_indices topk_sampling ;;
-    redzone)     echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 ;;
-    ref)         echo block_scaled_mxfp8 grouped_matmul_mxfp8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope ;;
+    redzone)
+      if [ "$FUZZ_VENDOR" = "amd" ]; then
+        echo softmax rms_norm layer_norm mha_nullmask
+      else
+        echo softmax rms_norm layer_norm matmul mha_nullmask block_scaled_fp4 attn_res_mix
+      fi
+      ;;
+    ref)
+      if [ "$FUZZ_VENDOR" = "amd" ]; then
+        echo moe_router msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope
+      else
+        echo block_scaled_mxfp8 grouped_matmul_mxfp8 grouped_matmul_sm100_w4a8 moe_router fused_swiglu_mxfp8 fused_swiglu_dispatch msa_decode msa_prefill sparse_indexer sparse_indexer_decode sparse_indexer_prefill fused_qk_rms_norm fused_qk_rope attn_res_mix
+      fi
+      ;;
     # Held out until their live findings are fixed (else the notify lane is
     # always red): mha_causal (BUG-03, valid_length=0 hang) and ep_combine
     # (BUG-04, send_tokens_back OOB write). Re-add once fixed.
-    determinism) echo matmul gemv_split_k ;;
-    contract)    echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill ;;
+    determinism) echo matmul gemv_split_k attn_res_mix ;;
+    contract)
+      if [ "$FUZZ_VENDOR" = "amd" ]; then
+        echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill
+      else
+        echo mxfp8_quantize moe_router sparse_indexer sparse_indexer_decode sparse_indexer_prefill attn_res_mix
+      fi
+      ;;
     *) return 1 ;;
   esac
 }
@@ -99,6 +133,10 @@ DEFAULT_LIST="$(default_targets "$ORACLE")" || {
   echo "::error::unknown oracle '$ORACLE'" >&2
   usage
 }
+if [ "$FUZZ_VENDOR" = "amd" ] && [ -z "$DEFAULT_LIST" ] && [ "$#" -eq 0 ]; then
+  echo "::error::oracle '$ORACLE' has no AMD-safe default target -- pass an explicit target list, or run this oracle on nvidia only" >&2
+  exit 1
+fi
 
 if [ "$#" -gt 0 ]; then
   TARGETS=("$@")
@@ -112,7 +150,7 @@ LOG="$RESULTS/run.log"
 SUMMARY_MD="$RESULTS/summary.md"
 : > "$SUMMARY_MD"
 
-echo ">>> oracle=$ORACLE targets=${#TARGETS[@]} budget=$FUZZ_BUDGET seed=$FUZZ_SEED timeout=${FUZZ_TIMEOUT}s gpu=$FUZZ_GPU" | tee -a "$LOG"
+echo ">>> oracle=$ORACLE vendor=$FUZZ_VENDOR targets=${#TARGETS[@]} budget=$FUZZ_BUDGET seed=$FUZZ_SEED timeout=${FUZZ_TIMEOUT}s gpu=$FUZZ_GPU" | tee -a "$LOG"
 echo ">>> results=$RESULTS" | tee -a "$LOG"
 
 {

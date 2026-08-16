@@ -102,7 +102,7 @@ struct Element[
         index_type: The integer type of the index pointing to each element.
     """
 
-    comptime element_data_type = SIMD[Self.dtype, size=Self.layout.size()]
+    comptime element_data_type = SIMD[Self.dtype, length=Self.layout.size()]
     """The SIMD type used to store and process the element data.
 
     This type alias defines a SIMD vector with the specified data type and size
@@ -195,7 +195,7 @@ struct Element[
                 comptime alignment = align_of[Self.element_data_type]()
                 return Self(
                     ptr.load[
-                        width=Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.length, alignment=alignment
                     ]()
                 )
 
@@ -285,7 +285,7 @@ struct Element[
 
                 return Self(
                     ptr.load[
-                        width=Self.element_data_type.size, alignment=alignment
+                        width=Self.element_data_type.length, alignment=alignment
                     ](0)
                 )
 
@@ -370,7 +370,7 @@ struct Element[
         return Element(element_data, runtime_layout)
 
     @always_inline("nodebug")
-    def store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def store(self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]):
         """Stores element data to memory according to the specified layout.
 
         This method performs a layout-aware store operation, writing data to memory
@@ -442,7 +442,9 @@ struct Element[
                 )
 
     @always_inline("nodebug")
-    def masked_store(self, ptr: MutUnsafePointer[Scalar[Self.dtype], ...]):
+    def masked_store(
+        self, ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...]
+    ):
         """Stores element data to memory with masking for partial stores.
 
         This method performs a layout-aware store operation with boundary checking.

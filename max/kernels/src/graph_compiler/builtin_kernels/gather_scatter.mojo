@@ -27,8 +27,8 @@ import extensibility
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
 
-from std.gpu.host import DeviceContext, DeviceContextArray
-from std.gpu.host.info import is_cpu
+from max.gpu.host import DeviceContext, DeviceContextArray
+from max.gpu.host.info import is_cpu
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
@@ -1115,7 +1115,7 @@ struct StaticReshape:
         )
 
         return {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[output_rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),
@@ -1220,7 +1220,7 @@ struct Transpose:
             ]()
         ],
     ):
-        shape, strides = Self.transpose_in_place(input, permutations)
+        var shape, strides = Self.transpose_in_place(input, permutations)
         return {input.unsafe_ptr(), shape, strides}
 
     @staticmethod
@@ -1263,7 +1263,7 @@ struct Transpose:
                     " rank)"
                 )
 
-        shape, _ = Self.transpose_in_place(input, permutations)
+        var shape, _ = Self.transpose_in_place(input, permutations)
         var out = IndexList[input.rank]()
 
         comptime for i in range(input.rank):
@@ -1323,6 +1323,19 @@ struct Slice:
                     * align_of[dtype](),
                 )
 
+            # Stepping along a non-innermost dimension moves the pointer by
+            # `step[i] * strides[i]` elements, so that stride bounds the
+            # alignment.
+            comptime if i != rank - 1:
+                comptime if not stride_types[i].is_static_value:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+
         return alignment
 
     @staticmethod
@@ -1370,7 +1383,7 @@ struct Slice:
         )
 
         result = {
-            view_buffer.ptr,
+            view_buffer._storage,
             rebind[IndexList[rank]](
                 coord_to_index_list(view_buffer.layout.shape_coord())
             ),
@@ -1697,7 +1710,7 @@ struct Concat:
         # all-zeros). `inputs` (`FusedInputVariadicTensors`) stores its tensors
         # by value, so the copy brings their device pointers into the kernel.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int, width: Int, _rank: Int, alignment: Int = 1
@@ -1713,7 +1726,7 @@ struct Concat:
         # by-reference capture leaves the device kernel holding a host pointer
         # to the output tensor on Metal.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -1781,7 +1794,7 @@ struct FusedConcatSlice:
         # all-zeros bug). Copy-capture brings the device pointers into the
         # closure.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda[
             input_index: Int,
@@ -1797,7 +1810,7 @@ struct FusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output, slice_output)
         def epilogue_wrapper[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -1906,7 +1919,7 @@ struct DualFusedConcatSlice:
         # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
         # the device pointers into the closure.
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda_0[
             input_index: Int,
@@ -1922,7 +1935,7 @@ struct DualFusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(inputs)
         def inputs_lambda_1[
             input_index: Int,
@@ -1938,7 +1951,7 @@ struct DualFusedConcatSlice:
             ](rebind[IndexList[rank]](indices))
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output_0, slice_output_0)
         def epilogue_0[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -1992,7 +2005,7 @@ struct DualFusedConcatSlice:
             )
 
         @always_inline
-        @parameter
+        @__parameter
         @__copy_capture(concat_output_1, slice_output_1)
         def epilogue_1[
             _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
@@ -2385,7 +2398,7 @@ struct AdvancedIndexingSetItem:
         """
 
         # First copy over input tensor into the output
-        @parameter
+        @__parameter
         @always_inline
         def func[
             width: Int, element_alignment: Int

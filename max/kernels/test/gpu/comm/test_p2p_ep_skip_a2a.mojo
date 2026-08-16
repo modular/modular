@@ -22,7 +22,7 @@ and that the combine kernel produces the expected weighted reduction:
 from std.random import randint, randn, seed
 from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator, size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx, row_major
 from shmem.ep import (
     ep_fused_dispatch_kernel_api,
@@ -199,7 +199,7 @@ def test_skip_a2a[
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(router_weights_tt)
     def router_weights_fn[
         width: Int

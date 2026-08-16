@@ -20,7 +20,7 @@ the gather + grouped-matmul + scatter pipeline.
 
 Data layouts:
     A: `[num_tokens, K_BYTES]` uint8, FP4 packed two-per-byte, row-major.
-    B: 5D-preshuffled (see `mxfp4_preshuffle_layouts.b_5d_grouped_layout`).
+    B: 5D-preshuffled (see `block_scaled_preshuffle_layouts.b_5d_grouped_layout`).
     sfa, sfb: 4D-preshuffled E8M0 scale bytes (`scale_4d_grouped_layout`).
     C: `[num_tokens * topk, N]` fp32, row-major.
 
@@ -32,14 +32,14 @@ CDNA4 ISA section 7.2.1.
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
-from std.math import ceildiv
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.math import align_up, ceildiv
 from std.memory import AddressSpace
 from std.sys import simd_width_of
 from std.utils import StaticTuple
@@ -55,7 +55,7 @@ from linalg.arch.amd.block_scaled_mma import (
 )
 from structured_kernels.amd_tile_io import RegTileLoader
 
-from .mxfp4_preshuffle_loaders import (
+from .block_scaled_preshuffle_loaders import (
     PreshuffledBLoader,
     PreshuffledScaleLoader,
 )
@@ -195,9 +195,11 @@ struct MXFP4MoERoutedMatmul[
         sfb_pre_tt: TileTensor[DType.uint8, ...],
         sorted_token_ids: TileTensor[DType.uint32, ...],
         expert_ids: TileTensor[DType.int32, ...],
-        num_tokens: Int,
-        size_expert_ids: Int,
+        num_tokens: Int32,
+        size_expert_ids: Int32,
     ):
+        var _num_tokens = Int(num_tokens)
+        var _size_expert_ids = Int(size_expert_ids)
         comptime out_dtype = type_of(c).dtype
         comptime assert (
             Self.num_m_mmas * Self.pack_K <= 4
@@ -216,7 +218,7 @@ struct MXFP4MoERoutedMatmul[
         var by_n: Int
         comptime if Self.enable_swizzle:
             comptime num_pid_n = ceildiv(N, Self.BN)
-            var num_pid_m = size_expert_ids
+            var num_pid_m = _size_expert_ids
             var wgid_raw = Int(block_idx.y) * num_pid_n + Int(block_idx.x)
             var pid = _xcd_wgm_swizzle(wgid_raw, num_pid_m, num_pid_n)
             bx = pid[0]
@@ -455,7 +457,7 @@ struct MXFP4MoERoutedMatmul[
                 var t = Int(fused & UInt32(0xFFFFFF))
                 var s = Int(fused >> UInt32(24))
                 c_dst_rows[i] = t * Self.topk + s
-                row_valids[i] = (t < num_tokens) and (s < Self.topk)
+                row_valids[i] = (t < _num_tokens) and (s < Self.topk)
 
             comptime for n_mma in range(Self.num_n_mmas):
                 var c_col = (
@@ -515,8 +517,8 @@ def _mxfp4_moe_matmul_routed_kernel[
     sfb_pre: TileTensor[DType.uint8, SFBLayout, ImmutAnyOrigin],
     sorted_token_ids: TileTensor[DType.uint32, STILayout, ImmutAnyOrigin],
     expert_ids: TileTensor[DType.int32, EILayout, ImmutAnyOrigin],
-    num_tokens: Int,
-    size_expert_ids: Int,
+    num_tokens: Int32,
+    size_expert_ids: Int32,
 ):
     MXFP4MoERoutedMatmul[
         BM=BM,
@@ -586,7 +588,7 @@ def mxfp4_moe_matmul_amd_routed[
         a: Input matrix of shape `[num_tokens, K_BYTES]` uint8, FP4 packed
             two per byte, row-major.
         b_pre: Preshuffled B weights in the 5D grouped layout (see
-            `mxfp4_preshuffle_layouts.b_5d_grouped_layout`).
+            `block_scaled_preshuffle_layouts.b_5d_grouped_layout`).
         sfa_pre: Preshuffled A E8M0 scale bytes in the 4D grouped layout.
         sfb_pre: Preshuffled B E8M0 scale bytes in the 4D grouped layout.
         sorted_token_ids: Fused token/slot IDs packing token index `t` in
@@ -612,7 +614,7 @@ def mxfp4_moe_matmul_amd_routed[
     comptime N = type_of(c).static_shape[1]
     # SFB_pre is preshuffled with MN_padded(N) rows per expert. Pass through
     # the comptime padding factor so the loader's layout matches the host.
-    comptime N_padded_scale = ceildiv(N, 32) * 32
+    comptime N_padded_scale = align_up(N, 32)
 
     comptime kernel = _mxfp4_moe_matmul_routed_kernel[
         out_dtype,
@@ -643,8 +645,8 @@ def mxfp4_moe_matmul_amd_routed[
         sfb_pre,
         sorted_token_ids,
         expert_ids,
-        num_tokens,
-        size_expert_ids,
+        Int32(num_tokens),
+        Int32(size_expert_ids),
         grid_dim=(ceildiv(N, Kernel.BN), size_expert_ids),
         block_dim=Kernel.num_threads,
     )
@@ -682,7 +684,7 @@ def mxfp4_moe_matmul_amd_routed_dispatch[
         a: Input matrix of shape `[num_tokens, K_BYTES]` uint8, FP4 packed
             two per byte, row-major.
         b_pre: Preshuffled B weights in the 5D grouped layout (see
-            `mxfp4_preshuffle_layouts.b_5d_grouped_layout`).
+            `block_scaled_preshuffle_layouts.b_5d_grouped_layout`).
         sfa_pre: Preshuffled A E8M0 scale bytes in the 4D grouped layout.
         sfb_pre: Preshuffled B E8M0 scale bytes in the 4D grouped layout.
         sorted_token_ids: Fused token/slot IDs packing token index `t` in

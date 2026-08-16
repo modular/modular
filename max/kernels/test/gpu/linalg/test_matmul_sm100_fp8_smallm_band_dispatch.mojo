@@ -38,7 +38,7 @@
 
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from std.random import rand, seed
 from layout import TileTensor, Coord, row_major, Idx
@@ -59,7 +59,7 @@ comptime STATIC_SCALE = 0.5
 comptime BAND_MS = [25, 27, 29, 31, 8, 16, 64, 128]
 
 
-@parameter
+@__parameter
 @always_inline
 def scaled_compute_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1

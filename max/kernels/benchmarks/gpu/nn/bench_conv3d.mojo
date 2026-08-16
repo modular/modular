@@ -42,7 +42,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout import (
     UNKNOWN_VALUE,
@@ -375,13 +375,12 @@ def bench_conv3d[
 
     if impl == "im2col":
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
         def im2col_bench(mut bencher: Bencher) raises:
-            @parameter
             @always_inline
-            def kernel(ctx: DeviceContext) raises:
+            def kernel(ctx: DeviceContext) raises {imm}:
                 _ = dispatch_im2col_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
@@ -393,7 +392,7 @@ def bench_conv3d[
                     ctx,
                 )
 
-            bencher_iter_custom[kernel](bencher, ctx)
+            bencher_iter_custom(bencher, kernel, ctx)
 
         b.bench_function[im2col_bench](
             BenchId("conv3d_im2col", input_id=bench_input_id),
@@ -401,13 +400,12 @@ def bench_conv3d[
         )
     elif impl == "1x1x1":
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
         def p1x1x1_bench(mut bencher: Bencher) raises:
-            @parameter
             @always_inline
-            def kernel(ctx: DeviceContext) raises:
+            def kernel(ctx: DeviceContext) raises {imm}:
                 _ = dispatch_1x1x1_matmul_conv3d(
                     input_tt,
                     filter_qrscf_tt,
@@ -419,7 +417,7 @@ def bench_conv3d[
                     ctx,
                 )
 
-            bencher_iter_custom[kernel](bencher, ctx)
+            bencher_iter_custom(bencher, kernel, ctx)
 
         b.bench_function[p1x1x1_bench](
             BenchId("conv3d_1x1x1", input_id=bench_input_id),
@@ -428,13 +426,12 @@ def bench_conv3d[
     elif impl == "qslice":
         comptime if not has_amd_gpu_accelerator():
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
             def qslice_bench(mut bencher: Bencher) raises:
-                @parameter
                 @always_inline
-                def kernel(ctx: DeviceContext) raises:
+                def kernel(ctx: DeviceContext) raises {imm}:
                     _ = dispatch_qslice_conv3d_sm100(
                         input_tt,
                         filter_qrscf_tt,
@@ -446,7 +443,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher_iter_custom[kernel](bencher, ctx)
+                bencher_iter_custom(bencher, kernel, ctx)
 
             b.bench_function[qslice_bench](
                 BenchId("conv3d_qslice", input_id=bench_input_id),
@@ -458,13 +455,12 @@ def bench_conv3d[
             comptime _BN_OVERRIDE = get_defined_int["BN_OVERRIDE", 0]()
             comptime _BK_OVERRIDE = get_defined_int["BK_OVERRIDE", 0]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
             def native_3d_bench(mut bencher: Bencher) raises:
-                @parameter
                 @always_inline
-                def kernel(ctx: DeviceContext) raises:
+                def kernel(ctx: DeviceContext) raises {imm}:
                     _ = dispatch_amd_4wave_conv3d[
                         input_type=dtype,
                         filter_type=dtype,
@@ -484,7 +480,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher_iter_custom[kernel](bencher, ctx)
+                bencher_iter_custom(bencher, kernel, ctx)
 
             b.bench_function[native_3d_bench](
                 BenchId("conv3d_native_3d", input_id=bench_input_id),
@@ -493,13 +489,12 @@ def bench_conv3d[
     elif impl == "cudnn":
         comptime if has_amd_gpu_accelerator():
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_buf, filter_qrscf_tt, output_buf)
             def miopen_bench(mut bencher: Bencher) raises:
-                @parameter
                 @always_inline
-                def kernel(ctx: DeviceContext) raises:
+                def kernel(ctx: DeviceContext) raises {imm}:
                     conv_miopen(
                         input_tt,
                         filter_qrscf_tt,
@@ -511,7 +506,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher_iter_custom[kernel](bencher, ctx)
+                bencher_iter_custom(bencher, kernel, ctx)
 
             b.bench_function[miopen_bench](
                 BenchId("conv3d_miopen", input_id=bench_input_id),
@@ -520,13 +515,12 @@ def bench_conv3d[
 
         else:
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(input_buf, filter_fcqrs_buf, output_buf)
             def cudnn_bench(mut bencher: Bencher) raises:
-                @parameter
                 @always_inline
-                def kernel(ctx: DeviceContext) raises:
+                def kernel(ctx: DeviceContext) raises {imm}:
                     conv3d_cudnn(
                         input_buf,
                         filter_fcqrs_buf,
@@ -538,7 +532,7 @@ def bench_conv3d[
                         ctx,
                     )
 
-                bencher_iter_custom[kernel](bencher, ctx)
+                bencher_iter_custom(bencher, kernel, ctx)
 
             b.bench_function[cudnn_bench](
                 BenchId("conv3d_cudnn", input_id=bench_input_id),
@@ -560,13 +554,12 @@ def bench_conv3d[
         var grid_dim_y = ceildiv(d_out, block_size)
         var grid_dim_z = batch
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(input_buf, filter_qrscf_buf, output_buf)
         def naive_bench(mut bencher: Bencher) raises:
-            @parameter
             @always_inline
-            def kernel(ctx: DeviceContext) raises:
+            def kernel(ctx: DeviceContext) raises {imm}:
                 ctx.enqueue_function[naive_kernel](
                     input_buf,
                     filter_qrscf_buf,
@@ -579,7 +572,7 @@ def bench_conv3d[
                     block_dim=(block_size, block_size, 1),
                 )
 
-            bencher_iter_custom[kernel](bencher, ctx)
+            bencher_iter_custom(bencher, kernel, ctx)
 
         b.bench_function[naive_bench](
             BenchId("conv3d_naive", input_id=bench_input_id),

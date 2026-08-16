@@ -58,7 +58,7 @@ from std.math import align_up, ceildiv, cos, max, min, sin, sqrt
 from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -485,7 +485,7 @@ def run_one_case(
 
     @always_inline
     @__copy_capture(latent)
-    @parameter
+    @__parameter
     def kv_input_fn[width: Int](coords: IndexList[2]) -> SIMD[kv_type, width]:
         return latent.load[width=width]((coords[0], coords[1]))
 

@@ -15,8 +15,8 @@
 from std.sys import has_nvidia_gpu_accelerator, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.algorithm.functional import elementwise
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.algorithm.functional import elementwise
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, PointerStorage, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import _batched_matmul_gpu
@@ -31,7 +31,7 @@ comptime epilogue_func_type = def[
 
 
 @always_inline
-@parameter
+@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -106,7 +106,7 @@ def run_bmm_and_check_result[
     ctx.enqueue_copy(b_device_buffer, b_host._storage)
 
     # Run BMM
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device)
     def epilogue_fn[

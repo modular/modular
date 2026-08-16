@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -38,12 +39,17 @@ from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from max.pipelines.weights import gptq_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -184,6 +190,12 @@ def _build_llama4_fp8_quant_config(
 class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama4 (text-only) graph construction."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     hidden_size: int
     num_attention_heads: int
     num_key_value_heads: int
@@ -225,6 +237,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     data_parallel_degree: int = 1
+    quantization_encoding: SupportedEncoding | None = None
 
     @staticmethod
     @override
@@ -309,9 +322,9 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = cache_dtype_for_encoding(
             quantization_encoding, model_config.kv_cache.kv_cache_format
@@ -360,9 +373,11 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             intermediate_size_mlp=text_config.intermediate_size_mlp,
             vocab_size=text_config.vocab_size,
             dtype=dtype,
-            model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
+            model_quantization_encoding=supported_encoding_quantization(
+                quantization_encoding
+            ),
             quantization_config=gptq_quant_config(
-                pipeline_config.model.quantization_encoding,
+                quantization_encoding,
                 pipeline_config.model.huggingface_config,
             ),
             max_seq_len=cls.calculate_max_seq_len(
@@ -402,6 +417,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             attention_bias=bool(getattr(text_config, "attention_bias", False)),
             attention_multiplier=math.sqrt(1.0 / float(head_dim)),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

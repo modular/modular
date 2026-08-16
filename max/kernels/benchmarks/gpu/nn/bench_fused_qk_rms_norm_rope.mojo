@@ -39,7 +39,7 @@ from std.benchmark import (
     Bencher,
     BenchId,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -257,7 +257,7 @@ def bench_fused_qk_rms_norm_rope[
         kv_blocks_fused_d, kv_block_rt
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         kv_blocks_ref_lt,
         cache_lengths_tensor,
@@ -273,9 +273,8 @@ def bench_fused_qk_rms_norm_rope[
     )
     @always_inline
     def bench_two_step(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             var kv_ref = PagedKVCacheCollection[dtype, kv_params, page_size](
                 kv_blocks_ref_lt,
                 cache_lengths_tensor,
@@ -312,7 +311,7 @@ def bench_fused_qk_rms_norm_rope[
                 context=ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_two_step](
         BenchId(
@@ -322,7 +321,7 @@ def bench_fused_qk_rms_norm_rope[
         )
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(
         kv_blocks_fused_lt,
         cache_lengths_tensor,
@@ -338,9 +337,8 @@ def bench_fused_qk_rms_norm_rope[
     )
     @always_inline
     def bench_fused(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             var kv_fused = PagedKVCacheCollection[dtype, kv_params, page_size](
                 kv_blocks_fused_lt,
                 cache_lengths_tensor,
@@ -351,7 +349,7 @@ def bench_fused_qk_rms_norm_rope[
             var q_src = q_fused_tile.as_immut()
 
             @always_inline
-            @parameter
+            @__parameter
             @__copy_capture(q_src)
             def q_input_fn[
                 width: Int, alignment: Int
@@ -376,7 +374,7 @@ def bench_fused_qk_rms_norm_rope[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_fused](
         BenchId(

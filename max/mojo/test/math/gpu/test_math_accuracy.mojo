@@ -14,9 +14,9 @@
 from std.math import cosh, exp, exp2, log, sinh
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 from std.utils import Index, IndexList
@@ -37,7 +37,7 @@ def run_elementwise[
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
-    @parameter
+    @__parameter
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
         var idx = Int(idx0[0].value())
         var val = in_buffer.unsafe_ptr().unsafe_load[width=simd_width](idx)

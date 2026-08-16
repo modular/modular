@@ -14,13 +14,19 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from max.graph.weights import WeightsFormat
-from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineArgs,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.lib.registry import (
     SupportedArchitecture,
@@ -28,6 +34,9 @@ from max.pipelines.lib.registry import (
 )
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import (
+    generate_local_model_path as _real_generate_local_model_path,
+)
 from test_common.mocks import (
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
@@ -41,6 +50,31 @@ from test_common.pipeline_model_dummy import (
     DummyPixelTokenizer,
 )
 from test_common.registry import prepare_registry
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+
+    def _gen(repo_id: str, revision: str) -> str:
+        try:
+            return _real_generate_local_model_path(repo_id, revision)
+        except Exception:
+            return f"/fake/cache/{repo_id}"
+
+    with (
+        patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"),
+        patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+        patch(
+            "max.pipelines.weights.hf_utils.generate_local_model_path",
+            side_effect=_gen,
+        ),
+    ):
+        yield
 
 
 @prepare_registry
@@ -64,7 +98,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
         # This forces it to fail if we don't have it.
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(ValueError):
         PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(config))
@@ -81,7 +115,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         model_path="GSAI-ML/LLaDA-8B-Instruct",
         trust_remote_code=True,
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     with pytest.raises(
         ValueError,
@@ -140,7 +174,7 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
         model_path="dummy/pixel-model",
         quantization_encoding="bfloat16",
         max_length=1,
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
     PIPELINE_REGISTRY.retrieve_factory(
         PipelineConfig.from_args(pipeline_args),

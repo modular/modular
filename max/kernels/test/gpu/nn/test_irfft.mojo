@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.gpu.host import DeviceContext
-from std.sys import Vendor
+from max.gpu.host import DeviceContext
 from layout import TileTensor, coord, row_major
 from nn.irfft import irfft
 from std.testing import assert_almost_equal
@@ -123,7 +122,7 @@ def test_irfft_basic[
 def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
-        if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:
+        if ctx.default_device_info.api != "cuda":
             print("Skipping cuFFT tests - not running on NVIDIA GPU")
             return
 
@@ -140,7 +139,7 @@ def main() raises:
     # First context - default device (GPU 0)
     print("Creating first device context (default device)...")
     with DeviceContext() as ctx1:
-        if ctx1.default_device_info.vendor != Vendor.NVIDIA_GPU:
+        if ctx1.default_device_info.api != "cuda":
             print("Skipping cuFFT tests - not running on NVIDIA GPU")
             return
 
@@ -150,7 +149,7 @@ def main() raises:
         # Second context - device 1
         print("Creating second device context (device 1)...")
         with DeviceContext(device_id=1) as ctx2:
-            if ctx2.default_device_info.vendor != Vendor.NVIDIA_GPU:
+            if ctx2.default_device_info.api != "cuda":
                 print(
                     "Skipping cuFFT tests on device 1 - not running on NVIDIA"
                     " GPU"

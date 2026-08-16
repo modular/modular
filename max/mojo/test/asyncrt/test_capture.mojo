@@ -13,23 +13,20 @@
 
 from asyncrt_test_utils import create_test_device_context
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
 def vec_func[
     op: def(Float32, Float32) capturing[_] -> Float32
 ](
-    # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a safe
-    # `Pointer`.
-    # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer args
-    # to `UnsafePointer` (their `device_type`) and matches the declared param
-    # type exactly, so these stay `UnsafePointer` (safe `Pointer` won't match).
-    in0: UnsafePointer[Float32, MutAnyOrigin],
-    in1: UnsafePointer[Float32, MutAnyOrigin],
-    output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    in0: Pointer[Float32, MutAnyOrigin],
+    in1: Pointer[Float32, MutAnyOrigin],
+    output: Pointer[Float32, MutAnyOrigin],
+    len_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -66,7 +63,7 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             in0_host[i] = Float32(i)
             out_host[i] = Float32(length + i)
 
-    @parameter
+    @__parameter
     def add_with_captured(left: Float32, right: Float32) -> Float32:
         return left + right + captured
 
@@ -79,7 +76,7 @@ def run_captured_func(ctx: DeviceContext, captured: Float32) raises:
         in0,
         in1,
         out,
-        length,
+        Int32(length),
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )

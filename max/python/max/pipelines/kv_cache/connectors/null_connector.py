@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
     CompletedTransfer,
     KVConnectorTransfer,
     TransferDirection,
@@ -49,7 +50,6 @@ class NullConnector:
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         return CompletedTransfer(TransferDirection.OFFLOAD)
@@ -76,20 +76,12 @@ class NullConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        return 0
+    def host_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_prefix_cache(self) -> None:
         pass

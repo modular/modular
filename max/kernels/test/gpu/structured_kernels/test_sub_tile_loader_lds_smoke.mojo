@@ -30,8 +30,9 @@ Both launch a 1-block / 1-warp kernel, build a
 bit-exact against the expected slice.
 """
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_equal
 from layout import (

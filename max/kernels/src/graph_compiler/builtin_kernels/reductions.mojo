@@ -18,37 +18,40 @@
 
 """Registers reduction graph ops (sum, mean, argmax, and related) over tensor axes."""
 
-from std.sys.info import simd_width_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from std.algorithm import max as reduce_max
-from std.algorithm import mean
-from std.algorithm import min as reduce_min
-from std.algorithm import product, sum
-from std.algorithm.reduction import _reduce_generator
+from algorithm.reductions import (
+    reduce_argmax,
+    reduce_argmin,
+    reduce_max,
+    reduce_mean,
+    reduce_min,
+    reduce_min_and_max,
+    reduce_product,
+    reduce_sum,
+)
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import is_gpu
 from nn import arg_nonzero
-from nn.argmaxmin import argmax, argmin
-from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.argsort import argsort
 from nn.cumsum import cumsum
-from nn.gather_scatter import _unsafe_normalize_neg_index, normalize_neg_index
+from nn.gather_scatter import _unsafe_normalize_neg_index
 from nn.normalization import (
     apply_qk_rms_norm,
     group_norm,
     layer_norm,
-    rms_norm,
+    layer_norm_rope_ragged,
     rms_norm_fused_residual_add,
-    rms_norm_rope_gpu,
-    row_mean_of_squares,
+    rms_norm_rope,
+    rms_norm,
     row_mean_of_squares_qk,
+    row_mean_of_squares,
 )
-from nn.softmax import logsoftmax, softmax
+from nn.softmax import softmax
 from nn.topk import top_k, top_k_shape_impl
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
@@ -66,8 +69,9 @@ from std.logger import Logger
 comptime logger = Logger()
 """Logger for the reductions module."""
 
-from std.utils import IndexList, StaticTuple
-from std.utils.coord import Coord
+from std.utils import IndexList
+from std.utils.coord import ComptimeInt, Coord
+from layout import UNKNOWN_VALUE
 from std.utils.index import Index
 
 # ===-----------------------------------------------------------------------===#
@@ -85,10 +89,10 @@ struct ArgMax:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[rank=rank, ...],
-        input: InputTensor[rank=rank, ...],
+        output: FusedOutputTensor[rank=rank, ...],
+        input: FusedInputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) raises:
+    ) capturing raises:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
@@ -105,27 +109,32 @@ struct ArgMax:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        var axis_val = normalize_neg_index(axis, rank)
+        # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
+        # the new impl handles CPU + GPU and any axis.
+        comptime reduce_dim = axis if axis >= 0 else axis + rank
 
-        comptime if target == "cpu":
-            argmax(
-                input.to_tile_tensor[DType.int64](),
-                axis_val,
-                output.to_tile_tensor[DType.int64](),
-                Optional[DeviceContext](ctx),
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[input.rank]](coords)
             )
-        else:
-            if axis_val != rank - 1:
-                raise Error("axis other than -1 not supported on GPU")
 
-            # Has no static shape info
-
-            # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            argmax_gpu(
-                ctx,
-                input.to_tile_tensor[DType.int64](),
-                output.to_tile_tensor[DType.int64](),
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
             )
+
+        reduce_argmax[
+            input.dtype,
+            target=target,
+            reduce_dim=reduce_dim,
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register("mo.reduce.arg_min")
@@ -139,10 +148,10 @@ struct ArgMin:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[rank=rank, ...],
-        input: InputTensor[rank=rank, ...],
+        output: FusedOutputTensor[rank=rank, ...],
+        input: FusedInputTensor[rank=rank, ...],
         ctx: DeviceContext,
-    ) raises:
+    ) capturing raises:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
@@ -159,25 +168,32 @@ struct ArgMin:
         Raises:
             Error: If the operation parameters are invalid.
         """
-        var axis_val = normalize_neg_index(axis, rank)
+        # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
+        # the new impl handles CPU + GPU and any axis.
+        comptime reduce_dim = axis if axis >= 0 else axis + rank
 
-        comptime if target == "cpu":
-            argmin(
-                input.to_tile_tensor[DType.int64](),
-                axis_val,
-                output.to_tile_tensor[DType.int64](),
-                Optional[DeviceContext](ctx),
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[input.rank]](coords)
             )
-        else:
-            if axis_val != rank - 1:
-                raise Error("axis other than -1 not supported on GPU")
 
-            # TODO(KERN-1045): Add support for taking advantage of static_shapes
-            argmin_gpu(
-                ctx,
-                input.to_tile_tensor[DType.int64](),
-                output.to_tile_tensor[DType.int64](),
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[DType.int64, width]) {var output}:
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
             )
+
+        reduce_argmin[
+            input.dtype,
+            target=target,
+            reduce_dim=reduce_dim,
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register("mo.arg_nonzero")
@@ -244,32 +260,28 @@ struct Mean:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        mean[
+        reduce_mean[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), Coord(output.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mean")
@@ -332,22 +344,24 @@ struct RowMeanOfSquares:
         if output.shape()[0] != input.shape()[0] or output.shape()[1] != 1:
             raise Error("output must have shape [input_rows, 1]")
 
-        @parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[input.dtype, width]:
+        ](coords: IndexList[_rank]) {var input} -> SIMD[input.dtype, width]:
             return input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
-        def output_fn(row: Int, val: Scalar[output.dtype]):
-            output.store[width=1](Index(row, 0), val)
+        def output_fn[
+            width: SIMDLength, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
+            # `output` is `[M, 1]`, so `width` adjacent rows (tiled tier) at
+            # column 0 sit contiguously -- one vector store, no lane splitting.
+            output.store[width=width](Index(coords[0], 0), val)
 
-        row_mean_of_squares[input_fn, output_fn, target=target](
-            input.shape(), ctx
+        row_mean_of_squares[input.dtype, output.dtype, 2, target=target](
+            input_fn, output_fn, input.shape(), ctx
         )
 
 
@@ -564,32 +578,28 @@ struct ReduceAdd:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        sum[
+        reduce_sum[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.add")
@@ -647,32 +657,28 @@ struct ReduceMul:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        product[
+        reduce_product[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -731,20 +737,18 @@ struct ReduceMax:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -752,11 +756,9 @@ struct ReduceMax:
 
         reduce_max[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.max")
@@ -814,20 +816,18 @@ struct ReduceMin:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width](
+            width: Int, alignment: Int, rank: Int
+        ](coords: IndexList[rank]) {var input} -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
@@ -835,11 +835,9 @@ struct ReduceMin:
 
         reduce_min[
             output.dtype,
-            input_fn,
-            output_fn,
             target=target,
             reduce_dim=axis,
-        ](Coord(input.shape()), ctx)
+        ](input_fn, output_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.min")
@@ -879,7 +877,7 @@ struct LayerNorm:
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
         input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Float32,
         ctx: DeviceContext,
@@ -904,50 +902,58 @@ struct LayerNorm:
         """
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
+        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Gamma size does not match dimension of reduction.")
+        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Beta size does not match dimension of reduction.")
 
-        # `IndexList` -> `Coord` boundary migration (mirror of
-        # `ReduceRMSNorm.execute`). The input fusion lambda takes a `Coord`
-        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
-        # and the shape is passed via `input.shape_coord()`, which preserves
-        # statically-known dims in the `Coord` type instead of erasing them to
-        # an all-runtime `IndexList` as `input.shape()` would. `gamma_fn` and
-        # `output_fn` keep their n-D `IndexList` form to match `layer_norm`'s
-        # `input_1_fn` / `output_0_fn`.
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) -> SIMD[dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 coords
             )
 
-        @parameter
-        @always_inline
-        def gamma_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return gamma._lambda_load[width=width, element_alignment=alignment](
-                rebind[IndexList[1]](coords)
-            )
-
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
-            input.shape_coord(),
-            gamma.shape(),
-            beta.to_tile_tensor[DType.int64](),
-            epsilon,
-            ctx,
-        )
+        # gamma / beta are passed as tile tensors (the Row body loads them
+        # via a strided load); gamma's producer fusion, if any, is not used.
+        # Pass the static row width when known so the Row register-caches the
+        # input strip (`_fuse`), avoiding a second global read of the input in
+        # the map phase; a dynamic width falls back to streaming inside the
+        # kernel.
+        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if ln_cols != UNKNOWN_VALUE:
+            layer_norm[dtype, rank, target=target](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[ln_cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                ctx,
+            )
+        else:
+            layer_norm[dtype, rank, target=target](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.reduce.layer_norm")
@@ -1019,46 +1025,63 @@ struct ReduceRMSNorm:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        # `IndexList` -> `Coord` boundary migration (mirror of softmax,
-        # `Softmax.execute` above). The input fusion lambda takes a `Coord`
-        # (the `_lambda_load` Coord overload erases to `IndexList` internally)
-        # and the shape is passed via `input.shape_coord()`, which preserves
-        # statically-known dims in the `Coord` type instead of erasing them to
-        # an all-runtime `IndexList` as `input.shape()` would. `output_fn`
-        # keeps its n-D `IndexList` form to match `rms_norm`'s `output_0_fn`.
-        @parameter
+        # Shape passed via `input.shape_coord()` to preserve statically-known
+        # dims in the `Coord` type. `input_fn` uses the Row 3-arg
+        # (width, alignment, rank) lambda form.
         @always_inline
         def input_fn[
-            width: Int, alignment: Int
-        ](coords: Coord) -> SIMD[dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+                rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        rms_norm[
-            dtype,
-            rank,
-            input_fn,
-            output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape_coord(),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-        )
+        # Pass the static row width when known so the Row register-caches the
+        # input strip (`_fuse`), avoiding a second global read of the input in
+        # the map phase; a dynamic width falls back to streaming.
+        comptime rms_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if rms_cols != UNKNOWN_VALUE:
+            rms_norm[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[rms_cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
+        else:
+            rms_norm[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.reduce.rms_norm")
@@ -1120,58 +1143,90 @@ struct ReduceRMSNormRoPE:
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[dtype, width]:
             return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def cos_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var cos_vals} -> SIMD[
+            cos_sin_dtype, width
+        ]:
             return cos_vals._fused_load[
                 width=width, element_alignment=alignment
             ](rebind[IndexList[cos_vals.rank]](coords))
 
-        @parameter
         @always_inline
         def sin_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var sin_vals} -> SIMD[
+            cos_sin_dtype, width
+        ]:
             return sin_vals._fused_load[
                 width=width, element_alignment=alignment
             ](rebind[IndexList[sin_vals.rank]](coords))
 
-        @parameter
         @always_inline
         def output_fn[
-            width: Int, alignment: Int
-        ](coords: IndexList[rank], val: SIMD[output_dtype, width]):
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
+            var output
+        }:
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        rms_norm_rope_gpu[
-            input_fn,
-            cos_fn,
-            sin_fn,
-            output_fn,
-            multiply_before_cast,
-        ](
-            input.shape(),
-            weight.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            cos_vals.to_tile_tensor[DType.int64](),
-            sin_vals.to_tile_tensor[DType.int64](),
-            ctx,
-        )
+        # Pass the row width when statically known so the kernel can use a SIMD
+        # rotate-half (needs `half` divisible by the SIMD width); a dynamic or
+        # non-divisible width falls back to scalar inside the kernel.
+        comptime rope_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if rope_cols != UNKNOWN_VALUE:
+            rms_norm_rope[
+                dtype,
+                output_dtype,
+                cos_sin_dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                cos_fn,
+                sin_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[rope_cols](),
+                weight.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
+        else:
+            rms_norm_rope[
+                dtype,
+                output_dtype,
+                cos_sin_dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                cos_fn,
+                sin_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                weight.to_tile_tensor[DType.int64](),
+                epsilon.cast[dtype](),
+                weight_offset,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function("mo.composite.rms_norm_rope")
@@ -1206,6 +1261,147 @@ def composite_rms_norm_rope_shape[
             `input` rank.
         sin_vals: Sine table used by the RoPE rotation, matching `input`
             rank.
+
+    Returns:
+        The output shape, which matches the `input` shape.
+    """
+    return input.shape()
+
+
+@extensibility.register("mo.composite.layer_norm_rope_ragged")
+struct LayerNormRopeRagged:
+    """Registers the `mo.composite.layer_norm_rope_ragged` graph op with the graph compiler.
+
+    Fuses LayerNorm with ragged RoPE applied to the leading `freqs_cis`-width
+    columns of the normalized output; the remaining columns pass through
+    unrotated.
+    """
+
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        freq_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        interleaved: Bool,
+    ](
+        output: FusedOutputTensor[dtype=output_dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        beta: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Float32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        ctx: DeviceContext,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+        if Int(gamma.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Gamma size does not match dimension of reduction.")
+        if Int(beta.shape()[0]) != Int(input.shape()[rank - 1]):
+            raise Error("Beta size does not match dimension of reduction.")
+
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            input_dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @always_inline
+        def output_fn[
+            width: SIMDLength, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[output_dtype, width]) {
+            var output
+        }:
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        comptime ln_cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if ln_cols != UNKNOWN_VALUE:
+            layer_norm_rope_ragged[
+                input_dtype,
+                output_dtype,
+                freq_dtype,
+                rank,
+                target=target,
+                interleaved=interleaved,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                ComptimeInt[ln_cols](),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                start_pos.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            layer_norm_rope_ragged[
+                input_dtype,
+                output_dtype,
+                freq_dtype,
+                rank,
+                target=target,
+                interleaved=interleaved,
+            ](
+                input_fn,
+                output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma.to_tile_tensor[DType.int64](),
+                beta.to_tile_tensor[DType.int64](),
+                epsilon.cast[input_dtype](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                start_pos.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+
+
+@extensibility.register_shape_function("mo.composite.layer_norm_rope_ragged")
+def composite_layer_norm_rope_ragged_shape[
+    dtype: DType,
+    freq_dtype: DType,
+    rank: Int,
+](
+    input: InputTensor[dtype=dtype, rank=rank, ...],
+    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    beta: InputTensor[dtype=dtype, rank=1, ...],
+    epsilon: Float32,
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+    freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+) -> IndexList[rank]:
+    """Computes the output shape for the `mo.composite.layer_norm_rope_ragged` graph op.
+
+    Parameters:
+        dtype: Element type of the `input`, `gamma`, and `beta` tensors.
+        freq_dtype: Element type of the `freqs_cis` RoPE table.
+        rank: Number of dimensions in the `input` and output tensors.
+
+    Args:
+        input: Activation tensor normalized by LayerNorm then partially
+            rotated by ragged RoPE.
+        gamma: Per-column scale weights applied after normalization.
+        beta: Per-column shift weights applied after scaling.
+        epsilon: Small constant added inside the normalization variance for
+            numerical stability.
+        input_row_offsets: Ragged batch boundaries.
+        start_pos: Per-sequence cache length used for the RoPE position
+            lookup.
+        freqs_cis: RoPE frequency table; its width sets the rotated prefix.
 
     Returns:
         The output shape, which matches the `input` shape.
@@ -1251,7 +1447,7 @@ struct ReduceGroupNorm:
             Error: If the operation parameters are invalid.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def input_fn[
             width: Int, _rank: Int
@@ -1260,12 +1456,12 @@ struct ReduceGroupNorm:
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return gamma._lambda_load[width=width](coords)
 
-        @parameter
+        @__parameter
         @always_inline
         def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
             return beta._lambda_load[width=width](coords)
@@ -1333,95 +1529,42 @@ struct ReduceMinAndMax:
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
 
-        comptime num_reductions = 2
         comptime norm_axis = axis + rank if axis < 0 else axis
         comptime assert (
             0 <= norm_axis < rank
         ), "axis must be between [0, <input rank>)"
 
-        @parameter
         @always_inline
-        def input_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._fused_load[width=width](
+        def input_fn[
+            width: Int, alignment: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            return input._fused_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
+        # The op packs both reductions into one `[..., 2, ...]` output tensor:
+        # min at slot 0, max at slot 1 of the reduced axis.
         @always_inline
-        def output_0_fn[
-            width: SIMDLength, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
-            output._fused_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        @always_inline
-        @parameter
-        def input_0_fn_wrapper[
-            _type: DType, width: Int, rank: Int
-        ](idx: IndexList[rank]) -> SIMD[_type, width]:
-            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+        def output_min_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            var idx = rebind[IndexList[output.rank]](coords)
+            idx[norm_axis] = 0
+            output._fused_store[width=width](idx, val)
 
         @always_inline
-        @parameter
-        def output_0_fn_wrapper[
-            _type: DType,
-            width: SIMDLength,
-            rank: Int,
-        ](
-            indices: IndexList[rank],
-            val: StaticTuple[SIMD[_type, width], num_reductions],
-        ):
-            # TODO: once we support multiple outputs, change this to route to
-            # TODO: multiple output tensors.
-            var indices_min = indices
-            indices_min[norm_axis] = 0
-            output_0_fn[width, rank](
-                indices_min, rebind[SIMD[dtype, width]](val[0])
-            )
+        def output_max_fn[
+            width: SIMDLength, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
+            var idx = rebind[IndexList[output.rank]](coords)
+            idx[norm_axis] = 1
+            output._fused_store[width=width](idx, val)
 
-            var indices_max = indices
-            indices_max[norm_axis] = 1
-            output_0_fn[width, rank](
-                indices_max, rebind[SIMD[dtype, width]](val[1])
-            )
-
-        @always_inline
-        @parameter
-        def reduce_fn[
-            ty: DType,
-            width: SIMDLength,
-            reduction_idx: Int,
-        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
-            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
-
-            comptime if reduction_idx == 0:
-                return min(left, right)
-            else:
-                return max(left, right)
-
-        var init_min = Scalar[dtype].MAX
-        var init_max = Scalar[dtype].MIN
-        var init = StaticTuple[Scalar[dtype], num_reductions](
-            init_min, init_max
-        )
-
-        _reduce_generator[
-            num_reductions,
+        reduce_min_and_max[
             dtype,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_fn,
             target=target,
             reduce_dim=norm_axis,
-        ](
-            Coord(input.shape()),
-            init=init,
-            context=Optional[DeviceContext](ctx),
-        )
+        ](input_fn, output_min_fn, output_max_fn, Coord(input.shape()), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
@@ -1499,39 +1642,37 @@ struct ReduceRMSNormFusedResidualAdd:
         if input.shape() != residual_input.shape():
             raise Error("Input and residual input buffers are not same shape")
 
-        @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def residual_input_fn[
             width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        ](coords: IndexList[_rank]) {var residual_input} -> SIMD[dtype, width]:
             return residual_input._lambda_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
-        @parameter
         @always_inline
         def output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
             output._fused_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.dtype, width]](val),
             )
 
-        @parameter
         @always_inline
         def residual_output_fn[
             width: SIMDLength, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]) {
+            var residual_output
+        }:
             residual_output._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -1539,23 +1680,52 @@ struct ReduceRMSNormFusedResidualAdd:
                 rebind[SIMD[residual_output.dtype, width]](val),
             )
 
-        rms_norm_fused_residual_add[
-            input_fn,
-            residual_input_fn,
-            output_fn,
-            residual_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape(),
-            gamma1.to_tile_tensor[DType.int64](),
-            epsilon1,
-            weight_offset1,
-            gamma2.to_tile_tensor[DType.int64](),
-            epsilon2,
-            weight_offset2,
-            ctx,
-        )
+        # Preserve a statically-known reduced-axis length (enables the Row
+        # register cache); dynamic dims fall back to streaming.
+        comptime cols = Int(input.static_spec.shape_tuple[rank - 1])
+
+        comptime if cols != UNKNOWN_VALUE:
+            rms_norm_fused_residual_add[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                residual_input_fn,
+                output_fn,
+                residual_output_fn,
+                input.shape_coord(),
+                ComptimeInt[cols](),
+                gamma1.to_tile_tensor[DType.int64](),
+                epsilon1.cast[dtype](),
+                weight_offset1,
+                gamma2.to_tile_tensor[DType.int64](),
+                epsilon2.cast[dtype](),
+                weight_offset2,
+                ctx,
+            )
+        else:
+            rms_norm_fused_residual_add[
+                dtype,
+                rank,
+                target=target,
+                multiply_before_cast=multiply_before_cast,
+            ](
+                input_fn,
+                residual_input_fn,
+                output_fn,
+                residual_output_fn,
+                input.shape_coord(),
+                Scalar[DType.int](Int(input.shape()[rank - 1])),
+                gamma1.to_tile_tensor[DType.int64](),
+                epsilon1.cast[dtype](),
+                weight_offset1,
+                gamma2.to_tile_tensor[DType.int64](),
+                epsilon2.cast[dtype](),
+                weight_offset2,
+                ctx,
+            )
 
 
 @extensibility.register_shape_function(
@@ -1642,7 +1812,7 @@ struct RMSNormResidualAdd:
             # GPU path: the device kernel bakes the callbacks in as `capturing`
             # comptime closures, so build them as comptime parameters. Reads go
             # through `_lambda_load` so a fused producer op folds into the load.
-            @parameter
+            @__parameter
             @always_inline
             def input_fn[
                 width: Int, _rank: Int
@@ -1651,7 +1821,7 @@ struct RMSNormResidualAdd:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_input_fn[
                 width: Int, _rank: Int
@@ -1660,7 +1830,7 @@ struct RMSNormResidualAdd:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int
@@ -1670,7 +1840,7 @@ struct RMSNormResidualAdd:
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_output_fn[
                 width: SIMDLength, _rank: Int, alignment: Int
@@ -1954,29 +2124,40 @@ struct Softmax:
             Error: If the operation parameters are invalid.
         """
 
-        # For adapting input fusion lambda required by call
-        @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            output.dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords)
+            )
 
-        comptime simd_width = simd_width_of[
-            output.dtype, target=get_gpu_target()
-        ]() if is_gpu[target]() else simd_width_of[output.dtype]()
+        # Pass the static reduced-axis width when known so the Row
+        # register-caches the input strip (`_fuse`), avoiding a second global
+        # read of the input in the map phase; a dynamic width falls back to
+        # streaming.
+        comptime sm_cols = Int(input.static_spec.shape_tuple[axis])
 
-        softmax[
-            output.dtype,
-            simd_width,
-            output.rank,
-            input_fn,
-            target,
-            has_prologue_fusion=has_prologue_fusion,
-        ](
-            Coord(output.shape()),
-            output.to_tile_tensor[DType.int64](),
-            axis,
-            context=ctx,
-        )
+        comptime if sm_cols != UNKNOWN_VALUE:
+            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+                input_fn,
+                Coord(output.shape()),
+                ComptimeInt[sm_cols](),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
+        else:
+            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+                input_fn,
+                Coord(output.shape()),
+                Scalar[DType.int](Int(input.shape()[axis])),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
 
 
 @extensibility.register("mo.reduce.logsoftmax")
@@ -2009,25 +2190,52 @@ struct LogSoftmax:
             Error: If the operation parameters are invalid.
         """
 
-        # For adapting input fusion lambda required by call
-        @parameter
         @always_inline
-        def input_fn[width: Int](coords: Coord) -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        def input_fn[
+            width: Int, alignment: Int, coord_rank: Int
+        ](coords: IndexList[coord_rank]) {var input} -> SIMD[
+            output.dtype, width
+        ]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords)
+            )
 
-        logsoftmax[
-            output.dtype,
-            simd_width_of[output.dtype](),
-            output.rank,
-            input_fn,
-            target,
-            has_prologue_fusion=has_prologue_fusion,
-        ](
-            Coord(output.shape()),
-            output.to_tile_tensor[DType.int64](),
-            axis,
-            context=ctx,
-        )
+        # Pass the static reduced-axis width when known so the Row
+        # register-caches the input strip (`_fuse`), avoiding a second global
+        # read of the input in the map phase; a dynamic width falls back to
+        # streaming.
+        comptime lsm_cols = Int(input.static_spec.shape_tuple[axis])
+
+        comptime if lsm_cols != UNKNOWN_VALUE:
+            softmax[
+                output.dtype,
+                output.rank,
+                target=target,
+                logsoftmax=True,
+                reduce_dim=axis,
+            ](
+                input_fn,
+                Coord(output.shape()),
+                ComptimeInt[lsm_cols](),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
+        else:
+            softmax[
+                output.dtype,
+                output.rank,
+                target=target,
+                logsoftmax=True,
+                reduce_dim=axis,
+            ](
+                input_fn,
+                Coord(output.shape()),
+                Scalar[DType.int](Int(input.shape()[axis])),
+                output.to_tile_tensor[DType.int64](),
+                axis,
+                context=ctx,
+            )
 
 
 @extensibility.register("mo.cumsum")

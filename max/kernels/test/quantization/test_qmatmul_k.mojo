@@ -16,7 +16,7 @@ from std.memory import alloc
 from std.random import rand, random_float64
 from std.sys import size_of
 
-from std.algorithm import sync_parallelize
+from max.algorithm import sync_parallelize
 from layout import (
     IntTuple,
     Layout,
@@ -497,7 +497,7 @@ def reference_gemm[
     var num_workers = ceildiv(total_work, grain_size)
 
     @__copy_capture(total_work, N, K)
-    @parameter
+    @__parameter
     def task_func(task_id: Int):
         var task_start = task_id * grain_size
         var task_count = min(total_work - task_start, grain_size)

@@ -35,10 +35,9 @@ Two kernels:
 The host launcher `naive_fa_decode_apple` allocates the partials and enqueues
 both kernels; `flash_attention_dispatch` selects it for Apple decode by default
 (set `MODULAR_ENABLE_APPLE_NAIVE_FA_DECODE=0` to opt out). The launcher
-dispatches the runtime `depth` to a compile-time `Depth` specialization over the
-multiples of `WARP_SIZE` up to `NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`; the
-dispatcher only routes here when `depth % WARP_SIZE == 0` and
-`depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM`, otherwise `mha_gpu_naive` runs.
+dispatches the runtime `depth` to a compile-time `Depth` specialization;
+`naive_fa_decode_apple_supports_depth` is the single definition of which head
+dims those are, and the dispatcher sends the rest to `mha_gpu_naive`.
 
 Partial-buffer layout (partition-last / contiguous):
   * `ml_idx(b, head, split) = (b*num_heads + head)*num_partitions + split`
@@ -48,8 +47,7 @@ Partial-buffer layout (partition-last / contiguous):
 
 from std.collections import OptionalReg
 from std.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp
 from std.sys import llvm_intrinsic
 from std.utils.index import Index
@@ -71,6 +69,30 @@ comptime NEG_INF = Float32(-3.0e38)
 # Dispatcher gate: larger dims (and non-multiples of WARP_SIZE) fall back to
 # mha_gpu_naive.
 comptime NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM = 256
+
+
+@always_inline
+def naive_fa_decode_apple_supports_depth(depth: Int) -> Bool:
+    """Whether this kernel has a `Depth` specialization for `depth`.
+
+    Splitting the head dim across lanes needs `depth % WARP_SIZE == 0`, but a
+    lane's fragment is an `EPL = depth // WARP_SIZE` wide SIMD and a SIMD length
+    must be a power of two — so `EPL` is constrained too, which rules out head
+    dims like 96 and 160. The launcher specializes exactly this set, and
+    `flash_attention_dispatch` sends everything else to `mha_gpu_naive`; both
+    ask here so the two cannot disagree and drop a launch on the floor.
+
+    Args:
+        depth: The head dimension to check.
+
+    Returns:
+        Whether `depth` is dispatchable to this kernel.
+    """
+    return (
+        depth % WARP_SIZE == 0
+        and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM
+        and Bool((depth // WARP_SIZE).is_power_of_two())
+    )
 
 
 @always_inline
@@ -143,16 +165,16 @@ def naive_fa_decode_apple_core[
     ],
     sink_weights: OptionalReg[TileTensor[q_type, sink_layout, ImmutAnyOrigin]],
     scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
+    batch_size: Int32,
+    max_prompt_len: Int32,
     # Full key count for the dense decode path (the K tensor's seq dim); the
     # KVCache/ragged paths derive their key count from `cache_length` +
     # `cur_query_len` instead. See the `cur_cache_len` branch below.
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
-    num_partitions: Int,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    group: Int32,
+    num_partitions: Int32,
 ):
     """Warp-centric split-K online-softmax producer for Apple decode attention.
 
@@ -220,21 +242,28 @@ def naive_fa_decode_apple_core[
     Constraints:
         `Depth % WARP_SIZE == 0`: the head dim must split evenly across lanes.
     """
+    var _batch_size = Int(batch_size)
+    var _max_prompt_len = Int(max_prompt_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _group = Int(group)
+    var _num_partitions = Int(num_partitions)
     comptime assert (
         Depth % WARP_SIZE == 0
     ), "naive_fa_decode_apple_core requires Depth % WARP_SIZE == 0"
     comptime EPL = Depth // WARP_SIZE
-    debug_assert(depth == Depth, "runtime depth must match comptime Depth")
+    debug_assert(_depth == Depth, "runtime _depth must match comptime Depth")
 
     var split_id = Int(block_idx.x)
     var batch_id = Int(block_idx.y)
     var head_id = Int(block_idx.z)
-    var kv_head = head_id // group
+    var kv_head = head_id // _group
     var lane = Int(lane_id())
 
     # Decode offset math — mirror `_bmm0_bs` (mha.mojo:5560-5589). The
     # `cur_cache_len` (number of keys to attend) is set PER BRANCH because the
-    # dense (`else`) path takes it from `max_cache_size` (the K tensor's full
+    # dense (`else`) path takes it from `_max_cache_size` (the K tensor's full
     # seq dim), NOT from `cur_query_len` / `cache_length` — exactly as the naive
     # fallback `_bmm0_bs` and the Apple prefill producer (`fa_prefill.mojo`) do.
     # The prior shared `cur_cache_len = cur_query_len` (under
@@ -251,7 +280,7 @@ def naive_fa_decode_apple_core[
         seq_start = Int(valid_length[batch_id])
         var seq_end = Int(valid_length[batch_id + 1])
         cur_query_len = seq_end - seq_start
-        q_offset = depth * (seq_start * num_heads + head_id)
+        q_offset = _depth * (seq_start * _num_heads + head_id)
         # The new token's own KV sits at index `cache_length`, so an inaccurate
         # cache length must include it. Mirror `_bmm0_bs` (mha.mojo:5567-5575).
         comptime if _is_cache_length_accurate:
@@ -263,19 +292,19 @@ def naive_fa_decode_apple_core[
         # offsets. Mirror `_bmm0_bs` (mha.mojo:5576-5582).
         seq_start = batch_id
         cur_query_len = Int(valid_length[batch_id])
-        q_offset = depth * (head_id + num_heads * max_prompt_len * batch_id)
+        q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
             cur_cache_len = k.cache_length(batch_id) + cur_query_len
     else:
         # Dense decode: all sequences share one length and cache length; the
-        # full key count is `max_cache_size` (the K tensor's seq dim). Mirror
+        # full key count is `_max_cache_size` (the K tensor's seq dim). Mirror
         # `_bmm0_bs` (mha.mojo:5585-5589).
         seq_start = batch_id
-        cur_query_len = max_prompt_len
-        q_offset = depth * (head_id + num_heads * max_prompt_len * batch_id)
-        cur_cache_len = max_cache_size
+        cur_query_len = _max_prompt_len
+        q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
+        cur_cache_len = _max_cache_size
     var seq_len = cur_cache_len
 
     var start = split_id * SplitSize
@@ -293,10 +322,10 @@ def naive_fa_decode_apple_core[
         DType.float32
     ]()
 
-    # KV sub-tile layout: a 1D (depth,) contiguous view of one token's K/V for
+    # KV sub-tile layout: a 1D (_depth,) contiguous view of one token's K/V for
     # `kv_head`, reused for every key in this split. `block_paged_tile` infers
     # the type from this value; each lane loads its `EPL` chunk.
-    var kv_token_layout = row_major(Coord(depth))
+    var kv_token_layout = row_major(Coord(_depth))
 
     # Replicated on every lane, so the running softmax needs no cross-lane comms.
     var m = NEG_INF
@@ -309,7 +338,7 @@ def naive_fa_decode_apple_core[
     # nn/softmax.mojo, compares the UNSCALED sink weight against the post-scale
     # row max). Seed ONLY split 0: this is split-K, so the stitch kernel does a
     # cross-split LSE combine; seeding every split would count the sink
-    # `num_partitions` times. Split 0 always exists (start=0 < seq_len), so the
+    # `_num_partitions` times. Split 0 always exists (start=0 < seq_len), so the
     # sink is counted exactly once. Mirrors AppleSoftmax.seed_sink in
     # fa_prefill.mojo and amd-attention-sink-as-init-state.
     comptime if sink:
@@ -380,14 +409,14 @@ def naive_fa_decode_apple_core[
     comptime for i in range(EPL):
         var d = lane * EPL + i
         var oi = _o_idx(
-            batch_id, head_id, d, split_id, num_heads, Depth, num_partitions
+            batch_id, head_id, d, split_id, _num_heads, Depth, _num_partitions
         )
         o_partial[oi] = rebind[o_partial.ElementType](
             SIMD[p_type, 1](o_frag[i].cast[p_type]())
         )
     if lane == 0:
         var idx = _ml_idx(
-            batch_id, head_id, split_id, num_heads, num_partitions
+            batch_id, head_id, split_id, _num_heads, _num_partitions
         )
         l_partial[idx] = rebind[l_partial.ElementType](
             SIMD[p_type, 1](l.cast[p_type]())
@@ -398,8 +427,8 @@ def naive_fa_decode_apple_core[
 
 
 # ===-------------------------------------------------------------------=== #
-# Stitch: LSE-combine the per-partition partials. Grid (num_heads, batch),
-# block `depth`.
+# Stitch: LSE-combine the per-partition partials. Grid (_num_heads, batch),
+# block `_depth`.
 # ===-------------------------------------------------------------------=== #
 def naive_fa_decode_apple_stitch[
     output_type: DType,
@@ -429,75 +458,19 @@ def naive_fa_decode_apple_stitch[
         valid_length_layout,
         ImmutAnyOrigin,
     ],
-    max_prompt_len: Int,
+    max_prompt_len: Int32,
     # Full key count for the dense decode path; mirrors the producer so the
     # combine's `active_splits` matches the splits the producer actually wrote.
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    num_partitions: Int,
+    max_cache_size: Int32,
+    num_heads: Int32,
+    depth: Int32,
+    num_partitions: Int32,
 ):
-    """Combines per-partition partials into the final decode attention output.
-
-    Grid `(num_heads, batch_size)`, block `depth`: one thread per head-dim
-    element. Reads the contiguous per-split `(o_partial, m_partial, l_partial)`
-    buffers written by `naive_fa_decode_apple_core` and merges them with a
-    log-sum-exp (LSE) reduction in FP32, then writes the normalized
-    `acc / l` row back into `output`. The active split count mirrors the
-    producer's `cur_cache_len` so only the partials actually written are
-    combined.
-
-    Parameters:
-        output_type: Element type of the `output` tensor (inferred).
-        p_type: Accumulation and partials element type (inferred).
-        k_t: `MHAOperand` type of the key cache operand (inferred).
-        v_t: Unused; mirrors `mha_gpu_naive` for dispatch uniformity
-            (inferred).
-        mask_t: Unused; mirrors `mha_gpu_naive` for dispatch uniformity
-            (inferred).
-        output_layout: `TensorLayout` of the `output` tensor (inferred).
-        p_layout: `TensorLayout` of the partials buffers (inferred).
-        valid_length_layout: `TensorLayout` of the `valid_length` tensor
-            (inferred).
-        ragged: Whether sequences are ragged with variable lengths and
-            row offsets in `valid_length` (defaults to `False`).
-        sink: Whether attention sink is enabled; the producer already
-            bakes the sink contribution into split 0 partials, so the
-            stitch does not act on this flag (defaults to `False`).
-        _use_valid_length: Whether to use `valid_length` for KVCache
-            decode as per-sequence query lengths (defaults to `False`).
-        _is_cache_length_accurate: Whether the cache length equals the
-            query length, so no new-token KV is added (defaults to
-            `False`).
-        SplitSize: Per-partition KV span in keys; must match the
-            producer's `SplitSize`.
-
-    Args:
-        output: Flat 1D output tensor; written with the normalized
-            attention output per `(batch, head, depth)`.
-        o_partial: Flat 1D partial output buffer from the producer;
-            one accumulator per `(batch, head, depth, split)`.
-        m_partial: Flat 1D partial row-max buffer from the producer;
-            one running max per `(batch, head, split)`.
-        l_partial: Flat 1D partial row-sum buffer from the producer;
-            one running denominator per `(batch, head, split)`.
-        k: Key cache operand implementing the `MHAOperand` contract;
-            used for `cache_length` in the ragged and KVCache paths.
-        valid_length: Per-sequence row offsets or query lengths
-            (`uint32`); meaning depends on `ragged` and
-            `_use_valid_length`.
-        max_prompt_len: Maximum prompt length; the dense decode path's
-            query length.
-        max_cache_size: Full key count for the dense decode path (the K
-            tensor's seq dim).
-        num_heads: Number of query attention heads.
-        depth: Runtime head dimension.
-        num_partitions: Number of KV splits; must match the producer's
-            partition count.
-
-    Constraints:
-        `o_partial`, `m_partial`, and `output` must be flat 1D TileTensors.
-    """
+    var _max_prompt_len = Int(max_prompt_len)
+    var _max_cache_size = Int(max_cache_size)
+    var _num_heads = Int(num_heads)
+    var _depth = Int(depth)
+    var _num_partitions = Int(num_partitions)
     comptime assert (
         o_partial.flat_rank == 1
         and m_partial.flat_rank == 1
@@ -507,13 +480,13 @@ def naive_fa_decode_apple_stitch[
     var batch_id = Int(block_idx.y)
     var d = Int(thread_idx.x)
 
-    if d >= depth:
+    if d >= _depth:
         return
 
     # Output offset — mirror mha.mojo:5390. `cur_cache_len` (the attend span)
     # is set PER BRANCH and MUST match the producer's exactly, so the combine
     # reads precisely the splits the producer wrote (the dense path takes it
-    # from `max_cache_size`, not `cur_query_len`).
+    # from `_max_cache_size`, not `cur_query_len`).
     var seq_start: Int
     var cur_query_len: Int
     var cur_cache_len: Int
@@ -533,10 +506,10 @@ def naive_fa_decode_apple_stitch[
         else:
             cur_cache_len = k.cache_length(batch_id) + cur_query_len
     else:
-        # Dense decode: full key count is `max_cache_size`.
+        # Dense decode: full key count is `_max_cache_size`.
         seq_start = batch_id
-        cur_query_len = max_prompt_len
-        cur_cache_len = max_cache_size
+        cur_query_len = _max_prompt_len
+        cur_cache_len = _max_cache_size
 
     # Split count must mirror the producer's attend span (`cur_cache_len`), not
     # the bare cache length, so we read exactly the partials that were written.
@@ -548,7 +521,7 @@ def naive_fa_decode_apple_stitch[
     var acc = Float32(0.0)
 
     for split in range(active_splits):
-        var ml = _ml_idx(batch_id, head_id, split, num_heads, num_partitions)
+        var ml = _ml_idx(batch_id, head_id, split, _num_heads, _num_partitions)
         var m_s = rebind[Scalar[p_type]](m_partial[ml]).cast[DType.float32]()
         var m_new = max(m, m_s)
         var corr = exp(m - m_new)
@@ -557,13 +530,13 @@ def naive_fa_decode_apple_stitch[
         var l_s = rebind[Scalar[p_type]](l_partial[ml]).cast[DType.float32]()
         l = l * corr + p * l_s
         var oi = _o_idx(
-            batch_id, head_id, d, split, num_heads, depth, num_partitions
+            batch_id, head_id, d, split, _num_heads, _depth, _num_partitions
         )
         var o_s = rebind[Scalar[p_type]](o_partial[oi]).cast[DType.float32]()
         acc = acc * corr + p * o_s
         m = m_new
 
-    var o_off = (seq_start * num_heads + head_id) * depth
+    var o_off = (seq_start * _num_heads + head_id) * _depth
     output[o_off + d] = rebind[output.ElementType](
         SIMD[output_type, 1]((acc / l).cast[output_type]())
     )
@@ -571,7 +544,7 @@ def naive_fa_decode_apple_stitch[
 
 # ===-------------------------------------------------------------------=== #
 # Host launcher. Mirrors `mha_gpu_naive` (MHAOperand overload, mha.mojo:5066)
-# signature; enqueues the producer/stitch pair. Dispatches the runtime `depth`
+# signature; enqueues the producer/stitch pair. Dispatches the runtime `_depth`
 # to a compile-time `Depth` specialization over multiples of WARP_SIZE.
 # ===-------------------------------------------------------------------=== #
 def naive_fa_decode_apple[
@@ -666,11 +639,11 @@ def naive_fa_decode_apple[
         return
 
     debug_assert(
-        depth % WARP_SIZE == 0 and depth <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM,
+        naive_fa_decode_apple_supports_depth(depth),
         (
-            "naive_fa_decode_apple requires depth %% WARP_SIZE == 0 and depth"
-            " <= NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM; the dispatcher must gate"
-            " unsupported head dims to mha_gpu_naive"
+            "naive_fa_decode_apple requires a depth that"
+            " naive_fa_decode_apple_supports_depth accepts; the dispatcher must"
+            " gate unsupported head dims to mha_gpu_naive"
         ),
     )
 
@@ -761,46 +734,48 @@ def naive_fa_decode_apple[
     comptime MAX_D_STEPS = NAIVE_FA_DECODE_APPLE_MAX_HEAD_DIM // WARP_SIZE
     comptime for di in range(1, MAX_D_STEPS + 1):
         comptime D = di * WARP_SIZE
-        if depth == D:
-            comptime core_kernel = naive_fa_decode_apple_core[
-                q_type,
-                output_type,
-                p_type,
-                k_t,
-                v_t,
-                mask_t,
-                type_of(o_partial_t).LayoutType,
-                type_of(q_flat).LayoutType,
-                type_of(valid_length_flat).LayoutType,
-                type_of(sink_layout_val),
-                ragged=ragged,
-                sink=sink,
-                _use_valid_length=_use_valid_length,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-                Depth=D,
-                SplitSize=SplitSize,
-            ]
-            ctx.enqueue_function[core_kernel](
-                o_partial_t,
-                m_partial_t,
-                l_partial_t,
-                q_flat,
-                k,
-                v,
-                mask_functor,
-                valid_length_flat,
-                sink_tile,
-                scale,
-                batch_size,
-                max_prompt_len,
-                max_cache_size,
-                num_heads,
-                depth,
-                group,
-                num_partitions,
-                grid_dim=(num_partitions, batch_size, num_heads),
-                block_dim=WARP_SIZE,
-            )
+        # gate non-power-of-two `di` instantiating an invalid vec type
+        comptime if naive_fa_decode_apple_supports_depth(D):
+            if depth == D:
+                comptime core_kernel = naive_fa_decode_apple_core[
+                    q_type,
+                    output_type,
+                    p_type,
+                    k_t,
+                    v_t,
+                    mask_t,
+                    type_of(o_partial_t).LayoutType,
+                    type_of(q_flat).LayoutType,
+                    type_of(valid_length_flat).LayoutType,
+                    type_of(sink_layout_val),
+                    ragged=ragged,
+                    sink=sink,
+                    _use_valid_length=_use_valid_length,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    Depth=D,
+                    SplitSize=SplitSize,
+                ]
+                ctx.enqueue_function[core_kernel](
+                    o_partial_t,
+                    m_partial_t,
+                    l_partial_t,
+                    q_flat,
+                    k,
+                    v,
+                    mask_functor,
+                    valid_length_flat,
+                    sink_tile,
+                    scale,
+                    Int32(batch_size),
+                    Int32(max_prompt_len),
+                    Int32(max_cache_size),
+                    Int32(num_heads),
+                    Int32(depth),
+                    Int32(group),
+                    Int32(num_partitions),
+                    grid_dim=(num_partitions, batch_size, num_heads),
+                    block_dim=WARP_SIZE,
+                )
 
     comptime stitch_kernel = naive_fa_decode_apple_stitch[
         output_type,
@@ -824,11 +799,11 @@ def naive_fa_decode_apple[
         l_partial_imm,
         k,
         valid_length_flat,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        num_partitions,
+        Int32(max_prompt_len),
+        Int32(max_cache_size),
+        Int32(num_heads),
+        Int32(depth),
+        Int32(num_partitions),
         grid_dim=(num_heads, batch_size),
         block_dim=depth,
     )

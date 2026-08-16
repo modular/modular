@@ -124,10 +124,10 @@ def test_dict_lazy_allocation() raises:
 
 
 def test_dict_literals() raises:
-    a = {"foo": 1, "bar": 2}
+    var a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
-    b = {1: 4, 2: 7, 3: 18}
+    var b = {1: 4, 2: 7, 3: 18}
     assert_equal(b[1], 4)
     assert_equal(b[2], 7)
     assert_equal(b[3], 18)
@@ -213,8 +213,6 @@ def test_basic() raises:
     assert_equal(1, dict["a"])
     assert_equal(2, dict["b"])
 
-    # TODO(MOCO-4374): use `var` here; a bare (implicit) declaration of a
-    # `Pointer` to an interior reference false-positives in CheckLifetimes.
     var ptr = Pointer(to=dict["a"])
     assert_equal(1, ptr[])
     ptr[] = 17
@@ -327,7 +325,7 @@ def _test_iter_bounds[
     var dict_iter: I,
     dict_len: Int,
 ) raises where conforms_to(
-    I.Element, ImplicitlyDeletable
+    I.Element, Deinitable
 ):
     var iter = dict_iter^
     for i in range(dict_len):
@@ -718,6 +716,46 @@ def test_owned_kwargs_dict() raises:
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
     _test_taking_owned_kwargs_dict(**owned_kwargs^)
+
+
+def test_string_dict_string_span_getitem() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("fruit", 8)
+    kwargs._insert("dessert", 9)
+
+    # Index with a plain `StringSpan`, no `String` allocation required.
+    assert_equal(kwargs[StringSpan("fruit")], 8)
+    assert_equal(kwargs[StringSpan("dessert")], 9)
+
+    # A view into a larger buffer resolves to the same entry as the `String`.
+    var buffer = StringSpan("fruitcake")
+    assert_equal(kwargs[buffer[byte=0:5]], kwargs[String("fruit")])
+
+    # A missing key still raises `DictKeyError`.
+    with assert_raises(contains="KeyError"):
+        _ = kwargs[StringSpan("salad")]
+
+
+def test_string_dict_write_to() raises:
+    var kwargs = StringDict[Int]()
+    kwargs._insert("a", 1)
+    kwargs._insert("b", 2)
+    check_write_to(kwargs, expected="{a: 1, b: 2}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({'a': Int(1), 'b': Int(2)})",
+        is_repr=True,
+    )
+
+
+def test_string_dict_write_to_empty() raises:
+    var kwargs = StringDict[Int]()
+    check_write_to(kwargs, expected="{}", is_repr=False)
+    check_write_to(
+        kwargs,
+        expected="StringDict[SIMD[DType.int, 1]]({})",
+        is_repr=True,
+    )
 
 
 def test_find_get() raises:
@@ -1342,7 +1380,7 @@ def test_dict_hash() raises:
     assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
 
 
-struct NonWritable(Copyable, ImplicitlyDeletable):
+struct NonWritable(Copyable, Deinitable):
     pass
 
 
@@ -1398,7 +1436,7 @@ def test_dict_iter_owned() raises:
 
 def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_imm().as_unsafe_any_origin()
+    var ptr = Pointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1413,7 +1451,7 @@ def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
     var del_count = 0
-    var ptr = UnsafePointer(to=del_count).as_imm().as_unsafe_any_origin()
+    var ptr = Pointer(to=del_count).as_imm().as_unsafe_any_origin()
     var d = Dict[Int, DelCounter[ptr.origin]]()
     d[1] = DelCounter(ptr)
     d[2] = DelCounter(ptr)
@@ -1447,7 +1485,7 @@ def test_dict_iter_owned_bounds() raises:
 
 def test_dict_move_only_value() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Dict[K, V: Movable & ImplicitlyDeletable, H]`.
+    # conformance path of `Dict[K, V: Movable & Deinitable, H]`.
     assert_false(conforms_to(Dict[String, MoveOnly[Int]], Copyable))
 
     var d = Dict[String, MoveOnly[Int]]()
@@ -1567,9 +1605,9 @@ def test_dict_move_only_key_and_value() raises:
 
 
 def test_dict_conditional_implicitly_deletable() raises:
-    assert_true(conforms_to(Dict[Int, Int], ImplicitlyDeletable))
+    assert_true(conforms_to(Dict[Int, Int], Deinitable))
 
-    assert_false(conforms_to(Dict[Int, ExplicitDestroy], ImplicitlyDeletable))
+    assert_false(conforms_to(Dict[Int, ExplicitDestroy], Deinitable))
 
 
 def test_dict_deinit_with() raises:
@@ -1653,7 +1691,7 @@ def test_dict_clear_with_empty() raises:
 
 def test_dict_clear_with_linear() raises:
     # `clear_with` on a populated linear `Dict` (neither key nor value is
-    # `ImplicitlyDeletable`). Populate via `insert`, then verify every entry
+    # `Deinitable`). Populate via `insert`, then verify every entry
     # reaches the closure once, the dict empties, and its capacity is reused.
     var d = Dict[ExplicitDestroyKey, ExplicitDestroy]()
     var disposed = List[Int]()

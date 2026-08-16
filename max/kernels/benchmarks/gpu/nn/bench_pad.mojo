@@ -22,7 +22,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import TileTensor, row_major
 from nn.pad_gpu import pad_constant, get_padding_output_shape
@@ -48,12 +48,11 @@ def bench_pad_gpu[
     var out_device = ctx.enqueue_create_buffer[dtype](output_size)
     var constant = Scalar[dtype](0)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_fn(mut b: Bencher) raises:
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut out_device, imm}:
             pad_constant(
                 out_device.unsafe_ptr(),
                 output_shape,
@@ -64,7 +63,7 @@ def bench_pad_gpu[
                 ctx,
             )
 
-        bencher_iter_custom[kernel_launch](b, ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     # Total memory traffic: read input + write output.
     var total_bytes = (input_size + output_size) * size_of[dtype]()

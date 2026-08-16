@@ -30,15 +30,15 @@ from std.sys.info import _is_amd_rdna2_or_earlier
 
 from std.gpu import (
     WARP_SIZE,
-    barrier,
     block_idx,
     lane_id,
     thread_idx,
     warp_id,
 )
-from std.gpu.compute.mma import mma as _mma_intrinsic
+from max.gpu.sync import barrier
+from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -91,9 +91,9 @@ def gemm_kernel_rdna[
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
     b: TileTensor[b_type, b_layout, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m: Int32,
+    n: Int32,
+    k: Int32,
 ):
     """GEMM kernel for AMD RDNA GPUs.
 
@@ -138,6 +138,9 @@ def gemm_kernel_rdna[
         n: Number of columns in the output and in `b`.
         k: Contraction dimension shared by `a` and `b`.
     """
+    var _m = Int(m)
+    var _n = Int(n)
+    var _k = Int(k)
     comptime assert c.flat_rank == 2, "c must have flat_rank == 2"
     comptime assert a.flat_rank == 2, "a must have flat_rank == 2"
     comptime assert b.flat_rank == 2, "b must have flat_rank == 2"
@@ -156,7 +159,7 @@ def gemm_kernel_rdna[
             transpose_b,
             elementwise_lambda_fn,
             s_type,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
     else:
         _wmma_matmul_kernel[
             c_type,
@@ -175,7 +178,7 @@ def gemm_kernel_rdna[
             WARPS_N,
             WARP_TILE_M,
             WARP_TILE_N,
-        ](c, a, b, m, n, k)
+        ](c, a, b, _m, _n, _k)
 
 
 def _naive_matmul_kernel[
@@ -285,9 +288,7 @@ def _load_tile_to_smem[
             BLOCK_K % VECTOR_WIDTH == 0
         ), "BLOCK_K must be divisible by VECTOR_WIDTH"
         comptime total_vectors = BLOCK_ROWS * BLOCK_K // VECTOR_WIDTH
-        comptime vecs_per_thread = (
-            total_vectors + NUM_THREADS - 1
-        ) // NUM_THREADS
+        comptime vecs_per_thread = ceildiv(total_vectors, NUM_THREADS)
 
         # Coalesced vectorized loads: adjacent threads load adjacent vectors
         comptime for i in range(vecs_per_thread):
@@ -367,7 +368,7 @@ def _load_tile_regs[
                 regs[i] = tile.load_linear[width=VECTOR_WIDTH](
                     IndexList[2](global_row, k_offset + elem_idx % BLOCK_K)
                 )
-    return regs
+    return regs^
 
 
 @always_inline
@@ -552,21 +553,17 @@ def _wmma_matmul_kernel[
         # Single LDS tile fed by a register-staged prefetch: the next K-tile's
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
-        var a_smem = stack_allocation[
+        var a_smem = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem = stack_allocation[
+        var b_smem = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
 
         # Per-thread 128-bit vector counts for the register-staged loads.
         comptime VW = min(BLOCK_K, 8)
-        comptime A_VECS = (
-            BLOCK_M * BLOCK_K // VW + NUM_THREADS - 1
-        ) // NUM_THREADS
-        comptime B_VECS = (
-            BLOCK_N * BLOCK_K // VW + NUM_THREADS - 1
-        ) // NUM_THREADS
+        comptime A_VECS = ceildiv(BLOCK_M * BLOCK_K // VW, NUM_THREADS)
+        comptime B_VECS = ceildiv(BLOCK_N * BLOCK_K // VW, NUM_THREADS)
 
         # Prologue: stage tile 0 into LDS via registers.
         var a_regs = _load_tile_regs[
@@ -632,16 +629,16 @@ def _wmma_matmul_kernel[
             "double-buffer tiles exceed LDS; this config needs transpose_b=True"
             " to use the register-staged pipeline"
         )
-        var a_smem_0 = stack_allocation[
+        var a_smem_0 = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var a_smem_1 = stack_allocation[
+        var a_smem_1 = unsafe_stack_allocation[
             BLOCK_M * SMEM_STRIDE, a_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem_0 = stack_allocation[
+        var b_smem_0 = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
-        var b_smem_1 = stack_allocation[
+        var b_smem_1 = unsafe_stack_allocation[
             BLOCK_N * SMEM_STRIDE, b_type, address_space=AddressSpace.SHARED
         ]()
 

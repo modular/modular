@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import TestSuite, assert_equal
 
 
-@parameter
+@__parameter
 def _timed_iter_func(context: DeviceContext, iter: Int) raises:
     comptime length = 64
 
@@ -46,7 +46,7 @@ def _timed_iter_func(context: DeviceContext, iter: Int) raises:
         )
 
 
-@parameter
+@__parameter
 def _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 

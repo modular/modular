@@ -24,7 +24,7 @@ from std.math.uutils import ufloordiv
 from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane
 from std.gpu import warp_id as get_warp_id
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast, unsafe_stack_allocation
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -140,7 +140,7 @@ __extension Attention:
             SIMD[k_rope_t.dtype, simd_width_of[k_rope_t.dtype]()]
         ]()
         comptime k_rope_smem_elems = 2 * Self.BN * rope_depth
-        var k_rope_smem_ptr = stack_allocation[
+        var k_rope_smem_ptr = unsafe_stack_allocation[
             k_rope_smem_elems,
             k_rope_t.dtype,
             address_space=AddressSpace.SHARED,
@@ -176,7 +176,7 @@ __extension Attention:
 
         # Phase 1: Q_nope @ K^T (depth // BK iterations)
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk_nope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
@@ -196,7 +196,7 @@ __extension Attention:
 
         # Phase 2: Q_rope @ K_rope^T (rope_depth // BK iterations)
         @always_inline
-        @parameter
+        @__parameter
         def mma_qk_rope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
@@ -215,7 +215,7 @@ __extension Attention:
                     )
 
         @always_inline
-        @parameter
+        @__parameter
         def mma_pv():
             comptime PVMmaOp = TiledMmaOp[
                 accum_type,
@@ -264,7 +264,7 @@ __extension Attention:
         comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         @always_inline
-        @parameter
+        @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             comptime next_slot = 1 - slot
 

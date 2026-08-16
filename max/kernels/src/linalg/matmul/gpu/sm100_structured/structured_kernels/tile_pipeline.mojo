@@ -813,7 +813,7 @@ struct InputProducerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Linear type handle for producer tile access.
 
     Compiler-enforced: must call release() to advance the producer stage.
@@ -972,7 +972,7 @@ struct InputConsumerStage[
     Payload: TilePayload,
     num_group_stages: Int,
     k_group_size: Int,
-](ImplicitlyDeletable where False, Movable):
+](Deinitable where False, Movable):
     """Linear type handle for consumer tile access.
 
     Compiler-enforced: must call release() to signal consumption and
@@ -1453,8 +1453,8 @@ struct OutputTilePipeline[
         Args:
             stage: The acquired output stage to signal completion for.
         """
-        from std.gpu.primitives.cluster import elect_one_sync
-        from std.gpu.compute.arch.mma_nvidia_sm100 import (
+        from max.gpu.primitives.cluster import elect_one_sync
+        from max.gpu.compute.arch.mma_nvidia_sm100 import (
             mma_arrive,
             mma_arrive_multicast,
         )
@@ -1720,7 +1720,7 @@ struct OutputConsumer[
 struct MmaStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](ImplicitlyDeletable where False):
+](Deinitable where False):
     """Unified linear type handle for MMA stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
@@ -1784,7 +1784,7 @@ struct MmaStage[
 struct EpilogueStage[
     origin: MutOrigin,
     opc: OutputPipelineConfig,
-](ImplicitlyDeletable where False):
+](Deinitable where False):
     """Unified linear type handle for epilogue stage in output pipeline.
 
     Works as both a linear type (direct use) and within context managers.
@@ -2010,7 +2010,7 @@ struct PerKConsumerStage[
         # Signal the consumer barrier to tell MMA we're done with this stage.
         # This is critical for per-K synchronization - MMA waits on this
         # barrier before each K iteration.
-        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from max.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(
@@ -2158,7 +2158,7 @@ struct EpilogueKContext[
         self.input_pipeline_ptr[].consumer_step()
 
         # Signal output pipeline consumer barrier (for MMA synchronization)
-        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from max.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(

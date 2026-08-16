@@ -16,22 +16,22 @@ from std.math.uutils import umod, ufloordiv
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import (
-    barrier,
     warp_id as get_warp_id,
     block_id_in_cluster,
     block_idx,
     lane_id,
 )
-from std.gpu.primitives.cluster import (
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.memory import AddressSpace, external_memory
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.memory import external_memory
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.compute.arch.tcgen05 import *
 from layout import (
     CoordLike,
     Coord,
@@ -61,7 +61,7 @@ from std.utils.static_tuple import StaticTuple
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.math import ceildiv
-from std.gpu.sync import syncwarp
+from max.gpu.sync import syncwarp
 from std.sys import argv
 from std.random import random_ui64
 from linalg.fp4_utils import (
@@ -129,8 +129,9 @@ def blockscaled_pair_cta_mxfp8[
         b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "a_type and b_type must be the same and either float8_e4m3fn"
@@ -245,8 +246,8 @@ def blockscaled_pair_cta_mxfp8[
     var tma_mbar_ptr = smem_pool.bitcast[Int64]()
     var mma_mbar_ptr = smem_pool.bitcast[Int64]() + 2
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = elect_one_sync_with_mask()
@@ -271,7 +272,7 @@ def blockscaled_pair_cta_mxfp8[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    tmem_addr = ptr_tmem_addr[0]
+    var tmem_addr = ptr_tmem_addr[0]
 
     comptime SFA_NUM_COLS = BM // 32
     comptime SFB_NUM_COLS = MMA_N // 32
@@ -296,14 +297,14 @@ def blockscaled_pair_cta_mxfp8[
         b_type
     ]()
 
-    adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+    var adesc_base = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
         a_smem_tile.ptr
     )
-    bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+    var bdesc_base = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
         b_smem_tile.ptr
     )
 
-    idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
+    var idesc = UMMAInsDescriptor[UMMAKind.KIND_MXF8F6F4].create[
         accum_type,
         a_type,
         b_type,
@@ -446,8 +447,8 @@ def blockscaled_pair_cta_mxfp8[
             barrier()
 
             if elect_one_warp:
-                adesc = adesc_base
-                bdesc = bdesc_base
+                var adesc = adesc_base
+                var bdesc = bdesc_base
 
                 if k_iter == 0:
                     if elect_one_thread:
@@ -470,7 +471,7 @@ def blockscaled_pair_cta_mxfp8[
                         adesc += mma_shape[2] * size_of[a_type]()
                         bdesc += b_k_stride
                         if elect_one_thread:
-                            runtime_desc = UMMAInsDescriptor[
+                            var runtime_desc = UMMAInsDescriptor[
                                 UMMAKind.KIND_MXF8F6F4
                             ].update_desc_with_sf_id[UInt32(j)](
                                 idesc,
@@ -607,10 +608,10 @@ def sm100_blockscaled_mxfp8_cta_pair[
         256,
     ), "MMA_M and MMA_N must be divisible by 128"
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -743,7 +744,7 @@ def sm100_blockscaled_mxfp8_cta_pair[
         a_scales_tma_op,
         b_scales_tma_op,
         c,
-        ceildiv(K, BK),
+        Int32(ceildiv(K, BK)),
         grid_dim=(
             align_up(ceildiv(M, BM), Int(cluster_shape[0])),
             align_up(ceildiv(N, BN) // cta_group, Int(cluster_shape[1])),

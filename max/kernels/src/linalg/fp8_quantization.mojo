@@ -13,14 +13,14 @@
 
 """Provides FP8 quantization kernels supporting static, dynamic, and blockwise scaling."""
 
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
-import std.gpu.primitives.block as block
-from std.algorithm.functional import _elementwise_impl_gpu
+import max.gpu.primitives.block as block
+from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -28,9 +28,9 @@ from std.gpu import (
     global_idx,
     thread_idx,
 )
-from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from std.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host.info import B200, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -44,8 +44,8 @@ from layout.tile_layout import TensorLayout
 from layout.tensor_storage import TensorStorage
 from std.logger import Logger
 from std.memory import bitcast
-from std.runtime.tracing import Trace, TraceLevel, trace_arg
-from std.algorithm import elementwise
+from max.runtime.tracing import Trace, TraceLevel, trace_arg
+from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
@@ -60,7 +60,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     GEMMKind,
 )
 from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
 
@@ -110,7 +110,7 @@ def quantize_static_scaled_fp8[
     ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(out_tensor, in_tensor, scale)
     def scaled_fp8_quant[
         width: Int, rank: Int, alignment: Int = 1
@@ -203,7 +203,7 @@ def max_reduction_scale_kernel[
         )
 
         if tid == 0:
-            _ = Atomic[DType.float32].max(scale_global.ptr, row_max / fp8_max)
+            _ = Atomic[Float32].max(scale_global.ptr, row_max / fp8_max)
 
 
 @always_inline
@@ -331,7 +331,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scaled_output.address_space_cast[AddressSpace.GENERIC](),
                 scales.address_space_cast[AddressSpace.GENERIC](),
                 scale_ub.cast[scales_dtype](),
-                num_rows,
+                Int32(num_rows),
             )
 
             ctx.enqueue_function(
@@ -704,7 +704,7 @@ struct _QuantizeFp8KernelPerTensor[
         linear_idx_type=Self.scales_idx_type,
     ]
     var scale_ub: Scalar[Self.scales_type]
-    var num_rows: Int
+    var num_rows_dev: Int32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -725,7 +725,7 @@ struct _QuantizeFp8KernelPerTensor[
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
         var scale_ub = self.scale_ub
-        var num_rows = self.num_rows
+        var num_rows = Int(self.num_rows_dev)
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x
@@ -1145,7 +1145,7 @@ def _matmul_dynamic_scaled_fp8_impl[
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
@@ -1173,7 +1173,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 var scaled_val = val.cast[DType.float32]() * a_scale * b_scale
                 return scaled_val.cast[_dtype]()
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
@@ -1212,7 +1212,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             # create a dummy TileTensor to instruct the matmul kernel to
             # output values in the correct dtype.
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn[
@@ -1239,7 +1239,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                     scaled_val.cast[c_type](),
                 )
 
-            @parameter
+            @__parameter
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn_tensor[
@@ -1895,7 +1895,7 @@ def convert_e4m3fn_to_e4m3fnuz(
     )
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1

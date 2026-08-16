@@ -763,6 +763,72 @@ class ExportKindAttr(max._core.Attribute):
     @property
     def value(self) -> ExportKind: ...
 
+class ExtensionAttr(max._core.Attribute):
+    """
+    The `#kgen.extension` attribute augments the trait view (metatype) of an
+    `anchor` type value with additional trait conformances supplied by a list
+    of "extension" struct type values, without changing the anchor's underlying
+    physical type.
+
+    Unlike `#kgen.downcast`, which merely re-views a conformance the anchor
+    already possesses, an extension supplies the conformance: when
+    `#kgen.get_witness` cannot find a trait entry on the anchor's own witness
+    tables, it searches the conformance tables of the extension structs. Because
+    the anchor's physical type is unchanged, a value typed as the anchor can be
+    rebound to the extension type at zero cost.
+
+    Example:
+
+    ```mlir
+    #kgen.extension<:!lit.trait<"def() -> T"> G, [!EXT1]>
+      : !lit.trait<"def() -> V">
+    ```
+    """
+
+    def __init__(
+        self,
+        type: max._core.Type,
+        anchor: max._core.dialects.builtin.TypedAttr,
+        extensions: Sequence[max._core.dialects.builtin.TypedAttr],
+    ) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+    @property
+    def anchor(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def extensions(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
+
+class FnMetadataAttr(max._core.Attribute):
+    """
+    The `#kgen.fn_metadata` attribute aggregates everything a `!kgen.func` type
+    describes on top of its value signature: the calling convention of each
+    input argument, the effects of the function, and the dialect-specific
+    metadata implementing `FnMetadataAttrInterface` (for example
+    `#lit.fn_meta_origin_data`).
+
+    Every `!kgen.func` type carries exactly one of these, so it is not printed
+    on its own in the sugared function type syntax.
+
+    Example:
+
+    ```mlir
+    #kgen.fn_metadata<[read, mut], "throws">
+    ```
+    """
+
+    def __init__(
+        self,
+        arg_conventions: Sequence[ArgConvention],
+        fn_effects: FnEffects,
+        metadata: FnMetadataAttrInterface,
+    ) -> None: ...
+    @property
+    def arg_conventions(self) -> Sequence[ArgConvention]: ...
+    @property
+    def fn_effects(self) -> FnEffects: ...
+    @property
+    def metadata(self) -> FnMetadataAttrInterface: ...
+
 class FnTypeIsCABIAttr(max._core.Attribute):
     """
     The `#kgen.fn_type_is_cabi` attribute returns true if the given type value
@@ -1088,7 +1154,7 @@ class GetWitnessAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_name: max._core.dialects.builtin.StringAttr,
+        trait_symbol: TraitSymbolAttr,
         witness_name: max._core.dialects.builtin.StringAttr,
         type: max._core.Type,
     ) -> None: ...
@@ -1096,14 +1162,14 @@ class GetWitnessAttr(max._core.Attribute):
     def __init__(
         self,
         type_value: max._core.dialects.builtin.TypedAttr,
-        trait_name: max._core.dialects.builtin.StringAttr,
+        trait_symbol: TraitSymbolAttr,
         witness_name: max._core.dialects.builtin.StringAttr,
         type: max._core.Type,
     ) -> None: ...
     @property
     def type_value(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
-    def trait_name(self) -> max._core.dialects.builtin.StringAttr: ...
+    def trait_symbol(self) -> TraitSymbolAttr: ...
     @property
     def witness_name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
@@ -1369,6 +1435,40 @@ class ParamDeclRefAttr(max._core.Attribute):
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
     @property
     def type(self) -> max._core.Type | None: ...
+
+class ParamIdenticalAttr(max._core.Attribute):
+    """
+    The `#kgen.param.identical` attribute is the proposition that its operands
+    all denote the same parameter value (as considered post-elaboration).
+    Its result is always `!kgen.scalar<bool>`.
+
+    Important: This is categorically different from `POC::EQ`, which is a
+    *lane-wise numeric* comparison whose result inherits the operand lane count.
+
+    Example:
+
+    ```mlir
+    #kgen.param.identical<#kgen.param.decl.ref<"T"> : !kgen.type,
+                          #kgen.param.decl.ref<"U"> : !kgen.type>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, operands: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, operands: Sequence[max._core.dialects.builtin.TypedAttr]
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        lhs: max._core.dialects.builtin.TypedAttr,
+        rhs: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def operands(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
 
 class ParamIndexRefAttr(max._core.Attribute):
     """
@@ -1820,6 +1920,20 @@ class SIMDSplatAttr(max._core.Attribute):
     @property
     def type(self) -> SIMDType: ...
 
+class SingletonAttr(max._core.Attribute):
+    """
+    The `#kgen.singleton` attribute is the value of a type that has exactly one
+    inhabitant, so there is nothing left to represent once the type is known.
+    This covers structs with no stored fields such as literal types.
+    """
+
+    @overload
+    def __init__(self, type: max._core.Type) -> None: ...
+    @overload
+    def __init__(self, type: max._core.Type) -> None: ...
+    @property
+    def type(self) -> max._core.Type | None: ...
+
 class StructAttr(max._core.Attribute):
     """
     The `#kgen.struct` attribute contains a heterogenous list of elements of
@@ -2251,20 +2365,58 @@ class TraitInstanceRefAttr(max._core.Attribute):
 
     @overload
     def __init__(
-        self,
-        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
-        type: max._core.Type,
+        self, symbols: Sequence[TraitSymbolAttr], type: max._core.Type
     ) -> None: ...
     @overload
     def __init__(
-        self,
-        symbols: Sequence[max._core.dialects.builtin.SymbolRefAttr],
-        type: max._core.Type,
+        self, symbols: Sequence[TraitSymbolAttr], type: max._core.Type
     ) -> None: ...
     @property
-    def symbols(self) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def symbols(self) -> Sequence[TraitSymbolAttr]: ...
     @property
     def type(self) -> max._core.Type | None: ...
+
+class TraitSymbolArrayAttr(max._core.Attribute):
+    """
+    The `#kgen.trait_symbols` attribute represents a list of trait symbols, the
+    list is sorted by flattened name.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbols<[@std::@builtin::@Movable, @std::@builtin::@Copyable]>
+    ```
+    """
+
+    def __init__(self, value: Sequence[TraitSymbolAttr]) -> None: ...
+    @property
+    def value(self) -> Sequence[TraitSymbolAttr]: ...
+
+class TraitSymbolAttr(max._core.Attribute):
+    """
+    The `#kgen.trait_symbol` attribute names a trait by a reference to its
+    declaration.
+
+    TODO: it will be holding an array of parameters for closure traits in the
+    future.
+
+    Example:
+
+    ```mlir
+    #kgen.trait_symbol<@std::@builtin::@bool::@Boolable>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, symbol: max._core.dialects.builtin.SymbolRefAttr
+    ) -> None: ...
+    @property
+    def symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
 
 class TypeConformsToTraitAttr(max._core.Attribute):
     """
@@ -2277,7 +2429,7 @@ class TypeConformsToTraitAttr(max._core.Attribute):
     ```mlir
     #kgen.type_conforms_to_trait<
         #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
-        #kgen.type<typevalue<#kgen.trait_ref<@Movable, @Copyable>>, type> : !kgen.type>
+        #kgen.type<typevalue<#kgen.trait_ref<[@Movable, @Copyable]>>, type> : !kgen.type>
     ```
 
     For the common case of a single checked type value, the operand is printed
@@ -2683,11 +2835,15 @@ class ConformanceOp(max._core.Operation):
     Its body contains the conformance table entries that map trait requirements
     to the struct type's definitions.
 
-    - The optional `traitRef` parameter is a reference to the trait being
-      conformed to.
-    - The `immediateParents` parameter contains the conformance tables that this
-      conformance table directly inherits from. It only includes the first level
-      of parents, not any further ancestors.
+    - The `sym_name` parameter is the flattened name of the trait being
+      conformed to, which is what a `#kgen.get_witness` looks this table up by.
+    - The optional `traitSymbol` parameter references the trait declaration
+      that `sym_name` is the flattened form of. It is present until `lower-lit`
+      erases the trait declarations, after which nothing can resolve it and the
+      flattened `sym_name` is the only identity that remains.
+    - The `immediateParents` parameter names the conformance tables that this
+      conformance table directly inherits from, sorted by flattened name. It
+      only includes the first level of parents, not any further ancestors.
     - The `constraint` parameter specifies the condition under which this
       conformance applies. This is used for conditional trait conformance,
       where a struct only conforms to a trait when certain conditions are met.
@@ -2730,9 +2886,8 @@ class ConformanceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
-        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        trait_symbol: TraitSymbolAttr,
+        immediate_parents: TraitSymbolArrayAttr,
         constraint: ConstraintAttr,
     ) -> None: ...
     @overload
@@ -2740,30 +2895,17 @@ class ConformanceOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        sym_name: max._core.dialects.builtin.StringAttr,
-        trait_ref: max._core.dialects.builtin.SymbolRefAttr,
-        immediate_parents: max._core.dialects.m.SymbolRefArrayAttr,
+        trait_symbol: TraitSymbolAttr,
+        immediate_parents: TraitSymbolArrayAttr,
     ) -> None: ...
     @property
-    def sym_name(self) -> str: ...
-    @sym_name.setter
-    def sym_name(
-        self, arg: max._core.dialects.builtin.StringAttr, /
-    ) -> None: ...
+    def trait_symbol(self) -> TraitSymbolAttr: ...
+    @trait_symbol.setter
+    def trait_symbol(self, arg: TraitSymbolAttr, /) -> None: ...
     @property
-    def trait_ref(self) -> max._core.dialects.builtin.SymbolRefAttr | None: ...
-    @trait_ref.setter
-    def trait_ref(
-        self, arg: max._core.dialects.builtin.SymbolRefAttr, /
-    ) -> None: ...
-    @property
-    def immediate_parents(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def immediate_parents(self) -> Sequence[TraitSymbolAttr]: ...
     @immediate_parents.setter
-    def immediate_parents(
-        self, arg: max._core.dialects.m.SymbolRefArrayAttr, /
-    ) -> None: ...
+    def immediate_parents(self, arg: TraitSymbolArrayAttr, /) -> None: ...
     @property
     def constraint(self) -> ConstraintAttr: ...
     @constraint.setter
@@ -4460,9 +4602,7 @@ class TraitSymbolInterface(Protocol):
     """
 
     @property
-    def trait_symbols(
-        self,
-    ) -> Sequence[max._core.dialects.builtin.SymbolRefAttr]: ...
+    def trait_symbols(self) -> Sequence[TraitSymbolAttr]: ...
 
 class BuildInfoType(max._core.Type):
     """
@@ -4502,6 +4642,57 @@ class DeferredType(max._core.Type):
 
     def __init__(self) -> None: ...
 
+class FuncGeneratorTypeBuilderType(max._core.Type):
+    """
+    The `!kgen.func_gen_type_builder` type constructs a `FuncTypeGeneratorType`
+    from its components: the parameters declared by the generator (an array of
+    `param.decl`s), the argument types (a `param_list` of `kgen.type`), the
+    result type (a `kgen.type`), and the function metadata (a `fn_metadata`).
+    It folds into the generator type itself once all of its components are
+    constant.
+
+    Every component is a parameter expression, so a still-symbolic piece (e.g.
+    an argument pack referenced by name) can be represented before elaboration.
+
+    NOTE: the builder constructs a bare FuncTypeGeneratorType, poglist for
+    param/arg should be attached later.
+
+    Example:
+
+    ```mlir
+    !kgen.func_gen_type_builder<
+      #kgen<param.decls[T : !kgen.type]>,
+      #kgen.param.decl.ref<"Ts"> : !kgen.param_list<!kgen.type>,
+      #kgen.param.decl.ref<"T"> : !kgen.type,
+      #kgen.fn_metadata<[read], "none">>
+    ```
+    """
+
+    @overload
+    def __init__(
+        self,
+        param_decls: max._core.dialects.builtin.TypedAttr,
+        arg_types: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.dialects.builtin.TypedAttr,
+        metadata: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        param_decls: max._core.dialects.builtin.TypedAttr,
+        arg_types: max._core.dialects.builtin.TypedAttr,
+        result_type: max._core.dialects.builtin.TypedAttr,
+        metadata: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def param_decls(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def arg_types(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def result_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def metadata(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class FuncLiteralType(max._core.Type):
     """
     This type describes the type of a literal function in KGEN, in additional to
@@ -4524,10 +4715,8 @@ class FuncType(max._core.Type):
     This type describes the type of a function KGEN, which can have input/output
     value arguments and results.
 
-    The metadata attribute is used to store additional information about a
-    function, such as its argument calling conventions and the effects of the
-    function itself. When the metadata only contains default values, it isn't
-    printed in the textual MLIR format.
+    The metadata attribute holds the argument calling conventions, the effects
+    of the function itself, and the dialect-specific function metadata.
     """
 
     @overload
@@ -4540,28 +4729,22 @@ class FuncType(max._core.Type):
     def __init__(
         self,
         values: max._core.dialects.builtin.FunctionType,
-        arg_convs: Sequence[ArgConvention] = [],
-        effects: FnEffects = FnEffects.none,
-        metadata: max._core.Attribute = ...,
-        arg_list_attrs: max._core.Attribute = ...,
+        metadata_attr: FnMetadataAttr,
+        arg_list_attrs: PogListAttr,
     ) -> None: ...
     @overload
     def __init__(
         self,
         values: max._core.dialects.builtin.FunctionType,
-        arg_conventions: Sequence[ArgConvention],
-        fn_effects: FnEffects,
-        metadata: FnMetadataAttrInterface,
-        arg_list_attrs: PogListAttr,
+        arg_convs: Sequence[ArgConvention] = [],
+        effects: FnEffects = FnEffects.none,
+        metadata: max._core.Attribute = ...,
+        arg_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @property
     def values(self) -> max._core.dialects.builtin.FunctionType: ...
     @property
-    def arg_conventions(self) -> Sequence[ArgConvention]: ...
-    @property
-    def fn_effects(self) -> FnEffects: ...
-    @property
-    def metadata(self) -> FnMetadataAttrInterface: ...
+    def metadata_attr(self) -> FnMetadataAttr: ...
     @property
     def arg_list_attrs(self) -> PogListAttr: ...
 
@@ -4577,21 +4760,21 @@ class GeneratorType(max._core.Type):
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: max._core.Attribute = ...,
+        param_list_attrs: max._core.Attribute = ...,
     ) -> None: ...
     @overload
     def __init__(
         self,
         input_param_types: Sequence[max._core.Type],
         body: max._core.Type,
-        metadata: PogListAttr,
+        param_list_attrs: PogListAttr,
     ) -> None: ...
     @property
     def input_param_types(self) -> Sequence[max._core.Type]: ...
     @property
     def body(self) -> max._core.Type | None: ...
     @property
-    def metadata(self) -> PogListAttr: ...
+    def param_list_attrs(self) -> PogListAttr: ...
 
 class MLIRDeferredType(max._core.Type):
     """

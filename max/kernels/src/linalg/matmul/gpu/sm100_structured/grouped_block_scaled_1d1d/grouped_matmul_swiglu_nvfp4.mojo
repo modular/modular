@@ -26,8 +26,8 @@ package's `dispatch.mojo`) and the `RealSwiGLUOutput` carrier (in
 `grouped_1d1d_matmul_kernel.mojo`).
 """
 
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import UnsafePointer
 from layout import Coord, Idx, TileTensor, row_major
 

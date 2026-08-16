@@ -58,7 +58,7 @@ from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse, assert_almost_equal
 
 from layout import Coord, TileTensor, row_major
@@ -91,14 +91,14 @@ def _run_rms_norm[
 
     @always_inline
     @__copy_capture(in_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(out_view)
-    @parameter
+    @__parameter
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
@@ -401,14 +401,13 @@ def bench_fused_lamport_allreduce_rmsnorm[
     )
 
     # ===== Benchmark 1: fused `lamport_allreduce_rmsnorm` (1 kernel) =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 ctx_idx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -427,7 +426,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_fused_iter](
         b,
@@ -437,14 +436,15 @@ def bench_fused_lamport_allreduce_rmsnorm[
     )
 
     # ===== Benchmark 2: unfused `allreduce` + `rms_norm_gpu` (2 kernels) =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_unfused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -475,7 +475,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bencher_iter_custom[call_fn](bench, ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
     bench_multicontext[bench_unfused_iter](
         b,

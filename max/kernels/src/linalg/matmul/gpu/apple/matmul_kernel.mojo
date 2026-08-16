@@ -28,7 +28,8 @@ tails. Operands load DRAM->register directly -- threadgroup-memory staging
 
 from std.collections import Array, Optional
 from std.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from std.math import align_down, ceildiv
+from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
 from std.utils import IndexList
 from layout import TensorStorage, TileTensor, Idx
@@ -287,6 +288,17 @@ struct Im2colALoader[
     var r: Int32
     var s: Int32
     var k_total: Int32  # R*S*C, prebaked once (the partial-K bound)
+
+    def __init__(out self, *, copy: Self):
+        self.input_ptr = copy.input_ptr
+        self.h_base = copy.h_base.copy()
+        self.w_base = copy.w_base.copy()
+        self.batch_base = copy.batch_base.copy()
+
+        self.c0 = copy.c0
+        self.r = copy.r
+        self.s = copy.s
+        self.k_total = copy.k_total
 
     @always_inline
     def __init__(
@@ -784,8 +796,8 @@ struct AppleM5MatMul[
         comptime SG_N_i32: Int32 = Int32(SG_N)
         comptime NUM_SG_N_i32: Int32 = Int32(Self.NUM_SG_N)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var sg_id = Int32(thread_idx.x) // Int32(WARP_SIZE)
         var sg_m_idx = sg_id // NUM_SG_N_i32
@@ -938,7 +950,7 @@ struct AppleM5MatMul[
         # view of C -- no pointer arithmetic. The lambda contract matches AMD's:
         # it receives `SIMD[c_type, width]` at absolute (row, col).
         @always_inline
-        @parameter
+        @__parameter
         def _apply_epilogue[
             bounded: Bool
         ](tile_row_base: Int, tile_col_base: Int):
@@ -952,7 +964,7 @@ struct AppleM5MatMul[
             var c_vec = c_sub.vectorize[1, 4]()
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
@@ -1037,7 +1049,7 @@ struct AppleM5MatMul[
         # is only entered when `c_type == fp32` (use_epilogue_path is False),
         # so the rebind is a no-op at runtime.
         @always_inline
-        @parameter
+        @__parameter
         def _fast_path_store[
             bounded: Bool
         ](valid_rows: Int = 0, valid_cols: Int = 0):
@@ -1102,7 +1114,7 @@ struct AppleM5MatMul[
         else:
 
             @always_inline
-            @parameter
+            @__parameter
             def _full_strip(k_strip: Int32):
                 var b_sub = b_slab.tile[BK, SG_N](Int(k_strip), 0)
                 loader.accumulate_strip[bounded=False](
@@ -1267,8 +1279,8 @@ struct AppleM5MatMul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Storage=b_storage],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
-        k_strip_start: Int,
-        k_strip_end: Int,
+        k_strip_start_dev: Int32,
+        k_strip_end_dev: Int32,
     ):
         """`clamp_v2` chained-pass kernel. `enqueue_apple_matmul_clamp_chain`
         launches it twice: pass 0 zero-seeds `[k_strip_start, k_strip_end)`,
@@ -1276,6 +1288,9 @@ struct AppleM5MatMul[
         reduce kernel is needed. Otherwise identical to `run`; requires
         `Self.clamp_edge=True` (asserted below).
         """
+        # `Int` is not device-passable; widen the fixed-width args.
+        var k_strip_start = Int(k_strip_start_dev)
+        var k_strip_end = Int(k_strip_end_dev)
         comptime assert (
             Self.clamp_edge
             and Self.c_type == DType.float32
@@ -1297,7 +1312,7 @@ struct AppleM5MatMul[
 
         # Same A-slab clamp shift as `run` (see its comment). Unconditional
         # here since the `comptime assert` above guarantees `clamp_edge=True`.
-        var tile_row0 = (row_base // BM_i32) * BM_i32
+        var tile_row0 = align_down(row_base, BM_i32)
         if tile_row0 + BM_i32 > Int32(m):
             var row_shift = (Int32(m) - BM_i32) - tile_row0
             a_ptr = a_ptr + Int(row_shift) * k
@@ -1468,7 +1483,7 @@ struct AppleM5MatMul[
         ],
         log2_grid_m: UInt32,
         log2_grid_n: UInt32,
-        k_per_split: Int,
+        k_per_split: Int32,
     ):
         """One 64x64 output tile's fp32 partial over a BK-aligned K-slice.
 
@@ -1527,8 +1542,8 @@ struct AppleM5MatMul[
         comptime SG_N_i32: Int32 = Int32(SG_N)
         comptime NUM_SG_N_i32: Int32 = Int32(Self.NUM_SG_N)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var num_tiles = UInt32(1) << (log2_grid_m + log2_grid_n)
         var bx = UInt32(block_idx.x)
@@ -1605,7 +1620,7 @@ struct AppleM5MatMul[
         else:
 
             @always_inline
-            @parameter
+            @__parameter
             def _full_strip(gstrip: Int32):
                 var a_sub = a_slab.tile[SG_M, BK](0, Int(gstrip))
                 var b_sub = b_slab.tile[BK, SG_N](Int(gstrip), 0)
@@ -1652,7 +1667,7 @@ struct AppleM5MatMul[
     ](
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Storage=c_storage],
         partials_ptr: UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin],
-        num_splits: Int,
+        num_splits: Int32,
     ):
         """Sum `num_splits` fp32 partials per output element, cast, store / fuse.
 
@@ -1671,6 +1686,7 @@ struct AppleM5MatMul[
                 partial is at offset `s * M * N`.
             num_splits: Number of K splits to sum per output element.
         """
+        var _num_splits = Int(num_splits)
         # `c_type` / `elementwise_lambda_fn` are struct params -- use `Self.x`.
         var c_ptr = c.ptr
         var m = Int(c.dim[0]())
@@ -1683,7 +1699,7 @@ struct AppleM5MatMul[
 
         var acc = Float32(0)
         var mn = m * n
-        for s in range(num_splits):
+        for s in range(_num_splits):
             acc += partials_ptr[s * mn + idx]
 
         var y = acc.cast[Self.c_type]()
@@ -1824,8 +1840,8 @@ def enqueue_apple_matmul[
 
     # Per-axis next-pow2 grid for rectangular Z-order. e.g. 32x224 (Llama-3
     # MLP up-proj) -> 32x256 = 8192 launches vs the prior square 256x256 = 65536.
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     # Split-K routing. `force_split_k` overrides the heuristic; when unset, the
     # heuristic routes under-occupied shapes -- few 64x64 output tiles but deep
@@ -1834,7 +1850,7 @@ def enqueue_apple_matmul[
     # recovers 1.4-2.9x there (measured, M5 Max). The threshold is conservative;
     # normal shapes (many tiles) take the single-pass launch below.
     var tiles = grid_m * grid_n
-    var num_strips = (k + MM.BK - 1) // MM.BK
+    var num_strips = ceildiv(k, MM.BK)
     var route_split_k = force_split_k.value() if force_split_k else (
         tiles <= 16 and num_strips >= 32 and num_strips >= 8 * tiles
     )
@@ -2054,8 +2070,8 @@ def enqueue_apple_conv2d[
         in_elems,
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0
@@ -2074,7 +2090,7 @@ def enqueue_apple_conv2d[
     # alignment can be lifted to a comptime kernel parameter without a per-shape
     # recompile. `c_aligned` lets the kernel DCE the per-element slow gather on
     # the interior strips (see `_load_a_im2col_fragment_x2`).
-    @parameter
+    @__parameter
     def _launch[c_aligned: Bool]() raises:
         comptime kernel = MM.run_conv[
             type_of(c).LayoutType,
@@ -2187,8 +2203,8 @@ def enqueue_apple_matmul_split_k[
             n <= 65535, "Apple matmul (NN): N must fit in UInt16; got N=", n
         )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
     var side_m = 1
     var log2_m: UInt32 = 0
     while side_m < grid_m:
@@ -2202,10 +2218,10 @@ def enqueue_apple_matmul_split_k[
 
     # Cap splits so none is empty: distribute BK-strips evenly (round up), then
     # recompute how many splits that actually fills.
-    var num_strips = (k + MM.BK - 1) // MM.BK
+    var num_strips = ceildiv(k, MM.BK)
     var hint = max(1, num_splits_hint)
-    var strips_per_split = (num_strips + hint - 1) // hint
-    var actual_splits = (num_strips + strips_per_split - 1) // strips_per_split
+    var strips_per_split = ceildiv(num_strips, hint)
+    var actual_splits = ceildiv(num_strips, strips_per_split)
     var k_per_split = strips_per_split * MM.BK
 
     var partials = ctx.enqueue_create_buffer[DType.float32](
@@ -2254,7 +2270,7 @@ def enqueue_apple_matmul_split_k[
             b,
             log2_m,
             log2_n,
-            k_per_split,
+            Int32(k_per_split),
             grid_dim=(side_m * side_n * actual_splits),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2265,11 +2281,10 @@ def enqueue_apple_matmul_split_k[
             b,
             log2_m,
             log2_n,
-            k_per_split,
+            Int32(k_per_split),
             grid_dim=(side_m * side_n * actual_splits),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
-
     comptime reduce_kernel = MM.run_split_k_reduce[
         type_of(c).LayoutType, type_of(c).Storage
     ]
@@ -2277,8 +2292,8 @@ def enqueue_apple_matmul_split_k[
     ctx.enqueue_function[reduce_kernel](
         c,
         partials.unsafe_ptr(),
-        actual_splits,
-        grid_dim=((n_elems + MM.REDUCE_BLOCK - 1) // MM.REDUCE_BLOCK),
+        Int32(actual_splits),
+        grid_dim=(ceildiv(n_elems, MM.REDUCE_BLOCK)),
         block_dim=(MM.REDUCE_BLOCK),
     )
     # Keep the workspace alive until both launches are enqueued.
@@ -2332,8 +2347,8 @@ def enqueue_apple_matmul_clamp_chain[
         ),
     )
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
     var side_m = 1
     var log2_m: UInt32 = 0
     while side_m < grid_m:
@@ -2414,8 +2429,8 @@ def enqueue_apple_matmul_clamp_chain[
             b,
             log2_m,
             log2_n,
-            0,
-            strips_pass0,
+            Int32(0),
+            Int32(strips_pass0),
             grid_dim=(grid_dim),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2425,8 +2440,8 @@ def enqueue_apple_matmul_clamp_chain[
             b,
             log2_m,
             log2_n,
-            strips_pass0,
-            num_strips,
+            Int32(strips_pass0),
+            Int32(num_strips),
             grid_dim=(grid_dim),
             block_dim=(MM.THREADS_PER_BLOCK),
         )
@@ -2437,8 +2452,8 @@ def enqueue_apple_matmul_clamp_chain[
         b,
         log2_m,
         log2_n,
-        0,
-        strips_pass0,
+        Int32(0),
+        Int32(strips_pass0),
         grid_dim=(grid_dim),
         block_dim=(MM.THREADS_PER_BLOCK),
     )
@@ -2448,8 +2463,8 @@ def enqueue_apple_matmul_clamp_chain[
         b,
         log2_m,
         log2_n,
-        strips_pass0,
-        num_strips,
+        Int32(strips_pass0),
+        Int32(num_strips),
         grid_dim=(grid_dim),
         block_dim=(MM.THREADS_PER_BLOCK),
     )

@@ -285,6 +285,22 @@ def test_construction_from_iterable_unicode() raises:
 #    # assert_equal(most_common[1][1][Int], 2)
 
 
+def test_most_common_clamps() raises:
+    var c = Counter[Int](1, 1, 2)
+
+    # Asking for more elements than the counter holds returns all of them,
+    # like Python's `Counter.most_common`.
+    var top = c.most_common(5)
+    assert_equal(len(top), 2)
+    assert_equal(top[0]._value, 1)
+    assert_equal(top[0]._count, 2)
+    assert_equal(top[1]._value, 2)
+    assert_equal(top[1]._count, 1)
+
+    assert_equal(len(c.most_common(0)), 0)
+    assert_equal(len(c.most_common(-1)), 0)
+
+
 # def test_eq_and_ne() raises:
 #     var c1 = Counter[String]()
 #     c1["a"] = 1

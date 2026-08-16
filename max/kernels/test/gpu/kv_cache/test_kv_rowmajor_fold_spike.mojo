@@ -75,15 +75,15 @@ one-TMA-per-multi-atom-row-page is not achievable as designed.
 B200-only (SM100 TMA). Single block / single elected thread, no cluster setup.
 """
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from std.gpu.memory import (
-    AddressSpace,
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from max.gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
-from std.memory import unsafe_memset_zero, stack_allocation
+from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
+from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.sys import has_nvidia_gpu_accelerator, size_of
 from std.utils.index import Index, IndexList
 
@@ -189,7 +189,7 @@ def _rowmajor_fold_spike_kernel[
     var smem_ref = smem_base
     var smem_test = smem_base + smem_elems
 
-    var mbar = stack_allocation[
+    var mbar = unsafe_stack_allocation[
         1,
         SharedMemBarrier,
         alignment=8,

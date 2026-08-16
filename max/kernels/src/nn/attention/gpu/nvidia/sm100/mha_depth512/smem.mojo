@@ -36,7 +36,7 @@ count when (BN//2)*BK0 == BK1*(ov_depth//4).
 """
 
 from std.sys import size_of
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,

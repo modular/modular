@@ -37,8 +37,6 @@ from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
 
 
-from std.gpu.memory import AddressSpace
-
 from layout import TensorLayout, TileTensor
 from layout.coord import Coord
 from layout.tensor_storage import TensorStorage
@@ -94,12 +92,12 @@ def _channel_weights[
 ](
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
     d: Int,
-) -> SIMD[weight_dtype, WIDTH]:
-    """Load channel `d`'s `WIDTH` conv weights into a register SIMD vector.
+) -> Array[Scalar[weight_dtype], WIDTH]:
+    """Load channel `d`'s `WIDTH` conv weights into a register buffer.
 
     Factored out of the fwd / update GPU kernels, which each preloaded the
     per-channel weights into a fixed 8-wide SIMD. The width is now the exact
-    comptime `WIDTH` (no magic 8), so the vector holds exactly the taps used.
+    comptime `WIDTH` (no magic 8), so the buffer holds exactly the taps used.
 
     Parameters:
         weight_dtype: The weight element type.
@@ -111,12 +109,15 @@ def _channel_weights[
         d: The channel index.
 
     Returns:
-        A `WIDTH`-wide SIMD of channel `d`'s weights, tap `w_idx` at lane
+        A `WIDTH`-element `Array` of channel `d`'s weights, tap `w_idx` at index
         `w_idx`.
     """
-    # Tap axis is unit-stride, so the WIDTH taps load in one shot; `alignment=1`
-    # tolerates non-power-of-2 widths (the op dispatches WIDTH in {1, 2, 3, 4}).
-    return weight.load[width=WIDTH, alignment=1](Coord(d, 0))
+    # WIDTH dispatches in {1, 2, 3, 4}; 3 is not a valid SIMD width, and every
+    # consumer indexes the taps one lane at a time, so hold them in an Array.
+    var weights = Array[Scalar[weight_dtype], WIDTH](fill=0)
+    comptime for w_idx in range(WIDTH):
+        weights[w_idx] = weight.load[width=1, alignment=1](Coord(d, w_idx))
+    return weights^
 
 
 # ============================================================================
@@ -608,9 +609,13 @@ def causal_conv1d_varlen_fwd_cpu[
                         )
                         val = Scalar[conv_states_dtype](x.raw_load(x_offset))
                     elif use_initial_state:
-                        # Carry over from initial state
-                        var state_idx = width_minus_1 + src_l - (width_minus_1)
-                        if state_idx >= 0 and state_idx < width_minus_1:
+                        # Carry over from initial state. `src_l` is negative
+                        # here, and the same mapping the convolution above uses
+                        # for negative positions applies: state index
+                        # `width_minus_1 + src_l`, which is in range because
+                        # `src_l >= -width_minus_1`.
+                        var state_idx = width_minus_1 + src_l
+                        if state_idx >= 0:
                             var state_offset = (
                                 UInt32(cache_idx) * conv_states_batch_stride
                                 + UInt32(d) * conv_states_dim_stride
@@ -834,10 +839,10 @@ def causal_conv1d_varlen_states_gpu[
     cu_seqlens_LT: TensorLayout,
     states_LT: TensorLayout,
 ](
-    total_tokens: Int,
-    dim: Int,
-    batch: Int,
-    state_len: Int,
+    total_tokens: Int32,
+    dim: Int32,
+    batch: Int32,
+    state_len: Int32,
     x: TileTensor[
         x_dtype, x_LT, MutUntrackedOrigin
     ],  # Shape (total_tokens, dim)
@@ -882,6 +887,10 @@ def causal_conv1d_varlen_states_gpu[
         states_dim_stride: Stride for dimension in states.
         states_seqlen_stride: Stride for sequence in states.
     """
+    var _total_tokens = Int(total_tokens)
+    var _dim = Int(dim)
+    var _batch = Int(batch)
+    var _state_len = Int(state_len)
     var batch_idx = block_idx.z
     var block_row = block_idx.y
     var block_col = block_idx.x
@@ -891,7 +900,7 @@ def causal_conv1d_varlen_states_gpu[
     # Load sequence boundaries
     var end_idx = Int(cu_seqlens.raw_load(batch_idx + 1))
     var start_idx_seq = Int(cu_seqlens.raw_load(batch_idx))
-    var start_idx = max(start_idx_seq, end_idx - state_len)
+    var start_idx = max(start_idx_seq, end_idx - _state_len)
 
     # Calculate row indices (processing from end backwards)
     var row = end_idx - (block_row * BLOCK_M + tid_row + 1)
@@ -899,17 +908,17 @@ def causal_conv1d_varlen_states_gpu[
 
     # Load value from x if in valid range
     var val: Scalar[states_dtype] = 0
-    if row >= start_idx and col < dim:
+    if row >= start_idx and col < _dim:
         var x_offset = (
             UInt32(row) * x_seqlen_stride + UInt32(col) * x_dim_stride
         )
         val = Scalar[states_dtype](x.raw_load(x_offset))
 
     # Calculate state row index
-    var states_row = state_len - (block_row * BLOCK_M + tid_row + 1)
+    var states_row = _state_len - (block_row * BLOCK_M + tid_row + 1)
 
     # Store to states if in valid range
-    if states_row >= 0 and col < dim:
+    if states_row >= 0 and col < _dim:
         var states_offset = (
             UInt32(batch_idx) * states_batch_stride
             + UInt32(col) * states_dim_stride
@@ -939,9 +948,9 @@ def causal_conv1d_varlen_fwd_gpu[
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    dim: Int,
-    total_seqlen: Int,
-    batch: Int,
+    dim: Int32,
+    total_seqlen: Int32,
+    batch: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
     bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
@@ -984,6 +993,9 @@ def causal_conv1d_varlen_fwd_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
+    var _dim = Int(dim)
+    var _total_seqlen = Int(total_seqlen)
+    var _batch = Int(batch)
     var batch_idx = block_idx.x
     var dim_block_idx = block_idx.y
     var tid = thread_idx.x
@@ -1001,7 +1013,7 @@ def causal_conv1d_varlen_fwd_gpu[
     var seq_end = Int(query_start_loc.raw_load(batch_idx + 1))
     var seqlen = seq_end - seq_start
 
-    if d >= dim:
+    if d >= _dim:
         return
 
     # Check for initial state
@@ -1084,6 +1096,26 @@ def causal_conv1d_varlen_fwd_gpu[
                     + UInt32((seq_start + src_l)) * x_seqlen_stride
                 )
                 val = Scalar[conv_states_dtype](x.raw_load(x_offset))
+            elif use_initial_state:
+                # A chunk shorter than WIDTH_MINUS_1 does not contain the whole
+                # new state: the oldest entries have to come from the state
+                # being continued, under the same negative-position mapping the
+                # convolution above uses. Zero here would silently restart the
+                # sequence on every decode step.
+                #
+                # This reads the pool it is writing, which is safe because the
+                # index read simplifies to `seqlen + s` -- strictly AHEAD of the
+                # `s` being written, and this loop runs `s` upwards. Reordering
+                # it would turn the carry-over into a read of a just-written
+                # entry.
+                var state_idx = WIDTH_MINUS_1 + src_l
+                if state_idx >= 0:
+                    var prev_offset = (
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
+                    )
+                    val = conv_states.raw_load(prev_offset)
 
             var state_offset = (
                 UInt32(cache_idx) * conv_states_batch_stride
@@ -1114,9 +1146,9 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    dim: Int,
-    total_seqlen: Int,
-    batch: Int,
+    dim_dev: Int32,
+    total_seqlen_dev: Int32,
+    batch_dev: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
     bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
@@ -1178,6 +1210,11 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
+    # `Int` is not device-passable; widen the fixed-width args. Only `dim` is
+    # read in this variant; the other two match the serial kernel's signature.
+    var dim = Int(dim_dev)
+    _ = total_seqlen_dev
+    _ = batch_dev
     var batch_idx = block_idx.x
     var dim_block_idx = block_idx.y
     var tid = thread_idx.x
@@ -1293,6 +1330,19 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
                     + UInt32((seq_start + src_l)) * x_seqlen_stride
                 )
                 val = Scalar[conv_states_dtype](x.raw_load(x_offset))
+            elif use_initial_state:
+                # See the same carry-over in `causal_conv1d_varlen_fwd_gpu`: a
+                # chunk shorter than WIDTH_MINUS_1 takes its oldest state
+                # entries from the state being continued, and the index read is
+                # `seqlen + s`, ahead of the `s` written here.
+                var state_idx = WIDTH_MINUS_1 + src_l
+                if state_idx >= 0:
+                    var prev_offset = (
+                        UInt32(cache_idx) * conv_states_batch_stride
+                        + UInt32(d) * conv_states_dim_stride
+                        + UInt32(state_idx) * conv_states_width_stride
+                    )
+                    val = conv_states.raw_load(prev_offset)
 
             var state_offset = (
                 UInt32(cache_idx) * conv_states_batch_stride
@@ -1320,10 +1370,10 @@ def causal_conv1d_varlen_update_gpu[
     conv_state_indices_LT: TensorLayout,
     output_LT: TensorLayout,
 ](
-    batch: Int,
-    dim: Int,
-    seqlen: Int,
-    state_len: Int,
+    batch: Int32,
+    dim: Int32,
+    seqlen: Int32,
+    state_len: Int32,
     x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin],
     weight: TileTensor[weight_dtype, weight_LT, MutUntrackedOrigin],
     bias: TileTensor[bias_dtype, bias_LT, MutUntrackedOrigin],
@@ -1360,6 +1410,10 @@ def causal_conv1d_varlen_update_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
+    var _batch = Int(batch)
+    var _dim = Int(dim)
+    var _seqlen = Int(seqlen)
+    var _state_len = Int(state_len)
     var batch_idx = block_idx.x
     var dim_block_idx = block_idx.y
     var tid = thread_idx.x
@@ -1372,10 +1426,10 @@ def causal_conv1d_varlen_update_gpu[
         if state_idx_val == pad_slot_id:
             return
 
-    if d >= dim:
+    if d >= _dim:
         return
 
-    # Get state batch index
+    # Get state _batch index
     var state_batch_idx: Int = batch_idx
     if has_conv_state_indices != 0:
         state_batch_idx = Int(conv_state_indices.raw_load(batch_idx))
@@ -1390,7 +1444,7 @@ def causal_conv1d_varlen_update_gpu[
 
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
-    for l in range(seqlen):
+    for l in range(_seqlen):
         # Get cache position
         var cache_offset = 0
         if has_cache_seqlens != 0:
@@ -1409,12 +1463,12 @@ def causal_conv1d_varlen_update_gpu[
                 var state_pos: Int
                 if has_cache_seqlens != 0:
                     state_pos = (
-                        cache_offset + rel_pos + l + state_len
-                    ) % state_len
+                        cache_offset + rel_pos + l + _state_len
+                    ) % _state_len
                 else:
                     state_pos = WIDTH_MINUS_1 + rel_pos + l
 
-                if state_pos >= 0 and state_pos < state_len:
+                if state_pos >= 0 and state_pos < _state_len:
                     var state_offset = (
                         UInt32(state_batch_idx) * conv_state_batch_stride
                         + UInt32(d) * conv_state_dim_stride
@@ -1426,7 +1480,7 @@ def causal_conv1d_varlen_update_gpu[
             else:
                 # From x
                 var x_l = rel_pos + l
-                if x_l >= 0 and x_l < seqlen:
+                if x_l >= 0 and x_l < _seqlen:
                     var x_offset = (
                         UInt32(batch_idx) * x_batch_stride
                         + UInt32(d) * x_dim_stride
@@ -1458,9 +1512,9 @@ def causal_conv1d_varlen_update_gpu[
 
         var state_pos: Int
         if has_cache_seqlens != 0:
-            state_pos = (cache_offset + l) % state_len
+            state_pos = (cache_offset + l) % _state_len
         else:
-            state_pos = state_len - seqlen + l
+            state_pos = _state_len - _seqlen + l
 
         var state_offset = (
             UInt32(state_batch_idx) * conv_state_batch_stride

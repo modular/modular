@@ -36,10 +36,10 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx
 from layout.tile_layout import row_major
-from std.memory import UnsafePointer
+from std.memory import UnsafePointer, dealloc
 from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
@@ -105,10 +105,14 @@ def bench_dispatch[
     ctx.enqueue_memset(recv_count_buf, UInt64.MAX_FINITE)
     ctx.enqueue_memset(atomic_counter, Int32(0))
 
-    var host_topk_ids = alloc[Int32](n_tokens_per_rank * top_k)
+    # These host buffers are intentionally leaked (no free in the original
+    # code): async `enqueue_copy` reads them, so they must outlive this scope.
+    var host_topk_ids = alloc[Int32](
+        {count = n_tokens_per_rank * top_k}
+    ).into_managed()
     var host_input_tokens = alloc[Scalar[input_type]](
-        n_tokens_per_rank * hidden_size
-    )
+        {count = n_tokens_per_rank * hidden_size}
+    ).into_managed()
     var device_topk_buf = ctx.enqueue_create_buffer[DType.int32](
         n_tokens_per_rank * top_k
     )
@@ -162,27 +166,34 @@ def bench_dispatch[
     # Initialize the topk ids and input tokens using fixed seed,
     # so that we can reproduce the results later on other ranks.
     seed(Int(my_rank) * n_ranks)
-    randint(host_topk_ids, n_tokens_per_rank * top_k, 0, n_experts - 1)
+    randint(host_topk_ids.unsafe_span(), 0, n_experts - 1)
 
     # The topk ids for a token is the expert id it needs to be sent to.
     # Since a token won't be sent to the same expert multiple times, we
     # need to legalize the topk ids to make sure they are unique for
     # each token.
-    legalize_topk_ids[n_experts, top_k](host_topk_ids, n_tokens_per_rank)
+    legalize_topk_ids[n_experts, top_k](
+        host_topk_ids.unsafe_ptr(), n_tokens_per_rank
+    )
 
     seed(Int(my_rank) * n_ranks)
-    randn(host_input_tokens, n_tokens_per_rank * hidden_size)
+    randn(host_input_tokens.unsafe_span())
 
-    ctx.enqueue_copy(device_topk_buf, host_topk_ids)
-    ctx.enqueue_copy(device_input_buf, host_input_tokens)
+    ctx.enqueue_copy(device_topk_buf, host_topk_ids.unsafe_span())
+    ctx.enqueue_copy(device_input_buf, host_input_tokens.unsafe_span())
+
+    # synchronize before deallocating the host buffers
+    ctx.synchronize()
+    dealloc(host_topk_ids^)
+    dealloc(host_input_tokens^)
 
     @always_inline
-    @parameter
+    @__parameter
     def clean_up(ctx: DeviceContext) raises:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     @always_inline
-    @parameter
+    @__parameter
     def setup_and_run_benchmark[
         TokenFmtType: TokenFormat,
         FormatHandlerType: TokenFormat,
@@ -232,7 +243,7 @@ def bench_dispatch[
         var func_wait = ctx.compile_function[dispatch_wait]()
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
             var recv_buf_ptrs: Array[UnsafePointer[UInt8, MutAnyOrigin], 1] = [
@@ -256,7 +267,7 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_dispatch_async_wait(ctx: DeviceContext) raises:
             ctx.enqueue_function(
                 func_wait,
@@ -273,7 +284,7 @@ def bench_dispatch[
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def run_e2e(ctx: DeviceContext) raises:
             run_dispatch_async(ctx)
             run_dispatch_async_wait(ctx)
@@ -281,20 +292,19 @@ def bench_dispatch[
         shmem_barrier_all_on_stream(ctx.stream())
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func() raises:
             run_e2e(ctx)
             clean_up(ctx)
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises {imm}:
                 run_func()
 
-            bencher_iter_custom[kernel_launch](b, ctx)
+            bencher_iter_custom(b, kernel_launch, ctx)
 
         var input_id_parts = String(
             "n_tokens_per_rank=",

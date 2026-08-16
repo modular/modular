@@ -533,13 +533,13 @@ def test_blocked_product() raises:
     assert_equal(String(bp0), "(((2, 3), (5, 4)):((5, 10), (1, 30)))")
     var cm_M = 8
     var cm_K = 8
-    core_matrix = Layout.row_major(cm_M, cm_K)
+    var core_matrix = Layout.row_major(cm_M, cm_K)
     var t_M = 2
     var t_K = 3
     var bp1 = blocked_product(core_matrix^, Layout.col_major(t_M, t_K))
     # ((cm_M,         t_M), (cm_K,               t_K)):
     # ((cm_K, cm_M * cm_K), (1,    t_M * cm_M * cm_K))
-    reference_bp1 = Layout(
+    var reference_bp1 = Layout(
         IntTuple(IntTuple(cm_M, t_M), IntTuple(cm_K, t_K)),
         IntTuple(IntTuple(cm_K, cm_M * cm_K), IntTuple(1, t_M * cm_M * cm_K)),
     )
@@ -638,10 +638,10 @@ def test_zipped_divide() raises:
     assert_equal(String(zd0), "(((2, 2), (2, 2)):((4, 1), (8, 2)))")
 
     # Resemble the case for distributing a tile over warp group.
-    tile_layout = Layout(
+    var tile_layout = Layout(
         IntTuple(IntTuple(16, 64), 4), IntTuple(IntTuple(128, 2), 2048)
     )
-    thread_layout = Layout(
+    var thread_layout = Layout(
         IntTuple(IntTuple(8, 4), 4), IntTuple(IntTuple(4, 1), 32)
     )
     assert_equal(

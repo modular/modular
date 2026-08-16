@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from std.gpu.host import DeviceContext, Dim
-from std.gpu.host._nvidia_cuda import (
+from max.gpu.host import DeviceContext, Dim
+from max.gpu.host._nvidia_cuda import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,
@@ -101,15 +101,9 @@ def _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     def vec_add_sig(
-        # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a
-        # safe `Pointer`.
-        # GPU kernel entry params: `enqueue_function` lowers the DeviceBuffer
-        # args to `UnsafePointer` (their `device_type`) and matches the declared
-        # param type exactly, so these stay `UnsafePointer` (safe `Pointer`
-        # won't match).
-        in0: UnsafePointer[Float32, MutAnyOrigin],
-        in1: UnsafePointer[Float32, MutAnyOrigin],
-        output: UnsafePointer[Float32, MutAnyOrigin],
+        in0: Pointer[Float32, MutAnyOrigin],
+        in1: Pointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass
@@ -174,13 +168,13 @@ $L__BB0_2:
     comptime LEN = 1024
     comptime BLOCK_DIM = 32
 
-    lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var lhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     lhs.enqueue_fill(2.0)
-    rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var rhs = ctx.enqueue_create_buffer[DType.float32](LEN)
     rhs.enqueue_fill(1.0)
-    out = ctx.enqueue_create_buffer[DType.float32](LEN)
+    var out = ctx.enqueue_create_buffer[DType.float32](LEN)
 
-    func = ctx.load_function[vec_add_sig](
+    var func = ctx.load_function[vec_add_sig](
         function_name="_Z9vectorAddPKfS0_Pfi",
         asm=ptx,
     )
@@ -216,13 +210,7 @@ def _run_cuda_external_function_distinct_entry_points(
     print("_run_cuda_external_function_distinct_entry_points()")
 
     def kernel_sig(
-        # TODO(MSTDL-2875): Remove once a DeviceBuffer's `device_type` can be a
-        # safe `Pointer`.
-        # GPU kernel entry param: `enqueue_function` lowers the DeviceBuffer
-        # arg to `UnsafePointer` (its `device_type`) and matches the declared
-        # param type exactly, so this stays `UnsafePointer` (safe `Pointer`
-        # won't match).
-        output: UnsafePointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, MutAnyOrigin],
         len: Int,
     ):
         pass
