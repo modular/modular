@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -101,7 +101,6 @@ def run_causal_conv1d_gpu[
     var input_buf = input_h
     var weight_buf = weight_h
     var bias_buf = bias_h
-    var result_gpu_buf = result_gpu_h
     var result_cpu_buf = result_cpu_h
 
     # Strides for channel-first layout (B, C, L)
@@ -169,24 +168,6 @@ def run_causal_conv1d_gpu[
         ctx.enqueue_copy(weight_device, weight_buf.ptr)
         ctx.enqueue_copy(bias_device, bias_buf.ptr)
 
-    # Create device LayoutTensors
-    var input_device_tensor = LayoutTensor[dtype, layout_3d](
-        input_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, layout_2d](
-        weight_device,
-        RuntimeLayout[layout_2d].row_major(Index(dim, width)),
-    )
-    var bias_device_tensor = LayoutTensor[dtype, layout_1d](
-        bias_device,
-        RuntimeLayout[layout_1d].row_major(Index(dim)),
-    )
-    var output_device_tensor = LayoutTensor[dtype, layout_3d](
-        output_device,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
         input_device,
@@ -232,10 +213,10 @@ def run_causal_conv1d_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
                 input_device_tt,
                 weight_device_tt,
                 output_device_tt,
@@ -274,10 +255,10 @@ def run_causal_conv1d_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
                 input_device_tt,
                 weight_device_tt,
                 output_device_tt,
@@ -316,10 +297,10 @@ def run_causal_conv1d_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
                 input_device_tt,
                 weight_device_tt,
                 output_device_tt,
@@ -358,10 +339,10 @@ def run_causal_conv1d_gpu[
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
                 input_device_tt,
                 weight_device_tt,
                 output_device_tt,

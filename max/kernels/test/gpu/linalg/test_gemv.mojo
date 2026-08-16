@@ -16,7 +16,7 @@ from std.random import randn, seed, random_float64
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.sys import simd_width_of
 from linalg.gemv import gemv_kernel, gemv_split_k, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
@@ -74,7 +74,7 @@ def run_matvec[
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[c_type, a_type, b_type]
 
@@ -82,15 +82,15 @@ def run_matvec[
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
             c_type,
@@ -103,9 +103,9 @@ def run_matvec[
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -215,11 +215,11 @@ def run_matvec_with_epilogue_fn(
 
     var const_val: Float32 = 4.0
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device_nd, const_val)
     def epilogue_fn[
-        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         c_device_nd.store[width=width](
             Coord(idx),
@@ -231,7 +231,7 @@ def run_matvec_with_epilogue_fn(
     comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gemv(ctx: DeviceContext) raises:
         comptime kernel = gemv_kernel[
             DType.float32,
@@ -245,15 +245,15 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gevm(ctx: DeviceContext) raises:
         comptime kernel = gevm_kernel[
             DType.float32,
@@ -268,9 +268,9 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(N, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -278,6 +278,7 @@ def run_matvec_with_epilogue_fn(
     ctx.enqueue_copy(c_device, c_host)
 
     var kernelType: StaticString
+    var nstime: Float64
     if N == 1:
         run_func_gemv(ctx)
         ctx.enqueue_copy(c_host, c_device)
@@ -307,7 +308,7 @@ def run_matvec_with_epilogue_fn(
     comptime BLOCK_DIM = 16
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel[
             DType.float32,
@@ -322,9 +323,9 @@ def run_matvec_with_epilogue_fn(
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
@@ -356,12 +357,15 @@ def run_split_k_gemm[
     N: Int,
     K: Int,
     with_epilogue: Bool,
+    a_type: DType = DType.float32,
+    b_type: DType = DType.float32,
     tile_n: Int = 2,
     tile_m: Int = 1,
+    num_threads: Int = 128,
+    weight_non_temporal: Bool = True,
 ](*, ctx: DeviceContext) raises:
-    comptime a_type = DType.float32
-    comptime num_threads = 128
-    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime c_type = DType.float32
+    comptime simd_width = simd_width_of[c_type, target=get_gpu_target()]()
     comptime check_bounds_n = N % tile_n != 0
     # The grid covers ceildiv(M, tile_m) * tile_m rows, so tile_m > 1 needs
     # the row guard (tile_m == 1 covers M exactly).
@@ -372,10 +376,18 @@ def run_split_k_gemm[
 
     seed(seed_val)
 
-    var a_host = alloc[Float32](M * K)
-    var w_host = alloc[Float32](N * K)
-    randn(a_host, M * K)
-    randn(w_host, N * K)
+    var a_host = alloc[Scalar[a_type]](M * K)
+    var w_host = alloc[Scalar[b_type]](N * K)
+    comptime if a_type == DType.float32:
+        randn(a_host, M * K)
+    else:
+        for i in range(M * K):
+            a_host[i] = random_float64(min=-1.0, max=1.0).cast[a_type]()
+    comptime if b_type == DType.float32:
+        randn(w_host, N * K)
+    else:
+        for i in range(N * K):
+            w_host[i] = random_float64(min=-1.0, max=1.0).cast[b_type]()
 
     var row_stride = N + row_pad
     var c_elems = M * row_stride
@@ -386,8 +398,8 @@ def run_split_k_gemm[
         c_expected[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
-    var w_device = ctx.enqueue_create_buffer[a_type](N * K)
-    var c_device = ctx.enqueue_create_buffer[a_type](c_elems)
+    var w_device = ctx.enqueue_create_buffer[b_type](N * K)
+    var c_device = ctx.enqueue_create_buffer[c_type](c_elems)
 
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(w_device, w_host)
@@ -399,30 +411,34 @@ def run_split_k_gemm[
 
     comptime if with_epilogue:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(c_nd)
         def epilogue_fn[
-            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+            dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]):
             c_nd.store[width=width](
                 Coord(idx),
-                rebind[SIMD[a_type, width]](
+                rebind[SIMD[c_type, width]](
                     val + SIMD[dtype, width](const_val)
                 ),
             )
 
         comptime kernel = gemv_split_k[
+            c_type,
             a_type,
-            a_type,
-            a_type,
+            b_type,
             type_of(c_nd).LayoutType,
             type_of(a_nd).LayoutType,
             type_of(w_nd).LayoutType,
+            type_of(c_nd).Storage,
+            type_of(a_nd).Storage,
+            type_of(w_nd).Storage,
             simd_width=simd_width,
             tile_m=tile_m,
             tile_n=tile_n,
             num_threads=num_threads,
+            weight_non_temporal=weight_non_temporal,
             elementwise_lambda_fn=epilogue_fn,
             check_bounds_m=check_bounds_m,
             check_bounds_n=check_bounds_n,
@@ -433,24 +449,28 @@ def run_split_k_gemm[
             c_nd,
             a_nd,
             w_nd,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
     else:
         comptime kernel = gemv_split_k[
+            c_type,
             a_type,
-            a_type,
-            a_type,
+            b_type,
             type_of(c_nd).LayoutType,
             type_of(a_nd).LayoutType,
             type_of(w_nd).LayoutType,
+            type_of(c_nd).Storage,
+            type_of(a_nd).Storage,
+            type_of(w_nd).Storage,
             simd_width=simd_width,
             tile_m=tile_m,
             tile_n=tile_n,
             num_threads=num_threads,
+            weight_non_temporal=weight_non_temporal,
             check_bounds_m=check_bounds_m,
             check_bounds_n=check_bounds_n,
         ]
@@ -458,9 +478,9 @@ def run_split_k_gemm[
             c_nd,
             a_nd,
             w_nd,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n)),
             block_dim=num_threads,
         )
@@ -485,7 +505,10 @@ def run_split_k_gemm[
         for n in range(N):
             var acc = Float32(0)
             for kk in range(K):
-                acc += a_host[m * K + kk] * w_host[n * K + kk]
+                acc += (
+                    a_host[m * K + kk].cast[DType.float32]()
+                    * w_host[n * K + kk].cast[DType.float32]()
+                )
             comptime if with_epilogue:
                 c_expected[m * row_stride + n] = acc + const_val
             else:
@@ -550,3 +573,84 @@ def main() raises:
         run_split_k_gemm[5, 126, 2048, with_epilogue=False, tile_n=4, tile_m=2](
             ctx=ctx
         )
+
+        # Mixed router GEMV: bf16 activations, fp32 weights/output, and the
+        # production launch configuration.
+        run_split_k_gemm[
+            2,
+            128,
+            6144,
+            with_epilogue=False,
+            a_type=DType.bfloat16,
+            b_type=DType.float32,
+            tile_n=2,
+            tile_m=1,
+            num_threads=128,
+            weight_non_temporal=False,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            16,
+            128,
+            6144,
+            with_epilogue=False,
+            a_type=DType.bfloat16,
+            b_type=DType.float32,
+            tile_n=2,
+            tile_m=1,
+            num_threads=128,
+            weight_non_temporal=False,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            32,
+            128,
+            6144,
+            with_epilogue=False,
+            a_type=DType.bfloat16,
+            b_type=DType.float32,
+            tile_n=2,
+            tile_m=1,
+            num_threads=128,
+            weight_non_temporal=False,
+        ](ctx=ctx)
+
+        # FP32 router-GEMM dispatch shapes (small N, large K) with an epilogue,
+        # at the dispatch's tile_m buckets (tile_n=1, 256 threads). Exercises
+        # the split-K GEMV epilogue path that matmul_dispatch_sm100 now routes
+        # the FP32 router/gate GEMM to (the epilogue rides through as the
+        # elementwise_lambda_wrapper).
+        run_split_k_gemm[
+            4,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=1,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            16,
+            128,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=4,
+            num_threads=256,
+        ](ctx=ctx)
+        run_split_k_gemm[
+            8,
+            256,
+            6144,
+            with_epilogue=True,
+            tile_n=1,
+            tile_m=2,
+            num_threads=256,
+        ](ctx=ctx)

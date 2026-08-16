@@ -35,11 +35,11 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.memory import external_memory, fence_mbarrier_init
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_release_allocation_lock,
@@ -53,6 +53,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     MBarType,
     elect,
     kv_sub_tile_rows,
+    o_store_tma_blocks_per_op,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -98,6 +99,41 @@ struct SM100MHADepth512[
     MaxSeqLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
 ](TrivialRegisterPassable):
+    """Implements pair-CTA SM100 (Blackwell) multi-head attention prefill for depth=512.
+
+    Dispatches the 12-warp (3 warp-group) schedule across two cooperating CTAs:
+    softmax, correction, MMA, load, and spare warps each run a specialized
+    sub-kernel that shares a single `Depth512AttentionSMem` allocation.
+
+    Parameters:
+        KVLUTType: MHA operand describing the KV cache lookup table; its
+            `dtype` is the Q, K, V element type and its `page_size` drives
+            the KV sub-tile row counts.
+        output_type: Output `DType` of the attention result (O store).
+        MaskType: Mask type applied to the attention score tiles, such as
+            a causal mask.
+        SchedulerType: Tile scheduler that assigns work tiles to CTAs and
+            advances the per-CTA iteration state.
+        config: Depth-512 SM100 tile and pipeline configuration
+            (`Depth512SM100Config`), parameterized by the KV dtype. Holds
+            `BM`, `BN`, head counts, depths, staging, and the TMEM/SMEM
+            budget.
+        ValidLengthType: Optional pointer type for the per-batch valid
+            sequence lengths; when non-null the kernel runs in ragged
+            mode.
+        KVRowOffsetsType: Optional pointer type for the KV input row
+            offsets; when non-null used to compute the per-batch KV
+            sequence length.
+        _is_cache_length_accurate: Whether the cache length is known to
+            be accurate, letting the start position be zeroed in ragged
+            mode.
+        MaxSeqLenType: Optionally-static maximum sequence length type; a
+            static value of 1 selects decoding mode (asserted false for
+            depth-512).
+        PartitionType: KV cache partition scheme; partitioning is
+            asserted unsupported for the depth-512 pair-CTA kernel.
+    """
+
     comptime qkv_type = Self.KVLUTType.dtype
     comptime accum_type = DType.float32
 
@@ -138,7 +174,7 @@ struct SM100MHADepth512[
         )
     )
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -167,10 +203,22 @@ struct SM100MHADepth512[
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            # O output store is row-major SWIZZLE_NONE (decoupled from the
+            # swizzled Q/K/V/S/P buffers governed by `config.swizzle_mode`).
+            TensorMapSwizzle.SWIZZLE_NONE,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
+            middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
             group=Self.config.group if Self.fuse_gqa else 1,
+            # Single issuer, no combine (depth_splits=1): full-depth box, one
+            # batched rank-5 TMA. Must match dispatch.mojo's store.
+            tma_blocks_per_op=o_store_tma_blocks_per_op[
+                Self.output_type,
+                TensorMapSwizzle.SWIZZLE_NONE,
+                Self.config.ov_depth,
+                Self.config.group if Self.fuse_gqa else 1,
+                depth_splits=1,
+            ](),
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -192,19 +240,19 @@ struct SM100MHADepth512[
             not Self.PartitionType.do_partition
         ), "Partitioning not supported with depth512 pair-CTA"
 
-        mask = pack.mask
-        valid_length = pack.valid_length
-        kv_input_row_offsets = pack.kv_input_row_offsets
-        max_seq_len = pack.max_seq_len
-        partition = pack.partition
+        var mask = pack.mask
+        var valid_length = pack.valid_length
+        var kv_input_row_offsets = pack.kv_input_row_offsets
+        var max_seq_len = pack.max_seq_len
+        var partition = pack.partition
 
         var smem = Self.SmemType()
 
-        # Per-warpgroup register allocation.  Depth-512 widens the per-WG
+        # Per-warpgroup register allocation. Depth-512 widens the per-WG
         # working set vs the depth ≤ 128 path (see `kernel.mojo`), so the
         # softmax (256) and correction (184) WGs get more registers than
         # the 192/88 split there; MMA + load warps run lean at "other"
-        # (64), and the spare warps drop to the floor (24).  Sum must fit
+        # (64), and the spare warps drop to the floor (24). Sum must fit
         # in the SM register budget; bump together if a path starts
         # spilling.
         comptime num_reg_softmax = 256
@@ -226,7 +274,7 @@ struct SM100MHADepth512[
                 UInt32(Self.config.sm100_tmem_cols),
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
@@ -283,7 +331,7 @@ struct SM100MHADepth512[
             )
 
             # Compute per-CTA output write parameters.
-            gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
+            var gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
                 seq_info, max_seq_len.as_uint32()
             )
             var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)
@@ -469,7 +517,7 @@ struct SM100MHADepth512[
                 )
 
         else:
-            # Spare warps 10-11 (no-op).  24 is the floor for
+            # Spare warps 10-11 (no-op). 24 is the floor for
             # `setmaxnreg.dec` on SM90+ — drop these warps' allocation
             # to the minimum so the active WGs claim their share of the
             # SM register file.

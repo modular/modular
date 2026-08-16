@@ -14,79 +14,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-import numpy as np
 from max.driver import Buffer
-from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
-    BatchProcessor,
+    PaddedEncoderBatchProcessor,
 )
-from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
-from max.pipelines.modeling.dataprocessing import collate_batch
 
 if TYPE_CHECKING:
     from .model import BertInputs
 
 
-class BertBatchProcessor(BatchProcessor[TextContext, "BertInputs"]):
+class BertBatchProcessor(PaddedEncoderBatchProcessor["BertInputs"]):
     """Fixed-shape padded batching for encoder-only BERT models."""
 
-    def get_symbolic_inputs(
+    def _make_inputs(
         self,
         *,
-        kv_params: KVCacheParamInterface,
-        device_refs: list[DeviceRef],
-    ) -> list[TensorType | BufferType]:
-        del kv_params
-        device_ref = device_refs[0]
-        return [
-            TensorType(
-                DType.int64,
-                shape=["batch_size", "seq_len"],
-                device=device_ref,
-            ),
-            TensorType(
-                DType.float32,
-                shape=["batch_size", "seq_len"],
-                device=device_ref,
-            ),
-        ]
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
+        next_tokens_batch: Buffer,
+        attention_mask: Buffer,
     ) -> BertInputs:
         from .model import BertInputs
 
-        del kv_cache_inputs, return_n_logits
-        if len(replica_batches) > 1:
-            raise ValueError("BertBatchProcessor does not support DP>1")
-
-        context_batch = replica_batches[0]
-        device0 = self.runtime.devices[0]
-        tokens = [ctx.tokens.active for ctx in context_batch]
-        pad_value = self.runtime.pad_token_id
-        next_tokens_batch, _ = collate_batch(
-            tokens,
-            pad_value=pad_value,
-            batch_size=len(tokens),
-        )
-        attention_mask = (next_tokens_batch != pad_value).astype(np.float32)
         return BertInputs(
-            next_tokens_batch=Buffer.from_numpy(next_tokens_batch).to(device0),
-            attention_mask=Buffer.from_numpy(attention_mask).to(device0),
+            next_tokens_batch=next_tokens_batch,
+            attention_mask=attention_mask,
         )
-
-    def process_outputs(
-        self, outputs: Sequence[Buffer | object]
-    ) -> ModelOutputs:
-        assert isinstance(outputs[0], Buffer)
-        return ModelOutputs(logits=outputs[0])

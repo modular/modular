@@ -15,9 +15,14 @@
 
 from __future__ import annotations
 
+from max.dtype import DType
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from transformers import AutoConfig
+
+from .model_config import Gemma4ForConditionalGenerationConfig
 
 _GRAPH_CAPTURE_HEADROOM_BYTES = 2 * 1024**3
 
@@ -97,6 +102,23 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             principled = _ACTIVATION_SAFETY_FACTOR * tokens_per_step * width * 2
             base = min(principled, flat)
 
+        # FIXME: We arbitrarily set some memory for activation memory to leave
+        # headroom for vision processing. We should determine this in a more
+        # principled way.
+        # Smaller KV cache dtypes (e.g. FP8) halve bytes_per_block, so the
+        # same KV budget buys ~2x more blocks.  The scheduler admits work
+        # based on available blocks, so it targets larger concurrent batches
+        # whose activation tensors need proportionally more headroom.
+        # TODO(MODELS-1544): investigate high activation memory estimates
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model,
+            Gemma4ForConditionalGenerationConfig.DEFAULT_ENCODING,
+        )
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
+        base = (30 // cache_dtype.size_in_bytes) * 1024**3
         if pipeline_config.runtime.device_graph_capture:
             base += _GRAPH_CAPTURE_HEADROOM_BYTES
         return base * num_devices
@@ -136,5 +158,26 @@ class Gemma4MemoryPlanner(PagedMemoryPlanner):
             return 0
         k = vision_config.pooling_kernel_size
         max_tokens = vision_config.position_embedding_size // (k * k)
-        hidden = text_config.hidden_size
-        return max_tokens * hidden * 2  # bfloat16
+        spec = self.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden, dtype = spec
+        return max_tokens * hidden * dtype.size_in_bytes
+
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: AutoConfig,
+    ) -> tuple[int, DType] | None:
+        """One embedding row per merged vision token: text hidden, bfloat16.
+
+        ``None`` for the text-only ``gemma4_unified`` checkpoints, which
+        have no vision cache.
+        """
+        if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
+            return None
+        text_config = getattr(huggingface_config, "text_config", None)
+        if text_config is None:
+            raise ValueError(
+                "Gemma4 requires a text_config in the HuggingFace config"
+            )
+        return (text_config.hidden_size, DType.bfloat16)

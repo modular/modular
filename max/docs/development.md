@@ -6,12 +6,12 @@ you plan to contribute changes back to the repo, first read everything in
 
 If you just want to build with MAX and aren't interested in developing in the
 source code, instead see the [MAX quickstart
-guide](https://docs.modular.com/max/get-started).
+guide](https://docs.modular.com/get-started).
 
 ## Set up your environment
 
 First, make sure your system meets the
-[MAX system requirements](https://docs.modular.com/max/packages#system-requirements).
+[MAX system requirements](https://docs.modular.com/packages#system-requirements).
 The same requirements that apply to the `modular` package apply to developing in
 this repo.
 
@@ -150,19 +150,19 @@ existing models, you can use the following Bazel commands to run inference.
 
 For example, this `entrypoints:pipelines generate` command is equivalent to
 running inference with [`max
-generate`](https://docs.modular.com/max/cli/generate):
+generate`](https://docs.modular.com/cli/generate):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- generate \
+./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --prompt "Hello, world!"
 ```
 
 And this is equivalent to creating an endpoint with [`max
-serve`](https://docs.modular.com/max/cli/serve):
+serve`](https://docs.modular.com/cli/serve):
 
 ```bash
-./bazelw run //max/python/max/entrypoints:pipelines -- serve \
+./bazelw run //max/python/max/_entrypoints:pipelines -- serve \
   --model OpenGVLab/InternVL3-8B-Instruct \
   --trust-remote-code
 ```

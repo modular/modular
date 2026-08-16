@@ -14,26 +14,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
 )
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import AutoConfig, PretrainedConfig
 from typing_extensions import Self, override
@@ -92,6 +101,17 @@ class Gemma4TextConfig(Gemma3Config):
     num_kv_shared_layers: int = 0
     """An optimization used in smaller models to share the kv cache across layers."""
 
+    fused_projection_weights: bool = False
+    """Load MLP gate/up and attention qkv/qk projections pre-fused (DISTINF-194).
+
+    When true (single-device, non-quantized only), each decoder layer's MLP uses
+    :class:`~max.nn.FusedMLP` (one ``gate_up_proj_fused`` weight) and attention
+    uses ``StackedLinear(stacked=True)`` (one ``qkv_proj``/``qk_proj`` weight),
+    and the weight adapter concatenates the checkpoint projections accordingly.
+    Avoids the in-graph concat the compiler would otherwise hoist to model init
+    and materialize as a second on-device copy. The gen-mef build tool sets
+    this after config finalization when ``--engine-owned-weights`` is enabled."""
+
     enable_moe_block: bool = False
     """If the model uses MOE."""
 
@@ -115,6 +135,14 @@ class Gemma4TextConfig(Gemma3Config):
 
     sliding_window_rope_theta: float = 10000.0
     """Rope theta used for the RoPE embeddings used in sliding window attention."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """Which hidden states the text model returns alongside logits."""
+
+    target_layer_ids: list[int] | None = None
+    """For ``ReturnHiddenStates.SELECTED_LAYERS``, the zero-based layer
+    indices whose post-block hidden states are captured and concatenated
+    along the feature dimension (used by spec-decode drafters)."""
 
     layer_types: list[str]
 
@@ -179,16 +207,17 @@ class Gemma4TextConfig(Gemma3Config):
             An initialized Gemma4TextConfig instance.
         """
         kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+        interleaved_rope_weights = _interleaved_rope_weights(
+            pipeline_config.model
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -217,8 +246,7 @@ class Gemma4TextConfig(Gemma3Config):
         sliding_window_rope_type = sliding_window_rope_params.get("rope_type")
         if sliding_window_rope_type != "default":
             raise ValueError(
-                f"Sliding window rope type {sliding_window_rope_type}"
-                " not supported"
+                f"Sliding window rope type {sliding_window_rope_type} not supported"
             )
         sliding_window_rope_theta = sliding_window_rope_params["rope_theta"]
 
@@ -280,6 +308,7 @@ class Gemma4TextConfig(Gemma3Config):
             global_rope_theta=global_rope_theta,
             sliding_window_rope_theta=sliding_window_rope_theta,
             layer_types=huggingface_config.layer_types,
+            quantization_encoding=quantization_encoding,
         )
 
 
@@ -411,6 +440,13 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     Model-specific parameters live in the respective sub-configs.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float16",
+        "float4_e2m1fnx2",
+    }
+
     devices: list[DeviceRef]
     """Devices to run the model with."""
 
@@ -439,6 +475,9 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
 
     def get_kv_params(self) -> MultiKVCacheParams:
         """Returns the KV cache parameters."""
@@ -479,7 +518,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 raise ValueError(f"Unknown attention type: {attention_type}")
 
         num_spec_tokens = (
-            pipeline_config.speculative.num_speculative_tokens
+            (pipeline_config.speculative.num_speculative_tokens or 0)
             if pipeline_config.speculative
             else 0
         )
@@ -496,6 +535,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 else None
             ),
             num_draft_tokens=num_spec_tokens,
+            window_size=huggingface_config.text_config.sliding_window,
         )
         global_kv_params = kv_cache_config.to_params(
             dtype=cache_dtype,
@@ -512,6 +552,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
                 else None
             ),
             num_draft_tokens=num_spec_tokens,
+            window_size=None,
         )
         return MultiKVCacheParams.from_params(
             {
@@ -578,11 +619,14 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             for spec in pipeline_config.model.device_specs
         ]
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         tie_word_embeddings = getattr(
             huggingface_config, "tie_word_embeddings", False
@@ -593,7 +637,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             raise ValueError("vision_config not found in huggingface_config")
         vision_config: Gemma4VisionConfig | None
         if getattr(huggingface_config, "model_type", None) == "gemma4_unified":
-            # These checkpoints (e.g. google/gemma-4-12b-it) carry a
+            # These checkpoints (e.g. google/gemma-4-12B-it) carry a
             # lightweight vision_embedder with a different schema that is not
             # implemented yet; serve text-only. Keyed on model_type so a
             # genuinely malformed full-vision config fails loudly below
@@ -631,6 +675,7 @@ class Gemma4ForConditionalGenerationConfig(ArchConfigWithKVCache):
             video_token_index=getattr(
                 huggingface_config, "video_token_id", 262_144
             ),
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

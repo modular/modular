@@ -17,7 +17,12 @@ from __future__ import annotations
 
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
 from transformers import AutoConfig
+
+from .model_config import GptOssConfig
 
 
 class GptOssMemoryPlanner(PagedMemoryPlanner):
@@ -47,7 +52,7 @@ class GptOssMemoryPlanner(PagedMemoryPlanner):
         # fragmentation issue. In #77700 we swapped the order of model weight
         # loading and KV cache loading. This affected memory fragmentation and
         # led to CUDA OOM when running
-        # `br smoke-test -- unsloth/gpt-oss-20b-bf16` on 1xH100.
+        # `br smoke-test -- unsloth/gpt-oss-20b-BF16` on 1xH100.
         # We reduce the KV cache size slightly to avoid this.
         base = 6 * 1024 * 1024 * 1024  # 6 GiB
 
@@ -55,7 +60,10 @@ class GptOssMemoryPlanner(PagedMemoryPlanner):
         # 3 projections (gate, up, down), each num_experts * hidden * moe_dim
         # at 2 bytes (BF16). The extra 15 GiB covers compilation workspace
         # and memory fragmentation.
-        if pipeline_config.model.quantization_encoding == "float4_e2m1fnx2":
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, GptOssConfig.DEFAULT_ENCODING
+        )
+        if quantization_encoding == "float4_e2m1fnx2":
             num_experts = getattr(huggingface_config, "num_local_experts", 32)
             moe_dim = getattr(huggingface_config, "intermediate_size", 2880)
             hidden_size = getattr(huggingface_config, "hidden_size", 2880)

@@ -16,11 +16,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -30,6 +33,9 @@ from ..llama3.model_config import Llama3Config
 @dataclass(kw_only=True)
 class Step3p5Config(Llama3Config):
     """Model configuration for Step-3.5-Flash."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     # Attention parameters
     num_attention_groups: int = 8
@@ -227,6 +233,8 @@ class Step3p5Config(Llama3Config):
             per_layer_rope_theta = [float(t) for t in rope_theta_raw]
             scalar_theta = rope_theta_raw[0] if rope_theta_raw else 10000.0
             huggingface_config.rope_theta = scalar_theta
+            # Save the list so a second init recovers it after the collapse.
+            huggingface_config.per_layer_rope_theta = per_layer_rope_theta
             # Transformers v5 copies rope_theta into rope_parameters; patch
             # there too so get_rope_theta() returns the scalar.
             rope_params = getattr(huggingface_config, "rope_parameters", None)
@@ -262,7 +270,10 @@ class Step3p5Config(Llama3Config):
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
 
         device_refs = [
@@ -373,6 +384,7 @@ class Step3p5Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
             # Step3p5-specific
             num_attention_groups=num_attention_groups,
             head_dim=head_dim,

@@ -49,9 +49,9 @@ class EchoPipelineTokenizer(
     """
 
     @property
-    def eos(self) -> int:
-        """Return a dummy EOS token ID."""
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        """Echo has no EOS; generation stops by length."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -138,7 +138,7 @@ class EchoPipelineTokenizer(
             max_length=max_length,
             tokens=token_buffer,
             eos_tracker=await build_eos_tracker_for_request(
-                {self.eos},
+                self.eos_token_ids,
                 request,
                 self.encode,
             ),
@@ -160,6 +160,11 @@ class EchoTokenGenerator(
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
         self._kv_manager = DummyKVCache()
+        self._max_batch_size = 1
+
+    @property
+    def max_batch_size(self) -> int:
+        return self._max_batch_size
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

@@ -1,15 +1,17 @@
 ---
-title: Generics
-description: Write code that builds and runs across many types using generics.
+title: Parameterized declarations
+description: >
+  Write code that builds and runs across many types using parameterized
+  declarations.
 ---
 
-Type generics let you write code once and use it across many types
+Parameterized types let you write code once and use it across many types
 without duplicating logic. You don't need separate implementations or
 type checks for each case. Mojo generates specialized versions for each
 type you use.
 
 Most languages only parameterize over types. Mojo also supports value
-generics. Its parameter system accepts both types and compile-time values
+parameters. Its parameter system accepts both types and compile-time values
 using the same `[]` syntax.
 
 Mojo distinguishes compile-time parameters from runtime arguments in its
@@ -23,7 +25,7 @@ know what the compiler specializes and what gets passed at runtime.
 # T is a type parameter, threshold is a value parameter.
 # Both are compile-time. values is a runtime argument.
 def count_above[
-    T: Comparable & ImplicitlyCopyable & ImplicitlyDeletable, threshold: T
+    T: Comparable & ImplicitlyCopyable & Deinitable, threshold: T
 ](values: List[T]) -> Int:
     var count = 0
     for v in values:
@@ -32,30 +34,30 @@ def count_above[
     return count
 ```
 
-Many generics use traits to constrain which types work with the code.
-A trait defines what a type must do, and generic code declares which
-traits it requires. The compiler enforces these requirements and generates
+Many parameterized declarations use traits to constrain which types work with
+the code. A trait defines what a type must do, and parameterized code declares
+which traits it requires. The compiler enforces these requirements and generates
 specialized code for each concrete type at the call site.
 
-## Type generics
+## Type parameters {#type-generics}
 
-Type generics let you write code that works across many types. You define
+Type parameters let you write code that works across many types. You define
 behavior once, and the compiler specializes it for each concrete type at
 the call site.
 
 ### Type constraints
 
-*Constraints* define what a type must do. You express them as traits or
-trait compositions. You must always constrain generic parameters — without
-a fixed set of required features, the compiler has no guarantees about
+*Constraints* define what a type must do. You express them as traits or trait
+compositions. You must always constrain or explicitly type parameter names.
+Without a fixed set of required features, the compiler has no guarantees about
 what operations are valid.
 
 - The most permissive constraint is
   [`AnyType`](/docs/std/builtin/anytype/AnyType/). It places no behavioral
   requirements on a type.
 
-- [`ImplicitlyDeletable`](/docs/std/builtin/anytype/ImplicitlyDeletable/)
-  is a common baseline for types with lifetimes. Generic code that stores
+- [`Deinitable`](/docs/std/builtin/anytype/Deinitable/)
+  is a common baseline for types with lifetimes. Parameterized code that stores
   or owns values often requires it.
 
 Constraints make your code sound: every operation you use is guaranteed
@@ -64,7 +66,7 @@ to exist for any type that satisfies them.
 ### Naming conventions
 
 Mojo follows naming conventions used in languages like Rust and C++.
-Type parameter names use PascalCase — short (`T`, `E`) or descriptive
+Type parameter names use PascalCase, short (`T`, `E`) or descriptive
 (`ErrorType`, `Element`). By convention, `T`, `U`, `V` are general
 types; `K`/`V` for key-value pairs; `E` for errors; `H` for hashers.
 Value parameter names use lower_snake_case and should be descriptive
@@ -76,7 +78,7 @@ Consider comparing two lists to test whether they contain the same values
 in the same order.
 
 You could write a separate implementation for each element type. Or you
-can write one generic function that works for any list whose elements
+can write one parameterized function that works for any list whose elements
 support the operations you need.
 
 This concrete version only works with integers:
@@ -91,13 +93,14 @@ def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
     return True
 ```
 
-The generic version doesn't care about the element type. It only requires
+The parameterized version doesn't care about the element type. It only requires
 the capabilities the algorithm uses: elements must support equality
-comparison and be copyable:
+comparison, be copyable, and be implicitly destructible (so the tuples
+`zip()` yields can be cleaned up at the end of each iteration):
 
 ```mojo
 def all_equal[
-    T: Equatable & Copyable
+    T: Equatable & Copyable & Deinitable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs): return False
 
@@ -126,7 +129,7 @@ print("String (Expect False):\t",
 ```
 
 The compiler generates a concrete, type-specific version of
-`all_equal()` for each type you use — one for `Int` and one for
+`all_equal()` for each type you use: one for `Int` and one for
 `String` in this example.
 
 :::note
@@ -139,28 +142,31 @@ In type theory, the parametric `all_equal()` function is
 Keep requirements minimal:
 
 ```mojo
-T: Equatable & Copyable
+T: Equatable & Copyable & Deinitable
 ```
 
 The ampersand (`&`) composes traits. Use the fewest constraints your code
-needs — that keeps your function usable with more types. If you remove
+needs. This keeps your function usable with more types. If you remove
 `Equatable` from `all_equal()`, the code won't compile because the
-compiler can't guarantee that `!=` exists for all `T`.
+compiler can't guarantee that `!=` exists for all `T`. Dropping
+`Deinitable` fails for a subtler reason: `zip()` yields each pair
+as a tuple, and the loop can only destroy that temporary tuple if `T` is
+implicitly destructible.
 
 :::note
 A type supports `!=` by implementing `__ne__()`.
 :::
 
 When your code uses an operation not covered by its constraints, the
-compiler reports an error — the type is *underspecified*. Fix this by
-adding the trait that provides the missing behavior. In practice, generic
+compiler reports an error: the type is *underspecified*. Fix this by
+adding the trait that provides the missing behavior. In practice, parameterized
 errors mean your constraints don't include the behavior your code uses.
 
 Adding constraints restricts which types you accept, but expands what
 your code can do. Each trait adds guaranteed operations, which lets the
 compiler check correctness and reason about lifetimes and effects.
 
-### Generic parameter types
+### Parameterized types {#generic-parameter-types}
 
 In the `all_equal()` example, both parameters use the same element type:
 
@@ -169,20 +175,20 @@ lhs: List[T], rhs: List[T]
 ```
 
 Using `T` for both ensures your loop compares like with like and prevents
-type mismatches. You can also use a generic type directly without
+type mismatches. You can also use a parameterized type directly without
 embedding it in a container:
 
 ```mojo
-def my_generic_fn[T: AnyType](value: T):
+def my_parameterized_fn[T: AnyType](value: T):
 ```
 
-This function accepts any type because its only limit is `AnyType` — the
+This function accepts any type because its only limit is `AnyType`, the
 root of the trait hierarchy that all types conform to. Using `AnyType`
 means the value has no guaranteed destructor or lifetime management.
 Outside of [reflection](/docs/manual/metaprogramming/reflection/), this
 function can't do anything meaningful with `value`.
 
-#### Printing under-specified generic values
+#### Printing under-specified parameterized values
 
 A common issue with `AnyType` is that the compiler can't print values of
 unspecified types. Because it can't determine whether `T` conforms to
@@ -199,13 +205,13 @@ def main():
     function(1, 2, 3)
 ```
 
-Work around this by testing the generic type parameter for `Writable`
+Work around this by testing the parameterized type parameter for `Writable`
 conformance and downcasting to expose the `Writable` trait:
 
 ```mojo
 def represent[T: AnyType](v: T) -> String:
     comptime if conforms_to(T, Writable):
-        return String(trait_downcast[Writable](v))
+        return String(v)
     else:
         return String(t"{reflect[T].name()}")
 
@@ -228,18 +234,19 @@ Non-`Writable` items use their type name, prefixed by the module name
 
 Read more about [safe downcasting](#downcasting-safely) on this page.
 
-## Generic types
+## Parameterized types {#generic-types}
 
-Generics aren't limited to functions. You can define generic types that
-use compile-time parameters to define both their fields and their methods.
+Parameterized declarations aren't limited to functions. You can define
+parameterized types that use compile-time parameters to define both their fields
+and their methods.
 
-Generic types let you package a reusable shape: stored fields plus
+Parameterized types let you package a reusable shape: stored fields plus
 supported operations. Instead of writing `PairInt`, `PairString`, and so
 on, you write one `Pair[T]` and let the compiler generate specialized
 versions for each concrete `T` you use.
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 
 @fieldwise_init
 struct Pair[T: ComparableValue](ComparableValue):
@@ -250,17 +257,17 @@ struct Pair[T: ComparableValue](ComparableValue):
         return self.left == other.left and self.right == other.right
 ```
 
-Like generic functions, generic types use placeholder parameters — but a
-generic type uses those parameters in its storage as well as in its
-methods. Here, `Pair` stores two values of the same element type and
-implements equality by comparing its fields.
+Like parameterized functions, parameterized types use placeholder parameters,
+but a parameterized type uses those parameters in its storage as well as in its
+methods. Here, `Pair` stores two values of the same element type and implements
+equality by comparing its fields.
 
 `Pair` needs to compare values, so `T` must be equatable. It also needs
 to copy and clean up values in common operations, so it applies a trait
 composition on `T`:
 
 ```mojo
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 ```
 
 The `Pair` definition applies this conformance in two places:
@@ -279,7 +286,7 @@ and ensures all `T` values conform.
 
 ## Mixing type and value parameters
 
-Generic types can take non-type parameters too. Add whatever you need
+Parameterized types can take non-type parameters too. Add whatever you need
 to define the behavior:
 
 ```mojo
@@ -290,7 +297,7 @@ struct ExampleStruct:
     ](
         self,
         data: String,             # argument
-        init_value: T             # generic argument
+        init_value: T             # parameterized argument
     ) -> String:
 ```
 
@@ -308,13 +315,13 @@ one place and using it in another.
 For example:
 
 ```mojo
-def my_generic_fn[T: Trait(s)](value: T):
+def my_parameterized_fn[T: Trait(s)](value: T):
 ```
 
 becomes:
 
 ```mojo
-def my_generic_fn(value: Some[Trait(s)]):
+def my_parameterized_fn(value: Some[Trait(s)]):
 ```
 
 You can use `Some` with any trait or trait composition, under any
@@ -371,7 +378,7 @@ def show(*pack: *SomeTypeList[Writable]):
 
 ### Operator overloads
 
-Operator overloads are a natural fit for `Some` — the trait that enables
+Operator overloads are a natural fit for `Some`, the trait that enables
 the operator lives directly on the declaration:
 
 ```mojo
@@ -395,18 +402,18 @@ missing parameters:
 @fieldwise_init
 struct Struct(Writable):
     # Error: a `Some` struct field has no concrete type to infer
-    var x: Some[Copyable & ImplicitlyDeletable & Writable]
+    var x: Some[Copyable & Deinitable & Writable]
 
 def main():
     var s = Struct(1)
     print(s)
 ```
 
-Move the conformances back to a generic type parameter to fix this:
+Move the conformances back to a parameterized type parameter to fix this:
 
 ```mojo
 @fieldwise_init
-struct Struct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+struct Struct[T: Copyable & Deinitable & Writable](Writable):
     var x: Self.T
 
 def main():
@@ -414,51 +421,58 @@ def main():
     print(s)  # Struct[Int](x=1)
 ```
 
-## Downcasting safely: `conforms_to` + `trait_downcast()` {#downcasting-safely}
+## Using conditional availability {#downcasting-safely}
 
-Sometimes a generic conformance is broader than what you need. Use a
-guarded downcast with `conforms_to()` and `trait_downcast()` to access
-operations from a specific trait the conformance doesn't guarantee.
-
-Check conformance first, then downcast and use the value through that
-trait:
+Sometimes a conformance is broader than you need. For example, a
+parameterized type may be constrained to `AnyType` in a struct, but you
+want to use it as `Writable` in a given method. Add a `where` clause to
+require `Writable`, allowing the compiler to prove the conformance before
+allowing a concrete instance to call the method:
 
 ```mojo
-def process[T: AnyType](value: T):
-    comptime if conforms_to(
-        T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
-    ):
-        var w = trait_downcast[
-            Writable & ImplicitlyCopyable & ImplicitlyDeletable
-        ](value)
-        print(w)
-    else:
-        print("<not writable>")
-        # Or fail at compile time with `comptime assert`
+def process(self, value: Self.T) where conforms_to(Self.T, Writable):
+    print(value)
 ```
 
-- `conforms_to(T, Trait)` checks whether `T` satisfies the trait
-  composition.
-- `trait_downcast()` rebinds the value to a trait-constrained view at
-  compile time.
+Call `conforms_to(T, Trait)` to test whether `T` satisfies a trait.
+Combine multiple checks with `and` or `or` to express more complex
+conditions.
 
-Only call `trait_downcast()` inside the guarded branch. Handle the
-fallback in the `else` branch. If you always need the trait, add it as a
-constraint (for example, `T: Writable`) instead of downcasting.
+Conditions are not limited to trait checks. They can also constrain
+compile-time facts, such as a data length being a power of two or a
+capacity being positive. Any compile-time expression with a known value
+can appear in a `where` clause.
 
-Use this pattern when you can't express the requirement as a constraint.
-It's common in reflection-style code that handles values based on their
-traits. See [reflection](/docs/manual/metaprogramming/reflection/).
+The compiler rejects calls that don't satisfy the constraint. For example,
+a type built with a non-writable type `T` can't call `process()`:
 
-## Value generics
+```mojo
+self.process(non_writable)   # Compile-time error, constraint violation
+```
 
-Value generics parameterize code over compile-time constants instead of
+`where` clauses let the compiler prove conditions before constructing
+types, resolving conformances, compiling methods and functions, or
+manifesting compile-time declarations.
+
+Beyond conformance, a where clause can test predicates on its
+parameters: whether a `DType` is floating point or numeric
+(`dtype.is_floating_point()`, `dtype.is_numeric()`), or whether an integer
+parameter is a power of two.
+
+What it can't do is evaluate target facts like `is_64bit()` or
+`is_nvidia_gpu()`, or arbitrary compile-time functions, as constraints. The
+compiler can't carry those as proof. For those cases, use `comptime if`
+instead, which evaluates its condition directly.
+
+## Parameterized values {#value-generics}
+
+Values parameterize code over compile-time constants instead of
 types. You declare them in `[]` alongside type parameters, but they bind
 to values.
 
-### When to use value generics
+### When to use parameterized values {#when-to-use-value-generics}
 
-Use value generics when a value shapes structure or behavior and is known
+Use parameterized values when a value shapes structure or behavior and is known
 at compile time. Common cases:
 
 - *Fixed sizes:* buffer lengths, array dimensions, matrix shapes
@@ -475,7 +489,7 @@ constants, and optimize aggressively with no runtime cost.
 This function creates a fixed-size list initialized with a default value:
 
 ```mojo
-comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
+comptime MyCollectionElement = ImplicitlyCopyable & Deinitable
 
 def make_filled[T: MyCollectionElement, size: Int](
     splat_value: T
@@ -508,37 +522,37 @@ use an argument.
 ```mojo
 # size is compile-time: the compiler specializes
 def fixed[size: Int]():
-    var buf = InlineArray[Int, size](fill=0)
+    var buf = Array[Int, size](fill=0)
 
 # size is runtime: no specialization
 def dynamic(size: Int):
     var buf = List[Int](capacity=size)
 ```
 
-## Generics and explicit destruction
+## Parameterized types and explicit destruction {#generics-and-explicit-destruction}
 
-Explicitly destroyed types don't always work with generic code. The issue
-isn't generics — it's lifetime management. Explicit destruction gives you
+Explicitly destroyed types don't always work with parameterized code. The issue
+isn't parameterization; it's lifetime management. Explicit destruction gives you
 control over teardown: you can define destructors that take arguments,
 follow different paths, or raise errors.
 
-Generic code that copies or moves values can't see or honor that logic.
+Parameterized code that copies or moves values can't see or honor that logic.
 Once a value is copied or transferred, you lose control over how (or
 whether) it's cleaned up, and the code won't compile.
 
 Watch for these cases:
 
-- Generic code that manages lifetimes
-- Generic code that copies or transfers values
+- Parameterized code that manages lifetimes
+- Parameterized code that copies or transfers values
 
 These show up most often in containers, collections, and iterators that
 copy values or take ownership and decide when destruction happens.
 
-Safe cases are generic operations that don't affect lifetimes, such as
+Safe cases are parameterized operations that don't affect lifetimes, such as
 comparisons and predicates.
 
-If your generic code needs to own, copy, or control when a value dies,
-avoid explicitly destroyed types. Add an `ImplicitlyDeletable` constraint
+If your parameterized code needs to own, copy, or control when a value dies,
+avoid explicitly destroyed types. Add a `Deinitable` constraint
 to keep things working.
 
 ## Conditional trait conformance
@@ -549,7 +563,7 @@ caution with `RegisterPassable` and `TrivialRegisterPassable`.
 :::
 
 *Conditional trait conformance* uses checks before allowing a type to
-adopt a trait. When the condition is satisfied, the type conforms — it
+adopt a trait. When the condition is satisfied, the type conforms. It
 must fulfill the trait's requirements and gains any default implementation
 the trait provides. When the condition isn't satisfied, Mojo skips the
 conformance.
@@ -560,7 +574,7 @@ In the following declaration, Mojo conforms `Wrapper` to `Writable` when
 its parameter `T` is also `Writable`:
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDeletable & Writable
+comptime BaseTraits = Copyable & Deinitable & Writable
 @fieldwise_init
 struct Wrapper[T: BaseTraits](
     Writable where conforms_to(T, Writable)
@@ -569,7 +583,7 @@ struct Wrapper[T: BaseTraits](
 ```
 
 When conforming to `Writable`, `Wrapper` doesn't need to implement any
-methods — the trait provides a default implementation of `write_to()`.
+methods. The trait provides a default implementation of `write_to()`.
 
 Now consider a type that isn't `Writable`:
 
@@ -607,7 +621,7 @@ naturally. `Result[T, E]`, `Pair[L, R]`, `Dict[K, V]`, and similar
 types say: "This type can do X if each of its parts can do X":
 
 ```mojo
-comptime BaseTraits = Copyable & ImplicitlyDeletable
+comptime BaseTraits = Copyable & Deinitable
 
 @fieldwise_init
 struct Pair[L: BaseTraits, R: BaseTraits](
@@ -638,7 +652,7 @@ var pair2 = Pair[Int, NotHashable](left=1, right=NotHashable(10))
 ### Example: conditional method access
 
 When a type adopts a trait, it must satisfy the trait's required methods.
-You gate those method implementations with `where` clauses — the same
+You gate those method implementations with `where` clauses, the same
 conditions that control whether the conformance applies.
 
 You can make `Wrapper` testable in `if` statements by conforming to
@@ -653,12 +667,12 @@ struct Wrapper[T: BaseTraits](
     var value: Self.T
 
     def __bool__(self) -> Bool where conforms_to(Self.T, Boolable):
-        return trait_downcast[Boolable](self.value).__bool__()
+        return self.value.__bool__()
 ```
 
 The condition on `__bool__()` matches the one used for the `Boolable`
 conditional conformance. Since the method and the conformance use the
-same condition, they stay aligned — you won't end up with a conformance
+same condition, they stay aligned. You won't end up with a conformance
 but no method, or a method without the corresponding conformance.
 
 ```mojo
@@ -703,7 +717,7 @@ Mojo supports flexible condition composition:
 - **Unconditional** — no special clauses:
 
   ```mojo
-  struct Foo(Copyable, ImplicitlyDeletable):
+  struct Foo(Copyable, Deinitable):
   ```
 
 - **Simple condition** — as shown in `Wrapper`:
@@ -750,7 +764,7 @@ has capacity and its elements are writable. The `Sized` conformance is
 unconditional:
 
 ```mojo
-comptime ElementTraits = Writable & Copyable & ImplicitlyDeletable
+comptime ElementTraits = Writable & Copyable & Deinitable
 struct SizedListWrapper[capacity: Int, T: ElementTraits](
     Sized, Writable where conforms_to(T, Writable) and capacity > 0
 ):

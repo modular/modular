@@ -16,15 +16,22 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 
-from ..comm.ep.ep_kernels import ep_mxfp4_max_padded_m, fused_silu
+from ..comm.ep.ep_kernels import (
+    ep_mxfp4_down_slot_stride,
+    ep_mxfp4_max_padded_m,
+    fused_silu,
+    uses_mx_ep_token_format,
+)
 from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
+    BlockScaledStrategy,
     Fp8Strategy,
-    Mxfp4Strategy,
+    Mxfp6Strategy,
     Nvfp4Scales,
     NvMxf4f8Strategy,
     QuantStrategy,
@@ -54,42 +61,69 @@ class MoEQuantized(MoE):
         assert self.quant_config is not None
         if self._uses_nvidia_block_scaled_ep_layout:
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
-        elif self.quant_config.is_mxfp4:
-            return Mxfp4Strategy(
+        elif self.quant_config.is_mxfp6:
+            # Deliberately not a subclass of Mxfp4Strategy: the
+            # `isinstance(strategy, Mxfp4Strategy)` branches below select the
+            # A-scale slot folds, which have no FP6 producer -- writing scales
+            # in the grouped matmul's slot layout is unimplemented in
+            # `fused_silu_mxfp6_kernel` (it asserts on
+            # `fuse_a_scale_preshuffle`). The fused *activation* kernel does
+            # exist for FP6 (`ep.fused_silu.mxfp6`), so MXFP6 is admitted to
+            # that branch explicitly with the fold inputs at 0; it is the
+            # isinstance checks for the folds it must stay out of.
+            if not self.quant_config.block_scaled_preshuffled_b:
+                raise ValueError(
+                    "MXFP6 MoE requires preshuffled B weights: the 24-byte FP6 "
+                    "lane fragment is read plane-split and the dense "
+                    "row-major grouped kernel cannot address it. The weight "
+                    "loader must call preshuffle_mxfp4_b_experts with "
+                    "lane_bytes=MXFP6_LANE_BYTES and set "
+                    "block_scaled_preshuffled_b=True."
+                )
+            return Mxfp6Strategy(self.quant_config, self.dtype)
+        elif self.quant_config.is_mxfp4 or self.quant_config.is_mxfp8:
+            # MXFP8 shares this path: the MOGG grouped-matmul op infers the
+            # element packing from the tensors, and the E8M0 scale layout is
+            # format-independent. Without this, MXFP8 would fall through to
+            # `Fp8Strategy` (legacy per-tensor scales).
+            return BlockScaledStrategy(
                 self.quant_config,
                 self.dtype,
-                preshuffled_b=self.quant_config.mxfp4_preshuffled_b,
+                preshuffled_b=self.quant_config.block_scaled_preshuffled_b,
             )
         return Fp8Strategy(self.quant_config, self.dtype)
 
     def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
-        """Enable the MXFP4 EP A-scale preshuffle fold on the shared EP config
-        so the dispatch ops emit slot-sized scales. Must run BEFORE the dispatch
+        """Enable the MX EP A-scale preshuffle fold on the shared EP config so
+        the dispatch ops emit slot-sized scales. Must run BEFORE the dispatch
         op (the dispatch output shape depends on this flag); the EP forward
         driver calls it once per layer before dispatch.
 
-        The fold writes the up-proj (KS224, ``ep_wait``) and down-proj (KS64,
-        ``fused_silu``) A-scale directly into the grouped-matmul slot layout,
-        dropping the standalone preshuffle kernels from the decode critical
-        path. It is enabled whenever this is an MXFP4 preshuffled-B EP layer and
-        the selected dispatch path wires the fold. It implements standard SiLU
-        only, so OAI-clamped SwiGLU (e.g. gpt-oss) is excluded and routed
-        through the generic quantize path.
+        The fold writes the up-proj A-scale during dispatch and the down-proj
+        A-scale during ``fused_silu`` directly into the grouped-matmul slot
+        layout, dropping the standalone preshuffle kernels from the decode
+        critical path.
 
         Args:
-            dispatch_supports_fold: Whether the dispatch path selected for this
-                forward threads the fold params. The multi-device single-op
-                ``call_distributed_ep_dispatch`` does not, so the fold stays off
-                there and the standalone preshuffle runs.
+            dispatch_supports_fold: Whether the selected dispatch path threads the
+                fold parameters.
         """
         if self._ep_batch_manager is None:
             return
+        # Every term reads `self.quant_config`, the object the consumer gate at
+        # `up_a_scales_preshuffled` reads. Taking the format from
+        # `ep_config.dispatch_quant_config` instead would silently emit
+        # slot-sized scales while the matmul reads row-major, and the MTP model
+        # already shares one `EPConfig` between target and draft. Only the
+        # accelerator-layout term needs the EP config.
         self.ep_batch_manager.config.mxfp4_a_scales_preshuffled = bool(
             dispatch_supports_fold
             and self.quant_config is not None
-            and self.quant_config.is_mxfp4
-            and self.quant_config.mxfp4_preshuffled_b
-            and not self.use_swigluoai
+            and uses_mx_ep_token_format(
+                self.ep_batch_manager.config, self.quant_config
+            )
+            and not self.quant_config.is_mxfp6
+            and self.quant_config.block_scaled_preshuffled_b
         )
 
     @property
@@ -160,7 +194,11 @@ class MoEQuantized(MoE):
         """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.quant_config is not None
         assert self.quant_config.weight_scale.block_size is not None
-        if not (self.quant_config.is_fp4 or self.quant_config.is_mxfp8):
+        if not (
+            self.quant_config.is_fp4
+            or self.quant_config.is_mxfp8
+            or self.quant_config.is_mxfp6
+        ):
             assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
@@ -237,9 +275,15 @@ class MoEQuantized(MoE):
     @property
     def _uses_nvidia_block_scaled_ep_layout(self) -> bool:
         """Whether local expert inputs include NVIDIA scale offsets."""
-        return self.quant_config is not None and (
-            self.quant_config.is_nvfp4 or self.quant_config.is_mxfp8
-        )
+        if self.quant_config is None:
+            return False
+        if self.quant_config.is_nvfp4:
+            return True
+        # MXFP8 takes the NVIDIA layout only on cuda, agreeing with
+        # `_uses_block_scaled_nv_ep_layout` in `ep_kernels`, which is what
+        # produces the offsets. Ungated, AMD MXFP8 read the dispatch's 5 outputs
+        # as the NVIDIA 6-tuple and never reached `BlockScaledStrategy`.
+        return self.quant_config.is_mxfp8 and accelerator_api() == "cuda"
 
     def _can_fuse_swiglu_nvfp4(self) -> bool:
         """Whether the fused SwiGLU+NVFP4 grouped matmul kernel should fire.
@@ -289,13 +333,10 @@ class MoEQuantized(MoE):
             self.gate_up_proj_scales, self.down_proj_scales, x.device
         )
 
-        # For the MXFP4 preb EP path, the producers write the
-        # grouped-matmul A-scale directly into the matmul's per-expert slot
-        # layout, so the standalone preshuffle kernels are dropped.  `ep_wait`
-        # does this for the up/gate proj (KS224) and `fused_silu` for the down
-        # proj (KS64); both share the SAME graph-build-time `max_padded_M`
-        # (single source of truth — the dispatch producer wrote the up-proj
-        # scales with it, and the matmul reader MUST use the same constant).
+        # For the MX preb EP path, `ep_wait` (up/gate proj) and `fused_silu`
+        # (down proj) write the grouped-matmul A-scale straight into the
+        # per-expert slot layout, dropping the standalone preshuffle kernels.
+        # Each matmul reader MUST use the constant its own producer wrote with.
         # Read the flag the EP forward driver already resolved via
         # `configure_ep_scale_fusion` (single source of truth) so the matmul
         # reader and the dispatch producer agree on the slot layout.
@@ -308,10 +349,39 @@ class MoEQuantized(MoE):
             if mxfp4_ep_scale_fusion
             else 0
         )
+        # Decode band gate; 0 disables (persistent fallback).
+        mxfp4_decode_grid_m_cap = (
+            self.ep_batch_manager.config.max_batch_size
+            if self._ep_batch_manager
+            else 0
+        )
+        # The gate admits the band at `etm <= cap`, which bounds the step at
+        # `cap * n_ranks / top_k` tokens; no expert holds more rows than that.
+        mxfp4_decode_grid_m_rows = 0
+        if self._ep_batch_manager and mxfp4_decode_grid_m_cap > 0:
+            _ep_cfg = self.ep_batch_manager.config
+            _n_ranks = _ep_cfg.n_gpus_per_node * _ep_cfg.n_nodes
+            mxfp4_decode_grid_m_rows = -(
+                -mxfp4_decode_grid_m_cap * _n_ranks // _ep_cfg.top_k
+            )
         # The up-proj reads its A-scale from the dispatched tokens, which
         # `ep_wait` wrote in slot layout when the fusion is on.
         up_a_scales_preshuffled = (
-            isinstance(strategy, Mxfp4Strategy) and mxfp4_ep_scale_fusion
+            isinstance(strategy, BlockScaledStrategy) and mxfp4_ep_scale_fusion
+        )
+        # Local SwiGLU down-proj A-scale fold: fold the down scale into the matmul
+        # slot layout, dropping the standalone preshuffle. Independent of the
+        # distributed up-fold above, so it engages on M3's distributed path.
+        mxfp4_down_slot_stride = (
+            ep_mxfp4_down_slot_stride(self.ep_batch_manager.config)
+            if (
+                self._ep_batch_manager
+                and self.use_swigluoai
+                and isinstance(strategy, BlockScaledStrategy)
+                and self.quant_config is not None
+                and self.quant_config.block_scaled_preshuffled_b
+            )
+            else 0
         )
 
         if self._can_fuse_swiglu_nvfp4():
@@ -328,13 +398,13 @@ class MoEQuantized(MoE):
                 swiglu_limit=self.swiglu_limit,
             )
         else:
-            if isinstance(strategy, Mxfp4Strategy) and not self.use_swigluoai:
-                # MXFP4 EP fold: ep_wait writes the up-proj A-scale
-                # (KS224) and fused_silu the down-proj A-scale (KS64) directly
-                # into the grouped-matmul slot layout. This covers standard
-                # SiLU only; OAI-clamped SwiGLU (e.g. gpt-oss) is excluded in
-                # `configure_ep_scale_fusion` and handled by the generic path
-                # below.
+            if isinstance(strategy, (BlockScaledStrategy, Mxfp6Strategy)):
+                # MXFP4 EP down path: fuse activation (SiLU or clamped SwiGLU) +
+                # MXFP4 quantize in one kernel. Up-proj A-scale folds into the
+                # slot layout when the dispatch fold is on (KS224, ep_wait); the
+                # down-proj A-scale folds (KS64) when it's on OR, for OAI-SwiGLU,
+                # via the local down-slot stride; else the standalone preshuffle
+                # runs.
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -343,12 +413,18 @@ class MoEQuantized(MoE):
                     # KS224: ep_wait wrote the up-proj A-scale in slot layout.
                     a_scales_preshuffled=up_a_scales_preshuffled,
                     a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                    decode_grid_m_cap=mxfp4_decode_grid_m_cap,
+                    decode_grid_m_rows=mxfp4_decode_grid_m_rows,
                 )
                 down_in, silu_scales = strategy.fused_silu_quantize(
                     gate_up,
                     input_scales=None,
                     expert_inputs=expert_inputs,
-                    max_padded_M=mxfp4_ep_max_padded_m,
+                    max_padded_M=mxfp4_ep_max_padded_m
+                    or mxfp4_down_slot_stride,
+                    clamp_activation=self.use_swigluoai,
+                    swiglu_alpha=self.swiglu_alpha,
+                    swiglu_limit=self.swiglu_limit,
                 )
             else:
                 gate_up = strategy.grouped_matmul(
@@ -385,18 +461,20 @@ class MoEQuantized(MoE):
                     )
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
-        if isinstance(strategy, Mxfp4Strategy):
+        if isinstance(strategy, BlockScaledStrategy):
+            # Whichever producer wrote the down A-scale in slot layout (up-fold or
+            # local SwiGLU down-fold; the other is 0), the reader stride MUST match
+            # that constant, not the runtime per-expert max, or it reads wrong scales.
+            down_slot_stride = mxfp4_ep_max_padded_m or mxfp4_down_slot_stride
             return strategy.grouped_matmul(
                 self.down_proj,
                 down_scales,
                 expert_inputs=down_inputs,
                 estimated_total_m=estimated_total_m,
-                # KS64: fused_silu wrote the down-proj A-scale in slot layout.
-                a_scales_preshuffled=mxfp4_ep_max_padded_m > 0,
-                # Reader slot stride MUST equal the constant the producer wrote
-                # with (single source of truth) — not the runtime per-expert
-                # max — or the matmul reads the wrong expert's scales.
-                a_scales_max_padded_m=mxfp4_ep_max_padded_m,
+                a_scales_preshuffled=down_slot_stride > 0,
+                a_scales_max_padded_m=down_slot_stride,
+                decode_grid_m_cap=mxfp4_decode_grid_m_cap,
+                decode_grid_m_rows=mxfp4_decode_grid_m_rows,
             )
         return strategy.grouped_matmul(
             self.down_proj,
@@ -406,24 +484,29 @@ class MoEQuantized(MoE):
             estimated_total_m=estimated_total_m,
         )
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """Runs quantized MoE routing and expert computation."""
-        if self._ep_batch_manager:
-            raise ValueError(
-                "Use forward_moe_sharded_layers for expert-parallel inference "
-                "instead of calling MoEQuantized directly."
-            )
+    def _expert_matmuls(
+        self,
+        x: TensorValue,
+        router_idx: TensorValue,
+        router_weight: TensorValue | None = None,
+    ) -> TensorValue:
+        """Runs the quantized expert matmuls for one flat expert assignment.
 
-        strategy = self._strategy()
-        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
+        Overrides :meth:`MoE._expert_matmuls`; same contract. Without a
+        ``quant_config`` this defers to the unquantized base implementation,
+        so one architecture class can serve a checkpoint that quantizes only
+        some of its MoE layers.
+        """
+        if self.quant_config is None:
+            return super()._expert_matmuls(x, router_idx, router_weight)
 
         assert not self.apply_router_weight_first, (
             "apply_router_weight_first must be False for quantized MoE"
         )
 
-        router_idx, router_weight = self.gate(x)
+        strategy = self._strategy()
+        nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
-        router_idx = ops.reshape(router_idx, [-1])
         seq_len = x.shape[0]
 
         create_indices_result = moe_create_indices(
@@ -440,12 +523,12 @@ class MoEQuantized(MoE):
             else None
         )
 
-        if self.pre_expert_norm is not None:
-            x = self.pre_expert_norm(x)
-
         permuted = ops.gather(
             x,
-            ops.cast(token_order // self.num_experts_per_token, DType.int32),
+            ops.cast(
+                ops.floor_div(token_order, self.num_experts_per_token),
+                DType.int32,
+            ),
             axis=0,
         )
 
@@ -528,14 +611,6 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        down = ops.gather(down, restore_order, axis=0).reshape(
+        return ops.gather(down, restore_order, axis=0).reshape(
             [seq_len, self.num_experts_per_token, down.shape[-1]]
         )
-
-        out = ops.unsqueeze(router_weight, axis=1) @ down
-        out = ops.squeeze(out, axis=1).cast(x.dtype)
-
-        if self.has_shared_experts:
-            out += self.shared_experts(x)
-
-        return out

@@ -13,9 +13,9 @@
 
 from std.sys import simd_width_of
 
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.gpu import *
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from std.random import NormalRandom, Random
 from std.testing import *
 from std.sys import has_apple_gpu_accelerator
@@ -33,16 +33,14 @@ def run_elementwise[
 
     comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
-    var out_stack = InlineArray[Scalar[dtype], length](uninitialized=True)
+    var out_stack = Array[Scalar[dtype], length](uninitialized=True)
     var out_host = TileTensor(out_stack, row_major[length]())
 
     var out_device = ctx.enqueue_create_buffer[dtype](length)
     var out_buffer = TileTensor(out_device, row_major(length))
 
     @always_inline
-    @__copy_capture(out_buffer)
-    @parameter
-    def func_uniform[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func_uniform[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         var rng_state = Random(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_uniform()
 
@@ -56,9 +54,7 @@ def run_elementwise[
                 ]()
 
     @always_inline
-    @__copy_capture(out_buffer)
-    @parameter
-    def func_normal[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func_normal[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         var rng_state = NormalRandom(seed=UInt64(idx0[0].value()))
         var rng = rng_state.step_normal()
 
@@ -72,11 +68,11 @@ def run_elementwise[
                 ]()
 
     comptime if distribution == "uniform":
-        elementwise[func_uniform, 4, target="gpu"](Coord(length), ctx)
+        elementwise[4, target="gpu"](func_uniform, Coord(length), ctx)
     else:
-        elementwise[func_normal, 4, target="gpu"](Coord(length), ctx)
+        elementwise[4, target="gpu"](func_normal, Coord(length), ctx)
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
     ctx.synchronize()
 
     print("Testing", distribution, "distribution:")

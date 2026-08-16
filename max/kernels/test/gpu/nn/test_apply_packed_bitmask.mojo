@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.gather_scatter import apply_packed_bitmask
 
@@ -24,7 +24,7 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
     comptime fill_value: Float32 = -10000.0
 
     # logits[b, v] = b * 100 + v, so every kept value is unique and checkable.
-    var logits_stack = InlineArray[Float32, batch * vocab](uninitialized=True)
+    var logits_stack = Array[Float32, batch * vocab](uninitialized=True)
     var logits = TileTensor(logits_stack, row_major[batch, vocab]())
     for b in range(batch):
         for v in range(vocab):
@@ -32,8 +32,8 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
 
     # Build a packed bitmask by setting an explicit set of valid tokens, then
     # derive the expected masked logits from the same source of truth.
-    var valid = InlineArray[Bool, batch * vocab](fill=False)
-    var packed_stack = InlineArray[Int32, batch * packed_vocab](fill=0)
+    var valid = Array[Bool, batch * vocab](fill=False)
+    var packed_stack = Array[Int32, batch * packed_vocab](fill=0)
     var packed = TileTensor(packed_stack, row_major[batch, packed_vocab]())
 
     # Row 0: a spread of tokens incl. ones that cross the 32-bit word boundary.
@@ -50,13 +50,13 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
 
     # Copy inputs to device.
     var logits_gpu_buf = ctx.enqueue_create_buffer[DType.float32](batch * vocab)
-    ctx.enqueue_copy(logits_gpu_buf, logits.ptr)
+    ctx.enqueue_copy(logits_gpu_buf, logits._storage)
     var logits_gpu = TileTensor(logits_gpu_buf, row_major[batch, vocab]())
 
     var packed_gpu_buf = ctx.enqueue_create_buffer[DType.int32](
         batch * packed_vocab
     )
-    ctx.enqueue_copy(packed_gpu_buf, packed.ptr)
+    ctx.enqueue_copy(packed_gpu_buf, packed._storage)
     var packed_gpu = TileTensor(
         packed_gpu_buf, row_major[batch, packed_vocab]()
     )
@@ -68,8 +68,9 @@ def test_apply_packed_bitmask(ctx: DeviceContext) raises:
         out_gpu, logits_gpu, packed_gpu, fill_value, ctx
     )
 
-    var out_stack = InlineArray[Float32, batch * vocab](uninitialized=True)
+    var out_stack = Array[Float32, batch * vocab](uninitialized=True)
     ctx.enqueue_copy(Span(out_stack), out_gpu_buf)
+    ctx.synchronize()
     var out = TileTensor(out_stack, row_major[batch, vocab]())
 
     for b in range(batch):

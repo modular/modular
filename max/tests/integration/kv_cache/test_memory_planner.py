@@ -13,18 +13,29 @@
 
 """Unit tests for MemoryPlanner and PagedMemoryPlanner."""
 
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+)
 from max.pipelines.kv_cache import (
     ModelConfig,
     ModelConfigWithKVCache,
     PagedMemoryPlanner,
 )
+from max.pipelines.lib.memory_estimation import MemoryEstimator
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.config import PipelineConfig
 
 # ---------------------------------------------------------------------------
 # Minimal protocol conformers
@@ -43,7 +54,7 @@ class _KVConfig(_MinimalConfig):
     """Satisfies ModelConfigWithKVCache (adds ``get_kv_params``)."""
 
     def get_kv_params(self) -> KVCacheParams:
-        return KVCacheParams(
+        return MHAKVCacheParams(
             dtype=DType.float32,
             n_kv_heads=8,
             head_dim=128,
@@ -106,6 +117,12 @@ def test_paged_planner_estimate_activation_memory_zero_by_default() -> None:
     assert planner.estimate_activation_memory(MagicMock(), MagicMock()) == 0
 
 
+def test_paged_planner_infer_max_batch_size_none_by_default() -> None:
+    """Default infer_max_batch_size defers to the framework inference."""
+    planner = PagedMemoryPlanner(_KVConfig())
+    assert planner.infer_max_batch_size(MagicMock(), [], 0) is None
+
+
 def test_with_activation_reservation_returns_correct_bytes() -> None:
     """with_activation_reservation should return the configured value."""
     reservation = 15 * 1024**3
@@ -115,3 +132,93 @@ def test_with_activation_reservation_returns_correct_bytes() -> None:
         planner.estimate_activation_memory(MagicMock(), MagicMock())
         == reservation
     )
+
+
+def test_paged_planner_vision_cache_row_spec_none() -> None:
+    """Default hook means no vision cache (text-only architectures)."""
+    planner = PagedMemoryPlanner(_KVConfig())
+    assert planner.get_vision_cache_row_spec(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Block-mode vision cache reservation
+# ---------------------------------------------------------------------------
+
+
+def _block_reserve(
+    utilization: float,
+    row_bytes: int,
+    available_memory: int,
+    n_devices: int = 1,
+) -> tuple[int, "PipelineRuntimeConfig"]:
+    """Run _reserve_vision_cache_blocks against a real runtime config."""
+    runtime = PipelineRuntimeConfig(
+        experimental_vision_cache_utilization=utilization
+    )
+    pipeline_config = SimpleNamespace(runtime=runtime)
+    total = MemoryEstimator._reserve_vision_cache_blocks(
+        cast("PipelineConfig", pipeline_config),
+        (row_bytes, DType.uint8),
+        available_memory,
+        n_devices,
+    )
+    return total, runtime
+
+
+def test_reserve_vision_cache_blocks_rounds_to_whole_blocks() -> None:
+    available = 1024**3
+    total, runtime = _block_reserve(
+        utilization=0.001,
+        row_bytes=10,
+        available_memory=available,
+    )
+    block_bytes = 128 * 10
+    assert total == (int(available * 0.001) // block_bytes) * block_bytes
+    assert 0 < total <= available * 0.001
+    plan = runtime._vision_cache_plan
+    assert plan is not None
+    assert plan.bytes_per_device == total
+    assert (plan.hidden_size, plan.dtype) == (10, DType.uint8)
+    # Block mode leaves the legacy entry knob untouched.
+    assert runtime.max_vision_cache_entries == 256
+
+
+def test_reserve_vision_cache_blocks_scales_with_pool() -> None:
+    small, runtime_small = _block_reserve(
+        utilization=0.5,
+        row_bytes=8,
+        available_memory=10 * 1024**2,
+    )
+    large, runtime_large = _block_reserve(
+        utilization=0.5,
+        row_bytes=8,
+        available_memory=20 * 1024**2,
+    )
+    assert 0 < small <= 5 * 1024**2
+    assert small < large <= 10 * 1024**2
+    assert runtime_small.max_vision_cache_entries == 256
+    assert runtime_large.max_vision_cache_entries == 256
+
+
+def test_reserve_vision_cache_blocks_raises_when_no_block_fits() -> None:
+    with pytest.raises(ValueError, match="too small to fit one"):
+        _block_reserve(
+            utilization=0.001,
+            row_bytes=1024**2,
+            available_memory=10 * 1024**2,
+        )
+
+
+def test_reserve_vision_cache_blocks_splits_budget_across_devices() -> None:
+    available = 1024**3
+    total, runtime = _block_reserve(
+        utilization=0.001,
+        row_bytes=10,
+        available_memory=available,
+        n_devices=2,
+    )
+    block_bytes = 128 * 10 * 2
+    assert total == (int(available * 0.001) // block_bytes) * block_bytes
+    plan = runtime._vision_cache_plan
+    assert plan is not None
+    assert plan.bytes_per_device == total // 2

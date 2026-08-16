@@ -45,7 +45,7 @@ compile.
 from std.math import ceildiv, exp, rsqrt
 from std.memory import alloc
 from std.random import randn, seed
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.sys import get_defined_bool, get_defined_int, get_defined_string
 
 from layout import LayoutTensor, TileTensor
@@ -281,11 +281,11 @@ def _mla_prefill_v2_launch[
         o,
         mask_functor,
         scale,
-        num_keys,
-        start_pos,
+        Int32(num_keys),
+        Int32(start_pos),
         work_indptr_ptr,
         work_info_ptr,
-        num_works,
+        Int32(num_works),
         grid_dim=(gx, gy, gz),
         block_dim=kernel.NUM_THREADS,
     )
@@ -535,9 +535,9 @@ def test_mla_vs_fp32_ref[
     )
 
     # ---- Per-head cosine similarity (kernel vs FP32 ref) --------------
-    var dot = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var a_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
-    var r_sq = InlineArray[Float64, NUM_HEADS](fill=Float64(0))
+    var dot = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var a_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
+    var r_sq = Array[Float64, NUM_HEADS](fill=Float64(0))
     var num_nonfinite = 0
     var max_diff: Float32 = 0
 

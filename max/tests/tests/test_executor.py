@@ -16,14 +16,15 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
-from typing import Any
+from concurrent.futures import Future
+from typing import cast
 
 import pytest
-from max import _interpreter
-from max._core.mlrt import AsyncValue
+from max import _interpreter, engine
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import CompiledModel
+from max.experimental import executor as executor_module
+from max.experimental.compile_pool import ProcessCompilePool, pool
 from max.experimental.executor import (
     CompilingExecutor,
     CompositeExecutor,
@@ -33,19 +34,17 @@ from max.experimental.executor import (
     UnsupportedGraphError,
     _eager_model_cache_key,
     _executor_from_env,
+    _FallbackExecutor,
     default_executor,
     set_default_executor,
 )
-from max.experimental.support import _session
 from max.graph import Graph, TensorType, ops
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+_KERNEL_FAILURE = "simulated kernel failure"
 
 
 def _float_buffer(values: Sequence[float]) -> Buffer:
-    """A host float32 buffer holding *values*."""
+    """Returns a host float32 buffer holding *values*."""
     buf = Buffer(DType.float32, [len(values)])
     for i, value in enumerate(values):
         buf[i] = value
@@ -53,34 +52,38 @@ def _float_buffer(values: Sequence[float]) -> Buffer:
 
 
 def _values(buf: Buffer | None) -> list[float]:
-    """The contents of a rank-1 buffer as a list of floats."""
+    """Returns the contents of a rank-1 buffer as a list of floats."""
     assert buf is not None
     (n,) = buf.shape
     return [buf[i].item() for i in range(n)]
 
 
 def _add_graph() -> tuple[Graph, Buffer]:
-    """A simple add-constant graph plus a matching input buffer."""
+    """Returns an add-constant graph and a matching input buffer.
+
+    Executors may mutate a graph in place, so each call builds a fresh
+    one. Successive graphs are structurally identical and therefore share
+    a cache key.
+    """
     input_type = TensorType(DType.float32, [2], CPU())
-    with Graph("add", input_types=[input_type]) as g:
-        (x,) = g.inputs
-        c = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
-        g.output(ops.add(x, c))
-    return g, _float_buffer([3.0, 4.0])
+    with Graph("add", input_types=[input_type]) as graph:
+        (x,) = graph.inputs
+        one = ops.constant([1.0, 1.0], dtype=DType.float32, device=CPU())
+        graph.output(ops.add(x, one))
+    return graph, _float_buffer([3.0, 4.0])
 
 
-def _custom_op_graph() -> Graph:
-    """A graph that triggers InterpreterExecutor refusal via name injection."""
-    with Graph("custom", input_types=[]) as g:
-        c = ops.constant([1.0], dtype=DType.float32, device=CPU())
-        g.output(c)
-    return g
+def _failing_execute(
+    graph: Graph, inputs: Sequence[Buffer]
+) -> Sequence[Buffer | None]:
+    """Stands in for ``max._interpreter.execute`` failing mid-execution."""
+    raise RuntimeError(_KERNEL_FAILURE)
 
 
 class _RecordingExecutor:
-    """Records calls and returns canned buffers."""
+    """An executor that records its calls and returns canned buffers."""
 
-    def __init__(self, result: Sequence[Buffer | None]) -> None:
+    def __init__(self, result: Sequence[Buffer | None] = ()) -> None:
         self.calls: list[tuple[Graph, Sequence[Buffer]]] = []
         self._result = result
 
@@ -91,346 +94,444 @@ class _RecordingExecutor:
         return self._result
 
 
-# ---------------------------------------------------------------------------
-# Protocol conformance
-# ---------------------------------------------------------------------------
+class _FakeModel:
+    """A compiled model that records its calls and returns canned buffers."""
+
+    def __init__(self, result: Sequence[Buffer | None]) -> None:
+        self.calls: list[Sequence[Buffer]] = []
+        self._result = result
+
+    def __call__(self, *inputs: Buffer) -> Sequence[Buffer | None]:
+        self.calls.append(inputs)
+        return self._result
 
 
-class TestProtocolConformance:
-    """All three concrete executors satisfy the Executor runtime_checkable protocol."""
+class _StubPool:
+    """Records compile submissions and returns futures the test controls.
 
-    def test_interpreter_executor_is_executor(self) -> None:
-        assert isinstance(InterpreterExecutor(), Executor)
+    Without an *exception* the futures never resolve, which pins
+    :class:`JitExecutor` to its interpreter path; a real compile could
+    otherwise win the race.
+    """
 
-    def test_compiling_executor_is_executor(self) -> None:
-        assert isinstance(CompilingExecutor(), Executor)
+    def __init__(self, exception: BaseException | None = None) -> None:
+        self.submissions: list[Graph] = []
+        self._exception = exception
 
-    def test_jit_executor_is_executor(self) -> None:
-        assert isinstance(JitExecutor(), Executor)
+    def compile(self, graph: Graph) -> Future[engine.CompiledModel]:
+        self.submissions.append(graph)
+        future: Future[engine.CompiledModel] = Future()
+        if self._exception is not None:
+            future.set_exception(self._exception)
+        return future
 
-    def test_recording_executor_is_executor(self) -> None:
-        """A duck-typed executor with the right signature also satisfies Protocol."""
-        assert isinstance(_RecordingExecutor([]), Executor)
+
+def _install_pool(
+    monkeypatch: pytest.MonkeyPatch, stub: _StubPool
+) -> _StubPool:
+    """Routes compile submissions to *stub*, patching the module singleton.
+
+    The real pool is left running: it is process-wide, so closing it would
+    break every other executor.
+    """
+    monkeypatch.setattr(
+        executor_module, "pool", lambda: cast(ProcessCompilePool, stub)
+    )
+    return stub
 
 
-# ---------------------------------------------------------------------------
-# InterpreterExecutor
-# ---------------------------------------------------------------------------
+@pytest.fixture
+def pending_pool(monkeypatch: pytest.MonkeyPatch) -> _StubPool:
+    """A stub compile pool whose compiles never land."""
+    return _install_pool(monkeypatch, _StubPool())
+
+
+class TestExecutorProtocol:
+    @pytest.mark.parametrize(
+        "executor",
+        [
+            InterpreterExecutor(),
+            CompilingExecutor(),
+            JitExecutor(interpreter=InterpreterExecutor()),
+            _FallbackExecutor(interpreter=InterpreterExecutor()),
+            _RecordingExecutor(),
+        ],
+        ids=["interpreter", "compiling", "jit", "fallback", "duck-typed"],
+    )
+    def test_conforms_to_protocol(self, executor: object) -> None:
+        """Concrete and duck-typed executors satisfy the Executor protocol."""
+        assert isinstance(executor, Executor)
+
+    def test_composite_executor_is_an_alias(self) -> None:
+        """CompositeExecutor names JitExecutor rather than a separate class."""
+        assert CompositeExecutor is JitExecutor
 
 
 class TestInterpreterExecutor:
-    def test_execute_simple_graph(self) -> None:
+    def test_executes_supported_graph(self) -> None:
+        """A graph the interpreter accepts runs and returns its outputs."""
         graph, buf = _add_graph()
-        executor = InterpreterExecutor()
-        results = executor.execute(graph, [buf])
-        assert len(results) == 1
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
+        (out,) = InterpreterExecutor().execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
 
-    def test_raises_unsupported_for_compilation_required_op(
-        self, monkeypatch: Any
+    def test_refuses_graph_needing_compilation(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """InterpreterExecutor raises UnsupportedGraphError for CustomOp graphs."""
+        """An op that requires compilation is refused before execution."""
         monkeypatch.setattr(
             _interpreter, "_COMPILATION_REQUIRED_OP_NAMES", ("ConstantOp",)
         )
-        graph = _custom_op_graph()
-        executor = InterpreterExecutor()
-        with pytest.raises(UnsupportedGraphError):
-            executor.execute(graph, [])
+        with Graph("constant", input_types=[]) as graph:
+            graph.output(ops.constant([1.0], dtype=DType.float32, device=CPU()))
+        with pytest.raises(UnsupportedGraphError, match="require compilation"):
+            InterpreterExecutor().execute(graph, [])
 
-    def test_raises_unsupported_when_over_max_ops(self) -> None:
-        """InterpreterExecutor raises UnsupportedGraphError when graph exceeds max_ops."""
+    def test_refuses_graph_over_max_ops(self) -> None:
+        """max_ops caps the graph size the interpreter accepts."""
         graph, buf = _add_graph()
-        # Set max_ops=1 so the ~3-op add graph is refused.
-        executor = InterpreterExecutor(max_ops=1)
-        with pytest.raises(UnsupportedGraphError):
-            executor.execute(graph, [buf])
+        with pytest.raises(UnsupportedGraphError, match="threshold 1"):
+            InterpreterExecutor(max_ops=1).execute(graph, [buf])
 
-    def test_propagates_runtime_error(self, monkeypatch: Any) -> None:
-        """Runtime errors from execute() propagate unchanged (no swallowing)."""
-
-        def _boom(graph: Any, inputs: Any) -> Any:
-            raise RuntimeError("simulated kernel failure")
-
-        monkeypatch.setattr(_interpreter, "execute", _boom)
+    def test_propagates_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failure mid-execution propagates unchanged, never masked."""
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
         graph, buf = _add_graph()
-        executor = InterpreterExecutor()
-        with pytest.raises(RuntimeError, match="simulated kernel failure"):
-            executor.execute(graph, [buf])
-
-
-# ---------------------------------------------------------------------------
-# CompilingExecutor
-# ---------------------------------------------------------------------------
+        with pytest.raises(RuntimeError, match=_KERNEL_FAILURE):
+            InterpreterExecutor().execute(graph, [buf])
 
 
 class TestCompilingExecutor:
-    def test_compile_and_execute_round_trip(self) -> None:
+    def test_compiles_and_executes(self) -> None:
+        """A graph compiles and runs within a single call."""
         graph, buf = _add_graph()
-        executor = CompilingExecutor()
-        results = executor.execute(graph, [buf])
-        assert len(results) >= 1
+        results = CompilingExecutor().execute(graph, [buf])
         assert _values(results[0]) == pytest.approx([4.0, 5.0])
 
-    def test_each_call_recompiles(self) -> None:
-        """CompilingExecutor has no cache; two calls on identical graphs both succeed."""
+    def test_recompiles_every_call(self) -> None:
+        """With no cache of its own, an identical second graph recompiles."""
+        executor = CompilingExecutor()
         graph1, buf1 = _add_graph()
         graph2, buf2 = _add_graph()
-        executor = CompilingExecutor()
-        r1 = executor.execute(graph1, [buf1])
-        r2 = executor.execute(graph2, [buf2])
-        assert _values(r1[0]) == pytest.approx(_values(r2[0]))
-
-
-# ---------------------------------------------------------------------------
-# CompositeExecutor
-# ---------------------------------------------------------------------------
-
-
-class TestCompositeExecutor:
-    """Interpreter-first with a cached-compile fallback."""
-
-    def test_is_executor(self) -> None:
-        assert isinstance(
-            CompositeExecutor(interpreter=None, fallback_on_error=True),
-            Executor,
-        )
-
-    def test_interpreter_path(self) -> None:
-        """A small graph runs on the interpreter, never touching compile."""
-        graph, buf = _add_graph()
-        executor = CompositeExecutor(
-            interpreter=InterpreterExecutor(), fallback_on_error=True
-        )
-        results = executor.execute(graph, [buf])
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
-
-    def test_compiles_when_interpreter_refuses(self) -> None:
-        """An over-threshold graph falls back to the compiled model."""
-        graph, buf = _add_graph()
-        executor = CompositeExecutor(
-            interpreter=InterpreterExecutor(max_ops=0), fallback_on_error=True
-        )
-        results = executor.execute(graph, [buf])
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
-
-    def test_no_interpreter_compiles(self) -> None:
-        """``interpreter=None`` makes this a pure cached-compile executor."""
-        graph, buf = _add_graph()
-        executor = CompositeExecutor(interpreter=None, fallback_on_error=True)
-        results = executor.execute(graph, [buf])
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
-
-    def test_fallback_on_error_swallows_then_compiles(
-        self, monkeypatch: Any
-    ) -> None:
-        """A runtime interpreter error is swallowed and the graph compiled."""
-
-        def _boom(graph: Any, inputs: Any) -> Any:
-            raise RuntimeError("simulated kernel failure")
-
-        monkeypatch.setattr(_interpreter, "execute", _boom)
-        graph, buf = _add_graph()
-        executor = CompositeExecutor(
-            interpreter=InterpreterExecutor(), fallback_on_error=True
-        )
-        (out,) = executor.execute(graph, [buf])
-        assert _values(out) == pytest.approx([4.0, 5.0])
-
-    def test_no_fallback_propagates_runtime_error(
-        self, monkeypatch: Any
-    ) -> None:
-        """With ``fallback_on_error=False`` a runtime error propagates."""
-
-        def _boom(graph: Any, inputs: Any) -> Any:
-            raise RuntimeError("simulated kernel failure")
-
-        monkeypatch.setattr(_interpreter, "execute", _boom)
-        graph, buf = _add_graph()
-        executor = CompositeExecutor(
-            interpreter=InterpreterExecutor(), fallback_on_error=False
-        )
-        with pytest.raises(RuntimeError, match="simulated kernel failure"):
-            executor.execute(graph, [buf])
-
-
-# ---------------------------------------------------------------------------
-# JitExecutor
-# ---------------------------------------------------------------------------
+        first = executor.execute(graph1, [buf1])
+        second = executor.execute(graph2, [buf2])
+        assert _values(first[0]) == pytest.approx(_values(second[0]))
 
 
 class TestJitExecutor:
-    def test_basic_execute(self) -> None:
-        graph, buf = _add_graph()
-        executor = JitExecutor()
-        results = executor.execute(graph, [buf])
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
+    """The interpreter serves while a compile is pending; the model takes over."""
 
-    def test_cache_idempotence_same_graph(self) -> None:
-        """Structurally identical graphs share one cache entry."""
-        graph, buf1 = _add_graph()
-        executor = JitExecutor()
-
-        executor.execute(graph, [buf1])
-        assert len(executor.cache) == 1
-        cached_entry = next(iter(executor.cache.values()))
-
-        # Second execute on a fresh (but structurally identical) graph.
-        graph2, buf2 = _add_graph()
-        executor.execute(graph2, [buf2])
-        assert len(executor.cache) == 1
-        assert next(iter(executor.cache.values())) is cached_entry
-
-    def test_blocks_on_compile_when_interpreter_refuses(self) -> None:
-        """Graphs the interpreter refuses are served by the compiled model."""
-        graph, buf = _add_graph()
-        executor = JitExecutor()
-        executor.interpreter = InterpreterExecutor(max_ops=0)
-        results = executor.execute(graph, [buf])
-        assert _values(results[0]) == pytest.approx([4.0, 5.0])
-
-    def test_interpreter_runtime_error_propagates(
-        self, monkeypatch: Any
+    def test_pending_compile_serves_via_interpreter(
+        self, pending_pool: _StubPool
     ) -> None:
-        """Errors raised mid-execution are never masked as cache misses."""
-
-        def _boom(graph: Any, inputs: Any) -> Any:
-            raise RuntimeError("simulated kernel failure")
-
-        monkeypatch.setattr(_interpreter, "execute", _boom)
+        """A call whose compile has not landed is served by the interpreter."""
         graph, buf = _add_graph()
-        executor = JitExecutor()
-        # Pin the compile as forever-pending so the interpreter path is
-        # deterministically chosen (a real compile may win the race).
-        _session()  # AsyncValue construction needs an initialized runtime.
-        pending: AsyncValue[Any] = AsyncValue()
-        with executor.lock:
-            executor.cache[_eager_model_cache_key(graph)] = pending
-        with pytest.raises(RuntimeError, match="simulated kernel failure"):
-            executor.execute(graph, [buf])
+        executor = JitExecutor(interpreter=InterpreterExecutor())
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+        assert len(pending_pool.submissions) == 1
 
-    def test_interpreter_max_ops_env(self, monkeypatch: Any) -> None:
-        """MAX_INTERPRETER_MAX_OPS caps the graph size the interpreter serves."""
-        monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "0")
-        executor = JitExecutor()
-        assert executor.interpreter._max_ops == 0
-        # With the interpreter refusing everything, execution still succeeds
-        # via the compiled model.
+    def test_landed_compile_bypasses_interpreter(
+        self, pending_pool: _StubPool
+    ) -> None:
+        """A cached, resolved future serves the call; nothing else is touched."""
         graph, buf = _add_graph()
+        model = _FakeModel([_float_buffer([7.0, 8.0])])
+        landed: Future[engine.Model] = Future()
+        landed.set_result(cast(engine.Model, model))
+        interpreter = _RecordingExecutor()
+        executor = JitExecutor(interpreter=interpreter)
+        executor.cache[_eager_model_cache_key(graph)] = landed
+
+        (out,) = executor.execute(graph, [buf])
+
+        assert _values(out) == pytest.approx([7.0, 8.0])
+        assert len(model.calls) == 1
+        assert not interpreter.calls
+        assert not pending_pool.submissions
+
+    def test_refused_graph_waits_for_compile(self) -> None:
+        """A graph the interpreter refuses waits for its compiled model."""
+        graph, buf = _add_graph()
+        executor = JitExecutor(interpreter=InterpreterExecutor(max_ops=0))
         (out,) = executor.execute(graph, [buf])
         assert _values(out) == pytest.approx([4.0, 5.0])
 
-    def test_failed_compile_propagates(self, monkeypatch: Any) -> None:
-        """A failed compile re-raises on every call; it is not retried."""
-        import max.experimental.executor as executor_module
-
-        session = executor_module._session()
-
-        class _FailingInitSession:
-            def compile_async(self, graph: Graph) -> CompiledModel:
-                return session.compile_async(graph)
-
-            def init(self, compiled: CompiledModel) -> Any:
-                raise RuntimeError("compile exploded")
-
-        monkeypatch.setattr(
-            executor_module, "_session", lambda: _FailingInitSession()
+    def test_refused_graph_raises_when_sync_disabled(
+        self, pending_pool: _StubPool
+    ) -> None:
+        """With sync fallback off a refusal raises, but the compile still goes out."""
+        graph, buf = _add_graph()
+        executor = JitExecutor(
+            interpreter=InterpreterExecutor(max_ops=0),
+            sync_on_interpreter_fallback=False,
         )
+        with pytest.raises(UnsupportedGraphError, match="require compilation"):
+            executor.execute(graph, [buf])
+        assert len(pending_pool.submissions) == 1
+
+    def test_interpreter_runtime_error_propagates(
+        self, monkeypatch: pytest.MonkeyPatch, pending_pool: _StubPool
+    ) -> None:
+        """A live interpreter error reaches the caller."""
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
+        graph, buf = _add_graph()
+        executor = JitExecutor(
+            interpreter=InterpreterExecutor(),
+            sync_on_interpreter_fallback=False,  # TODO(MXF-595)
+        )
+        with pytest.raises(RuntimeError, match=_KERNEL_FAILURE):
+            executor.execute(graph, [buf])
+
+    def test_identical_graphs_share_one_compile(
+        self, pending_pool: _StubPool
+    ) -> None:
+        """Structurally identical graphs share a cache entry and one submission."""
+        executor = JitExecutor(interpreter=InterpreterExecutor())
+        graph1, buf1 = _add_graph()
+        graph2, buf2 = _add_graph()
+
+        (first,) = executor.execute(graph1, [buf1])
+        (cached,) = executor.cache.values()
+        (second,) = executor.execute(graph2, [buf2])
+
+        assert _values(first) == pytest.approx([4.0, 5.0])
+        assert _values(second) == pytest.approx([4.0, 5.0])
+        assert len(executor.cache) == 1
+        assert next(iter(executor.cache.values())) is cached
+        assert len(pending_pool.submissions) == 1
+
+    def test_failed_compile_is_cached(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failed compile re-raises on every call and is never retried."""
+        stub = _install_pool(
+            monkeypatch, _StubPool(RuntimeError("compile exploded"))
+        )
+        # A refusing interpreter makes every call demand the compiled model.
+        executor = JitExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        graph, buf = _add_graph()
+
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="compile exploded"):
+                executor.execute(graph, [buf])
+        assert len(stub.submissions) == 1
+
+    def test_caches_are_per_instance(self, pending_pool: _StubPool) -> None:
+        """Two JitExecutors never share a compile cache."""
+        graph, buf = _add_graph()
+        first = JitExecutor(interpreter=InterpreterExecutor())
+        second = JitExecutor(interpreter=InterpreterExecutor())
+        first.execute(graph, [buf])
+        assert len(first.cache) == 1
+        assert not second.cache
+
+    def test_default_composite_reads_max_ops_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """MAX_INTERPRETER_MAX_OPS caps what the default composite interprets."""
+        monkeypatch.delenv("MAX_EAGER_EXECUTOR", raising=False)
+        monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "0")
+        executor = _executor_from_env()
+        assert isinstance(executor, JitExecutor)
+        assert isinstance(executor.interpreter, InterpreterExecutor)
+        assert executor.interpreter._max_ops == 0
 
         graph, buf = _add_graph()
-        executor = JitExecutor()
-        # Force the demand path: the interpreter must refuse the graph.
-        executor.interpreter = InterpreterExecutor(max_ops=0)
-
-        with pytest.raises(RuntimeError, match="compile exploded"):
-            executor.execute(graph, [buf])
-        with pytest.raises(RuntimeError, match="compile exploded"):
-            executor.execute(graph, [buf])
-
-    def test_isolation_between_instances(self) -> None:
-        """Two JitExecutor instances have independent caches."""
-        graph1, buf1 = _add_graph()
-        ex1 = JitExecutor()
-        ex2 = JitExecutor()
-        ex1.execute(graph1, [buf1])
-        assert len(ex1.cache) == 1
-        assert len(ex2.cache) == 0
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
 
 
 class TestJitExecutorSnapshot:
     """The background compile owns a snapshot, not the caller's module."""
 
-    def test_background_compile_survives_caller_mutation(self) -> None:
-        """The interpreter path may legalize the caller's module in place;
-        the background compile must still succeed and agree with it."""
-        graph, inp = _add_graph()
-        executor = JitExecutor()
-        (first,) = executor.execute(graph, [inp])
-        (future,) = executor.cache.values()
-        future.wait()  # Waits for the background compile and init.
-        (second,) = executor.execute(graph, [inp])
+    def test_compiled_model_agrees_with_interpreter(self) -> None:
+        """A landed compile agrees with the interpreter that served earlier.
+
+        The interpreter path legalizes the caller's module in place, which
+        must leave the already-submitted compile unaffected.
+        """
+        graph, buf = _add_graph()
+        executor = JitExecutor(interpreter=InterpreterExecutor())
+        (interpreted,) = executor.execute(graph, [buf])
+        (compiling,) = executor.cache.values()
+        compiling.result()
+        (compiled,) = executor.execute(graph, [buf])
+        assert _values(interpreted) == pytest.approx(_values(compiled))
+
+    def test_repeated_execute_of_one_graph_object(self) -> None:
+        """Executing one graph object twice stays cached and correct."""
+        graph, buf = _add_graph()
+        executor = JitExecutor(interpreter=InterpreterExecutor())
+        (first,) = executor.execute(graph, [buf])
+        (second,) = executor.execute(graph, [buf])
         assert _values(first) == pytest.approx(_values(second))
 
-    def test_repeated_execute_after_caller_mutation(self) -> None:
-        """Executing, mutating nothing, and executing again stays cached and
-        correct -- two executes of one graph object must not double-process
-        the module."""
-        graph, inp = _add_graph()
-        executor = JitExecutor()
-        (first,) = executor.execute(graph, [inp])
-        (second,) = executor.execute(graph, [inp])
-        assert _values(first) == pytest.approx(_values(second))
+
+class TestJitExecutorConcurrency:
+    def test_concurrent_demands_share_one_compile(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Threads racing on one graph trigger a single compile and init."""
+        real_pool = pool()
+        real_session = executor_module._session()
+        compiles: list[Graph] = []
+        inits: list[engine.CompiledModel] = []
+
+        class _CountingPool:
+            def compile(self, graph: Graph) -> Future[engine.CompiledModel]:
+                compiles.append(graph)
+                return real_pool.compile(graph)
+
+        class _CountingSession:
+            def init(self, compiled: engine.CompiledModel) -> engine.Model:
+                inits.append(compiled)
+                return real_session.init(compiled)
+
+        monkeypatch.setattr(
+            executor_module,
+            "pool",
+            lambda: cast(ProcessCompilePool, _CountingPool()),
+        )
+        monkeypatch.setattr(
+            executor_module, "_session", lambda: _CountingSession()
+        )
+
+        # A refusing interpreter forces every thread onto the compile.
+        executor = JitExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        workloads = [_add_graph() for _ in range(4)]
+        results: list[Sequence[Buffer | None]] = []
+
+        def _demand(graph: Graph, buf: Buffer) -> None:
+            results.append(executor.execute(graph, [buf]))
+
+        threads = [
+            threading.Thread(target=_demand, args=workload)
+            for workload in workloads
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=300)
+
+        assert len(results) == 4
+        for result in results:
+            assert _values(result[0]) == pytest.approx([4.0, 5.0])
+        assert len(compiles) == 1
+        assert len(inits) == 1
 
 
-# ---------------------------------------------------------------------------
-# default_executor / set_default_executor / MAX_EAGER_EXECUTOR
-# ---------------------------------------------------------------------------
+class TestFallbackExecutor:
+    def test_served_graph_never_compiles(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A graph the interpreter serves never touches the compiler."""
+
+        def _no_session() -> engine.InferenceSession:
+            pytest.fail("compiled an interpreter-served graph")
+
+        monkeypatch.setattr(executor_module, "_session", _no_session)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor())
+        graph, buf = _add_graph()
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+
+    def test_refused_graph_compiles_synchronously(self) -> None:
+        """A refused graph is served by an in-process compile."""
+        graph, buf = _add_graph()
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
+        assert len(executor.cache) == 1
+
+    def test_identical_refused_graphs_share_one_compile(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Structurally identical refused graphs share a cache entry."""
+        real_session = executor_module._session
+        sessions: list[engine.InferenceSession] = []
+
+        def _counting_session() -> engine.InferenceSession:
+            sessions.append(real_session())
+            return sessions[-1]
+
+        monkeypatch.setattr(executor_module, "_session", _counting_session)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor(max_ops=0))
+        graph1, buf1 = _add_graph()
+        graph2, buf2 = _add_graph()
+
+        (first,) = executor.execute(graph1, [buf1])
+        (second,) = executor.execute(graph2, [buf2])
+
+        assert _values(first) == pytest.approx([4.0, 5.0])
+        assert _values(second) == pytest.approx([4.0, 5.0])
+        assert len(executor.cache) == 1
+        assert len(sessions) == 1
+
+    def test_interpreter_runtime_error_falls_back_with_warning(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A mid-execution interpreter failure warns and serves compiled."""
+        monkeypatch.setattr(_interpreter, "execute", _failing_execute)
+        executor = _FallbackExecutor(interpreter=InterpreterExecutor())
+        graph, buf = _add_graph()
+        with pytest.warns(UserWarning, match="file a bug"):
+            (out,) = executor.execute(graph, [buf])
+        assert _values(out) == pytest.approx([4.0, 5.0])
 
 
 class TestDefaultExecutor:
-    """Tests for the ambient default executor mechanism."""
+    @pytest.mark.parametrize(
+        ("env_value", "expected"),
+        [
+            (None, CompositeExecutor),
+            ("composite", CompositeExecutor),
+            ("jit", JitExecutor),
+            ("interpreter", InterpreterExecutor),
+            ("compile", CompilingExecutor),
+            ("fallback-internal", _FallbackExecutor),
+        ],
+        ids=[
+            "unset",
+            "composite",
+            "jit",
+            "interpreter",
+            "compile",
+            "fallback-internal",
+        ],
+    )
+    def test_env_selects_executor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_value: str | None,
+        expected: type[object],
+    ) -> None:
+        """MAX_EAGER_EXECUTOR picks the executor; unset means the composite."""
+        if env_value is None:
+            monkeypatch.delenv("MAX_EAGER_EXECUTOR", raising=False)
+        else:
+            monkeypatch.setenv("MAX_EAGER_EXECUTOR", env_value)
+        assert isinstance(_executor_from_env(), expected)
 
-    def test_env_default_is_composite(self, monkeypatch: Any) -> None:
-        monkeypatch.delenv("MAX_EAGER_EXECUTOR", raising=False)
-        assert isinstance(_executor_from_env(), CompositeExecutor)
-
-    def test_env_selects_composite(self, monkeypatch: Any) -> None:
-        monkeypatch.setenv("MAX_EAGER_EXECUTOR", "composite")
-        assert isinstance(_executor_from_env(), CompositeExecutor)
-
-    def test_env_selects_jit(self, monkeypatch: Any) -> None:
-        monkeypatch.setenv("MAX_EAGER_EXECUTOR", "jit")
-        assert isinstance(_executor_from_env(), JitExecutor)
-
-    def test_env_selects_interpreter(self, monkeypatch: Any) -> None:
-        monkeypatch.setenv("MAX_EAGER_EXECUTOR", "interpreter")
-        assert isinstance(_executor_from_env(), InterpreterExecutor)
-
-    def test_env_selects_compile(self, monkeypatch: Any) -> None:
-        monkeypatch.setenv("MAX_EAGER_EXECUTOR", "compile")
-        assert isinstance(_executor_from_env(), CompilingExecutor)
-
-    def test_env_unknown_value_raises(self, monkeypatch: Any) -> None:
+    def test_env_unknown_value_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """An unrecognized MAX_EAGER_EXECUTOR fails loudly, never silently."""
         monkeypatch.setenv("MAX_EAGER_EXECUTOR", "compiled")
         with pytest.raises(ValueError, match="MAX_EAGER_EXECUTOR"):
             _executor_from_env()
 
-    def test_set_default_executor_overrides(self) -> None:
-        custom = CompilingExecutor()
-        with set_default_executor(custom):
-            assert default_executor() is custom
-
-    def test_set_default_executor_restores(self) -> None:
-        """The returned handle restores the previous executor on exit."""
+    def test_set_default_executor_restores_on_exit(self) -> None:
+        """The handle installs immediately and restores the previous executor."""
         original = default_executor()
         replacement = InterpreterExecutor()
         with set_default_executor(replacement):
             assert default_executor() is replacement
         assert default_executor() is original
 
-    def test_set_default_executor_discard_keeps(self) -> None:
-        """The set is eager; discarding the handle keeps the new executor."""
+    def test_discarded_handle_keeps_new_executor(self) -> None:
+        """The set is eager: dropping the handle keeps the new executor."""
         original = default_executor()
         replacement = InterpreterExecutor()
         set_default_executor(replacement)
@@ -439,82 +540,18 @@ class TestDefaultExecutor:
         finally:
             set_default_executor(original)
 
-    def test_default_executor_thread_safe(self) -> None:
-        """default_executor() is safe to call from multiple threads."""
+    def test_default_executor_is_shared_across_threads(self) -> None:
+        """Concurrent callers all see the same singleton."""
         results: list[Executor] = []
-        errors: list[Exception] = []
-
-        def _get() -> None:
-            try:
-                results.append(default_executor())
-            except Exception as e:
-                errors.append(e)
-
-        threads = [threading.Thread(target=_get) for _ in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors
-        assert len(results) == 8
-        # All threads should see the same singleton.
-        assert all(r is results[0] for r in results)
-
-
-class TestJitExecutorConcurrency:
-    """Racing executes for one graph share a single compile and init."""
-
-    def test_concurrent_demands_share_one_compile(
-        self, monkeypatch: Any
-    ) -> None:
-        import max.experimental.executor as executor_module
-
-        session = executor_module._session()
-        compile_count = [0]
-        init_count = [0]
-
-        class _CountingSession:
-            def compile_async(self, graph: Graph) -> CompiledModel:
-                compile_count[0] += 1
-                return session.compile_async(graph)
-
-            def init(self, compiled: CompiledModel) -> Any:
-                init_count[0] += 1
-                return session.init(compiled)
-
-        monkeypatch.setattr(
-            executor_module, "_session", lambda: _CountingSession()
-        )
-
-        executor = JitExecutor()
-        # Force the demand path: the interpreter must refuse the graph.
-        executor.interpreter = InterpreterExecutor(max_ops=0)
-
-        # One graph object per thread: executors mutate graphs in place, so
-        # sharing one object across threads is outside the contract.  The
-        # graphs are structurally identical and share a cache key.
-        workloads = [_add_graph() for _ in range(4)]
-        results: list[Sequence[Buffer | None]] = []
-        errors: list[Exception] = []
-
-        def _demand(graph: Graph, inp: Buffer) -> None:
-            try:
-                results.append(executor.execute(graph, [inp]))
-            except Exception as e:
-                errors.append(e)
 
         threads = [
-            threading.Thread(target=_demand, args=pair) for pair in workloads
+            threading.Thread(target=lambda: results.append(default_executor()))
+            for _ in range(8)
         ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=300)
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
-        assert not errors
-        assert len(results) == 4
-        for result in results:
-            assert _values(result[0]) == pytest.approx([4.0, 5.0])
-        assert compile_count[0] == 1
-        assert init_count[0] == 1
+        assert len(results) == 8
+        assert all(result is results[0] for result in results)

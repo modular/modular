@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
@@ -29,8 +30,12 @@ from max.pipelines.lib import (
     parse_quant_config,
     upper_bounded_default,
 )
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces import ArchConfigWithKVCache
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -81,6 +86,12 @@ class SSMStateCacheParams:
 class MambaConfig(ArchConfigWithKVCache):
     """Model configuration for Mamba graph construction/execution."""
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float32"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
+
     # Core architecture fields
     hidden_size: int
     intermediate_size: int
@@ -114,6 +125,8 @@ class MambaConfig(ArchConfigWithKVCache):
     # Expand factor (needed for intermediate_size derivation)
     expand: int = 2
 
+    quantization_encoding: SupportedEncoding | None = None
+
     def get_max_seq_len(self) -> int:
         return self.max_seq_len
 
@@ -125,7 +138,7 @@ class MambaConfig(ArchConfigWithKVCache):
         and PagedKVCacheManager initialization.  The tiny dimensions
         (1 head, 1 dim, 1 layer) make the allocation negligible.
         """
-        return KVCacheParams(
+        return MHAKVCacheParams(
             dtype=self.dtype,
             n_kv_heads=1,
             head_dim=1,
@@ -199,9 +212,9 @@ class MambaConfig(ArchConfigWithKVCache):
         model_config: MAXModelConfig | None = None,
     ) -> Self:
         model_config = model_config or pipeline_config.model
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
         n_devices = len(pipeline_config.model.device_specs)
 
@@ -266,6 +279,7 @@ class MambaConfig(ArchConfigWithKVCache):
             expand=expand,
             use_subgraphs=pipeline_config.model.use_subgraphs,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

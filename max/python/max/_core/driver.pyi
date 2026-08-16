@@ -19,6 +19,7 @@ MAX Driver Python bindings.
 Provides low-level access to hardware devices and memory management.
 """
 
+import enum
 import os
 import types
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -137,6 +138,7 @@ class Device:
         - ``cpu`` for host devices.
         - ``cuda`` for NVIDIA GPUs.
         - ``hip`` for AMD GPUs.
+        - ``metal`` for Apple GPUs.
 
         .. code-block:: python
 
@@ -595,6 +597,88 @@ class DeviceEvent:
     def __repr__(self) -> str: ...
     def __eq__(self, arg: object, /) -> bool: ...
 
+class LaunchTraceEntry:
+    """
+    One operation recorded by ``max.driver.begin_launch_trace``.
+
+    Describes a kernel launch, memory copy, or memset enqueued on a
+    device stream. Only the field group matching ``kind`` is
+    meaningful; the other groups hold zero values. ``stream_index``
+    identifies which stream enqueued the operation, so entries from
+    different streams can be told apart in the single enqueue-ordered
+    list. ``semantic_hash`` is a deterministic hash of the launch
+    parameters that excludes memory addresses, so it is stable across
+    runs and suitable for change-detection in tests.
+    """
+
+    class OperationKind(enum.Enum):
+        """The kind of operation a trace entry describes."""
+
+        KERNEL_LAUNCH = 0
+
+        MEMCPY = 1
+
+        MEMSET = 2
+
+    class MemcpyKind(enum.Enum):
+        """The direction of a memcpy entry."""
+
+        NONE = 0
+
+        HTOD = 1
+
+        DTOH = 2
+
+        DTOD = 3
+
+    @property
+    def kind(self) -> LaunchTraceEntry.OperationKind:
+        """The kind of operation this entry represents."""
+
+    @property
+    def name(self) -> str:
+        """
+        The kernel name, or the driver API name for copies/memsets (e.g. ``cuMemcpyHtoD``).
+        """
+
+    @property
+    def semantic_hash(self) -> int:
+        """Deterministic, address-free hash of the operation parameters."""
+
+    @property
+    def grid_x(self) -> int: ...
+    @property
+    def grid_y(self) -> int: ...
+    @property
+    def grid_z(self) -> int: ...
+    @property
+    def block_x(self) -> int: ...
+    @property
+    def block_y(self) -> int: ...
+    @property
+    def block_z(self) -> int: ...
+    @property
+    def shared_mem_bytes(self) -> int: ...
+    @property
+    def stream_index(self) -> int:
+        """
+        Identifies the stream this operation was enqueued on, assigned in first-seen order within a trace.
+        """
+
+    @property
+    def memcpy_kind(self) -> LaunchTraceEntry.MemcpyKind:
+        """The copy direction; ``NONE`` unless ``kind`` is ``MEMCPY``."""
+
+    @property
+    def memcpy_byte_size(self) -> int: ...
+    @property
+    def memset_byte_size(self) -> int: ...
+    @property
+    def memset_value(self) -> int: ...
+    @property
+    def memset_value_size(self) -> int: ...
+    def __repr__(self) -> str: ...
+
 class DeviceStream:
     """
     Provides access to a stream of execution on a device.
@@ -742,6 +826,9 @@ class DeviceStream:
     def device(self) -> Device:
         """The device this stream is executing on."""
 
+    def _device_context_ptr(self) -> int:
+        """Gets the AsyncRT DeviceContext pointer for this specific stream."""
+
     @property
     def native_stream_handle(self) -> int:
         """
@@ -763,6 +850,30 @@ class DeviceStream:
 
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""
+
+def begin_launch_trace() -> None:
+    """
+    Starts a process-global recording of enqueued device operations.
+
+    Records kernel launches, memory copies, and memsets across **all**
+    streams into one enqueue-ordered list, clearing any previous trace.
+    No stream or device handle is needed, so work enqueued on streams the
+    caller does not hold (e.g. a compiled graph's internal stream) is still
+    captured. Only CUDA and HIP devices record entries; on other devices the
+    trace is always empty. Intended for tests and debugging: pair with
+    ``take_launch_trace`` to assert which device work a code path enqueues
+    and on which stream.
+    """
+
+def take_launch_trace() -> list[LaunchTraceEntry]:
+    """
+    Stops the global recording and returns the recorded entries.
+
+    Returns:
+        list[LaunchTraceEntry]: The operations enqueued since
+            ``begin_launch_trace``, in enqueue order across all streams.
+            Each entry's ``stream_index`` identifies its stream.
+    """
 
 def __unsafe_pack_py_host_func(fn: Callable) -> tuple[int, int]:
     """
@@ -1060,7 +1171,7 @@ class Buffer:
         shape: Sequence[int],
         mode: numpy._MemMapModeKind = "copyonwrite",
         offset: int = 0,
-    ):
+    ) -> Buffer:
         """
         Creates a memory-mapped buffer from a binary file on disk.
 
@@ -1250,6 +1361,16 @@ class Buffer:
     def _data_ptr(self) -> int:
         """Gets the memory address of the buffer data. Internal use only."""
 
+def _batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
+    """
+    Batched copy of ``srcs`` into ``dsts``.
+
+    Sources may be host, pinned, same-device or peer memory in any mix. One
+    submission only orders the writes on its own stream, so destinations are
+    grouped by device and submitted one batch per device. Identical pairs
+    (``dst is src``) are skipped. All buffers must have matching sizes.
+    """
+
 class DevicePinnedBuffer(Buffer):
     """
     Creates a pinned host memory allocation tied to the given device.
@@ -1341,6 +1462,21 @@ class DevicePinnedBuffer(Buffer):
         Raises:
             ValueError: If is a CPU device.
         """
+
+    def __getitem__(
+        self, idx: int | slice | Sequence[int | slice]
+    ) -> DevicePinnedBuffer:
+        """
+        Gets a buffer slice, preserving the device-pinned type.
+
+        Unlike :obj:`Buffer.__getitem__`, the returned slice is itself a
+        :obj:`DevicePinnedBuffer`, so reads such as ``to_numpy`` on the slice
+        keep the no-synchronization behavior of device-pinned memory.
+        """
+
+    def _view(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int]
+    ) -> DevicePinnedBuffer: ...
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""

@@ -117,6 +117,27 @@ for key, value in pairs:  # For example, [("a", 1), ("b", 2), ...]
     print(key, value)
 ```
 
+### Loop variable bindings
+
+Use `var` and `ref` conventions to control ownership, copying, and
+mutability behavior in loop variables. By default, loop variables are
+immutable references to the iterated items (`imm`). To create a mutable
+copy, use `var`. To maintain value mutability, use `ref`:
+
+```mojo
+var list: List[String] = ["a", "b", "c", "d"]
+
+for var item in list:
+    item = item + "x" # works. item is mutable copy of list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # unchanged
+
+for ref item in list:
+    item = item + "x" # mutability picked up in reference to list element
+    print(item) # prints "ax", then "bx", "cx", and "dx"
+print(list) # changed to ["ax", "bx", "cx", "dx"]
+```
+
 ## Loops and else clauses
 
 An optional `else` clause runs when the loop exits normally.
@@ -139,6 +160,7 @@ Both `for` and `while` loops support `else`.
 A `try` statement executes code that may raise errors.
 
 ```mojo
+var result: Bool
 try:
     result = risky()
 except e:
@@ -205,7 +227,7 @@ def fetch() raises NetworkError -> String:
     raise NetworkError("HTCPCP", 418)   # See RFC 2324 *
 
 try:
-    result = fetch()
+    var result = fetch()
 except e:              # e is inferred as `NetworkError`
     print(e.message)   # Known types support direct field access
     print(e.code)      # `.code` and `.message` only work because `e`
@@ -229,7 +251,7 @@ The cleanup always runs when the block exits, even if an error occurs:
 
 ```mojo
 with open("file.txt") as f:
-    content = f.read()
+    var content = f.read()
 # File is closed here, even if an error occurred
 ```
 
@@ -342,7 +364,7 @@ print(x)   # Error: x is not in scope
 
 ```mojo
 with open("file.txt") as f:
-    data = f.read()
+    var data = f.read()
 # f is not accessible here
 ```
 
@@ -351,7 +373,7 @@ enclosing functions with capture lists:
 
 ```mojo
 def outer():
-    count = 0
+    var count = 0
 
     def inner() {mut count}:  # Capture count by mutable reference
         count += 1            # Updates captured count

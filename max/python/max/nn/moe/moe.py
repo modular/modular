@@ -75,6 +75,27 @@ def make_concatenated_gated_activation_fn(
     return _concatenated_gated_activation_fn
 
 
+def make_interleaved_gated_activation_fn(
+    activation_fn: Callable[[TensorValue], TensorValue],
+) -> Callable[[TensorValue, int], TensorValue]:
+    """Builds a gated activation for interleaved ``[gate | up]`` projections.
+
+    The returned callable reads the gate and up halves with a stride rather
+    than a split point: ``activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]``.
+    That is the layout a checkpoint fusing each expert's gate and up rows as
+    ``[g0, u0, g1, u1, ...]`` produces, and reading it with a stride is what
+    lets such a weight reach the matmul unrearranged.
+    """
+
+    def _interleaved_gated_activation_fn(
+        gate_up: TensorValue, moe_dim: int
+    ) -> TensorValue:
+        del moe_dim  # The halves are separated by a stride, not a split point.
+        return activation_fn(gate_up[:, 0::2]) * gate_up[:, 1::2]
+
+    return _interleaved_gated_activation_fn
+
+
 def _swigluoai_activation(
     gate_up: TensorValue,
     moe_dim: int,
@@ -269,13 +290,17 @@ class MoE(Module, Shardable):
     shard_index: int = 0
     """The index of the current shard (if the MoE layer was sharded)."""
 
+    layer_idx: int | None = None
+    """The index of the MoE layer."""
+
     def __init__(
         self,
         devices: list[DeviceRef],
         hidden_dim: int,
-        num_experts: int,
+        num_experts: int,  # phycial id
         num_experts_per_token: int,
         moe_dim: int,
+        num_logical_experts: int | None = None,
         gate_cls: Callable[..., MoEGate] = MoEGate,
         mlp_cls: Callable[..., MLP] = MLP,
         shared_mlp_cls: Callable[..., MLP] | None = None,
@@ -301,6 +326,7 @@ class MoE(Module, Shardable):
         self.hidden_dim = hidden_dim
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
+        self.num_logical_experts = num_logical_experts or num_experts
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
         self.mlp_cls = mlp_cls
@@ -321,7 +347,7 @@ class MoE(Module, Shardable):
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
-            num_experts=num_experts,
+            num_experts=self.num_logical_experts,
             num_experts_per_token=num_experts_per_token,
             dtype=DType.bfloat16,
         )
@@ -386,7 +412,7 @@ class MoE(Module, Shardable):
                 devices=self.devices,
                 quant_config=self.quant_config,
             )
-            for _ in range(self.num_experts)
+            for _ in range(self.num_logical_experts)
         ]
 
         self.experts = LayerList(self._all_experts)
@@ -504,6 +530,7 @@ class MoE(Module, Shardable):
                 hidden_dim=self.hidden_dim,
                 num_experts=self.num_experts,
                 num_experts_per_token=self.num_experts_per_token,
+                num_logical_experts=self.num_logical_experts,
                 moe_dim=sharded_moe_dim,
                 gate_cls=self.gate_cls,
                 mlp_cls=self.mlp_cls,
@@ -551,7 +578,15 @@ class MoE(Module, Shardable):
 
                 experts_list: list[MLP] = []
                 for _ in range(self.num_local_experts):
-                    curr_expert = self.experts[expert_idx]
+                    plan = self.ep_batch_manager._eplb_phy2log
+                    if plan is not None:
+                        assert self.layer_idx is not None, (
+                            "MoE.layer_idx must be set when EPLB is enabled"
+                        )
+                        log_id = int(plan[self.layer_idx, expert_idx])
+                    else:
+                        log_id = expert_idx
+                    curr_expert = self.experts[log_id]
                     assert isinstance(curr_expert, MLP)
                     experts_list.append(curr_expert.shard([device])[0])
                     expert_idx += 1
@@ -559,6 +594,7 @@ class MoE(Module, Shardable):
                 sharded.experts = LayerList(experts_list)
                 sharded._ep_batch_manager = self.ep_batch_manager
 
+            sharded.layer_idx = self.layer_idx
             shards.append(sharded)
 
         return shards
@@ -714,10 +750,8 @@ class MoE(Module, Shardable):
         if self._ep_batch_manager:
             raise ValueError(
                 "Use forward_moe_sharded_layers for expert-parallel inference "
-                "instead of calling MoE directly."
+                f"instead of calling {type(self).__name__} directly."
             )
-
-        seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
@@ -725,9 +759,54 @@ class MoE(Module, Shardable):
         if self.pre_expert_norm is not None:
             x = self.pre_expert_norm(x)
 
-        router_idx = ops.reshape(
-            router_idx, [-1]
-        )  # (seq_len * n_expert_per_token,)
+        down_projs = self._expert_matmuls(
+            x, ops.reshape(router_idx, [-1]), router_weight
+        )
+
+        if not self.apply_router_weight_first:
+            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
+            routed_expert_out = (
+                ops.unsqueeze(router_weight, axis=1) @ down_projs
+            )
+            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
+                x.dtype
+            )
+        else:
+            routed_expert_out = down_projs.transpose(1, 2)
+            routed_expert_out = ops.squeeze(
+                ops.sum(routed_expert_out, axis=2), axis=2
+            ).cast(x.dtype)
+
+        if self.has_shared_experts:
+            routed_expert_out += self.shared_experts(x)
+
+        return routed_expert_out
+
+    def _expert_matmuls(
+        self,
+        x: TensorValue,
+        router_idx: TensorValue,
+        router_weight: TensorValue | None = None,
+    ) -> TensorValue:
+        """Runs the unquantized expert matmuls for one flat expert assignment.
+
+        Args:
+            x: ``[seq_len, hidden_dim]`` expert input.
+            router_idx: ``[seq_len * num_experts_per_token]`` selected expert
+                ids, in token-major order.
+            router_weight: ``[seq_len, num_experts_per_token]`` router weights,
+                read only when ``apply_router_weight_first`` is set.
+
+        Returns:
+            ``[seq_len, num_experts_per_token, hidden_dim]``, each selected
+            expert's output before the router weights are applied.
+
+        A subclass whose router carries state beyond the ids and weights
+        overrides ``__call__`` and calls this from there. ``MoEQuantized``
+        overrides it with the quantized expert matmuls, so such a subclass
+        works against either base.
+        """
+        seq_len = x.shape[0]
 
         (
             token_expert_order,
@@ -742,12 +821,16 @@ class MoE(Module, Shardable):
         permutated_states = ops.gather(
             x,
             ops.cast(
-                token_expert_order // self.num_experts_per_token, DType.int32
+                ops.floor_div(token_expert_order, self.num_experts_per_token),
+                DType.int32,
             ),
             axis=0,
         )
 
         if self.apply_router_weight_first:
+            assert router_weight is not None, (
+                "router_weight is required when apply_router_weight_first is set"
+            )
             permutated_states = permutated_states * ops.gather(
                 router_weight.reshape([-1, 1]), token_expert_order, axis=0
             ).cast(x.dtype)
@@ -777,25 +860,6 @@ class MoE(Module, Shardable):
             expert_usage_stats,
         )
 
-        down_projs = ops.gather(
-            down_projs, restore_token_order, axis=0
-        ).reshape([seq_len, self.num_experts_per_token, self.hidden_dim])
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_projs
-            )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
-
-        if self.has_shared_experts:
-            routed_expert_out += self.shared_experts(x)
-
-        return routed_expert_out
+        return ops.gather(down_projs, restore_token_order, axis=0).reshape(
+            [seq_len, self.num_experts_per_token, self.hidden_dim]
+        )

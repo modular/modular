@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -86,6 +89,9 @@ def _required_config_bool(huggingface_config: AutoConfig, name: str) -> bool:
 @dataclass(kw_only=True)
 class HYV3Config(Llama3Config):
     """Hy3-preview decoder-only MoE config."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
     # MoE
     num_local_experts: int = 192
@@ -204,7 +210,10 @@ class HYV3Config(Llama3Config):
         base_config.use_subgraphs = True
 
         kv_cache_config = pipeline_config.model.kv_cache
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            base_config.quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
         n_devices = len(pipeline_config.model.device_specs)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
@@ -267,6 +276,7 @@ class HYV3Config(Llama3Config):
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
             data_parallel_degree=base_config.data_parallel_degree,
+            quantization_encoding=base_config.quantization_encoding,
             # MoE
             num_local_experts=num_local_experts,
             num_experts_per_tok=num_experts_per_tok,

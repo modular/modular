@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Python projection of HAL ``Device``."""
 
-from std.memory import ArcPointer, UnsafePointer
+from std.memory import ArcPointer, Pointer
 from std.os import abort
 from std.python import PythonObject
-from std.sys._hal.context import Context as HALContext
-from std.sys._hal.device import Device as HALDevice, get_device_spec
+from _hal.context import Context as HALContext
+from _hal.device import Device as HALDevice, get_device_spec
 
 from .context import Context
 
@@ -32,7 +32,7 @@ struct Device(Movable, Writable):
     @staticmethod
     def _self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:

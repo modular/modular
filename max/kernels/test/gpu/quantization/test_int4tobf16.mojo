@@ -18,7 +18,7 @@
 
 from std.sys.info import is_amd_gpu, is_apple_gpu
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.intrinsics import lop
 from std.memory.unsafe import bitcast
 from std.testing import assert_equal
@@ -68,7 +68,7 @@ def call_int4tobf16[
 
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
-    var stack = InlineArray[BFloat16, 8](uninitialized=True)
+    var stack = Array[BFloat16, 8](uninitialized=True)
     var out_host = TileTensor(stack, row_major[8]())
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
@@ -77,7 +77,8 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
         Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
-    ctx.enqueue_copy(out_host.ptr, out_device)
+    ctx.enqueue_copy(out_host._storage, out_device)
+    ctx.synchronize()
     for i in range(4):
         assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
         assert_equal(out_host[2 * i + 1], BFloat16(i + 4))

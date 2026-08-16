@@ -12,15 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 """Rejection Sampler custom ops."""
 
+from typing import Literal
+
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorType, TensorValue, ops
-from max.nn.kernels import apply_packed_bitmask, topk_fused_sampling
+from max.nn.kernels import (
+    apply_packed_bitmask,
+    gumbel_argmax_from_probs,
+    topk_fused_sampling,
+    topk_topp_masked_probs,
+)
 from max.nn.layer import Module
 
 # Constant for masking invalid tokens in logits.
 # Using -10000 to match the existing sampling code pattern.
 _MASKED_LOGIT_VALUE = -10000.0
+
+_GREEDY_TEMPERATURE_EPS = 1e-5
 
 
 def _multinomial(
@@ -46,6 +55,29 @@ def _multinomial(
 
     divided = ops.div(probs, q)
     return ops.squeeze(ops.argmax(divided, axis=-1), axis=-1)
+
+
+def repeat_per_draft_step(
+    value: TensorValue, batch_dim: Dim, steps_dim: Dim
+) -> TensorValue:
+    """Flattens a per-request value to one entry per (request, draft step).
+
+    Sampling params arrive per request, but a sampled draft proposal evaluates
+    one row per draft position, so each param is repeated across a request's
+    steps first.
+
+    Args:
+        value: Per-request values ``[batch]``.
+        batch_dim: The batch dimension of the result.
+        steps_dim: How many draft positions each request contributes.
+
+    Returns:
+        The repeated values, ``[batch * steps]``.
+    """
+    return ops.reshape(
+        ops.broadcast_to(ops.unsqueeze(value, axis=-1), [batch_dim, steps_dim]),
+        [batch_dim * steps_dim],
+    )
 
 
 def _find_first_rejected(
@@ -342,7 +374,7 @@ class AcceptanceSampler:
       the mean joint acceptance across ``num_draft_steps`` matches
       the configured rate, via
       :func:`compute_synthetic_acceptance_base_rate`.
-    - ``use_stochastic=True`` → stochastic (real) target-only rejection
+    - ``use_stochastic=True`` → stochastic rejection
       sampling. The caller must then pass per-row sampling params
       (``temperature``, ``top_k``, ``max_k``, ``top_p``, ``min_top_p``)
       at call time.
@@ -350,6 +382,10 @@ class AcceptanceSampler:
 
     Synthetic mode takes priority over stochastic when both are
     configured; the stochastic params are ignored in that case.
+
+    ``relaxed_topk`` / ``relaxed_delta`` require ``draft_proposal="argmax"``;
+    the relaxed rule assumes the drafted token is the draft's own argmax, so
+    it does not carry over to a sampled proposal.
     """
 
     def __init__(
@@ -357,11 +393,28 @@ class AcceptanceSampler:
         synthetic_acceptance_rate: float | None = None,
         num_draft_steps: int = 1,
         use_stochastic: bool = False,
+        draft_proposal: Literal["argmax", "sampled"] = "argmax",
+        vocab_size: int | None = None,
         relaxed_topk: int | None = None,
         relaxed_delta: float | None = None,
     ) -> None:
         self._num_draft_steps = num_draft_steps
         self._use_stochastic = use_stochastic
+        self._draft_proposal = draft_proposal
+        self._vocab_size = vocab_size
+        if draft_proposal == "sampled" and vocab_size is None:
+            raise ValueError(
+                "vocab_size is required when draft_proposal='sampled'"
+            )
+        if draft_proposal == "sampled" and (
+            relaxed_topk is not None or relaxed_delta is not None
+        ):
+            raise ValueError(
+                "relaxed acceptance requires draft_proposal='argmax': it"
+                " accepts a draft token whenever the target ranks it near the"
+                " top, which is only a sound approximation when that token is"
+                " the draft's own argmax"
+            )
         self._base_rate: float | None = None
         self._relaxed_topk = relaxed_topk
         self._relaxed_delta = relaxed_delta
@@ -385,6 +438,7 @@ class AcceptanceSampler:
         min_top_p: TensorValue | None = None,
         in_thinking_phase: TensorValue | None = None,
         token_bitmasks: TensorValue | None = None,
+        draft_probs_full: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -402,10 +456,14 @@ class AcceptanceSampler:
                 span. Required when the sampler was built with
                 ``relaxed_topk`` / ``relaxed_delta``; rows where this is
                 True use the relaxed acceptance rule, others use the
-                strict stochastic rule.
+                strict stochastic rule. Relaxed acceptance is available
+                only under ``draft_proposal="argmax"``.
             token_bitmasks: Optional packed int32 grammar constraint bitmask
                 ``[batch, num_steps+1, ceil(vocab_size/32)]``. Only used in
                 stochastic mode (not in synthetic and greedy modes).
+            draft_probs_full: ``[batch, num_steps, vocab_size]`` distributions
+                the draft sampled from. Required when the sampler was built
+                with ``draft_proposal="sampled"``; forbidden otherwise.
         """
         if self._base_rate is not None:
             assert seed is not None, "synthetic acceptance requires a seed"
@@ -436,6 +494,9 @@ class AcceptanceSampler:
                 relaxed_topk=self._relaxed_topk,
                 relaxed_delta=self._relaxed_delta,
                 token_bitmasks=token_bitmasks,
+                draft_proposal=self._draft_proposal,
+                draft_probs_full=draft_probs_full,
+                vocab_size=self._vocab_size,
             )
         return greedy_acceptance_sampler(draft_tokens, target_logits)
 
@@ -453,13 +514,26 @@ def stochastic_acceptance_sampler(
     relaxed_topk: int | None = None,
     relaxed_delta: float | None = None,
     token_bitmasks: TensorValue | None = None,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    draft_probs_full: TensorValue | None = None,
+    vocab_size: int | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
-    Accepts a draft token with probability ``p_target(draft_token)`` after
-    applying temperature scaling and softmax. Recovered tokens are sampled
-    from the target distribution; the bonus token is sampled via
-    ``topk_fused_sampling``.
+    Accepts a draft token with probability ``min(1, p_target / q_draft)``.
+    The bonus token is sampled via ``topk_fused_sampling``.
+
+    ``draft_proposal="argmax"`` (the default) means the draft proposed
+    deterministically. Its ``q`` is then one-hot with probability 1, so the
+    test reduces to ``coin < p_target``, and recovered tokens are sampled
+    from the target distribution. Only temperature reaches the
+    draft-verification distribution in this mode.
+
+    ``draft_proposal="sampled"`` means the draft sampled its own token and
+    ``draft_probs_full`` carries the distribution it drew from. On rejection
+    this mode recovers from the residual ``max(0, p_target - q_draft)``.
+    Temperature, top-k and top-p all reach the draft-verification.
+    ``vocab_size`` is required.
 
     When ``in_thinking_phase``, ``relaxed_topk``, and ``relaxed_delta``
     are all provided, rows where ``in_thinking_phase[b]`` is True
@@ -467,6 +541,13 @@ def stochastic_acceptance_sampler(
     probability is within ``relaxed_delta`` of the top-1 probability.
     Recovered tokens for accepted-but-rejected positions in relaxed
     mode fall back to the target's top-1 argmax.
+
+    Relaxed acceptance requires ``draft_proposal="argmax"``. It reads nothing
+    from the draft's distribution, so it is only a sound approximation while
+    the drafted token is the draft's own most likely token; a sampled proposal
+    can draw from the tail, where "the target also ranks it highly" no longer
+    implies the two models agree. Passing relaxed parameters alongside
+    ``draft_proposal="sampled"`` raises.
 
     When ``token_bitmasks`` is provided, grammar constraints are applied
     to mask invalid tokens before computing probabilities. This ensures
@@ -479,9 +560,34 @@ def stochastic_acceptance_sampler(
         - recovered_tokens: Tokens sampled from target distribution ``[batch, num_steps]``
         - bonus_tokens: Bonus token from final position ``[batch, 1]``
     """
+    if draft_proposal == "sampled":
+        if draft_probs_full is None or vocab_size is None:
+            raise ValueError(
+                "draft_probs_full and vocab_size are required when "
+                "draft_proposal='sampled'"
+            )
+        if draft_tokens.device == DeviceRef.CPU():
+            raise ValueError("draft_proposal='sampled' is GPU-only")
+        if relaxed_topk is not None or relaxed_delta is not None:
+            raise ValueError(
+                "relaxed acceptance requires draft_proposal='argmax': it"
+                " accepts a draft token whenever the target ranks it near the"
+                " top, which is only a sound approximation when that token is"
+                " the draft's own argmax"
+            )
+    elif draft_probs_full is not None:
+        raise ValueError(
+            "draft_probs_full must be None when draft_proposal='argmax'"
+        )
     ops.random.set_seed(seed)
 
     device = draft_tokens.device
+
+    is_greedy_row = temperature < ops.constant(
+        _GREEDY_TEMPERATURE_EPS,
+        dtype=temperature.dtype,
+        device=temperature.device,
+    )
 
     temperature = ops.max(
         temperature,
@@ -515,8 +621,6 @@ def stochastic_acceptance_sampler(
 
     temp_3d = ops.reshape(temperature, shape=[Dim("batch_size"), 1, 1])
     scaled_logits = draft_verification_logits / temp_3d
-
-    target_probs = ops.softmax(scaled_logits)
 
     batch_size = draft_tokens.shape[0]
     num_steps = draft_tokens.shape[1]
@@ -559,11 +663,110 @@ def stochastic_acceptance_sampler(
         [batch_indices, step_indices, token_indices], axis=2
     )
 
-    p_target = ops.gather_nd(target_probs, gather_indices)
+    if draft_proposal == "sampled":
+        assert draft_probs_full is not None
+        assert vocab_size is not None
+        bk_shape = [Dim("batch_size"), Dim("num_steps")]
+        bkv_shape: list[Dim] = [
+            Dim("batch_size"),
+            Dim("num_steps"),
+            Dim(vocab_size),
+        ]
+        flat_rows = batch_size * num_steps
+        dist = ops.rebind(draft_probs_full, bkv_shape)
+        logits_3d = ops.rebind(draft_verification_logits, bkv_shape)
 
-    coins = ops.random.uniform(p_target.type)
-    rejected_strict = coins >= p_target
-    recovered_strict = _multinomial(target_probs)
+        # The masked renormalized target distribution under the request's own
+        # sampling params. The accept test and the residual below read this
+        # one tensor, so they cannot disagree.
+        target_masked = ops.reshape(
+            topk_topp_masked_probs(
+                ops.reshape(logits_3d, [flat_rows, vocab_size]),
+                top_k=repeat_per_draft_step(top_k, batch_size, num_steps).cast(
+                    DType.int64
+                ),
+                temperature=repeat_per_draft_step(
+                    temperature, batch_size, num_steps
+                ).cast(DType.float32),
+                top_p=repeat_per_draft_step(top_p, batch_size, num_steps).cast(
+                    DType.float32
+                ),
+            ),
+            bkv_shape,
+        )
+        p_target = ops.gather_nd(target_masked, gather_indices)
+
+        # The draft sampled its token out of this distribution, so the mass it
+        # carries there is q. Zero means the scheduler had no distribution for
+        # the row, and q = 1 degrades the test to typical acceptance. Reading q
+        # from the same tensor the residual subtracts keeps the two consistent,
+        # which is what rejection sampling needs.
+        q_draft = ops.gather_nd(dist, gather_indices)
+        has_dist = q_draft > ops.constant(0.0, DType.float32, device)
+        q_eff = ops.where(
+            has_dist, q_draft, ops.constant(1.0, DType.float32, device)
+        )
+
+        coins = ops.random.uniform(p_target.type)
+        # ``coin >= min(1, p_target / q)`` without dividing, so a q that
+        # underflows to 0 degrades toward reject rather than accept.
+        rejected_strict = (coins * q_eff) >= p_target
+
+        # Residual: max(masked target - proposal, 0), both already normalized.
+        # A row without a distribution subtracts a one-hot of its drafted
+        # token instead, which removes exactly the token the target just
+        # rejected.
+        onehot = ops.range(
+            0, vocab_size, 1, device=device, dtype=DType.int64
+        ) == ops.unsqueeze(token_indices, axis=-1)
+        draft_mass = ops.where(
+            ops.unsqueeze(has_dist, axis=-1),
+            dist,
+            onehot.cast(DType.float32),
+        )
+        residual = ops.relu(target_masked - draft_mass)
+
+        # One noise row per request, shared by its draft positions (the seed
+        # repeats across a request's rows), for num_steps times less RNG.
+        seed_rows = repeat_per_draft_step(
+            seed
+            + ops.range(
+                0,
+                batch_size,
+                1,
+                out_dim=Dim("batch_size"),
+                device=device,
+                dtype=DType.uint64,
+            ),
+            batch_size,
+            num_steps,
+        )
+        recovered_strict = ops.reshape(
+            gumbel_argmax_from_probs(
+                ops.reshape(residual, [flat_rows, vocab_size]),
+                seed=seed_rows,
+            ),
+            bk_shape,
+        )
+    else:
+        target_probs = ops.softmax(scaled_logits)
+        p_target = ops.gather_nd(target_probs, gather_indices)
+
+        coins = ops.random.uniform(p_target.type)
+        rejected_strict = coins >= p_target
+        recovered_strict = _multinomial(target_probs)
+
+    all_target_argmax = ops.squeeze(
+        ops.argmax(target_logits_3d, axis=-1), axis=-1
+    )
+    target_argmax_draft = ops.rebind(
+        all_target_argmax[:, :-1], [Dim("batch_size"), Dim("num_steps")]
+    )
+    bonus_argmax = all_target_argmax[:, -1:]
+    rejected_greedy = ops.not_equal(
+        token_indices, target_argmax_draft.cast(token_indices.dtype)
+    )
+    recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
 
     use_relaxed = (
         in_thinking_phase is not None
@@ -650,6 +853,27 @@ def stochastic_acceptance_sampler(
         rejected = rejected_strict
         recovered_token_ids = recovered_strict
 
+    is_greedy_bk = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1),
+        shape=[Dim("batch_size"), Dim("num_steps")],
+    )
+    rejected = ops.where(is_greedy_bk, rejected_greedy, rejected)
+    recovered_token_ids = ops.where(
+        is_greedy_bk, recovered_greedy, recovered_token_ids
+    )
+
+    if draft_proposal == "sampled":
+        # Commit the draft token where accepted so ``recovered`` is the
+        # emitted token per position: callers feed the whole vector back to
+        # the draft model via ``eagle_prefill_shift_tokens``, and only the
+        # first rejection is resampled -- accepted positions must keep their
+        # draft token, not the residual sample computed for them.
+        recovered_token_ids = ops.where(
+            rejected,
+            recovered_token_ids,
+            token_indices.cast(recovered_token_ids.dtype),
+        )
+
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(rejected, device), axis=-1
     )
@@ -664,8 +888,19 @@ def stochastic_acceptance_sampler(
         min_top_p=min_top_p,
         seed=seed_per_batch,
     )
+    bonus_token_tensor = bonus_token_ids.tensor
+    is_greedy_b = ops.broadcast_to(
+        ops.unsqueeze(is_greedy_row, axis=-1), shape=[Dim("batch_size"), 1]
+    )
+    bonus_token_tensor = ops.where(
+        is_greedy_b,
+        ops.rebind(bonus_argmax, [Dim("batch_size"), 1]).cast(
+            bonus_token_tensor.dtype
+        ),
+        bonus_token_tensor,
+    )
 
-    return first_rejected_idx, recovered_token_ids, bonus_token_ids.tensor
+    return first_rejected_idx, recovered_token_ids, bonus_token_tensor
 
 
 class RejectionSamplerWithResiduals(Module):

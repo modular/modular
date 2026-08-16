@@ -52,7 +52,7 @@ from std.collections import Set
 from std.math import ceildiv, sqrt
 from std.random import random_ui64, randn, seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from kv_cache.types import (
