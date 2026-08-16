@@ -16,7 +16,7 @@ is essential for working with structs correctly.
 
 ## The basics
 
-You create struct instances by calling the `__init__()` constructor:
+You create struct instances by calling the `__init__()` initializer:
 
 ```mojo
 struct Person:
@@ -32,7 +32,7 @@ def main():
 ```
 
 Calling `Person("Alice", 30)` is syntactic sugar for calling the
-constructor directly:
+initializer directly:
 
 ```mojo
 var me: Person
@@ -273,9 +273,9 @@ As a destructor, you can use this `consume` method for
 
 The `__del__()` method is the core of implicit destruction types. It's
 Mojo's default destructor and works hand in hand with
-`ImplicitlyDeletable`, a trait that all structs conform to by default.
+`Deinitable`, a trait that all structs conform to by default.
 The compiler calls `__del__()` automatically when it detects the final
-use of an implicitly deletable struct value.
+use of a `Deinitable` struct value.
 
 As the name suggests, explicit destruction requires you to call a
 destructor. An explicitly destroyed type must define at least one
@@ -402,7 +402,7 @@ Destruction is compiler-checked, but you choose when it happens.
 The value's final use in scope must be that explicit destructor call.
 
 Field operations are also constrained. Fieldwise initialization must
-happen inside the `__init__()` constructor. You can move values out of a
+happen inside the `__init__()` initializer. You can move values out of a
 field only when the compiler can prove that the instance won't be used
 again, or that the field will be reinitialized before the end of a
 normal method.

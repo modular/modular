@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides wrappers around ARM NEON dot-product and matrix-multiply-accumulate intrinsics."""
+
 from std.sys import llvm_intrinsic
 
 from std.memory.unsafe import bitcast
@@ -21,7 +23,7 @@ from std.memory.unsafe import bitcast
 
 
 def _neon_dotprod[
-    a_type: DType, b_type: DType, c_type: DType, width: SIMDSize
+    a_type: DType, b_type: DType, c_type: DType, width: SIMDLength
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -30,7 +32,7 @@ def _neon_dotprod[
     comptime assert c_type == DType.int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @parameter
+    @__parameter
     @always_inline
     def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
@@ -48,8 +50,8 @@ def _neon_dotprod_lane[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    width: SIMDSize,
-    b_width: SIMDSize,
+    width: SIMDLength,
+    b_width: SIMDLength,
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -73,7 +75,7 @@ def _neon_dotprod_lane[
 
 
 def _neon_matmul[
-    a_type: DType, b_type: DType, c_type: DType, width: SIMDSize
+    a_type: DType, b_type: DType, c_type: DType, width: SIMDLength
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -82,7 +84,7 @@ def _neon_matmul[
     comptime assert c_type == DType.int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @parameter
+    @__parameter
     @always_inline
     def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)

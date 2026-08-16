@@ -111,9 +111,9 @@ Type annotations aren't required, but they improve readability and catch
 errors:
 
 ```mojo
-x: Int = 42
-name: String = "Alice"
-values: List[Float64] = []
+var x: Int = 42
+var name: String = "Alice"
+var values: List[Float64] = []
 ```
 
 A `var` without a type *and* without an initializer is an error:
@@ -142,7 +142,7 @@ they run once:
 
 ```mojo
 # Good for initializing counters/flags to the same literal.
-var x = y = z = "Hello"
+var x = var y = var z = "Hello"
 print(x, y, z) # Hello Hello Hello
 
 # Mixing conventions
@@ -322,7 +322,7 @@ comptime MAX = SIZE * 2
 used to create type aliases and trait composition aliases:
 
 ```mojo
-comptime Permissive = ImplicitlyCopyable & ImplicitlyDeletable
+comptime Permissive = ImplicitlyCopyable & Deinitable
 
 trait SimpleTrait(Writable):  # `SimpleTrait` refines `Writable`
     comptime Element = Permissive  # Associated type with a comptime alias

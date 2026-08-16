@@ -133,8 +133,8 @@ def start_workers(
 
         except KeyboardInterrupt:
             logger.info("MAX Workers shutting down gracefully.")
-        except Exception as e:
-            logger.exception(f"Error occurred starting MAX Workers: {e}")
+        except Exception:
+            logger.exception("Error occurred starting MAX Workers")
         finally:
             _shutdown_event = None
 

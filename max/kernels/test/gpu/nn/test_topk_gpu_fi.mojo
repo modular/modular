@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -19,7 +20,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from layout._fillers import random
 from std.math import exp
@@ -40,7 +41,7 @@ comptime PRINT_OUTPUT = False
 comptime NUM_VALIDATION_TRIALS = 50
 
 
-@parameter
+@__parameter
 def fill_random_for_test[
     dtype: DType, normalized: Bool
 ](buffer: TileTensor[mut=True, dtype, ...]):
@@ -102,11 +103,10 @@ def compute_topk_mask[
         for i in range(N):
             values_list.append(values.load[width=1]((b, i)))
 
-        @parameter
         def _greater_than(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Bool:
             return lhs > rhs
 
-        sort[_greater_than](values_list)
+        sort(values_list, _greater_than)
 
         # K-th largest value.
         var kth_value = values_list[K - 1]
@@ -214,13 +214,12 @@ def compute_topp_mask[
             prob_idx.append((probs.load[width=1]((b, i)), i))
 
         # Sort descending by probability.
-        @parameter
         def _greater_than(
             lhs: Tuple[Scalar[dtype], Int], rhs: Tuple[Scalar[dtype], Int]
         ) -> Bool:
             return lhs[0] > rhs[0]
 
-        sort[_greater_than](prob_idx)
+        sort(prob_idx, _greater_than)
 
         # Walk sorted list, include tokens until cumulative prob >= p.
         var cumsum = Float32(0.0)
@@ -353,16 +352,19 @@ def test_topk_topp_sampling[
                 input_host_tensor, topp_mask_tensor, p, batch_size, N
             )
 
-    # Create a 1-element seed buffer on device.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_layout = row_major(Idx[1])
+    # Per-row seed buffer: the kernel indexes rng_seed by row_idx (the
+    # request's logical row), so every row needs an entry even though all
+    # rows share the same seed value here.
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_layout = row_major(batch_size)
 
     # Run sampling trials.
     var num_passed = 0
     for trial in range(NUM_VALIDATION_TRIALS):
         var trial_seed = UInt64(42 + trial)
         with seed_buf.map_to_host() as seed_host:
-            seed_host[0] = trial_seed
+            for b in range(batch_size):
+                seed_host[b] = trial_seed
         var seed_tt = (
             TileTensor(seed_buf, seed_layout).as_unsafe_any_origin().as_immut()
         )
@@ -666,7 +668,7 @@ def test_topk_sampling[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             comptime if sampling_from_prob:
                 topk_sampling_from_prob[dtype, out_idx_type, block_size](
@@ -824,7 +826,7 @@ def test_case_batched[
     comptime if DEBUG_BENCH:
 
         @always_inline
-        @parameter
+        @__parameter
         def run_func(ctx: DeviceContext) raises:
             topk_mask_logits[dtype, out_idx_type, block_size](
                 ctx,
@@ -894,7 +896,7 @@ def test_case_batched[
                 comptime if DEBUG_BENCH:
 
                     @always_inline
-                    @parameter
+                    @__parameter
                     def run_func_cpu(ctx: DeviceContext) raises:
                         _top_k_cpu[
                             dtype=dtype,
@@ -961,15 +963,14 @@ def test_case_batched[
 def time_kernel[
     func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
-    @parameter
+    @__parameter
     @always_inline
     def bench_func(mut m: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             func(ctx)
 
-        m.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(m, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(
@@ -978,7 +979,7 @@ def time_kernel[
     )
 
 
-@parameter
+@__parameter
 def fill_random[
     rank: Int, dtype: DType
 ](buffer: TileTensor[mut=True, dtype, ...]):

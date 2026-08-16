@@ -40,7 +40,7 @@ from std.sys import is_defined
 ```
 """
 
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 
 
 def is_defined[name: StaticString]() -> Bool:
@@ -215,7 +215,9 @@ def get_defined_dtype[name: StaticString, default: DType]() -> DType:
     """
 
     comptime if is_defined[name]():
-        return DType._from_str(get_defined_string[name]())
+        comptime parsed = DType._from_str(get_defined_string[name]())
+        comptime assert parsed, "invalid DType define for '" + name + "'"
+        return parsed.value()
     else:
         return default
 

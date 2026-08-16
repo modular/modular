@@ -94,6 +94,15 @@ def _content_contains(data: dict[str, Any], needle: str) -> str | None:
     return None
 
 
+def _args_not_json(args: str) -> bool:
+    """Return True if a tool call's arguments string is not valid JSON."""
+    try:
+        json.loads(args)
+    except (json.JSONDecodeError, TypeError):
+        return True
+    return False
+
+
 def _check_completion_tokens(data: dict[str, Any]) -> str | None:
     """Return error if completion_tokens is 0 or missing (OR: completion_tokens_positive)."""
     usage = data.get("usage", {})
@@ -319,6 +328,16 @@ CALCULATE_TOOL = {
         "strict": True,
     },
 }
+
+# Forced-tool runaway thresholds for the tool-choice-required validators.
+# Above this many tool calls the repetition attractor is certain, even if the
+# model escaped the grammar before the token cap.
+_RUNAWAY_CALL_FAIL_THRESHOLD = 8
+# Completion-token ceiling for a clean forced-tool answer to the scenario's
+# trivial prompts: reasoning plus a handful of calls fits in a few hundred
+# tokens, so a response burning more than this is a runaway even when it
+# stops before the request's max_tokens (which stays at OR's 65536 shape).
+_RUNAWAY_COMPLETION_BUDGET = 4096
 
 WEATHER_SCHEMA = {
     "type": "json_schema",
@@ -550,14 +569,52 @@ class ProviderBaseline(BaseScenario):
 
     @staticmethod
     def _check_tool_choice_required(data: dict[str, Any]) -> str | None:
-        """OR validation for tool_choice=required: finish_reason=tool_calls."""
+        """OR validation for tool_choice=required.
+
+        Beyond OR's own finish_reason=tool_calls check, this classifies
+        forced-tool runaway: a ``required`` grammar masks EOS until the
+        tool-call envelope closes, so a model that reasoned its way to "no
+        tool needed" can fall into a repetition attractor — it keeps opening
+        new calls instead of closing the envelope, running until the token
+        cap (observed on Kimi-K2.6 via OpenRouter: ~1900 incrementing
+        calculate calls, with the truncated trailing call's non-JSON
+        arguments leaked on the length stop).
+
+        Runaway signatures, most severe first: finish_reason="length", an
+        excessive call count, an excessive completion-token count, or a call
+        with non-JSON arguments.
+        """
         fr = _get_finish_reason(data)
-        tc = _get_tool_calls(data)
-        if fr == "tool_calls" and tc:
-            return None
-        if tc and fr != "tool_calls":
+        tool_calls = _get_tool_calls(data) or []
+        n_calls = len(tool_calls)
+        completion_tokens = (data.get("usage") or {}).get("completion_tokens")
+        stats = (
+            f"calls={n_calls}, finish_reason={fr}, "
+            f"completion_tokens={completion_tokens}"
+        )
+
+        if fr == "length":
+            return f"Forced-tool runaway: hit token cap ({stats})"
+        if n_calls > _RUNAWAY_CALL_FAIL_THRESHOLD:
+            return f"Forced-tool runaway: excessive call count ({stats})"
+        if (
+            isinstance(completion_tokens, int)
+            and completion_tokens > _RUNAWAY_COMPLETION_BUDGET
+        ):
+            return f"Forced-tool runaway: excessive completion tokens ({stats})"
+
+        bad_args = [
+            i
+            for i, tc in enumerate(tool_calls)
+            if _args_not_json((tc.get("function") or {}).get("arguments", ""))
+        ]
+        if bad_args:
+            return f"Non-JSON arguments in tool call(s) {bad_args} ({stats})"
+        if not tool_calls:
+            return f"No tool_calls ({stats})"
+        if fr != "tool_calls":
             return f"tool_calls present but finish_reason={fr} (expected tool_calls)"
-        return f"No tool_calls, finish_reason={fr}"
+        return None
 
     @staticmethod
     def _tool_choice_function_verdict(
@@ -2083,6 +2140,10 @@ class ProviderBaseline(BaseScenario):
             else:
                 errors = []
                 args_map = _assemble_stream_tool_args(resp.chunks)
+                if len(args_map) > _RUNAWAY_CALL_FAIL_THRESHOLD:
+                    errors.append(
+                        f"Forced-tool runaway: {len(args_map)} streamed calls"
+                    )
                 for idx, args_str in args_map.items():
                     try:
                         json.loads(args_str)

@@ -15,14 +15,14 @@ To get started, you need to do the following:
 
 3. Install the nightly Mojo compiler:
 
-    We recommend using [`pixi`](https://pixi.sh/latest/), which you can install
-    with this command:
+   We recommend using [`pixi`](https://pixi.sh/latest/), which you can install
+   with this command:
 
     ```bash
     curl -fsSL https://pixi.sh/install.sh | sh
     ```
 
-    Then create a new project environment like this and it will install the
+   Then create a new project environment like this and it will install the
 latest nightly version of `mojo` (the CLI compiler) by default:
 
     ```bash
@@ -32,7 +32,7 @@ latest nightly version of `mojo` (the CLI compiler) by default:
     ```
 
     ```bash
-    pixi add modular
+    pixi add mojo
     ```
 
     Lastly enter the environment shell for `mojo` to be available and

@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu import thread_idx
-from std.gpu.memory import CacheOperation
+from max.gpu.memory import CacheOperation
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor, load_to_simd
@@ -32,7 +32,8 @@ def copy_dram_to_sram_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+    var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
         dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
@@ -92,7 +93,7 @@ def run_copy_dram_to_sram_buffer_load_tests(ctx: DeviceContext) raises:
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
-        3,
+        Int32(3),
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )
@@ -105,7 +106,8 @@ def copy_dram_to_local_buffer_load_kernel[
     BN: Int,
     BK: Int,
     thread_layout: Layout,
-](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m: Int,):
+](input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], m_dev: Int32,):
+    var m = Int(m_dev)
     comptime layout = Layout.row_major(BM, BN)
     comptime q_tile_type = LayoutTensor[
         dtype, layout, _, masked=True, address_space=AddressSpace.GLOBAL
@@ -180,7 +182,7 @@ def run_copy_dram_to_local_buffer_load_tests(ctx: DeviceContext) raises:
     ]
     ctx.enqueue_function[kernel](
         input.device_tensor().ptr,
-        3,
+        Int32(3),
         grid_dim=1,
         block_dim=(comptime (thread_layout.size())),
     )

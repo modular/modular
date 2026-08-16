@@ -5,13 +5,13 @@ description: Use speculative decoding to accelerate LLM inference
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import InstallOpenAI from '../../_includes/install-openai.mdx';
+import InstallOpenAI from '../_includes/install-openai.mdx';
 
 Speculative decoding accelerates LLM token generation without changing the
-model's outputs. A smaller, faster draft step proposes several candidate
-tokens, and the larger target model verifies them in one forward pass. MAX
-accepts the prefix the target agrees with and resamples at the first
-disagreement, so quality matches running the target alone.
+model's outputs. A smaller, faster draft step proposes several candidate tokens,
+and the larger target model verifies them in one forward pass. MAX accepts the
+prefix the target agrees with and resamples at the first disagreement, so
+quality matches running the target alone.
 
 The speedup comes from batching verification across `K` candidate positions.
 When the target accepts all `K` drafts, you get `K+1` tokens per step instead
@@ -29,7 +29,7 @@ implementation matures.
 
 We recommend running speculative decoding on an accelerator. For more
 information, see [System
-requirements](/max/packages#system-requirements).
+requirements](/packages#system-requirements).
 
 :::
 
@@ -72,7 +72,7 @@ max serve \
 We use `atomicapple0/EAGLE-LLaMA3.1-Instruct-8B` because it ships
 safetensors weights. For the full list of weight formats MAX supports,
 see
-[`WeightsFormat`](/max/api/python/generated/max.graph.weights.WeightsFormat).
+[`WeightsFormat`](/api/python/generated/max.graph.weights.WeightsFormat).
 
 Once the server prints `Server ready on http://0.0.0.0:8000`, send a
 chat-completion request:
@@ -173,10 +173,10 @@ better-matched draft checkpoint.
 
 The following flags control how MAX drafts tokens and how verification decides
 to accept them. The first three map to fields on
-[`SpeculativeConfig`](/max/api/python/generated/max.pipelines.SpeculativeConfig)
+[`SpeculativeConfig`](/api/python/generated/max.pipelines.SpeculativeConfig)
 when you configure a pipeline programmatically. The last two live on the draft
 model's config and on
-[`KVCacheConfig`](/max/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
+[`KVCacheConfig`](/api/python/generated/max.pipelines.kv_cache.KVCacheConfig/).
 
 - `--num-speculative-tokens`: number of tokens the draft proposes per
   step. Default is `2`. Larger values raise peak speedup but hurt
@@ -203,11 +203,11 @@ flags.
 When using speculative decoding:
 
 - The `--enable-echo` flag isn't supported.
-- The [`--max-length`](/max/cli/serve/#--max-length-max_length) and
-  [`--draft-max-length`](/max/cli/serve/#--draft-max-length-draft_max_length)
+- The [`--max-length`](/cli/serve/#--max-length-max_length) and
+  [`--draft-max-length`](/cli/serve/#--draft-max-length-draft_max_length)
   are both capped at the draft model's maximum supported length. MAX
   clamps both to that limit if either exceeds it.
-- [Structured output](/max/serve/structured-output) is supported. MAX
+- [Structured output](/serve/structured-output) is supported. MAX
   applies the constraint bitmask to each speculated position during
   verification. This feature requires a GPU deployment.
 - Repetition, frequency, and presence penalties aren't supported when
@@ -221,9 +221,11 @@ You can combine speculative decoding with prefix caching and with
 disaggregated inference. The following topics go deeper on performance
 and deployment:
 
-- [Prefix caching with PagedAttention](/max/serve/prefix-caching): Use prefix
+- [Prefix caching with PagedAttention](/serve/prefix-caching): Use prefix
   caching and PagedAttention when serving a model with the MAX CLI.
-- [Benchmark MAX on NVIDIA or AMD GPUs](/max/deploy/benchmark): Learn how to
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark): Learn how to
   use our benchmarking script to measure the performance of MAX.
-- [Deploy MAX on GPU with self-hosted endpoints](/max/deploy/local-to-cloud):
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
   Learn how to deploy MAX pipelines to cloud.
+- [Speculative decoding](https://handbook.modular.com/inference-optimization/speculative-decoding/):
+  Learn more about it in the LLM Inference Handbook.

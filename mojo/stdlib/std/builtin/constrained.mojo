@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements compile-time constraint helpers used by trait conformance checks.
 """
-from std.collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_span import _get_kgen_string
 from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 

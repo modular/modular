@@ -59,8 +59,9 @@ genuine consumer of the slice-1 primitive.
 """
 
 from std.atomic import Ordering, fence
-from std.gpu import barrier, block_idx, global_idx, thread_idx
-from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import block_idx, global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import bitcast
 from std.sys import has_amd_gpu_accelerator
 from std.testing import assert_equal, assert_true
@@ -95,7 +96,7 @@ comptime NUM_SLOTS = 256
 def writer_kernel[
     use_fence: Bool,
     fence_scope: StaticString,
-](peer_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin], num_slots: Int):
+](peer_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin], num_slots_dev: Int32):
     """Publishes ITERS generations of the all-lanes-equal pack into a peer slot.
 
     Each thread owns one 128-bit slot. For every generation `g` it first writes
@@ -104,6 +105,8 @@ def writer_kernel[
     naturally-aligned 128-bit volatile stores (the single `v4` instruction we
     are testing for atomicity).
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_slots = Int(num_slots_dev)
     var slot = Int(global_idx.x)
     if slot >= num_slots:
         return
@@ -134,7 +137,7 @@ def reader_kernel[
     fence_scope: StaticString,
 ](
     own_buf: UnsafePointer[Scalar[DTYPE], MutAnyOrigin],
-    num_slots: Int,
+    num_slots_dev: Int32,
     torn_counts: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
     max_seen: UnsafePointer[Scalar[DType.int64], MutAnyOrigin],
 ):
@@ -150,6 +153,8 @@ def reader_kernel[
     bug). The bounded `SPIN_CAP` makes such a failure a finite result, not a
     hang.
     """
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var num_slots = Int(num_slots_dev)
     var slot = Int(global_idx.x)
     if slot >= num_slots:
         return
@@ -244,7 +249,7 @@ def run_variant[
     # Launch reader first (it spins waiting), then the writer that feeds it.
     reader_ctx.enqueue_function[reader_kernel[use_fence, fence_scope]](
         shared_ptr,
-        NUM_SLOTS,
+        Int32(NUM_SLOTS),
         torn_ptr,
         seen_ptr,
         grid_dim=grid,
@@ -252,7 +257,7 @@ def run_variant[
     )
     writer_ctx.enqueue_function[writer_kernel[use_fence, fence_scope]](
         shared_ptr,
-        NUM_SLOTS,
+        Int32(NUM_SLOTS),
         grid_dim=grid,
         block_dim=BLOCK,
     )

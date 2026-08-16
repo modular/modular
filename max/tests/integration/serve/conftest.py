@@ -24,6 +24,7 @@ from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.context import TextContext, TextGenerationOutput
 from max.pipelines.lib import (
     MAXModelConfig,
+    ModelManifest,
     PipelineArgs,
     PipelineConfig,
     PipelineRuntimeConfig,
@@ -62,13 +63,12 @@ def mock_pipeline_config() -> PipelineConfig:
     runtime = PipelineRuntimeConfig.model_construct(
         max_batch_size=1,
     )
-    pipeline_config = PipelineConfig.model_construct(
-        runtime=runtime,
-    )
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config.model = model_config
-    return pipeline_config
+    return PipelineConfig.model_construct(
+        runtime=runtime,
+        models=ModelManifest({"main": model_config}),
+    )
 
 
 @pytest.fixture()

@@ -21,24 +21,20 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
-from max.graph import DeviceRef
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModel,
     PipelineConfig,
-    PipelineModel,
 )
 
 from .batch_processor import MPNetModuleV3BatchProcessor
@@ -58,11 +54,13 @@ class MPNetInputs(ModelInputs):
     attention_mask: Buffer
 
 
-class MPNetPipelineModel(PipelineModel[TextContext]):
+class MPNetPipelineModel(ModuleV3PipelineModel[TextContext]):
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetModuleV3BatchProcessor]] = (
         MPNetModuleV3BatchProcessor
     )
+
+    model: Callable[..., Any]
 
     def __init__(
         self,
@@ -96,41 +94,32 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         assert isinstance(result, Buffer)
         return ModelOutputs(logits=result)
 
-    def load_model(self) -> Callable[..., tuple[Tensor, ...]]:
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
+    def _create_model_config(self, state_dict: dict[str, Any]) -> MPNetConfig:
+        del state_dict
+        return MPNetConfig.initialize(self.pipeline_config)
 
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        del model_config
         # Cast weights to match the model's configured dtype (e.g. float32
         # safetensor weights -> bfloat16 when default_encoding is bfloat16).
         # V3 compile() requires exact dtype matching unlike V2 load_state_dict.
         target_dtype = self.dtype
         cast_state_dict: dict[str, Any] = {}
-        for k, v in state_dict.items():
-            buf = Buffer.from_dlpack(v) if not isinstance(v, Buffer) else v
+        for key, value in state_dict.items():
+            buf = (
+                Buffer.from_dlpack(value)
+                if not isinstance(value, Buffer)
+                else value
+            )
             if buf.dtype != target_dtype and buf.dtype.is_float():
                 buf = cast_tensor_to(buf, target_dtype)
-            cast_state_dict[k] = buf
-        state_dict = cast_state_dict
+            cast_state_dict[key] = buf
+        return cast_state_dict
 
-        config = MPNetConfig.initialize(self.pipeline_config)
-
-        with F.lazy(), default_dtype(target_dtype):
-            nn_model = MPNetModel(config)
-            nn_model.to(self.devices[0])
-
-        assert self.batch_processor is not None
-        compile_input_types = self.batch_processor.get_symbolic_inputs(
-            kv_params=cast(KVCacheParamInterface, None),
-            device_refs=[DeviceRef.from_device(self.devices[0])],
-        )
-
-        compiled_model = nn_model.compile(
-            *compile_input_types,
-            weights=state_dict,
-        )
-
-        return compiled_model
+    def _instantiate_module(self, model_config: Any) -> MPNetModel:
+        assert isinstance(model_config, MPNetConfig)
+        nn_model = MPNetModel(model_config)
+        nn_model.to(self.devices[0])
+        return nn_model

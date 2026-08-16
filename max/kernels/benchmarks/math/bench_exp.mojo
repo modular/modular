@@ -30,7 +30,7 @@ from std.benchmark import (
 from layout import Coord, TileTensor, row_major
 from std.builtin.range import _StridedRange
 from std.compile import compile_info
-from std.memory import bitcast, stack_allocation
+from std.memory import bitcast, dealloc, unsafe_stack_allocation
 
 
 def _ri(v: Int) -> Int64:
@@ -38,7 +38,7 @@ def _ri(v: Int) -> Int64:
 
 
 def apply[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
@@ -46,7 +46,7 @@ def apply[
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ):
-    def _func[width: Int](idx: Int) {read}:
+    def _func[width: Int](idx: Int) {imm}:
         output.store_linear[width=width](
             IndexList[1](idx),
             func(input.load_linear[width=width](IndexList[1](idx))),
@@ -56,33 +56,39 @@ def apply[
 
 
 def bench_unary[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
+](mut m: Bench, size_range: _StridedRange[DType.int], op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 
 
 def bench_unary[
-    func: def[dtype: DType, width: SIMDSize](SIMD[dtype, width]) thin -> SIMD[
+    func: def[dtype: DType, width: SIMDLength](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
 ](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
-    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var input_ptr_alloc = alloc[Scalar[dtype]](
+        {count = size, alignment = alignment}
+    ).into_managed()
+    var input_ptr = input_ptr_alloc.unsafe_ptr()
+    var output_ptr_alloc = alloc[Scalar[dtype]](
+        {count = size, alignment = alignment}
+    ).into_managed()
+    var output_ptr = output_ptr_alloc.unsafe_ptr()
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
         var f = bitcast[dtype](UInt32(linspace[i % len(linspace)]))
-        input_ptr[i] = f
+        input_ptr.unsafe_offset(i).write(f)
 
-    @parameter
+    @__parameter
     def bench(mut b: Bencher, size: Int) raises:
-        @parameter
+        @__parameter
         def iter_fn():
             apply[func](
                 TileTensor(input_ptr, row_major(Coord(_ri(size)))),
@@ -102,12 +108,12 @@ def bench_unary[
         [elements],
     )
 
-    input_ptr.free()
-    output_ptr.free()
+    dealloc(input_ptr_alloc^)
+    dealloc(output_ptr_alloc^)
 
 
 def ldexp2kf_opt[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -134,7 +140,7 @@ def ldexp2kf_opt[
 
 
 def pow2if[
-    simd_width: SIMDSize
+    simd_width: SIMDLength
 ](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
     var x = (
         ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]())
@@ -143,7 +149,7 @@ def pow2if[
 
 
 def ldexp2kf[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -167,7 +173,7 @@ def ldexp2kf[
 
 @always_inline
 def exp_libm[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
@@ -178,7 +184,7 @@ def exp_libm[
 
 @always_inline
 def ldexp_libm[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -190,7 +196,7 @@ def ldexp_libm[
 
 
 def exp_sleef[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
     comptime lg2it = SIMD[dtype, simd_width](0.6931471805599453)
@@ -217,7 +223,7 @@ def exp_sleef[
 
 @always_inline
 def _exp_taylor0[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         1.0,
@@ -234,7 +240,7 @@ def _exp_taylor0[
 
 @always_inline
 def exp_mojo_opt[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -262,7 +268,7 @@ def exp_mojo_opt[
 
 @always_inline
 def exp_mojo_opt2[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -287,7 +293,7 @@ def exp_mojo_opt2[
 
 @always_inline
 def _exp_taylor3[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
         0.5,
@@ -302,7 +308,7 @@ def _exp_taylor3[
 
 @always_inline
 def exp_mojo_opt3[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
@@ -326,7 +332,7 @@ def exp_mojo_opt3[
 
 @always_inline
 def _exp_taylor_mlas[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
         [
@@ -343,7 +349,7 @@ def _exp_taylor_mlas[
 
 @always_inline
 def exp_mlas[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -364,7 +370,7 @@ def exp_mlas[
 
 @always_inline
 def llvm_ldexp[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -373,7 +379,7 @@ def llvm_ldexp[
 
 @always_inline
 def mlas_llvm_ldexp[
-    dtype: DType, simd_width: SIMDSize
+    dtype: DType, simd_width: SIMDLength
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
@@ -397,7 +403,7 @@ def accuracy_test() raises:
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas_ptr = unsafe_stack_allocation[delta_range, DType.int32]()
     var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
     _ = deltas.fill(Scalar[DType.int32](0))
 

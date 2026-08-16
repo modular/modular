@@ -31,10 +31,10 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
 """
 
 from layout import Idx, TileTensor, row_major
-from std.collections import InlineArray
+from std.collections import Array
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
@@ -80,7 +80,7 @@ def _test_pull[
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(Int(0))), ImmutAnyOrigin
     ]
-    var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
+    var tt_input_bufs = Array[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
         var n = len(expected[dp])
@@ -97,7 +97,7 @@ def _test_pull[
     comptime OutputTileType = TileTensor[
         dtype, type_of(row_major(Int(0))), MutAnyOrigin
     ]
-    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
+    var out_tiles = Array[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         var replica = i // tp_size
         var n = len(expected[replica])
@@ -111,7 +111,7 @@ def _test_pull[
 
     # Signal buffers.
     var signal_bufs = List[DeviceBuffer[DType.uint8]]()
-    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+    var rank_sigs = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
         uninitialized=True
     )
     for i in range(ngpus):

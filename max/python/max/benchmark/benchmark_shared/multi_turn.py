@@ -75,10 +75,14 @@ async def chat_session_driver(
     run_prefix_len: int = 0,
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
+    use_session_id_as_cache_salt: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
         session_id=str(chat_session.id),
+        cache_salt=str(chat_session.id)
+        if use_session_id_as_cache_salt
+        else None,
         sampling=sampling,
         prompt=[],
         images=[],
@@ -251,6 +255,7 @@ async def prerun_warmup_turns(
     sampling: SamplingConfig,
     max_concurrency: int,
     disable_tqdm: bool = False,
+    use_session_id_as_cache_salt: bool = False,
 ) -> None:
     """Send one warmup request per session with prefix_turns > 0.
 
@@ -295,6 +300,9 @@ async def prerun_warmup_turns(
             pending_request = RequestFuncInput(
                 model=model_id,
                 session_id=str(session.id),
+                cache_salt=str(session.id)
+                if use_session_id_as_cache_salt
+                else None,
                 sampling=sampling,
                 prompt=list(message_history),
                 images=[],
@@ -326,6 +334,9 @@ async def prerun_warmup_turns(
     )
 
     semaphore = asyncio.Semaphore(max_concurrency)
+    warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
+        requests_to_fire
+    )
 
     with progressbar_request_driver(
         request_driver,
@@ -334,11 +345,26 @@ async def prerun_warmup_turns(
         desc="warmup",
     ) as driver:
 
-        async def _fire(req: RequestFuncInput) -> None:
+        async def _fire(idx: int, req: RequestFuncInput) -> None:
             async with semaphore:
-                await driver.request(req)
+                warmup_results[idx] = await driver.request(req)
 
-        await asyncio.gather(*(_fire(r) for r in requests_to_fire))
+        await asyncio.gather(
+            *(_fire(idx, r) for idx, r in enumerate(requests_to_fire))
+        )
+
+    for idx, result in enumerate(warmup_results):
+        if result is None:
+            raise RuntimeError(
+                f"Warmup-prerun task {idx} did not produce a result"
+                " (this is a bug)"
+            )
+        if not result.success:
+            raise ValueError(
+                f"Warmup-prerun request failed at index {idx}"
+                f" (prompt_len: {requests_to_fire[idx].prompt_len}),"
+                f" error: {result.error}"
+            )
     logger.info("[warmup-prerun] complete.")
 
 
@@ -363,6 +389,7 @@ async def run_multiturn_benchmark(
     burstiness: float = 1.0,
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
+    use_session_id_as_cache_salt: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -403,6 +430,7 @@ async def run_multiturn_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                use_session_id_as_cache_salt=use_session_id_as_cache_salt,
             )
         session_id = (
             str(chat_session.id)
@@ -530,6 +558,7 @@ async def run_kv_cache_stress_benchmark(
     burstiness: float = 1.0,
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
+    use_session_id_as_cache_salt: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -643,6 +672,7 @@ async def run_kv_cache_stress_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                use_session_id_as_cache_salt=use_session_id_as_cache_salt,
             )
             session_id = (
                 str(chat_session.id)
@@ -697,6 +727,7 @@ async def chat_judge_session_driver(
     max_output_tokens: int,
     sampling: SamplingConfig,
     benchmark_should_end_time: int | None = None,
+    use_session_id_as_cache_salt: bool = False,
 ) -> list[RequestFuncOutput]:
     """Drive one chat-judge session: every turn already has its full
     context inlined as text in the user message, so we send
@@ -744,6 +775,9 @@ async def chat_judge_session_driver(
             prompt_len=system_num_tokens + message.num_tokens,
             max_tokens=max_output_tokens,
             ignore_eos=False,
+            cache_salt=str(chat_session.id)
+            if use_session_id_as_cache_salt
+            else None,
         )
 
         if deadline_passed(benchmark_should_end_time):
@@ -803,6 +837,7 @@ async def run_chat_judge_benchmark(
     warmup_delay_ms: float,
     max_concurrency: int | None,
     sampling: SamplingConfig,
+    use_session_id_as_cache_salt: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run the chat-judge multi-turn scenario."""
     request_counter = RequestCounter(
@@ -829,6 +864,7 @@ async def run_chat_judge_benchmark(
                 max_output_tokens=max_output_tokens,
                 sampling=sampling,
                 benchmark_should_end_time=benchmark_should_end_time,
+                use_session_id_as_cache_salt=use_session_id_as_cache_salt,
             )
         session_id = (
             str(chat_session.id)

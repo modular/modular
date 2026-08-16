@@ -25,4 +25,5 @@ Modules
    experimental.nn.rope
    experimental.sharding
    experimental.tensor
+   experimental.testing
    experimental.torch

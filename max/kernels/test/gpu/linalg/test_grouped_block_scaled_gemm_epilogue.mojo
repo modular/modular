@@ -25,8 +25,8 @@ from std.random import rand, random_float64, seed
 from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from layout import (
@@ -178,12 +178,12 @@ def test_grouped_gemm_epilogue[
     var c_tensor_lt = c_tensor.to_layout_tensor()
 
     # Define epilogue lambda that adds original C value to matmul result
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_lt)
     def epilogue_add_c[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -194,8 +194,8 @@ def test_grouped_gemm_epilogue[
 
     # Initialize random data
     seed(42)
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
 
     # Initialize C with random values for epilogue test
     for i in range(Int(m.value())):
@@ -207,7 +207,7 @@ def test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device, c_host._storage)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -360,19 +360,19 @@ def test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host.ptr, c_device)
-    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
+    ctx.enqueue_copy(c_host._storage, c_device)
+    ctx.enqueue_copy(c_host_ref._storage, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
     var c_tensor_host_lt = c_host_original.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor_host_lt)
     def epilogue_add_c_host[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -391,8 +391,8 @@ def test_grouped_gemm_epilogue[
     # Compare results
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
