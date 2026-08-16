@@ -60,14 +60,14 @@ def _verify_xyz[dim: StaticString]():
 def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
-        UnsafePointer[
+        Pointer[
             Scalar[dtype],
             MutUntrackedOrigin,
             address_space=AddressSpace.CONSTANT,
         ],
         has_side_effect=False,
     ]()
-    return Int(ptr.load[alignment=4](offset))
+    return Int(ptr.unsafe_load[alignment=4](offset))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -333,7 +333,6 @@ struct _BlockDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
-            @parameter
             def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 6
@@ -389,7 +388,6 @@ struct _GridDim[ResultType: _FromInt](Defaultable, TrivialRegisterPassable):
             return Self.ResultType(from_int=Int(i))
         elif is_amd_gpu():
 
-            @parameter
             def _get_offset() -> Int:
                 comptime if dim == "x":
                     return 0

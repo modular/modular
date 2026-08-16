@@ -39,7 +39,7 @@ from std.math import ceildiv, rsqrt
 from std.random import seed
 from std.collections import OptionalReg
 from layout._utils import ManagedLayoutTensor
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
@@ -196,7 +196,7 @@ def execute_sink_prefill_repro[
     var kv_block_paged_lt = kv_block_paged.device_tensor()
     var paged_lut_lt = paged_lut.device_tensor()
 
-    kv_collection_paged_device = PagedKVCacheCollection[
+    var kv_collection_paged_device = PagedKVCacheCollection[
         dtype, kv_params, page_size
     ](
         kv_block_paged_lt,
@@ -256,8 +256,8 @@ def main() raises:
         # seq_len=11 prefill, CausalMask, bf16, paged, ragged — this is the
         # exact specialization that crashes during AMDGPURewriteAGPRCopyMFMA.
         print("Gemma4 global sink=True prefill repro")
-        var seq_lens = [11]
-        var cache_sizes = [0]
+        var seq_lens: List = [11]
+        var cache_sizes: List = [0]
         execute_sink_prefill_repro[
             32,
             DType.bfloat16,

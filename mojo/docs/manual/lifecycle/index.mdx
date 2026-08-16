@@ -14,7 +14,7 @@ garbage collector.
 
 Mojo also has no built-in data types with special privileges. All data types
 in the standard library (such as [`Bool`](/docs/std/builtin/bool/Bool/),
-[`Int`](/docs/std/builtin/int/Int/), and
+[`Int`](/docs/std/builtin/simd/#int), and
 [`String`](/docs/std/collections/string/string/String/)) are implemented as
 [structs](/docs/manual/structs/).
 
@@ -30,8 +30,8 @@ ownership](/docs/manual/values/ownership).
 
 In summary, it's the responsibility of the type author to manage the memory and
 resources for each value type, by implementing specific lifecycle methods, such
-as the constructor, copy constructor, move constructor, and destructor, as
-necessary. Mojo doesn't create any constructors by default, although it does
+as the initializer, copy initializer, move initializer, and destructor, as
+necessary. Mojo doesn't create any initializers by default, although it does
 add a trivial, no-op destructor for types that don't define their own.
 
 In the following pages, we'll explain exactly how to define these lifecycle
@@ -45,8 +45,8 @@ First, let's clarify some terminology:
 - The "lifecycle" of a value is defined by various [dunder
   methods](/docs/manual/structs#special-methods) in a struct.
   Each lifecycle event is handled by a different method,
-  such as the constructor (`__init__()`), the destructor (`__del__()`), the copy
-  constructor (`__init__(copy=)`), and the move constructor (`__init__(take=)`).
+  such as the initializer (`__init__()`), the destructor (`__del__()`), the copy
+  initializer (`__init__(copy=)`), and the move initializer (`__init__(take=)`).
   All values that are declared with the same type have the same lifecycle.
 
 - The "lifetime" of a variable is defined by the span of time during

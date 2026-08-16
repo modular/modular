@@ -39,8 +39,11 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
-from modular_graph_test import are_all_tensor_values, modular_graph_test
 from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import (
+    are_all_tensor_values,
+    modular_graph_test,
+)
 
 MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
@@ -666,9 +669,9 @@ def test_kv_cache_ragged_rope(
     ]
 
     for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
     input_row_offsets = Buffer(
         DType.uint32,
@@ -839,9 +842,9 @@ def test_rope_split_store_ragged(
     ]
 
     for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
     input_row_offsets = Buffer(
         DType.uint32,

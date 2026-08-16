@@ -13,7 +13,7 @@
 
 from std.math import rsqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
@@ -41,11 +41,11 @@ def execute_ragged_flash_attention[
     var num_layers = 1
     var layer_idx = 0
 
-    var true_ce_prompt_lens = [100, 200, 300, 400]
-    var mixed_ce_prompt_lens = [50, 100, 150, 100]
+    var true_ce_prompt_lens: List = [100, 200, 300, 400]
+    var mixed_ce_prompt_lens: List = [50, 100, 150, 100]
 
-    var true_ce_cache_lens = [0, 0, 0, 0]
-    var mixed_ce_cache_lens = [50, 100, 150, 300]
+    var true_ce_cache_lens: List = [0, 0, 0, 0]
+    var mixed_ce_cache_lens: List = [50, 100, 150, 300]
 
     var batch_size = len(true_ce_prompt_lens)
 
@@ -101,27 +101,27 @@ def execute_ragged_flash_attention[
     )
     var mixed_ce_q_ragged_host = mixed_ce_q_ragged.tensor[update=False]()
 
-    true_ce_row_offsets_host_ptr = (
+    var true_ce_row_offsets_host_ptr = (
         true_ce_cache_lengths_table.input_row_offsets.host_ptr
     )
-    mixed_ce_row_offsets_host_ptr = (
+    var mixed_ce_row_offsets_host_ptr = (
         mixed_ce_cache_lengths_table.input_row_offsets.host_ptr
     )
 
     var head_stride = num_q_heads * kv_params.head_size
     for bs_idx in range(batch_size):
-        mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
+        var mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
-        true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
-        mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])
+        var true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs_idx])
+        var mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs_idx])
 
-        mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
+        var mixed_ce_cache_len = mixed_ce_cache_lens[bs_idx]
 
-        true_ce_offset = (
+        var true_ce_offset = (
             true_ce_q_ragged_host.ptr
             + (true_ce_row_offset + mixed_ce_cache_len) * head_stride
         )
-        mixed_ce_offset = (
+        var mixed_ce_offset = (
             mixed_ce_q_ragged_host.ptr + mixed_ce_row_offset * head_stride
         )
 
@@ -174,7 +174,7 @@ def execute_ragged_flash_attention[
         ctx,
     )
 
-    true_ce_kv_collection_device = PagedCollectionType(
+    var true_ce_kv_collection_device = PagedCollectionType(
         kv_block_paged.device_tensor(),
         true_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
@@ -182,7 +182,7 @@ def execute_ragged_flash_attention[
         UInt32(true_ce_max_full_context_length),
     )
 
-    mixed_ce_kv_collection_device = PagedCollectionType(
+    var mixed_ce_kv_collection_device = PagedCollectionType(
         kv_block_paged.device_tensor(),
         mixed_ce_cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
@@ -223,20 +223,20 @@ def execute_ragged_flash_attention[
     true_ce_output_host = true_ce_output.tensor()
 
     for bs in range(batch_size):
-        mixed_ce_prompt_len = mixed_ce_prompt_lens[bs]
-        mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs])
-        true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs])
-        mixed_ce_cache_len = mixed_ce_cache_lens[bs]
+        var mixed_ce_prompt_len = mixed_ce_prompt_lens[bs]
+        var mixed_ce_row_offset = Int(mixed_ce_row_offsets_host_ptr[bs])
+        var true_ce_row_offset = Int(true_ce_row_offsets_host_ptr[bs])
+        var mixed_ce_cache_len = mixed_ce_cache_lens[bs]
 
-        true_ce_ragged_offset = true_ce_row_offset + mixed_ce_cache_len
-        mixed_ce_ragged_offset = mixed_ce_row_offset
+        var true_ce_ragged_offset = true_ce_row_offset + mixed_ce_cache_len
+        var mixed_ce_ragged_offset = mixed_ce_row_offset
         for s in range(mixed_ce_prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    true_ce_val = true_ce_output_host[
+                    var true_ce_val = true_ce_output_host[
                         true_ce_ragged_offset + s, h, hd
                     ]
-                    mixed_ce_val = mixed_ce_output_host[
+                    var mixed_ce_val = mixed_ce_output_host[
                         mixed_ce_ragged_offset + s, h, hd
                     ]
                     try:

@@ -32,10 +32,9 @@ from layout import ComptimeInt, Coord, RowMajorLayout, TileTensor, row_major
 from layout.tile_io import TileCopier
 from layout.tile_layout import TensorLayout
 
-from std.memory import stack_allocation as raw_stack_allocation
+from std.memory import unsafe_stack_allocation as raw_stack_allocation
 
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from std.utils.index import IndexList
 
@@ -95,7 +94,7 @@ struct AddFusionTile(ElementwiseFusionTile):
         # already one, so only `rhs` needs a generic view. Add writes into `dst`
         # in place and returns it.
         var rhs_g = TileTensor(
-            rhs.ptr.address_space_cast[
+            rhs._storage.address_space_cast[
                 AddressSpace.GENERIC
             ]().unsafe_origin_cast[MutAnyOrigin](),
             dst.layout,

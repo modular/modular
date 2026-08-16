@@ -29,14 +29,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_inputs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
-from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
 
-from ..gemma4.batch_vision_inputs import (
-    build_image_inputs,
-    build_video_inputs,
-    create_empty_embeddings,
-    create_empty_indices,
-)
 from ..gemma4.context import Gemma4Context
 
 if TYPE_CHECKING:
@@ -55,7 +48,6 @@ class UnifiedMTPGemma4BatchProcessor(
     """
 
     _config: Gemma4ForConditionalGenerationConfig | None = None
-    _ve_cache: VisionEncoderCache[Gemma4Context] | None = None
 
     def __init__(
         self,
@@ -68,11 +60,9 @@ class UnifiedMTPGemma4BatchProcessor(
         self,
         *,
         config: Gemma4ForConditionalGenerationConfig,
-        ve_cache: VisionEncoderCache[Gemma4Context],
     ) -> None:
-        """Wire model config and vision encoder cache from ``load_model``."""
+        """Wire the model config from ``load_model``."""
         self._config = config
-        self._ve_cache = ve_cache
 
     def get_symbolic_inputs(
         self,
@@ -159,54 +149,6 @@ class UnifiedMTPGemma4BatchProcessor(
             for _ in range(len(self.runtime.devices))
         ]
 
-        # --- Vision inputs (mirrors Gemma4BatchProcessor) ---
-        # The vision encoder runs during prefill only; execute() consumes
-        # ``images``/``video`` to produce combined_embeds/indices, which default
-        # to empty (a no-op scatter) for text-only and decode steps.
-        assert self._config is not None, (
-            "config must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
-        assert self._ve_cache is not None, (
-            "ve_cache must be bound before prepare_initial_token_inputs(); "
-            "call bind_model_state() in load_model()"
-        )
-        k = (
-            self._config.vision_config.pooling_kernel_size
-            if self._config.vision_config is not None
-            else 1
-        )
-        needs_images = any(
-            getattr(ctx, "needs_vision_encoding", False)
-            for ctx in context_batch
-        )
-        if needs_images:
-            uncached = self._ve_cache.get_uncached_contexts(context_batch)
-            image_inputs = build_image_inputs(
-                context_batch=context_batch,
-                uncached=uncached,
-                devices=devices,
-                pooling_kernel_size=k,
-                ve_cache=self._ve_cache,
-                empty_embeddings=self._empty_embeddings(),
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            image_inputs = None
-
-        needs_video = any(
-            getattr(ctx, "needs_video_encoding", False) for ctx in context_batch
-        )
-        if needs_video:
-            video_inputs = build_video_inputs(
-                context_batch=context_batch,
-                devices=devices,
-                pooling_kernel_size=k,
-                dtype=self._config.unquantized_dtype,
-            )
-        else:
-            video_inputs = None
-
         return UnifiedMTPGemma4Inputs(
             tokens=device_tokens,
             input_row_offsets=device_row_offsets,
@@ -218,28 +160,7 @@ class UnifiedMTPGemma4BatchProcessor(
             batch_context_lengths=batch_context_lengths,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
-            images=image_inputs,
-            video=video_inputs,
-            combined_embeds=self._empty_embeddings(),
-            combined_indices=self._empty_indices(),
         )
-
-    def _empty_embeddings(self) -> list[Buffer]:
-        assert self._config is not None
-        if not hasattr(self, "_cached_empty_embeddings"):
-            self._cached_empty_embeddings = create_empty_embeddings(
-                self.runtime.devices,
-                self._config.text_config.hidden_size,
-                self._config.unquantized_dtype,
-            )
-        return self._cached_empty_embeddings
-
-    def _empty_indices(self) -> list[Buffer]:
-        if not hasattr(self, "_cached_empty_indices"):
-            self._cached_empty_indices = create_empty_indices(
-                self.runtime.devices
-            )
-        return self._cached_empty_indices
 
     def process_outputs(
         self, outputs: Sequence[Buffer | object]

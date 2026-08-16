@@ -29,6 +29,11 @@ from max.graph import (
 from max.nn.kv_cache import MultiKVCacheParams, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.transformer.transformer import (
+    captures_by_device,
+    fuse_captured_hidden_states,
+)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
 from max.pipelines.speculative.ragged_token_merger import (
     RaggedTokenMerger,
@@ -39,6 +44,7 @@ from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,
     build_spec_decode_input_types,
 )
+from max.pipelines.speculative.unified_graph_ops import apply_overlap_bitmask
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..dflash_kimi_k25 import DFlashKimiK25
@@ -48,9 +54,14 @@ from .model_config import UnifiedDflashKimiK25Config
 class UnifiedDflashKimiK25(Module):
     """Fused: merge -> target (MLA) -> reject -> materialize -> draft block."""
 
-    def __init__(self, config: UnifiedDflashKimiK25Config) -> None:
+    def __init__(
+        self,
+        config: UnifiedDflashKimiK25Config,
+        enable_structured_output: bool = False,
+    ) -> None:
         super().__init__()
         self.config = config
+        self.enable_structured_output = enable_structured_output
         self.block_size = config.resolve_block_size()
         self.num_speculative_tokens = self.block_size - 1
         self.target_layer_ids = list(config.target_layer_ids)
@@ -84,8 +95,13 @@ class UnifiedDflashKimiK25(Module):
         max_k: TensorValue,
         top_p: TensorValue,
         min_top_p: TensorValue,
+        image_embeddings: list[TensorValue],
+        image_token_indices: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
     ) -> tuple[TensorValue, ...]:
         assert draft_kv_collections is not None
 
@@ -112,19 +128,42 @@ class UnifiedDflashKimiK25(Module):
             merged_offsets, signal_buffers
         )
 
-        target_outputs = self.target(
-            merged_tokens,
+        h_per_dev = [
+            merge_multimodal_embeddings(
+                inputs_embeds=h_d,
+                multimodal_embeddings=img_emb_d,
+                image_token_indices=img_idx_d,
+            )
+            for h_d, img_emb_d, img_idx_d in zip(
+                self.target.embed_tokens(merged_tokens, signal_buffers),
+                image_embeddings,
+                image_token_indices,
+                strict=True,
+            )
+        ]
+        target_outputs = self.target._process_hidden_states(
+            h_per_dev,
             signal_buffers,
             kv_collections,
             return_n_logits,
-            merged_offsets_per_dev,
+            list(merged_offsets_per_dev),
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
         )
         target_logits = target_outputs[1]
-        target_hs_per_dev = list(target_outputs[3 : 3 + n_devs])
+        target_hs_per_dev = fuse_captured_hidden_states(
+            captures_by_device(target_outputs[3:], n_devs)
+        )
+
+        effective_bitmasks = apply_overlap_bitmask(
+            pinned_bitmask,
+            wait_payload,
+            device_bitmask_scratch,
+            num_steps=draft_tokens.shape[1],
+            device=device0,
+        )
 
         seed_scalar = seed[0]
         num_accepted, recovered, bonus = self.acceptance_sampler(
@@ -136,6 +175,7 @@ class UnifiedDflashKimiK25(Module):
             max_k=max_k,
             top_p=top_p,
             min_top_p=min_top_p,
+            token_bitmasks=effective_bitmasks,
         )
 
         num_steps_scalar_i32 = _shape_to_scalar(
@@ -359,12 +399,16 @@ class UnifiedDflashKimiK25(Module):
         ``kv_params`` is the unified ``{"target", "draft"}`` tree; the target
         leaf is MLA and the draft leaf is MHA, each carrying its own blocks
         and dispatch metadata. Distributed (DP + signals + EP) MHA-draft graph
-        (no vision, no in-thinking-phase, no structured output). See
+        with vision (no in-thinking-phase) that appends the structured-output
+        bitmask triple when ``enable_structured_output`` is set. See
         :func:`build_spec_decode_input_types` for the canonical ordering.
         """
         spec = SpecDecodeInputTypeSpec(
             distributed=True,
             data_parallel_degree=self.config.target.data_parallel_degree,
+            enable_vision=True,
+            vision_hidden_size=self.config.target.hidden_size,
+            enable_structured_output=self.enable_structured_output,
         )
         ep_input_types = (
             self.target.ep_manager.input_types()

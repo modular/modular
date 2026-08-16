@@ -60,7 +60,7 @@ struct Complex(
         return sqrt(self.squared_norm())
 
     def __truediv__(self, rhs: Self) -> Self:
-        denom = rhs.squared_norm()
+        var denom = rhs.squared_norm()
         return Self(
             (self.re * rhs.re + self.im * rhs.im) / denom,
             (self.im * rhs.re - self.re * rhs.im) / denom,
@@ -88,7 +88,7 @@ struct Complex(
         return Self(self.re / rhs, self.im / rhs)
 
     def __rtruediv__(self, lhs: Float64) -> Self:
-        denom = self.squared_norm()
+        var denom = self.squared_norm()
         return Self(
             (lhs * self.re) / denom,
             (-lhs * self.im) / denom,
@@ -164,8 +164,8 @@ def test_complex() raises:
     assert_true(isclose(c.squared_norm(), 43.69))
     assert_true(isclose(c.norm(), 6.6098))
 
-    c1 = Complex(-1.2, 6.5)
-    c2 = Complex(3.14, -2.72)
+    var c1 = Complex(-1.2, 6.5)
+    var c2 = Complex(3.14, -2.72)
     assert_true(isclose((c1 + c2).re, 1.94))
     assert_true(isclose((c1 + c2).im, 3.78))
     assert_true(isclose((c1 - c2).re, -4.34))

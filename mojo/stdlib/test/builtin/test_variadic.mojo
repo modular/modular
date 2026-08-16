@@ -27,16 +27,16 @@ def test_variadic_iterator() raises:
 
 def test_variadic_reverse_empty() raises:
     var _tup = ()
-    comptime ReversedVariadic = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.size, 0)
-    assert_equal(ReversedVariadic.size, 0)
+    comptime ReversedVariadic = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 0)
+    assert_equal(ReversedVariadic.length, 0)
 
 
 def test_variadic_reverse_odd() raises:
     var _tup = (String("hi"), Int(42), Float32(3.14))
-    comptime ReversedVariadic = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.size, 3)
-    assert_equal(ReversedVariadic.size, 3)
+    comptime ReversedVariadic = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 3)
+    assert_equal(ReversedVariadic.length, 3)
     assert_true(ReversedVariadic[0] == Float32)
     assert_true(ReversedVariadic[1] == Int)
     assert_true(ReversedVariadic[2] == String)
@@ -44,9 +44,9 @@ def test_variadic_reverse_odd() raises:
 
 def test_variadic_reverse_even() raises:
     var _tup = (Int(1), String("a"))
-    comptime ReversedVariadic3 = type_of(_tup).element_types.reverse()
-    assert_equal(_tup.element_types.size, 2)
-    assert_equal(ReversedVariadic3.size, 2)
+    comptime ReversedVariadic3 = type_of(_tup).Ts.reverse()
+    assert_equal(_tup.Ts.length, 2)
+    assert_equal(ReversedVariadic3.length, 2)
     assert_true(ReversedVariadic3[0] == String)
     assert_true(ReversedVariadic3[1] == Int)
 
@@ -54,20 +54,20 @@ def test_variadic_reverse_even() raises:
 def test_variadic_concat_empty() raises:
     var _tup = ()
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup).Ts.values
     ]()
-    assert_equal(_tup.element_types.size, 0)
-    assert_equal(ConcattedVariadic.size, 0)
+    assert_equal(_tup.Ts.length, 0)
+    assert_equal(ConcattedVariadic.length, 0)
 
 
 def test_variadic_concat_singleton() raises:
     var _tup = (String("hi"), Int(42), Float32(3.14))
     var _tup2 = (Bool(True),)
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup2).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup2).Ts.values
     ]()
-    assert_equal(_tup.element_types.size, 3)
-    assert_equal(ConcattedVariadic.size, 4)
+    assert_equal(_tup.Ts.length, 3)
+    assert_equal(ConcattedVariadic.length, 4)
     assert_true(ConcattedVariadic[0] == String)
     assert_true(ConcattedVariadic[1] == Int)
     assert_true(ConcattedVariadic[2] == Float32)
@@ -78,10 +78,10 @@ def test_variadic_concat_identity() raises:
     var _tup = (Int(1), String("a"))
     var _tup2 = ()
     comptime ConcattedVariadic = TypeList._concat[
-        type_of(_tup).element_types.values, type_of(_tup2).element_types.values
+        type_of(_tup).Ts.values, type_of(_tup2).Ts.values
     ]()
-    assert_equal(_tup.element_types.size, 2)
-    assert_equal(ConcattedVariadic.size, 2)
+    assert_equal(_tup.Ts.length, 2)
+    assert_equal(ConcattedVariadic.length, 2)
     assert_true(ConcattedVariadic[0] == Int)
     assert_true(ConcattedVariadic[1] == String)
 
@@ -143,7 +143,7 @@ def test_type_list_filter_idx_even_positions() raises:
         WithValue[30],
         WithValue[40],
     ]().filter_idx[_KeepEvenIdx]()
-    assert_equal(filtered.size, 2)
+    assert_equal(filtered.length, 2)
     assert_true(filtered[0] == WithValue[10])
     assert_true(filtered[1] == WithValue[30])
 
@@ -152,7 +152,7 @@ def test_type_list_filter_idx_keep_all() raises:
     comptime filtered = TypeList.of[
         Trait=HasStaticValue, WithValue[1], WithValue[2]
     ]().filter_idx[_KeepAllIdx]()
-    assert_equal(filtered.size, 2)
+    assert_equal(filtered.length, 2)
     assert_true(filtered[0] == WithValue[1])
     assert_true(filtered[1] == WithValue[2])
 
@@ -161,14 +161,14 @@ def test_type_list_filter_idx_empty() raises:
     comptime filtered = TypeList.of[Trait=HasStaticValue]().filter_idx[
         _KeepEvenIdx
     ]()
-    assert_equal(filtered.size, 0)
+    assert_equal(filtered.length, 0)
 
 
 def test_type_list_filter_idx_even_positions_pair() raises:
     comptime filtered = TypeList.of[
         Trait=HasStaticValue, WithValue[7], WithValue[8]
     ]().filter_idx[_KeepEvenIdx]()
-    assert_equal(filtered.size, 1)
+    assert_equal(filtered.length, 1)
     assert_true(filtered[0] == WithValue[7])
 
 
@@ -182,7 +182,7 @@ def test_type_list_filter_idx_by_index() raises:
         WithValue[200],
         WithValue[300],
     ]().filter_idx[_KeepFirstTwo]()
-    assert_equal(filtered.size, 2)
+    assert_equal(filtered.length, 2)
     assert_true(filtered[0] == WithValue[100])
     assert_true(filtered[1] == WithValue[200])
 
@@ -218,17 +218,17 @@ def test_variadic_value_reducer() raises:
     assert_true(mapped_values[0] == WithValue[1])
     assert_true(mapped_values[1] == WithValue[2])
     assert_true(mapped_values[2] == WithValue[3])
-    assert_equal(mapped_values.size, 3)
+    assert_equal(mapped_values.length, 3)
 
 
 def test_variadic_value_reducer_empty() raises:
     comptime mapped_values = IntToWithValue[*ParameterList.empty_of[Int]()]
-    assert_equal(mapped_values.size, 0)
+    assert_equal(mapped_values.length, 0)
 
 
 def test_variadic_splatted() raises:
     comptime splatted_variadic = TypeList.splat[3, String]()
-    assert_equal(splatted_variadic.size, 3)
+    assert_equal(splatted_variadic.length, 3)
     assert_true(splatted_variadic[0] == String)
     assert_true(splatted_variadic[1] == String)
     assert_true(splatted_variadic[2] == String)
@@ -236,7 +236,7 @@ def test_variadic_splatted() raises:
 
 def test_variadic_splatted_zero() raises:
     comptime splatted_variadic = TypeList.splat[0, Float64]()
-    assert_equal(splatted_variadic.size, 0)
+    assert_equal(splatted_variadic.length, 0)
 
 
 comptime _TabulateTimesThree[index: Int]: Int = index * 3
@@ -266,7 +266,7 @@ def test_parameter_list_splat_zero() raises:
 
 def test_variadic_contains() raises:
     comptime types = TypeList.of[Int, String, Float32]()
-    assert_equal(types.size, 3)
+    assert_equal(types.length, 3)
     assert_true(types.contains[Int]())
     assert_true(types.contains[String]())
     assert_true(types.contains[Float32]())
@@ -275,7 +275,7 @@ def test_variadic_contains() raises:
 
 def test_variadic_contains_empty() raises:
     comptime types = TypeList.of[Trait=Writable]()
-    assert_equal(types.size, 0)
+    assert_equal(types.length, 0)
     assert_false(types.contains[Bool]())
 
 
@@ -296,12 +296,12 @@ def test_variadic_contains_value_empty() raises:
 
 def test_slice_types_empty() raises:
     comptime types = TypeList.of[Trait=Writable]().slice[start=0, end=0]()
-    assert_equal(types.size, 0)
+    assert_equal(types.length, 0)
 
 
 def test_slice_types() raises:
     comptime types = TypeList.of[Int, String, Float32]().slice[start=0, end=2]()
-    assert_equal(types.size, 2)
+    assert_equal(types.length, 2)
     assert_true(types[0] == Int)
     assert_true(types[1] == String)
 
@@ -309,7 +309,7 @@ def test_slice_types() raises:
 def test_map_types_to_types_empty() raises:
     comptime mapper[T: AnyType] = Int
     comptime types = TypeList.of[Trait=AnyType]().map[mapper]()
-    assert_equal(types.size, 0)
+    assert_equal(types.length, 0)
 
 
 trait TestErrable:
@@ -328,7 +328,7 @@ def test_map_types_to_types() raises:
     comptime Mapper[T: TestErrable] = T.ErrorType
     # TODO: to remove `Trait=TestErrable`, we need to better support generator type conversion.
     comptime types = TypeList.of[Trait=TestErrable, Foo, Baz]().map[Mapper]()
-    assert_equal(types.size, 2)
+    assert_equal(types.length, 2)
     assert_true(types[0] == Int)
     assert_true(types[1] == String)
 
@@ -494,7 +494,7 @@ def test_variadic_pack_some() raises:
     """Test using SomeTypeList in a variadic pack."""
 
     def foo(*args: *SomeTypeList[Writable]) raises:
-        comptime assert args.element_types.all_conforms_to[Writable]()
+        comptime assert args.Ts.all_conforms_to[Writable]()
         var s = String()
         args.write_to(s)
         assert_equal(s, "(a, True)")
@@ -507,9 +507,9 @@ def test_variadic_pack_some() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def test_typelist_size() raises:
-    assert_equal(TypeList.of[Trait=AnyType, Int, String, Float64].size, 3)
-    assert_equal(TypeList.of[Bool].size, 1)
+def test_typelist_length() raises:
+    assert_equal(TypeList.of[Trait=AnyType, Int, String, Float64].length, 3)
+    assert_equal(TypeList.of[Bool].length, 1)
 
 
 def test_typelist_getitem() raises:
@@ -521,7 +521,7 @@ def test_typelist_getitem() raises:
 
 def test_typelist_reversed() raises:
     comptime rev = TypeList.of[Trait=AnyType, Int, String, Float64]().reverse()
-    assert_equal(rev.size, 3)
+    assert_equal(rev.length, 3)
     assert_true(rev[0] == Float64)
     assert_true(rev[1] == String)
     assert_true(rev[2] == Int)
@@ -543,29 +543,29 @@ def test_typelist_reduce() raises:
     assert_equal(count, 3)
 
 
-def test_typelist_any_all_satisfies() raises:
+def test_typelist_any_all() raises:
     comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
 
     comptime IsInt[T: AnyType] = T == Int
     comptime IsNumber[T: AnyType] = T == Int or T == Float64
 
-    comptime assert TL.any_satisfies[IsInt]()
-    comptime assert TL.any_satisfies[IsNumber]()
+    comptime assert TL.any[IsInt]()
+    comptime assert TL.any[IsNumber]()
 
     comptime IsBool[T: AnyType] = T == Bool
-    comptime assert not TL.any_satisfies[IsBool]()
+    comptime assert not TL.any[IsBool]()
 
     comptime AlwaysTrue[T: AnyType] = True
-    comptime assert TL.all_satisfies[AlwaysTrue]()
+    comptime assert TL.all[AlwaysTrue]()
 
     comptime IsIntOrString[T: AnyType] = T == Int or T == String
-    comptime assert not TL.all_satisfies[IsIntOrString]()
+    comptime assert not TL.all[IsIntOrString]()
 
 
-def test_typelist_all_satisfies_empty() raises:
+def test_typelist_all_empty() raises:
     comptime TL = TypeList.of[Trait=AnyType]()
     comptime AlwaysFalse[T: AnyType] = False
-    comptime assert TL.all_satisfies[AlwaysFalse]()
+    comptime assert TL.all[AlwaysFalse]()
 
 
 def test_typelist_slice() raises:
@@ -573,25 +573,25 @@ def test_typelist_slice() raises:
 
     # Slice middle
     comptime middle = TL.slice[start=1, end=3]()
-    assert_equal(middle.size, 2)
+    assert_equal(middle.length, 2)
     assert_true(middle[0] == String)
     assert_true(middle[1] == Float64)
 
     # Slice from start
     comptime first2 = TL.slice[start=0, end=2]()
-    assert_equal(first2.size, 2)
+    assert_equal(first2.length, 2)
     assert_true(first2[0] == Int)
     assert_true(first2[1] == String)
 
     # Slice to end (using default)
     comptime last2 = TL.slice[start=2]()
-    assert_equal(last2.size, 2)
+    assert_equal(last2.length, 2)
     assert_true(last2[0] == Float64)
     assert_true(last2[1] == Bool)
 
     # Full slice (defaults)
     comptime full = TL.slice[]
-    assert_equal(full.size, 4)
+    assert_equal(full.length, 4)
 
 
 def test_typelist_map() raises:
@@ -599,7 +599,7 @@ def test_typelist_map() raises:
 
     comptime ToList[T: Copyable]: Copyable = List[T]
     comptime mapped = TL.map[ToList]()
-    assert_equal(mapped.size, 3)
+    assert_equal(mapped.length, 3)
     comptime assert mapped[0] == List[Int]
     comptime assert mapped[1] == List[String]
     comptime assert mapped[2] == List[Float64]
@@ -610,7 +610,7 @@ def test_typelist_map_identity() raises:
 
     comptime Identity[T: AnyType] = T
     comptime mapped = TL.map[Identity]()
-    assert_equal(mapped.size, 2)
+    assert_equal(mapped.length, 2)
     comptime assert mapped[0] == Int
     comptime assert mapped[1] == Bool
 
@@ -620,7 +620,7 @@ def test_typelist_map_empty() raises:
 
     comptime ToList[T: Copyable]: Copyable = List[T]
     comptime mapped = TL.map[ToList]()
-    assert_equal(mapped.size, 0)
+    assert_equal(mapped.length, 0)
 
 
 def main() raises:

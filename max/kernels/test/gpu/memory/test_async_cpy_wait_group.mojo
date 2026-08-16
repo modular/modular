@@ -14,15 +14,14 @@
 from std.sys import size_of
 
 from std.gpu import thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.host import DeviceContext
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 
@@ -33,7 +32,7 @@ def copy_via_shared(
     var thread_id = thread_idx.x
     var mem_buff: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[
+    ] = unsafe_stack_allocation[
         16, Float32, address_space=AddressSpace.SHARED
     ]().as_unsafe_any_origin()
     var src_global: UnsafePointer[
@@ -88,9 +87,11 @@ def run_copy_via_shared(ctx: DeviceContext) raises:
 def copy_with_src_size(
     src: UnsafePointer[Float32, ImmutAnyOrigin],
     dst: UnsafePointer[Float32, MutAnyOrigin],
-    src_size: Int,
+    src_size_dev: Int32,
 ):
-    var smem = stack_allocation[
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var src_size = Int(src_size_dev)
+    var smem = unsafe_stack_allocation[
         8, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
@@ -120,7 +121,7 @@ def copy_with_non_zero_fill[
     src: UnsafePointer[BFloat16, ImmutAnyOrigin],
     dst: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
-    var smem = stack_allocation[
+    var smem = unsafe_stack_allocation[
         smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
     ]()
 
@@ -168,7 +169,7 @@ def test_copy_with_src_size(ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         a_device,
         b_device,
-        src_size,
+        Int32(src_size),
         grid_dim=(1, 1, 1),
         block_dim=(1, 1, 1),
     )

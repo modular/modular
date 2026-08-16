@@ -14,20 +14,22 @@
 from std.math import exp
 
 from std.gpu import (
-    AMDScheduleBarrierMask,
-    barrier,
     thread_idx,
     block_dim,
     grid_dim,
     lane_id,
+)
+from max.gpu.sync import (
+    AMDScheduleBarrierMask,
+    barrier,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
     s_waitcnt_barrier,
 )
 from std.gpu.globals import WARP_SIZE
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,
