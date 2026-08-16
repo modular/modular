@@ -20,11 +20,14 @@ import logging
 from max.dtype import DType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
+
+from .model_config import DeepseekV3NextNConfig
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +61,9 @@ class DeepseekV3NextNMemoryPlanner(PagedMemoryPlanner):
         assert draft_model_config is not None, (
             "draft_model must be set for NextN"
         )
-        encoding = draft_model_config.quantization_encoding
-        assert encoding is not None
+        encoding = _select_quantization_encoding(
+            draft_model_config, DeepseekV3NextNConfig.DEFAULT_ENCODING
+        )
         # NextN weights are always BF16 even when the pipeline encoding is FP4,
         # because the NextN checkpoint is not quantized.
         if is_float4_encoding(encoding):

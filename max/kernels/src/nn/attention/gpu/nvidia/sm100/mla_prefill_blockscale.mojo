@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""
+Implements the SM100 (Blackwell) MLA prefill attention kernel with blockwise
+FP8 scaling, converting block-scaled FP8 K_rope tiles to BF16 in shared
+memory before the MMA stage.
+"""
+
 from std.sys import size_of
 from std.math import ceildiv, align_up
 from nn.attention.mha_operand import MHAOperand
@@ -54,17 +60,17 @@ from layout.swizzle import make_swizzle
 from linalg.arch.sm100.mma import smem_descriptor
 
 from std.gpu.globals import WARP_SIZE
-from std.gpu.memory import AddressSpace
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
+from max.gpu.sync import barrier
 from nn.attention.mha_utils import (
     MHAConfig,
     NoPartition,
     OptionallyStaticInt,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from std.utils.static_tuple import StaticTuple
 from kv_cache.types import padded_depth
 
@@ -86,6 +92,9 @@ from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 
 @fieldwise_init
 struct WarpRole(Equatable, TrivialRegisterPassable):
+    """Tags each warp with its specialized role in the warp-specialized MLA prefill kernel.
+    """
+
     var _role: Int32
     comptime Softmax0 = Self(0)
     comptime Softmax1 = Self(1)
@@ -101,6 +110,15 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
 
 
 def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+    """Maps a global warp index to its `WarpRole` based on warpgroup assignment.
+
+    Args:
+        warp_idx: Global warp index within the CTA, where each warpgroup
+            spans four consecutive warps. Determines the specialized role
+            (softmax, correction, MMA, load, or FP8-to-BF16 conversion) via
+            `warp_idx // 4` for warpgroup assignment and direct index checks
+            for warps 12 and above.
+    """
     var wg_idx = warp_idx // 4
     if wg_idx == 0:
         return WarpRole.Softmax0
@@ -130,7 +148,7 @@ __extension SM100MLA:
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"sm100_mla_prefill_blockscale_{Self.qkv_dtype}_{Self.output_dtype}_{blockwise_scale}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -222,11 +240,11 @@ __extension SM100MLA:
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
-        mask = pack.mask
-        scheduler = pack.scheduler
-        valid_length = pack.valid_length
-        max_seq_len = pack.max_seq_len
-        partition = pack.partition
+        var mask = pack.mask
+        var scheduler = pack.scheduler
+        var valid_length = pack.valid_length
+        var max_seq_len = pack.max_seq_len
+        var partition = pack.partition
 
         comptime num_q = Self.config.num_q()
         # TODO: We may want to support num_q>2 for depth=64?
@@ -301,7 +319,7 @@ __extension SM100MLA:
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
@@ -530,7 +548,7 @@ __extension SM100MLA:
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             Self.KRopeType.dtype,
-            DType.invalid,
+            None,
             Self.config,
         ]
 
@@ -562,7 +580,7 @@ __extension SM100MLA:
             seq_info, max_seq_len
         )
         var q_head_idx: UInt32 = seq_info.head_idx
-        e = elect()
+        var e = elect()
 
         # Sub-tile paging: when page_size < BN, each BN-row load is split
         # into num_kv_pages sub-tile loads of kv_sub_BN rows each.
@@ -635,7 +653,7 @@ __extension SM100MLA:
             Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_nope/V sub-tile pages at `current_kv_row`."""
@@ -646,7 +664,7 @@ __extension SM100MLA:
                 UInt32(ceildiv(Int(num_keys - current_kv_row), Int(kv_sub_BN))),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _rope_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_rope sub-tile pages at `current_kv_row`."""
@@ -660,7 +678,7 @@ __extension SM100MLA:
             )
 
         # ---- Mode-shared sub-tile constants ----
-        # The K_rope sub-tile shape is identical in fused-KV and split-KV
+        # The K_rope sub-tile shape is identical in shared-KV and non-shared-KV
         # mode (`rope_depth * rope_sub_BN` FP8 elements). Hoist the
         # constants and the SmemTensor type so the unified `_produce_k_rope`
         # closure below works for both modes — the only mode-specific
@@ -681,7 +699,7 @@ __extension SM100MLA:
             Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_k_rope[
             partial: Bool,
@@ -695,8 +713,8 @@ __extension SM100MLA:
             signaling completion on the CVT producer mbar.
 
             `smem_base_ptr` is the FP8 base of this tile's K_rope smem
-            region — the caller pre-bitcasts (fused-KV) or pre-rebounds
-            (split-KV) so this closure can advance by `_p *
+            region, the caller pre-bitcasts (shared-KV) or pre-rebounds
+            (non-shared-KV) so this closure can advance by `_p *
             k_rope_sub_elems` in FP8-element units. Folds in
             `expect_bytes_pred` for the CVT producer mbar so the byte
             count and the `_p`-loop stay in sync. `partial=True` early-
@@ -752,7 +770,7 @@ __extension SM100MLA:
                     e,
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_v[
             partial: Bool,
@@ -789,13 +807,13 @@ __extension SM100MLA:
             0
         ] == TileMaskStatus.UNKNOWN_MASK
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # K_nope/V alternate in the same circular buffer; a stage fits the
-            # wider of the two (fused_kv_cols). K_rope (FP8) goes into the
+            # wider of the two (shared_kv_cols). K_rope (FP8) goes into the
             # separate rope smem buffer via tma_to_cvt_pipeline.
             comptime kv_stage_elems = (
-                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -807,7 +825,7 @@ __extension SM100MLA:
             var kv_pipeline: KVPipeProdType = {mbars.get_k_mbars()}
             kv_pipeline.state._phase = 1  # producer starts at phase 1
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_rope_smem_ptr() -> (
                 SharedMemPointer[Scalar[Self.KRopeType.dtype]]
@@ -826,7 +844,7 @@ __extension SM100MLA:
                     * UInt32(rope_stage_elems)
                 ).bitcast[Scalar[Self.KRopeType.dtype]]()
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_fused[
                 partial: Bool,
@@ -880,7 +898,7 @@ __extension SM100MLA:
                     rope_nvp,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_v_smem_ptr() -> (
                 SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
@@ -1019,7 +1037,7 @@ __extension SM100MLA:
                         kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V pipelines
             comptime VPipeType = VProducerPipeline[
@@ -1033,7 +1051,7 @@ __extension SM100MLA:
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
             # Compute byte size then convert to qkv_dtype element count. The
-            # K_nope part is `padded_nope_depth` wide (split-KV: V has its own
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV: V has its own
             # `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
                 Self.config.fa4_config.padded_nope_depth
@@ -1048,7 +1066,7 @@ __extension SM100MLA:
             # Get K0 barrier (no wait needed for first iteration)
             var k0_mbar = k_pipeline.producer_mbar[qk_stage=0]()
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_split[
                 partial: Bool,
@@ -1066,8 +1084,8 @@ __extension SM100MLA:
                 shared `_produce_k_rope` closure.
 
                 Includes the `split_smem` decomposition into K_nope and
-                K_rope smem regions. Note: unlike generic split-KV,
-                blockscale's K_rope bytes are NOT on the K barrier — so
+                K_rope smem regions. Note: unlike generic non-shared-KV,
+                blockscale's K_rope bytes are NOT on the K barrier, so
                 the K-barrier expect only carries Q + K_nope.
                 """
                 # Q + K_nope bytes go on the K barrier.
@@ -1091,7 +1109,7 @@ __extension SM100MLA:
                 var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
                     k_elements_per_stage
                 )
-                k_nope_smem_local, k_rope_smem_local = split_smem[
+                var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
@@ -1120,12 +1138,12 @@ __extension SM100MLA:
                     rope_nvp,
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV's V pipeline pair.
+                """V destination smem ptr for non-shared-KV's V pipeline pair.
 
                 Note we switched from `pipeline_v.get_v(e)` (which auto-
                 emits a fixed-size `expect_bytes`) to
@@ -1289,8 +1307,8 @@ __extension SM100MLA:
             Self.KVLUTType.dtype, TensorMapSwizzle.SWIZZLE_128B
         ]()
 
-        # In split mode, k_rope sits after k_nope within each K stage.
-        # In fused mode, k_rope is in a separate rope smem buffer.
+        # In non-shared mode, k_rope sits after k_nope within each K stage.
+        # In shared mode, k_rope is in a separate rope smem buffer.
         comptime k_stage_stride = Self.config.padded_qk_depth * Self.config.BN
         comptime k_rope_offset = Self.config.BN * Self.nope_depth
         comptime rope_stage_elems = Self.config.rope_depth * Self.config.BN
@@ -1298,10 +1316,10 @@ __extension SM100MLA:
         while True:
             tma_to_cvt_pipeline.consumer_wait()
 
-            # In fused mode, k_rope is in a separate rope smem buffer.
-            # In split mode, k_rope sits after k_nope within each K stage.
+            # In shared mode, k_rope is in a separate rope smem buffer.
+            # In non-shared mode, k_rope sits after k_nope within each K stage.
             var k_rope_smem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
-            comptime if Self.config.fa4_config.use_fused_kv:
+            comptime if Self.config.fa4_config.use_shared_kv:
                 k_rope_smem_ptr = (
                     rope_smem_base
                     + tma_to_cvt_pipeline.state.index()
@@ -1335,8 +1353,10 @@ __extension SM100MLA:
             var bf16_base = k_rope_smem_ptr.bitcast[
                 Scalar[Self.KVLUTType.dtype]
             ]()
-            k_rope_tile_fp8 = SmemFP8(fp8_base + tile_offset, tile_layout)
-            k_rope_tile_bf16 = SmemBF16(bf16_base + tile_offset, tile_layout)
+            var k_rope_tile_fp8 = SmemFP8(fp8_base + tile_offset, tile_layout)
+            var k_rope_tile_bf16 = SmemBF16(
+                bf16_base + tile_offset, tile_layout
+            )
 
             cvt_block_fp8_to_bf16_with_scale[
                 swizzle_fp8=swizzle_fp8,
@@ -1378,17 +1398,17 @@ __extension SM100MLA:
         comptime BlockscaleSmemType = SM100AttentionSMem[Self.config.fa4_config]
         var mbars = BlockscaleSmemType().misc_mbars()
 
-        s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
-        s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
-        o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
-        o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
+        var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
+        var s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
+        var o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
+        var o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
 
         # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
         var pipeline_s0 = mbars.producer_s0()
         var pipeline_s1 = mbars.producer_s1()
         # Keep consumer pointers for acquire operations (shared phase tracking)
-        consumer_s0 = pipeline_s0.consumer_mbar_base
-        consumer_s1 = pipeline_s1.consumer_mbar_base
+        var consumer_s0 = pipeline_s0.consumer_mbar_base
+        var consumer_s1 = pipeline_s1.consumer_mbar_base
 
         # O pipelines (producer side only; consumer wait is merged into S barriers)
         var pipeline_o0 = mbars.producer_o0()
@@ -1396,18 +1416,18 @@ __extension SM100MLA:
 
         comptime q0_size = (Self.config.BM // 2) * Self.config.padded_qk_depth
         comptime q0_bytes = UInt32(q0_size * size_of[Self.KVLUTType.dtype]())
-        q0 = Self.descriptor_q(q_smem)
-        q1 = q0 + q0_bytes
+        var q0 = Self.descriptor_q(q_smem)
+        var q1 = q0 + q0_bytes
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # K_nope/V alternate in the same buffer; a stage fits the wider of
-            # the two (fused_kv_cols). K_rope (BF16 after CVT) is in a separate
+            # the two (shared_kv_cols). K_rope (BF16 after CVT) is in a separate
             # rope buffer.
             # Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
             comptime kv_stage_bytes = (
-                Self.config.fa4_config.fused_kv_cols()
+                Self.config.fa4_config.shared_kv_cols()
                 * Self.config.BN
                 * size_of[Self.KVLUTType.dtype]()
             )
@@ -1419,7 +1439,7 @@ __extension SM100MLA:
 
             # K_nope descriptor: k_major for Q@K_nope'. Width is the K_nope
             # depth (`padded_nope_depth`), the Q@K' contraction dim.
-            kv_desc_k = smem_descriptor[
+            var kv_desc_k = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.fa4_config.padded_nope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
@@ -1427,14 +1447,14 @@ __extension SM100MLA:
             ](k_smem_base)
             # V descriptor: mn_major for P@V. Width is the V head dim
             # (`padded_ov_depth`).
-            kv_desc_v = smem_descriptor[
+            var kv_desc_v = smem_descriptor[
                 BMN=Self.config.fa4_config.padded_ov_depth,
                 BK=Self.config.BN,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
                 is_k_major=False,
             ](k_smem_base)
             # K_rope descriptor: k_major for Q@K_rope' (BF16 after CVT)
-            rope_desc = smem_descriptor[
+            var rope_desc = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.rope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
@@ -1444,8 +1464,8 @@ __extension SM100MLA:
             # Q_rope offset: Q_nope occupies first MMA_M * padded_v_depth
             # elements in Q's column-major tiled layout.
             comptime q_rope_off = UInt32(Self.q_rope_byte_offset)
-            q0_rope = q0 + q_rope_off
-            q1_rope = q1 + q_rope_off
+            var q0_rope = q0 + q_rope_off
+            var q1_rope = q1 + q_rope_off
 
             comptime KVPipeType = StagedPipeline[
                 Self.config.fa4_config.num_kv_stages, 1
@@ -1459,7 +1479,7 @@ __extension SM100MLA:
                 - 1
             )
 
-            e = elect()
+            var e = elect()
 
             # Rope stage counter: tracks which cvt_to_mma stage contains the
             # current K_rope BF16 data. Cycles 0,1,...,num_rope_buffers-1.
@@ -1472,10 +1492,12 @@ __extension SM100MLA:
             # Stage 0 = K0 (K_nope0 + K_rope0 via CVT)
             kv_pipeline.consumer_wait()
             cvt_to_mma_pipeline.consumer_wait()
-            k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            var k0 = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
             Self.UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
             # K_rope0: from CVT pipeline at rope_stage=0
-            r0 = rope_desc + UInt32(rope_stage_bytes) * rope_stage
+            var r0 = rope_desc + UInt32(rope_stage_bytes) * rope_stage
             Self.UMMA0RopeType.mma[stage_idx=0](
                 q0_rope, r0, s0_tmem, elect=e, c_scale=1
             )
@@ -1496,7 +1518,7 @@ __extension SM100MLA:
             # Stage 1 = V0
             kv_pipeline.consumer_wait()
             var v_prev_idx: UInt32 = kv_pipeline.state.index()
-            v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s0[pv_stage].wait(0)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1517,21 +1539,21 @@ __extension SM100MLA:
                 # Kn (K_nope_n via KV pipeline + K_rope_n via CVT pipeline)
                 kv_pipeline.consumer_wait()
                 cvt_to_mma_pipeline.consumer_wait()
-                kn = (
+                var kn = (
                     kv_desc_k
                     + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
                 )
                 Self.UMMA0Type.mma[stage_idx=0](
                     q0, kn, s0_tmem, elect=e, c_scale=0
                 )
-                rn = rope_desc + UInt32(rope_stage_bytes) * rope_stage
+                var rn = rope_desc + UInt32(rope_stage_bytes) * rope_stage
                 Self.UMMA0RopeType.mma[stage_idx=0](
                     q0_rope, rn, s0_tmem, elect=e, c_scale=1
                 )
                 pipeline_s0.commit_mma(e)
 
                 # P1 @ V_{n-1}
-                v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s1[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1559,7 +1581,7 @@ __extension SM100MLA:
                 # Vn
                 kv_pipeline.consumer_wait()
                 v_prev_idx = kv_pipeline.state.index()
-                vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s0[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1568,7 +1590,7 @@ __extension SM100MLA:
                 pipeline_o0.commit_mma(e)
 
             # ---- Epilogue ----
-            v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s1[pv_stage].wait(phase)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1578,7 +1600,7 @@ __extension SM100MLA:
             kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V consumer pipelines
             comptime KConType = KConsumerPipeline[
@@ -1603,8 +1625,8 @@ __extension SM100MLA:
             pipeline_k.wait_k()
             cvt_to_mma_pipeline.consumer_wait()
 
-            k0 = pipeline_k.get_k()
-            e = elect()
+            var k0 = pipeline_k.get_k()
+            var e = elect()
 
             Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
             pipeline_s0.commit_mma(e)
@@ -1619,7 +1641,7 @@ __extension SM100MLA:
 
             # Wait V0
             pipeline_v.wait_v()
-            vlatest = pipeline_v.get_v()
+            var vlatest = pipeline_v.get_v()
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s0[pv_stage].wait(0)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1634,7 +1656,7 @@ __extension SM100MLA:
                 iter_count -= 1
 
                 # Q_0 @ K_n'
-                kn = pipeline_k.get_k()
+                var kn = pipeline_k.get_k()
                 pipeline_k.wait_k()
                 cvt_to_mma_pipeline.consumer_wait()
 
@@ -1709,6 +1731,61 @@ def mla_sm100_prefill_blockscale[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
+    """Launches the SM100 MLA prefill kernel with blockwise FP8 scaling.
+
+    Selects an FA4 MLA config, builds the TMA tiles for Q, K_nope, K_rope, and
+    V, then enqueues the warp-specialized `mla_prefill_kernel_blockscale` kernel
+    that converts block-scaled FP8 K_rope to BF16 before the MMA stage.
+
+    Parameters:
+        output_dtype: The element dtype of the output tensor.
+        q_type: The element dtype of the query tensor.
+        KVType: The `MHAOperand` type for K_nope, carrying gmem layout
+            and page-size metadata.
+        VType: The `MHAOperand` type for V, carrying gmem layout and
+            page-size metadata.
+        KRopeType: The `MHAOperand` type for K_rope, carrying gmem
+            layout, page-size, and dtype (FP8 for blockscale).
+        MaskType: The `MHAMask` type controlling causal and padding
+            behavior.
+        MaxPromptLenType: The `OptionallyStaticInt` type of
+            `max_prompt_len`, either a compile-time constant or a
+            runtime integer.
+        config: The `MHAConfig` holding tile sizes, stage counts, and
+            head counts (inferred).
+        group: The GQA group size, namely the number of query heads per
+            KV head (inferred).
+        q_depth: The total query head dimension, combining nope and rope
+            depth (inferred).
+        cache_depth: The total KV cache depth, combining nope and rope
+            depth (inferred).
+        _ndbuffer_mha_operand: Whether the MHA operand uses the ndbuffer
+            layout (inferred).
+        blockwise_scale: The blockwise FP8 scaling mode flag (defaults
+            to 0, inferred).
+        v_depth: The V and output head dimension, or -1 for the DeepSeek
+            shape where V width equals nope width (defaults to -1,
+            inferred).
+
+    Args:
+        output: The output tensor of shape
+            `[batch * num_rows, num_q_heads, ov_depth]`.
+        q: The query tensor of shape
+            `[batch * num_rows, num_q_heads, qk_depth]`.
+        k: The K_nope operand for the non-rotary part of the KV cache.
+        v: The V operand for the value part of the KV cache.
+        k_rope: The K_rope operand for the rotary-position-encoded part
+            of K, stored as block-scaled FP8.
+        mask_functor: The attention mask functor applied to the score
+            matrix.
+        valid_length: The per-sequence valid length tensor of shape
+            `[batch]` as `uint32`.
+        max_prompt_len: The maximum prompt length across the batch, as
+            a compile-time or runtime integer.
+        scale: The softmax scale factor applied to the Q@K' dot product.
+        batch_size: The number of sequences in the batch.
+        ctx: The `DeviceContext` used to enqueue the kernel.
+    """
     comptime assert (
         KVType.dtype == VType.dtype
     ), "k and v must share an element dtype for SM100 MLA prefill"
@@ -1756,7 +1833,7 @@ def mla_sm100_prefill_blockscale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
@@ -1770,14 +1847,14 @@ def mla_sm100_prefill_blockscale[
     )
 
     # [batch_size * num_keys, num_heads, kv_depth]
-    k_nope_tma_op = k.create_tma_tile[
+    var k_nope_tma_op = k.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=fa4_config.nope_depth,
     ](ctx)
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
-    k_rope_tma_op = k_rope.create_tma_tile[
+    var k_rope_tma_op = k_rope.create_tma_tile[
         fa4_config.rope_gmem_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         depth=cache_depth,
@@ -1785,7 +1862,7 @@ def mla_sm100_prefill_blockscale[
     ](ctx)
 
     # [batch_size * num_keys, num_heads, v_depth] — V gmem width is ov_depth.
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=ov_depth,

@@ -19,7 +19,7 @@ from std.sys import (
 )
 
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -38,7 +38,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
 from std.testing import assert_almost_equal
-from std.gpu.host.info import _is_sm10x_gpu
+from max.gpu.host.info import _is_sm10x_gpu
 
 
 from std.utils.index import Index
@@ -173,7 +173,7 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_device,
@@ -454,7 +454,7 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(
         q_device,
@@ -643,8 +643,8 @@ def test_prefill[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
-                    lhs = output_rank4[b, s, h, d]
-                    rhs = output_ref[b, s, h, d]
+                    var lhs = output_rank4[b, s, h, d]
+                    var rhs = output_ref[b, s, h, d]
                     if abs((lhs - rhs)).cast[DType.float64]() > atol:
                         print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)

@@ -10,13 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Worker-method type-hint introspection for `pydantic.BaseModels`."""
+"""Worker-method type-hint introspection, plus the `CascadeValue` boundary type."""
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterable, Callable
-from typing import Any, get_args, get_origin, get_type_hints
+from typing import Any, TypeAlias, Union, get_args, get_origin, get_type_hints
+
+import numpy as np
+
+CascadeValue: TypeAlias = Union[
+    "np.ndarray",
+    bytes,
+    str,
+    float,
+    bool,
+    int,
+    None,
+    dict[str, "CascadeValue"],
+    list["CascadeValue"],
+]
 
 
 def arg_types(method: Callable[..., Any]) -> dict[str, object | None]:

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for log_basic_config output.
 
-These tests guard against a regression where max_seq_len and cache_memory
-were missing from server startup logs because log_basic_config was called
-before pipeline_config.resolve() had populated model.max_length and
-kv_cache._available_cache_memory.
+Guards against a regression where max_seq_len was missing from server startup
+logs because log_basic_config was called before pipeline_config.resolve() had
+populated model.max_length. (cache_memory now logs from the memory planner,
+where the KV budget is computed, rather than from this config logger.)
 """
 
 from __future__ import annotations
@@ -35,19 +35,14 @@ from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import PipelineTask
 
 
-def _make_pipeline_config(
-    max_length: int | None,
-    available_cache_memory: int | None,
-) -> PipelineConfig:
+def _make_pipeline_config(max_length: int | None) -> PipelineConfig:
     """Build a minimal PipelineConfig without triggering full validation."""
     model_config = MAXModelConfig.model_construct(
         model_path="modularai/Llama-3.1-8B-Instruct-GGUF",
         device_specs=[DeviceSpec.cpu()],
         max_length=max_length,
     )
-    kv_cache = KVCacheConfig()
-    kv_cache._available_cache_memory = available_cache_memory
-    model_config.kv_cache = kv_cache
+    model_config.kv_cache = KVCacheConfig()
     model_config._huggingface_config = MagicMock()
 
     runtime = PipelineRuntimeConfig.model_construct()
@@ -100,50 +95,8 @@ class TestLogBasicConfigAfterResolve:
 
     def test_max_seq_len_present_after_resolve(self) -> None:
         """max_seq_len must show the resolved value, not None."""
-        config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=None
-        )
+        config = _make_pipeline_config(max_length=131072)
         output = _capture_log_basic_config(config)
         assert "131072" in output, (
             f"Expected max_seq_len=131072 in log output:\n{output}"
-        )
-
-    def test_cache_memory_present_after_resolve(self) -> None:
-        """cache_memory must appear when _available_cache_memory is populated."""
-        cache_bytes = 256 * 1024**3  # 256 GiB
-        config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=cache_bytes
-        )
-        output = _capture_log_basic_config(config)
-        assert "cache_memory" in output, (
-            f"cache_memory entry missing from log:\n{output}"
-        )
-        assert "GiB" in output, (
-            f"Expected human-readable GiB in cache_memory:\n{output}"
-        )
-
-    def test_both_fields_present_after_resolve(self) -> None:
-        """Both max_seq_len and cache_memory must appear after resolve.
-
-        retrieve_factory() calls resolve(), which populates max_length and
-        _available_cache_memory. Callers must invoke log_basic_config only
-        after retrieve_factory/retrieve.
-        """
-        cache_bytes = 200 * 1024**3
-        config = _make_pipeline_config(
-            max_length=262144, available_cache_memory=cache_bytes
-        )
-        output = _capture_log_basic_config(config)
-
-        assert "262144" in output, f"max_seq_len missing:\n{output}"
-        assert "cache_memory" in output, f"cache_memory missing:\n{output}"
-
-    def test_cache_memory_absent_without_available_memory(self) -> None:
-        """cache_memory must not appear when _available_cache_memory is None."""
-        config = _make_pipeline_config(
-            max_length=131072, available_cache_memory=None
-        )
-        output = _capture_log_basic_config(config)
-        assert "cache_memory" not in output, (
-            f"cache_memory should be absent when _available_cache_memory is None:\n{output}"
         )

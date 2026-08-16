@@ -14,24 +14,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 
 from .batch_processor import Olmo3BatchProcessor
@@ -60,7 +57,9 @@ class Olmo3Inputs(ModelInputs):
     """Number of logits to return."""
 
 
-class Olmo3Model(PipelineModelWithKVCache[TextContext]):
+class Olmo3Model(
+    ModuleV3PipelineModelWithKVCache[TextContext],
+):
     """An Olmo3 pipeline model for text generation.
 
     This class integrates the Olmo3 architecture with the MAX Engine pipeline
@@ -111,51 +110,19 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
 
         self.model = self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
-        """Loads the compiled Olmo3 model into the MAX Engine session.
+    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+        model_config = Olmo3Config.initialize(self.pipeline_config)
+        model_config.finalize(
+            huggingface_config=self.huggingface_config,
+            state_dict=state_dict,
+            return_logits=self.return_logits,
+        )
+        return model_config
 
-        Args:
-            session: The MAX Engine inference session.
-
-        Returns:
-            The loaded MAX Engine model object.
-        """
-
-        with CompilationTimer("model") as timer:
-            huggingface_config = self.huggingface_config
-            if self.adapter:
-                state_dict = self.adapter(
-                    dict(self.weights.items()),
-                    huggingface_config=huggingface_config,
-                    pipeline_config=self.pipeline_config,
-                )
-            else:
-                state_dict = {
-                    key: value.data() for key, value in self.weights.items()
-                }
-            model_config = Olmo3Config.initialize(self.pipeline_config)
-            model_config.finalize(
-                huggingface_config=huggingface_config,
-                state_dict=state_dict,
-                return_logits=self.return_logits,
-            )
-            with F.lazy():
-                nn_model = Olmo3(model_config, self.kv_params)
-                nn_model.to(self.devices[0])
-
-            assert self.batch_processor is not None
-            compile_input_types = self.batch_processor.get_symbolic_inputs(
-                kv_params=self.kv_params,
-                device_refs=self.device_refs,
-            )
-
-            timer.mark_build_complete()
-            compiled_model = nn_model.compile(
-                *compile_input_types,
-                weights=state_dict,
-            )
-
-        return compiled_model
+    def _instantiate_module(self, model_config: Any) -> Any:
+        nn_model = Olmo3(model_config, self.kv_params)
+        nn_model.to(self.devices[0])
+        return nn_model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Olmo3 model with the prepared inputs.

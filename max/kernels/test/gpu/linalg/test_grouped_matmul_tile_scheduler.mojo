@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from std.utils.index import Index
@@ -21,7 +21,7 @@ from std.utils.index import Index
 def test_kernel[
     swizzle: Bool, layout: Layout
 ](group_offsets: LayoutTensor[DType.uint32, layout, MutAnyOrigin]):
-    scheduler = TileScheduler[
+    var scheduler = TileScheduler[
         static_MN=20,
         tile_shape=Index(4, 8, 16),
         cluster=Index(1, 1, 1),
@@ -29,7 +29,7 @@ def test_kernel[
     ](group_offsets.dim(0) - 1, group_offsets)
 
     while True:
-        work_info = scheduler.fetch_next_work()
+        var work_info = scheduler.fetch_next_work()
         if work_info.is_done():
             break
         print(block_idx.x, work_info)

@@ -51,7 +51,10 @@ DI_SERVER_TIMEOUT_SECONDS = 2700
 
 
 def build_run_dist_cmd(
-    config_yaml: Path, proxy_host: str, proxy_port: int
+    config_yaml: Path,
+    proxy_host: str,
+    proxy_port: int,
+    base_command: str | None = None,
 ) -> list[str]:
     """Build the ``run_dist`` command that boots the DI workers + proxy.
 
@@ -62,7 +65,7 @@ def build_run_dist_cmd(
     default output base lock (CI uses ``--noblock_for_lock``, which
     otherwise causes immediate FATAL exits).
     """
-    return [
+    cmd = [
         "./bazelw",
         f"--output_base=/tmp/di_smoke_run_dist_{os.getpid()}",
         "run",
@@ -76,6 +79,9 @@ def build_run_dist_cmd(
         "--proxy-port",
         str(proxy_port),
     ]
+    if base_command is not None:
+        cmd.extend(["--base-command", base_command])
+    return cmd
 
 
 def make_proxy_health_probe(base_url: str) -> Callable[[], bool]:
@@ -177,6 +183,16 @@ def resolve_model_path(config_yaml: Path) -> str:
     default=False,
     help="Disable all timeouts. Useful when debugging hangs.",
 )
+@click.option(
+    "--base-command",
+    type=str,
+    default=None,
+    help=(
+        "Override run_dist's per-worker serve command. Needed for models "
+        "whose architecture lives in max_private, e.g. "
+        "'./bazelw run //max_private:max_private -- serve'."
+    ),
+)
 def di_smoke_test(
     config_yaml: Path,
     output_path: Path | None,
@@ -187,6 +203,7 @@ def di_smoke_test(
     proxy_host: str,
     proxy_port: int,
     disable_timeouts: bool,
+    base_command: str | None,
 ) -> None:
     """
     Run a DI smoke test against the deployment described by CONFIG_YAML.
@@ -197,7 +214,7 @@ def di_smoke_test(
 
     Example:
         ./bazelw run //...:di_smoke_test -- \\
-            max/examples/internal/di/configs/1p1d-intranode.yaml
+            max/examples/internal/di/configs/llama-1p1d-intranode.yaml
     """
     validate_hf_token()
 
@@ -220,7 +237,9 @@ def di_smoke_test(
     model = resolve_model_path(config_yaml)
     base_url = f"http://{proxy_host}:{proxy_port}"
     url = f"{base_url}/v1/chat/completions"
-    cmd = build_run_dist_cmd(config_yaml, proxy_host, proxy_port)
+    cmd = build_run_dist_cmd(
+        config_yaml, proxy_host, proxy_port, base_command=base_command
+    )
 
     timeout = sys.maxsize if disable_timeouts else DI_SERVER_TIMEOUT_SECONDS
 

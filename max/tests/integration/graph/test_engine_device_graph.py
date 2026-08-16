@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import gc
 import weakref
-from collections.abc import Generator
 
 import numpy as np
 import pytest
@@ -25,23 +24,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn import Linear
-
-
-@pytest.fixture(autouse=True)
-def clean_up_gpus() -> Generator[None, None, None]:
-    """Call synchronize after each test on all accelerators.
-
-    GPU failures for a particular device can spill over to later tests,
-    incorrectly reporting the source of the error. This fixture synchronizes
-    all accelerators after each test, which will propagate any pending errors
-    up to the Python level.
-    """
-
-    yield
-
-    for i in range(accelerator_count()):
-        accelerator = Accelerator(i)
-        accelerator.synchronize()
 
 
 def test_execution_trace_capture_replay() -> None:

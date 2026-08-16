@@ -21,7 +21,7 @@ from test_utils import MoveCopyCounter, DelCounter
 # ===----------------------------------------------------------------------=== #
 
 
-def indirect_rebind_reg[X: SIMDSize](a: SIMD[DType.int32, X]) -> String:
+def indirect_rebind_reg[X: SIMDLength](a: SIMD[DType.int32, X]) -> String:
     return String(rebind[SIMD[DType.int32, 4]](a))
 
 
@@ -82,7 +82,7 @@ def test_rebind_var_does_not_copy_only_moves() raises:
 
 def test_rebind_does_not_call_del() raises:
     var n_dels = 0
-    var counter = DelCounter(UnsafePointer(to=n_dels))
+    var counter = DelCounter(Pointer(to=n_dels))
     var rebound = rebind_var[type_of(counter)](counter^)
     assert_equal(n_dels, 0)
     _ = rebound

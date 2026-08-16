@@ -113,13 +113,13 @@ def run_rms_norm_fused_residual_cpu[
     # Define output functions
     @always_inline
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) {output_tensor} -> None:
         output_tensor.store[width=width](coords, val)
 
     @always_inline
     def residual_output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) {
         residual_output_tensor
     } -> None:
@@ -130,7 +130,7 @@ def run_rms_norm_fused_residual_cpu[
     # that trips the exclusivity checker, so erase the provenance with
     # `as_unsafe_any_origin()` (an immutable view alone keeps it).
     var residual_output_immut = (
-        residual_output_tensor.get_immutable().as_unsafe_any_origin()
+        residual_output_tensor.as_imm().as_unsafe_any_origin()
     )
 
     @always_inline

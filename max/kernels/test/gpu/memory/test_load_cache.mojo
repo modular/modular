@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host.compile import _compile_code
-from std.gpu.memory import CacheEviction, CacheOperation, load
+from max.gpu.host.compile import _compile_code
+from max.gpu.memory import CacheEviction, CacheOperation, load
 from std.testing import assert_equal, assert_true
 
 

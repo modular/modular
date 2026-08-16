@@ -21,7 +21,7 @@ on (N, K) shape. Verifies correctness against vendor_blas reference for:
 from std.math import align_up, ceildiv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -70,7 +70,7 @@ def _test_dispatch[
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
     comptime transpose_b = True
 
-    total_num_tokens = 0
+    var total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
     var M = total_num_tokens
@@ -164,14 +164,14 @@ def _test_dispatch[
     for i in range(num_experts):
         expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(num_experts)
 
-    a_scale_dim0 = 0
+    var a_scale_dim0 = 0
     a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         a_scale_offsets_ptr[i] = UInt32(
             a_scale_dim0
             - Int(a_offsets_host_ptr[i] // UInt32(SF_MN_GROUP_SIZE))
         )
-        local_m = num_tokens_by_expert[i]
+        var local_m = num_tokens_by_expert[i]
         a_offsets_host_ptr[i + 1] = a_offsets_host_ptr[i] + UInt32(local_m)
         a_scale_dim0 += ceildiv(local_m, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
@@ -222,26 +222,26 @@ def _test_dispatch[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # --- Initialize data ---
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
     var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Set a_scales for active expert regions
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        local_m = end - start
-        actual_start = (
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var local_m = end - start
+        var actual_start = (
             start // SF_MN_GROUP_SIZE + Int(a_scale_offsets_ptr[i])
         ) * SF_MN_GROUP_SIZE
-        actual_end = actual_start + local_m
+        var actual_end = actual_start + local_m
         for idx0 in range(actual_start, actual_end):
             for idx1 in range(
                 0,
@@ -258,7 +258,7 @@ def _test_dispatch[
 
     # Zero unused b_scales regions
     for e in range(num_experts):
-        expert_slice_size = (
+        var expert_slice_size = (
             Int(b_scales_host.dim(1))
             * Int(b_scales_host.dim(2))
             * Int(b_scales_host.dim(3))
@@ -361,30 +361,30 @@ def _test_dispatch[
     ] * SF_ATOM_K
 
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
-        expert_id = expert_ids_host_ptr[i]
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
+        var expert_id = expert_ids_host_ptr[i]
 
         if expert_id < 0 or end - start == 0:
             continue
 
         var c_slice = TileTensor(
-            c_ref_tensor.ptr + start * c_row_stride,
+            c_ref_tensor._storage + start * c_row_stride,
             row_major((end - start, Idx[N])),
         )
 
         var new_a_tensor = TileTensor(
-            a_tensor.ptr + start * a_row_stride,
+            a_tensor._storage + start * a_row_stride,
             row_major((end - start, Idx[packed_K])),
         )
 
         var new_b_tensor = TileTensor(
-            b_tensor.ptr + Int(expert_id) * b_expert_stride,
+            b_tensor._storage + Int(expert_id) * b_expert_stride,
             row_major((Idx[N], Idx[packed_K])),
         )
 
         var new_b_scales_tensor = TileTensor(
-            b_scales_tensor.ptr + Int(expert_id) * b_scales_expert_stride,
+            b_scales_tensor._storage + Int(expert_id) * b_scales_expert_stride,
             row_major(
                 Coord(
                     Idx[n_groups],
@@ -400,7 +400,7 @@ def _test_dispatch[
             a_scale_offsets_ptr[i]
         )
         var new_a_scales_tensor = TileTensor(
-            a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
+            a_scales_tensor._storage + a_scales_start * a_scales_row_stride,
             row_major(
                 Coord(
                     ceildiv(end - start, SF_MN_GROUP_SIZE),
@@ -433,16 +433,16 @@ def _test_dispatch[
 
     # Zero output regions for skipped experts (expert_id == -1 or 0 tokens)
     for i in range(num_active_experts):
-        start = Int(a_offsets_host_ptr[i])
-        end = Int(a_offsets_host_ptr[i + 1])
+        var start = Int(a_offsets_host_ptr[i])
+        var end = Int(a_offsets_host_ptr[i + 1])
         if expert_ids_host_ptr[i] < 0 or end - start == 0:
             for j in range(start * N, end * N):
                 c_host_ptr[j] = Scalar[c_type](0)
                 c_host_ref_ptr[j] = Scalar[c_type](0)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

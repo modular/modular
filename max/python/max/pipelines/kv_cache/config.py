@@ -14,10 +14,10 @@
 
 from __future__ import annotations
 
-__all__ = ["KVCacheConfig", "KVConnectorConfig"]
+__all__ = ["KVCacheConfig", "KVConnectorConfig", "cache_dtype_for_encoding"]
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
@@ -36,6 +36,70 @@ from max.pipelines.kv_cache.paged_kv_cache._seed_helpers import (
 )
 from pydantic import ConfigDict, Field, PrivateAttr
 
+if TYPE_CHECKING:
+    from max.pipelines.modeling.config_enums import SupportedEncoding
+
+# KV-cache dtype by explicit `kv_cache_format` override.
+_KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
+    "float32": DType.float32,
+    "bfloat16": DType.bfloat16,
+    "float8_e4m3fn": DType.float8_e4m3fn,
+}
+
+# Default KV-cache dtype for each quantization encoding. Quantized weight
+# formats keep the cache in a compute dtype (bf16/f32) rather than the weight
+# dtype.
+_ENCODING_TO_KV_CACHE_DTYPE: dict[str, DType] = {
+    "float32": DType.float32,
+    "float16": DType.float16,
+    "bfloat16": DType.bfloat16,
+    "float8_e4m3fn": DType.bfloat16,
+    "float6_e2m3fn": DType.bfloat16,
+    "float4_e2m1fnx2": DType.bfloat16,
+    "q4_k": DType.float32,
+    "q4_0": DType.float32,
+    "q6_k": DType.float32,
+    "gptq": DType.bfloat16,
+}
+
+
+def cache_dtype_for_encoding(
+    quantization_encoding: SupportedEncoding | None,
+    kv_cache_format: str | None,
+) -> DType:
+    """Returns the KV-cache dtype for a quantization encoding.
+
+    An explicit ``kv_cache_format`` override takes precedence; otherwise the
+    dtype is derived from ``quantization_encoding`` (``float32`` when unset).
+
+    Args:
+        quantization_encoding: The resolved weight encoding, or ``None``.
+        kv_cache_format: An explicit override string, or ``None``.
+
+    Returns:
+        The KV-cache ``DType``.
+
+    Raises:
+        ValueError: If the override string or encoding is unrecognized.
+    """
+    if kv_cache_format is not None:
+        dtype = _KV_CACHE_FORMAT_TO_DTYPE.get(kv_cache_format.lower())
+        if dtype is None:
+            raise ValueError(
+                f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
+                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+            )
+        return dtype
+    if not quantization_encoding:
+        return DType.float32
+    try:
+        return _ENCODING_TO_KV_CACHE_DTYPE[quantization_encoding]
+    except KeyError:
+        raise ValueError(
+            "Unsupported quantization encoding for KV cache dtype resolution: "
+            f"{quantization_encoding}"
+        ) from None
+
 
 class KVConnectorConfig(ConfigFileModel):
     """Connector-specific configuration for KV cache connectors.
@@ -50,7 +114,7 @@ class KVConnectorConfig(ConfigFileModel):
         default=50.0,
         description=(
             "Host memory (GiB) reserved for KV cache swapping. "
-            "Used by local and tiered connectors."
+            "Used by the tiered connector."
         ),
     )
     """Host memory in GiB for KV cache swapping."""
@@ -69,6 +133,17 @@ class KVConnectorConfig(ConfigFileModel):
         description="Maximum disk space (GB) for KV cache offloading.",
     )
     """Maximum disk space in GB for KV cache offloading."""
+
+    num_disk_workers: int = Field(
+        default=32,
+        gt=0,
+        description=(
+            "Number of disk I/O worker threads for the tiered / rust_tiered "
+            "connector's disk offload tier. Higher values drain the disk-op "
+            "queue faster under load; returns diminish past ~32."
+        ),
+    )
+    """Number of disk I/O worker threads for the tiered connectors."""
 
     block_store_endpoint: str | None = Field(
         default=None,
@@ -104,6 +179,20 @@ class KVCacheConfig(ConfigFileModel):
         description="Whether to enable prefix caching for the paged KVCache.",
     )
     """Whether to enable prefix caching for the paged KV cache."""
+
+    enable_dp_cross_replica_prefix_copy: bool = Field(
+        default=True,
+        description=(
+            "Whether a prefix-cache block resident on another data-parallel "
+            "(DP) replica's GPU may be copied device-to-device onto the "
+            "request's replica to serve a cache hit. When disabled, "
+            "cross-replica reuse is only served from the shared host/disk "
+            "tier via the KV connector (or recomputed). Only relevant when "
+            "``data_parallel_degree > 1`` and prefix caching is enabled."
+        ),
+    )
+    """Whether DP cross-replica prefix-cache hits may be served by
+    device-to-device copies."""
 
     kv_connector: KVConnectorType | None = Field(
         default=None,
@@ -147,9 +236,6 @@ class KVCacheConfig(ConfigFileModel):
     )
     """Default for :meth:`to_params`'s ``allow_kv_head_replication`` argument."""
 
-    _cache_dtype: DType = PrivateAttr(default=DType.float32)
-    "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
-
     kv_cache_format: str | None = Field(
         default=None,
         description=(
@@ -162,11 +248,11 @@ class KVCacheConfig(ConfigFileModel):
         default="ahash64",
         description=(
             "Hash algorithm used for KV-cache block identity. "
-            "``ahash64`` is the legacy 64-bit non-cryptographic hasher. "
-            "``sha256`` is a 256-bit cryptographic hasher with optional "
-            "per-cluster seed and per-request salt. ``sha256_64`` "
-            "truncates the SHA-256 chain to 64 bits for protocol "
-            "compatibility."
+            "``ahash64`` (default) is fast and non-cryptographic; "
+            "``sha256`` is a cryptographic 256-bit hasher; both support "
+            "an optional seed/salt for prefix-cache isolation. "
+            "``sha256_64`` truncates the SHA-256 chain to 64 bits for "
+            "protocol compatibility."
         ),
     )
     """Hash algorithm used for KV-cache block identity."""
@@ -174,28 +260,18 @@ class KVCacheConfig(ConfigFileModel):
     kv_cache_hash_seed: str | None = Field(
         default=None,
         description=(
-            "Optional 64-character hex string (32 bytes) used as a "
-            "cluster-wide seed when ``kv_cache_hash_algo`` is "
-            "``sha256``/``sha256_64``. When omitted, MAX generates a "
-            "random seed at process start; the hex is logged once. "
-            "Ignored for ``ahash64``."
+            "Optional 64-character hex string (32 bytes), a cluster-wide "
+            "seed for kv_cache_hash_algo. If omitted, sha256/sha256_64 "
+            "generate a random seed at startup; ahash64 does not, so "
+            "existing deployments are unaffected unless set explicitly."
         ),
     )
-    """Optional 32-byte hex seed for sha256/sha256_64 hashing."""
-
-    # Need to use `Optional` here to support `click` with 3.9.
-    _available_cache_memory: int | None = PrivateAttr(default=None)
-    """The amount of available cache memory in bytes. This should only be set by internal code."""
+    """Optional 32-byte hex seed for KV-cache hashing."""
 
     _config_file_section_name: str = PrivateAttr(default="kv_cache_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""
-
-    @property
-    def cache_dtype(self) -> DType:
-        """Returns the data type used for KV cache storage."""
-        return self._cache_dtype
 
     def to_params(
         self,
@@ -211,6 +287,8 @@ class KVCacheConfig(ConfigFileModel):
         speculative_method: SpeculativeMethod | None = None,
         num_draft_tokens: int = 0,
         allow_kv_head_replication: bool | None = None,
+        page_size: int | None = None,
+        window_size: int | None = None,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -238,13 +316,24 @@ class KVCacheConfig(ConfigFileModel):
             allow_kv_head_replication: Replicate KV heads for TP wider than the
                 KV head count. Defaults to ``None`` (falls back to the config's
                 :attr:`allow_kv_head_replication`).
+            page_size: Tokens per KV cache page. Defaults to ``None`` (falls
+                back to the config's :attr:`kv_cache_page_size`). Architectures
+                with a kernel-imposed minimum page size pass their effective
+                value here instead of mutating the shared config.
+            window_size: Window size for the attention layer.
 
         Returns:
             The constructed KV cache parameters.
         """
         if allow_kv_head_replication is None:
             allow_kv_head_replication = self.allow_kv_head_replication
+        # A connector without an explicit config gets defaults (e.g.
+        # `--kv-connector tiered` with no `--kv-connector-config`). Done here
+        # rather than in the pipeline config so the connector config's defaults
+        # are owned by this module.
         cfg = self.kv_connector_config
+        if cfg is None and self.kv_connector is not None:
+            cfg = KVConnectorConfig()
         kv_hash_seed = resolve_kv_hash_seed(
             self.kv_cache_hash_algo, self.kv_cache_hash_seed
         )
@@ -252,8 +341,13 @@ class KVCacheConfig(ConfigFileModel):
             dtype=dtype,
             head_dim=head_dim,
             num_layers=num_layers,
-            page_size=self.kv_cache_page_size,
+            page_size=(
+                page_size if page_size is not None else self.kv_cache_page_size
+            ),
             enable_prefix_caching=self.enable_prefix_caching,
+            enable_dp_cross_replica_prefix_copy=(
+                self.enable_dp_cross_replica_prefix_copy
+            ),
             kv_connector=self.kv_connector,
             kv_connector_config=cfg,
             host_kvcache_swap_space_gb=(
@@ -266,6 +360,7 @@ class KVCacheConfig(ConfigFileModel):
             num_draft_tokens=num_draft_tokens,
             kv_hash_algo=self.kv_cache_hash_algo,
             kv_hash_seed=kv_hash_seed,
+            window_size=window_size,
         )
         if is_mla:
             if num_q_heads is None:

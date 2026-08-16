@@ -27,8 +27,8 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
 from max.pipelines.kv_cache import PagedKVCacheManager
-from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
+from test_common.modular_graph_test import modular_graph_test
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -132,9 +132,9 @@ def test_kv_cache_ragged_attention(
     ]
 
     for context in batch:
-        kv_manager.claim(context.request_id, replica_idx=0)
+        kv_manager.claim(context)
         assert isinstance(kv_manager, PagedKVCacheManager)
-        kv_manager.alloc(context, replica_idx=0)
+        kv_manager.alloc(context)
 
     input_row_offsets = Buffer(
         DType.uint32,

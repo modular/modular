@@ -11,7 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.algorithm import parallelize
+"""SHMEM runtime context and multi-GPU launch helper.
+
+Provides `SHMEMContext`, which wraps the SHMEM runtime lifecycle and exposes a
+`DeviceContext`-compatible interface for submitting kernels and managing
+symmetric-heap buffers. Use `shmem_launch` to run a per-GPU function across
+all attached GPUs.
+"""
+
+from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
@@ -22,7 +30,7 @@ from std.sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from std.gpu.host import (
+from max.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -32,8 +40,8 @@ from std.gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from std.gpu.host.device_context import _DumpPath
-from std.gpu.host.launch_attribute import (
+from max.gpu.host.device_context import _DumpPath
+from max.gpu.host.launch_attribute import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
@@ -72,7 +80,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         ctx.barrier_all()
 
         var msg = Int32(0)
-        destination.enqueue_copy_to(UnsafePointer(to=msg))
+        destination.enqueue_copy_to(Pointer(to=msg))
 
         ctx.synchronize()
 
@@ -313,7 +321,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return self^
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.
@@ -366,7 +374,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return SHMEMBuffer[dtype](self._ctx, size)
 
     @always_inline
-    @parameter
+    @__parameter
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -453,7 +461,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_finalize(gpu_kernel)
 
     @always_inline
-    @parameter
+    @__parameter
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -506,7 +514,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from std.gpu.host import DeviceContext
+        from max.gpu.host import DeviceContext
 
         def kernel():
             print("hello from the GPU")

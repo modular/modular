@@ -13,6 +13,7 @@ def modular_py_library(
         imports = [],
         test_docstring_examples = False,
         docstring_example_deps = [],
+        docstring_example_shard_count = None,
         tags = [],
         **kwargs):
     """Creates a py_library target
@@ -30,6 +31,11 @@ def modular_py_library(
         docstring_example_deps: Extra runtime deps the examples import but the
             library itself cannot depend on (e.g. engine, which depends on
             graph). Ignored unless test_docstring_examples is True.
+        docstring_example_shard_count: Shards for the docstring-example test.
+            Each example compiles its own graph and CI clamps every test to
+            800s, so set this for packages with many examples. Sharding is
+            per example (a visible code block plus its invisible checks), so
+            every example in a sharded package must be self-contained.
         tags: Tags to add to the target
         **kwargs: Extra arguments passed through to py_library
     """
@@ -65,28 +71,38 @@ def modular_py_library(
         )
 
     if test_docstring_examples:
-        # Scope collection to this target's own sources: pass them explicitly
-        # as pytest paths rather than the whole max/python/max tree, so the
-        # test only runs examples from the opted-in target (not from its
-        # dependencies). main + empty srcs load the collector as a plugin.
-        example_srcs = [
-            "{}/{}".format(native.package_name(), src)
-            for src in kwargs.get("srcs", [])
-            if src.endswith(".py")
-        ]
-        if not example_srcs:
-            fail("test_docstring_examples = True requires Python 'srcs' to scan.")
+        # Scope collection to this target's own package directory rather than
+        # the whole max/python/max tree, so the test only runs examples from
+        # this package (its dependencies live in other package directories and
+        # are not collected). Pass the directory, not individual source files:
+        # an explicit file argument is an "initpath" that pytest's builtin
+        # Python collector imports as a test module (bypassing python_files),
+        # which would fail on any optional top-level dependency. Directory
+        # recursion instead lets sybil_collect's pytest_ignore_collect skip
+        # private and excluded files before they are imported.
+        # Sharding is implemented in sybil_collect, per example group;
+        # pytest_runner forwards bazel's shard env vars to it.
         modular_py_test(
             name = name + ".docstring_examples",
             timeout = "long",
             srcs = [],
             main = "pytest_runner.py",
-            args = example_srcs + [
+            shard_count = docstring_example_shard_count,
+            # CI runs without network access; fail network-dependent
+            # examples on the author's machine instead of in presubmit.
+            env = {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+            },
+            args = [
+                native.package_name(),
                 "-p",
                 "sybil_collect",
                 "--import-mode=importlib",
                 "-o",
                 "consider_namespace_packages=true",
+                # Surface the slowest examples so cost creep stays visible.
+                "--durations=20",
             ],
             deps = [
                 ":" + name,

@@ -16,19 +16,37 @@ decisions and verifying the final inference results.
 
 You can use `import-model` to assist in bringing up a model from an existing
 architecture, and `debug-model` to track down output divergences when the new
-model produces incorrect results. Once the model runs correctly, the
-[`profile-model`](/max/gpu-system-profiling) skill helps you find where it
-spends time and whether the GPU is saturated.
+model produces incorrect results. When the model serves correctly, the
+[`eval-model`](https://github.com/modular/skills/blob/main/eval-model/SKILL.md)
+skill measures its task accuracy on standard benchmarks such as GSM8K and MMLU,
+so you can compare it against the original model's published scores. Once the
+model runs correctly, the [`profile-model`](/gpu-system-profiling) skill
+helps you find where it spends time and whether the GPU is saturated.
 
-## Install the MAX skills
+## Install MAX skills
 
 To equip your AI coding agent with the model bring-up workflow, you must install
 the MAX skills.
 
+### Install with Claude Code
+
+Add the Modular plugin marketplace to Claude Code and install the MAX skills
+plugin:
+
+```text
+/plugin marketplace add modular/skills
+/plugin install max-skills@modular
+```
+
+The `max-skills` plugin includes the model lifecycle skills used on this page
+(`import-model`, `debug-model`, and `eval-model`) along with skills to serve,
+benchmark, and profile models. To install all Modular skills, including the
+Mojo skills, use `skills@modular` instead.
+
 ### Install with npx
 
-If you have Node.js installed, you can add all MAX skills to your
-assistant with a single command:
+With Codex and other agents, install the skills with
+[Node.js](https://nodejs.org/en/download):
 
 ```bash
 npx skills add modular/skills
@@ -60,7 +78,7 @@ configuration directory. For Claude Code, copy the directories into
 `~/.claude/skills/`:
 
 ```bash
-cp -r skills/import-model skills/debug-model ~/.claude/skills/
+cp -r skills/import-model skills/debug-model skills/eval-model ~/.claude/skills/
 ```
 
 Consult your specific agent's documentation to find its configuration and skills
@@ -116,7 +134,8 @@ at every layer, then reads the comparison to localize the divergence:
   cache) and the harness (tokenizer and chat template).
 
 Review each finding and confirm the fix, the same way you steer the bring-up
-itself.
+itself. To run the same per-layer comparison yourself, see
+[Layer comparison](/develop/layer-comparison/).
 
 ## How agent-driven model bring-up works
 
@@ -158,17 +177,29 @@ continuously improving, it doesn't guarantee correctness out of the box. If you
 see gibberish or incoherent text, the `debug-model` skill takes the model from
 here to isolate and resolve the divergence.
 
+Greedy token comparison confirms the model matches the reference on a handful of
+prompts. To confirm accuracy holds across a full benchmark, the `eval-model`
+skill runs standard datasets against the served model and compares the scores
+against the original model's model card.
+
 ## Next steps
 
 Once the agent has created and verified your new model architecture, you can
 serve and deploy it:
 
-- [Serve custom model architectures](/max/develop/serve-custom-model-architectures/):
+- [Serve custom model architectures](/develop/serve-custom-model-architectures/):
   Learn how to package and run your new custom model architecture using
   `max serve`.
-- [Model bring-up workflow](/max/develop/model-bringup-workflow/): Read the
+- [Evaluate model accuracy](https://github.com/modular/skills/blob/main/eval-model/SKILL.md):
+  Use the `eval-model` skill to benchmark your served model on standard datasets
+  and compare the scores against the original model.
+- [Logit comparison](/develop/logit-comparison/) and
+  [Layer comparison](/develop/layer-comparison/): Validate the architecture
+  yourself, measuring logit similarity and localizing the first layer that
+  diverges from the reference.
+- [Model bring-up workflow](/develop/model-bringup-workflow/): Read the
   detailed manual bring-up steps to better understand graph compilation, memory
   sizing, and weight remapping.
-- [Using AI coding assistants](/max/coding-assistants/): Configure your
+- [Using AI coding assistants](/coding-assistants/): Configure your
   development environment with rules and context files for general AI-assisted
   development.

@@ -34,7 +34,7 @@ from std.collections.string._grapheme_break_lookups import (
     _INCB_RANGE_VALUES,
 )
 from std.collections.string._utf8 import _is_utf8_continuation_byte
-from std.memory import Span
+from std.collections import Span
 
 
 # ===----------------------------------------------------------------------=== #
@@ -93,8 +93,8 @@ comptime INCB_LINKER: UInt8 = 3
 
 @always_inline
 def _range_lookup[
-    starts_table: InlineArray[UInt32, _],
-    values_table: InlineArray[UInt8, _],
+    starts_table: Array[UInt32, _],
+    values_table: Array[UInt8, _],
     default: UInt8,
 ](cp: UInt32) -> UInt8:
     """Look up a property value for a codepoint using binary search over a
@@ -364,7 +364,7 @@ def _is_grapheme_break(mut state: _GraphemeBreakState, cp: UInt32) -> Bool:
 
 @always_inline
 def _decode_previous_codepoint(
-    span: Span[mut=False, Byte, ...], end: Int
+    span: ImmSpan[Byte, _], end: Int
 ) -> Tuple[UInt32, Int]:
     """Decode the codepoint whose last byte is at `end - 1`.
 
@@ -387,9 +387,7 @@ def _decode_previous_codepoint(
     return (cp.to_u32(), byte_len)
 
 
-def _find_safe_grapheme_start(
-    span: Span[mut=False, Byte, ...], end: Int
-) -> Int:
+def _find_safe_grapheme_start(span: ImmSpan[Byte, _], end: Int) -> Int:
     """Find a byte offset `<= end` that is a guaranteed grapheme boundary.
 
     Used by reverse grapheme iteration: given the end of a range, walk

@@ -43,12 +43,16 @@ class EOSTracker(BaseModel):
     eos_stop_strings: Sequence[str] = Field(default_factory=list)
 
     _max_stop_length: int = PrivateAttr(default=0)
+    _max_eos_seq_len: int = PrivateAttr(default=1)
     _continuation_tail: str = PrivateAttr(default="")
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to set the maximum stop length and continuation tail."""
         self._max_stop_length = max(
             (len(s) for s in self.eos_stop_strings), default=0
+        )
+        self._max_eos_seq_len = max(
+            (len(s) for s in self.eos_sequences), default=1
         )
 
     # --- EOS Single ID + Sequence ID Check---
@@ -83,6 +87,45 @@ class EOSTracker(BaseModel):
                 return True
 
         return False
+
+    def first_eos_offset(
+        self,
+        prior_generated: npt.NDArray[np.int64],
+        new_tokens: Sequence[int],
+    ) -> int | None:
+        """Offset within a committed span at which generation first ends.
+
+        Speculative decoding commits several tokens at once, but generation
+        stops at the *first* of them that ends the sequence, exactly as
+        one-token-at-a-time decoding does. This applies :meth:`is_eos_from_tokens`
+        at each position of the span -- single-id EOS or a completed stop
+        sequence, including one straddling the ``prior_generated`` / span
+        boundary -- and returns the offset of the first hit, or ``None`` when
+        the span does not end generation.
+
+        Only the final ``len(stop_sequence) - 1`` prior tokens can complete a
+        boundary-spanning sequence, so just that bounded tail is inspected
+        rather than the whole history.
+
+        Args:
+            prior_generated: Generated tokens preceding the committed span.
+            new_tokens: The newly committed span, in commit order.
+
+        Returns:
+            The offset into ``new_tokens`` of the first terminating token, or
+            ``None`` if the span does not end generation.
+        """
+        keep = self._max_eos_seq_len - 1
+        tail = (
+            prior_generated[max(0, len(prior_generated) - keep) :]
+            if keep
+            else prior_generated[:0]
+        )
+        span = np.concatenate([tail, np.asarray(new_tokens, dtype=np.int64)])
+        for offset in range(len(new_tokens)):
+            if self.is_eos_from_tokens(span[: len(tail) + offset + 1]):
+                return offset
+        return None
 
     # --- EOS Stop Sequence (string-based) ---
     def is_eos_from_string(self, next_token_decoded: str) -> str | None:

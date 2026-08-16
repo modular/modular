@@ -21,9 +21,9 @@
 from std.math import align_up, ceildiv
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
@@ -47,7 +47,7 @@ from linalg.fp4_utils import (
     SF_ATOM_K,
     set_scale_factor,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def test_block_scaled_prefetch[
@@ -154,10 +154,10 @@ def test_block_scaled_prefetch[
     var b_scales_lt = b_scales_tensor.to_layout_tensor()
     var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+    rand(b_host._storage, b_host.num_elements(), min=0, max=255)
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     # Zero out unused scale entries to avoid accuracy issues
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
@@ -221,8 +221,8 @@ def test_block_scaled_prefetch[
         c_ref_tensor_lt.as_unsafe_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-        b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+        a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+        b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,
@@ -235,8 +235,8 @@ def test_block_scaled_prefetch[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,

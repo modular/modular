@@ -36,7 +36,7 @@ MI355X-only; the dispatcher gates on `amdgpu:gfx950` and returns
 False on any other accelerator (which would skip the test silently).
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 
 from layout import Coord, Idx, TileTensor, row_major
