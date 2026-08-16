@@ -15,16 +15,36 @@ Because the compiled results depend on the hardware, run this command on the
 same kind of machine you plan to run on. A common use is during system
 provisioning, such as a step in a Dockerfile after you install MAX.
 
-.. raw:: markdown
+MAX saves the cache next to the engine's own model cache and records your
+machine's hardware alongside it, so other MAX processes on the same machine
+reuse the compiled results with no extra setup.
 
-    :::note
+The command refuses to run only when a set variable's value conflicts with
+the warm: ``MAX_EAGER_ALLOW_LAZY_COMPILE=0`` for a real warm, or
+``MAX_EAGER_OP_PRECOMPILE=1`` for either mode; ``--check`` tolerates the
+former since it compiles nothing. Unset the variable for this command, for
+example ``env -u MAX_EAGER_ALLOW_LAZY_COMPILE max warm-interpreter-cache``.
 
-    To let other MAX processes reuse the compiled results, set the
-    `MODULAR_DERIVED_PATH` environment variable to the same value those processes
-    use before you run this command. MAX saves the cache under that
-    location and records your machine's hardware alongside it.
+Use ``--check`` to report whether this machine is already warmed, without
+compiling anything:
 
-    :::
+.. code-block:: console
+
+    $ max warm-interpreter-cache --check
+
+This exits with status 0 if the machine is warmed, or 1 otherwise, so a
+provisioning script or health check can branch on the result.
+
+Running the command again on an already-warmed machine does nothing. Pass
+``--force`` to recompile anyway, such as after a toolchain change:
+
+.. code-block:: console
+
+    $ max warm-interpreter-cache --force
+
+Compilation runs concurrently in worker processes, one per operation family
+by default, capped at the CPU count. Pass ``--jobs`` to bound the number of
+workers, or ``--jobs 1`` to compile serially in-process.
 
 .. click:: max._entrypoints.pipelines:cli_warm_interpreter_cache
   :prog: max warm-interpreter-cache

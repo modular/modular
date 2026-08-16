@@ -18,8 +18,8 @@ from std.testing import assert_equal
 
 def test_get_batch_from_row_offsets() raises:
     comptime batch_size = 9
-    var storage = InlineArray[UInt32, batch_size + 1](uninitialized=True)
-    prefix_sums = TileTensor(storage, row_major[batch_size + 1]())
+    var storage = Array[UInt32, batch_size + 1](uninitialized=True)
+    var prefix_sums = TileTensor(storage, row_major[batch_size + 1]())
     prefix_sums[0] = 0
     prefix_sums[1] = 100
     prefix_sums[2] = 200

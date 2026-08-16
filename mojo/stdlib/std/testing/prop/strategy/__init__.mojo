@@ -18,14 +18,14 @@ from .list_strategy import *
 from .string_strategy import *
 
 
-trait Strategy(ImplicitlyDeletable, Movable):
+trait Strategy(Deinitable, Movable):
     """A type used to produce random inputs for property tests.
 
     Strategies are a core building block of property testing. They are used to
     produce the random input values for the properties being tested.
     """
 
-    comptime Value: Copyable & ImplicitlyDeletable
+    comptime Value: Copyable & Deinitable
     """The type the strategy produces."""
 
     def value(mut self, mut rng: Rng) raises -> Self.Value:

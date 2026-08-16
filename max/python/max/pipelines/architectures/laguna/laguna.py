@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable, Sequence
-from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -40,7 +39,6 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
-    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -49,7 +47,7 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import LayerList, Module
+from max.nn.layer import LayerList, Module, SubgraphInput
 from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
@@ -68,40 +66,6 @@ from .layers.attention import LagunaAttention
 from .layers.moe_gate import LagunaTopKRouter
 from .layers.rotary_embedding import LagunaRotaryEmbedding
 from .model_config import LagunaConfig
-
-
-def _unpack_kv_collections(
-    kv_collections: Sequence[PagedCacheValues],
-) -> tuple[
-    list[BufferValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-]:
-    """Unpacks KV collections into flat ``Value`` lists for subgraphs.
-
-    Subgraphs require flat ``Value`` inputs; ``PagedCacheValues`` is a
-    dataclass that cannot be passed directly.
-
-    Returns:
-        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_prompt_lengths,
-        max_cache_lengths, dispatch_metadata_tensors).
-    """
-    dispatch_metadata_tensors = [
-        kv.attention_dispatch_metadata
-        for kv in kv_collections
-        if kv.attention_dispatch_metadata is not None
-    ]
-    return (
-        [kv.kv_blocks for kv in kv_collections],
-        [kv.cache_lengths for kv in kv_collections],
-        [kv.lookup_table for kv in kv_collections],
-        [kv.max_prompt_length for kv in kv_collections],
-        [kv.max_cache_length for kv in kv_collections],
-        dispatch_metadata_tensors,
-    )
 
 
 class LagunaTransformerBlock(Module):
@@ -292,34 +256,12 @@ class LagunaTransformerBlock(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_prompt_length: list[TensorValue],
-        kv_max_cache_length: list[TensorValue],
-        dispatch_metadata_tensors: list[TensorValue],
+        kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
         ep_inputs: list[TensorValue | BufferValue] | None = None,
     ) -> list[TensorValue]:
         """Runs the forward pass through the decoder block."""
-        # Re-pack the flat KV args (the caller unpacked them for the subgraph)
-        # into PagedCacheValues for attention.
-        num_devices = len(kv_blocks)
-        kv_collections = [
-            PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_prompt_length[i],
-                kv_max_cache_length[i],
-                attention_dispatch_metadata=dispatch_metadata_tensors[i]
-                if dispatch_metadata_tensors
-                else None,
-            )
-            for i in range(num_devices)
-        ]
-
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
         # Replicated — no allreduce needed.
@@ -518,28 +460,14 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
                 data_parallel_splits,
             )
 
-        (
-            kv_blocks,
-            cache_lengths,
-            lookup_tables,
-            max_prompt_lengths,
-            max_cache_lengths,
-            dispatch_metadata_tensors,
-        ) = _unpack_kv_collections(kv_collections)
-
         def inputs_for_layer(
             idx: int, h: list[TensorValue]
-        ) -> list[Value[Any] | Sequence[Value[Any]]]:
-            values: list[Value[Any] | Sequence[Value[Any]]] = [
+        ) -> list[SubgraphInput]:
+            values: list[SubgraphInput] = [
                 ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                 h,
                 signal_buffers,
-                kv_blocks,
-                cache_lengths,
-                lookup_tables,
-                max_prompt_lengths,
-                max_cache_lengths,
-                dispatch_metadata_tensors,
+                kv_collections,
                 freqs_cis,
                 input_row_offsets_list,
             ]

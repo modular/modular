@@ -19,7 +19,7 @@ are spelled as `reflect[T].method()` (no parens after `[T]`).
 
 - `is_struct()` - whether `T` is a Mojo struct type.
 - `field_count()` - number of fields.
-- `field_names()` - `InlineArray[StaticString, N]` of field names.
+- `field_names()` - `Array[StaticString, N]` of field names.
 - `field_types()` - a `TypeList` of field types.
 - `field_index[name]()` - index of the named field.
 - `field[name]` - `Reflected[FieldT]` for the named field's type.
@@ -140,7 +140,7 @@ struct Reflected[T: AnyType]:
       type. `field[name]` and `field_at[idx]` are the type-returning
       members today.
     - A member that returns a **value** (an `Int`, `StaticString`,
-      `InlineArray`, a `TypeList`, a typed `ref`, etc.) is an
+      `Array`, a `TypeList`, a typed `ref`, etc.) is an
       `@staticmethod` and is spelled with `()` — e.g.
       `reflect[T].field_count()`, `reflect[T].field_names()`,
       `reflect[T].field_index["x"]()`. The `()` at the call site signals
@@ -272,7 +272,7 @@ struct Reflected[T: AnyType]:
         Returns:
             The number of fields in the struct.
         """
-        return _field_types_of[Self.T]().size
+        return _field_types_of[Self.T]().length
 
     @staticmethod
     def field_types() -> _field_types_of[Self.T]:
@@ -302,23 +302,21 @@ struct Reflected[T: AnyType]:
         return {}
 
     @staticmethod
-    def field_names() -> (
-        InlineArray[StaticString, _field_types_of[Self.T]().size]
-    ):
+    def field_names() -> Array[StaticString, _field_types_of[Self.T]().length]:
         """Returns the names of all fields in struct `T`.
 
         Constraints:
             `T` must be a struct type.
 
         Returns:
-            An `InlineArray` of `StaticString`, one entry per field.
+            An `Array` of `StaticString`, one entry per field.
         """
-        comptime count = _field_types_of[Self.T]().size
+        comptime count = _field_types_of[Self.T]().length
         comptime raw = _field_names_of[Self.T]()
 
         # Safety: uninitialized=True is safe because the comptime for loop
         # below initializes every element.
-        var result = InlineArray[StaticString, count](uninitialized=True)
+        var result = Array[StaticString, count](uninitialized=True)
 
         comptime for i in range(raw.size):
             result[i] = comptime (StaticString(raw[i]))

@@ -47,11 +47,11 @@ from nn.attention.gpu.nvidia.common import (
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
+from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
-from std.gpu.primitives.grid_controls import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
+from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -64,7 +64,7 @@ from nn.attention.mha_utils import (
     NoPartition,
     OptionallyStaticInt,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
 from std.utils.static_tuple import StaticTuple
 from kv_cache.types import padded_depth
@@ -109,20 +109,41 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
         return self == Self(Int32(other))
 
 
-def warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
+def warp_idx_to_role[
+    single_softmax_wg: Bool = False
+](warp_idx: UInt32) -> WarpRole:
     var wg_idx = warp_idx // 4
-    if wg_idx == 0:
-        return WarpRole.Softmax0
-    elif wg_idx == 1:
-        return WarpRole.Softmax1
-    elif wg_idx == 2:
-        return WarpRole.Correction
-    elif warp_idx == 12:
-        return WarpRole.MMA
-    elif warp_idx == 13:
-        return WarpRole.Load
+    comptime if single_softmax_wg:
+        # Generic single-O (wide-V): WG1's softmax is a full no-op, so it is
+        # dropped and the roles pack into 3 warpgroups (384 threads). WG0 keeps
+        # Softmax0; Correction moves down from WG2 into WG1; the MMA/Load warps
+        # move down from WG3 (warps 12/13) into WG2 (warps 8/9). Correction /
+        # MMA / Load bodies are position-independent (local row via
+        # `thread_idx.x % WARPGROUP_SIZE`; MMA/Load `elect()` not absolute
+        # warp index), so the remap is transparent.
+        if wg_idx == 0:
+            return WarpRole.Softmax0
+        elif wg_idx == 1:
+            return WarpRole.Correction
+        elif warp_idx == 8:
+            return WarpRole.MMA
+        elif warp_idx == 9:
+            return WarpRole.Load
+        else:
+            return WarpRole.Empty
     else:
-        return WarpRole.Empty
+        if wg_idx == 0:
+            return WarpRole.Softmax0
+        elif wg_idx == 1:
+            return WarpRole.Softmax1
+        elif wg_idx == 2:
+            return WarpRole.Correction
+        elif warp_idx == 12:
+            return WarpRole.MMA
+        elif warp_idx == 13:
+            return WarpRole.Load
+        else:
+            return WarpRole.Empty
 
 
 __extension SM100MLA:
@@ -134,10 +155,10 @@ __extension SM100MLA:
     @__llvm_arg_metadata(ragged_tma_store, `nvvm.grid_constant`)
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
-            Int32(Self.config.num_threads)
+            Int32(Self.config.launch_num_threads())
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDLength(1))
     @__name(
         t"sm100_mla_prefill_generic_{Self.qkv_dtype}_{Self.output_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
@@ -409,8 +430,8 @@ __extension SM100MLA:
             not Self.SchedulerType.may_advance
         ), "Persistent kernels not yet supported with FA4"
 
-        mask = pack.mask
-        max_seq_len = pack.max_seq_len
+        var mask = pack.mask
+        var max_seq_len = pack.max_seq_len
 
         # Matches the thin entrypoint's switch predicate: True iff short
         # tiles are actually routed to the 1Q body, so the 2Q softmax may
@@ -448,7 +469,24 @@ __extension SM100MLA:
         var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
-        comptime num_reg_softmax = 184
+        #
+        # Non-single-O keeps the 4-WG (512-thread) split at 184. Generic
+        # single-O drops WG1 (3 WGs / 384 threads), freeing the WG1 register
+        # budget for the lone remaining softmax WG. 208 is NOT "give softmax the
+        # max": `num_reg_softmax` is that WG's `setmaxnreg` peak, and ptxas folds
+        # the peak into the whole-function allocation it runs for the shared
+        # prologue, so the peak must clear the prologue WITHOUT spilling a live
+        # scalar to local memory. That is non-monotonic -- measured on B200,
+        # single-O spills at 184/192/216/232 and at the "obvious" max 256 (896
+        # local-ld sectors), and is spill-free only on the narrow {200, 208}
+        # island (208 chosen). A ptxas/toolchain bump can move the island;
+        # re-verify that the single-O `mla_prefill_generic` launch reports ZERO
+        # local traffic (else sweep `num_reg_softmax` by 8 to re-find it):
+        #   ncu --target-processes all --kernel-name-base demangled \
+        #       --kernel-name regex:"mla_prefill_generic" \
+        #       --print-metric-instances values --metrics \
+        #       l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum,l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum <binary>
+        comptime num_reg_softmax = 208 if Self.config.fa4_config.single_o else 184
         comptime num_reg_correction = 96
         comptime num_reg_other = 48
         comptime num_reg_empty = 24
@@ -467,7 +505,7 @@ __extension SM100MLA:
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         elif warp_idx == 2:
-            e = elect()
+            var e = elect()
             if e != 0:
                 q_tma_op.prefetch_descriptor()
             if e != 0:
@@ -499,7 +537,7 @@ __extension SM100MLA:
         # consumers must not re-read `tmem_addr_ptr()` in their bodies.
         var tmem_addr = ptr_tmem_addr[0]
 
-        var role = warp_idx_to_role(warp_idx)
+        var role = warp_idx_to_role[Self.config.fa4_config.single_o](warp_idx)
 
         # warp group partitioning
         # Two QO:
@@ -522,6 +560,7 @@ __extension SM100MLA:
                 False,
                 Self.MaxSeqLenType,
                 output_nonempty=output_nonempty,
+                single_softmax_wg=Self.config.fa4_config.single_o,
             ](
                 attn_smem,
                 tmem_addr,
@@ -672,15 +711,15 @@ __extension SM100MLA:
         comptime KVPipeType = MLAKVLayouts[
             Self.KVLUTType.dtype,
             KRopeType.dtype,
-            DType.invalid,
+            None,
             Self.config,
         ]
 
         # If two-qo, we produce qkv in a pattern of
         # q0 & k0, q1, v0, k1, v1, k2, v2...
-        # In 1Q fused-KV mode the pattern is instead
+        # In 1Q shared-KV mode the pattern is instead
         # q & k0, k1, v0, v1, k2, k3, v2, v3, ... (matching the mma's
-        # even/odd consumption). Split-KV needs no producer reorder: K
+        # even/odd consumption). Non-shared-KV needs no producer reorder: K
         # and V live in independent pipelines, so only the Q1 issue is
         # gated on num_q == 2.
         comptime SMemTensorLT[elems: Int] = TileTensor[
@@ -706,7 +745,7 @@ __extension SM100MLA:
             seq_info, max_seq_len
         )
         var q_head_idx: UInt32 = seq_info.head_idx
-        e = elect()
+        var e = elect()
 
         # Sub-tile paging: when page_size < BN, each BN-row load is split
         # into num_kv_pages sub-tile loads of kv_sub_BN rows each.
@@ -770,7 +809,7 @@ __extension SM100MLA:
             Self.ov_depth * kv_sub_BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_nope/V sub-tile pages at `current_kv_row`."""
@@ -781,7 +820,7 @@ __extension SM100MLA:
                 UInt32(ceildiv(Int(num_keys - current_kv_row), Int(kv_sub_BN))),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def _rope_num_valid_pages(current_kv_row: UInt32) -> UInt32:
             """Valid K_rope sub-tile pages at `current_kv_row`."""
@@ -796,7 +835,7 @@ __extension SM100MLA:
 
         # ---- Mode-shared sub-tile constants & closures ----
         # The K_rope sub-tile shape and V tile shape are identical in
-        # fused-KV and split-KV modes (only the smem base pointer and
+        # shared-KV and non-shared-KV modes (only the smem base pointer and
         # pipeline machinery differ). Hoist the constants and the unified
         # `_produce_k_rope` / `_produce_v` closures so both modes share
         # them — mirrors `mla_prefill_blockscale.mojo`'s pattern.
@@ -820,7 +859,7 @@ __extension SM100MLA:
             Self.ov_depth * Self.config.BN * size_of[Self.qkv_dtype]()
         )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_k_rope[
             partial: Bool,
@@ -885,7 +924,7 @@ __extension SM100MLA:
                     e,
                 )
 
-        @parameter
+        @__parameter
         @always_inline
         def _produce_v[
             partial: Bool,
@@ -918,14 +957,14 @@ __extension SM100MLA:
                 num_valid_pages=v_nvp,
             )
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # Single StagedPipeline with alternating K_nope and V stages.
             # K_rope stored separately in rope_smem, protected by K barriers.
             # Stages: K_nope0, V0, K_nope1, V1, ...
-            # Stage fits the wider of K_nope/V (fused_kv_cols).
+            # Stage fits the wider of K_nope/V (shared_kv_cols).
             comptime kv_stage_elems = (
-                Self.config.fa4_config.fused_kv_cols() * Self.config.BN
+                Self.config.fa4_config.shared_kv_cols() * Self.config.BN
             )
             comptime rope_stage_elems = (
                 Self.config.rope_depth * Self.config.BN
@@ -938,14 +977,14 @@ __extension SM100MLA:
             kv_pipeline.state._phase = 1  # producer starts at phase 1
 
             # Rope buffer index: cycles through ceildiv(num_kv_stages, 2)
-            # independently from the fused KV pipeline, since only K stages
-            # (every other fused stage) need rope.
+            # independently from the shared KV pipeline, since only K stages
+            # (every other shared stage) need rope.
             var rope_idx: UInt32 = 0
             comptime num_rope_bufs = UInt32(
                 Self.config.fa4_config.num_rope_buffers()
             )
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_rope_smem_ptr(
                 idx: UInt32,
@@ -962,7 +1001,7 @@ __extension SM100MLA:
                     Scalar[KRopeType.dtype]
                 ]() + idx * UInt32(rope_stage_elems)
 
-            @parameter
+            @__parameter
             @always_inline
             def _fused_v_smem_ptr() -> (
                 SharedMemPointer[Scalar[Self.KVLUTType.dtype]]
@@ -972,7 +1011,7 @@ __extension SM100MLA:
                     kv_stage_elems
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_fused[
                 partial: Bool,
@@ -1030,10 +1069,10 @@ __extension SM100MLA:
                 )
 
             comptime if num_q == 1:
-                # ---- 1Q fused-KV producer ----
+                # ---- 1Q shared-KV producer ----
                 # MMA consumes K_e, K_o, V_e, V_o per logical iter;
                 # produce in matching slot order (mirrors
-                # load_warp.mojo's 1Q fused producer). No FULL_MASK
+                # load_warp.mojo's 1Q shared producer). No FULL_MASK
                 # skipping here (see the `check_mask` assert at the top
                 # of `load`).
 
@@ -1041,7 +1080,7 @@ __extension SM100MLA:
                 # lifecycle (acquire / mbar / produce / rope-buf cycle /
                 # step). The first peeled K slot passes `acquire=False`
                 # (initial producer phase = 1).
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_k_1q[
                     partial: Bool,
@@ -1069,7 +1108,7 @@ __extension SM100MLA:
                     rope_idx = (rope_idx + 1) % num_rope_bufs
                     kv_pipeline.state.step()
 
-                @parameter
+                @__parameter
                 @always_inline
                 def _emit_v_1q[
                     partial: Bool
@@ -1087,9 +1126,9 @@ __extension SM100MLA:
                 var k_nvp_0 = _k_num_valid_pages(kv_row)
                 var rope_nvp_0 = _rope_num_valid_pages(kv_row)
 
-                # NOTE: single-O (1Q wide-V) never reaches the fused-KV
-                # producer — `FA4Config` forces `use_fused_kv=False` for
-                # single-O, so its per-tile production lives on split-KV.
+                # NOTE: single-O (1Q wide-V) never reaches the shared-KV
+                # producer — `FA4Config` forces `use_shared_kv=False` for
+                # single-O, so its per-tile production lives on non-shared-KV.
 
                 # T == 1 fast path: produce K_e[0] (with Q) + V_e[0]
                 # only. mma's matching fast path consumes those two
@@ -1250,7 +1289,7 @@ __extension SM100MLA:
                         _emit_v_1q[partial=True](paged_rows, k_nvp_pe)
                         _emit_v_1q[partial=True](paged_rows_o, k_nvp_po)
             else:
-                # ---- 2Q fused-KV producer (original) ----
+                # ---- 2Q shared-KV producer (original) ----
 
                 # ---- Peeled: K0 + Q0 on same barrier ----
                 var k0_mbar = kv_pipeline.producer_mbar()
@@ -1391,7 +1430,7 @@ __extension SM100MLA:
                             kv_pipeline.state.step()
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V pipelines
             comptime VPipeType = VProducerPipeline[
@@ -1405,7 +1444,7 @@ __extension SM100MLA:
 
             # K stage may contain mixed dtypes (e.g. FP8 nope + BF16 rope).
             # Compute byte size then convert to qkv_dtype element count. The
-            # K_nope part is `padded_nope_depth` wide (split-KV mode: V has its
+            # K_nope part is `padded_nope_depth` wide (non-shared-KV mode: V has its
             # own `pipeline_v`), so this is K-only.
             comptime k_stage_bytes = (
                 Self.config.fa4_config.padded_nope_depth
@@ -1420,12 +1459,12 @@ __extension SM100MLA:
             # Get K0 barrier (no wait needed for first iteration)
             var k0_mbar = k_pipeline.producer_mbar[qk_stage=0]()
 
-            @parameter
+            @__parameter
             @always_inline
             def _split_v_smem_ptr(
                 pair: type_of(pipeline_v.get_tile[qk_stage=0]()),
             ) -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
-                """V destination smem ptr for split-KV's V pipeline pair.
+                """V destination smem ptr for non-shared-KV's V pipeline pair.
 
                 Mirrors blockscale's `_split_v_smem_ptr` so the unified
                 `_produce_v` closure can emit a partial-aware
@@ -1436,7 +1475,7 @@ __extension SM100MLA:
                     pair.smem.ptr
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def _produce_k_split[
                 partial: Bool,
@@ -1449,7 +1488,7 @@ __extension SM100MLA:
                 k_nvp: UInt32 = UInt32(num_kv_pages),
                 rope_nvp: UInt32 = UInt32(num_rope_pages),
             ):
-                """Q (if `with_q`) + K_nope + K_rope onto `mbar` (split-KV).
+                """Q (if `with_q`) + K_nope + K_rope onto `mbar` (non-shared-KV).
 
                 Includes the `split_smem` decomposition into K_nope and
                 K_rope smem regions so the call sites only need to set
@@ -1476,7 +1515,7 @@ __extension SM100MLA:
                 var smem_ptr = k_smem_base + k_pipeline.state.index() * UInt32(
                     k_elements_per_stage
                 )
-                k_nope_smem_local, k_rope_smem_local = split_smem[
+                var k_nope_smem_local, k_rope_smem_local = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
@@ -1656,17 +1695,17 @@ __extension SM100MLA:
         # tiles, and o0/o1 accumulate alternating V tiles — mirroring
         # mma_warp.mojo's 1Q structure.
         comptime num_q = Self.config.num_q()
-        s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
-        s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
-        o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
-        o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
+        var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
+        var s1_tmem = tmem_addr + UInt32(Self.config.TMEM_S1)
+        var o0_tmem = tmem_addr + UInt32(Self.config.TMEM_O0)
+        var o1_tmem = tmem_addr + UInt32(Self.config.TMEM_O1)
 
         # S pipelines with sub-stages (1 producer, num_pv_stages consumers)
         var pipeline_s0 = mbars.producer_s0()
         var pipeline_s1 = mbars.producer_s1()
         # Keep consumer pointers for acquire operations (shared phase tracking)
-        consumer_s0 = pipeline_s0.consumer_mbar_base
-        consumer_s1 = pipeline_s1.consumer_mbar_base
+        var consumer_s0 = pipeline_s0.consumer_mbar_base
+        var consumer_s1 = pipeline_s1.consumer_mbar_base
 
         # O pipelines (producer side only; consumer wait is merged into S barriers)
         var pipeline_o0 = mbars.producer_o0()
@@ -1678,19 +1717,21 @@ __extension SM100MLA:
             Self.config.q_tile_rows()
         ) * Self.config.padded_qk_depth
         comptime q0_bytes = UInt32(q0_size * size_of[Self.KVLUTType.dtype]())
-        q0 = Self.descriptor_q(q_smem)
-        q1 = q0 + q0_bytes
+        var q0 = Self.descriptor_q(q_smem)
+        var q1 = q0 + q0_bytes
 
-        comptime if Self.config.fa4_config.use_fused_kv:
-            # ---- Fused KV mode ----
+        var q0_rope: type_of(q0)
+        var q1_rope: type_of(q1)
+        comptime if Self.config.fa4_config.use_shared_kv:
+            # ---- Shared KV mode ----
             # Single StagedPipeline alternating K_nope and V.
             # K_rope is in a separate smem region, protected by the same
             # K barrier (load warp puts both on the same mbarrier).
             # Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
-            # Fused buffer stage fits the wider of K_nope/V (fused_kv_cols).
+            # Shared buffer stage fits the wider of K_nope/V (shared_kv_cols).
             comptime kv_stage_bytes = (
-                Self.config.fa4_config.fused_kv_cols()
+                Self.config.fa4_config.shared_kv_cols()
                 * Self.config.BN
                 * size_of[Self.KVLUTType.dtype]()
             )
@@ -1707,7 +1748,7 @@ __extension SM100MLA:
 
             # K_nope descriptor: k_major for Q@K_nope'. Width is the K_nope
             # depth (`padded_nope_depth`), the Q@K' contraction dim.
-            kv_desc_k = smem_descriptor[
+            var kv_desc_k = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.fa4_config.padded_nope_depth,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
@@ -1715,14 +1756,14 @@ __extension SM100MLA:
             ](k_smem_base)
             # V descriptor: mn_major for P@V. Width is the V head dim
             # (`padded_ov_depth`).
-            kv_desc_v = smem_descriptor[
+            var kv_desc_v = smem_descriptor[
                 BMN=Self.config.fa4_config.padded_ov_depth,
                 BK=Self.config.BN,
                 swizzle_mode=Self.config.qkv_swizzle_mode,
                 is_k_major=False,
             ](k_smem_base)
             # K_rope descriptor: k_major for Q@K_rope'
-            rope_desc = smem_descriptor[
+            var rope_desc = smem_descriptor[
                 BMN=Self.config.BN,
                 BK=Self.config.rope_depth,
                 swizzle_mode=Self.config.rope_mma_swizzle_mode,
@@ -1743,7 +1784,7 @@ __extension SM100MLA:
             # different dtypes AND swizzles (FP8 64B nope, BF16 128B rope),
             # so `q0 + offset` would read the BF16 rope with the FP8
             # descriptor's swizzle — garbage. Build a dedicated rope
-            # descriptor at the rope sub-tile, mirroring the split
+            # descriptor at the rope sub-tile, mirroring the non-shared
             # mixed-dtype path (`descriptor_q_rope`).
             comptime q_rope_off = UInt32(Self.q_rope_byte_offset)
             comptime if Self.qkv_dtype == Self.rope_mma_dtype:
@@ -1751,7 +1792,7 @@ __extension SM100MLA:
                 q1_rope = q1 + q_rope_off
             else:
                 # Mixed-dtype is single-CTA num_q=1 only (per-token-scale
-                # 2Q is split-KV, never fused), so q1_rope is dead here;
+                # 2Q is non-shared-KV, never shared), so q1_rope is dead here;
                 # define it from the same base for type consistency.
                 q0_rope = Self.descriptor_q_rope(
                     (
@@ -1786,12 +1827,12 @@ __extension SM100MLA:
             ](seq_id, score_row, num_keys)
             var iter_count: UInt32 = total_iters_runtime - UInt32(3 - num_q)
 
-            e = elect()
+            var e = elect()
 
             # Release the KV slot at `release_idx`, advance to the next
             # stage, wait for it, and return its slot index (1Q only;
             # mirrors mma_warp.mojo's `_advance_kv`).
-            @parameter
+            @__parameter
             @always_inline
             def _advance_kv(release_idx: UInt32) -> UInt32:
                 kv_pipeline.consumer_release_at(release_idx, e)
@@ -1799,16 +1840,18 @@ __extension SM100MLA:
                 kv_pipeline.consumer_wait()
                 return kv_pipeline.state.index()
 
-            # NOTE: single-O (1Q wide-V) never reaches the fused-KV branch —
-            # `FA4Config` forces `use_fused_kv=False` for single-O so the
-            # single-O serial P@V path lives solely on split-KV (below).
+            # NOTE: single-O (1Q wide-V) never reaches the shared-KV branch —
+            # `FA4Config` forces `use_shared_kv=False` for single-O so the
+            # single-O serial P@V path lives solely on non-shared-KV (below).
 
             # ---- Peeled iteration ----
             # Stage 0 = K0 (K_nope0 + K_rope0)
             kv_pipeline.consumer_wait()
-            k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            var k0 = (
+                kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
+            )
             Self.UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
-            r0 = rope_desc + UInt32(rope_stage_bytes) * rope_idx
+            var r0 = rope_desc + UInt32(rope_stage_bytes) * rope_idx
             Self.UMMA0RopeType.mma[stage_idx=0](
                 q0_rope, r0, s0_tmem, elect=e, c_scale=1
             )
@@ -1826,7 +1869,7 @@ __extension SM100MLA:
                 # return. Don't touch s1 / o1 -- softmax WG1 takes its
                 # matching no-op path.
                 if total_iters_runtime == UInt32(1):
-                    v0_t1 = kv_desc_v + UInt32(kv_stage_bytes) * slot1
+                    var v0_t1 = kv_desc_v + UInt32(kv_stage_bytes) * slot1
                     comptime for pv_stage in range(Self.config.num_pv_stages):
                         _ = consumer_s0[pv_stage].wait(0)
                         Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1865,7 +1908,7 @@ __extension SM100MLA:
             # single use, then V_o[0] loaded and held)
             kv_pipeline.consumer_wait()
             var v_prev_idx: UInt32 = kv_pipeline.state.index()
-            v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v0 = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s0[pv_stage].wait(0)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1891,21 +1934,21 @@ __extension SM100MLA:
 
                 # Kn (K_nope_n + K_rope_n) / K_e[n] (1Q)
                 kv_pipeline.consumer_wait()
-                kn = (
+                var kn = (
                     kv_desc_k
                     + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
                 )
                 Self.UMMA0Type.mma[stage_idx=0](
                     q0, kn, s0_tmem, elect=e, c_scale=0
                 )
-                rn = rope_desc + UInt32(rope_stage_bytes) * rope_idx
+                var rn = rope_desc + UInt32(rope_stage_bytes) * rope_idx
                 Self.UMMA0RopeType.mma[stage_idx=0](
                     q0_rope, rn, s0_tmem, elect=e, c_scale=1
                 )
                 pipeline_s0.commit_mma(e)
 
                 # P1 @ V_{n-1} (2Q) / P_o @ V_o[n-1] (1Q)
-                v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s1[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1969,7 +2012,7 @@ __extension SM100MLA:
                 # then V_o[n] loaded and held)
                 kv_pipeline.consumer_wait()
                 v_prev_idx = kv_pipeline.state.index()
-                vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+                var vn = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s0[pv_stage].wait(phase)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1983,7 +2026,7 @@ __extension SM100MLA:
                     v_prev_idx = _advance_kv(v_prev_idx)
 
             # ---- Epilogue ----
-            v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
+            var v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
             comptime for pv_stage in range(Self.config.num_pv_stages):
                 _ = consumer_s1[pv_stage].wait(phase)
                 Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -1993,7 +2036,7 @@ __extension SM100MLA:
             kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
 
         else:
-            # ---- Split KV mode (original) ----
+            # ---- Non-shared mode (original) ----
 
             # Separate K and V consumer pipelines
             comptime KConType = KConsumerPipeline[
@@ -2027,7 +2070,7 @@ __extension SM100MLA:
             # tail both loops used, so `@always_inline` keeps them
             # byte-identical. Captures pipeline_v/consumer_s0/pipeline_o0/
             # s0_tmem/o0_tmem from this scope (mirrors `_advance_kv`).
-            @parameter
+            @__parameter
             @always_inline
             def _pv_into_o0(mut s_phase: UInt32, mut c_scale: UInt32, e: Int32):
                 pipeline_v.wait_v()
@@ -2042,22 +2085,22 @@ __extension SM100MLA:
                 c_scale = 1
                 s_phase ^= 1
 
-            # ---- single-O serial path (1Q wide-V), split-KV, same-dtype ----
+            # ---- single-O serial path (1Q wide-V), non-shared-KV, same-dtype ----
             # Wide V (e.g. v_head_dim=256) cannot hold the two per-WG O
             # partials in the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so
             # single-O aliases O1 onto O0 and CANNOT run the two-WG even/odd
             # LSE-combine that the standard 1Q path uses (the softmax peer O
             # read would overrun TMEM). Instead ONE warp group folds EVERY
             # K/V tile serially into the single O0 (WG1 no-op; the softmax and
-            # correction warps take matching single-O paths). Split-KV has
+            # correction warps take matching single-O paths). Non-shared-KV has
             # separate K and V consumer pipelines; per tile do Q@K_i -> s0,
             # then P_i @ V_i -> O0 (init on tile 0, accumulate onto the
             # correction-rescaled O0 after). `consumer_s0` completion gates
-            # both "P ready" and "O0 rescaled". `FA4Config` forces split-KV
+            # both "P ready" and "O0 rescaled". `FA4Config` forces non-shared-KV
             # for single-O, so this (and the mixed-dtype variant below) are
             # the ONLY single-O MMA paths.
             comptime if Self.config.fa4_config.single_o and Self.fused_umma0:
-                e = elect()
+                var e = elect()
                 var t_left: UInt32 = total_iters_runtime
                 var s_phase: UInt32 = 0
                 var c_scale: UInt32 = 0
@@ -2075,8 +2118,8 @@ __extension SM100MLA:
             comptime if Self.fused_umma0:
                 # Q_0 @ K_0' (2Q) / Q @ K_e[0]' (1Q)
                 pipeline_k.wait_k()
-                k0 = pipeline_k.get_k()
-                e = elect()
+                var k0 = pipeline_k.get_k()
+                var e = elect()
                 Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
                 comptime if num_q == 1:
                     pipeline_k.release_k(e)  # K_e[0] single use
@@ -2118,7 +2161,7 @@ __extension SM100MLA:
                 # Wait V0 (2Q held for first main iter) / V_e[0] (1Q
                 # single use, then V_o[0] loaded and held)
                 pipeline_v.wait_v()
-                vlatest = pipeline_v.get_v()
+                var vlatest = pipeline_v.get_v()
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s0[pv_stage].wait(0)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -2147,7 +2190,7 @@ __extension SM100MLA:
                     iter_count -= 1
 
                     # Q_0 @ K_n' (2Q) / Q @ K_e[n]' (1Q)
-                    kn = pipeline_k.get_k()
+                    var kn = pipeline_k.get_k()
                     pipeline_k.wait_k()
                     Self.UMMA0Type.mma(q0, kn, s0_tmem, elect=e, c_scale=0)
                     comptime if num_q == 1:
@@ -2177,7 +2220,7 @@ __extension SM100MLA:
                     comptime if num_q == 1:
                         if iter_count == 0:
                             # Tail iter (T odd). Same alias-swap pattern
-                            # as fused-KV: rebind o1-side aliases to
+                            # as shared-KV: rebind o1-side aliases to
                             # o0-side resources and fall through to the
                             # epilogue.
                             vlatest = pipeline_v.get_v()  # V_e[k]
@@ -2233,7 +2276,7 @@ __extension SM100MLA:
                     )
                 pipeline_o1.commit_mma(e)
             else:
-                # ---- Split KV mode with separate nope/rope UMMAs ----
+                # ---- Non-shared mode with separate nope/rope UMMAs ----
                 # K_nope and K_rope have different dtypes (e.g. FP8 + BF16),
                 # so Q@K' = Q_nope@K_nope (c_scale=0) + Q_rope@K_rope (c_scale=1).
 
@@ -2254,13 +2297,13 @@ __extension SM100MLA:
                 )
                 comptime q_half_bytes = UInt32(q_nope_bytes + q_rope_bytes)
 
-                q0_nope = Self.descriptor_q(q_smem)
+                var q0_nope = Self.descriptor_q(q_smem)
                 q0_rope = Self.descriptor_q_rope(
                     (q_smem + q_nope_bytes // Self.qkv_dt_size).bitcast[
                         Scalar[Self.rope_mma_dtype]
                     ]()
                 )
-                q1_nope = q0_nope + q_half_bytes
+                var q1_nope = q0_nope + q_half_bytes
                 q1_rope = q0_rope + q_half_bytes
 
                 # ---- K descriptor setup ----
@@ -2274,14 +2317,14 @@ __extension SM100MLA:
                 )
                 comptime k_stage_stride = UInt32(KConType.full_kv_bytes)
 
-                kv_desc_k_nope = smem_descriptor[
+                var kv_desc_k_nope = smem_descriptor[
                     BMN=Self.config.BN,
                     BK=Self.nope_depth,
                     swizzle_mode=Self.config.qkv_swizzle_mode,
                     is_k_major=True,
                 ](k_smem_base)
 
-                kv_desc_k_rope = smem_descriptor[
+                var kv_desc_k_rope = smem_descriptor[
                     BMN=Self.config.BN,
                     BK=Self.rope_depth,
                     swizzle_mode=Self.config.rope_mma_swizzle_mode,
@@ -2292,16 +2335,16 @@ __extension SM100MLA:
                     ).bitcast[Scalar[Self.rope_mma_dtype]]()
                 )
 
-                # ---- single-O serial path (1Q wide-V), split-KV, mixed ----
+                # ---- single-O serial path (1Q wide-V), non-shared-KV, mixed ----
                 # Mixed-dtype (e.g. FP8 nope + BF16 rope) wide V forces
                 # single-O (aliased O0): ONE warp group folds EVERY K/V tile
-                # serially into O0 (WG1 no-op). Split-KV has separate K and V
+                # serially into O0 (WG1 no-op). Non-shared-KV has separate K and V
                 # consumer pipelines and a two-part Q@K' (Q_nope@K_nope +
                 # Q_rope@K_rope). Per tile: Q@K_i -> s0, then P_i @ V_i -> O0
                 # (init on tile 0, accumulate onto the correction-rescaled O0
                 # after). `consumer_s0` gates "P ready" + "O0 rescaled".
                 comptime if Self.config.fa4_config.single_o:
-                    e = elect()
+                    var e = elect()
                     var t_left_m: UInt32 = total_iters_runtime
                     var s_phase_m: UInt32 = 0
                     var c_scale_m: UInt32 = 0
@@ -2327,9 +2370,9 @@ __extension SM100MLA:
                 # Q_0 @ K_0' (2Q) / Q @ K_e[0]' (1Q)
                 pipeline_k.wait_k()
                 var k_idx = pipeline_k.pipeline.state.index()
-                k0_nope = kv_desc_k_nope + k_stage_stride * k_idx
-                k0_rope = kv_desc_k_rope + k_stage_stride * k_idx
-                e = elect()
+                var k0_nope = kv_desc_k_nope + k_stage_stride * k_idx
+                var k0_rope = kv_desc_k_rope + k_stage_stride * k_idx
+                var e = elect()
                 Self.UMMA0Type.mma[stage_idx=0](
                     q0_nope, k0_nope, s0_tmem, elect=e, c_scale=0
                 )
@@ -2388,7 +2431,7 @@ __extension SM100MLA:
                 # Wait V0 (2Q held) / V_e[0] (1Q single use, then V_o[0]
                 # loaded and held)
                 pipeline_v.wait_v()
-                vlatest = pipeline_v.get_v()
+                var vlatest = pipeline_v.get_v()
                 comptime for pv_stage in range(Self.config.num_pv_stages):
                     _ = consumer_s0[pv_stage].wait(0)
                     Self.UMMA1Type.mma[stage_idx=pv_stage](
@@ -2414,11 +2457,11 @@ __extension SM100MLA:
                     iter_count -= 1
 
                     # Q_0 @ K_n' (2Q) / Q @ K_e[n]' (1Q)
-                    kn_nope = (
+                    var kn_nope = (
                         kv_desc_k_nope
                         + k_stage_stride * pipeline_k.pipeline.state.index()
                     )
-                    kn_rope = (
+                    var kn_rope = (
                         kv_desc_k_rope
                         + k_stage_stride * pipeline_k.pipeline.state.index()
                     )
@@ -2594,7 +2637,7 @@ def mla_sm100_prefill_generic[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    q_tma_op = q_tma[
+    var q_tma_op = q_tma[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.qk_depth,
@@ -2608,14 +2651,14 @@ def mla_sm100_prefill_generic[
     )
 
     # [batch_size * num_keys, num_heads, kv_depth]
-    k_nope_tma_op = k.create_tma_tile[
+    var k_nope_tma_op = k.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=fa4_config.nope_depth,
     ](ctx)
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
-    k_rope_tma_op = k_rope.create_tma_tile[
+    var k_rope_tma_op = k_rope.create_tma_tile[
         fa4_config.rope_gmem_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KRopeType.page_size),
         depth=cache_depth,
@@ -2623,7 +2666,7 @@ def mla_sm100_prefill_generic[
     ](ctx)
 
     # [batch_size * num_keys, num_heads, v_depth] — V gmem width is ov_depth.
-    v_tma_op = v.create_tma_tile[
+    var v_tma_op = v.create_tma_tile[
         fa4_config.qkv_swizzle_mode,
         BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=ov_depth,
@@ -2739,7 +2782,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     # their types fold to identical values for both configs (Q TMA and
     # ragged store use `BM // num_q` = 128 in both modes; K/V/rope TMA
     # shapes are BM-independent), so they are passed through unchanged.
-    @parameter
+    @__parameter
     @always_inline
     def _launch[cfg: MLAConfig]() raises:
         comptime assert cfg.supported(), cfg.fa4_config.description()
@@ -2793,7 +2836,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
             max_num_prompt_tiles * PartitionType().num_partitions()
         )
 
-        comptime num_threads = cfg.num_threads
+        comptime num_threads = cfg.launch_num_threads()
         # When the launched (2Q) kernel may dispatch to the 1Q body at
         # runtime, it builds the 1Q `SM100AttentionSMem` over the same
         # dynamic-smem region, so reserve the max of both footprints.

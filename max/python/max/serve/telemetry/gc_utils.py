@@ -11,10 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Utilities for CPython garbage-collector."""
+"""Utilities for the CPython garbage-collector and the host allocator."""
 
 from __future__ import annotations
 
+import ctypes
 import gc
 import logging
 import time
@@ -145,3 +146,32 @@ def freeze_gc_heap() -> int:
     gc.collect(2)
     gc.freeze()
     return gc.get_freeze_count()
+
+
+def _release_free_host_memory() -> bool:
+    """Returns free host-allocator pages to the OS, if the platform supports it.
+
+    No-ops when ``malloc_trim`` is not in the process's symbol scope, which
+    covers macOS and musl. Under a jemalloc or tcmalloc ``LD_PRELOAD`` the
+    symbol still resolves from glibc but finds nothing to release, since those
+    allocators do not strand memory this way to begin with.
+
+    Returns:
+        Whether the trim actually ran.
+    """
+    try:
+        libc = ctypes.CDLL(None)
+        malloc_trim = libc.malloc_trim
+    except (OSError, AttributeError):
+        logger.debug("malloc_trim unavailable; skipping host memory trim.")
+        return False
+
+    malloc_trim.argtypes = [ctypes.c_size_t]
+    malloc_trim.restype = ctypes.c_int
+
+    start_s = time.monotonic()
+    malloc_trim(0)
+    logger.debug(
+        "Released free host memory in %.2fs.", time.monotonic() - start_s
+    )
+    return True
