@@ -18,6 +18,7 @@ _NUMPY_TESTS = [
         ],
         data = [
             "custom_indexable.py",
+            "custom_operators.py",
             "my_module.py",
         ],
         python_version = version.replace("_", "."),

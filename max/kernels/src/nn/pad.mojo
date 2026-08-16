@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements tensor padding with constant or edge values for CPU and GPU."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -57,7 +58,7 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
 
     var cur: Self.Element
 
-    comptime LoopBoundSpec = InlineArray[IndexList[2], Self.n_loops]
+    comptime LoopBoundSpec = Array[IndexList[2], Self.n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
@@ -140,6 +141,12 @@ def pad_constant[
     Fill `output` with values from `input`, and edges padded with `constant`
     based on `paddings`.
 
+    Parameters:
+        dtype: DType of the `input` and `output` buffers.
+        paddings_type: DType of the `paddings` buffer.
+        constant_type: DType of the `constant` value before it is cast to
+            `dtype`.
+
     Args:
         output: The output buffer.
         input: The input buffer.
@@ -205,6 +212,10 @@ def pad_reflect[
     """
     Fill `output` with values from `input`, and edges padded with reflected
     values from the unpadded region.
+
+    Parameters:
+        dtype: DType of the `input` and `output` buffers.
+        paddings_type: DType of the `paddings` buffer.
 
     Args:
         output: The output buffer.
@@ -324,13 +335,13 @@ def _do_pad[
     paddings: UnsafePointer[Scalar[paddings_type], _],
     pad_impl_fn: PadImplFn,
 ):
-    var input_strides_stack = InlineArray[Scalar[DType.int], output.rank](
+    var input_strides_stack = Array[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var input_strides_buf = TileTensor(
         input_strides_stack, row_major[input.rank]()
     )
-    var output_strides_stack = InlineArray[Scalar[DType.int], output.rank](
+    var output_strides_stack = Array[Scalar[DType.int], output.rank](
         uninitialized=True
     )
     var output_strides_buf = TileTensor(
@@ -553,8 +564,7 @@ def _memcpy_regions_fast[
         if cnt == modulo:
             cnt = 0
 
-    @parameter
-    def _common_loop[pre_copy: Bool, singleton: Bool]():
+    def _common_loop[pre_copy: Bool, singleton: Bool]() {var}:
         var curr_rem: Int = 0
         var num_iters = pre_pad if pre_copy else post_pad
         var copy_to: Int = (pre_pad - 1) if pre_copy else (pre_pad + non_pad)

@@ -15,7 +15,7 @@ from std.math import ceildiv
 
 import std.gpu.primitives.warp as warp
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
@@ -63,15 +63,15 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     comptime kernel = gemv_kernel[DType.float32, DType.bfloat16, DType.bfloat16]
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_gemv(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             c_device,
             a_device,
             b_device,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
         )
@@ -117,7 +117,7 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     )
 
     @always_inline
-    @parameter
+    @__parameter
     def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
@@ -133,9 +133,9 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
             c_tt,
             a_tt,
             b_tt,
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )

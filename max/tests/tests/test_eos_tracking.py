@@ -90,6 +90,59 @@ def test_is_eos_from_tokens_empty_array_raises() -> None:
         t.is_eos_from_tokens(np.array([], dtype=np.int64))
 
 
+# --- first_eos_offset (multi-token committed span scan) ---
+
+
+def test_first_eos_offset_none_when_span_does_not_end() -> None:
+    t = EOSTracker(eos_token_ids={1})
+    prior = np.array([99], dtype=np.int64)
+    assert t.first_eos_offset(prior, [8, 9, 10]) is None
+
+
+def test_first_eos_offset_single_id_interior() -> None:
+    t = EOSTracker(eos_token_ids={1})
+    prior = np.array([99], dtype=np.int64)
+    # Span [8, 1, 9]: the single-id EOS at offset 1 terminates first.
+    assert t.first_eos_offset(prior, [8, 1, 9]) == 1
+
+
+def test_first_eos_offset_returns_earliest_eos() -> None:
+    t = EOSTracker(eos_token_ids={1})
+    prior = np.array([99], dtype=np.int64)
+    # Two EOS in the span; the earliest (offset 0) wins.
+    assert t.first_eos_offset(prior, [1, 2, 1]) == 0
+
+
+def test_first_eos_offset_sequence_within_span() -> None:
+    t = EOSTracker(eos_sequences=[[5, 6]])
+    prior = np.array([99], dtype=np.int64)
+    # Sequence [5, 6] completes at offset 1 (the token that closes it).
+    assert t.first_eos_offset(prior, [5, 6, 8]) == 1
+
+
+def test_first_eos_offset_sequence_straddling_boundary() -> None:
+    t = EOSTracker(eos_sequences=[[5, 6]])
+    # Prior ends in 5; the span's first token (6) completes the sequence.
+    prior = np.array([99, 5], dtype=np.int64)
+    assert t.first_eos_offset(prior, [6, 8]) == 0
+
+
+def test_first_eos_offset_long_sequence_short_prior() -> None:
+    # 4-token stop sequence: keep=3, but only 2 prior tokens exist, so the whole
+    # prior must be retained for the straddling match (index must not go
+    # negative and drop the earliest token).
+    t = EOSTracker(eos_sequences=[[11, 12, 20, 21]])
+    prior = np.array([11, 12], dtype=np.int64)
+    # span 20, 21 completes [11, 12, 20, 21] at offset 1.
+    assert t.first_eos_offset(prior, [20, 21, 99]) == 1
+
+
+def test_first_eos_offset_empty_prior() -> None:
+    t = EOSTracker(eos_token_ids={1})
+    prior = np.array([], dtype=np.int64)
+    assert t.first_eos_offset(prior, [8, 1]) == 1
+
+
 # --- EOS Stop StringSequence (s) ---
 
 

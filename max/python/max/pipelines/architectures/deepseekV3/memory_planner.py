@@ -22,14 +22,18 @@ from max.nn.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
+
+from .model_config import DeepseekV3Config
 
 logger = logging.getLogger("max.pipelines")
 
@@ -49,12 +53,16 @@ def _get_mtp_draft_ep_dispatch_dtype(
     if spec_config is None or not spec_config.is_mtp():
         return None
 
-    encoding = pipeline_config.model.quantization_encoding
-    if encoding is None or not is_float4_encoding(encoding):
+    encoding = _select_quantization_encoding(
+        pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+    )
+    if not is_float4_encoding(encoding):
         return None
 
     draft_encoding = (
-        pipeline_config.draft_model.quantization_encoding
+        _select_quantization_encoding(
+            pipeline_config.draft_model, DeepseekV3Config.DEFAULT_ENCODING
+        )
         if pipeline_config.draft_model is not None
         else None
     )
@@ -110,8 +118,9 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         weights_size = model_config.weights_size()
         n_gpus_per_node = len(model_config.device_specs)
 
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
 
         def _n_elems_to_bytes(n_elems: int) -> int:
             dtype = supported_encoding_dtype(encoding).size_in_bytes
@@ -209,8 +218,9 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         Returns:
             Estimated activation memory in bytes.
         """
-        encoding = pipeline_config.model.quantization_encoding
-        assert encoding is not None
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, DeepseekV3Config.DEFAULT_ENCODING
+        )
         mla_activation_memory: int = 0
         moe_activation_memory: int = 0
         ep_buffer_memory = 0
@@ -227,13 +237,17 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
             else:
                 max_kv_length = pipeline_config.runtime.max_batch_total_tokens
 
+            cache_dtype = cache_dtype_for_encoding(
+                encoding,
+                pipeline_config.model.kv_cache.kv_cache_format,
+            )
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree
                 * 2  # 2 for K and V
                 * max_kv_length
                 * huggingface_config.num_attention_heads
                 * huggingface_config.qk_nope_head_dim
-                * pipeline_config.model.kv_cache.cache_dtype.size_in_bytes
+                * cache_dtype.size_in_bytes
             )
 
         # Estimate buffer and activation memory during Expert Parallel MoE.

@@ -43,7 +43,7 @@ through that storage. Together those two accesses close the loop on the
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
   at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic
-  indexer's `IndexTypes.size == flat_rank` constraint can't be proven while
+  indexer's `IndexTypes.length == flat_rank` constraint can't be proven while
   `LayoutType` is an abstract kernel parameter.)
 
 What makes it work — per-field device encoding:
@@ -64,7 +64,7 @@ from layout import TensorLayout, TileTensor, row_major
 from layout.tensor_storage import DevicePointerStorage
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 from std.testing import assert_equal
 

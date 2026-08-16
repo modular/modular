@@ -8,8 +8,7 @@ description:
 <!--
 VERIFIED: std/reflection/__init__.mojo, std/reflection/reflect.mojo,
      std/reflection/type_info.mojo, std/reflection/location.mojo,
-     std/reflection/struct_fields.mojo, std/reflection/traits.mojo,
-     builtin/comparable.mojo
+     std/reflection/struct_fields.mojo, builtin/comparable.mojo
 -->
 
 Reflection helps you write code that inspects its own structure at
@@ -149,7 +148,7 @@ var default_host: host_handle.T = "localhost"
 print(default_host)  # localhost
 ```
 
-Name-based lookup requires a concrete type. If `T` is generic, use
+Name-based lookup requires a concrete type. If `T` is parameterized, use
 index-based iteration instead.
 :::
 
@@ -169,7 +168,7 @@ def diff_fields[T: AnyType](a: T, b: T) -> List[String]:
             ref a_val = reflect[T].field_ref[idx](a)
             ref b_val = reflect[T].field_ref[idx](b)
             if a_val != b_val:
-                diffs.append(String(names[idx]))
+                diffs.append(String(comptime (names[idx])))
 
     return diffs^
 ```
@@ -213,7 +212,7 @@ trait MakeCopyable:
         comptime field_count = reflect[Self].field_count()
         comptime field_types = reflect[Self].field_types()
 
-        comptime Usable = Copyable & ImplicitlyDeletable
+        comptime Usable = Copyable & Deinitable
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
             comptime if conforms_to(field_type, Usable):
@@ -266,7 +265,7 @@ struct Packet:
     var payload: UInt64
 
 def show_layout[T: AnyType]():
-    comptime names = reflect[T].field_names()
+    var names = materialize[reflect[T].field_names()]()
     comptime for i in range(reflect[T].field_count()):
         comptime off = reflect[T].field_offset[index=i]()
         print(names[i], "at byte", off)
@@ -316,7 +315,7 @@ from std.os import abort
 
 def first_ref[
     T: Copyable
-](ref list: List[T]) -> ref [origin_of(list)] T:
+](ref list: List[T]) -> ref[list[0]] T:
     if not list:
         abort("empty list")
     return list[0]

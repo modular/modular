@@ -83,10 +83,13 @@ class _SpeculativeDecodingMetrics:
 
         Returns a list of acceptance rates for each draft position. The rate
         at position i represents the probability that draft token i is accepted
-        given that all previous draft tokens (0..i-1) were accepted.
+        given that all previous draft tokens (0..i-1) were accepted. Empty when
+        no verifications were performed: such a batch carries no acceptance
+        information, and a row of zeros would dilute every consumer that
+        averages these rates (e.g. the per-position histograms).
         """
         if self.num_verifications == 0 or self.accepted_per_position is None:
-            return [0.0] * self.num_speculative_tokens
+            return []
         return [
             count / self.num_verifications
             for count in self.accepted_per_position

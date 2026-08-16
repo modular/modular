@@ -150,9 +150,9 @@ def test_atof_generate_cases() raises:
                     var sign: Float64 = 1
                     if multiplier == "-":
                         sign = -1
-                    final_string = number_as_str.replace("e", exponent)
+                    var final_string = number_as_str.replace("e", exponent)
                     final_string = multiplier + final_string + suffix
-                    final_value = sign * number
+                    var final_value = sign * number
 
                     assert_equal(atof(final_string), final_value)
 

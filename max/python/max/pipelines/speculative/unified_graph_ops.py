@@ -169,6 +169,7 @@ def accept_and_pick_next_tokens(
     min_top_p: TensorValue,
     in_thinking_phase: TensorValue | None = None,
     token_bitmasks: TensorValue | None = None,
+    draft_probs_full: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
     """Run acceptance sampling and pick the next token at the first reject."""
     # AcceptanceSampler defaults in_thinking_phase to None, so passing it
@@ -184,6 +185,7 @@ def accept_and_pick_next_tokens(
         min_top_p=min_top_p,
         in_thinking_phase=in_thinking_phase,
         token_bitmasks=token_bitmasks,
+        draft_probs_full=draft_probs_full,
     )
     # concat([recovered, bonus]) -> [batch, K+1]; gather_nd picks the token at
     # index num_accepted[b] per batch element (target argmax at first reject).

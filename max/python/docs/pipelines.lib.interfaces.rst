@@ -38,13 +38,3 @@ Batch processing
    BatchProcessor
    BatchProcessorRuntime
    RaggedBatchProcessor
-
-Diffusion
----------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DiffusionPipeline

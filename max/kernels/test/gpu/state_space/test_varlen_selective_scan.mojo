@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -501,9 +501,9 @@ def run_varlen_selective_scan_fwd_gpu[
 
     ctx.enqueue_function(
         compiled_kernel,
-        dim,
-        ngroups,
-        batch,
+        Int32(dim),
+        Int32(ngroups),
+        Int32(batch),
         Int32(-1),  # pad_slot_id
         Int8(1) if delta_softplus else Int8(0),
         u_gpu_tt,
@@ -537,6 +537,7 @@ def run_varlen_selective_scan_fwd_gpu[
     var output_to_check = z_d if has_z else output_gpu_d
     var output_to_check_host = z_gpu_h if has_z else output_gpu_h
     ctx.enqueue_copy(output_to_check_host, output_to_check)
+    ctx.synchronize()
 
     # Compare outputs
     var output_to_check_cpu = z_cpu_h if has_z else output_cpu_h

@@ -122,14 +122,14 @@ def _build_list[start: Int, stop: Int]() -> List[Int]:
 comptime width = bit_width_of[Int]()
 
 
-@parameter
+@__parameter
 def bench_next_power_of_two_int[
     func: def(Int) thin -> Int
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
@@ -139,14 +139,14 @@ def bench_next_power_of_two_int[
     b.iter[call_fn]()
 
 
-@parameter
+@__parameter
 def bench_next_power_of_two_uint[
     func: def(UInt) thin -> UInt
 ](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
-    @parameter
+    @__parameter
     def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
@@ -187,11 +187,11 @@ def main() raises:
         BenchId("bench_next_power_of_two_uint_v4")
     )
 
-    results = Dict[String, Tuple[Float64, Int]]()
+    var results = Dict[String, Tuple[Float64, Int]]()
     for info in m.info_vec:
-        n = info.name
-        time = info.result.mean("ms")
-        avg, amnt = results.get(n, (Float64(0), 0))
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
         results[n] = (
             (avg * Float64(amnt) + time) / Float64((amnt + 1)),
             amnt + 1,

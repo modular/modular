@@ -10,13 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Contains a bounds check which is on by default for CPU and off by default for GPU.
+"""Contains bounds checks which are on by default for CPU and off by default for GPU.
 """
 
 from . import OptionalReg
+from std.builtin.builtin_slice import ContiguousSlice
+from std.builtin.debug_assert import _assert_enabled
 from std.reflection import SourceLocation
 from std.sys.info import is_gpu
 from std.reflection import call_location
+
+comptime _AssertMode[
+    cpu_default: Bool
+] = "safe" if cpu_default and not is_gpu() else "none"
 
 
 @always_inline
@@ -53,9 +59,7 @@ def check_bounds[
             inside a `__getitem__` method, it will show the source location where
             the incorrect index was provided.
     """
-    debug_assert[
-        assert_mode="safe" if cpu_default and not is_gpu() else "none",
-    ](
+    debug_assert[assert_mode=_AssertMode[cpu_default]](
         UInt(index(idx)) < UInt(size),
         "index ",
         index(idx),
@@ -65,3 +69,80 @@ def check_bounds[
             inline_count=2
         ](),
     )
+
+
+@always_inline
+def check_slice_bounds[
+    cpu_default: Bool = True,
+](
+    slice: ContiguousSlice,
+    len: Int,
+    location: OptionalReg[SourceLocation] = None,
+) -> Tuple[Int, Int]:
+    """Bounds check for slice indexing, which is on by default for CPU, and
+    off by default for GPU.
+
+    Resolves `slice`'s optional `start`/`end` against `len` and aborts if the
+    resolved start or end index is out of bounds, or if start is greater than
+    end. `ContiguousSlice` does not support negative (from-the-end) indices,
+    so a negative start or end is always out of bounds.
+
+    Parameters:
+        cpu_default: If the bounds check is on by default on CPU.
+
+    Args:
+        slice: The slice to resolve and bounds check.
+        len: The size of the container.
+        location: `SourceLocation` shown on assert error. Defaults to showing
+            the callsite two levels of function calls above this one. So if
+            `check_slice_bounds` is called inside a `__getitem__` method, it
+            will show the source location where the incorrect slice was
+            provided.
+
+    Returns:
+        The slice's resolved `(start, end)`.
+    """
+    comptime mode = _AssertMode[cpu_default]
+    var start = slice.start.or_else(0)
+    var end = slice.end.or_else(len)
+
+    @no_inline
+    def do_asserts(location: SourceLocation) {imm}:
+        debug_assert[assert_mode=mode](
+            UInt(start) <= UInt(len),
+            "slice start index ",
+            start,
+            " is out of bounds, valid range is 0 to ",
+            len,
+            location=location,
+        )
+        debug_assert[assert_mode=mode](
+            UInt(end) <= UInt(len),
+            "slice end index ",
+            end,
+            " is out of bounds, valid range is 0 to ",
+            len,
+            location=location,
+        )
+        debug_assert[assert_mode=mode](
+            start <= end,
+            "slice start index ",
+            start,
+            " is greater than slice end index ",
+            end,
+            location=location,
+        )
+
+    # TODO(MSTDL-3004): Figure out if we can enable bounds checking
+    # on GPU.
+    comptime if _assert_enabled[mode, True]():
+        # Combine the failure conditions here so valid slices avoid the
+        # no-inline assertion helper, while invalid slices still bounds check.
+        if UInt(start) > UInt(len) or UInt(end) > UInt(len) or start > end:
+            do_asserts(
+                location.unsafe_value() if location else call_location[
+                    inline_count=2
+                ]()
+            )
+
+    return start, end

@@ -14,9 +14,10 @@ model:
   model_path: nvidia/GLM-5.2-NVFP4
   device_specs: [0, 1, 2, 3, 4, 5, 6, 7]
   data_parallel_degree: 1
+  max_length: 1048576  # The checkpoint's full 1M context.
   kv_cache:
     kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.7
+    device_memory_utilization: 0.75
 
 speculative:
   speculative_method: mtp
@@ -25,4 +26,3 @@ speculative:
 runtime:
   ep_size: 8
   max_batch_input_tokens: 1024
-  max_num_steps: 1

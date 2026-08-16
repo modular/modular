@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -55,8 +55,8 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
         comptime assert len(items) > 0, "empty list in _max"
-        items_dyn = materialize[items]()
-        max_item = items_dyn[0]
+        var items_dyn = materialize[items]()
+        var max_item = items_dyn[0]
         for i in range(1, len(items_dyn)):
             if items_dyn[i] > max_item:
                 max_item = items_dyn[i]
@@ -126,10 +126,13 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         q_shape.flattened_length()
     )
 
-    start_positions_dyn = materialize[start_positions]()
+    var start_positions_dyn = materialize[start_positions]()
 
     # Initialize KV cache block buffer with golden values.
-    k_cache_input_buffer = k_cache_input[dtype]()
+    var k_cache_input_buffer = k_cache_input[dtype]()
+    var k_cache_input_buffer_ptr: UnsafePointer[
+        k_cache_input_buffer.T, origin_of(k_cache_input_buffer)
+    ] = k_cache_input_buffer.unsafe_ptr()
     with kv_block_device.map_to_host() as kv_block_host:
         var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
             kv_block_host, kv_block_runtime_layout
@@ -141,8 +144,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             )
             unsafe_memcpy(
                 dest=kv_block_tensor.ptr + dest_offset,
-                src=k_cache_input_buffer.unsafe_ptr()
-                + (batch_idx * seq_len * dim),
+                src=k_cache_input_buffer_ptr + (batch_idx * seq_len * dim),
                 count=seq_len * dim,
             )
 
@@ -157,7 +159,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             lookup_table_host[i] = lookup_table[i]
 
     # Initialize query buffer with golden values
-    q_input_buffer = q_input[dtype]()
+    var q_input_buffer = q_input[dtype]()
     with q_device.map_to_host() as q_host:
         unsafe_memcpy(
             dest=q_host.unsafe_ptr(),
@@ -166,7 +168,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         )
 
     # Initialize freqs_cis_table with golden values
-    freqs_input_buffer = freqs_cis_table_input[dtype]()
+    var freqs_input_buffer = freqs_cis_table_input[dtype]()
     with freqs_device.map_to_host() as freqs_host:
         unsafe_memcpy(
             dest=freqs_host.unsafe_ptr(),
@@ -207,7 +209,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
     var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
-    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+    var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         blocks=LayoutTensor[dtype, Layout.row_major[6]()](
             kv_block_tensor.ptr,
             RuntimeLayout[Layout.row_major[6]()].row_major(
@@ -221,14 +223,17 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     )
 
     # Create and initialize golden outputs.
-    expected_q_out_buffer = q_out_golden[dtype]()
+    var expected_q_out_buffer = q_out_golden[dtype]()
     assert (
         len(expected_q_out_buffer) == q_shape.flattened_length()
     ), "invalid expected q out init"
-    expected_k_out_buffer = k_out_golden[dtype]()
+    var expected_k_out_buffer = k_out_golden[dtype]()
     assert (
         len(expected_k_out_buffer) == batch_size * seq_len * dim
     ), "invalid expected k out init"
+    var expected_k_out_buffer_ptr: UnsafePointer[
+        expected_k_out_buffer.T, origin_of(expected_k_out_buffer)
+    ] = expected_k_out_buffer.unsafe_ptr()
 
     # Create valid_lengths device buffer - all sequences have full seq_len valid
     var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -247,7 +252,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         type_of(valid_lengths_static).LayoutType,
         MutAnyOrigin,
     ](
-        valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
+        valid_lengths_static._storage.unsafe_origin_cast[MutAnyOrigin](),
         valid_lengths_static.layout,
     ).make_dynamic[
         DType.int64
@@ -284,8 +289,7 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             )
             assert_almost_equal(
                 kv_block_out_tensor.ptr + src_offset,
-                expected_k_out_buffer.unsafe_ptr()
-                + (batch_idx * seq_len * dim),
+                expected_k_out_buffer_ptr + (batch_idx * seq_len * dim),
                 # Number of elements in one batch item.
                 len(expected_k_out_buffer) // batch_size,
             )

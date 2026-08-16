@@ -21,7 +21,7 @@ from std.math import exp
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Layout,
@@ -157,7 +157,7 @@ def run_one_case(
         in_dev.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
     )
 
-    @parameter
+    @__parameter
     @__copy_capture(in_tt)
     def input_fn_device[
         _simd_width: Int

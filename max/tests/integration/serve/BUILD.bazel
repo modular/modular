@@ -82,6 +82,17 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/architectures/mpnet",
+        # pydeps can't attribute this import to opentelemetry-proto: the
+        # opentelemetry.* namespace is shared across many separate wheels
+        # (api, sdk, exporter-otlp-proto-http, proto, ...), and its
+        # heuristic attributes opentelemetry.proto.* to one of the
+        # already-present sibling wheels instead.
+        requirement("opentelemetry-proto"),
+    ],
+    ignore_unresolved_imports = [
+        # pydeps matches on the full dotted path including the imported
+        # symbol, not just the module.
+        "opentelemetry.proto.collector.metrics.v1.metrics_service_pb2.ExportMetricsServiceRequest",
     ],
     tags = [
         "no-sandbox",
@@ -112,6 +123,7 @@ modular_py_test(
         "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),
+        requirement("opentelemetry-proto"),
         requirement("pytest-asyncio"),
         requirement("requests"),
         requirement("sse-starlette"),
@@ -304,11 +316,8 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
-    # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    # Note this test is a critical part of local max serve debugging workflow
+    # and should not be disabled on mac os. Please fix Mac CI runners instead.
     deps = [
         "//max/python/max/_entrypoints",
         "//max/python/max/driver",

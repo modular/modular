@@ -63,8 +63,9 @@ Diagnosis on failure:
   (OnlineSoftmax FP32 path / FP8 P-cast interaction).
 """
 
-from std.gpu import lane_id, thread_idx, barrier
-from std.gpu.host import DeviceContext
+from std.gpu import lane_id, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_true
 
@@ -188,7 +189,7 @@ def kernel_pv_chain[
     comptime _smem_total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _smem_total:
-        v_smem.ptr[i] = src_v_subtile_ptr[i]
+        v_smem._storage[i] = src_v_subtile_ptr[i]
         i += 64
     barrier()
 

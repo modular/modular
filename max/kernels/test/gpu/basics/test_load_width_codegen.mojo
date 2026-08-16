@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.gpu.host.compile import _compile_code, get_gpu_target
+from max.gpu.host.compile import _compile_code, get_gpu_target
 from std.testing import assert_true
 
 comptime _TargetType = __mlir_type.`!kgen.target`
