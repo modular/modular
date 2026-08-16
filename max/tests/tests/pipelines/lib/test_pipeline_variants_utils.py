@@ -675,6 +675,7 @@ class TestGrammarValidation:
             *,
             tool_parser_name: str | None = None,
             stop_token_ids: Any = None,
+            any_whitespace: bool | None = None,
         ) -> GrammarBackend[Any]:
             captured["name"] = name
             return _NoopBackend()
@@ -783,6 +784,7 @@ class TestMakeValidatorRejectUnsupported:
             *,
             tool_parser_name: str | None = None,
             stop_token_ids: Any = None,
+            any_whitespace: bool | None = None,
         ) -> GrammarBackend[Any]:
             return _xgrammar_backend(
                 reject_unsupported=tool_parser_name in ("gemma4", "glm45")
@@ -825,6 +827,7 @@ class TestMakeValidatorRejectUnsupported:
             *,
             tool_parser_name: str | None = None,
             stop_token_ids: Any = None,
+            any_whitespace: bool | None = None,
         ) -> GrammarBackend[Any]:
             captured["tool_parser_name"] = tool_parser_name
             return _NoopBackend()
@@ -847,6 +850,7 @@ class TestMakeValidatorRejectUnsupported:
             *,
             tool_parser_name: str | None = None,
             stop_token_ids: Any = None,
+            any_whitespace: bool | None = None,
         ) -> GrammarBackend[Any]:
             captured["tool_parser_name"] = tool_parser_name
             return _NoopBackend()
