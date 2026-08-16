@@ -46,11 +46,11 @@ tail loop, cast/epilogue store). The dense fp16/bf16/fp32 path is untouched.
 """
 
 from std.collections import Optional
-from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.sys import align_of
 from std.utils import IndexList
 
@@ -184,6 +184,28 @@ struct AppleM5Fp4MatMul[
     ):
         """W4A16 GEMM kernel entry; `M`/`N`/`K` derive from C, A, and packed.
 
+        Parameters:
+            c_layout: Compile-time `TensorLayout` of the output tile `c`.
+            a_layout: Compile-time `TensorLayout` of the activation tile `a`.
+            packed_layout: Compile-time `TensorLayout` of the packed FP4
+                weight `packed`.
+            scale_layout: Compile-time `TensorLayout` of the FP8 block
+                scales `scales`.
+
+        Args:
+            c: Output tile `(M, N)` of dtype `c_type`, row-major; receives
+                the matmul result.
+            a: Activation tile `(M, K)` of `bfloat16`, row-major; the A
+                operand of `out = a @ W^T`.
+            packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble
+                first; the transposed B operand.
+            scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per
+                16 K columns.
+            log2_grid_m: Base-2 log of the power-of-two M-side grid length
+                for the rectangular Morton scheduler.
+            log2_grid_n: Base-2 log of the power-of-two N-side grid length
+                for the rectangular Morton scheduler.
+
         C is `(M, N)` row-major, A is `(M, K)` row-major (bf16 activation),
         `packed` is the FP4 weight `(N, K//2)`, `scales` `(N, ceil(K/16))`. Grid
         is `(1<<log2_grid_m) * (1<<log2_grid_n)` threadgroups; OOB threadgroups
@@ -225,8 +247,8 @@ struct AppleM5Fp4MatMul[
         var n_i32 = Int32(n)
         var k_i32 = Int32(k)
 
-        var grid_m = (m_i32 + BM_i32 - 1) // BM_i32
-        var grid_n = (n_i32 + BN_i32 - 1) // BN_i32
+        var grid_m = ceildiv(m_i32, BM_i32)
+        var grid_n = ceildiv(n_i32, BN_i32)
 
         var tid = Int32(thread_idx.x)
         var sg_id = tid // Int32(WARP_SIZE)
@@ -247,7 +269,7 @@ struct AppleM5Fp4MatMul[
         # Double-buffered (2, BN, BK) bf16 SMEM weight sub-tile. Wrapped in a
         # TileTensor view so both buffers are addressed by `(buf, nrow, col)`
         # indexing (in-bounds by construction) -- no raw SMEM pointer arithmetic.
-        var b_smem = stack_allocation[
+        var b_smem = unsafe_stack_allocation[
             2 * BN * BK,
             Scalar[Self.in_type],
             address_space=AddressSpace.SHARED,
@@ -266,7 +288,7 @@ struct AppleM5Fp4MatMul[
         # read on the `coalesce_scales` path.
         comptime NBLK = Self.NBLK_PER_STRIP
         comptime SCALE_SMEM = (2 * BN * NBLK) if Self.coalesce_scales else 1
-        var s_smem = stack_allocation[
+        var s_smem = unsafe_stack_allocation[
             SCALE_SMEM,
             Scalar[DType.float32],
             address_space=AddressSpace.SHARED,
@@ -317,7 +339,7 @@ struct AppleM5Fp4MatMul[
         # the one block scale the run shares (`COLS_PER_THREAD <= 16`). Shared by
         # the interior path and the bounded path's in-bounds run.
         @always_inline
-        @parameter
+        @__parameter
         def _decode_run(
             n_abs: Int,
             k0: Int,
@@ -352,7 +374,7 @@ struct AppleM5Fp4MatMul[
         # and a clean zero elsewhere. `k_valid` is the in-bounds K width of this
         # strip (used only on the bounded path).
         @always_inline
-        @parameter
+        @__parameter
         def _stage_dequant[bounded: Bool](k0: Int32, k_valid: Int32, buf: Int):
             var t = Int(tid)
             var nrow = t // THREADS_PER_ROW
@@ -439,7 +461,7 @@ struct AppleM5Fp4MatMul[
         # scattered 1-byte DRAM load. The caller barriers after this before the
         # decode reads it. Only emitted when `coalesce_scales`.
         @always_inline
-        @parameter
+        @__parameter
         def _stage_scales(k0: Int32, buf: Int):
             comptime NSCALE = BN * NBLK
             var t = Int(tid)
@@ -458,7 +480,7 @@ struct AppleM5Fp4MatMul[
                 )
 
         @always_inline
-        @parameter
+        @__parameter
         def _mma_from_smem[
             bounded: Bool
         ](buf: Int, k_strip_local: Int32, valid_rows: Int32):
@@ -496,7 +518,7 @@ struct AppleM5Fp4MatMul[
         var valid_rows = max(Int32(0), min(SG_M_i32, m_i32 - row_base))
 
         @always_inline
-        @parameter
+        @__parameter
         def _run_strips[bounded: Bool]():
             comptime use_coalesced = Self.coalesce_scales and not bounded
             comptime if use_coalesced:
@@ -553,7 +575,7 @@ struct AppleM5Fp4MatMul[
             var tile_col_base = Int(col_base)
 
             @always_inline
-            @parameter
+            @__parameter
             def _write4(
                 lrow: Int,
                 lcol: Int,
@@ -747,7 +769,7 @@ def _enqueue_apple_fp4_materialize_dense[
     lowering (a post-matmul multiply), identically for both paths.
 
     Buffer lifetime (the correctness hinge): the dense GEMM reads `wdense` after
-    this function returns -- `enqueue_*` is async. `DeviceBuffer.__del__`
+    this function returns -- `enqueue_*` is async. `DeviceBuffer.__deinit__`
     schedules a STREAM-ORDERED free (`AsyncRT_DeviceBuffer_release`: "the actual
     deallocation may occur asynchronously after all operations using this buffer
     have completed", `device_context.mojo`), so the free cannot race the GEMM
@@ -792,9 +814,9 @@ def _enqueue_apple_fp4_materialize_dense[
             c,
             a,
             wdense_tt.as_immut(),
-            m,
-            n,
-            k,
+            Int32(m),
+            Int32(n),
+            Int32(k),
             grid_dim=(ceildiv(n, 64), ceildiv(m, 64)),
             block_dim=(4 * WARP_SIZE,),
         )
@@ -837,8 +859,8 @@ def _launch_apple_fp4_matmul[
         coalesce_scales=coalesce_scales,
     ]
 
-    var grid_m = (m + MM.BM - 1) // MM.BM
-    var grid_n = (n + MM.BN - 1) // MM.BN
+    var grid_m = ceildiv(m, MM.BM)
+    var grid_n = ceildiv(n, MM.BN)
 
     var side_m = 1
     var log2_m: UInt32 = 0
@@ -905,6 +927,16 @@ def enqueue_apple_fp4_matmul[
             future geometry. NOTE this override is ORTHOGONAL to the deep-K niche
             below, which routes to `matmul2d` BY DEFAULT (`use_matmul2d=False`)
             where it actually wins. See the `_M2D_*` threshold comments.
+
+    Args:
+        c: Output tile `(M, N)` of dtype `c_type`; receives the matmul
+            result.
+        a: Activation tile `(M, K)` of `bfloat16`; the A operand.
+        packed: Packed FP4 weight `(N, K//2)` of `uint8`, lo-nibble first;
+            the transposed B operand.
+        scales: FP8-E4M3 block scales `(N, ceil(K/16))`; one scale per 16 K
+            columns.
+        ctx: Device context used to enqueue the kernel(s).
 
     The default strategy (`use_matmul2d=False`) is chosen by (K, M) -- all paths
     produce bit-identical dequant (the E2M1 * |scale| arithmetic is the same on

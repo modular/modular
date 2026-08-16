@@ -26,22 +26,28 @@ The TileLoader struct abstracts these loading mechanisms to provide a unified
 interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile, _idx_product
-from layout import Coord, Idx, MixedLayout, TensorLayout, TileTensor
-from std.gpu.memory import (
-    AddressSpace,
+from layout import (
+    Coord,
+    Idx,
+    MixedLayout,
+    PointerStorage,
+    TensorLayout,
+    TileTensor,
+)
+from max.gpu.memory import (
     async_copy,
 )
 from ....structuring import SMemBarrier
 from layout.swizzle import make_swizzle
 from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu.sync import async_copy_arrive
+from max.gpu.sync import async_copy_arrive
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from std.sys import simd_width_of, size_of
 from std.utils.index import IndexList
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 
 trait TileLoader(TrivialRegisterPassable):
@@ -59,6 +65,7 @@ trait TileLoader(TrivialRegisterPassable):
         dst: TileTensor[
             mut=True,
             address_space=AddressSpace.SHARED,
+            Storage=PointerStorage[element_width=1],
             ...,
         ],
         mem_barrier: SMemBarrier,
@@ -175,7 +182,7 @@ struct CPAsyncBarrierHandler(BarrierHandler):
 
 
 struct TileLoaderTMA[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -239,6 +246,7 @@ struct TileLoaderTMA[
         dst: TileTensor[
             mut=True,
             address_space=AddressSpace.SHARED,
+            Storage=PointerStorage[element_width=1],
             ...,
         ],
         mem_barrier: SMemBarrier,
@@ -260,7 +268,7 @@ struct TileLoaderTMA[
         """
         comptime assert type_of(dst).dtype == Self._dtype
         # Materialize the inferred destination as an exact TileTensor type for
-        # TMA overload resolution.  The trait method accepts any shared-memory
+        # TMA overload resolution. The trait method accepts any shared-memory
         # TileTensor, but TMATensorTile is parameterized on Self._dtype.
         var dst_exact = TileTensor[
             mut=True,
@@ -270,9 +278,7 @@ struct TileLoaderTMA[
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst.ptr.mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[Self._dtype]](),
+            dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
             dst.layout,
         )
 
@@ -376,6 +382,7 @@ struct TileLoaderCPAsync[
         dst: TileTensor[
             mut=True,
             address_space=AddressSpace.SHARED,
+            Storage=PointerStorage[element_width=1],
             ...,
         ],
         mem_barrier: SMemBarrier,
@@ -407,7 +414,7 @@ struct TileLoaderCPAsync[
             Coord(coords[0], coords[1])
         ).vectorize[1, Self.vector_size]()
 
-        # Perform the async copy with bounds checking and swizzling.  Rebind
+        # Perform the async copy with bounds checking and swizzling. Rebind
         # through an exact destination type so the dtype parameter can unify
         # across the source and destination TileTensor arguments.
         # Materialize an exact, any-origin destination tile from the raw
@@ -421,9 +428,7 @@ struct TileLoaderCPAsync[
             address_space=AddressSpace.SHARED,
             linear_idx_type=type_of(dst).linear_idx_type,
         ](
-            dst.ptr.mut_cast[True]()
-            .unsafe_origin_cast[MutAnyOrigin]()
-            .bitcast[Scalar[Self._dtype]](),
+            dst._storage.as_unsafe_any_origin().bitcast[Scalar[Self._dtype]](),
             dst.layout,
         )
         var dst_vec = dst_exact.vectorize[1, Self.vector_size]()
@@ -438,6 +443,8 @@ def async_copy_with_bound_check[
     dtype: DType,
     src_layout: TensorLayout,
     dst_layout: TensorLayout,
+    src_element_width: Int,
+    dst_element_width: Int,
     //,
     thread_layout: MixedLayout,
     swizzle_mode: TensorMapSwizzle,
@@ -448,6 +455,7 @@ def async_copy_with_bound_check[
         LayoutType=src_layout,
         origin=ImmutAnyOrigin,
         address_space=AddressSpace.GENERIC,
+        Storage=PointerStorage[element_width=src_element_width],
         ...,
     ],
     dst: TileTensor[
@@ -456,6 +464,7 @@ def async_copy_with_bound_check[
         LayoutType=dst_layout,
         origin=MutAnyOrigin,
         address_space=AddressSpace.SHARED,
+        Storage=PointerStorage[element_width=dst_element_width],
         ...,
     ],
 ):
@@ -468,12 +477,15 @@ def async_copy_with_bound_check[
     The method also handles shared memory swizzling to avoid bank conflicts
     and maximize memory bandwidth utilization.
 
-    Template Parameters:
-        dtype: Data type of the elements.
-        src_layout: Layout of the source tile.
-        dst_layout: Layout of the destination tile.
-        thread_layout: Thread arrangement for distributed copying.
-        swizzle_mode: Swizzling pattern for bank conflict avoidance.
+    Parameters:
+        dtype: Element type of the source and destination tiles (inferred).
+        src_layout: Static layout of the source tile in global memory (inferred).
+        dst_layout: Static layout of the destination tile in shared memory
+            (inferred).
+        thread_layout: Thread mapping that partitions the source and
+            destination tiles across threads.
+        swizzle_mode: Shared memory swizzle pattern applied to avoid bank
+            conflicts.
 
     Args:
         src: Source tensor fragment in global memory.
@@ -507,7 +519,9 @@ def async_copy_with_bound_check[
     var src_bound1 = Int32(src.dim[1]()) * Int32(dst.element_size)
 
     # Calculate base coordinates for this thread's destination fragment
-    var dst_frag_offset = (Int(dst_frag.ptr) - Int(dst.ptr)) // size_of[dtype]()
+    var dst_frag_offset = (
+        Int(dst_frag._storage) - Int(dst._storage)
+    ) // size_of[dtype]()
     comptime dst_stride0 = dst_layout.static_stride[0]
     var dst_frag_base_coord0, dst_frag_base_coord1 = divmod(
         Int32(dst_frag_offset), Int32(dst_stride0)
@@ -532,7 +546,9 @@ def async_copy_with_bound_check[
             swizzle(Scalar[dst.linear_idx_type](dst_frag_offset + dst_idx_base))
             + Scalar[dst.linear_idx_type](dst_idx_diff)
         )
-        var dst_ptr = dst.ptr + Int(dst_swizzled_idx)
+        var dst_ptr = dst._storage.bitcast[Scalar[dtype]]() + Int(
+            dst_swizzled_idx
+        )
 
         # Calculate the 2D coordinates for this element
         # TODO: we should be able to use idx2crd for this.
@@ -546,7 +562,9 @@ def async_copy_with_bound_check[
 
         # Calculate source pointer based on 2D coordinates
         var src_ptr = (
-            src.ptr.address_space_cast[AddressSpace.GLOBAL]()
+            src._storage.bitcast[Scalar[dtype]]().address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
             + dst_coord1
             + dst_coord0 * Int32(src_stride0)
         )

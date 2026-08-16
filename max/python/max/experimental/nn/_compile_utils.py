@@ -21,22 +21,20 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 from max import driver, graph
 from max.driver import CPU, Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.functional import transfer_to
+from max.experimental.nn._trace_context import ModuleTraceRealizationContext
 from max.experimental.realization_context import (
-    GraphRealizationContext,
     LazyRealizationContext,
     define_subgraph,
     in_graph_context,
 )
 from max.experimental.sharding import (
     DeviceMapping,
-    DistributedTensorType,
     DistributedType,
     PlacementMapping,
 )
@@ -96,7 +94,8 @@ class _InputSlot:
 
     start: int
     count: int
-    dist: DistributedType[Any] | None
+    mapping: DeviceMapping | None
+    """Device mapping for a distributed input (``None`` for single-device)."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -120,7 +119,13 @@ def _flatten_input_types(
     for t in input_types:
         if isinstance(t, DistributedType):
             local = t.local_types
-            slots.append(_InputSlot(len(graph_types), len(local), t))
+            slots.append(
+                _InputSlot(
+                    len(graph_types),
+                    len(local),
+                    PlacementMapping(t.mesh, t.placements),
+                )
+            )
             graph_types.extend(local)
         else:
             slots.append(_InputSlot(len(graph_types), 1, None))
@@ -133,24 +138,17 @@ def _wrap_graph_inputs(
     input_slots: list[_InputSlot],
 ) -> list[Tensor]:
     """Wraps flat graph inputs back into Tensors."""
-    from max.experimental.tensor import current_realization_context
-
     ctx = current_realization_context()
     inputs: list[Tensor] = []
     for slot in input_slots:
-        if slot.dist is not None:
+        if slot.mapping is not None:
             shards = [
                 Tensor.from_graph_value(graph_inputs[slot.start + i])
                 for i in range(slot.count)
             ]
             shard_values = tuple(s._graph_value for s in shards)
             inputs.append(
-                ctx.create_unrealized(
-                    shard_values,
-                    mapping=PlacementMapping(
-                        slot.dist.mesh, slot.dist.placements
-                    ),
-                )
+                ctx.create_unrealized(shard_values, mapping=slot.mapping)
             )
         else:
             inputs.append(Tensor.from_graph_value(graph_inputs[slot.start]))
@@ -172,7 +170,7 @@ def flatten_input_buffers(
         raise ValueError("\n".join(error))
     for arg, slot in zip(args, input_slots, strict=True):
         if (
-            slot.dist is not None
+            slot.mapping is not None
             and isinstance(arg, Tensor)
             and arg.is_distributed
         ):
@@ -249,12 +247,8 @@ def flatten_operands(
     slots: list[_InputSlot] = []
     for t in operands:
         shards = list(t.graph_values)
-        dist = (
-            DistributedTensorType(t.dtype, t.shape, t.mesh, t.placements)
-            if t.is_distributed
-            else None
-        )
-        slots.append(_InputSlot(len(values), len(shards), dist))
+        mapping = t.mapping if t.is_distributed else None
+        slots.append(_InputSlot(len(values), len(shards), mapping))
         values.extend(shards)
     return values, slots
 
@@ -467,13 +461,17 @@ def lower_subgraph(
     module: Any,
     args: tuple[Any, ...],
     kwargs: Mapping[str, Any],
+    *,
+    key: str | None = None,
 ) -> Any:
     """Lowers one :func:`~max.experimental.nn.subgraphable` call.
 
     Inlines in plain eager (and inside a subgraph body, whose cache is ``None``);
     in a graph-compile or lazy capture emits one ``mo.call`` into a shared,
-    content-deduplicated subgraph. ``module`` is the :class:`Module` whose
-    parameters thread in as operands.
+    deduplicated subgraph. ``module`` is the :class:`Module` whose parameters
+    thread in as operands. ``key`` is the subgraph dedup key: when given (from
+    ``subgraphable(..., name=...)``), calls sharing it share one definition;
+    when ``None``, the body's IR hash is used instead.
     """
     if not in_graph_context():
         raise TypeError(
@@ -485,82 +483,131 @@ def lower_subgraph(
     # nested subgraph bodies, whose cache is None) inline instead.
     ctx = current_realization_context()
     if (
-        not isinstance(ctx, (GraphRealizationContext, LazyRealizationContext))
+        not isinstance(
+            ctx, (ModuleTraceRealizationContext, LazyRealizationContext)
+        )
         or ctx.subgraph_cache is None
     ):
         return module.forward(*args, **kwargs)
 
-    # Arguments and the module's weights are both Tensor pytrees threaded in as
-    # call operands; the same flatten/unflatten pair round-trips the result.
+    # When tracing a Module, weights must be created in the subgraph, and
+    # referenced with the module's weight_prefix.
+    weight_prefix: str = ""
+    create_external_constant: (
+        Callable[[str, str, Tensor, bool], Tensor] | None
+    ) = None
+    if isinstance(ctx, ModuleTraceRealizationContext):
+        weight_prefix = ctx.weight_prefixes.get(module, "")
+        create_external_constant = ctx.create_external_constant
+
     arg_values, arg_def = flatten_value_tree((args, kwargs))
-    params = list(module.parameters)
-    names = [name for name, _ in params]
-    weight_values, weight_def = flatten_value_tree([t for _, t in params])
+
+    # Compile resolves each weight by name at load time via the call prefix and
+    # the weights registry, so weights are not call operands. Lazy has no
+    # registry (weights are concrete tensors), so thread them in as operands and
+    # rebind them to block args inside the body.
+    weight_names: list[str] = []
+    weight_values: list[GraphValue] = []
+    weight_def: Any = None
+    if not isinstance(ctx, ModuleTraceRealizationContext):
+        params = list(module.parameters)
+        weight_names = [name for name, _ in params]
+        weight_values, weight_def = flatten_value_tree([t for _, t in params])
+
     operand_values = [*arg_values, *weight_values]
     n_args = len(arg_values)
-    out_def: list[ValueTreeDef] = []
+    out_def: list[ValueTreeDef] = []  # Tree structure of the module outputs.
 
     def build_body(inputs: list[Value[Any]]) -> list[GraphValue]:
         call_args, call_kwargs = unflatten_value_tree(inputs[:n_args], arg_def)
-        # Bind each weight to its matching subgraph input so the body traces
-        # against block args, not the outer tensors.
-        weights = unflatten_value_tree(inputs[n_args:], weight_def)
-        by_name = dict(zip(names, weights, strict=True))
-        with module._mapped_parameters(lambda nm, _t: by_name[nm]):
+        by_name: dict[str, Tensor] = {}
+        if weight_def is not None:
+            weights = unflatten_value_tree(inputs[n_args:], weight_def)
+            by_name = dict(zip(weight_names, weights, strict=True))
+
+        def rebind(name: str, tensor: Tensor) -> Tensor:
+            if name in by_name:  # lazy: bound to a threaded operand
+                return by_name[name]
+            assert create_external_constant is not None
+            return create_external_constant(
+                weight_prefix + name, name, tensor, True
+            )
+
+        with module._mapped_parameters(rebind):
             out = module.forward(*call_args, **call_kwargs)
         values, treedef = flatten_value_tree(out)
         out_def.append(treedef)
         return values
 
     subgraph = define_subgraph(
-        ctx, resolved, [v.type for v in operand_values], build_body
+        ctx, resolved, [v.type for v in operand_values], build_body, key=key
     )
+
+    # `out_def` is only defined correctly if `build_body` is called, so
+    # cache it in case a cached subgraph is used.
+    if out_def:
+        out_treedef = out_def[0]
+        if key is not None:
+            ctx.subgraph_out_defs[key] = out_treedef
+    else:
+        assert key is not None
+        out_treedef = ctx.subgraph_out_defs[key]
+
     signals = ctx.signal_buffers or []
-    results = ops.call(subgraph, *operand_values, *signals)
-    return unflatten_value_tree(list(results), out_def[0])
+    results = ops.call(
+        subgraph, *operand_values, *signals, prefix=weight_prefix
+    )
+    return unflatten_value_tree(list(results), out_treedef)
 
 
-def _flatten_named_buffers(
+def flatten_distributed_tensors(
     named_tensors: Iterable[tuple[str, Tensor]],
-) -> dict[str, DLPackArray]:
-    """Flattens named parameters to a ``name -> DLPackArray`` mapping.
+) -> dict[str, Tensor]:
+    """Flattens potentially distributed tensors.
 
-    The registry must contain host-resident buffers: ``Tensor._as_constant_external``
-    declares every parameter's external constant on CPU and the lowering emits
-    a ``host_to_device`` op to copy it to the target device, so the runtime
-    reads the registered pointer as a host pointer. Copy any non-CPU-resident
-    buffer to CPU here to honor that contract.
+    Distributed tensors are flattened into `{name}._shard.{i}` for each shard.
     """
     cpu = CPU()
-    result: dict[str, DLPackArray] = {}
-    for name, t in named_tensors:
-        if t.real:
-            bufs = t.buffers
-            for i, buf in enumerate(bufs):
-                key = f"{name}._shard.{i}" if len(bufs) > 1 else name
-                result[key] = buf if buf.device == cpu else buf.to(cpu)
+    result: dict[str, Tensor] = {}
+    for name, tensor in named_tensors:
+        if tensor.real:
+            local_shards = tensor.local_shards
+            for i, shard in enumerate(local_shards):
+                key = f"{name}._shard.{i}" if len(local_shards) > 1 else name
+                result[key] = shard if shard.device == cpu else shard.to(cpu)
         else:
-            result[name] = t
+            result[name] = tensor
     return result
 
 
-def _prepare_weight_for_parameter(
+class _PreparedWeight(NamedTuple):
+    weight: Tensor
+    """Tensor holding the weight value."""
+    cast_record: CastRecord | None
+    """Record of the cast applied, if any."""
+    transfer_needed: bool
+    """Whether the weight needs to be transferred to the parameter's device(s)."""
+
+
+def prepare_weight_for_parameter(
     name: str,
     weight: DLPackArray | Tensor,
     param: Tensor,
     *,
     auto_cast: bool,
-) -> tuple[Tensor, CastRecord | None]:
+) -> _PreparedWeight:
     """Validates and prepares a weight for a parameter.
 
-    Handles conversion, validation, and sharding:
+    Handles conversion and validation of the weight. Does not handle device
+    transfers; instead any device transfers are performed in the graph.
 
     1. Converts DLPack array to Tensor if needed
     2. When ``auto_cast`` is true, auto-casts dtype when both loaded and
        parameter dtypes are in the safe-cast whitelist (see
        ``_SAFE_CAST_DTYPES``)
     3. Validates shape and dtype match the parameter
-    4. For distributed parameters: validates mapping or shards single-device weights
+    4. For distributed parameters: validates if mapping matches the parameter's
+    mapping. If it doesn't match, then notes that a transfer is needed.
 
     Args:
         name: Parameter name for error messages.
@@ -569,11 +616,7 @@ def _prepare_weight_for_parameter(
         auto_cast: Whether to apply safe-cast-set dtype coercion.
 
     Returns:
-        A tuple ``(prepared, cast_record)`` where ``prepared`` is a Tensor
-        ready to be assigned to the parameter and ``cast_record`` is
-        ``(from_dtype, to_dtype)`` when a safe auto-cast was applied,
-        otherwise ``None``. Callers may aggregate ``cast_record`` values to
-        emit a single summary warning per load.
+        See :class:`_PreparedWeight`.
 
     Raises:
         ValueError: If shape, dtype, or distribution doesn't match.
@@ -597,7 +640,7 @@ def _prepare_weight_for_parameter(
     _validate_loaded_parameter(name, param, weight_tensor)
 
     if not param.is_distributed:
-        return weight_tensor, cast_record
+        return _PreparedWeight(weight_tensor, cast_record, False)
 
     assert param._mapping is not None
 
@@ -607,9 +650,9 @@ def _prepare_weight_for_parameter(
                 f"Weight '{name}' has incompatible distribution. "
                 f"Expected {param._mapping}, got {weight_tensor._mapping}."
             )
-        return weight_tensor, cast_record
+        return _PreparedWeight(weight_tensor, cast_record, False)
 
-    return transfer_to(weight_tensor, param._mapping), cast_record
+    return _PreparedWeight(weight_tensor, cast_record, True)
 
 
 def _emit_cast_summary(cast_counts: Mapping[CastRecord, int]) -> None:
@@ -632,31 +675,35 @@ def _emit_cast_summary(cast_counts: Mapping[CastRecord, int]) -> None:
     _logger.warning("load_state_dict auto-cast: %s.", "; ".join(parts))
 
 
-def _process_provided_weights(
+class _PreparedWeights(NamedTuple):
+    weights_registry: dict[str, Tensor]
+    """Processed weights that are ready to be assigned to the parameters."""
+
+    weights_to_transfer: dict[str, Tensor]
+    """The weights that need to be transferred to the parameters.
+    The keys are strictly a subset of `weights_registry`."""
+
+
+def prepare_weights_registry(
     weights: Mapping[str, DLPackArray],
     parameters: Iterable[tuple[str, Tensor]],
     *,
     auto_cast: bool,
-) -> dict[str, DLPackArray]:
-    """Processes user-provided weights based on parameter distribution.
-
-    Handles two cases for each parameter:
-
-    - **Non-distributed parameter**: Weight passes through as-is.
-    - **Distributed parameter**: If weight is a single-device buffer, shards
-      it using ``transfer_to()``. If weight is already a dtensor, extracts shards.
-      Both cases produce ``name._shard.N`` entries.
+) -> _PreparedWeights:
+    """Prepares the weight registry given input weights and module parameters.
 
     Args:
         weights: User-provided weight buffers keyed by parameter name.
         parameters: Module parameters with distribution metadata.
         auto_cast: Whether to permit safe-cast-set dtype coercion when
-            shapes match (see :func:`_prepare_weight_for_parameter`).
+            shapes match (see :func:`prepare_weight_for_parameter`).
 
     Returns:
-        A weights registry suitable for ``session.load(..., weights_registry=...)``.
+        A :class:`_PreparedWeights` containing the weights registry and
+        the weights that need to be transferred.
     """
-    result: dict[str, DLPackArray] = {}
+    weights_registry: dict[str, Tensor] = {}
+    weights_to_transfer: dict[str, Tensor] = {}
     cast_counts: dict[CastRecord, int] = {}
 
     for name, param in parameters:
@@ -665,21 +712,25 @@ def _process_provided_weights(
                 f"Weight '{name}' is missing from the provided weights mapping."
             )
 
-        prepared, cast_record = _prepare_weight_for_parameter(
+        prepared, cast_record, transfer_needed = prepare_weight_for_parameter(
             name, weights[name], param, auto_cast=auto_cast
         )
         if cast_record is not None:
             cast_counts[cast_record] = cast_counts.get(cast_record, 0) + 1
         shards = prepared.local_shards
 
-        if not param.is_distributed:
-            result[name] = shards[0]
+        if transfer_needed:
+            assert len(shards) == 1
+            weights_registry[name] = shards[0]
+            weights_to_transfer[name] = prepared
+        elif not param.is_distributed:
+            weights_registry[name] = shards[0]
         else:
             for i, shard in enumerate(shards):
-                result[f"{name}._shard.{i}"] = shard
+                weights_registry[f"{name}._shard.{i}"] = shard
 
     _emit_cast_summary(cast_counts)
-    return result
+    return _PreparedWeights(weights_registry, weights_to_transfer)
 
 
 def _detect_signals(
@@ -726,9 +777,9 @@ def _describe_arg(arg: Any) -> str:
                 f"dtype={arg.dtype}, placements={arg.placements}, "
                 f"shards={len(arg.local_shards)})"
             )
-        return f"Tensor(shape={list(arg.shape)}, dtype={arg.dtype})"
+        return f"Tensor(shape={list(arg.shape)}, dtype={arg.dtype}, device={arg.device})"
     if isinstance(arg, Buffer):
-        return f"Buffer(shape={list(arg.shape)}, dtype={arg.dtype})"
+        return f"Buffer(shape={list(arg.shape)}, dtype={arg.dtype}, device={arg.device})"
     if arg is None:
         return "None"
     return type(arg).__name__
@@ -736,10 +787,9 @@ def _describe_arg(arg: Any) -> str:
 
 def _describe_slot(slot: _InputSlot) -> str:
     """Format an input slot's expectation for an error message."""
-    if slot.dist is not None:
+    if slot.mapping is not None:
         return (
-            f"distributed Tensor(shape={list(slot.dist.shape)}, "
-            f"placements={slot.dist.placements}, "
+            f"distributed Tensor(placements={slot.mapping.placements}, "
             f"expects {slot.count} shards)"
         )
     return "single-device Tensor"

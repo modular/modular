@@ -22,7 +22,7 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names[0]] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
@@ -30,7 +30,7 @@ struct NameList:
 
 
 def main() raises:
-    list = NameList("Thor", "Athena", "Dana", "Vrinda")
+    var list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)
     name += "?"

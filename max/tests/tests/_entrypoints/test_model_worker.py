@@ -163,8 +163,8 @@ async def test_model_worker_start_timeout(
 
 class MockTokenizer(PipelineTokenizer):  # type: ignore
     @property
-    def eos(self) -> int:
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:

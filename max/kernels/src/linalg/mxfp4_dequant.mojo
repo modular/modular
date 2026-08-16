@@ -21,10 +21,10 @@ SF_VECTOR_SIZE (32) consecutive elements.
 
 from std.math import ceildiv
 from std.gpu import block_idx, thread_idx, grid_dim, block_dim
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import GPUInfo
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
@@ -35,7 +35,7 @@ from layout import TensorStorage, TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import TensorLayout
 from .fp4_utils import cast_uint_to_fp4e2m1, MXFP4_SF_VECTOR_SIZE
-from std.algorithm.functional import elementwise
+from max.algorithm.functional import elementwise
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.sys.info import simd_width_of
@@ -59,38 +59,34 @@ def _dequant_mxfp4_to_fp8_kernel[
     SF_VECTOR_SIZE: Int = 32,
     ELEMENTS_PER_THREAD: Int = 8,
 ](
-    output: TileTensor[
-        out_dtype, output_layout, MutAnyOrigin, Storage=output_storage
-    ],
-    input: TileTensor[
-        in_dtype, input_layout, MutAnyOrigin, Storage=input_storage
-    ],
-    scales: TileTensor[
-        scales_dtype, scales_layout, MutAnyOrigin, Storage=scales_storage
-    ],
-    num_rows: Int,
-    num_cols: Int,
+    output: TileTensor[out_dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[in_dtype, input_layout, MutAnyOrigin],
+    scales: TileTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    num_rows: Int32,
+    num_cols: Int32,
 ):
     """Kernel that dequantizes MXFP4 packed uint8 to out_dtype (FP8 or BF16).
 
     Scales are 2D [num_rows, num_cols // SF_VECTOR_SIZE], one scale per block
     of SF_VECTOR_SIZE elements.
     """
+    var _num_rows = Int(num_rows)
+    var _num_cols = Int(num_cols)
     comptime assert output.flat_rank >= 2
     comptime assert input.flat_rank >= 2
     comptime assert scales.flat_rank >= 2
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        for global_row_idx in range(block_idx.x, _num_rows, grid_dim.x):
             for col_thread_idx in range(
                 thread_idx.x,
-                ceildiv(num_cols, ELEMENTS_PER_THREAD),
+                ceildiv(_num_cols, ELEMENTS_PER_THREAD),
                 block_dim.x,
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 
-                if global_col_idx >= num_cols:
+                if global_col_idx >= _num_cols:
                     continue
 
                 # Load packed uint8 bytes
@@ -143,6 +139,9 @@ def dequant_mxfp4[
     pdl_level: PDLLevel = PDLLevel(),
 ) raises:
     """Dequantize MXFP4 packed weights to FP8 or BF16.
+
+    Parameters:
+        SF_VECTOR_SIZE: Number of consecutive elements each E8M0 block scale covers (defaults to 32).
 
     Args:
         ctx: Device context for kernel launch.
@@ -232,8 +231,8 @@ def dequant_mxfp4[
         output,
         input_tt,
         scales_tt,
-        num_rows,
-        num_cols,
+        Int32(num_rows),
+        Int32(num_cols),
         block_dim=block_dim_val,
         grid_dim=grid_dim_val,
         attributes=pdl_launch_attributes(pdl_level),

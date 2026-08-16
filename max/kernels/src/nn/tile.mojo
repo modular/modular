@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the ONNX Tile operator, which replicates a tensor a specified number of times along each axis."""
 
 from layout import TileTensor
 from std.memory import unsafe_memcpy

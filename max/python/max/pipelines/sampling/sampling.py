@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 from max.driver import Buffer
@@ -649,24 +649,44 @@ def build_synthetic_acceptance_sampler_graph(
 
 def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
+    *,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    vocab_size: int | None = None,
 ) -> Graph:
     """Builds a target-only stochastic rejection sampler for speculative decoding.
 
-    Accepts draft tokens based on ``coin < p_target(draft_token)`` where
-    p_target is computed after applying temperature, top-k, and top-p
-    filtering.  No draft probabilities are needed.
+    Accepts a draft token on ``coin < p_target / q_draft``. How ``p_target`` is
+    filtered depends on the proposal mode: ``"argmax"`` applies temperature
+    only, while ``"sampled"`` applies temperature, top-k and top-p.
+
+    ``draft_proposal="argmax"`` (the default) means the draft proposed
+    deterministically, so its one-hot ``q`` needs no input and recovered
+    tokens are sampled from the
+    target distribution. ``"sampled"`` means the draft sampled its own token,
+    and the graph takes one more input: the distribution it drew from, which
+    rejection recovers from via ``max(p_target - q_draft, 0)``. That mode also
+    needs a concrete ``vocab_size``, since the distribution's trailing dim has
+    to be static.
 
     The sampling RNG seed is bound as a graph input — callers refresh it
     per execution so RNG varies across calls.
 
     Args:
         device: Device for the graph.
+        draft_proposal: Proposal distribution used to produce
+            ``draft_tokens``; defaults to ``"argmax"``.
+        vocab_size: Static vocabulary size. Required iff
+            ``draft_proposal="sampled"``.
 
     Returns:
-        A graph that takes draft tokens, target logits, target logit
-        offsets, sampling parameters, and a per-execute seed, and outputs
-        the first rejected index, recovered tokens, and a bonus token.
+        A graph that takes draft tokens, target logits, target logit offsets,
+        sampling parameters, a per-execute seed, and in ``"sampled"`` mode the
+        draft distributions, and outputs the first rejected index, recovered
+        tokens, and a bonus token.
     """
+    if draft_proposal == "sampled" and vocab_size is None:
+        raise ValueError("vocab_size is required when draft_proposal='sampled'")
+
     graph_inputs = [
         TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
         TensorType(
@@ -679,17 +699,41 @@ def build_stochastic_acceptance_sampler_graph(
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         ops.random.SeedType(device),
     ]
+    if draft_proposal == "sampled":
+        assert vocab_size is not None
+        graph_inputs.append(
+            TensorType(
+                DType.float32,
+                ["batch_size", "num_steps", vocab_size],
+                device=device,
+            )
+        )
+
     with Graph("typical_acceptance_sampler", input_types=graph_inputs) as graph:
-        (
-            draft_tokens,
-            target_logits,
-            temperature,
-            top_k,
-            max_k,
-            top_p,
-            min_top_p,
-            seed,
-        ) = graph.inputs
+        draft_probs_full = None
+        if draft_proposal == "sampled":
+            (
+                draft_tokens,
+                target_logits,
+                temperature,
+                top_k,
+                max_k,
+                top_p,
+                min_top_p,
+                seed,
+                draft_probs_full,
+            ) = graph.inputs
+        else:
+            (
+                draft_tokens,
+                target_logits,
+                temperature,
+                top_k,
+                max_k,
+                top_p,
+                min_top_p,
+                seed,
+            ) = graph.inputs
 
         first_rejected_idx, recovered_tokens, bonus_tokens = (
             stochastic_acceptance_sampler(
@@ -701,6 +745,11 @@ def build_stochastic_acceptance_sampler_graph(
                 top_p=top_p.tensor,
                 min_top_p=min_top_p.tensor,
                 seed=seed.tensor,
+                draft_proposal=draft_proposal,
+                draft_probs_full=draft_probs_full.tensor
+                if draft_probs_full is not None
+                else None,
+                vocab_size=vocab_size,
             )
         )
         graph.output(first_rejected_idx, recovered_tokens, bonus_tokens)

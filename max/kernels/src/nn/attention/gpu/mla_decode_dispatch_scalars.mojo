@@ -16,8 +16,8 @@ This module hosts a single device-generic entry point,
 `mla_decode_dispatch_scalars`, that computes the packed 3-int MLA decode
 dispatch metadata `(batch_size, q_max_seq_len, num_partitions)`. It mirrors
 the MHA pattern (`mha_decoding_num_partitions`), which hides the HIP-vs-SM100
-device dispatch behind one function so callers — in particular the
-Mojo->Python binding `mla_dispatch_args_scalar` — stay device-agnostic and
+device dispatch behind one function so callers (in particular the
+Mojo->Python binding `mla_dispatch_args_scalar`) stay device-agnostic and
 carry no `if ctx.api()` branch.
 
 The file sits *above* both per-device heuristics in the dependency graph and
@@ -29,7 +29,7 @@ in a generic heuristic, or an AMD import in an SM100 file), so it lives in a
 device-generic location instead.
 """
 
-from std.gpu.host import DeviceAttribute, DeviceContext
+from max.gpu.host import DeviceAttribute, DeviceContext
 
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
@@ -53,8 +53,8 @@ def mla_decode_dispatch_scalars(
     `ctx.api()` internally, mirroring `mha_decoding_num_partitions`:
 
     - **HIP (AMD):** the AMD MLA decode kernel bakes its split-K grid from
-      `mha_decoding_num_partitions(..., is_mla=True)` at dispatch time
-      (`mla.mojo:756-768`) and never reads `num_partitions` from the scalar
+      `mha_decoding_num_partitions(..., is_mla=True)` at dispatch time and
+      never reads `num_partitions` from the scalar
       buffer; the metadata `num_partitions` is used only as the HIP
       device-graph capture/replay selection key. To keep the capture key
       byte-for-byte equal to the baked grid, compute the SAME value the kernel
@@ -63,7 +63,7 @@ def mla_decode_dispatch_scalars(
       adjustment.
     - **CUDA (NVIDIA/SM100):** delegate to the SM100 runtime heuristic
       `compute_mla_dispatch_scalars_runtime`, which reads the device SM count.
-    - **Any other api (e.g. Metal):** raise — there is no MLA decode dispatch
+    - **Any other api (e.g. Metal):** raise: there is no MLA decode dispatch
       path for non-HIP/non-CUDA devices, so route them to a clear error rather
       than silently into the SM100 heuristic.
 
@@ -80,8 +80,8 @@ def mla_decode_dispatch_scalars(
     """
     if ctx.api() == "hip":
         # MLA: kv_num_heads == 1, so heads_per_group == num_heads. Pass raw
-        # max_cache_valid_length — byte-for-byte the same call mla.mojo:762
-        # bakes into the AMD split-K grid.
+        # max_cache_valid_length — byte-for-byte the same value
+        # `mha_decoding_num_partitions` bakes into the AMD split-K grid.
         var np = mha_decoding_num_partitions(
             batch_size,
             max_cache_valid_length,

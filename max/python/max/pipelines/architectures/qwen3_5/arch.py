@@ -32,15 +32,11 @@ qwen3_5_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3.5-27B"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float32",
-    },
+    default_encoding=Qwen3_5Config.DEFAULT_ENCODING,
+    supported_encodings=Qwen3_5Config.SUPPORTED_ENCODINGS,
     pipeline_model=Qwen3_5Model,
     tokenizer=Qwen3_5Tokenizer,
     context_type=Qwen3VLTextAndVisionContext,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_5_state_dict,
     },

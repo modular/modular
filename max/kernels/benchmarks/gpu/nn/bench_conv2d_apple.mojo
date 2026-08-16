@@ -43,7 +43,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf
 from nn.conv.gpu.im2col_matmul_2d import (
     dispatch_fused_im2col_conv2d_apple,
@@ -172,7 +172,7 @@ def bench_shape[
     var gy = ceildiv(H_out, block_size)
     var gz = N
 
-    @parameter
+    @__parameter
     @always_inline
     def run_naive() raises:
         ctx.enqueue_function[naive](
@@ -182,7 +182,7 @@ def bench_shape[
             stride,
             IndexList[2](1, 1),
             pad,
-            1,
+            Int32(1),
             grid_dim=(gx, gy, gz),
             block_dim=(block_size, block_size),
         )

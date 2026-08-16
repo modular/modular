@@ -14,7 +14,7 @@
 from std.math import rsqrt
 from std.random import seed
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from kv_cache_test_utils import random_distinct
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -57,8 +57,8 @@ def execute_flash_attention[
         ")",
     )
 
-    max_prompt_len = 0
-    max_context_len = 0
+    var max_prompt_len = 0
+    var max_context_len = 0
 
     for i in range(batch_size):
         max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
@@ -243,7 +243,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
     var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
 
     comptime for dtype_idx in range(len(dtypes)):
-        comptime dtype = dtypes[dtype_idx]
+        comptime dtype = rebind[DType](dtypes[dtype_idx])
 
         print("Replit context encoding")
         # Replit context encoding [testing even query valid lengths].

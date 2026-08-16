@@ -24,7 +24,7 @@ from std.math.math import _Expable
 from std.sys import llvm_intrinsic
 from std.format._utils import FormatStruct
 
-comptime ComplexScalar = ComplexSIMD[..., size=1]
+comptime ComplexScalar = ComplexSIMD[..., length=1]
 """Represents a scalar complex value."""
 comptime ComplexFloat32 = ComplexScalar[DType.float32]
 """A complex number with 32-bit floating point components."""
@@ -38,7 +38,7 @@ comptime ComplexFloat64 = ComplexScalar[DType.float64]
 # ===-----------------------------------------------------------------------===#
 
 
-struct ComplexSIMD[dtype: DType, size: SIMDSize](
+struct ComplexSIMD[dtype: DType, length: SIMDLength](
     Equatable, TrivialRegisterPassable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
@@ -47,7 +47,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
 
     Parameters:
         dtype: DType of the value.
-        size: SIMD width of the value.
+        length: SIMD width of the value.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -57,7 +57,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
     comptime type = Self.dtype
     """The data type of the complex components."""
 
-    comptime element_type = SIMD[Self.dtype, Self.size]
+    comptime element_type = SIMD[Self.dtype, Self.length]
     """The SIMD type used for real and imaginary parts."""
 
     var re: Self.element_type
@@ -80,7 +80,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
         self.im = im
 
     def __init__(
-        out self, *, from_interleaved: SIMD[Self.dtype, 2 * Self.size]
+        out self, *, from_interleaved: SIMD[Self.dtype, 2 * Self.length]
     ):
         """Initializes a complex SIMD value.
 
@@ -92,7 +92,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
         self.re, self.im = rebind[T](from_interleaved.deinterleave())
 
     def __init__(
-        out self, *, from_deinterleaved: SIMD[Self.dtype, 2 * Self.size]
+        out self, *, from_deinterleaved: SIMD[Self.dtype, 2 * Self.length]
     ):
         """Initializes a complex SIMD value.
 
@@ -101,9 +101,9 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
                 `[0, 1, 1, 0]` where the pattern is `[re0, re1, im0, im1]`.
         """
         comptime T = Self.element_type
-        self.re = rebind[T](from_deinterleaved.slice[Self.size]())
+        self.re = rebind[T](from_deinterleaved.slice[Self.length]())
         self.im = rebind[T](
-            from_deinterleaved.slice[Self.size, offset=Self.size]()
+            from_deinterleaved.slice[Self.length, offset=Self.length]()
         )
 
     # ===-------------------------------------------------------------------===#
@@ -119,11 +119,11 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
         """
 
         # Print an opening `[`.
-        comptime if Self.size > 1:
+        comptime if Self.length > 1:
             writer.write_string("[")
 
         # Print each element.
-        for i in range(Self.size):
+        for i in range(Self.length):
             var re = self.re[i]
             var im = self.im[i]
             # Print separators between each element.
@@ -136,7 +136,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
                 writer.write(" + ", im, "i")
 
         # Print a closing `]`.
-        comptime if Self.size > 1:
+        comptime if Self.length > 1:
             writer.write_string("]")
 
     @no_inline
@@ -148,11 +148,11 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
         """
         FormatStruct(writer, "ComplexSIMD").params(
             Self.dtype,
-            Int(Self.size),
+            Int(Self.length),
         ).fields(self)
 
     @always_inline
-    def __abs__(self) -> SIMD[Self.dtype, Self.size]:
+    def __abs__(self) -> SIMD[Self.dtype, Self.length]:
         """Returns the magnitude of the complex value.
 
         Returns:
@@ -297,18 +297,18 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
         return Self(self.re, -self.im)
 
     @always_inline
-    def norm(self) -> SIMD[Self.dtype, Self.size]:
+    def norm(self) -> SIMD[Self.dtype, Self.length]:
         """Returns the magnitude of the complex value.
 
         Returns:
             Value of `sqrt(re*re + im*im)`.
         """
-        return llvm_intrinsic["llvm.sqrt", SIMD[Self.dtype, Self.size]](
+        return llvm_intrinsic["llvm.sqrt", SIMD[Self.dtype, Self.length]](
             self.squared_norm()
         )
 
     @always_inline
-    def squared_norm(self) -> SIMD[Self.dtype, Self.size]:
+    def squared_norm(self) -> SIMD[Self.dtype, Self.length]:
         """Returns the squared magnitude of the complex value.
 
         Returns:
@@ -373,7 +373,7 @@ struct ComplexSIMD[dtype: DType, size: SIMDSize](
 # TODO: we need this overload, because the Absable trait requires returning Self
 # dtype. We could maybe get rid of this if we had associated dtypes?
 @always_inline
-def abs(x: ComplexSIMD[...]) -> SIMD[x.dtype, x.size]:
+def abs(x: ComplexSIMD[...]) -> SIMD[x.dtype, x.length]:
     """Performs elementwise abs (norm) on each element of the complex value.
 
     Args:

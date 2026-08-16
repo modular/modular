@@ -120,6 +120,24 @@ class TestLoadKvManager:
                 available_cache_memory=1024 * 1024 * 1024,
             )
 
+    def test_load_kv_manager_rejects_oversized_max_seq_len(self) -> None:
+        """load_kv_manager should fail startup when a single request at
+        max_seq_len cannot fit in the device block pool."""
+        params = create_kv_params()
+        mock_session = MagicMock()
+
+        # 1 GiB fits 64 blocks of 128 tokens each = 8192 tokens.
+        with pytest.raises(
+            RuntimeError, match="one request at the max sequence length"
+        ):
+            load_kv_manager(
+                params=params,
+                max_batch_size=16,
+                max_seq_len=8192 + 1,
+                session=mock_session,
+                available_cache_memory=1024 * 1024 * 1024,
+            )
+
     @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_manager_rejects_invalid_page_size(
         self, mock_paged_manager_cls: MagicMock

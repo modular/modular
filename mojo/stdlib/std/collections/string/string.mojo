@@ -13,12 +13,12 @@
 """Implements the core `String` type and related utilities."""
 
 from std.builtin.globals import global_constant
-from std.collections import KeyElement
+from std.collections import KeyElement, Span, check_slice_bounds
 from std.collections.string import CodepointsIter
 from std.collections.string._parsing_numbers.parsing_floats import _atof
 from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     BytesIter,
     CodepointSliceIter,
     GraphemeIndicesIter,
@@ -28,6 +28,7 @@ from std.collections.string.string_slice import (
 )
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
+from std.reflection import call_location
 from std.format.tstring import TString
 from std.format._utils import (
     STACK_BUFFER_BYTES,
@@ -38,16 +39,16 @@ from std.os import PathLike, abort
 from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
-from std.sys.info import is_32bit
+from std.sys.info import is_32bit, is_apple_gpu
 
 from std.bit import count_leading_zeros
 from std.memory import (
     Layout,
     ThinAllocation,
     dealloc,
-    memcmp,
+    unsafe_memcmp,
     unsafe_memcpy,
-    memset,
+    unsafe_memset,
 )
 from std.python import ConvertibleFromPython, PythonObject
 
@@ -56,6 +57,7 @@ from std.python import ConvertibleFromPython, PythonObject
 # ===----------------------------------------------------------------------=== #
 
 
+@stable(since="1.0")
 struct String(
     Boolable,
     Comparable,
@@ -209,10 +211,10 @@ struct String(
 
     Related types:
 
-    - [`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/): A non-owning
+    - [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/): A non-owning
       view of string data, which can be either mutable or immutable.
-    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
-      alias for an immutable constant `StringSlice`.
+    - [`StaticString`](/docs/std/collections/string/string_span/#StaticString): An
+      alias for an immutable constant `StringSpan`.
     - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
     """
@@ -221,7 +223,7 @@ struct String(
     # form when '_capacity_or_data.is_inline()' is true. The inline form
     # clobbers these fields (except the top byte of the capacity field) with
     # the string data.
-    var _ptr_or_data: UnsafePointer[UInt8, MutUntrackedOrigin]
+    var _ptr_or_data: Pointer[UInt8, MutUntrackedOrigin]
     """The underlying storage for the string data."""
     var _len_or_data: Int
     """The number of bytes in the string data."""
@@ -287,23 +289,27 @@ struct String(
 
     # This is the size to offset the pointer by, to get access to the
     # atomic reference count prepended to the UTF-8 data.
-    comptime REF_COUNT_SIZE = size_of[Atomic[DType.int]]()
+    comptime REF_COUNT_SIZE = size_of[Atomic[Int]]()
     """Size of the reference count prefix for heap strings."""
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
+    @stable(since="1.0")
     @always_inline("nodebug")
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroy the string data."""
         self._drop_ref()
 
     @always_inline("nodebug")
     def __init__(out self):
         """Construct an empty string."""
+        # this is UB if we ever touch the pointer, but so is
+        # an uninitialized pointer
+        self._ptr_or_data = {unsafe_from_address = Int(0)}
+        self._len_or_data = 0
         self._capacity_or_data = Self.FLAG_IS_INLINE
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline("nodebug")
     def __init__(out self, *, capacity: Int):
@@ -313,10 +319,7 @@ struct String(
             capacity: The capacity of the string to allocate.
         """
         if capacity <= Self.INLINE_CAPACITY:
-            self._capacity_or_data = Self.FLAG_IS_INLINE
-            __mlir_op.`lit.ownership.mark_initialized`(
-                __get_mvalue_as_litref(self)
-            )
+            self = Self()
         else:
             self._capacity_or_data = (capacity + 7) >> 3
             self._ptr_or_data = Self._alloc(self._capacity_or_data << 3)
@@ -324,8 +327,9 @@ struct String(
             self._set_ref_counted()
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     @implicit  # does not allocate.
-    def __init__(out self, data: StaticString):
+    def __init__(out self, data: StaticString, /):
         """Construct a `String` from a `StaticString` without allocating.
 
         Args:
@@ -344,19 +348,20 @@ struct String(
         self._capacity_or_data = 0
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     @implicit  # does not allocate.
-    def __init__(out self, data: StringLiteral):
+    def __init__(out self, data: StringLiteral, /):
         """Construct a `String` from a `StringLiteral` without allocating.
 
         Args:
             data: The static constant string to refer to.
         """
         self._len_or_data = Int(
-            SIMDSize(mlir_value=__mlir_op.`pop.string.size`(data.value))
+            SIMDLength(mlir_value=__mlir_op.`pop.string.size`(data.value))
         )
-        self._ptr_or_data = UnsafePointer[_, MutUntrackedOrigin](
+        self._ptr_or_data = Pointer[_, MutUntrackedOrigin](
             _mlir_value=__mlir_op.`pop.string.address`(data.value)
-        ).bitcast[Byte]()
+        ).unsafe_bitcast[Byte]()
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary unsafe_memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
@@ -397,6 +402,7 @@ struct String(
             count=length,
         )
 
+    @stable(since="1.0")
     def __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
         """Construct a string from a span of bytes, including invalid UTF-8.
 
@@ -499,39 +505,6 @@ struct String(
             args._write_to(buffer, end=end, sep=sep)
             buffer.flush()
 
-    @staticmethod
-    def write[
-        *Ts: Writable,
-    ](*args: *Ts, sep: StaticString = "", end: StaticString = "") -> Self:
-        """Construct a string by concatenating a sequence of Writable arguments.
-
-        Args:
-            args: A sequence of Writable arguments.
-            sep: The separator used between elements.
-            end: The String to write after printing the elements.
-
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Returns:
-            A string formed by formatting the argument sequence.
-        """
-        comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
-
-        var total_bytes = _TotalWritableBytes()
-        args._write_to(total_bytes, end=end, sep=sep)
-
-        if total_bytes.size <= Self.INLINE_CAPACITY:
-            var result = String()
-            args._write_to(result, end=end, sep=sep)
-            return result^
-        else:
-            var result = String(capacity=total_bytes.size)
-            var buffer = _WriteBufferStack[STACK_BUFFER_BYTES](result)
-            args._write_to(buffer, end=end, sep=sep)
-            buffer.flush()
-            return result^
-
     def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
@@ -566,23 +539,6 @@ struct String(
         """
         value.write_to(self)
 
-    @staticmethod
-    def write[T: Writable](value: T) -> Self:
-        """Write a single Writable argument to the provided Writer.
-
-        Parameters:
-            T: The type of the value to write, which must implement `Writable`.
-
-        Args:
-            value: The `Writable` argument to write.
-
-        Returns:
-            A new `String` containing the written value.
-        """
-        var result = String()
-        value.write_to(result)
-        return result^
-
     @always_inline("nodebug")
     def __init__(out self, *, unsafe_uninit_length: Int):
         """Construct a String with the specified length, with uninitialized
@@ -594,17 +550,17 @@ struct String(
             unsafe_uninit_length: The number of bytes to allocate.
         """
         self = Self(capacity=unsafe_uninit_length)
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     def __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char, _],
+        unsafe_from_utf8_ptr: ImmPointer[c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -614,18 +570,16 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
                 )
             )
         )
 
-    def __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
-    ):
+    def __init__(out self, *, unsafe_from_utf8_ptr: ImmPointer[UInt8, _]):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: A `Pointer[Byte]` of null-terminated bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -635,11 +589,12 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSlice(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
                 )
             )
         )
 
+    @stable(since="1.0")
     @always_inline("nodebug")
     def __init__(out self, *, copy: Self):
         """Copy initialize the string from another string.
@@ -716,11 +671,11 @@ struct String(
     # out-of-line strings, which is stored before the UTF-8 data.
 
     @always_inline("nodebug")
-    def _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[DType.int]:
+    def _refcount(self) -> ref[self._ptr_or_data.origin] Atomic[Int]:
         # The header is stored before the string data.
-        return (self._ptr_or_data - Self.REF_COUNT_SIZE).bitcast[
-            Atomic[DType.int]
-        ]()[]
+        return self._ptr_or_data.unsafe_offset(
+            -Self.REF_COUNT_SIZE
+        ).unsafe_bitcast[Atomic[Int]]()[]
 
     @always_inline("nodebug")
     def _is_unique(mut self) -> Bool:
@@ -733,6 +688,10 @@ struct String(
     @always_inline("nodebug")
     def _add_ref(mut self):
         """Atomically increment the refcount."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
@@ -742,16 +701,18 @@ struct String(
     def _drop_ref(mut self):
         """Atomically decrement the refcount and deallocate self if the result
         hits zero."""
+        comptime if is_apple_gpu():
+            # No-op: heap-string refcounting is unsupported on Apple GPU.
+            # See MSTDL-2907.
+            return
         # If indirect or inline we don't need to do anything.
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
-            var refcount = ptr.bitcast[Atomic[DType.int]]()
+            var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
+            var refcount = ptr.unsafe_bitcast[Atomic[Int]]()
             if refcount[].fetch_sub(1) == 1:
                 fence[Ordering.ACQUIRE]()
                 dealloc(
-                    ThinAllocation(
-                        unsafe_assume_ownership=ptr
-                    ).unsafe_with_layout(
+                    ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
                             count=self.capacity() + Self.REF_COUNT_SIZE
                         )
@@ -759,20 +720,20 @@ struct String(
                 )
 
     @staticmethod
-    def _alloc(capacity: Int) -> UnsafePointer[Byte, MutUntrackedOrigin]:
+    def _alloc(capacity: Int) -> Pointer[Byte, MutUntrackedOrigin]:
         """Allocate space for a new out-of-line string buffer."""
         var ptr = alloc(
             Layout[Byte](count=capacity + Self.REF_COUNT_SIZE)
         ).unsafe_leak()
 
         # Initialize the Atomic refcount into the header.
-        __get_address_as_uninit_lvalue(
-            ptr.bitcast[Atomic[DType.int]]()._get_kgen_pointer()
-        ) = Atomic[DType.int](1)
+        ptr.unsafe_bitcast[Atomic[Int]]().unsafe_write(
+            init_with=lambda () -> Atomic[Int]: Atomic[Int](1)
+        )
 
         # Return a pointer to right after the header, which is where the string
         # data will be stored.
-        return ptr + Self.REF_COUNT_SIZE
+        return ptr.unsafe_offset(Self.REF_COUNT_SIZE)
 
     # ===------------------------------------------------------------------=== #
     # Factory dunders
@@ -830,10 +791,36 @@ struct String(
     def __len__(self) -> Int:
         ...
 
+    @__unsafe_nested_origins_read_only
+    @always_inline
+    def __getitem__(
+        self, *, byte: Int
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        var string_slice = self._interior_slice()
+        var idx = index(byte)
+        string_slice._check_valid_index(idx)
+        return string_slice._unchecked_get_byte(idx)
+
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__[
         I: Indexer, //
-    ](self, *, byte: I) -> StringSlice[origin_of(self)]:
+    ](self, *, byte: I) -> StringSlice[
+        origin_of(self)._get_owned_interior["bytes"]
+    ]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -850,13 +837,16 @@ struct String(
         Returns:
             A StringSlice containing a single byte at the specified position.
         """
-        var string_slice = StringSlice(self)
+        var string_slice = self._interior_slice()
         var idx = index(byte)
         string_slice._check_valid_index(idx)
         return string_slice._unchecked_get_byte(idx)
 
+    @__unsafe_nested_origins_read_only
     @always_inline
-    def __getitem__(self, *, byte: IntLiteral) -> StringSlice[origin_of(self)]:
+    def __getitem__(
+        self, *, byte: IntLiteral
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a single byte at the specified byte index.
 
         This performs byte-level indexing, not character (codepoint) indexing.
@@ -874,13 +864,15 @@ struct String(
             "negative indexing is not supported, use e.g."
             " `string[byte=string.byte_length() - 1]`"
         )
-        var string_slice = StringSlice(self)
+        var string_slice = self._interior_slice()
         string_slice._check_valid_index(byte)
         return string_slice._unchecked_get_byte(byte)
 
+    @__unsafe_nested_origins_read_only
+    @always_inline
     def __getitem__(
         self, *, byte: ContiguousSlice
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified byte positions.
 
         This performs byte-level slicing, not character (codepoint) slicing.
@@ -888,17 +880,25 @@ struct String(
         multi-byte UTF-8 characters, slicing at byte positions that do not fall
         on codepoint boundaries will abort.
 
+        Aborts if `byte`'s start or end index is out of bounds (valid range
+        is `0` to `self.byte_length()`, inclusive), or if start is greater
+        than end. Negative indices are not supported and always abort.
+
         Args:
             byte: A slice that specifies byte positions of the new substring.
 
         Returns:
             A StringSlice containing the bytes in the specified range.
         """
-        return StringSlice(self)[byte=byte]
+        _ = check_slice_bounds(byte, self.byte_length(), call_location())
+        return self._interior_slice()[byte=byte]
 
+    @__unsafe_nested_origins_read_only
     def __getitem__[
         I: Indexer, //
-    ](self, *, codepoint: I) -> StringSlice[origin_of(self)]:
+    ](self, *, codepoint: I) -> StringSlice[
+        origin_of(self)._get_owned_interior["bytes"]
+    ]:
         """Gets the character at the specified position.
 
         Parameters:
@@ -911,12 +911,13 @@ struct String(
             A `StringSlice` view containing the unicode codepoint at the
             specified position.
         """
-        return StringSlice(self)[codepoint=codepoint]
+        return self._interior_slice()[codepoint=codepoint]
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         self, *, codepoint: ContiguousSlice
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets a substring at the specified codepoint positions.
 
         Args:
@@ -926,12 +927,13 @@ struct String(
         Returns:
             A StringSlice containing the codepoints in the specified range.
         """
-        return StringSlice(self)[codepoint=codepoint]
+        return self._interior_slice()[codepoint=codepoint]
 
+    @__unsafe_nested_origins_read_only
     @always_inline
     def __getitem__(
         self, *, grapheme: Some[Indexer]
-    ) -> StringSlice[origin_of(self)]:
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
         """Gets the character at the specified position.
 
         Args:
@@ -941,8 +943,9 @@ struct String(
             A `StringSlice` view containing the unicode grapheme at the
             specified position.
         """
-        return StringSlice(self)[grapheme=grapheme]
+        return self._interior_slice()[grapheme=grapheme]
 
+    @stable(since="1.0")
     def __eq__(self, rhs: String) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -963,9 +966,10 @@ struct String(
         if self_len == 0 or self_ptr == rhs_ptr:
             return True
         # Compare memory directly
-        return memcmp(self_ptr, rhs_ptr, self_len) == 0
+        return unsafe_memcmp(self_ptr, rhs_ptr, self_len) == 0
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __eq__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -978,6 +982,7 @@ struct String(
         return StringSlice(self) == other
 
     @always_inline("nodebug")
+    @stable(since="1.0")
     def __ne__(self, other: StringSlice) -> Bool:
         """Compares two Strings if they have the same values.
 
@@ -1011,7 +1016,9 @@ struct String(
         var result_ptr = result.unsafe_ptr_mut()
         unsafe_memcpy(dest=result_ptr, src=lhs.unsafe_ptr(), count=lhs_len)
         unsafe_memcpy(
-            dest=result_ptr + lhs_len, src=rhs.unsafe_ptr(), count=rhs_len
+            dest=result_ptr.unsafe_offset(lhs_len),
+            src=rhs.unsafe_ptr(),
+            count=rhs_len,
         )
         return result^
 
@@ -1036,8 +1043,8 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        (self.unsafe_ptr_mut() + length).unsafe_write(byte)
-        self.set_byte_length(length + 1)
+        self.unsafe_ptr_mut().unsafe_offset(length).write(byte)
+        self._set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):
         """Append a codepoint to the string.
@@ -1049,8 +1056,10 @@ struct String(
         var length = self.byte_length()
         var new_length = length + codepoint.utf8_byte_length()
         self.reserve(new_length)
-        _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
-        self.set_byte_length(new_length)
+        _ = codepoint.unsafe_write_utf8(
+            self.unsafe_ptr_mut().unsafe_offset(length)
+        )
+        self._set_byte_length(new_length)
 
     def __radd__(self, other: StringSlice[mut=False, _]) -> String:
         """Creates a string by prepending another string slice to the start.
@@ -1063,18 +1072,18 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    def _iadd(mut self, other: Span[mut=False, Byte, _]):
+    def _iadd(mut self, other: ImmSpan[Byte, _]):
         var other_len = len(other)
         if other_len == 0:
             return
         var old_len = self.byte_length()
         var new_len = old_len + other_len
         unsafe_memcpy(
-            dest=self.unsafe_ptr_mut(new_len) + old_len,
+            dest=self.unsafe_ptr_mut(new_len).unsafe_offset(old_len),
             src=other.unsafe_ptr(),
             count=other_len,
         )
-        self.set_byte_length(new_len)
+        self._set_byte_length(new_len)
         self._clear_nul_terminator()
 
     def __iadd__(mut self, other: StringSlice[mut=False, _]):
@@ -1175,7 +1184,7 @@ struct String(
         """
         StringSlice(self).write_repr_to(writer)
 
-    def join[T: Copyable & Writable](self, elems: Span[T, ...]) -> String:
+    def join[T: Copyable & Writable](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
         Defaults to writing to the stack if total bytes of `elems` is less than
         `buffer_size`, otherwise will allocate once to the heap and write
@@ -1367,8 +1376,8 @@ struct String(
     def split_at_grapheme(
         self, n: Int
     ) -> Tuple[
-        StringSlice[ImmutOrigin(origin_of(self))],
-        StringSlice[ImmutOrigin(origin_of(self))],
+        StringSlice[ImmOrigin(origin_of(self))],
+        StringSlice[ImmOrigin(origin_of(self))],
     ]:
         """Split this string at the `n`-th grapheme-cluster boundary.
 
@@ -1395,7 +1404,7 @@ struct String(
     @always_inline("nodebug")
     def unsafe_ptr(
         self,
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a pointer to the underlying memory.
 
         Returns:
@@ -1405,19 +1414,19 @@ struct String(
         if self._is_inline():
             # The string itself holds the data.
             return (
-                UnsafePointer(to=self)
-                .bitcast[Byte]()
-                .as_immutable()
+                Pointer(to=self)
+                .unsafe_bitcast[Byte]()
+                .as_imm()
                 .unsafe_origin_cast[origin_of(self)]()
             )
         else:
-            return self._ptr_or_data.as_immutable().unsafe_origin_cast[
+            return self._ptr_or_data.as_imm().unsafe_origin_cast[
                 origin_of(self)
             ]()
 
     def unsafe_ptr_mut(
         mut self, var capacity: Int = 0
-    ) -> UnsafePointer[Byte, origin_of(self)]:
+    ) -> Pointer[Byte, origin_of(self)]:
         """Retrieves a mutable pointer to the unique underlying memory. Passing
         a larger capacity will reallocate the string to the new capacity if
         larger than the existing capacity, allowing you to write more data.
@@ -1441,7 +1450,7 @@ struct String(
     @always_inline
     def as_c_string_slice(
         mut self,
-    ) -> CStringSlice[ImmutOrigin(origin_of(self))]:
+    ) -> CStringSlice[ImmOrigin(origin_of(self))]:
         """Return a `CStringSlice` to the underlying memory of the string.
 
         Returns:
@@ -1451,24 +1460,51 @@ struct String(
         if not self._has_nul_terminator():
             var ptr = self.unsafe_ptr_mut(capacity=self.byte_length() + 1)
             var len = self.byte_length()
-            ptr[len] = 0
+            ptr[unsafe_offset=len] = 0
             self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
 
         # Safety: we ensure the string is null-terminated above.
-        return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
+        return CStringSlice(
+            unsafe_from_ptr=self.unsafe_ptr().unsafe_bitcast[c_char]()
+        )
 
-    def as_bytes(self) -> Span[Byte, origin_of(self)]:
+    @__unsafe_nested_origins_read_only
+    def as_bytes(
+        ref self,
+    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a contiguous slice of the bytes owned by this string.
 
         Returns:
             A contiguous slice pointing to the bytes owned by this string.
+
+        Notes:
+            The returned span carries an interior origin derived from this
+            string, so mutating the string (which may reallocate its buffer)
+            invalidates the span at compile time.
         """
 
-        return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr(), length=self.byte_length()
+        return Span(
+            unsafe_ptr=Pointer(
+                to=self.unsafe_ptr()._get_ref_with_unsafe_interior_origin[
+                    "bytes", origin_of(self)
+                ]()
+            ),
+            length=self.byte_length(),
         )
 
-    def unsafe_as_bytes_mut(mut self) -> Span[Byte, origin_of(self)]:
+    @__unsafe_nested_origins_read_only
+    def _interior_slice(
+        ref self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        # Canonical interior-origin string-slice view of the whole string. All
+        # view-returning accessors derive from this so element/substring views
+        # are invalidated when the string is mutated.
+        return StringSlice(unsafe_from_utf8=self.as_bytes())
+
+    @__unsafe_nested_origins_read_only
+    def unsafe_as_bytes_mut(
+        mut self,
+    ) -> Span[Byte, origin_of(self)._get_owned_interior["bytes"]]:
         """Returns a mutable contiguous slice of the bytes owned by this string.
         This name has a _mut suffix so the as_bytes() method doesn't have to
         guarantee mutability.
@@ -1480,18 +1516,14 @@ struct String(
             - Any mutation of the byte slice must uphold UTF-8 validity of the
               overall string.
         """
-        return Span[Byte, origin_of(self)](
-            ptr=self.unsafe_ptr_mut(), length=self.byte_length()
+        return Span(
+            unsafe_ptr=Pointer(
+                to=self.unsafe_ptr_mut()._get_ref_with_unsafe_interior_origin[
+                    "bytes", origin_of(self)
+                ]()
+            ),
+            length=self.byte_length(),
         )
-
-    @deprecated("Use `StringSlice(str)` instead.")
-    def as_string_slice(self) -> StringSlice[origin_of(self)]:
-        """Returns a string slice of the data owned by this string.
-
-        Returns:
-            A string slice pointing to the data owned by this string.
-        """
-        return StringSlice(self)
 
     def byte_length(self) -> Int:
         """Get the string length in bytes.
@@ -1558,10 +1590,11 @@ struct String(
         """
         return StringSlice(self).count_codepoints()
 
-    def set_byte_length(mut self, new_len: Int):
+    def _set_byte_length(mut self, new_len: Int):
         """Set the byte length of the `String`.
 
-        This is an internal helper method that updates the length field.
+        This only updates the length field. The caller is responsible for
+        ensuring the buffer holds at least `new_len` initialized bytes.
 
         Args:
             new_len: The new byte length to set.
@@ -1643,7 +1676,9 @@ struct String(
         return StringSlice(self).isspace()
 
     @always_inline
-    def split(self, sep: StringSlice) -> List[StringSlice[origin_of(self)]]:
+    def split(
+        self, sep: StringSlice
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1665,12 +1700,12 @@ struct String(
         _ = StringSlice("123").split("") # ['', '1', '2', '3', '']
         ```
         """
-        return StringSlice(self).split(sep)
+        return self._interior_slice().split(sep)
 
     @always_inline
     def split(
         self, sep: StringSlice, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by a separator.
 
         Args:
@@ -1691,10 +1726,12 @@ struct String(
         _ = StringSlice("123").split("", maxsplit=1) # ['', '123']
         ```
         """
-        return StringSlice(self).split(sep, maxsplit=maxsplit)
+        return self._interior_slice().split(sep, maxsplit=maxsplit)
 
     @always_inline
-    def split(self, sep: NoneType = None) -> List[StringSlice[origin_of(self)]]:
+    def split(
+        self, sep: NoneType = None
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1718,12 +1755,12 @@ struct String(
         ).split()  # ["hello", "world"]
         ```
         """
-        return StringSlice(self).split(sep)
+        return self._interior_slice().split(sep)
 
     @always_inline
     def split(
         self, sep: NoneType = None, *, maxsplit: Int
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string by every Whitespace separator.
 
         Args:
@@ -1739,11 +1776,11 @@ struct String(
         _ = StringSlice("1     2  3").split(maxsplit=1) # ['1', '2  3']
         ```
         """
-        return StringSlice(self).split(sep, maxsplit=maxsplit)
+        return self._interior_slice().split(sep, maxsplit=maxsplit)
 
     def splitlines(
         self, keepends: Bool = False
-    ) -> List[StringSlice[origin_of(self)]]:
+    ) -> List[StringSlice[origin_of(self)._get_owned_interior["bytes"]]]:
         """Split the string at line boundaries. This corresponds to Python's
         [universal newlines:](
         https://docs.python.org/3/library/stdtypes.html#str.splitlines)
@@ -1755,7 +1792,7 @@ struct String(
         Returns:
             A List of Strings containing the input split by line boundaries.
         """
-        return StringSlice(self).splitlines(keepends)
+        return self._interior_slice().splitlines(keepends)
 
     def replace(self, old: StringSlice, new: StringSlice) -> String:
         """Return a copy of the string with all occurrences of substring `old`
@@ -1770,72 +1807,86 @@ struct String(
         """
         return StringSlice(self).replace(old, new)
 
-    def strip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with leading and trailing characters
+    def strip(
+        self, chars: ImmStringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with leading and trailing characters
         removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no leading or trailing characters.
+            A `StringSlice` into this string with no leading or trailing
+            characters.
         """
 
         return self.lstrip(chars).rstrip(chars)
 
-    def strip(self) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with leading and trailing whitespaces
+    def strip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with leading and trailing whitespaces
         removed. This only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no leading or trailing whitespaces.
+            A `StringSlice` into this string with no leading or trailing
+            whitespaces.
         """
         return self.lstrip().rstrip()
 
-    def rstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with trailing characters removed.
+    def rstrip(
+        self, chars: ImmStringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with trailing characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no trailing characters.
+            A `StringSlice` into this string with no trailing characters.
         """
 
-        return StringSlice(self).rstrip(chars)
+        return self._interior_slice().rstrip(chars)
 
-    def rstrip(self) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with trailing whitespaces removed. This
+    def rstrip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with trailing whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no trailing whitespaces.
+            A `StringSlice` into this string with no trailing whitespaces.
         """
-        return StringSlice(self).rstrip()
+        return self._interior_slice().rstrip()
 
-    def lstrip(self, chars: StringSlice) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with leading characters removed.
+    def lstrip(
+        self, chars: ImmStringSlice
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with leading characters removed.
 
         Args:
             chars: A set of characters to be removed. Defaults to whitespace.
 
         Returns:
-            A copy of the string with no leading characters.
+            A `StringSlice` into this string with no leading characters.
         """
 
-        return StringSlice(self).lstrip(chars)
+        return self._interior_slice().lstrip(chars)
 
-    def lstrip(self) -> StringSlice[origin_of(self)]:
-        """Return a copy of the string with leading whitespaces removed. This
+    def lstrip(
+        self,
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with leading whitespaces removed. This
         only takes ASCII whitespace into account:
         `" \\t\\n\\v\\f\\r\\x1c\\x1d\\x1e"`.
 
         Returns:
-            A copy of the string with no leading whitespaces.
+            A `StringSlice` into this string with no leading whitespaces.
         """
-        return StringSlice(self).lstrip()
+        return self._interior_slice().lstrip()
 
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
@@ -1908,15 +1959,17 @@ struct String(
 
     def removeprefix(
         self, prefix: StringSlice, /
-    ) -> StringSlice[origin_of(self)]:
-        """Returns a new string with the prefix removed if it was present.
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with the prefix removed if it was
+        present.
 
         Args:
             prefix: The prefix to remove from the string.
 
         Returns:
+            A `StringSlice` into this string:
             `string[byte=prefix.byte_length():]` if the string starts with
-            the prefix string, or a copy of the original string otherwise.
+            the prefix string, or the whole string otherwise.
 
         Examples:
 
@@ -1925,19 +1978,21 @@ struct String(
         print(String('BaseTestCase').removeprefix('Test')) # 'BaseTestCase'
         ```
         """
-        return StringSlice(self).removeprefix(prefix)
+        return self._interior_slice().removeprefix(prefix)
 
     def removesuffix(
         self, suffix: StringSlice, /
-    ) -> StringSlice[origin_of(self)]:
-        """Returns a new string with the suffix removed if it was present.
+    ) -> StringSlice[origin_of(self)._get_owned_interior["bytes"]]:
+        """Returns a view of the string with the suffix removed if it was
+        present.
 
         Args:
             suffix: The suffix to remove from the string.
 
         Returns:
+            A `StringSlice` into this string:
             `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the suffix string,
-            or a copy of the original string otherwise.
+            or the whole string otherwise.
 
         Examples:
 
@@ -1946,7 +2001,7 @@ struct String(
         print(String('BaseTestCase').removesuffix('Test')) # 'BaseTestCase'
         ```
         """
-        return StringSlice(self).removesuffix(suffix)
+        return self._interior_slice().removesuffix(suffix)
 
     def __int__(self) raises -> Int:
         """Parses the given string as a base-10 integer and returns that value.
@@ -2169,8 +2224,8 @@ struct String(
         self._clear_nul_terminator()
         var old_len = self.byte_length()
         if length > old_len:
-            memset(
-                self.unsafe_ptr_mut(length) + old_len,
+            unsafe_memset(
+                self.unsafe_ptr_mut(length).unsafe_offset(old_len),
                 fill_byte,
                 length - old_len,
             )
@@ -2181,7 +2236,7 @@ struct String(
                 length,
                 " which does not lie on a codepoint boundary.",
             )
-        self.set_byte_length(length)
+        self._set_byte_length(length)
 
     def resize(mut self, *, unsafe_uninit_length: Int):
         """Resizes the string to the given new size leaving any new data
@@ -2205,7 +2260,7 @@ struct String(
         )
         if unsafe_uninit_length > self.capacity():
             self.reserve(unsafe_uninit_length)
-        self.set_byte_length(unsafe_uninit_length)
+        self._set_byte_length(unsafe_uninit_length)
 
     def reserve(mut self, new_capacity: Int):
         """Reserves the requested capacity.
@@ -2225,11 +2280,11 @@ struct String(
     def _inline_string(mut self):
         var length = self.byte_length()
         var new_string = Self()
-        new_string.set_byte_length(length)
-        var dst = UnsafePointer(to=new_string).bitcast[Byte]()
+        new_string._set_byte_length(length)
+        var dst = Pointer(to=new_string).unsafe_bitcast[Byte]()
         var src = self.unsafe_ptr()
         for i in range(length):
-            dst[i] = src[i]
+            dst[unsafe_offset=i] = src[unsafe_offset=i]
         self = new_string^
 
     # This is the out-of-line implementation of reserve called when we need
@@ -2332,7 +2387,7 @@ def _unsafe_chr_ascii(c: UInt8) -> String:
         c <= _LARGEST_UNICODE_ASCII_BYTE
     ), "Character is not single byte unicode"
 
-    return String(unsafe_from_utf8=Span(ptr=UnsafePointer(to=c), length=1))
+    return String(unsafe_from_utf8=Span(unsafe_ptr=Pointer(to=c), length=1))
 
 
 def _repr_ascii(c: UInt8) -> String:
@@ -2493,7 +2548,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
     # underscores under the conditions they have a prefix
     var was_last_digit_underscore = not (real_base in (2, 8, 16) and has_prefix)
     for pos in range(start, str_len):
-        var ord_current = Int(buff[pos])
+        var ord_current = Int(buff[unsafe_offset=pos])
         if ord_current == ord_underscore:
             if was_last_digit_underscore:
                 raise Error(_str_to_base_error(base, str_slice))
@@ -2517,7 +2572,10 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
             break
         else:
             raise Error(_str_to_base_error(base, str_slice))
-        if pos + 1 < str_len and not Codepoint(buff[pos + 1]).is_posix_space():
+        if (
+            pos + 1 < str_len
+            and not Codepoint(buff[unsafe_offset=pos + 1]).is_posix_space()
+        ):
             var nextresult = result * real_base
             if nextresult < result:
                 raise Error(
@@ -2531,7 +2589,7 @@ def atol(str_slice: StringSlice, base: Int = 10) raises -> Int:
 
     if has_space_after_number:
         for pos in range(start, str_len):
-            if not Codepoint(buff[pos]).is_posix_space():
+            if not Codepoint(buff[unsafe_offset=pos]).is_posix_space():
                 raise Error(_str_to_base_error(base, str_slice))
     if is_negative:
         result = -result
@@ -2554,10 +2612,13 @@ def _trim_and_handle_sign(
     """
     var buff = str_slice.unsafe_ptr()
     var start: Int = 0
-    while start < str_len and Codepoint(buff[start]).is_posix_space():
+    while (
+        start < str_len
+        and Codepoint(buff[unsafe_offset=start]).is_posix_space()
+    ):
         start += 1
-    var p: Bool = buff[start] == UInt8(ord("+"))
-    var n: Bool = buff[start] == UInt8(ord("-"))
+    var p: Bool = buff[unsafe_offset=start] == UInt8(ord("+"))
+    var n: Bool = buff[unsafe_offset=start] == UInt8(ord("-"))
     return start + (Int(p) or Int(n)), n
 
 
@@ -2583,8 +2644,8 @@ def _handle_base_prefix(
     var start = pos
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
-        var prefix_char = chr(Int(buff[start + 1]))
-        if buff[start] == UInt8(ord("0")) and (
+        var prefix_char = chr(Int(buff[unsafe_offset=start + 1]))
+        if buff[unsafe_offset=start] == UInt8(ord("0")) and (
             (base == 2 and (prefix_char == "b" or prefix_char == "B"))
             or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
             or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
@@ -2687,7 +2748,7 @@ def _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table: InlineArray[Int, 32] = [
+    comptime lookup_table: Array[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,

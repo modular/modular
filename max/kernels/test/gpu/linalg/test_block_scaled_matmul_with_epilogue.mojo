@@ -14,9 +14,9 @@
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
-from linalg.fp4_quantization import block_scaled_matmul_with_epilogue
+from linalg.block_scaled_quantization import block_scaled_matmul_with_epilogue
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,

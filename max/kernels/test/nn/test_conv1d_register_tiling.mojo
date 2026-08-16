@@ -102,15 +102,15 @@ def conv1d_register_tiling(
 
 
 def test_conv1d_register_tiling() raises:
-    var output_stack = InlineArray[Scalar[type], Int(output_shape.product())](
+    var output_stack = Array[Scalar[type], Int(output_shape.product())](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
-    var input_stack = InlineArray[Scalar[type], Int(input_shape.product())](
+    var input_stack = Array[Scalar[type], Int(input_shape.product())](
         uninitialized=True
     )
     var input = TileTensor(input_stack, input_shape)
-    var filter_stack = InlineArray[Scalar[type], Int(filter_shape.product())](
+    var filter_stack = Array[Scalar[type], Int(filter_shape.product())](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack, filter_shape)
@@ -127,10 +127,10 @@ def test_conv1d_register_tiling() raises:
     var w = wo * stride_w - pad_left
 
     # FRSCf
-    var filter_ptr = filter.ptr + f_tile_offset * R * S * C
+    var filter_ptr = filter._storage + f_tile_offset * R * S * C
     # NHWC
-    var input_ptr = input.ptr + c_tile_offset + C * w
-    var output_ptr = output.ptr + f_tile_offset + F * (wo)
+    var input_ptr = input._storage + c_tile_offset + C * w
+    var output_ptr = output._storage + f_tile_offset + F * (wo)
 
     conv1d_register_tiling(
         output_ptr,

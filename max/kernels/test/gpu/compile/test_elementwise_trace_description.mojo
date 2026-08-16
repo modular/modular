@@ -23,8 +23,8 @@
 
 from std.sys.info import simd_width_of
 
-from std.algorithm import elementwise
-from std.gpu.host import DeviceContext
+from max.algorithm import elementwise
+from max.gpu.host import DeviceContext
 
 from std.utils.coord import Coord
 
