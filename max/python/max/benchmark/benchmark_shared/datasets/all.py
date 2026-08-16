@@ -521,10 +521,13 @@ def sample_requests(
                     "--num-frames is required for --benchmark-task text-to-video"
                 )
         elif benchmark_task == "image-to-video":
-            if not isinstance(benchmark_dataset, LocalImageBenchmarkDataset):
+            if not isinstance(
+                benchmark_dataset,
+                (LocalImageBenchmarkDataset, SyntheticPixelBenchmarkDataset),
+            ):
                 raise ValueError(
                     "image-to-video currently supports only "
-                    "--dataset-name local-image"
+                    "--dataset-name local-image or synthetic-pixel"
                 )
             if args.num_frames is None:
                 raise ValueError(

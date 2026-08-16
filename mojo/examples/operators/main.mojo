@@ -17,16 +17,16 @@ from my_complex import Complex
 
 def main() raises:
     # Examples of creating Complex instances
-    c1 = Complex(-1.2, 6.5)
+    var c1 = Complex(-1.2, 6.5)
     print("c1 =", repr(c1))
 
-    c2 = Complex(3.14159)
+    var c2 = Complex(3.14159)
     print("c2 =", repr(c2))
 
     print()
 
     # Examples of using Complex values with String(), repr(), and print()
-    c3 = Complex(3.14159, -2.71828)
+    var c3 = Complex(3.14159, -2.71828)
     print("c3 =", repr(c3))
     var msg = String("The value is: ", c3)
     print(msg)
@@ -57,7 +57,7 @@ def main() raises:
     print()
 
     # Examples of binary arithmetic operators mixing Complex and Float64 values
-    f1 = 2.5
+    var f1 = 2.5
     print("c1 + f1 =", c1 + f1)
     print("f1 + c1 =", f1 + c1)
     print("c1 - f1 =", c1 - f1)
@@ -70,7 +70,7 @@ def main() raises:
     print()
 
     # Examples of in-place arithmetic operators
-    c4 = Complex(-1, -1)
+    var c4 = Complex(-1, -1)
     print("c4 =", c4)
     c4 += Complex(0.5, -0.5)
     print("c4 += Complex(0.5, -0.5) =>", c4)
@@ -94,7 +94,7 @@ def main() raises:
     # Examples of equality and inequality comparison operators
     c1 = Complex(-1.2, 6.5)
     c3 = Complex(3.14159, -2.71828)
-    c5 = Complex(-1.2, 6.5)
+    var c5 = Complex(-1.2, 6.5)
 
     if c1 == c5:
         print("c1 is equal to c5")

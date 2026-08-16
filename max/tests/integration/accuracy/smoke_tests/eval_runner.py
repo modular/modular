@@ -67,6 +67,10 @@ _COMPLETION_TOKEN_METRICS = (
     "sglang:generation_tokens_total",  # sglang
 )
 
+_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
+    "maxserve_spec_decode_avg_acceptance_length"
+)
+
 
 def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
@@ -179,11 +183,13 @@ def call_eval(
             "deepseek-v3",
             "gemma-4",
             "gpt-oss",
+            "inkling",
             "internvl3_5",
             "qwen3",
             "kimi-k2",
             "minimax-m2",
             "minimax-m3",
+            "nemotron",
             "step-3.5",
             "glm-5",
         )
@@ -235,6 +241,11 @@ def call_eval(
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
+        spec_decode_totals_before = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
+        )
         try:
             check_call(args, timeout=eval_timeout)
         except TimeoutExpired:
@@ -245,12 +256,22 @@ def call_eval(
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
+        spec_decode_totals_after = (
+            get_spec_decode_acceptance_totals(metrics_url)
+            if metrics_url
+            else None
+        )
 
         results, samples = parse_eval_results(Path(tempdir))
         results["num_tokens_generated"] = (
             tokens_after - tokens_before
             if tokens_before is not None and tokens_after is not None
             else None
+        )
+        results["spec_decode_acceptance_length"] = (
+            _spec_decode_acceptance_length_delta(
+                spec_decode_totals_before, spec_decode_totals_after
+            )
         )
         return results, samples
 
@@ -281,6 +302,52 @@ def get_num_tokens_generated(metrics_url: str) -> int | None:
     return None
 
 
+def get_spec_decode_acceptance_totals(
+    metrics_url: str,
+) -> tuple[float, float] | None:
+    """Reads the cumulative (sum, count) of the spec-decode acceptance-length
+    histogram from Prometheus."""
+    try:
+        r = requests.get(metrics_url, timeout=(5, 30))
+        r.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    total_sum = 0.0
+    total_count = 0.0
+    for line in r.text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        # A sample line is ``name{labels} value`` or ``name value``.
+        name = line.split("{", 1)[0].split(" ", 1)[0]
+        if not name.startswith(_SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC):
+            continue
+        # Skips the ``_bucket`` rows of the same family.
+        if name.endswith("_sum"):
+            total_sum += float(line.rsplit(" ", 1)[1])
+        elif name.endswith("_count"):
+            total_count += float(line.rsplit(" ", 1)[1])
+
+    return total_sum, total_count
+
+
+def _spec_decode_acceptance_length_delta(
+    before: tuple[float, float] | None,
+    after: tuple[float, float] | None,
+) -> float | None:
+    """Computes the windowed acceptance length from two cumulative
+    (sum, count) snapshots, or None if either snapshot is missing or the
+    count didn't advance (guards the division)."""
+    if before is None or after is None:
+        return None
+    sum_before, count_before = before
+    sum_after, count_after = after
+    count_delta = count_after - count_before
+    if count_delta <= 0:
+        return None
+    return (sum_after - sum_before) / count_delta
+
+
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:
     samples = []
     for line in open(next(loc.glob("**/samples*.jsonl")), encoding="utf-8"):
@@ -303,6 +370,7 @@ class EvalSummary:
     total_evaluation_time_seconds: float
     task_hash: str
     num_tokens_generated: int | None = None
+    spec_decode_acceptance_length: float | None = None
 
 
 def build_eval_summary(
@@ -347,6 +415,9 @@ def build_eval_summary(
                 total_evaluation_time_seconds=total_secs,
                 task_hash=result["task_hashes"][task],
                 num_tokens_generated=result.get("num_tokens_generated"),
+                spec_decode_acceptance_length=result.get(
+                    "spec_decode_acceptance_length"
+                ),
             )
         )
 

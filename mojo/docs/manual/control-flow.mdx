@@ -13,7 +13,7 @@ conditionally execute an indented code block if a given
 [boolean](/docs/manual/types/#booleans) expression evaluates to `True`.
 
 ```mojo
-temp_celsius = Float64(25)
+var temp_celsius = Float64(25)
 if temp_celsius > 20:
     print("It is warm.")
     print("The temperature is", temp_celsius * 9 / 5 + 32, "Fahrenheit." )
@@ -28,7 +28,7 @@ You can write the entire `if` statement as a single line if all you need to
 execute conditionally is a single, short statement.
 
 ```mojo
-temp_celsius = 22
+var temp_celsius = 22
 if temp_celsius < 15: print("It is cool.") # Skipped because condition is False
 if temp_celsius > 20: print("It is warm.")
 ```
@@ -47,7 +47,7 @@ Additionally, an `if` statement can include an optional `else` clause providing
 a code block to execute if all conditions evaluate to `False`.
 
 ```mojo
-temp_celsius = 25
+var temp_celsius = 25
 if temp_celsius <= 0:
     print("It is freezing.")
 elif temp_celsius < 20:
@@ -120,8 +120,8 @@ as a concise way to assign one of two different values to a variable, based on a
 boolean condition.
 
 ```mojo
-temp_celsius = 15
-forecast = "warm" if temp_celsius > 20 else "cool"
+var temp_celsius = 15
+var forecast = "warm" if temp_celsius > 20 else "cool"
 print("The forecast for today is", forecast)
 ```
 
@@ -132,6 +132,7 @@ The forecast for today is cool
 The alternative, written as a multi-line `if` statement, is more verbose.
 
 ```mojo
+var forecast: String
 if temp_celsius > 20:
     forecast = "warm"
 else:
@@ -150,8 +151,8 @@ expression evaluates to `True`. For example, the following loop prints values
 from the Fibonacci series that are less than 50.
 
 ```mojo
-fib_prev = 0
-fib_curr = 1
+var fib_prev = 0
+var fib_curr = 1
 
 print(fib_prev, end="")
 while fib_curr < 50:
@@ -167,7 +168,7 @@ A `continue` statement skips execution of the rest of the code block and
 resumes with the loop test expression.
 
 ```mojo
-n = 0
+var n = 0
 while n < 5:
     n += 1
     if n == 3:
@@ -182,7 +183,7 @@ while n < 5:
 A `break` statement terminates execution of the loop.
 
 ```mojo
-n = 0
+var n = 0
 while n < 5:
     n += 1
     if n == 3:
@@ -199,7 +200,7 @@ clause executes when the loop's boolean condition evaluates to `False`, even if
 it occurs the first time tested.
 
 ```mojo
-n = 5
+var n = 5
 
 while n < 4:
     print(n)
@@ -220,7 +221,7 @@ exits the `while` loop.
 :::
 
 ```mojo
-n = 0
+var n = 0
 while n < 5:
     n += 1
     if n == 3:
@@ -253,7 +254,7 @@ The following shows an example of iterating over a Mojo
 [`List`](/docs/std/collections/list/List/).
 
 ```mojo
-states = ["California", "Hawaii", "Oregon"]
+var states = ["California", "Hawaii", "Oregon"]
 for state in states:
     print(state)
 ```
@@ -270,7 +271,7 @@ The same technique works for iterating over a Mojo
 ```mojo
 from std.collections import Set
 
-values = {42, 0}
+var values = {42, 0}
 for item in values:
     print(item)
 ```
@@ -429,7 +430,7 @@ terminates the `for` loop.
 ```mojo
 from std.collections import List
 
-animals = ["cat", "aardvark", "hippopotamus", "dog"]
+var animals = ["cat", "aardvark", "hippopotamus", "dog"]
 for animal in animals:
     if animal == "dog":
         print("Found a dog")
@@ -457,7 +458,7 @@ from std.python import Python
 
 def main() raises:
     # Create a mixed-type Python list
-    py_list = Python.list(42, "cat", 3.14159)
+    var py_list = Python.list(42, "cat", 3.14159)
     for py_obj in py_list:  # Each element is of type "PythonObject"
         print(py_obj)
 ```
@@ -476,7 +477,7 @@ from std.python import Python
 
 def main() raises:
     # Create a mixed-type Python dictionary
-    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    var py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_key in py_dict:  # Each key is of type "PythonObject"
         print(py_key, py_dict[py_key])
 ```
@@ -496,7 +497,7 @@ from std.python import Python
 
 def main() raises:
     # Create a mixed-type Python dictionary
-    py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
+    var py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_tuple in py_dict.items():  # Each 2-tuple is of type "PythonObject"
         print(py_tuple[0], py_tuple[1])
 ```

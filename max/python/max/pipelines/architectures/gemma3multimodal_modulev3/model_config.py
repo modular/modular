@@ -14,27 +14,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.model_config import (
     Gemma3Config,
 )
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     MAXModelConfig,
     PipelineConfig,
     parse_quant_config,
+)
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
 )
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
 )
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -122,6 +131,12 @@ class Gemma3ForConditionalGenerationConfig(
     extracted from a HuggingFace configuration object's text config.
     """
 
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float8_e4m3fn",
+    }
+
     boi_token_index: int
     """The begin-of-image token index to wrap the image prompt"""
 
@@ -168,6 +183,9 @@ class Gemma3ForConditionalGenerationConfig(
 
     quant_config: QuantConfig | None = None
     """Scaled quantization configuration."""
+
+    quantization_encoding: SupportedEncoding | None = None
+    """The resolved quantization encoding the model runs with."""
 
     head_dim: int = 256
     """The attention head dimension."""
@@ -229,21 +247,22 @@ class Gemma3ForConditionalGenerationConfig(
         Returns:
             A Gemma3ForConditionalGenerationConfig instance ready for finalization.
         """
-        _weights_format = weights_format(pipeline_config.model.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == "normal"
+        interleaved_rope_weights = _interleaved_rope_weights(
+            pipeline_config.model
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
         ]
 
-        quantization_encoding = pipeline_config.model.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
+        )
         dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding,
+            pipeline_config.model.kv_cache.kv_cache_format,
+        )
 
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -290,6 +309,7 @@ class Gemma3ForConditionalGenerationConfig(
             eoi_token_index=huggingface_config.eoi_token_index,
             image_token_index=huggingface_config.image_token_index,
             initializer_range=0.0,
+            quantization_encoding=quantization_encoding,
         )
 
     def finalize(

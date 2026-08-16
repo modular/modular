@@ -15,15 +15,16 @@ from std.sys import simd_width_of, size_of
 from std.os import abort
 
 from std.memory import (
-    destroy_n,
-    memcmp,
+    unsafe_memcmp,
     unsafe_memcpy,
-    memmove,
-    memset,
-    memset_zero,
-    uninit_copy_n,
-    uninit_move_n,
+    unsafe_memmove,
+    unsafe_memset,
+    unsafe_memset_zero,
+    unsafe_destroy_n,
+    unsafe_uninit_copy_n,
+    unsafe_uninit_move_n,
     forget_deinit,
+    dealloc,
 )
 from std.testing import TestSuite
 from std.testing import (
@@ -56,10 +57,9 @@ def test_memcpy() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(0, 0)
 
-    var src = UnsafePointer(to=pair1)
-    var dest = UnsafePointer(to=pair2)
+    var src = Pointer(to=pair1)
+    var dest = Pointer(to=pair2)
 
-    # UnsafePointer test
     pair2.lo = 0
     pair2.hi = 0
     unsafe_memcpy(dest=dest, src=src, count=1)
@@ -67,23 +67,22 @@ def test_memcpy() raises:
     assert_equal(pair2.lo, 1)
     assert_equal(pair2.hi, 2)
 
-    @parameter
     def _test_memcpy_buf[size: Int]() raises:
-        var buf = alloc[UInt8](size * 2)
-        memset_zero(buf + size, size)
-        var src = alloc[UInt8](size * 2)
-        var dst = alloc[UInt8](size * 2)
+        var buf_allocation = alloc[UInt8]({count = size * 2}).into_managed()
+        var buf = buf_allocation.unsafe_ptr()
+        unsafe_memset_zero(buf.unsafe_offset(size), size)
+        var src_allocation = alloc[UInt8]({count = size * 2}).into_managed()
+        var src = src_allocation.unsafe_ptr()
+        var dst_allocation = alloc[UInt8]({count = size * 2}).into_managed()
+        var dst = dst_allocation.unsafe_ptr()
         for i in range(size * 2):
-            buf[i] = src[i] = 2
-            dst[i] = 0
+            buf[unsafe_offset=i] = src[unsafe_offset=i] = 2
+            dst[unsafe_offset=i] = 0
 
         unsafe_memcpy(dest=dst, src=src, count=size)
-        var err = memcmp(dst, buf, size)
+        var err = unsafe_memcmp(dst, buf, size)
 
         assert_equal(err, 0)
-        buf.free()
-        src.free()
-        dst.free()
 
     _test_memcpy_buf[1]()
     _test_memcpy_buf[4]()
@@ -98,36 +97,35 @@ def test_memcpy() raises:
 
 
 def test_memcpy_dtype() raises:
-    var a = alloc[Int32](4)
-    var b = alloc[Int32](4)
+    var a_allocation = alloc[Int32]({count = 4}).into_managed()
+    var a = a_allocation.unsafe_ptr()
+    var b_allocation = alloc[Int32]({count = 4}).into_managed()
+    var b = b_allocation.unsafe_ptr()
     for i in range(4):
-        a[i] = Int32(i)
-        b[i] = -1
+        a[unsafe_offset=i] = Int32(i)
+        b[unsafe_offset=i] = -1
 
-    assert_equal(b[0], -1)
-    assert_equal(b[1], -1)
-    assert_equal(b[2], -1)
-    assert_equal(b[3], -1)
+    assert_equal(b[unsafe_offset=0], -1)
+    assert_equal(b[unsafe_offset=1], -1)
+    assert_equal(b[unsafe_offset=2], -1)
+    assert_equal(b[unsafe_offset=3], -1)
 
     unsafe_memcpy(dest=b, src=a, count=4)
 
-    assert_equal(b[0], 0)
-    assert_equal(b[1], 1)
-    assert_equal(b[2], 2)
-    assert_equal(b[3], 3)
-
-    a.free()
-    b.free()
+    assert_equal(b[unsafe_offset=0], 0)
+    assert_equal(b[unsafe_offset=1], 1)
+    assert_equal(b[unsafe_offset=2], 2)
+    assert_equal(b[unsafe_offset=3], 3)
 
 
 def test_memcmp() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(1, 2)
 
-    var ptr1 = UnsafePointer(to=pair1)
-    var ptr2 = UnsafePointer(to=pair2)
+    var ptr1 = Pointer(to=pair1)
+    var ptr2 = Pointer(to=pair2)
 
-    var errors = memcmp(ptr1, ptr2, 1)
+    var errors = unsafe_memcmp(ptr1, ptr2, 1)
 
     assert_equal(errors, 0)
     _ = pair1
@@ -147,9 +145,9 @@ def test_memcmp_non_multiple_of_int32() raises:
 
     comptime assert size_of[SixByteStruct]() == 6
 
-    var ptr1 = UnsafePointer(to=triple1)
-    var ptr2 = UnsafePointer(to=triple2)
-    var errors = memcmp(ptr1, ptr2, 1)
+    var ptr1 = Pointer(to=triple1)
+    var ptr2 = Pointer(to=triple2)
+    var errors = unsafe_memcmp(ptr1, ptr2, 1)
     assert_equal(errors, -1)
 
     _ = triple1
@@ -157,116 +155,111 @@ def test_memcmp_non_multiple_of_int32() raises:
 
 
 def test_memcmp_overflow() raises:
-    p1 = alloc[Byte](1)
-    p2 = alloc[Byte](1)
-    p1.store(-120)
-    p2.store(120)
+    var p1_allocation = alloc[Byte]({count = 1}).into_managed()
+    var p1 = p1_allocation.unsafe_ptr()
+    var p2_allocation = alloc[Byte]({count = 1}).into_managed()
+    var p2 = p2_allocation.unsafe_ptr()
+    p1.unsafe_store(-120)
+    p2.unsafe_store(120)
 
-    c = memcmp(p1, p2, 1)
+    var c = unsafe_memcmp(p1, p2, 1)
     assert_equal(c, 1)
 
-    c = memcmp(p2, p1, 1)
+    c = unsafe_memcmp(p2, p1, 1)
     assert_equal(c, -1)
-
-    p1.free()
-    p2.free()
 
 
 def test_memcmp_simd() raises:
     var length = simd_width_of[DType.int8]() + 10
 
-    var p1 = alloc[Int8](length)
-    var p2 = alloc[Int8](length)
-    memset_zero(p1, length)
-    memset_zero(p2, length)
-    p1.store(120)
-    p1.store(1, 100)
-    p2.store(120)
-    p2.store(1, 90)
+    var p1_allocation = alloc[Int8]({count = length}).into_managed()
+    var p1 = p1_allocation.unsafe_ptr()
+    var p2_allocation = alloc[Int8]({count = length}).into_managed()
+    var p2 = p2_allocation.unsafe_ptr()
+    unsafe_memset_zero(p1, length)
+    unsafe_memset_zero(p2, length)
+    p1.unsafe_store(120)
+    p1.unsafe_store(1, 100)
+    p2.unsafe_store(120)
+    p2.unsafe_store(1, 90)
 
-    var c = memcmp(p1, p2, length)
+    var c = unsafe_memcmp(p1, p2, length)
     assert_equal(c, 1, "[120, 100, 0, ...] is bigger than [120, 90, 0, ...]")
 
-    c = memcmp(p2, p1, length)
+    c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[120, 90, 0, ...] is smaller than [120, 100, 0, ...]")
 
-    memset_zero(p1, length)
-    memset_zero(p2, length)
+    unsafe_memset_zero(p1, length)
+    unsafe_memset_zero(p2, length)
 
-    p1.store(length - 2, 120)
-    p1.store(length - 1, 100)
-    p2.store(length - 2, 120)
-    p2.store(length - 1, 90)
+    p1.unsafe_store(length - 2, 120)
+    p1.unsafe_store(length - 1, 100)
+    p2.unsafe_store(length - 2, 120)
+    p2.unsafe_store(length - 1, 90)
 
-    c = memcmp(p1, p2, length)
+    c = unsafe_memcmp(p1, p2, length)
     assert_equal(c, 1, "[..., 0, 120, 100] is bigger than [..., 0, 120, 90]")
 
-    c = memcmp(p2, p1, length)
+    c = unsafe_memcmp(p2, p1, length)
     assert_equal(c, -1, "[..., 0, 120, 90] is smaller than [..., 120, 100]")
-
-    p1.free()
-    p2.free()
 
 
 def _test_memcmp_extensive[
     dtype: DType, extremes: StaticString = ""
 ](count: Int) raises:
-    var ptr1 = alloc[Scalar[dtype]](count)
-    var ptr2 = alloc[Scalar[dtype]](count)
-
-    var dptr1 = alloc[Scalar[dtype]](count)
-    var dptr2 = alloc[Scalar[dtype]](count)
-
+    var ptr1_allocation = alloc[Scalar[dtype]]({count = count}).into_managed()
+    var ptr1 = ptr1_allocation.unsafe_ptr()
+    var ptr2_allocation = alloc[Scalar[dtype]]({count = count}).into_managed()
+    var ptr2 = ptr2_allocation.unsafe_ptr()
+    var dptr1_allocation = alloc[Scalar[dtype]]({count = count}).into_managed()
+    var dptr1 = dptr1_allocation.unsafe_ptr()
+    var dptr2_allocation = alloc[Scalar[dtype]]({count = count}).into_managed()
+    var dptr2 = dptr2_allocation.unsafe_ptr()
     for i in range(count):
-        ptr1[i] = Scalar[dtype](i)
-        dptr1[i] = Scalar[dtype](i)
+        ptr1[unsafe_offset=i] = Scalar[dtype](i)
+        dptr1[unsafe_offset=i] = Scalar[dtype](i)
 
         comptime if extremes == "":
-            ptr2[i] = Scalar[dtype](i + 1)
-            dptr2[i] = Scalar[dtype](i + 1)
+            ptr2[unsafe_offset=i] = Scalar[dtype](i + 1)
+            dptr2[unsafe_offset=i] = Scalar[dtype](i + 1)
         elif extremes == "nan":
-            ptr2[i] = nan[dtype]()
-            dptr2[i] = nan[dtype]()
+            ptr2[unsafe_offset=i] = nan[dtype]()
+            dptr2[unsafe_offset=i] = nan[dtype]()
         elif extremes == "inf":
-            ptr2[i] = Scalar[dtype].MAX
-            dptr2[i] = Scalar[dtype].MAX
+            ptr2[unsafe_offset=i] = Scalar[dtype].MAX
+            dptr2[unsafe_offset=i] = Scalar[dtype].MAX
 
     assert_equal(
-        memcmp(ptr1, ptr1, count),
+        unsafe_memcmp(ptr1, ptr1, count),
         0,
         String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
-        memcmp(ptr1, ptr2, count),
+        unsafe_memcmp(ptr1, ptr2, count),
         -1,
         String("for dtype=", dtype, ";count=", count),
     )
     assert_equal(
-        memcmp(ptr2, ptr1, count),
+        unsafe_memcmp(ptr2, ptr1, count),
         1,
         String("for dtype=", dtype, ";count=", count),
     )
 
     assert_equal(
-        memcmp(dptr1, dptr1, count),
+        unsafe_memcmp(dptr1, dptr1, count),
         0,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
-        memcmp(dptr1, dptr2, count),
+        unsafe_memcmp(dptr1, dptr2, count),
         -1,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
     assert_equal(
-        memcmp(dptr2, dptr1, count),
+        unsafe_memcmp(dptr2, dptr1, count),
         1,
         String("for dtype=", dtype, ";extremes=", extremes, ";count=", count),
     )
-
-    ptr1.free()
-    ptr2.free()
-    dptr1.free()
-    dptr2.free()
 
 
 def test_memcmp_extensive() raises:
@@ -304,30 +297,28 @@ def test_memcmp_simd_boundary() raises:
 
     # Test 1: Difference exactly at SIMD boundary
     comptime size = simd_width + 1
-    var ptr1 = alloc[Int8](size)
-    var ptr2 = alloc[Int8](size)
-
+    var ptr1_allocation = alloc[Int8]({count = size}).into_managed()
+    var ptr1 = ptr1_allocation.unsafe_ptr()
+    var ptr2_allocation = alloc[Int8]({count = size}).into_managed()
+    var ptr2 = ptr2_allocation.unsafe_ptr()
     # Fill with identical data
     for i in range(size):
-        ptr1[i] = 42
-        ptr2[i] = 42
+        ptr1[unsafe_offset=i] = 42
+        ptr2[unsafe_offset=i] = 42
 
     # Make difference at SIMD boundary
-    ptr2[simd_width] = 43
+    ptr2[unsafe_offset=simd_width] = 43
 
-    var result = memcmp(ptr1, ptr2, size)
+    var result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(result, -1, "Should detect difference at SIMD boundary")
 
     # Test opposite direction
-    ptr1[simd_width] = 44
-    ptr2[simd_width] = 42
-    result = memcmp(ptr1, ptr2, size)
+    ptr1[unsafe_offset=simd_width] = 44
+    ptr2[unsafe_offset=simd_width] = 42
+    result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(
         result, 1, "Should detect difference at SIMD boundary (reverse)"
     )
-
-    ptr1.free()
-    ptr2.free()
 
 
 def test_memcmp_simd_overlap() raises:
@@ -344,25 +335,23 @@ def test_memcmp_simd_overlap() raises:
 
     for i in range(len(test_sizes)):
         var size = test_sizes[i]
-        var ptr1 = alloc[Int8](size)
-        var ptr2 = alloc[Int8](size)
-
+        var ptr1_allocation = alloc[Int8]({count = size}).into_managed()
+        var ptr1 = ptr1_allocation.unsafe_ptr()
+        var ptr2_allocation = alloc[Int8]({count = size}).into_managed()
+        var ptr2 = ptr2_allocation.unsafe_ptr()
         # Fill with identical data
         for j in range(size):
-            ptr1[j] = 42
-            ptr2[j] = 42
+            ptr1[unsafe_offset=j] = 42
+            ptr2[unsafe_offset=j] = 42
 
         # Should be equal
-        var result = memcmp(ptr1, ptr2, size)
+        var result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(result, 0, "Overlapping regions should be equal")
 
         # Make difference in overlap region
-        ptr2[size - 1] = ptr2[size - 1] + 1
-        result = memcmp(ptr1, ptr2, size)
+        ptr2[unsafe_offset=size - 1] = ptr2[unsafe_offset=size - 1] + 1
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(result, -1, "Should detect difference in overlap region")
-
-        ptr1.free()
-        ptr2.free()
 
 
 def test_memcmp_simd_index_finding() raises:
@@ -371,86 +360,83 @@ def test_memcmp_simd_index_finding() raises:
 
     # Test difference at each possible SIMD lane position
     for lane in range(simd_width):
-        var ptr1 = alloc[Int8](simd_width)
-        var ptr2 = alloc[Int8](simd_width)
-
+        var ptr1_allocation = alloc[Int8]({count = simd_width}).into_managed()
+        var ptr1 = ptr1_allocation.unsafe_ptr()
+        var ptr2_allocation = alloc[Int8]({count = simd_width}).into_managed()
+        var ptr2 = ptr2_allocation.unsafe_ptr()
         # Fill with identical data
         for i in range(simd_width):
-            ptr1[i] = 100
-            ptr2[i] = 100
+            ptr1[unsafe_offset=i] = 100
+            ptr2[unsafe_offset=i] = 100
 
         # Create difference at specific lane
-        ptr2[lane] = 101
+        ptr2[unsafe_offset=lane] = 101
 
-        var result = memcmp(ptr1, ptr2, simd_width)
+        var result = unsafe_memcmp(ptr1, ptr2, simd_width)
         assert_equal(
             result, -1, "Should detect difference at lane " + String(lane)
         )
 
         # Test opposite direction
-        ptr1[lane] = 102
-        ptr2[lane] = 100
-        result = memcmp(ptr1, ptr2, simd_width)
+        ptr1[unsafe_offset=lane] = 102
+        ptr2[unsafe_offset=lane] = 100
+        result = unsafe_memcmp(ptr1, ptr2, simd_width)
         assert_equal(
             result,
             1,
             "Should detect difference at lane " + String(lane) + " (reverse)",
         )
 
-        ptr1.free()
-        ptr2.free()
-
 
 def test_memcmp_simd_signed_overflow() raises:
     """Test signed byte overflow cases in SIMD memcmp."""
-    var ptr1 = alloc[Int8](4)
-    var ptr2 = alloc[Int8](4)
-
+    var ptr1_allocation = alloc[Int8]({count = 4}).into_managed()
+    var ptr1 = ptr1_allocation.unsafe_ptr()
+    var ptr2_allocation = alloc[Int8]({count = 4}).into_managed()
+    var ptr2 = ptr2_allocation.unsafe_ptr()
     # Test extreme signed values
-    ptr1[0] = -128  # Most negative
-    ptr1[1] = -1
-    ptr1[2] = 0
-    ptr1[3] = 127  # Most positive
+    ptr1[unsafe_offset=0] = -128  # Most negative
+    ptr1[unsafe_offset=1] = -1
+    ptr1[unsafe_offset=2] = 0
+    ptr1[unsafe_offset=3] = 127  # Most positive
 
-    ptr2[0] = -128
-    ptr2[1] = -1
-    ptr2[2] = 0
-    ptr2[3] = 127
+    ptr2[unsafe_offset=0] = -128
+    ptr2[unsafe_offset=1] = -1
+    ptr2[unsafe_offset=2] = 0
+    ptr2[unsafe_offset=3] = 127
 
-    var result = memcmp(ptr1, ptr2, 4)
+    var result = unsafe_memcmp(ptr1, ptr2, 4)
     assert_equal(result, 0, "Identical extreme values should be equal")
 
     # Test signed comparison edge cases
-    ptr1[0] = -1  # 0xFF as unsigned
-    ptr2[0] = 1  # 0x01 as unsigned
+    ptr1[unsafe_offset=0] = -1  # 0xFF as unsigned
+    ptr2[unsafe_offset=0] = 1  # 0x01 as unsigned
 
-    result = memcmp(ptr1, ptr2, 4)
+    result = unsafe_memcmp(ptr1, ptr2, 4)
     assert_equal(
         result, 1, "0xFF should be greater than 0x01 in unsigned comparison"
     )
-
-    ptr1.free()
-    ptr2.free()
 
 
 def test_memcmp_simd_alignment() raises:
     """Test alignment-related bugs in SIMD memcmp."""
     var size = 64
-    var large_ptr1 = alloc[Int8](size)
-    var large_ptr2 = alloc[Int8](size)
-
+    var large_ptr1_allocation = alloc[Int8]({count = size}).into_managed()
+    var large_ptr1 = large_ptr1_allocation.unsafe_ptr()
+    var large_ptr2_allocation = alloc[Int8]({count = size}).into_managed()
+    var large_ptr2 = large_ptr2_allocation.unsafe_ptr()
     # Fill with pattern
     for i in range(size):
-        large_ptr1[i] = Int8(i % 256)
-        large_ptr2[i] = Int8(i % 256)
+        large_ptr1[unsafe_offset=i] = Int8(i % 256)
+        large_ptr2[unsafe_offset=i] = Int8(i % 256)
 
     # Test various unaligned starting positions
     for offset in range(1, 8):
-        var ptr1 = large_ptr1 + offset
-        var ptr2 = large_ptr2 + offset
+        var ptr1 = large_ptr1.unsafe_offset(offset)
+        var ptr2 = large_ptr2.unsafe_offset(offset)
         var test_size = size - offset - 8
 
-        var result = memcmp(ptr1, ptr2, test_size)
+        var result = unsafe_memcmp(ptr1, ptr2, test_size)
         assert_equal(
             result,
             0,
@@ -458,17 +444,18 @@ def test_memcmp_simd_alignment() raises:
         )
 
         # Create difference and test
-        ptr2[test_size - 1] = ptr2[test_size - 1] + 1
-        result = memcmp(ptr1, ptr2, test_size)
+        ptr2[unsafe_offset=test_size - 1] = (
+            ptr2[unsafe_offset=test_size - 1] + 1
+        )
+        result = unsafe_memcmp(ptr1, ptr2, test_size)
         assert_equal(
             result, -1, "Should detect difference with unaligned access"
         )
 
         # Restore for next iteration
-        ptr2[test_size - 1] = ptr2[test_size - 1] - 1
-
-    large_ptr1.free()
-    large_ptr2.free()
+        ptr2[unsafe_offset=test_size - 1] = (
+            ptr2[unsafe_offset=test_size - 1] - 1
+        )
 
 
 def test_memcmp_simd_width_edge_cases() raises:
@@ -490,15 +477,16 @@ def test_memcmp_simd_width_edge_cases() raises:
 
     for i in range(len(critical_sizes)):
         var size = critical_sizes[i]
-        var ptr1 = alloc[Int8](size)
-        var ptr2 = alloc[Int8](size)
-
+        var ptr1_allocation = alloc[Int8]({count = size}).into_managed()
+        var ptr1 = ptr1_allocation.unsafe_ptr()
+        var ptr2_allocation = alloc[Int8]({count = size}).into_managed()
+        var ptr2 = ptr2_allocation.unsafe_ptr()
         # Fill with identical sequential data
         for j in range(size):
-            ptr1[j] = Int8(j % 256)
-            ptr2[j] = Int8(j % 256)
+            ptr1[unsafe_offset=j] = Int8(j % 256)
+            ptr2[unsafe_offset=j] = Int8(j % 256)
 
-        var result = memcmp(ptr1, ptr2, size)
+        var result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             0,
@@ -507,29 +495,27 @@ def test_memcmp_simd_width_edge_cases() raises:
 
         # Test difference at end
         if size > 0:
-            ptr2[size - 1] = ptr2[size - 1] + 1
-            result = memcmp(ptr1, ptr2, size)
+            ptr2[unsafe_offset=size - 1] = ptr2[unsafe_offset=size - 1] + 1
+            result = unsafe_memcmp(ptr1, ptr2, size)
             assert_equal(
                 result,
                 -1,
                 "Should detect end difference for size " + String(size),
             )
 
-        ptr1.free()
-        ptr2.free()
-
 
 def test_memcmp_simd_zero_bytes() raises:
     """Test handling of zero bytes in SIMD memcmp."""
     comptime size = simd_width_of[DType.int8]() * 2
-    var ptr1 = alloc[Int8](size)
-    var ptr2 = alloc[Int8](size)
-
+    var ptr1_allocation = alloc[Int8]({count = size}).into_managed()
+    var ptr1 = ptr1_allocation.unsafe_ptr()
+    var ptr2_allocation = alloc[Int8]({count = size}).into_managed()
+    var ptr2 = ptr2_allocation.unsafe_ptr()
     # Fill with zeros
-    memset_zero(ptr1, size)
-    memset_zero(ptr2, size)
+    unsafe_memset_zero(ptr1, size)
+    unsafe_memset_zero(ptr2, size)
 
-    var result = memcmp(ptr1, ptr2, size)
+    var result = unsafe_memcmp(ptr1, ptr2, size)
     assert_equal(result, 0, "Zero-filled buffers should be equal")
 
     # Test zero vs non-zero at different positions
@@ -539,12 +525,12 @@ def test_memcmp_simd_zero_bytes() raises:
         var pos = test_positions[i]
 
         # Reset to zeros
-        memset_zero(ptr1, size)
-        memset_zero(ptr2, size)
+        unsafe_memset_zero(ptr1, size)
+        unsafe_memset_zero(ptr2, size)
 
         # Create difference at position
-        ptr2[pos] = 1
-        result = memcmp(ptr1, ptr2, size)
+        ptr2[unsafe_offset=pos] = 1
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             -1,
@@ -552,104 +538,106 @@ def test_memcmp_simd_zero_bytes() raises:
         )
 
         # Test opposite
-        ptr1[pos] = 2
-        ptr2[pos] = 0
-        result = memcmp(ptr1, ptr2, size)
+        ptr1[unsafe_offset=pos] = 2
+        ptr2[unsafe_offset=pos] = 0
+        result = unsafe_memcmp(ptr1, ptr2, size)
         assert_equal(
             result,
             1,
             "Should detect non-zero vs zero at position " + String(pos),
         )
 
-    ptr1.free()
-    ptr2.free()
-
 
 def test_memset() raises:
     var pair = Pair(1, 2)
 
-    var ptr = UnsafePointer(to=pair)
-    memset_zero(ptr, 1)
+    var ptr = Pointer(to=pair)
+    unsafe_memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
     pair.lo = 1
     pair.hi = 2
-    memset_zero(ptr, 1)
+    unsafe_memset_zero(ptr, 1)
 
     assert_equal(pair.lo, 0)
     assert_equal(pair.hi, 0)
 
-    var buf0 = alloc[Int32](2)
-    memset(buf0, 1, 2)
-    assert_equal(buf0.load(0), 16843009)
-    memset(buf0, -1, 2)
-    assert_equal(buf0.load(0), -1)
-    buf0.free()
+    var buf0_allocation = alloc[Int32]({count = 2}).into_managed()
+    var buf0 = buf0_allocation.unsafe_ptr()
+    unsafe_memset(buf0, 1, 2)
+    assert_equal(buf0.unsafe_load(0), 16843009)
+    unsafe_memset(buf0, -1, 2)
+    assert_equal(buf0.unsafe_load(0), -1)
 
-    var buf1 = alloc[Int8](2)
-    memset(buf1, 5, 2)
-    assert_equal(buf1.load(0), 5)
-    buf1.free()
+    var buf1_allocation = alloc[Int8]({count = 2}).into_managed()
+    var buf1 = buf1_allocation.unsafe_ptr()
+    unsafe_memset(buf1, 5, 2)
+    assert_equal(buf1.unsafe_load(0), 5)
 
-    var buf3 = alloc[Int32](2)
-    memset(buf3, 1, 2)
-    memset_zero[count=2](buf3)
-    assert_equal(buf3.load(0), 0)
-    assert_equal(buf3.load(1), 0)
-    buf3.free()
+    var buf3_allocation = alloc[Int32]({count = 2}).into_managed()
+    var buf3 = buf3_allocation.unsafe_ptr()
+    unsafe_memset(buf3, 1, 2)
+    unsafe_memset_zero[count=2](buf3)
+    assert_equal(buf3.unsafe_load(0), 0)
+    assert_equal(buf3.unsafe_load(1), 0)
 
     _ = pair
 
 
 def test_pointer_string() raises:
-    var ptr = alloc[Int](1)
+    var allocation = alloc[Int]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
-    ptr.free()
 
 
 def test_dtypepointer_string() raises:
-    var ptr = alloc[Float32](1)
+    var allocation = alloc[Float32]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
-    ptr.free()
 
 
 def test_pointer_explicit_copy() raises:
-    var ptr = alloc[Int](1)
+    var allocation = alloc[Int]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr[] = 42
     var copy = ptr.copy()
     assert_equal(copy[], 42)
-    ptr.free()
 
 
 def test_pointer_refitem() raises:
-    var ptr = alloc[Int](1)
+    var allocation = alloc[Int]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr[] = 42
     assert_equal(ptr[], 42)
-    ptr.free()
 
 
 def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
-    var ptr = alloc[String](1)
-    __get_address_as_uninit_lvalue(ptr._get_kgen_pointer()) = String()
+    var allocation = alloc[String]({count = 1})
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_write(init_with=lambda () -> String: String())
     ptr[] = payload
-    assert_equal(ptr[], payload)
-    ptr.free()
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var value = ptr[]
+    unsafe_destroy_n(ptr, count=1)
+    dealloc(allocation^)
+    assert_equal(value, payload)
 
 
 def test_pointer_refitem_pair() raises:
-    var ptr = alloc[Pair](1)
+    var allocation = alloc[Pair]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr[].lo = 42
     ptr[].hi = 24
     #   NOTE: We want to write the below but we can't implement a generic assert_equal yet.
     #   assert_equal(ptr[], Pair(42, 24))
     assert_equal(ptr[].lo, 42)
     assert_equal(ptr[].hi, 24)
-    ptr.free()
 
 
 def test_address_space_str() raises:
@@ -658,147 +646,136 @@ def test_address_space_str() raises:
 
 
 def test_dtypepointer_gather() raises:
-    var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0))
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
-    @parameter
     def _test_gather[
-        width: SIMDSize
-    ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
-        var actual = ptr.gather(offset)
+        width: SIMDLength
+    ](offset: SIMD[_, width], desired: SIMD[ptr.T.dtype, width]) raises {imm}:
+        var actual = ptr.unsafe_gather(offset)
         assert_almost_equal(
             actual, desired, msg="_test_gather", atol=0.0, rtol=0.0
         )
 
-    @parameter
     def _test_masked_gather[
-        width: SIMDSize
+        width: SIMDLength
     ](
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width],
-        default: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, width],
-    ) raises:
-        var actual = ptr.gather(offset, mask, default)
+        default: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, width],
+    ) raises {imm}:
+        var actual = ptr.unsafe_gather(offset, mask, default)
         assert_almost_equal(
             actual, desired, msg="_test_masked_gather", atol=0.0, rtol=0.0
         )
 
     var offset = SIMD[DType.int64, 8](3, 0, 2, 1, 2, 0, 3, 1)
-    var desired = SIMD[ptr.type.dtype, 8](
-        3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0
-    )
+    var desired = SIMD[ptr.T.dtype, 8](3.0, 0.0, 2.0, 1.0, 2.0, 0.0, 3.0, 1.0)
 
     _test_gather[1](UInt16(2), 2.0)
     _test_gather(offset.cast[DType.uint32]().slice[2](), desired.slice[2]())
     _test_gather(offset.cast[DType.uint64]().slice[4](), desired.slice[4]())
 
     var mask = offset.ge(0) & offset.lt(3)
-    var default = SIMD[ptr.type.dtype, 8](-1.0)
-    desired = SIMD[ptr.type.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
+    var default = SIMD[ptr.T.dtype, 8](-1.0)
+    desired = SIMD[ptr.T.dtype, 8](-1.0, 0.0, 2.0, 1.0, 2.0, 0.0, -1.0, 1.0)
 
     _test_masked_gather[1](Int16(2), Scalar[DType.bool](False), -1.0, -1.0)
     _test_masked_gather[1](Int32(2), Scalar[DType.bool](True), -1.0, 2.0)
     _test_masked_gather(offset, mask, default, desired)
 
-    ptr.free()
-
 
 def test_dtypepointer_scatter() raises:
-    var ptr = alloc[Float32](4)
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0))
 
-    @parameter
     def _test_scatter[
-        width: SIMDSize
+        width: SIMDLength
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
-        desired: SIMD[ptr.type.dtype, 4],
-    ) raises:
-        ptr.scatter(offset, val)
-        var actual = ptr.load[width=4](0)
+        val: SIMD[ptr.T.dtype, width],
+        desired: SIMD[ptr.T.dtype, 4],
+    ) raises {imm}:
+        ptr.unsafe_scatter(offset, val)
+        var actual = ptr.unsafe_load[width=4](0)
         assert_almost_equal(
             actual, desired, msg="_test_scatter", atol=0.0, rtol=0.0
         )
 
-    @parameter
     def _test_masked_scatter[
-        width: SIMDSize
+        width: SIMDLength
     ](
         offset: SIMD[_, width],
-        val: SIMD[ptr.type.dtype, width],
+        val: SIMD[ptr.T.dtype, width],
         mask: SIMD[DType.bool, width],
-        desired: SIMD[ptr.type.dtype, 4],
-    ) raises:
-        ptr.scatter(offset, val, mask)
-        var actual = ptr.load[width=4](0)
+        desired: SIMD[ptr.T.dtype, 4],
+    ) raises {imm}:
+        ptr.unsafe_scatter(offset, val, mask)
+        var actual = ptr.unsafe_load[width=4](0)
         assert_almost_equal(
             actual, desired, msg="_test_masked_scatter", atol=0.0, rtol=0.0
         )
 
-    _test_scatter[1](
-        UInt16(2), 2.0, SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0)
-    )
+    _test_scatter[1](UInt16(2), 2.0, SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0))
     _test_scatter(  # Test with repeated offsets
         SIMD[DType.uint32, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 0.0),
     )
     _test_scatter(
         SIMD[DType.uint64, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 1.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 1.0, 0.0),
     )
 
-    ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
+    ptr.unsafe_store(0, SIMD[ptr.T.dtype, 4](0.0))
 
     _test_masked_scatter[1](
         Int16(2),
         2.0,
         Scalar[DType.bool](False),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 0.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 0.0, 0.0),
     )
     _test_masked_scatter[1](
         Int32(2),
         2.0,
         Scalar[DType.bool](True),
-        SIMD[ptr.type.dtype, 4](0.0, 0.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, 0.0, 2.0, 0.0),
     )
     _test_masked_scatter(  # Test with repeated offsets
         SIMD[DType.int64, 4](1, 1, 1, 1),
-        SIMD[ptr.type.dtype, 4](-1.0, 2.0, -2.0, 1.0),
+        SIMD[ptr.T.dtype, 4](-1.0, 2.0, -2.0, 1.0),
         SIMD[DType.bool, 4](True, True, True, False),
-        SIMD[ptr.type.dtype, 4](0.0, -2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](0.0, -2.0, 2.0, 0.0),
     )
     _test_masked_scatter(
         SIMD[DType.int, 4](3, 2, 1, 0),
-        SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0),
+        SIMD[ptr.T.dtype, 4](0.0, 1.0, 2.0, 3.0),
         SIMD[DType.bool, 4](True, False, True, True),
-        SIMD[ptr.type.dtype, 4](3.0, 2.0, 2.0, 0.0),
+        SIMD[ptr.T.dtype, 4](3.0, 2.0, 2.0, 0.0),
     )
-
-    ptr.free()
 
 
 def test_indexing() raises:
-    var ptr = alloc[Float32](4)
+    var allocation = alloc[Float32]({count = 4}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     for i in range(4):
-        ptr[i] = Float32(i)
+        ptr[unsafe_offset=i] = Float32(i)
 
-    assert_equal(ptr[Int(2)], 2)
-    assert_equal(ptr[1], 1)
-
-    ptr.free()
+    assert_equal(ptr[unsafe_offset=Int(2)], 2)
+    assert_equal(ptr[unsafe_offset=1], 1)
 
 
 def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
-    memmove(
+    unsafe_memmove(
         # NOTE: need `as_unsafe_any_origin` to avoid exclusivity violations
         dest=list.unsafe_ptr().as_unsafe_any_origin(),
-        src=list.unsafe_ptr().as_unsafe_any_origin() + 1,
+        src=list.unsafe_ptr().as_unsafe_any_origin().unsafe_offset(1),
         count=len(list) - 1,
     )
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
@@ -808,7 +785,9 @@ def test_memmove_non_overlapping_regions() raises:
     var list1 = [1, 2, 3]
     var list2 = [4, 5, 6]
     # shift all values down by 1
-    memmove(dest=list1.unsafe_ptr(), src=list2.unsafe_ptr(), count=len(list1))
+    unsafe_memmove(
+        dest=list1.unsafe_ptr(), src=list2.unsafe_ptr(), count=len(list1)
+    )
     assert_equal(list1, [4, 5, 6])
     assert_equal(list2, [4, 5, 6])
 
@@ -817,229 +796,260 @@ def test_uninit_move_n_trivial() raises:
     # Test with trivial move type - should use unsafe_memcpy, not call move
     # constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
-    var src = alloc[Counter](3)
-    (src + 0).unsafe_write(Counter(10))
-    (src + 1).unsafe_write(Counter(20))
-    (src + 2).unsafe_write(Counter(30))
+    var src_allocation = alloc[Counter]({count = 3}).into_managed()
+    var src = src_allocation.unsafe_ptr()
+    src.unsafe_offset(0).unsafe_write(Counter(10))
+    src.unsafe_offset(1).unsafe_write(Counter(20))
+    src.unsafe_offset(2).unsafe_write(Counter(30))
 
-    var dest = alloc[Counter](3)
-
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+    var dest_allocation = alloc[Counter]({count = 3}).into_managed()
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Verify values were moved
-    assert_equal(dest[0].value, 10)
-    assert_equal(dest[1].value, 20)
-    assert_equal(dest[2].value, 30)
+    assert_equal(dest[unsafe_offset=0].value, 10)
+    assert_equal(dest[unsafe_offset=1].value, 20)
+    assert_equal(dest[unsafe_offset=2].value, 30)
 
     # Move should only be called once when moving into the allocation.
-    assert_equal(dest[0].move_count, 1)
-    assert_equal(dest[1].move_count, 1)
-    assert_equal(dest[2].move_count, 1)
+    assert_equal(dest[unsafe_offset=0].move_count, 1)
+    assert_equal(dest[unsafe_offset=1].move_count, 1)
+    assert_equal(dest[unsafe_offset=2].move_count, 1)
 
     # Don't destroy src - it's uninitialized after move
-    src.free()
-    destroy_n(dest, count=3)
-    dest.free()
+    unsafe_destroy_n(dest, count=3)
 
 
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
-    var src = alloc[MoveCounter[String]](3)
-    (src + 0).unsafe_write(MoveCounter("foo"))
-    (src + 1).unsafe_write(MoveCounter("bar"))
-    (src + 2).unsafe_write(MoveCounter("baz"))
+    var src_allocation = alloc[MoveCounter[String]]({count = 3})
+    var src = src_allocation.unsafe_ptr()
+    src.unsafe_offset(0).unsafe_write(MoveCounter("foo"))
+    src.unsafe_offset(1).unsafe_write(MoveCounter("bar"))
+    src.unsafe_offset(2).unsafe_write(MoveCounter("baz"))
 
-    var dest = alloc[MoveCounter[String]](3)
+    var dest_allocation = alloc[MoveCounter[String]]({count = 3})
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
 
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=3)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the values first.
+    var value0 = dest[unsafe_offset=0].value
+    var value1 = dest[unsafe_offset=1].value
+    var value2 = dest[unsafe_offset=2].value
+    var move_count0 = dest[unsafe_offset=0].move_count
+    var move_count1 = dest[unsafe_offset=1].move_count
+    var move_count2 = dest[unsafe_offset=2].move_count
+
+    # Don't destroy src - it's uninitialized after move
+    unsafe_destroy_n(dest, count=3)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
 
     # Verify values were moved
-    assert_equal(dest[0].value, "foo")
-    assert_equal(dest[1].value, "bar")
-    assert_equal(dest[2].value, "baz")
+    assert_equal(value0, "foo")
+    assert_equal(value1, "bar")
+    assert_equal(value2, "baz")
 
     # Verify move constructor was called.
     # First time for the initial move into the allocation.
     # Second time for the move from src -> dest
-    assert_equal(dest[0].move_count, 2)
-    assert_equal(dest[1].move_count, 2)
-    assert_equal(dest[2].move_count, 2)
-
-    # Don't destroy src - it's uninitialized after move
-    src.free()
-    destroy_n(dest, count=3)
-    dest.free()
+    assert_equal(move_count0, 2)
+    assert_equal(move_count1, 2)
+    assert_equal(move_count2, 2)
 
 
 def test_uninit_copy_n_trivial() raises:
     # Test with trivial copy type - should use unsafe_memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
-    var src = alloc[Counter](3)
+    var src_allocation = alloc[Counter]({count = 3}).into_managed()
+    var src = src_allocation.unsafe_ptr()
     src.unsafe_write(Counter(0))
-    (src + 1).unsafe_write(Counter(1))
-    (src + 2).unsafe_write(Counter(2))
+    src.unsafe_offset(1).unsafe_write(Counter(1))
+    src.unsafe_offset(2).unsafe_write(Counter(2))
 
-    var dest = alloc[Counter](3)
-
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+    var dest_allocation = alloc[Counter]({count = 3}).into_managed()
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
     # Both src and dest should have the values
-    assert_equal(src[0].value, 0)
-    assert_equal(src[1].value, 1)
-    assert_equal(src[2].value, 2)
-    assert_equal(dest[0].value, 0)
-    assert_equal(dest[1].value, 1)
-    assert_equal(dest[2].value, 2)
+    assert_equal(src[unsafe_offset=0].value, 0)
+    assert_equal(src[unsafe_offset=1].value, 1)
+    assert_equal(src[unsafe_offset=2].value, 2)
+    assert_equal(dest[unsafe_offset=0].value, 0)
+    assert_equal(dest[unsafe_offset=1].value, 1)
+    assert_equal(dest[unsafe_offset=2].value, 2)
 
     # Verify copy constructor was NOT called (trivial copy uses unsafe_memcpy)
-    assert_equal(dest[0].copy_count, 0)
-    assert_equal(dest[1].copy_count, 0)
-    assert_equal(dest[2].copy_count, 0)
-
-    src.free()
-    dest.free()
+    assert_equal(dest[unsafe_offset=0].copy_count, 0)
+    assert_equal(dest[unsafe_offset=1].copy_count, 0)
+    assert_equal(dest[unsafe_offset=2].copy_count, 0)
 
 
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
-    var src = alloc[CopyCounter[String]](3)
+    var src_allocation = alloc[CopyCounter[String]]({count = 3})
+    var src = src_allocation.unsafe_ptr()
     src.unsafe_write(CopyCounter("alpha"))
-    (src + 1).unsafe_write(CopyCounter("beta"))
-    (src + 2).unsafe_write(CopyCounter("gamma"))
+    src.unsafe_offset(1).unsafe_write(CopyCounter("beta"))
+    src.unsafe_offset(2).unsafe_write(CopyCounter("gamma"))
 
-    var dest = alloc[CopyCounter[String]](3)
+    var dest_allocation = alloc[CopyCounter[String]]({count = 3})
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
 
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=3)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the values first.
+    var dest_value0 = dest[unsafe_offset=0].value
+    var dest_value1 = dest[unsafe_offset=1].value
+    var dest_value2 = dest[unsafe_offset=2].value
+    var dest_copy_count0 = dest[unsafe_offset=0].copy_count
+    var dest_copy_count1 = dest[unsafe_offset=1].copy_count
+    var dest_copy_count2 = dest[unsafe_offset=2].copy_count
+    var src_value0 = src[unsafe_offset=0].value
+    var src_value1 = src[unsafe_offset=1].value
+    var src_value2 = src[unsafe_offset=2].value
+    var src_copy_count0 = src[unsafe_offset=0].copy_count
+    var src_copy_count1 = src[unsafe_offset=1].copy_count
+    var src_copy_count2 = src[unsafe_offset=2].copy_count
+
+    unsafe_destroy_n(src, count=3)
+    unsafe_destroy_n(dest, count=3)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
 
     # Verify values were copied
-    assert_equal(dest[0].value, "alpha")
-    assert_equal(dest[1].value, "beta")
-    assert_equal(dest[2].value, "gamma")
+    assert_equal(dest_value0, "alpha")
+    assert_equal(dest_value1, "beta")
+    assert_equal(dest_value2, "gamma")
 
     # Verify copy constructor was called (count incremented)
-    assert_equal(dest[0].copy_count, 1)
-    assert_equal(dest[1].copy_count, 1)
-    assert_equal(dest[2].copy_count, 1)
+    assert_equal(dest_copy_count0, 1)
+    assert_equal(dest_copy_count1, 1)
+    assert_equal(dest_copy_count2, 1)
 
     # Source should still be valid
-    assert_equal(src[0].value, "alpha")
-    assert_equal(src[1].value, "beta")
-    assert_equal(src[2].value, "gamma")
-    assert_equal(src[0].copy_count, 0)
-    assert_equal(src[1].copy_count, 0)
-    assert_equal(src[2].copy_count, 0)
-
-    destroy_n(src, count=3)
-    destroy_n(dest, count=3)
-    src.free()
-    dest.free()
+    assert_equal(src_value0, "alpha")
+    assert_equal(src_value1, "beta")
+    assert_equal(src_value2, "gamma")
+    assert_equal(src_copy_count0, 0)
+    assert_equal(src_copy_count1, 0)
+    assert_equal(src_copy_count2, 0)
 
 
 def test_destroy_n_trivial() raises:
-    # Test with trivial destructor - should be no-op, not call __del__
+    # Test with trivial destructor - should be no-op, not call __deinit__
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
-    var ptr = alloc[Counter](3)
-    (ptr + 0).unsafe_write(Counter(counter_ptr))
-    (ptr + 1).unsafe_write(Counter(counter_ptr))
-    (ptr + 2).unsafe_write(Counter(counter_ptr))
+    var allocation = alloc[Counter]({count = 3}).into_managed()
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_offset(0).unsafe_write(Counter(counter_ptr))
+    ptr.unsafe_offset(1).unsafe_write(Counter(counter_ptr))
+    ptr.unsafe_offset(2).unsafe_write(Counter(counter_ptr))
 
     # This should compile to nothing for trivial destructors
-    destroy_n(ptr, count=3)
+    unsafe_destroy_n(ptr, count=3)
     # Verify destructor was NOT called (trivial destructor is no-op)
     assert_equal(del_count, 0)
-
-    ptr.free()
 
 
 def test_destroy_n_nontrivial() raises:
     # Test with non-trivial type that tracks destructor calls
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count)]
 
-    var ptr = alloc[Counter](3)
-    (ptr + 0).unsafe_write(Counter(counter_ptr))
-    (ptr + 1).unsafe_write(Counter(counter_ptr))
-    (ptr + 2).unsafe_write(Counter(counter_ptr))
+    var allocation = alloc[Counter]({count = 3})
+    var ptr = allocation.unsafe_ptr()
+    ptr.unsafe_offset(0).unsafe_write(Counter(counter_ptr))
+    ptr.unsafe_offset(1).unsafe_write(Counter(counter_ptr))
+    ptr.unsafe_offset(2).unsafe_write(Counter(counter_ptr))
 
-    destroy_n(ptr, count=3)
+    unsafe_destroy_n(ptr, count=3)
+    dealloc(allocation^)
     # Verify destructor was called for all 3 elements
     assert_equal(del_count, 3)
-
-    ptr.free()
 
 
 def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src = alloc[MoveCounter[String]](1)
+    var src_allocation = alloc[MoveCounter[String]]({count = 1})
+    var src = src_allocation.unsafe_ptr()
     # Use unsafe_memcpy to initialize without calling move constructor
     var tmp = MoveCounter("test")
-    unsafe_memcpy(dest=src, src=UnsafePointer(to=tmp), count=1)
+    unsafe_memcpy(dest=src, src=Pointer(to=tmp), count=1)
 
-    var dest = alloc[MoveCounter[String]](1)
+    var dest_allocation = alloc[MoveCounter[String]]({count = 1})
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
 
-    uninit_move_n[overlapping=False](dest=dest, src=src, count=0)
-
-    # Nothing should have happened - move count should still be 0
-    assert_equal(src[0].move_count, 0)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var move_count = src[unsafe_offset=0].move_count
 
     # Cleanup/free the memory
-    destroy_n(src, count=1)
-    src.free()
-    dest.free()
+    unsafe_destroy_n(src, count=1)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
+    # Nothing should have happened - move count should still be 0
+    assert_equal(move_count, 0)
 
 
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
-    var src = alloc[CopyCounter[String]](1)
+    var src_allocation = alloc[CopyCounter[String]]({count = 1})
+    var src = src_allocation.unsafe_ptr()
     src.unsafe_write(CopyCounter("test"))
 
-    var dest = alloc[CopyCounter[String]](1)
+    var dest_allocation = alloc[CopyCounter[String]]({count = 1})
+    var dest = dest_allocation.unsafe_ptr()
+    unsafe_uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
 
-    uninit_copy_n[overlapping=False](dest=dest, src=src, count=0)
-
-    # Nothing should have happened - copy count should still be 0
-    assert_equal(src[0].copy_count, 0)
+    # `assert_equal` can raise, and an `Allocation` must be consumed on every
+    # path (including the raising one), so capture the value first.
+    var copy_count = src[unsafe_offset=0].copy_count
 
     # Cleanup/free the memory
-    destroy_n(src, count=1)
-    src.free()
-    dest.free()
+    unsafe_destroy_n(src, count=1)
+    dealloc(src_allocation^)
+    dealloc(dest_allocation^)
+
+    assert_equal(copy_count, 0)
 
 
 def test_destroy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var del_count = 0
-    var counter_ptr = UnsafePointer(to=del_count)
+    var counter_ptr = Pointer(to=del_count)
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
-    var ptr = alloc[Counter](1)
+    var allocation = alloc[Counter]({count = 1}).into_managed()
+    var ptr = allocation.unsafe_ptr()
     ptr.unsafe_write(Counter(counter_ptr))
 
-    destroy_n(ptr, count=0)
+    unsafe_destroy_n(ptr, count=0)
     # Destructor should NOT have been called - del_count should still be 0
     assert_equal(del_count, 0)
 
     # Cleanup/free the memory
-    destroy_n(ptr, count=1)
-    ptr.free()
+    unsafe_destroy_n(ptr, count=1)
 
 
 @fieldwise_init
 struct Parent:
     var child: Child
 
-    def __del__(deinit self):
-        abort("@ Parent.__del__ should not have run")
+    def __deinit__(deinit self):
+        abort("@ Parent.__deinit__ should not have run")
 
 
 @fieldwise_init
 struct Child(Movable):
-    def __del__(deinit self):
-        abort("@ Child.__del__ should not have run")
+    def __deinit__(deinit self):
+        abort("@ Child.__deinit__ should not have run")
 
 
 def test_forget_deinit() raises:

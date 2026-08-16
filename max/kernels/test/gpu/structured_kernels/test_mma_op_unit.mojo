@@ -67,7 +67,7 @@ Tolerances (max element-wise abs-diff over the whole accumulator):
 """
 
 from std.gpu import lane_id, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_true
 

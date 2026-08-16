@@ -33,6 +33,9 @@ from max.pipelines.diffusion.cache import (
 )
 from max.pipelines.lib import float32_array_to_buffer
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -268,7 +271,10 @@ class Flux2Executor(
 
         # Extract transformer config for helper methods.
         transformer_config = manifest["transformer"]
-        encoding = transformer_config.quantization_encoding or "bfloat16"
+        resolved_encoding, _ = _resolve_component_encoding_and_weights(
+            transformer_config
+        )
+        encoding = resolved_encoding or "bfloat16"
         # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
         self._model_dtype: DType = (
             DType.bfloat16

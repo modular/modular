@@ -24,14 +24,13 @@ from .weight_adapters import convert_lfm2_safetensor_state_dict
 
 lfm2_arch = SupportedArchitecture(
     name="Lfm2ForCausalLM",
-    default_encoding="float32",
+    default_encoding=LFM2Config.DEFAULT_ENCODING,
     task=PipelineTask.TEXT_GENERATION,
-    supported_encodings={"float32", "bfloat16"},
+    supported_encodings=LFM2Config.SUPPORTED_ENCODINGS,
     example_repo_ids=["LiquidAI/LFM2.5-350M", "LiquidAI/LFM2.5-350M-Base"],
     pipeline_model=LFM2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type="neox",
     default_weights_format=WeightsFormat.safetensors,
     required_arguments={
         "allow_safetensors_weights_fp32_bf16_bidirectional_cast": True,

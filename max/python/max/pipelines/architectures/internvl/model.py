@@ -33,12 +33,11 @@ from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
-    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
+    MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -107,7 +106,7 @@ def assert_image_embeddings_invariant(
 
 class InternVLModel(
     AlwaysSignalBuffersMixin,
-    PipelineModelWithKVCache[TextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
 ):
     """An InternVL pipeline model for multimodal text generation."""
 
@@ -131,7 +130,7 @@ class InternVLModel(
         )
         return getattr(llm_config, "max_position_embeddings", 4096)
 
-    vision_model: Model
+    vision_model: Model | None
     """The compiled vision model for processing images."""
 
     language_model: Model
@@ -161,13 +160,7 @@ class InternVLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
 
-    def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Loads the compiled InternVL models into the MAX Engine session.
-
-        Returns:
-            A tuple of (vision_model, language_model).
-        """
-        # Validate SafetensorWeights requirement
+    def _load_state_dict(self) -> dict[str, Any]:
         if not isinstance(self.weights, SafetensorWeights):
             raise ValueError(
                 "InternVL currently only supports safetensors weights"
@@ -177,46 +170,28 @@ class InternVLModel(
         # NOTE: use weights_dict to mean WeightData, and state dict to mean
         # DLPack arrays, since state dict is overloaded.
         weights_dict = dict(self.weights.items())
-        llm_weights_dict = convert_internvl_language_model_state_dict(
+        self._language_weights_dict = (
+            convert_internvl_language_model_state_dict(weights_dict)
+        )
+        self._vision_weights_dict = convert_internvl_vision_model_state_dict(
             weights_dict
         )
-        vision_model_weights_dict = convert_internvl_vision_model_state_dict(
-            weights_dict
-        )
+        return {}
 
-        # Generate InternVL config from HuggingFace config
+    def _create_model_config(
+        self, state_dict: dict[str, Any]
+    ) -> InternVLConfig:
+        del state_dict
+
         internvl_config = InternVLConfig.initialize(self.pipeline_config)
         internvl_config.finalize(
             huggingface_config=self.huggingface_config,
-            llm_state_dict=llm_weights_dict,
-            vision_state_dict=vision_model_weights_dict,
+            llm_state_dict=self._language_weights_dict,
+            vision_state_dict=self._vision_weights_dict,
             dtype=self.dtype,
             return_logits=self.return_logits,
         )
-
-        # Build and compile vision + language models in parallel
-        with CompilationTimer("vision + language model") as timer:
-            module = Module()
-            vision_graph, vision_model_state_dict = self._build_vision_graph(
-                internvl_config, vision_model_weights_dict, module=module
-            )
-            language_graph, language_model_state_dict = (
-                self._build_language_graph(
-                    internvl_config, llm_weights_dict, module=module
-                )
-            )
-            timer.mark_build_complete()
-            combined_registry = {
-                **vision_model_state_dict,
-                **language_model_state_dict,
-            }
-            models = session.load_all(
-                module, weights_registry=combined_registry
-            )
-            vision_model = models[vision_graph.name]
-            language_model = models[language_graph.name]
-
-        return vision_model, language_model
+        return internvl_config
 
     def _build_vision_graph(
         self,
@@ -434,6 +409,7 @@ class InternVLModel(
         image_embeddings: list[Buffer]
         image_token_indices: list[Buffer]
         if model_inputs.has_vision_inputs:
+            assert self.vision_model is not None
             assert model_inputs.pixel_values is not None
             assert model_inputs.image_token_indices is not None
 

@@ -51,6 +51,7 @@ from std.math import ceildiv
 from std.random import random_ui64, seed
 from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -59,7 +60,7 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from std.gpu import *
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils import IndexList, StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
@@ -267,13 +268,12 @@ def run_mha_prefill_v2_paged[
 
     if bench:
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(cb_q, cb_o, k_operand, v_operand)
         def bench_func(mut b: Bencher):
-            @parameter
             @always_inline
-            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
                 var q_ptr = cb_q.offset_ptr(iteration).bitcast[
                     Scalar[qkv_type]
                 ]()
@@ -311,9 +311,9 @@ def run_mha_prefill_v2_paged[
                     ctx,
                 )
 
-            b.iter_custom[_kernel_launch](ctx)
+            bencher_iter_custom(b, _kernel_launch, ctx)
 
-        def compute_flops() {read} -> Int:
+        def compute_flops() {imm} -> Int:
             # Causal: half the tiles. Matches `bench_mha_prefill_v2`'s
             # formula (`2 * B * H * N * NK * D`).
             return 2 * batch_size * num_heads * seq_len * num_keys * depth

@@ -9,14 +9,14 @@ description: >
   signature clauses.
 ---
 
-<!-- VERIFIED: TokenKinds.def, Lexer.cpp, Signatures.h, Signatures.cpp,
-     ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h -->
+{/* VERIFIED: TokenKinds.def, Lexer.cpp, Signatures.h, Signatures.cpp,
+     ExprNode.h, ParserExprs.cpp, ParserStmts.cpp, ParserBase.h */}
 
-<!-- In TokenKinds.def, `_` is declared with TOK_KEYWORD rather than
+{/* In TokenKinds.def, `_` is declared with TOK_KEYWORD rather than
      TOK_PUNCTUATION. This is an internal classification used by the
      lexer; for the language surface, `_` is a regular identifier
      character (see the identifier grammar below). Do not document `_`
-     as a keyword. -->
+     as a keyword. */}
 
 Every Mojo source file is built from tokens. This page covers the tokens
 you choose (identifiers), the tokens the language reserves (keywords), and
@@ -111,15 +111,16 @@ These keywords structure error propagation and recovery.
 
 ### Declarations
 
-These keywords introduce new named entities.
+These keywords introduce functions, types, and bindings.
 
-| Keyword  | Purpose                  |
-|----------|--------------------------|
-| `def`    | Function declaration     |
-| `struct` | Struct type declaration  |
-| `trait`  | Trait declaration        |
-| `var`    | Scoped variable binding  |
-| `ref`    | Scoped reference binding |
+| Keyword  | Purpose                                  |
+|----------|------------------------------------------|
+| `def`    | Function declaration                     |
+| `lambda` | Anonymous single-expression function     |
+| `struct` | Struct type declaration                  |
+| `trait`  | Trait declaration                        |
+| `var`    | Scoped variable binding                  |
+| `ref`    | Scoped reference binding                 |
 
 ### Keyword operators
 
@@ -176,14 +177,18 @@ names won't break, but in Mojo signatures they have fixed meaning.
 **Argument conventions** appear before argument names in function signatures.
 They control ownership and mutability:
 
+{/* markdownlint-disable MD013 */}
+
 | Convention | Role                 | Meaning                                                     |
 |------------|----------------------|-------------------------------------------------------------|
-| (`read`)   | Argument             | Immutable reference to an existing value (default behavior) |
+| (`imm`)    | Argument             | Immutable reference to an existing value (default behavior) |
 | `mut`      | Argument             | Mutable reference to an existing value                      |
 | `out`      | Argument             | Returns a value without a return arrow                      |
 | `deinit`   | Argument             | Destructive transfer; end of a value's lifecycle            |
 | `var`      | Argument or variable | Independent mutable owned copy of the value                 |
 | `ref`      | Argument or variable | Reference that doesn't own the value                        |
+
+{/* markdownlint-enable MD013 */}
 
 `var` and `ref` also appear in **variable declarations**, where `var`
 creates a scoped mutable variable and `ref` creates a scoped reference
