@@ -211,7 +211,7 @@ def test_subscript_dict() raises:
 
 
 def test_slice_start_stop() raises:
-    var items = [0, 1, 2, 3, 4, 5]
+    var items: List = [0, 1, 2, 3, 4, 5]
     var first_three = items[0:3]
     assert_equal(len(first_three), 3)
     assert_equal(first_three[0], 0)
@@ -219,7 +219,7 @@ def test_slice_start_stop() raises:
 
 
 def test_slice_open_stop() raises:
-    var items = [0, 1, 2, 3, 4, 5]
+    var items: List = [0, 1, 2, 3, 4, 5]
     var from_three = items[3:]
     assert_equal(len(from_three), 3)
     assert_equal(from_three[0], 3)
@@ -227,7 +227,7 @@ def test_slice_open_stop() raises:
 
 
 def test_slice_stride() raises:
-    var items = [0, 1, 2, 3, 4, 5]
+    var items: List = [0, 1, 2, 3, 4, 5]
     var every_other = items[::2]
     assert_equal(len(every_other), 3)
     assert_equal(every_other[0], 0)
@@ -236,7 +236,7 @@ def test_slice_stride() raises:
 
 
 def test_slice_negative_stride() raises:
-    var items = [0, 1, 2, 3, 4, 5]
+    var items: List = [0, 1, 2, 3, 4, 5]
     var reversed_items = items[::-1]
     assert_equal(len(reversed_items), 6)
     assert_equal(reversed_items[0], 5)
@@ -271,6 +271,7 @@ def test_ternary_chained_right_assoc() raises:
 def test_walrus_in_if() raises:
     var items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     var captured: Int = -1
+    var n: Int
     if (n := len(items)) > 10:
         captured = n
     assert_equal(captured, 11)
@@ -279,6 +280,7 @@ def test_walrus_in_if() raises:
 def test_walrus_in_while() raises:
     var i = 0
     var last_seen: Int = -1
+    var j: Int
     while (j := i) < 3:
         last_seen = j
         i += 1

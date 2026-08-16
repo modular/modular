@@ -14,8 +14,8 @@
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
 from std.random import rand
 from layout import (
@@ -117,8 +117,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             for k_idx in range(Int(k.value())):
                 b_host[n_idx, k_idx] = Float32(n_idx + k_idx).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host.ptr, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
+        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)

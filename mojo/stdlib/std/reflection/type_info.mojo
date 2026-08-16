@@ -43,7 +43,7 @@ def main():
 """
 
 from std.sys.info import _current_target, _TargetType
-from std.collections.string.string_slice import get_static_string
+from std.collections.string.string_span import get_static_string
 
 from .reflect import reflect
 
@@ -101,7 +101,7 @@ def get_function_name[
 def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = reflect[type].name()
     comptime parameter_list_start = name.find("[")
-    if parameter_list_start == -1:
+    comptime if parameter_list_start == -1:
         # HACK: Split is evaluated twice because `List[StringSlice]` cannot
         # be materialized to runtime from a comptime context.
         comptime n = len(name.split("."))

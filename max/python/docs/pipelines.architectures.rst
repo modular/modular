@@ -25,9 +25,9 @@ family.
    pipelines.architectures.deepseekV3_nextn
    pipelines.architectures.dflash_llama3
    pipelines.architectures.diffusion_gemma
+   pipelines.architectures.dspark_draft
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
-   pipelines.architectures.exaone
    pipelines.architectures.flux2
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3multimodal
@@ -39,6 +39,7 @@ family.
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
    pipelines.architectures.ideogram4
+   pipelines.architectures.inkling
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
    pipelines.architectures.laguna
@@ -65,8 +66,11 @@ family.
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
+   pipelines.architectures.unified_dflash_gemma4_31b
    pipelines.architectures.unified_dflash_kimi_k25
    pipelines.architectures.unified_dflash_llama3
+   pipelines.architectures.unified_dspark_gemma4_12b
+   pipelines.architectures.unified_dspark_gemma4_31b
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.unified_mtp_gemma4
@@ -85,9 +89,9 @@ Text generation
    ~max.pipelines.architectures.deepseekV3_nextn
    ~max.pipelines.architectures.dflash_llama3
    ~max.pipelines.architectures.diffusion_gemma
+   ~max.pipelines.architectures.dspark_draft
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
-   ~max.pipelines.architectures.exaone
    ~max.pipelines.architectures.gemma3
    ~max.pipelines.architectures.gemma3multimodal
    ~max.pipelines.architectures.gemma4
@@ -97,6 +101,7 @@ Text generation
    ~max.pipelines.architectures.granite
    ~max.pipelines.architectures.hy_v3
    ~max.pipelines.architectures.idefics3
+   ~max.pipelines.architectures.inkling
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
    ~max.pipelines.architectures.laguna
@@ -119,8 +124,11 @@ Text generation
    ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
+   ~max.pipelines.architectures.unified_dflash_gemma4_31b
    ~max.pipelines.architectures.unified_dflash_kimi_k25
    ~max.pipelines.architectures.unified_dflash_llama3
+   ~max.pipelines.architectures.unified_dspark_gemma4_12b
+   ~max.pipelines.architectures.unified_dspark_gemma4_31b
    ~max.pipelines.architectures.unified_eagle_llama3
    ~max.pipelines.architectures.unified_mtp_deepseekV3
    ~max.pipelines.architectures.unified_mtp_gemma4

@@ -41,6 +41,7 @@ from max.engine import CompiledModel, InferenceSession, Model
 from max.engine._compilation_stats import collect_compilation_stats
 from max.experimental.nn._compilation_timer import CompilationTimer
 from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
+from max.nn import Signals
 
 
 @dataclass
@@ -266,6 +267,16 @@ def test_init_all_in_virtual_device_mode_returns_dict(
     models = session.init_all(compiled)
 
     assert set(models.keys()) == {encoder.name, decoder.name}
+
+
+def test_signal_buffers_skip_allocation_in_virtual_device_mode(
+    virtual_device_mode: None,
+) -> None:
+    """Signal-buffer allocation degrades to nothing on a virtual device."""
+    set_virtual_device_count(2)
+    signals = Signals([DeviceRef.GPU(0), DeviceRef.GPU(1)])
+
+    assert signals.buffers() == []
 
 
 def test_nested_collectors_both_observe_phases() -> None:

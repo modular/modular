@@ -17,7 +17,7 @@ from gridv1_step7 import Grid
 
 def grid_str(grid: Grid) -> String:
     # Create an empty String
-    str = String()
+    var str = String()
 
     # Iterate through rows 0 through rows-1
     for row in range(grid.rows):
@@ -33,7 +33,7 @@ def grid_str(grid: Grid) -> String:
 
 
 def main():
-    glider = [
+    var glider: List[List[Int]] = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0],
@@ -43,6 +43,6 @@ def main():
         [0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0],
     ]
-    start = Grid(8, 8, glider^)
-    result = grid_str(start)
+    var start = Grid(8, 8, glider^)
+    var result = grid_str(start)
     print(result)

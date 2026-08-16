@@ -27,6 +27,7 @@ Usage:
 from std.math import ceildiv
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,8 +35,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index
 from internal_utils import arg_parse
@@ -67,7 +68,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 def _get_run_name[
     in_type: DType,
     out_type: DType,
-](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int,) -> String:
+](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int) -> String:
     var mode_str = "1SM" if cta_group == 1 else "2SM"
     return String(
         "grouped_block_scaled_gemm(",
@@ -340,7 +341,7 @@ def bench_grouped_block_scaled_gemm[
     # Total FLOPs for all groups
     var total_flops = 2 * M * Int(n.value()) * Int(k.value()) * num_groups
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -357,9 +358,8 @@ def bench_grouped_block_scaled_gemm[
     )
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -381,7 +381,7 @@ def bench_grouped_block_scaled_gemm[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(

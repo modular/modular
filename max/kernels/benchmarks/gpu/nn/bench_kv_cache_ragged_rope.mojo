@@ -15,6 +15,7 @@ from std.collections import Set
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -48,7 +49,7 @@ def _get_run_name[
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
-](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool,) -> String:
+](batch_size: Int, seq_len: Int, use_random_seq_lengths: Bool) -> String:
     # fmt: off
     return String(
         "fused_qkv_ragged_rope(", dtype, ") : ",
@@ -93,6 +94,7 @@ def execute_kv_cache_ragged_rope[
     var total_seq_len: UInt32 = 0
     var cache_len: UInt32 = 10
 
+    var max_context_length: UInt32
     with cache_lengths_device.map_to_host() as cache_lengths_host:
         with input_row_offsets_device.map_to_host() as input_row_offsets_host:
             for i in range(batch_size):
@@ -190,11 +192,13 @@ def execute_kv_cache_ragged_rope[
         freqs_cis_table_layout.static_product
     )
 
-    num_flops_per_elem = 6
-    num_elems = Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
+    var num_flops_per_elem = 6
+    var num_elems = (
+        Int(total_seq_len) * num_q_heads * num_kv_heads * head_dim // 2
+    )
     var flop_count = num_flops_per_elem * num_elems
 
-    @parameter
+    @__parameter
     @__copy_capture(
         q_device,
         kv_collection_device,
@@ -204,9 +208,8 @@ def execute_kv_cache_ragged_rope[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             fused_qk_rope_ragged[
                 kv_collection_device.CacheType,
                 interleaved=False,
@@ -222,7 +225,7 @@ def execute_kv_cache_ragged_rope[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

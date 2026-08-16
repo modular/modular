@@ -30,7 +30,7 @@
 # The residual is applied as a TMA-epilogue load on the native path (cases 1, 4)
 # and as an elementwise (store) epilogue on every fallback.
 
-from std.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.host import DeviceContext, DeviceBuffer
 from std.memory import alloc
 from internal_utils import assert_almost_equal
 from std.random import rand

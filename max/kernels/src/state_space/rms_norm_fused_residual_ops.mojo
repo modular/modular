@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm fused residual op registration for state space models."""
 
-import extensibility as compiler
+import extensibility
 
-from std.gpu.host import DeviceContext
-from std.gpu.host.info import is_gpu
+from max.gpu.host import DeviceContext
+from max.gpu.host.info import is_gpu
 from extensibility import InputTensor, OutputTensor
 
 from std.utils.index import IndexList
@@ -31,7 +31,7 @@ from state_space.rms_norm_fused_residual import (
 # ===----------------------------------------------------------------------=== #
 
 
-@compiler.register("rms_norm_fused_residual")
+@extensibility.register("rms_norm_fused_residual")
 struct RMSNormFusedResidual:
     """RMS normalization with fused residual connection for Mamba blocks.
 
@@ -85,7 +85,7 @@ struct RMSNormFusedResidual:
         comptime if is_gpu[target]():
             # GPU path: the device kernel bakes the callbacks in as `capturing`
             # comptime closures, so build them as comptime parameters.
-            @parameter
+            @__parameter
             @always_inline
             def input_fn[
                 width: Int, _rank: Int
@@ -94,7 +94,7 @@ struct RMSNormFusedResidual:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_input_fn[
                 width: Int, _rank: Int
@@ -103,20 +103,20 @@ struct RMSNormFusedResidual:
                     rebind[IndexList[input.rank]](coords)
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 output._fused_store[width=width, element_alignment=alignment](
                     rebind[IndexList[output.rank]](coords),
                     rebind[SIMD[output.dtype, width]](val),
                 )
 
-            @parameter
+            @__parameter
             @always_inline
             def residual_output_fn[
-                width: SIMDSize, _rank: Int, alignment: Int
+                width: SIMDLength, _rank: Int, alignment: Int
             ](coords: IndexList[_rank], val: SIMD[dtype, width]):
                 residual_output._fused_store[
                     width=width, element_alignment=alignment
@@ -165,7 +165,7 @@ struct RMSNormFusedResidual:
 
             @always_inline
             def output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var output
             } -> None:
@@ -176,7 +176,7 @@ struct RMSNormFusedResidual:
 
             @always_inline
             def residual_output_fn_cpu[
-                width: SIMDSize, alignment: Int
+                width: SIMDLength, alignment: Int
             ](coords: IndexList[rank], val: SIMD[dtype, width]) {
                 var residual_output
             } -> None:
@@ -203,7 +203,7 @@ struct RMSNormFusedResidual:
             )
 
 
-@compiler.register_shape_function("rms_norm_fused_residual")
+@extensibility.register_shape_function("rms_norm_fused_residual")
 def rms_norm_fused_residual_shape[
     dtype: DType,
     rank: Int,
@@ -216,4 +216,22 @@ def rms_norm_fused_residual_shape[
     dropout_p: Scalar[dtype=dtype],
     seed: Scalar[dtype=DType.uint64],
 ) -> IndexList[rank]:
+    """Returns the output shape for the `rms_norm_fused_residual` op.
+
+    The fused RMS-norm-plus-residual op preserves the input shape; both the
+    normalized output and the updated residual have the same shape as `input`.
+
+    Args:
+        input: Input tensor to normalize.
+        residual_input: Residual tensor added before normalization.
+        gamma: Scale (weight) vector with shape `(last_dim,)`.
+        epsilon: Small constant added to the RMS for numerical stability.
+        weight_offset: Scalar offset added to `gamma` before scaling.
+        dropout_p: Dropout probability applied to `input` before the residual
+            add (0.0 disables dropout).
+        seed: RNG seed for dropout.
+
+    Returns:
+        The output shape, equal to `input.shape()`.
+    """
     return input.shape()

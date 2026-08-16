@@ -17,15 +17,13 @@ from std.testing import TestSuite
 
 
 def test_map() raises:
-    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector_stack: Array[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
-    @parameter
-    @__copy_capture(vector)
-    def add_two(idx: Int):
+    def add_two(idx: Int) {var}:
         vector[idx] = vector[idx] + 2
 
-    map[add_two](len(vector))
+    map(len(vector), add_two)
 
     assert_equal(vector[0], 3.0)
     assert_equal(vector[1], 4.0)
@@ -33,12 +31,10 @@ def test_map() raises:
     assert_equal(vector[3], 6.0)
     assert_equal(vector[4], 7.0)
 
-    @parameter
-    @__copy_capture(vector)
-    def add(idx: Int):
+    def add(idx: Int) {var}:
         vector[idx] = vector[idx] + vector[idx]
 
-    map[add](len(vector))
+    map(len(vector), add)
 
     assert_equal(vector[0], 6.0)
     assert_equal(vector[1], 8.0)

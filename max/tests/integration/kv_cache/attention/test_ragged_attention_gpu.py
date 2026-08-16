@@ -37,56 +37,10 @@ from max.nn.kernels import (
     flash_attention_ragged_gpu,
 )
 from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from modular_graph_test import are_all_tensor_values
+from test_common.modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
 TORCH_DTYPE = torch.bfloat16
-
-
-def null_mask_max_flash_attn(
-    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-) -> torch.Tensor:
-    dtype = torch_dtype_to_max(q.dtype)
-    _batch, _q_seq_len, nheads, head_dim = q.shape
-
-    # Graph types.
-    q_type = TensorType(
-        dtype,
-        shape=["batch", "q_seq_len", nheads, head_dim],
-        device=DeviceRef.GPU(),
-    )
-    kv_type = TensorType(
-        dtype,
-        shape=["batch", "kv_seq_len", nheads, head_dim],
-        device=DeviceRef.GPU(),
-    )
-
-    session = InferenceSession(devices=[Accelerator()])
-
-    # Stage ops.
-
-    # Construct and compile the MAX graph flash attention.
-    graph = Graph(
-        "flash_attn",
-        forward=partial(
-            flash_attention_gpu,
-            scale=math.sqrt(1.0 / head_dim),
-            mask_variant=MHAMaskVariant.NULL_MASK,
-        ),
-        input_types=[
-            q_type,
-            kv_type,
-            kv_type,
-        ],
-    )
-
-    # Compile model.
-    model = session.load(graph)
-
-    # Execute.
-    output = model.execute(q.detach(), k.detach(), v.detach())[0]
-    assert isinstance(output, Buffer)
-    return torch.from_dlpack(output)
 
 
 def causal_max_flash_attn(
@@ -256,6 +210,7 @@ def compute_ragged_max_flash_attn(
     [
         ([64, 64, 64, 16, 16, 4], 16, 128),  # Variable length sequences
         ([100], 32, 128),  # Single sequence
+        ([256, 64], 16, 80),  # MiniMax M3 vision attention
     ],
 )
 def test_ragged_flash_attention_gpu(
@@ -323,8 +278,12 @@ def test_ragged_flash_attention_gpu(
         k_single = k_ragged[start_idx:end_idx].unsqueeze(0)
         v_single = v_ragged[start_idx:end_idx].unsqueeze(0)
 
-        # Run null mask flash attention on the single sequence
-        out_single = null_mask_max_flash_attn(q_single, k_single, v_single)
+        out_single = scaled_dot_product_attention(
+            q_single.permute(0, 2, 1, 3),
+            k_single.permute(0, 2, 1, 3),
+            v_single.permute(0, 2, 1, 3),
+            scale=math.sqrt(1.0 / head_dim),
+        ).permute(0, 2, 1, 3)
         reference_outputs.append(out_single.squeeze(0))
 
     # Compare ragged output with reference output

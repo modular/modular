@@ -73,6 +73,27 @@ def test_construction_from_int_variadic_list() raises:
     assert_equal(t[2].value(), 3)
 
 
+def test_construction_from_array() raises:
+    var a: Array[Int, 3] = [1, 2, 3]
+    var t = Coord(a)
+    assert_equal(len(t), 3)
+    assert_equal(t[0].value(), 1)
+    assert_equal(t[1].value(), 2)
+    assert_equal(t[2].value(), 3)
+    # An `Array` carries no compile-time extents, so every element of the
+    # resulting `Coord` must be dynamic even when the values look constant.
+    assert_true(not type_of(t).all_dims_known)
+    assert_true(not type_of(t).ParamListType[0].is_static_value)
+
+
+def test_construction_from_array_narrow_dtype() raises:
+    var a: Array[Int32, 2] = [7, 9]
+    var t = Coord(a)
+    assert_true(type_of(t[0]) == Int32)
+    assert_equal(t[0].value(), 7)
+    assert_equal(t[1].value(), 9)
+
+
 def test_static_product() raises:
     comptime p = coord[1, 2, 3].static_product
     assert_equal(p, 6)

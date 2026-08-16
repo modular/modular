@@ -22,13 +22,11 @@ def test_argn() raises:
     comptime size = 93
 
     comptime vector_shape = row_major[size]()
-    var vector_stack = InlineArray[Int32, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int32, vector_shape.product()](uninitialized=True)
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -63,13 +61,13 @@ def test_argn_2() raises:
     comptime size = 91
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
+    var vector_stack = Array[Float32, vector_shape.product()](
         uninitialized=True
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -113,13 +111,13 @@ def test_argn_2_test_2() raises:
     comptime size = 3
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
+    var vector_stack = Array[Float32, vector_shape.product()](
         uninitialized=True
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -161,13 +159,13 @@ def test_argn_2_neg_axis() raises:
     comptime size = 3
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
+    var vector_stack = Array[Float32, vector_shape.product()](
         uninitialized=True
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -209,13 +207,13 @@ def test_argn_test_zeros() raises:
     comptime size = 16
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Float32, vector_shape.product()](
+    var vector_stack = Array[Float32, vector_shape.product()](
         uninitialized=True
     )
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -253,13 +251,11 @@ def test_argn_test_identity() raises:
     comptime size = 5
 
     comptime vector_shape = row_major[batch_size, size]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](uninitialized=True)
     var vector = TileTensor(vector_stack, vector_shape)
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -307,9 +303,7 @@ def test_argn_3d_identity() raises:
     comptime hidden_dim = 5
 
     comptime vector_shape = row_major[batch_size, seq_len, hidden_dim]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](uninitialized=True)
     var vector = TileTensor(vector_stack, vector_shape)
 
     for i in range(batch_size):
@@ -318,7 +312,7 @@ def test_argn_3d_identity() raises:
                 vector[i, j, k] = 0
 
     comptime output_shape = row_major[batch_size, seq_len, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -369,9 +363,7 @@ def test_argn_less_than_simd() raises:
     comptime hidden_dim = 3  # assumes simd_width of 4
 
     comptime vector_shape = row_major[batch_size, hidden_dim]()
-    var vector_stack = InlineArray[Int64, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int64, vector_shape.product()](uninitialized=True)
     var vector = TileTensor(vector_stack, vector_shape)
 
     for i in range(batch_size):
@@ -379,7 +371,7 @@ def test_argn_less_than_simd() raises:
             vector[i, j] = 0
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -431,16 +423,14 @@ def test_argn_simd_index_order() raises:
     comptime size = 17
 
     comptime vector_shape = row_major[size]()
-    var vector_stack = InlineArray[Int32, vector_shape.product()](
-        uninitialized=True
-    )
+    var vector_stack = Array[Int32, vector_shape.product()](uninitialized=True)
     var vector = TileTensor(vector_stack, vector_shape)
 
     for i in range(size):
         vector[i] = 0
 
     comptime output_shape = row_major[1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)
@@ -486,7 +476,7 @@ def test_argn_parallelize() raises:
             input[i, j] = 0
 
     comptime output_shape = row_major[batch_size, 1]()
-    var output_stack = InlineArray[Scalar[DType.int], output_shape.product()](
+    var output_stack = Array[Scalar[DType.int], output_shape.product()](
         uninitialized=True
     )
     var output = TileTensor(output_stack, output_shape)

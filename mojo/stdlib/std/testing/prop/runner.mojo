@@ -58,10 +58,11 @@ struct PropTest(Movable):
         """
         self._config = config^
 
+    # TODO(MOCO 4614) - change this to be a closure argument rather than thin
     def test[
         StrategyType: Strategy,
         //,
-        f: def(var StrategyType.Value) capturing raises,
+        f: def(var StrategyType.Value) thin raises,
     ](self, var strategy: StrategyType) raises:
         """Run a property test with the given strategy.
 

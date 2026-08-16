@@ -16,21 +16,29 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.graph.weights import WeightData, WeightsFormat, weights_format
+from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import (
+    _interleaved_rope_weights,
+    _select_quantization_encoding,
+)
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -46,6 +54,14 @@ class Olmo2Config(
     Contains parameters specific to the Olmo2 architecture, typically
     extracted from a HuggingFace configuration object.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "bfloat16",
+        "float32",
+    }
+
+    quantization_encoding: SupportedEncoding | None = None
 
     vocab_size: int
     """Vocabulary size of the Olmo2 model."""
@@ -155,17 +171,15 @@ class Olmo2Config(
         huggingface_config = model_config.huggingface_config
         assert huggingface_config is not None
         kv_cache_config = model_config.kv_cache
-        quantization_encoding = model_config.quantization_encoding
-        if quantization_encoding is None:
-            raise ValueError("quantization_encoding must not be None")
-        dtype = supported_encoding_dtype(quantization_encoding)
-        cache_dtype = model_config.kv_cache.cache_dtype
-
-        _weights_format = weights_format(model_config.weight_path)
-        interleaved_rope_weights = (
-            _weights_format == WeightsFormat.gguf
-            and model_config.rope_type == "normal"
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
         )
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
+
+        interleaved_rope_weights = _interleaved_rope_weights(model_config)
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in model_config.device_specs
@@ -202,6 +216,7 @@ class Olmo2Config(
             ),
             dtype=dtype,
             devices=device_refs,
+            quantization_encoding=quantization_encoding,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=kv_params,
             # Placeholder values; finalize() sets the real values once
