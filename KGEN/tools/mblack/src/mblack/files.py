@@ -35,6 +35,7 @@ from typing import (
 
 from mypy_extensions import mypyc_attr
 from pathspec import PathSpec
+from pathspec.pattern import Pattern as PathSpecPattern
 from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
 if sys.version_info >= (3, 11):
@@ -156,7 +157,7 @@ def find_user_pyproject_toml() -> Path:
 
 
 @lru_cache
-def get_gitignore(root: Path) -> PathSpec:
+def get_gitignore(root: Path) -> PathSpec[PathSpecPattern]:
     """Return a PathSpec matching gitignore content if present."""
     gitignore = root / ".gitignore"
     lines: list[str] = []
@@ -200,7 +201,9 @@ def normalize_path_maybe_ignore(
 
 
 def path_is_ignored(
-    path: Path, gitignore_dict: dict[Path, PathSpec], report: Report
+    path: Path,
+    gitignore_dict: dict[Path, PathSpec[PathSpecPattern]],
+    report: Report,
 ) -> bool:
     for gitignore_path, pattern in gitignore_dict.items():
         relative_path = normalize_path_maybe_ignore(
@@ -230,7 +233,7 @@ def gen_python_files(
     extend_exclude: Pattern[str] | None,
     force_exclude: Pattern[str] | None,
     report: Report,
-    gitignore_dict: dict[Path, PathSpec] | None,
+    gitignore_dict: dict[Path, PathSpec[PathSpecPattern]] | None,
     *,
     verbose: bool,
     quiet: bool,

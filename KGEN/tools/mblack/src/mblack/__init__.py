@@ -44,6 +44,7 @@ from mblib2to3.pgen2 import token
 from mblib2to3.pytree import Leaf, Node
 from mypy_extensions import mypyc_attr
 from pathspec import PathSpec
+from pathspec.pattern import Pattern as PathSpecPattern
 from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
 from mblack.cache import (
@@ -708,7 +709,7 @@ def get_sources(
         if exclude is None
         else exclude
     )
-    gitignore: PathSpec | None = None
+    gitignore: PathSpec[PathSpecPattern] | None = None
     root_gitignore = get_gitignore(root)
 
     for s in src:
