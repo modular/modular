@@ -25,7 +25,6 @@ from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.sys.info import is_32bit
 from std.sys.info import bit_width_of
 
-from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.math import Absable, DivModable, Powable
 from std.python import (
     ConvertibleFromPython,
@@ -76,7 +75,7 @@ def index[T: Indexer](idx: T, /) -> Int:
     Returns:
         An `__mlir_type` representing the index value.
     """
-    return Int(SIMDSize(mlir_value=idx.__mlir_index__()))
+    return Int(SIMDLength(mlir_value=idx.__mlir_index__()))
 
 
 # ===----------------------------------------------------------------------=== #

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from dataclasses import dataclass, field
 from typing import cast
 
@@ -25,7 +24,6 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVConnectorType,
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheInputs,
@@ -33,9 +31,6 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManager
-from max.pipelines.kv_cache.config import KVConnectorConfig
-from max.pipelines.kv_cache.connectors.tiered_connector import TieredConnector
-from max.pipelines.kv_cache.kv_connector import to_block_hash_bytes
 from test_common.context_utils import create_text_context
 
 
@@ -86,19 +81,19 @@ def test_claim() -> None:
         # TokenBuffer requires at least one token, so start from 1
         context = create_text_context(np.empty(max(i, 1)))
         replica_idx = i % data_parallel_degree
-        kv_manager.claim(context.request_id, replica_idx=replica_idx)
+        kv_manager.claim(context, replica_idx=replica_idx)
         batch.append((replica_idx, context))
 
     new_context = create_text_context(np.empty(max(i, 1)))
 
     # Release a slot.
     replica_idx, context = batch[0]
-    kv_manager.release(context.request_id, replica_idx=replica_idx)
-    assert not kv_manager.contains(context.request_id, replica_idx=replica_idx)
+    kv_manager.release(context)
+    assert not kv_manager.contains(context)
 
     # Check that the new context can be claimed using the released slot.
-    kv_manager.claim(new_context.request_id, replica_idx=replica_idx)
-    assert kv_manager.contains(new_context.request_id, replica_idx=replica_idx)
+    kv_manager.claim(new_context, replica_idx=replica_idx)
+    assert kv_manager.contains(new_context)
 
 
 def test_step() -> None:
@@ -116,7 +111,7 @@ def test_step() -> None:
     for i, prompt_len in enumerate(prompt_lens):
         context = create_text_context(np.empty(prompt_len))
         replica_idx = i % data_parallel_degree
-        kv_manager.claim(context.request_id, replica_idx=replica_idx)
+        kv_manager.claim(context, replica_idx=replica_idx)
         batch.append(context)
         batches_by_replica[replica_idx].append(context)
 
@@ -126,12 +121,14 @@ def test_step() -> None:
 
     # Update these values a few times
     for j in range(3):
-        for i, ctx in enumerate(batch):
-            kv_manager.alloc(ctx, replica_idx=i % data_parallel_degree)
+        for ctx in batch:
+            kv_manager.alloc(ctx)
         kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
-        kv_manager.step(batches_by_replica)
+        for replica_batch in batches_by_replica:
+            for ctx in replica_batch:
+                kv_manager.step(ctx)
 
         for i, ctx in enumerate(batch):
             assert ctx.tokens.processed_length == prompt_lens[i] * (j + 1)
@@ -157,159 +154,6 @@ class PrevModelInputs:
     input_row_offsets: Buffer
     data_parallel_splits: Buffer
     signal_buffers: list[Buffer] = field(default_factory=list)
-
-
-def test_get_metrics_aggregated_h2d_d2h() -> None:
-    """Verify get_metrics_aggregated() reports h2d/d2h transfer counts.
-
-    Setup: 2 GPUs, data_parallel_degree=2 → 2 replicas, each with 1 GPU,
-    sharing a single LocalConnector (SERVOPT-1501). Offloading from / loading
-    into each replica's device buffers (selected via ``replica_idx``) must be
-    reflected in the shared connector's metrics.
-    """
-    if accelerator_count() < 2:
-        pytest.skip("Need at least 2 GPUs")
-
-    num_devices = 2
-    data_parallel_degree = 2
-
-    devices = [Accelerator(id=i) for i in range(num_devices)]
-    params = MHAKVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=4,
-        head_dim=32,
-        num_layers=2,
-        page_size=16,
-        enable_prefix_caching=True,
-        kv_connector=KVConnectorType.local,
-        host_kvcache_swap_space_gb=1.0,
-        devices=[DeviceRef.GPU(i) for i in range(num_devices)],
-        data_parallel_degree=data_parallel_degree,
-    )
-    session = InferenceSession(devices=devices)
-    manager = PagedKVCacheManager(
-        params=params,
-        session=session,
-        total_num_pages=16,
-        total_num_host_pages=8,
-        max_batch_size=128,
-    )
-
-    # The connector is shared across replicas; the host tier is keyed purely by
-    # hash, so use globally-distinct hashes per replica to avoid collisions.
-    def hashes_for(replica_idx: int) -> list[bytes]:
-        base = 1000 * (replica_idx + 1)
-        return [to_block_hash_bytes(base + 1), to_block_hash_bytes(base + 2)]
-
-    # Offload 2 blocks from each replica's device buffers → D2H copies.
-    connector = manager._replica[0].connector
-    for replica_idx in range(data_parallel_degree):
-        connector.offload(
-            [0, 1], hashes_for(replica_idx), replica_idx=replica_idx
-        )
-        connector.wait_for_offloads()
-
-    metrics = manager.get_metrics_aggregated()
-    assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
-    assert metrics.h2d_blocks_copied == 0  # nothing loaded yet
-
-    # Load the same blocks back into each replica's device buffers → H2D copies.
-    for replica_idx in range(data_parallel_degree):
-        connector.load([0, 1], hashes_for(replica_idx), replica_idx=replica_idx)
-
-    metrics = manager.get_metrics_aggregated()
-    assert metrics.d2h_blocks_copied == 4  # unchanged
-    assert metrics.h2d_blocks_copied == 4  # 2 per replica x 2 replicas
-
-
-def test_get_metrics_aggregated_disk_ops() -> None:
-    """Verify get_metrics_aggregated() reports shared-tier disk metrics.
-
-    Setup: 2 GPUs, data_parallel_degree=2, a single TieredConnector shared
-    across replicas (SERVOPT-1501) with a 4-block host tier. Offloading from
-    both replicas fills the host tier and spills to disk; a subsequent load
-    must fetch from disk. The connector is replica-agnostic, so the metrics
-    reflect every replica's traffic.
-    """
-    if accelerator_count() < 2:
-        pytest.skip("Need at least 2 GPUs")
-
-    num_devices = 2
-    data_parallel_degree = 2
-
-    with tempfile.TemporaryDirectory(prefix="kv_metrics_disk_") as disk_dir:
-        devices = [Accelerator(id=i) for i in range(num_devices)]
-        params = MHAKVCacheParams(
-            dtype=DType.float32,
-            n_kv_heads=4,
-            head_dim=32,
-            num_layers=2,
-            page_size=16,
-            enable_prefix_caching=True,
-            kv_connector=KVConnectorType.tiered,
-            host_kvcache_swap_space_gb=1.0,
-            kv_connector_config=KVConnectorConfig(
-                host_kvcache_swap_space_gb=1.0,
-                disk_offload_dir=disk_dir,
-                disk_offload_max_gb=1.0,
-            ),
-            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
-            data_parallel_degree=data_parallel_degree,
-        )
-        session = InferenceSession(devices=devices)
-        # A single shared 4-block host tier: offloading two pairs per replica
-        # (4 total) fills it; a second batch then evicts the first to disk.
-        manager = PagedKVCacheManager(
-            params=params,
-            session=session,
-            total_num_pages=16,
-            total_num_host_pages=4,
-            max_batch_size=128,
-        )
-
-        connector = manager._replica[0].connector
-        assert isinstance(connector, TieredConnector)
-
-        # Globally-distinct hashes per replica (the shared tier is hash-keyed).
-        def hashes_for(replica_idx: int, base: int) -> list[bytes]:
-            start = base + 1000 * (replica_idx + 1)
-            return [
-                to_block_hash_bytes(start + 1),
-                to_block_hash_bytes(start + 2),
-            ]
-
-        # Offload 2 blocks from each replica → D2H + write-through to disk.
-        for replica_idx in range(data_parallel_degree):
-            connector.offload(
-                [0, 1], hashes_for(replica_idx, 0), replica_idx=replica_idx
-            )
-            connector.wait_for_offloads()
-            connector._disk_tier.wait_for_writes()
-            connector.wait_for_offloads()  # drain write-locked host blocks
-
-        metrics = manager.get_metrics_aggregated()
-        assert metrics.d2h_blocks_copied == 4  # 2 per replica x 2 replicas
-        assert metrics.disk_blocks_written == 4  # 2 per replica x 2 replicas
-
-        # Offload 2 more blocks from each replica → evicts the first batch from
-        # the full host tier, leaving it only on disk.
-        for replica_idx in range(data_parallel_degree):
-            connector.offload(
-                [2, 3], hashes_for(replica_idx, 5000), replica_idx=replica_idx
-            )
-            connector.wait_for_offloads()
-            connector._disk_tier.wait_for_writes()
-            connector.wait_for_offloads()
-
-        # Load the first batch back → must be promoted from disk (not in host).
-        for replica_idx in range(data_parallel_degree):
-            connector.load(
-                [4, 5], hashes_for(replica_idx, 0), replica_idx=replica_idx
-            )
-
-        metrics = manager.get_metrics_aggregated()
-        assert metrics.disk_blocks_read == 4  # 2 per replica x 2 replicas
-        assert metrics.h2d_blocks_copied == 4  # 2 per replica x 2 replicas
 
 
 def _bytes_per_block(buf: Buffer) -> int:
@@ -386,7 +230,7 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     num_prompt_tokens = 2 * page_size + 1
     ctx = create_text_context(np.arange(num_prompt_tokens))
     bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
+    hashes = cast("list[bytes]", list(bm.req_to_hashes[ctx.request_id]))
     assert len(hashes) == 2
 
     # Seed replica 0's device prefix cache with the two blocks, each holding a
@@ -402,12 +246,17 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
     assert len(pool1.prefix_cache) == 0
 
     # Admit the identical prompt on replica 1: triggers the cross-replica copy.
-    manager.claim(ctx.request_id, replica_idx=1)
-    manager.alloc(ctx, replica_idx=1)
+    manager.claim(ctx, replica_idx=1)
+    manager.alloc(ctx)
 
     # Both prefix blocks were served cross-replica.
     metrics = manager.get_metrics_aggregated()
     assert metrics.cross_replica_blocks_copied == 2
+    assert metrics.cross_replica_bytes_copied == 2 * _bytes_per_block(buf0)
+    # A cross-replica D2D copy is not a local device hit: must not also tick
+    # device_blocks_served (regression guard for the G0/G0-DP double-count
+    # bug -- CENG-845).
+    assert metrics.device_blocks_served == 0
 
     # The request's window advanced past the two reused blocks.
     assert ctx.cached_prefix_length == 2 * page_size
@@ -420,94 +269,13 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
         np.testing.assert_array_equal(got, expected[i])
 
 
-def test_cross_replica_host_prefix_cache_hit() -> None:
-    """A request on replica 1 reuses prefix blocks offloaded by replica 0.
-
-    The host (CPU) tier is shared across replicas (SERVOPT-1501): replica 0
-    offloads two blocks to the single host pool (and they are *not* resident in
-    any replica's GPU prefix cache). An identical prompt admitted on replica 1
-    must load those blocks from the shared host tier into replica 1's device
-    buffers, byte-identical to what replica 0 offloaded.
-    """
-    if accelerator_count() < 2:
-        pytest.skip("Need at least 2 GPUs")
-
-    num_devices = 2
-    data_parallel_degree = 2
-    page_size = 16
-
-    devices = [Accelerator(id=i) for i in range(num_devices)]
-    params = MHAKVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=4,
-        head_dim=32,
-        num_layers=2,
-        page_size=page_size,
-        enable_prefix_caching=True,
-        kv_connector=KVConnectorType.local,
-        host_kvcache_swap_space_gb=1.0,
-        devices=[DeviceRef.GPU(i) for i in range(num_devices)],
-        data_parallel_degree=data_parallel_degree,
-    )
-    session = InferenceSession(devices=devices)
-    manager = PagedKVCacheManager(
-        params=params,
-        session=session,
-        total_num_pages=16,
-        total_num_host_pages=8,
-        max_batch_size=128,
-    )
-
-    bm = manager._block_manager
-    pool0 = bm.device_block_pools[0]
-    pool1 = bm.device_block_pools[1]
-    connector = manager._replica[0].connector
-    # The host tier is shared: every replica sees the same connector instance.
-    assert manager._replica[1].connector is connector
-
-    num_prompt_tokens = 2 * page_size + 1
-    ctx = create_text_context(np.arange(num_prompt_tokens))
-    bm.compute_hashes_for_request(ctx)
-    hashes = cast("list[int | bytes]", list(bm.req_to_hashes[ctx.request_id]))
-    assert len(hashes) == 2
-    hash_bytes = [to_block_hash_bytes(h) for h in hashes]
-
-    buf0 = manager.get_device_buffer(0).all_buffers[0]
-    buf1 = manager.get_device_buffer(1).all_buffers[0]
-
-    # Write known patterns into replica 0's device blocks and offload them to
-    # the shared host tier. Crucially we do NOT commit them into any device
-    # prefix cache, so replica 1's lookup must fall through to the host tier
-    # (rather than a cross-replica GPU copy).
-    expected: list[np.ndarray] = []
-    src_blocks = []
-    for i in range(len(hashes)):
-        block = bm.allocate_device_block(0)
-        src_blocks.append(block)
-        expected.append(_write_block_pattern(buf0, block.bid, seed=200 + i))
-    connector.offload([b.bid for b in src_blocks], hash_bytes, replica_idx=0)
-    connector.wait_for_offloads()
-    for block in src_blocks:
-        pool0.free_block(block)
-
-    assert len(pool0.prefix_cache) == 0
-    assert len(pool1.prefix_cache) == 0
-
-    # Admit the identical prompt on replica 1: must hit the shared host tier.
-    manager.claim(ctx.request_id, replica_idx=1)
-    manager.alloc(ctx, replica_idx=1)
-
-    metrics = manager.get_metrics_aggregated()
-    assert metrics.cross_replica_blocks_copied == 0  # host hit, not GPU copy
-    assert metrics.h2d_blocks_copied == 2
-    assert ctx.cached_prefix_length == 2 * page_size
-
-    # Replica 1 now holds the two blocks, byte-identical to replica 0's offload.
-    for i, block_hash in enumerate(hashes):
-        assert block_hash in pool1.prefix_cache
-        dst_block = pool1.prefix_cache[block_hash]
-        got = _read_block_bytes(buf1, dst_block.bid)
-        np.testing.assert_array_equal(got, expected[i])
+# ``test_get_metrics_aggregated_h2d_d2h``, ``test_get_metrics_aggregated_disk_ops``
+# and ``test_cross_replica_host_prefix_cache_hit`` were removed with the Python
+# host/disk tier: that tier is now the Rust ``rust_tiered`` connector, whose pyo3
+# extension may only be depended on from an internal-only package. Its tier
+# metrics and host/disk residency coverage lives in
+# ``internal/dkv/test_rust_tiered_connector_gpu.py``; the shared-connector DP
+# wiring stays covered by ``test_cross_replica_gpu_prefix_cache_hit`` above.
 
 
 def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
@@ -561,8 +329,8 @@ def test_runtime_inputs_mha_primary_mla_secondary_matches_graph() -> None:
     )
 
     context = create_text_context(np.empty(4))
-    manager.claim(context.request_id, replica_idx=0)
-    manager.alloc(context, replica_idx=0)
+    manager.claim(context)
+    manager.alloc(context)
 
     kv_cache_inputs = manager.runtime_inputs([[context]])
     assert isinstance(kv_cache_inputs, MultiKVCacheInputs)

@@ -280,8 +280,8 @@ def generate_max_outputs_fp4(
 
     # Set up KV cache for execution (single replica: replica_idx=0)
     batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    kv_manager.alloc(batch[0], replica_idx=0)
+    kv_manager.claim(batch[0])
+    kv_manager.alloc(batch[0])
     kv_runtime_inputs = kv_manager.runtime_inputs_for_leaf(
         cast(list[list[TextContext]], [batch])
     ).inputs[0]

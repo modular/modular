@@ -15,22 +15,22 @@ from std.testing import assert_equal
 
 def elementwise_max(lhs: SIMD, rhs: type_of(lhs), out result: type_of(lhs)):
     result = {}
-    comptime for i in range(lhs.size):
+    comptime for i in range(lhs.length):
         result[i] = lhs[i] if lhs[i] >= rhs[i] else rhs[i]
 
 
 def main() raises:
     comptime simd_type = SIMD[DType.int64, 4]
-    v1 = simd_type(12, 0, 99, 77)
-    v2 = simd_type(0, 92, 11, 4)
+    var v1 = simd_type(12, 0, 99, 77)
+    var v2 = simd_type(0, 92, 11, 4)
     assert_equal(elementwise_max(v1, v2), simd_type(12, 92, 99, 77))
 
-    a: InlineArray[Float64, 5] = [2, 4, 5, 7, 8]
-    b = InlineArray[Float64, 4](fill=0)
+    var a: Array[Float64, 5] = [2, 4, 5, 7, 8]
+    var b = Array[Float64, 4](fill=0)
 
     comptime for i in range(1, 5):
         b[i - 1] = a[i] + a[i - 1]
 
-    expected: InlineArray[Float64, 4] = [6.0, 9.0, 12.0, 15.0]
-    for i in range(expected.size):
+    var expected: Array[Float64, 4] = [6.0, 9.0, 12.0, 15.0]
+    for i in range(expected.length):
         assert_equal(b[i], expected[i])

@@ -24,6 +24,9 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
+from max.pipelines.lib.config.model_config import (
+    _resolve_component_encoding_and_weights,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import traced
 
@@ -62,7 +65,10 @@ class TextEncoder(CompiledComponent):
 
         config = manifest["text_encoder"]
         config_dict = config.huggingface_config.to_dict()
-        encoding = config.quantization_encoding or "bfloat16"
+        resolved_encoding, resolved_weight_path = (
+            _resolve_component_encoding_and_weights(config)
+        )
+        encoding = resolved_encoding or "bfloat16"
         devices = load_devices(config.device_specs)
 
         umt5_config = UMT5Config.generate(config_dict, encoding, devices)
@@ -73,7 +79,7 @@ class TextEncoder(CompiledComponent):
         self._device = devices[0]
 
         # Load weights.
-        paths = config.resolved_weight_paths()
+        paths = config.resolved_weight_paths(resolved_weight_path)
         weights = load_weights(paths)
         state_dict = _prepare_state_dict(weights, target_dtype=dtype)
 

@@ -22,8 +22,8 @@ This page covers:
   — Use enumerated error types or the `Variant` type for pattern matching.
 - [**The `Never` type**](#the-never-type) — Mark functions that always raise
   or never raise.
-- [**Parametric raises**](#parametric-raises) — Write generic functions that
-  propagate error types from their arguments.
+- [**Parametric raises**](#parametric-raises) — Write parameterized functions
+  that propagate error types from their arguments.
 - [**Typed and `Error` interaction**](#typed-errors-and-error-interaction) —
   Work with code that uses both error styles.
 - [**Stack traces**](#enable-stack-trace-generation-for-errors) — Enable stack
@@ -49,7 +49,7 @@ type for most Mojo code. It carries a text message describing what went wrong,
 and it's the right choice for application-level error handling—simple,
 well-supported, and sufficient for the majority of use cases.
 
-You can raise an `Error` with the constructor or a string literal shorthand:
+You can raise an `Error` with the initializer or a string literal shorthand:
 
 ```mojo
 # These are equivalent
@@ -145,7 +145,7 @@ def main() raises:
             except e:
                 if "invalid" in String(e):
                     print("except  => fatal:", e)
-                    raise e^
+                    raise e
                 print("except  => handled:", e)
             else:
                 print("else    => success:", result)
@@ -183,25 +183,31 @@ Notice:
 - When `id` is 1001: `process_record()` raises an error. The `except` clause
   handles it and execution continues with the next iteration.
 - When `id` is -3: `process_record()` raises an "invalid" error. The `except`
-  clause re-raises it with `raise e^`, which transfers ownership of the error
-  to the outer `try`/`except`. The `finally` clause still runs before the error
-  propagates. Because the re-raise exits the loop, `id` 42 is never processed.
+  clause re-raises it, so it propagates to the outer `try`/`except`. The
+  `finally` clause still runs before the error propagates. Because the re-raise
+  exits the loop, `id` 42 is never processed.
 
 ### Re-raise an error
 
-To re-raise a caught error, use `raise` with the
-[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-)
-(`^`) to transfer ownership of the error value:
+To re-raise a caught error, pass it to `raise`:
 
 ```mojo
 try:
-    result = process_record(-1)
+    var result = process_record(-1)
 except e:
     print("Logging error:", e)
-    raise e^  # re-raise with ownership transfer
+    raise e  # re-raise
 ```
 
 You can also raise a different error from within an `except` clause.
+
+Re-raising copies the error, which is cheap because both its message and its
+optional stack trace are reference counted. To avoid the copy, transfer the
+error with the
+[transfer sigil](/docs/manual/values/ownership/#transfer-arguments-var-and-):
+`raise e^`. A [custom error type](#typed-errors) that doesn't conform to
+[`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) requires the
+transfer sigil to re-raise.
 
 ## Typed errors
 
@@ -236,7 +242,7 @@ keyword arguments like `ValidationError(field="username", reason="too short")`.
 
 Typed errors work on GPUs and embedded targets as long as you avoid
 heap-allocated types like `String`. For more on GPU programming, see
-[GPU fundamentals](/docs/manual/gpu/fundamentals/).
+[GPU fundamentals](https://docs.modular.com/gpu/fundamentals/).
 
 :::
 
@@ -486,7 +492,7 @@ distinguish between conditions without carrying different data per condition.
 
 ## The `Never` type
 
-`Never` is a type with no constructors—it can't be instantiated. This makes
+`Never` is a type with no initializers. It can't be instantiated. This makes
 it useful in error-handling signatures to express two opposite guarantees:
 
 - `raises YourErrorType -> Never` — The function *always* raises and never
@@ -535,7 +541,7 @@ This equivalency is especially useful in combination with
 ## Parametric raises
 
 You can write
-[generic functions](/docs/manual/parameters/#parameters-and-generics) that
+[parameterized functions](/docs/manual/parameters/#parameters-and-generics) that
 propagate the error type from a function argument to the caller. This uses a
 compile-time parameter for the error type:
 
@@ -895,8 +901,8 @@ like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
-content = f.read()
+var f = open(input_file, "r")
+var content = f.read()
 # Process the content as needed
 # Close the file handle
 f.close()
@@ -918,10 +924,10 @@ To handle this scenario, you could rewrite the code to use `try` like this:
 
 ```mojo
 # Obtain a file handle to read from storage
-f = open(input_file, "r")
+var f = open(input_file, "r")
 
 try:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 finally:
     # Ensure that the file handle is closed even if read() raises an error
@@ -939,7 +945,7 @@ like this:
 
 ```mojo
 with open(input_file, "r") as f:
-    content = f.read()
+    var content = f.read()
     # Process the content as needed
 ```
 
@@ -950,8 +956,8 @@ different file:
 
 ```mojo
 with open(input_file, "r") as f_in, open(output_file, "w") as f_out:
-    input_text = f_in.read()
-    output_text = input_text.upper()
+    var input_text = f_in.read()
+    var output_text = input_text.upper()
     f_out.write(output_text)
 ```
 
@@ -1015,8 +1021,8 @@ struct Timer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
             Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
@@ -1090,8 +1096,8 @@ struct ConditionalTimer(ImplicitlyCopyable):
         return self
 
     def __exit__(mut self):
-        end_time = time.perf_counter_ns()
-        elapsed_time_ms = round(
+        var end_time = time.perf_counter_ns()
+        var elapsed_time_ms = round(
             Float64(end_time - self.start_time) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
@@ -1126,7 +1132,7 @@ def main() raises:
                 print("continue executed")
                 continue
 
-            j = flaky_identity(i)
+            var j = flaky_identity(i)
             print("j =", j)
 
             print("Ending execution")
@@ -1162,7 +1168,7 @@ Unhandled exception caught during execution: really bad
 ### Handle typed errors in `__exit__()`
 
 The `__exit__(self, error: Error)` overload handles only `Error` values.
-To handle typed errors, implement a generic `__exit__()` method with a
+To handle typed errors, implement a parameterized `__exit__()` method with a
 compile-time error type parameter:
 
 ```mojo

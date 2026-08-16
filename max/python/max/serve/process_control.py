@@ -76,10 +76,19 @@ class _DebugSpawnProcess(multiprocessing.context.SpawnProcess):
 async def run_subprocess(
     func: Callable[_P, _R],
     name: str,
+    daemon: bool,
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> None:
     """async coroutine to run func(*args,**kwargs) in a subprocess.
+
+    ``daemon`` controls the child's ``daemon`` flag. Passing ``True`` matches
+    multiprocessing's safety behaviour of auto-terminating the child with the
+    parent, but daemonic processes cannot spawn their own children. Callers that
+    host a subprocess which itself launches further subprocesses (e.g. a cascade
+    worker that spins up a ``max.serve`` model worker) must pass ``False``.
+    Teardown is explicit in the ``finally`` block below, so a non-daemon child
+    is still reliably reaped on context exit.
 
     Two entry points to the ``finally:`` cleanup:
 
@@ -105,7 +114,7 @@ async def run_subprocess(
         target=func,
         args=args,
         kwargs=kwargs,
-        daemon=True,
+        daemon=daemon,
         name=name,
     )
     try:
@@ -159,6 +168,7 @@ class ProcessManager:
 
     name: str
     group: CancelGroup
+    daemon: bool = True
     task: asyncio.Task[None] | None = None
     heartbeat: asyncio.Task[None] | None = None
 
@@ -177,7 +187,7 @@ class ProcessManager:
         """
         assert self.task is None, "ProcessManager.start may only be called once"
         self.task = self.group.create_task(
-            run_subprocess(func, self.name, *args, **kwargs)
+            run_subprocess(func, self.name, self.daemon, *args, **kwargs)
         )
 
         def task_done(_: asyncio.Task[None]) -> None:
@@ -258,13 +268,22 @@ class ProcessManager:
 
 
 @asynccontextmanager
-async def subprocess_manager(name: str) -> AsyncGenerator[ProcessManager]:
+async def subprocess_manager(
+    name: str, *, daemon: bool = True
+) -> AsyncGenerator[ProcessManager]:
     """Async context manager owning one :py:class:`ProcessManager`.
 
     Internally uses :py:class:`CancelGroup` to supervise the lifecycle
     task + any watchers; child failures cancel the body, body exit
     cancels the children. The subprocess is always reaped on exit.
+
+    Args:
+        name: Human-readable name for the managed subprocess.
+        daemon: Whether the managed subprocess runs as a daemon. Pass
+            ``daemon=False`` when the subprocess must spawn its own child
+            processes (daemonic processes cannot). See
+            :py:func:`run_subprocess`.
     """
     logger.info("Starting subprocess: %s", name)
     async with CancelGroup() as tg:
-        yield ProcessManager(name=name, group=tg)
+        yield ProcessManager(name=name, group=tg, daemon=daemon)

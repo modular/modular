@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements numpy-style tensor broadcasting for CPU and GPU targets."""
 
 
 from layout import TileTensor
@@ -64,6 +65,9 @@ def broadcast[
     For each axis of `input`, if the dimension is 1, duplicate the data at
     each index of the corresponding axis in `output`, otherwise copy over the
     entire axis to the corresponding axis in `output`.
+
+    Parameters:
+        dtype: The element type of the `input` and `output` tensors.
 
     Args:
         output: The output buffer.
@@ -123,6 +127,9 @@ def broadcast_impl[
     For each axis of `input` ∈ [axis, rank), if the dimension is 1, duplicate the data at
     each index of the corresponding axis in `output`, otherwise copy over the
     entire axis to the corresponding axis in `output`.
+
+    Parameters:
+        dtype: The element type of the `input` and `output` tensors.
 
     Args:
         axis: The axis value.

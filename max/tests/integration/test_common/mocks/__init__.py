@@ -25,10 +25,12 @@ from .pipeline_config import (
     DummyMAXModelConfig,
     DummyPipelineConfig,
     mock_estimate_memory_footprint,
+    mock_hf_repo_access,
     mock_huggingface_config,
     mock_huggingface_hub_repo_exists_with_retry,
     mock_pipeline_config_hf_dependencies,
     mock_pipeline_config_resolve,
+    patched_hf_construction,
 )
 from .pipeline_model import MockPipelineModel
 from .tokenizer import MockTextTokenizer
@@ -80,12 +82,12 @@ def retrieve_mock_text_generation_pipeline(
         pipeline: TextGenerationPipeline[TextContext] = TextGenerationPipeline(
             pipeline_config=mock_config,
             pipeline_model=MockPipelineModel,
-            eos_token_id=eos_token,
             weight_adapters={},
             tokenizer=tokenizer,
             memory_plan=_MemoryPlan(
                 max_batch_size=mock_config.runtime.max_batch_size or 1,
                 footprint=0,
+                device_specs=tuple(device_specs),
             ),
         )
 
@@ -99,9 +101,11 @@ __all__ = [
     "DummyPipelineConfig",
     "MockTextTokenizer",
     "mock_estimate_memory_footprint",
+    "mock_hf_repo_access",
     "mock_huggingface_config",
     "mock_huggingface_hub_repo_exists_with_retry",
     "mock_pipeline_config_hf_dependencies",
     "mock_pipeline_config_resolve",
+    "patched_hf_construction",
     "retrieve_mock_text_generation_pipeline",
 ]

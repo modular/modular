@@ -22,10 +22,13 @@ torch_reference_layer, and prepare_torch_inputs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import cast
 
 import numpy as np
-import torch
+
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -114,10 +117,19 @@ class RaggedAttentionHarness(
             num_layers=1,
             devices=[DeviceRef.GPU()],
         )
-        self._kv_manager = PagedKVCacheManager(
+
+    @cached_property
+    def _kv_manager(self) -> PagedKVCacheManager:
+        """The paged KV cache, allocated on first use.
+
+        Deferred because it claims device memory, which building the graph does
+        not need: the CPU precompile step constructs a harness with no GPU
+        attached.
+        """
+        return PagedKVCacheManager(
             params=self._kv_params,
-            total_num_pages=static_params.total_num_pages,
-            session=session,
+            total_num_pages=self.static_params.total_num_pages,
+            session=self.session,
             max_batch_size=128,
         )
 
@@ -146,8 +158,8 @@ class RaggedAttentionHarness(
                 max_length=max(total_len, self.static_params.max_seq_len),
                 tokens=TokenBuffer(np.empty(total_len, dtype=np.int64)),
             )
-            self._kv_manager.claim(ctx.request_id, replica_idx=0)
-            self._kv_manager.alloc(ctx, replica_idx=0)
+            self._kv_manager.claim(ctx)
+            self._kv_manager.alloc(ctx)
             if dynamic_params.ctx_len > 0:
                 ctx.tokens.skip_processing(dynamic_params.ctx_len)
             batch.append(ctx)
@@ -185,7 +197,7 @@ class RaggedAttentionHarness(
         context: list[TextContext],
     ) -> None:
         for ctx in context:
-            self._kv_manager.release(ctx.request_id, replica_idx=0)
+            self._kv_manager.release(ctx)
 
     def cuda_graph_eligible(
         self, dynamic_params: AttentionDynamicParams

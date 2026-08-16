@@ -17,7 +17,7 @@
 from std.random import random_float64
 from std.math import ceildiv
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.itertools import product
 
 # ========================== KERNEL CODE ==========================
@@ -26,7 +26,7 @@ from std.itertools import product
 def stencil_kernel(
     in_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     out_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    N: Int,
+    n_dim: Int32,
     c0: Float32,
     c1: Float32,
     c2: Float32,
@@ -40,7 +40,7 @@ def stencil_kernel(
     Args:
         in_ptr: Input 3D array (device).
         out_ptr: Output 3D array (device).
-        N: Dimension size (N x N x N volume).
+        n_dim: Dimension size (N x N x N volume).
         c0: Coefficient for center element.
         c1: Coefficient for k-1 neighbor.
         c2: Coefficient for k+1 neighbor.
@@ -50,6 +50,8 @@ def stencil_kernel(
         c6: Coefficient for i+1 neighbor.
     """
     comptime BLOCK_DIM = 8
+    # `Int` is not device-passable; widen the fixed-width arg back for indexing.
+    var N = Int(n_dim)
     var i = block_idx.z * BLOCK_DIM + thread_idx.z
     var j = block_idx.y * BLOCK_DIM + thread_idx.y
     var k = block_idx.x * BLOCK_DIM + thread_idx.x
@@ -122,7 +124,7 @@ def stencil_3d(
     ctx.enqueue_function[stencil_kernel](
         d_in,
         d_out,
-        N,
+        Int32(N),
         c0,
         c1,
         c2,

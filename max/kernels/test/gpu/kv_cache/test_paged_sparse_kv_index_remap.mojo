@@ -24,7 +24,7 @@
 # ===----------------------------------------------------------------------=== #
 """GPU test for row-offset sparse KV remap (same dispatch as sparse MLA MOGG path)."""
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import UnsafePointer, alloc
 
 from std.testing import assert_equal

@@ -31,10 +31,8 @@ deepseekV2_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
+    default_encoding=DeepseekV2Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV2Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
     batching=DeepseekV2BatchProcessor,
