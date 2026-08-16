@@ -37,25 +37,34 @@ def test_convtranspose_pads():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 7, 3, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -65,15 +74,15 @@ def test_convtranspose_pads():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 7, 3, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,
@@ -109,25 +118,34 @@ def test_convtranspose():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 5, 5, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 1, 1)
@@ -137,15 +155,15 @@ def test_convtranspose():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 5, 5, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,
@@ -176,10 +194,13 @@ def test_convtranspose_dilation():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     input.raw_store(0, 3)
     input.raw_store(1, 8)
     input.raw_store(2, 1)
@@ -191,20 +212,26 @@ def test_convtranspose_dilation():
     input.raw_store(8, 6)
 
     comptime filter_layout = row_major[1, 2, 2, 1, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     filter.raw_store(0, 7)
     filter.raw_store(1, 2)
     filter.raw_store(2, 1)
     filter.raw_store(3, 9)
 
     comptime output_layout = row_major[1, 1, 5, 5, 1]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
     var stride = Index(1, 1, 1)
     var dilation = Index(1, 2, 2)
     var pad_d = Index(0, 0)
@@ -213,15 +240,15 @@ def test_convtranspose_dilation():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 5, 5, 1))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 2, 2, 1, 1))),
         ),
         stride,
@@ -267,25 +294,34 @@ def test_convtranspose_attributes():
     comptime type = DType.float32
 
     comptime input_layout = row_major[1, 1, 3, 3, 1]()
-    var input_stack = InlineArray[Scalar[type], input_layout.product()](
+    var input_stack = Array[Scalar[type], input_layout.product()](
         uninitialized=True
     )
-    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    var input_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(input_stack)
+    ] = input_stack.unsafe_ptr()
+    var input = TileTensor(input_stack_ptr, input_layout)
     for i in range(9):
         input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
-    var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
+    var filter_stack = Array[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
-    var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
+    var filter_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(filter_stack)
+    ] = filter_stack.unsafe_ptr()
+    var filter = TileTensor(filter_stack_ptr, filter_layout)
     _ = filter.fill(1.0)
 
     comptime output_layout = row_major[1, 1, 10, 8, 2]()
-    var output_stack = InlineArray[Scalar[type], output_layout.product()](
+    var output_stack = Array[Scalar[type], output_layout.product()](
         uninitialized=True
     )
-    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
+    var output_stack_ptr: UnsafePointer[
+        Scalar[type], origin_of(output_stack)
+    ] = output_stack.unsafe_ptr()
+    var output = TileTensor(output_stack_ptr, output_layout)
 
     var stride = Index(1, 3, 2)
     var dilation = Index(1, 1, 1)
@@ -295,15 +331,15 @@ def test_convtranspose_attributes():
 
     conv_transpose_naive[type](
         TileTensor(
-            output.ptr,
+            output._storage,
             row_major(Coord(IndexList[5](1, 1, 10, 8, 2))),
         ),
         TileTensor(
-            input.ptr,
+            input._storage,
             row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
         ),
         TileTensor(
-            filter.ptr,
+            filter._storage,
             row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
         ),
         stride,

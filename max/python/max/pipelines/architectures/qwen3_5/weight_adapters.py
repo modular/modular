@@ -19,8 +19,13 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.model_config import (
+    _select_dtype_cast,
+)
+from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
+
+from .model_config import Qwen3_5Config
 
 # -----------------------------------------------------------------------
 # Vision encoder weight mapping
@@ -134,11 +139,16 @@ def convert_qwen3_5_state_dict(
                 max_name = after + max_name[len(before) :]
                 break
 
-        # Cast linear attention scalar weights to float32.
-        # dt_bias is stored as bfloat16 but model expects float32.
+        # Cast linear attention scalar weights and gated RMSNorm weight to
+        # float32.  dt_bias is stored as bfloat16 but model expects float32.
         # A_log is already stored as float32; the cast is a no-op but kept
         # for safety in case older checkpoints stored it as bfloat16.
-        if max_name.endswith((".dt_bias", ".A_log")):
+        # linear_attn.norm.weight backs a float32 RMSNorm inside
+        # GatedDeltaNet, but the global float32→bfloat16 cast applied below
+        # would otherwise downcast it.
+        if max_name.endswith(
+            (".dt_bias", ".A_log", ".linear_attn.norm.weight")
+        ):
             weight_data = weight_data.astype(DType.float32)
 
         # Reshape conv1d weight from [conv_dim, kernel_size] to
@@ -165,13 +175,14 @@ def convert_qwen3_5_state_dict(
     # Qwen3.5 checkpoints have a small number of intentionally-float32
     # tensors (A_log, norm.weight). Those are already in float32 so they
     # are unaffected by either direction of casting.
-    model_config = pipeline_config.model
-    if model_config._applied_dtype_cast_from:
-        cast_from = model_config._applied_dtype_cast_from
-        cast_to = model_config._applied_dtype_cast_to
+    # TODO(MXF-517): this should be resolved by the ArchConfig, not the adapter.
+    cast_from, cast_to = _select_dtype_cast(
+        pipeline_config.model, Qwen3_5Config.DEFAULT_ENCODING
+    )
+    if cast_from:
         assert cast_to, (
-            "Invalid configuration: _applied_dtype_cast_to is not set but "
-            "_applied_dtype_cast_from is set. This should not happen."
+            "Invalid configuration: cast_to is not set but "
+            "cast_from is set. This should not happen."
         )
         cast_from_dtype = supported_encoding_dtype(cast_from)
         cast_to_dtype = supported_encoding_dtype(cast_to)

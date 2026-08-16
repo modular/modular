@@ -15,14 +15,15 @@ from std.math import ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.random import random_si64
 
-from std.gpu import WARP_SIZE, barrier, lane_id, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import ld_matrix, mma
-from std.gpu.compute.mma_util import store_matrix_d
+from std.gpu import WARP_SIZE, lane_id, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import ld_matrix, mma
+from max.gpu.compute.mma_util import store_matrix_d
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_almost_equal
 
 from std.utils.numerics import get_accum_type
@@ -32,23 +33,24 @@ def test_ldmatrix_fp32(
     c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
     b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
-    m: Int,
-    n: Int,
-    k: Int,
+    m_dev: Int32,
+    n_dev: Int32,
+    k_dev: Int32,
 ):
+    var n = Int(n_dev)
     comptime mma_m: Int = 16
     comptime mma_n: Int = 8
     comptime mma_k: Int = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         mma_m * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         mma_n * mma_k,
         DType.float32,
         alignment=32,
@@ -96,10 +98,10 @@ def test_ldmatrix_transposed[
     var lane = lane_id()
     var d = SIMD[accum_type, c_frag_size](0)
 
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         M * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
-    var b_shared = stack_allocation[
+    var b_shared = unsafe_stack_allocation[
         N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
@@ -169,7 +171,7 @@ def check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(b_device, b_host)
 
     comptime kernel_type = test_ldmatrix_transposed[input_type, output_type]
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
@@ -181,25 +183,25 @@ def check_ldmatrix_transposed_bf16[
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     # Run naive matmul.
@@ -213,13 +215,13 @@ def check_ldmatrix_transposed_bf16[
         type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
-    ctx.enqueue_function_experimental[kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type](
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
@@ -280,13 +282,13 @@ def check_ldmatrix(
     comptime MMA_K = 8
 
     comptime kernel_type = test_ldmatrix_fp32
-    ctx.enqueue_function_experimental[kernel_type](
+    ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=1,
         block_dim=WARP_SIZE,
     )
@@ -297,25 +299,25 @@ def check_ldmatrix(
 
     # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(Idx(M), Idx(N))),
+        row_major(Coord(M, N)),
     )
     var a_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(M), Idx(K))),
+        row_major(Coord(M, K)),
     )
     var b_tt = TileTensor(
         UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(Idx(K), Idx(N))),
+        row_major(Coord(K, N)),
     )
 
     # Run naive matmul.
@@ -331,19 +333,20 @@ def check_ldmatrix(
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function_experimental[kernel_naive_type](
+    ctx.enqueue_function[kernel_naive_type](
         c_ref_tt,
         a_tt,
         b_tt,
-        M,
-        N,
-        K,
+        Int32(M),
+        Int32(N),
+        Int32(K),
         grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
     ctx.synchronize()
     ctx.enqueue_copy(c_host_ref, c_device_ref)
+    ctx.synchronize()
 
     for i in range(M * N):
         var out_val = c_host[i]

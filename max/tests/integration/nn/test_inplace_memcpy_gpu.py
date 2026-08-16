@@ -127,7 +127,7 @@ def test_inplace_memcpy_dtype_mismatch_raises() -> None:
     """`inplace_memcpy` rejects operands with mismatched dtype."""
     device_ref = DeviceRef.GPU()
     with pytest.raises(
-        ValueError, match=r"Expected dst and src to have the same dtype"
+        ValueError, match=r"expected dst and src to have the same dtype"
     ):
         with Graph(
             "dtype_mismatch",

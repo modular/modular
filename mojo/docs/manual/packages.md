@@ -86,16 +86,17 @@ APIs to be imported and used in other Mojo programs.
 A Mojo package is just a collection of Mojo modules in a directory that
 includes an `__init__.mojo` file. By organizing modules together in a
 directory, you can then import all the modules together or individually.
-Optionally, you can also compile the package into a `.mojopkg` file
-that's easier to share and still compatible with other system architectures.
+Optionally, you can also compile the package into a precompiled `.mojoc` file
+that's quicker to load when used as a dependency to another Mojo compile.
 
 You can import a package and its modules either directly from source files or
-from a compiled `.mojopkg` file. It makes no real difference to Mojo
+from a compiled `.mojoc` file. It makes no real difference to Mojo
 which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
-package`](/docs/cli/precompile) command—it can differ from the directory
-name).
+precompile`](/docs/cli/precompile) command—it can differ from the directory
+name). For examples, see the section below about
+[naming and identifiers](#package-naming-and-identifiers).
 
 For example, consider a project with these files:
 
@@ -138,17 +139,22 @@ mojo main.mojo
 ```
 
 However, if you don't want the `mypackage` source code in the same location
-as `main.mojo`, you can compile it into a package file like this:
+as `main.mojo`, you can compile it into a precompiled file like this:
 
 ```sh
-mojo package mypackage -o mypack.mojopkg
+mojo precompile mypackage -o mypack.mojoc
 ```
 
 :::note
 
-A `.mojopkg` file contains non-elaborated code, so you can share it across
+A `.mojoc` file contains non-elaborated code, so you _can_ share it across
 systems. The code becomes an architecture-specific executable only after it's
 imported into a Mojo program that's then compiled with `mojo build`.
+
+The `.mojoc` format is not intended as a generic distributable format, however,
+as it is tied to the exact version of the compiler that produced it. Loading a
+`.mojoc` file produced by one version of the compiler into another version of
+the compiler will result in a compiler error.
 
 :::
 
@@ -157,7 +163,7 @@ now look like this:
 
 ```ini
 main.mojo
-mypack.mojopkg
+mypack.mojoc
 ```
 
 Because we named the package `mypack`, we need to fix
@@ -180,8 +186,8 @@ mojo main.mojo
 :::note
 
 If you want to rename your package, you cannot simply edit the
-`.mojopkg` filename, because the package name is encoded in the file.
-You must instead run `mojo package` again to specify a new name.
+`.mojoc` filename, because the package name is encoded in the file.
+You must instead run `mojo precompile` again to specify a new name.
 
 :::
 
@@ -226,11 +232,11 @@ This feature explains why some members in the Mojo standard library can be
 imported from their package name, while others required the
 `<package_name>.<module_name>` notation. For example, the
 [`functional`](/docs/std/algorithm/functional/) module resides in the
-`algorithm` package, so you can import members of that module (such as the
+`std.algorithm` package, so you can import members of that module (such as the
 `map()` function) like this:
 
 ```mojo
-from algorithm.functional import map
+from std.algorithm.functional import map
 ```
 
 However, the `algorithm/__init__.mojo` file also includes these lines:
@@ -245,13 +251,30 @@ naming the package. That is, you can drop the `functional` name from the import
 statement, and it also works:
 
 ```mojo
-from algorithm import map
+from std.algorithm import map
 ```
 
 :::note
 
 Which modules in the standard library are imported to the package
 scope varies, and is subject to change. Refer to the [documentation for each
-module](/docs/lib) to see how you can import its members.
+module](/docs/std/) to see how you can import its members.
 
 :::
+
+### Package naming and identifiers
+
+Package names are taken from directory names in the case of source packages, or
+the precompiled (`.mojoc`) filename for binary ones.
+
+Note that if the package name is not a valid identifier, an escaped identifier
+may be used instead:
+
+```mojo
+import `модул`
+import `package-with-hyphens and a space!` as package_without_hyphens_or_a_space
+
+def main():
+    `модул`.`здрасти`()
+    package_without_hyphens_or_a_space.hello()
+```

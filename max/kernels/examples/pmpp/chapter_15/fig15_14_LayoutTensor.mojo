@@ -14,9 +14,9 @@
 """Figure 15.14: Matrix multiplication with double buffering (software pipelining)."""
 
 from std.math import ceildiv
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.itertools import product
 from layout.layout_tensor import Layout, LayoutTensor
 
@@ -29,8 +29,8 @@ comptime NUM_THREADS = 128
 
 
 def mm_tiled_kernel_double_buffer(
-    A: UnsafePointer[Float32, MutAnyOrigin],
-    B: UnsafePointer[Float32, MutAnyOrigin],
+    A: UnsafePointer[Float32, ImmutAnyOrigin],
+    B: UnsafePointer[Float32, ImmutAnyOrigin],
     C: UnsafePointer[Float32, MutAnyOrigin],
     M: UInt32,
     N: UInt32,
@@ -240,7 +240,7 @@ def mm_tiled_kernel_double_buffer(
 def cpu_mm(
     A: UnsafePointer[Float32, _],
     B: UnsafePointer[Float32, _],
-    C: UnsafePointer[Float32, MutAnyOrigin],
+    C: UnsafePointer[mut=True, Float32, _],
     M: Int,
     N: Int,
     K: Int,
@@ -327,7 +327,7 @@ def main() raises:
         )
         print("Using LayoutTensor-based double buffering")
 
-        ctx.enqueue_function_experimental[mm_tiled_kernel_double_buffer](
+        ctx.enqueue_function[mm_tiled_kernel_double_buffer](
             d_A,
             d_B,
             d_C,

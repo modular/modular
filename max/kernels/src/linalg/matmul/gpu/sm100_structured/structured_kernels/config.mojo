@@ -25,13 +25,14 @@ ranges and alignment requirements differ between standard and scaled kernels.
 """
 
 from std.collections.set import Set
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.math import align_down
+from std.sys import size_of
+from std.math import align_down, align_up, ceildiv
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -40,8 +41,10 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
+    block_scaled_operands_compatible,
+    block_scaled_umma_kind,
 )
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init("implicit")
@@ -207,6 +210,18 @@ def _compute_output_tile_shape(
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
             output_tile_m, output_tile_n
         )
+    elif c_type == DType.float32:
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
+        var output_tile_n = 8
+        if c_tile_n % 32 == 0 and not AB_swapped:
+            output_tile_n = 32
+        elif c_tile_n % 16 == 0:
+            output_tile_n = 16
+        return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
+            output_tile_m, output_tile_n
+        )
     else:  # FP8 output tile shape
         var output_tile_n = 16  # no swizzle for fp8 output dtype
         return Index(output_tile_n, output_tile_m) if AB_swapped else Index(
@@ -225,19 +240,22 @@ def _compute_swizzle_modes(
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
-    if c_type == DType.bfloat16:
+    if c_type == DType.bfloat16 or c_type == DType.float32:
         if AB_swapped:
             c_swizzle = (
                 TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
             )
         else:
-            # When not swapped, output_tile_shape[1] is the N dimension
-            var tile_n = output_tile_shape[1]
-            if tile_n == 64:
+            # When not swapped, output_tile_shape[1] is the N dimension.
+            # Key the swizzle off bytes so it is dtype-generic: bf16 tile_n
+            # {64,32,16} and fp32 tile_n {32,16,8} both map to {128B,64B,32B}.
+            var elem_size = 2 if c_type == DType.bfloat16 else 4
+            var row_bytes = output_tile_shape[1] * elem_size
+            if row_bytes == 128:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            elif tile_n == 32:
+            elif row_bytes == 64:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            elif tile_n == 16:
+            elif row_bytes == 32:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
@@ -275,6 +293,7 @@ def _maximize_pipeline_stages[
     use_tma_epilogue_load: Bool = False,
     num_tma_epilogue_pipeline_stages: Int = 2,
     AB_swapped: Bool = False,
+    epilogue_is_1d: Bool = False,
 ) -> Int:
     """Calculate max pipeline stages based on shared memory budget."""
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
@@ -290,18 +309,28 @@ def _maximize_pipeline_stages[
 
     var epi_load_smem_bytes = 0
     if use_tma_epilogue_load:
-        # AB_swapped: full MMA_N×BM tile per stage, num_accum_pipeline_stages stages.
-        # non-AB_swapped: BM×stageN per stage (decoupled), num_tma_epilogue_pipeline_stages stages.
-        var num_epi_stages = (
-            num_accum_pipeline_stages if AB_swapped else num_tma_epilogue_pipeline_stages
-        )
-        var epi_tile_rows = mma_shape[1] if AB_swapped else block_tile_shape[0]
-        var epi_tile_cols = block_tile_shape[
-            0
-        ] if AB_swapped else output_tile_shape[1]
-        epi_load_smem_bytes = (
-            epi_tile_rows * epi_tile_cols * num_epi_stages * size_of[c_type]()
-        )
+        var num_epi_stages = num_tma_epilogue_pipeline_stages
+        if epilogue_is_1d:
+            var bias_tile_elems = block_tile_shape[
+                0
+            ] if AB_swapped else mma_shape[1]
+            epi_load_smem_bytes = (
+                bias_tile_elems * num_epi_stages * size_of[c_type]()
+            )
+        elif AB_swapped:
+            epi_load_smem_bytes = (
+                mma_shape[1]
+                * block_tile_shape[0]
+                * num_epi_stages
+                * size_of[c_type]()
+            )
+        else:
+            epi_load_smem_bytes = (
+                block_tile_shape[0]
+                * output_tile_shape[1]
+                * num_epi_stages
+                * size_of[c_type]()
+            )
         # Add epi_load barrier pairs × 16 bytes
         epi_load_smem_bytes += num_epi_stages * 16
 
@@ -357,8 +386,9 @@ def _write_common_config[
     raster_order: RasterOrder,
     num_split_k: Int,
     register_based_epilogue: Bool,
-    use_tma_epilogue_load: Bool,
-    num_tma_epilogue_pipeline_stages: Int,
+    use_tma_epilogue_load: Bool = False,
+    num_tma_epilogue_pipeline_stages: Int = 0,
+    epilogue_is_1d: Bool = False,
 ):
     """Write common config fields to string."""
     writer.write(a_type, "_")
@@ -390,13 +420,13 @@ def _write_common_config[
     writer.write(
         "rbe_" if register_based_epilogue else "sbe_"
     )  # (rbe) register based epilogue or (sbe) shared memory based epilogue
-    writer.write(
-        "epi"
-        + String(
-            num_tma_epilogue_pipeline_stages
-        ) if use_tma_epilogue_load else "",
-        "_",
-    )
+    if use_tma_epilogue_load:
+        writer.write(
+            "epi1d_" if epilogue_is_1d else "epi2d_",
+            String(num_tma_epilogue_pipeline_stages),
+            "stages_",
+        )
+    writer.write("_")
 
 
 def _get_dtype_name(dtype: DType) -> String:
@@ -501,10 +531,13 @@ def _maximize_tma_epi_pipeline_stages[
     num_accum_pipeline_stages: Int,
     max_num_pipeline_stages_wo_tma_epi: Int,
     AB_swapped: Bool,
+    epilogue_is_1d: Bool = False,
 ) -> Int:
     """Calculate max tma epilogue pipeline stages based on smem budget."""
 
-    if mma_shape[0] == mma_shape[1] == 256:
+    if AB_swapped or epilogue_is_1d:
+        return num_accum_pipeline_stages
+    elif mma_shape[0] == mma_shape[1] == 256:
         return 1
     elif max_num_pipeline_stages_wo_tma_epi >= 8:
         return 4
@@ -519,7 +552,17 @@ struct MatmulConfig[
     c_type: DType,
     transpose_b: Bool = True,
 ](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
-    """Static configuration of GPU matmul."""
+    """Static configuration of GPU matmul.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements; `float32` input
+            requires `float32` output.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+    """
 
     # Mandatory parameters
     var cta_group: Int
@@ -552,6 +595,7 @@ struct MatmulConfig[
 
     var use_tma_epilogue_load: Bool
     var num_tma_epilogue_pipeline_stages: Int
+    var epilogue_is_1d: Bool
 
     def __init__(
         out self,
@@ -573,8 +617,14 @@ struct MatmulConfig[
         gemm_kind: GEMMKind = GEMMKind.GEMM,
         use_tma_epilogue_load: Bool = False,
         num_tma_epilogue_pipeline_stages: Optional[Int] = None,
+        epilogue_is_1d: Bool = False,
+        output_tile_shape: Optional[IndexList[2]] = None,
+        c_swizzle: Optional[TensorMapSwizzle] = None,
     ):
         comptime assert Self.a_type == Self.b_type
+        comptime assert (
+            Self.a_type != DType.float32 or Self.c_type == DType.float32
+        ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -587,6 +637,7 @@ struct MatmulConfig[
         self.register_based_epilogue = register_based_epilogue
         self.gemm_kind = gemm_kind
         self.use_tma_epilogue_load = use_tma_epilogue_load
+        self.epilogue_is_1d = epilogue_is_1d
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
             mma_shape, cta_group
@@ -640,6 +691,7 @@ struct MatmulConfig[
             self.num_accum_pipeline_stages,
             max_num_pipeline_stages_wo_tma_epi,
             AB_swapped,
+            epilogue_is_1d,
         )
 
         if num_tma_epilogue_pipeline_stages:
@@ -664,6 +716,7 @@ struct MatmulConfig[
             use_tma_epilogue_load=self.use_tma_epilogue_load,
             num_tma_epilogue_pipeline_stages=self.num_tma_epilogue_pipeline_stages,
             AB_swapped=AB_swapped,
+            epilogue_is_1d=self.epilogue_is_1d,
         )
 
         if num_pipeline_stages:
@@ -672,12 +725,26 @@ struct MatmulConfig[
             ), "MatmulConfig requested num_pipeline_stages exceeds smem budget."
             self.num_pipeline_stages = num_pipeline_stages.value()
         else:
-            self.num_pipeline_stages = max_num_pipeline_stages
+            self.num_pipeline_stages = (
+                max_num_pipeline_stages if max_num_pipeline_stages <= 16 else 16
+            )
 
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(
             self.num_pipeline_stages, self.k_group_size
         )
+
+        # Optional caller overrides for decode-mode matmul+RS. The fused
+        # kernel widens the C SMEM row (output_tile_shape[1]) so per-row
+        # TMA slices meet the 128B source-alignment requirement, and forces
+        # a non-swizzled C layout so per-row slicing composes. Neither is
+        # derivable from mma_shape, so they are explicit opt-in knobs;
+        # applied last so the default derivations (block_tile_shape, A/B
+        # swizzles) are unaffected.
+        if output_tile_shape:
+            self.output_tile_shape = output_tile_shape.value()
+        if c_swizzle:
+            self.c_swizzle = c_swizzle.value()
 
     def swap_AB_type(
         self,
@@ -701,6 +768,7 @@ struct MatmulConfig[
             gemm_kind=self.gemm_kind,
             use_tma_epilogue_load=self.use_tma_epilogue_load,
             num_tma_epilogue_pipeline_stages=self.num_tma_epilogue_pipeline_stages,
+            epilogue_is_1d=self.epilogue_is_1d,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -726,12 +794,13 @@ struct MatmulConfig[
             self.register_based_epilogue,
             self.use_tma_epilogue_load,
             self.num_tma_epilogue_pipeline_stages,
+            self.epilogue_is_1d,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    def get_kernal_name(self) -> String:
+    def get_kernel_name(self) -> String:
         return (
             "SM100_"
             + String(self.gemm_kind)
@@ -768,9 +837,35 @@ def choose_config[
     transpose_b: Bool = True,
     gemm_kind: GEMMKind = GEMMKind.GEMM,
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ](M: Int, N: Int, K: Int, B: Int) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
+    """Select a `MatmulConfig` that minimizes waves per SM for the given problem shape.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        gemm_kind: The `GEMMKind` selecting the kernel variant, for
+            example `GEMM` or `BMM` (defaults to `GEMMKind.GEMM`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is 1D, for example a
+            bias vector (defaults to `False`).
+
+    Args:
+        M: The M dimension of the matmul.
+        N: The N dimension of the matmul.
+        K: The K dimension of the matmul.
+        B: The batch dimension of the matmul.
+
+    Returns:
+        A `MatmulConfig` tuned for the given problem dimensions.
+    """
     comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     comptime num_SMs = B200.sm_count
@@ -806,8 +901,8 @@ def choose_config[
                 MMA_N_GRANULARITY,
             ),
         ):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm) * B
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -819,7 +914,7 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
             for bm in [64, 128]:
@@ -830,10 +925,10 @@ def choose_config[
                     N_aligned = align_up(N, 32)
                     MMA_N_GRANULARITY = 32
 
-                max_mma_n = min(N_aligned, 256)
+                var max_mma_n = min(N_aligned, 256)
                 # In practice 64x16 mma creates too many ctas and increase L2
                 # load volume, ends up hurting performance.
-                min_mma_n = min(N_aligned, 32)
+                var min_mma_n = min(N_aligned, 32)
 
                 for mma_n in range(
                     max_mma_n, min_mma_n - 1, -MMA_N_GRANULARITY
@@ -876,7 +971,7 @@ def choose_config[
         # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
         # has BN = MMA_N.
         # Traverse the tile sizes to find min load volume per wave.
-        # TODO: consider the L2 resue across waves.
+        # TODO: consider the L2 resue across waves. # spellchecker:disable-line
         var BM = mma_mn[0] // cta_group
         for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)
@@ -899,7 +994,7 @@ def choose_config[
     # var num_clc_pipeline_stages: Int = Int(min(min_num_waves-1, 2))
     var num_clc_pipeline_stages = 0 if min_num_waves == 1 else 2
 
-    return MatmulConfig[a_type, b_type, c_type, transpose_b](
+    var config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=IndexList[3](
             mma_mn[0], mma_mn[1], Kbytes_per_mma // size_of[a_type]()
         ),
@@ -912,7 +1007,19 @@ def choose_config[
         k_group_size=k_group_size,
         gemm_kind=gemm_kind,
         use_tma_epilogue_load=has_epilogue_tensor,
+        epilogue_is_1d=epilogue_is_1d,
     )
+
+    # At decode M the producer releases its dependents early, so this kernel is
+    # resident while the producer still runs and can spend that window on
+    # weights. It stops paying once M fills the device. The depth is capped by
+    # the ring: a deeper prefetch would fill it before any barrier can fire.
+    if M < 128:
+        config.prefetch_tiles_n = min(
+            4, config.num_pipeline_stages // config.k_group_size
+        )
+
+    return config
 
 
 def build_sm100_matmul_configs[
@@ -923,29 +1030,51 @@ def build_sm100_matmul_configs[
     K: Int,
     transpose_b: Bool = True,
     has_epilogue_tensor: Bool = False,
+    epilogue_is_1d: Bool = False,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Build a set of `MatmulConfig` instances by sweeping M from 8 to 8192.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+        epilogue_is_1d: Whether the epilogue tensor is 1D, for example a
+            bias vector (defaults to `False`).
+
+    Returns:
+        A set of unique `MatmulConfig` instances covering the swept M range.
+    """
     comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
 
     for m in range(8, 256, 8):  # [8, 256)
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
             transpose_b,
             has_epilogue_tensor=has_epilogue_tensor,
+            epilogue_is_1d=epilogue_is_1d,
         ](m, N, K, 1)
         if config not in set:
             set.add(config)
 
     for m in range(256, 8192 + 1, 64):  # [256, 8192]
-        config = choose_config[
+        var config = choose_config[
             a_type,
             b_type,
             c_type,
             transpose_b,
             has_epilogue_tensor=has_epilogue_tensor,
+            epilogue_is_1d=epilogue_is_1d,
         ](m, N, K, 1)
         if config not in set:
             set.add(config)
@@ -961,13 +1090,27 @@ def build_sm100_batched_matmul_configs[
     K: Int,
     transpose_b: Bool = True,
 ]() -> Set[MatmulConfig[a_type, b_type, c_type, transpose_b]]:
+    """Build a set of batched matmul `MatmulConfig` instances by sweeping batch and M.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+
+    Returns:
+        A set of unique batched `MatmulConfig` instances covering the swept ranges.
+    """
     comptime config_t = MatmulConfig[a_type, b_type, c_type, transpose_b]
 
     var set = Set[config_t]()
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(8, 256, 8):  # [8, 256)
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -975,7 +1118,7 @@ def build_sm100_batched_matmul_configs[
 
     for b in [1, 2, 4, 8, 16, 32, 64, 128]:
         for m in range(256, 8192 + 1, 64):  # [256, 8192]
-            config = choose_config[
+            var config = choose_config[
                 a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
             ](m, N, K, b)
             if config not in set:
@@ -993,7 +1136,21 @@ struct BlockScaledMatmulConfig[
     sfb_dtype: DType,
     transpose_b: Bool = True,
 ](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
-    """Static configuration of GPU matmul."""
+    """Static configuration of GPU matmul.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; `uint8` indicates
+            packed FP4. Must equal `b_type`, except for the W4A8 pair (see
+            `block_scaled_operands_compatible`).
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors; selects
+            the block-scaled MMA kind.
+        sfb_dtype: `DType` of the B operand block scaling factors; must
+            equal `sfa_dtype`.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+    """
 
     # Mandatory parameters
     var cta_group: Int
@@ -1025,6 +1182,7 @@ struct BlockScaledMatmulConfig[
     var num_sf_k_tiles: Int
     var is_small_bn: Bool
     var gemm_kind: GEMMKind
+    var prefetch_tiles_n: Int
 
     def __init__(
         out self,
@@ -1045,8 +1203,11 @@ struct BlockScaledMatmulConfig[
         is_small_bn: Bool = False,
         register_based_epilogue: Bool = True,
         gemm_kind: GEMMKind = GEMMKind.GEMM,
+        prefetch_tiles_n: Int = 0,
     ):
-        comptime assert Self.a_type == Self.b_type
+        comptime assert block_scaled_operands_compatible[
+            Self.a_type, Self.b_type
+        ](), "a_type and b_type must be the same, or the W4A8 pair"
 
         self.cta_group = cta_group
         self.is_small_bn = is_small_bn
@@ -1066,6 +1227,7 @@ struct BlockScaledMatmulConfig[
         )
 
         self.gemm_kind = gemm_kind
+        self.prefetch_tiles_n = prefetch_tiles_n
 
         # Scaling factors configuration (SFA, SFB)
         self.scaling_kind = scaling_kind
@@ -1076,6 +1238,10 @@ struct BlockScaledMatmulConfig[
         else:
             self.vec_sf_size = MXFP8_SF_VECTOR_SIZE
         var sf_k_group_size = self.vec_sf_size * SF_ATOM_K
+        # A K-tile spans `block_tile_shape[2]` shared-memory bytes and, under
+        # every kind but the FP4-only ones, one element per byte. The FP4-only
+        # kinds keep both operands nibble-packed, so their tile covers twice
+        # the elements.
         if (
             self.scaling_kind == UMMAKind.KIND_MXF4NVF4
             or self.scaling_kind == UMMAKind.KIND_MXF4
@@ -1184,6 +1350,7 @@ struct BlockScaledMatmulConfig[
             is_small_bn=self.is_small_bn,
             register_based_epilogue=self.register_based_epilogue,
             gemm_kind=self.gemm_kind,
+            prefetch_tiles_n=self.prefetch_tiles_n,
         )
 
     def write_to[W: Writer](self, mut writer: W):
@@ -1216,14 +1383,12 @@ struct BlockScaledMatmulConfig[
             self.raster_order,
             self.num_split_k,
             self.register_based_epilogue,
-            False,
-            0,
         )
 
     def write_repr_to(self, mut writer: Some[Writer]):
         self.write_to(writer)
 
-    def get_kernal_name(self) -> String:
+    def get_kernel_name(self) -> String:
         var name = String("SM100_block_scaled_" + String(self.gemm_kind) + "_")
         name += String(self.scaling_kind) + "_"
         name += _get_common_config_string[
@@ -1268,6 +1433,30 @@ def choose_block_scaled_config[
 ](M: Int, N: Int, K: Int) -> BlockScaledMatmulConfig[
     a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
 ]:
+    """Select a `BlockScaledMatmulConfig` that minimizes waves per SM for the given shape.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; `uint8`
+            indicates packed FP4; must equal `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors; must
+            equal `sfb_dtype`.
+        sfb_dtype: `DType` of the B operand block scaling factors; must
+            equal `sfa_dtype`.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        gemm_kind: The `GEMMKind` selecting the kernel variant (defaults to
+            `GEMMKind.GEMM`).
+
+    Args:
+        M: The M dimension of the matmul.
+        N: The N dimension of the matmul.
+        K: The K dimension of the matmul.
+
+    Returns:
+        A `BlockScaledMatmulConfig` tuned for the given problem dimensions.
+    """
     comptime assert a_type == b_type, "a_type and b_type must be the same"
     comptime assert (
         sfa_dtype == sfb_dtype
@@ -1299,8 +1488,8 @@ def choose_block_scaled_config[
     # a larger range than mma_m.
     if M < M_pivote:
         for bm, mma_n in product([128], range(64, align_up(M, 64) + 1, 64)):
-            num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
-            num_waves = ceildiv(num_ctas, num_SMs)
+            var num_ctas = ceildiv(M, mma_n) * ceildiv(N, bm)
+            var num_waves = ceildiv(num_ctas, num_SMs)
             if num_waves < min_num_waves or (
                 num_waves == min_num_waves
                 and bm * mma_n < mma_mn[0] * mma_mn[1]
@@ -1312,14 +1501,14 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @parameter
+        @__parameter
         @always_inline
         def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
-            N_alignby64 = align_up(N, 64)
-            max_mma_n = min(N_alignby64, 256)
+            var N_alignby64 = align_up(N, 64)
+            var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2
             # load volume, ends up hurting performance.
-            min_mma_n = min(N_alignby64, 64)
+            var min_mma_n = min(N_alignby64, 64)
             for bm in [128]:
                 for mma_n in range(max_mma_n, min_mma_n - 1, -64):
                     var mma_m = bm * cta_group
@@ -1361,7 +1550,7 @@ def choose_block_scaled_config[
         # Use MMA_N because cta_group = 2, 2 ctas cover entire MMA_N. cta_group = 1
         # has BN = MMA_N.
         # Traverse the tile sizes to find min load volume per wave.
-        # TODO: consider the L2 resue across waves.
+        # TODO: consider the L2 resue across waves. # spellchecker:disable-line
         var BM = mma_mn[0] // cta_group
         for tile_size in [1, 2, 4, 8]:
             var num_ctas_m = ceildiv(M, BM)
@@ -1386,13 +1575,9 @@ def choose_block_scaled_config[
 
     var num_accum_pipeline_stages = 2 if mma_mn[1] <= 128 else 1
 
-    var scaling_kind: UMMAKind
-    if a_type == DType.uint8 and sfa_dtype == DType.float8_e4m3fn:
-        scaling_kind = UMMAKind.KIND_MXF4NVF4
-    elif a_type == DType.uint8 and sfa_dtype == DType.float8_e8m0fnu:
-        scaling_kind = UMMAKind.KIND_MXF4
-    else:
-        scaling_kind = UMMAKind.KIND_MXF8F6F4
+    # `a_type == b_type` is asserted above, so this can never see the mixed
+    # W4A8 pair -- it reads B's dtype only to stay on the shared mapping.
+    comptime scaling_kind = block_scaled_umma_kind[a_type, b_type, sfa_dtype]()
 
     return BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
@@ -1426,24 +1611,47 @@ def build_block_scaled_configs[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ]
 ]:
+    """Build a set of `BlockScaledMatmulConfig` instances by sweeping M from 8 to 8192.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        sfa_dtype: `DType` of the A operand block scaling factors.
+        sfb_dtype: `DType` of the B operand block scaling factors.
+        N: The N dimension (output columns) of the matmul.
+        K: The K dimension (contraction axis) of the matmul.
+        transpose_b: Whether the B operand is stored transposed (defaults to
+            `True`).
+
+    Returns:
+        A set of unique `BlockScaledMatmulConfig` instances covering the swept M range.
+    """
     comptime config_t = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ]
 
     var set = Set[config_t]()
 
+    # Enumerate only MMA tiles the kernel accepts (its tile `constrained[]`):
+    # one unsupported tile in this comptime-instantiated set fails the whole
+    # compile; a shape with no matching config falls through to vendor.
+    def _kernel_supported(cfg: config_t) {} -> Bool:
+        var mma_m_ok = cfg.mma_shape[0] == (256 if cfg.cta_group == 2 else 128)
+        return mma_m_ok and cfg.mma_shape[1] in (64, 128, 192, 256)
+
     for m in range(8, 128, 8):  # [8, 128]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
-        if config not in set:
+        if _kernel_supported(config) and config not in set:
             set.add(config)
 
     for m in range(128, 8193, 64):  # [128, 8192]
-        config = choose_block_scaled_config[
+        var config = choose_block_scaled_config[
             a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
         ](m, N, K)
-        if config not in set:
+        if _kernel_supported(config) and config not in set:
             set.add(config)
 
     return set^
@@ -1458,10 +1666,29 @@ def default_matmul_config_bf16_fp8[
     gemm_kind: GEMMKind = GEMMKind.GEMM,
     has_epilogue_tensor: Bool = False,
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    """Return a default `MatmulConfig` for bf16-output FP8 matmul kernels.
+
+    Parameters:
+        a_type: `DType` of the A (left) operand elements; must equal
+            `b_type`.
+        b_type: `DType` of the B (right) operand elements.
+        c_type: `DType` of the output matrix elements.
+        transpose_b: Whether the B operand is stored transposed (defaults
+            to `True`).
+        cta_group: CTA group size, 1 or 2, setting the number of CTAs
+            cooperating per MMA (defaults to 2).
+        gemm_kind: The `GEMMKind` selecting the kernel variant (defaults
+            to `GEMMKind.GEMM`).
+        has_epilogue_tensor: Whether the kernel uses a TMA epilogue load
+            for an epilogue tensor (defaults to `False`).
+
+    Returns:
+        A `MatmulConfig` with a 128x128 block tile and default pipeline stages.
+    """
     # Nvidia mma instruction process 32B in K.
     comptime Kbytes_per_mma = 32
 
-    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
     comptime block_tile_shape = Index(128, 128, BK)

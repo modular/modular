@@ -406,7 +406,7 @@ struct FlushDenormals(Defaultable):
                 mxcsr |= 0x8000  # flush to zero
                 mxcsr |= 0x40  # denormals are zero
             llvm_intrinsic["llvm.x86.sse.ldmxcsr", NoneType](
-                UnsafePointer[Int32](to=mxcsr)
+                Pointer[Int32](to=mxcsr)
             )
             _ = mxcsr
             return
@@ -445,7 +445,7 @@ struct FlushDenormals(Defaultable):
         comptime if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
-                UnsafePointer[Int32](to=mxcsr)
+                Pointer[Int32](to=mxcsr)
             )
             return mxcsr
 
@@ -483,39 +483,39 @@ def nan[dtype: DType]() -> Scalar[dtype]:
 
     comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fn>`,
         )
     elif dtype == DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fnuz>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fnuz>`,
         )
     elif dtype == DType.float8_e5m2:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2>`,
         )
     elif dtype == DType.float8_e5m2fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e5m2fnuz>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2fnuz>`,
         )
     elif dtype == DType.float8_e8m0fnu:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e8m0fnu>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e8m0fnu>`,
         )
     elif dtype == DType.bfloat16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<bf16>`,
         )
     elif dtype == DType.float16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f16>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f16>`,
         )
     elif dtype == DType.float32:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f32>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`,
         )
     elif dtype == DType.float64:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
+            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f64>`,
         )
     else:
         comptime assert False, "unsupported float type"
@@ -528,7 +528,7 @@ def nan[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 def isnan[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is Not a Number (NaN).
 
@@ -600,31 +600,31 @@ def inf[dtype: DType]() -> Scalar[dtype]:
 
     comptime if dtype == DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e4m3fnuz>`,
         )
     elif dtype == DType.float8_e5m2:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2>`,
         )
     elif dtype == DType.float8_e5m2fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e5m2fnuz>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2fnuz>`,
         )
     elif dtype == DType.bfloat16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<bf16>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<bf16>`,
         )
     elif dtype == DType.float16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f16>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f16>`,
         )
     elif dtype == DType.float32:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f32>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f32>`,
         )
     elif dtype == DType.float64:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
+            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f64>`,
         )
     else:
         comptime assert False, "unsupported float type"
@@ -654,35 +654,35 @@ def neg_inf[dtype: DType]() -> Scalar[dtype]:
 
     comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fn>`,
         )
     elif dtype == DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fnuz>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fnuz>`,
         )
     elif dtype == DType.float8_e5m2:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2>`,
         )
     elif dtype == DType.float8_e5m2fnuz:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e5m2fnuz>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2fnuz>`,
         )
     elif dtype == DType.bfloat16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<bf16>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<bf16>`,
         )
     elif dtype == DType.float16:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f16>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f16>`,
         )
     elif dtype == DType.float32:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f32>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f32>`,
         )
     elif dtype == DType.float64:
         return rebind[Scalar[dtype]](
-            __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
+            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f64>`,
         )
     else:
         comptime assert False, "unsupported float type"
@@ -817,7 +817,7 @@ def min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 @always_inline("nodebug")
 def isinf[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is infinite.
 
@@ -835,9 +835,10 @@ def isinf[
     """
 
     comptime if not dtype.is_floating_point() or dtype in (
+        DType.float8_e4m3fn,
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
-        # The OCP MX FP4 (E2M1) format has no Inf encoding.
+        DType.float8_e8m0fnu,
         DType.float4_e2m1fn,
     ):
         return SIMD[DType.bool, width](fill=False)
@@ -864,7 +865,7 @@ def isinf[
 
 @always_inline("nodebug")
 def isfinite[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is not infinite.
 
@@ -952,7 +953,7 @@ def get_accum_type[
 
 
 def nextafter[
-    dtype: DType, width: SIMDSize, //
+    dtype: DType, width: SIMDLength, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 
@@ -976,7 +977,6 @@ def nextafter[
     ), "nextafter only supports float32 and float64 types"
 
     @always_inline("nodebug")
-    @parameter
     def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
@@ -985,7 +985,6 @@ def nextafter[
         )
 
     @always_inline("nodebug")
-    @parameter
     def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:

@@ -16,10 +16,10 @@
 
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, global_idx, thread_idx
-from std.gpu.memory import external_memory
-from std.gpu.sync import barrier
+from max.gpu.memory import external_memory
+from max.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -27,9 +27,11 @@ from std.testing import assert_almost_equal, assert_equal
 def shared_memory_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
     """A kernel that uses shared memory to test occupancy calculations."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     var thread_id = thread_idx.x
     var block_size = block_dim.x
@@ -66,9 +68,11 @@ def shared_memory_kernel(
 def occupancy_test_kernel(
     input: UnsafePointer[Float32, ImmutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
-    len: Int,
+    len_dev: Int32,
 ):
     """A simple kernel for testing occupancy - just copies input to output."""
+    # `Int` is not device-passable; widen the fixed-width arg.
+    var len = Int(len_dev)
     var tid = global_idx.x
     if tid >= len:
         return
@@ -82,9 +86,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Compile the simple kernel for occupancy testing
-    var simple_func = ctx.compile_function[
-        occupancy_test_kernel, occupancy_test_kernel
-    ]()
+    var simple_func = ctx.compile_function[occupancy_test_kernel]()
 
     # Test with different block sizes
     var block_sizes: List[Int] = [32, 64, 128, 256, 512, 1024]
@@ -114,9 +116,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
             )
 
     # Test with shared memory usage
-    var shared_func = ctx.compile_function[
-        shared_memory_kernel, shared_memory_kernel
-    ]()
+    var shared_func = ctx.compile_function[shared_memory_kernel]()
 
     print("\nTesting occupancy with different shared memory sizes:")
     var shared_memory_sizes: List[Int] = [
@@ -201,10 +201,10 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     # Launch the kernel
     var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
     comptime kernel = occupancy_test_kernel
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         input_device,
         output_device,
-        length,
+        Int32(length),
         grid_dim=grid_dim,
         block_dim=optimal_block_size,
     )

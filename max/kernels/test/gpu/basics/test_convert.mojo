@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.testing import *
 
 
 def test_convert_asm() raises:
-    @parameter
+    @__parameter
     def my_cast[
         frm: DType, to: DType
     ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):
@@ -83,9 +83,7 @@ def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     device_buf.enqueue_fill(0)
 
     comptime kernel = convert_kernel[src_type, dst_type, size]
-    ctx.enqueue_function_experimental[kernel](
-        device_buf, grid_dim=(1), block_dim=(1)
-    )
+    ctx.enqueue_function[kernel](device_buf, grid_dim=(1), block_dim=(1))
     with device_buf.map_to_host() as host_buf:
         for i in range(size):
             assert_equal(host_buf[i], Scalar[dst_type](i))

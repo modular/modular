@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
-from std.gpu.compute.mma import mma
+from max.gpu.host import DeviceContext
+from max.gpu.compute.mma import mma
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
@@ -41,7 +41,9 @@ def load_and_mma_16x8x32[
         in_type == DType.float8_e4m3fn or in_type == DType.float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 
-    mma = TensorCore[DType.float32, in_type, IndexList[3](16, 8, 32), False]()
+    var mma = TensorCore[
+        DType.float32, in_type, IndexList[3](16, 8, 32), False
+    ]()
     var a_reg_tile = mma.load_a(mat_a)
     var b_reg_tile = mma.load_b(mat_b)
     var c_reg_tile = mma.load_c(mat_c)
@@ -98,9 +100,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext) raises:
         mat_b.layout,
     ]
 
-    ctx.enqueue_function_experimental[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
-    ](
+    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -163,9 +163,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext) raises:
         mat_b.layout,
     ]
 
-    ctx.enqueue_function_experimental[
-        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
-    ](
+    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),

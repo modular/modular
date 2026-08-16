@@ -21,14 +21,14 @@ from std.sys.info import align_of, simd_width_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     grid_dim,
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.memory import external_memory
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from layout.layout import size
@@ -223,7 +223,7 @@ def b2b_gemm[
     ) if swizzle_block else Index(block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = udivmod(warp_id, num_warps_n)
+    var warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare shared memory buffers for A, B, and C.
     # We load our entire local `A` block into shared
@@ -447,7 +447,6 @@ def b2b_gemm[
         var accum_smem_warp_tile = LayoutTensor[
             accum_type,
             Layout.row_major(WM, WN),
-            MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](a_smem.bitcast[Scalar[accum_type]]() + warp_id * WM * WN)
 
@@ -498,6 +497,7 @@ def b2b_gemm[
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
+                var dst_idx: Int
                 comptime if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
@@ -548,6 +548,7 @@ def b2b_gemm[
             comptime for i in range(type_of(d_gmem_frag).layout.size()):
                 comptime src_idx = d_reg_frag.layout(i)
 
+                var dst_idx: Int
                 comptime if d_layout.all_dims_known():
                     comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
                     dst_idx = dst_static_idx
@@ -619,7 +620,7 @@ def multistage_b2b_gemm[
             size(Layout(A.layout.shape[1]))
         )
         print("smem_use =", smem_use)
-        ctx.enqueue_function[b2b_fn, b2b_fn](
+        ctx.enqueue_function[b2b_fn](
             D,
             A,
             B,
@@ -683,14 +684,10 @@ def test_b2b_matmul(ctx: DeviceContext) raises:
     var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
     var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
     var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
-    var stack_d = InlineArray[Scalar[dst_type], layout_d.size()](
-        uninitialized=True
-    )
+    var stack_d = Array[Scalar[dst_type], layout_d.size()](uninitialized=True)
     comptime layout_ab = Layout.row_major(M, L)
-    var stack_ab = InlineArray[Scalar[dst_type], layout_ab.size()](
-        uninitialized=True
-    )
-    var stack_ab_downcast = InlineArray[Scalar[src_type], layout_ab.size()](
+    var stack_ab = Array[Scalar[dst_type], layout_ab.size()](uninitialized=True)
+    var stack_ab_downcast = Array[Scalar[src_type], layout_ab.size()](
         uninitialized=True
     )
     var host_d_ref = LayoutTensor[dst_type, layout_d](stack_d)

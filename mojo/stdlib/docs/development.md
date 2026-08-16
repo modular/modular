@@ -15,14 +15,14 @@ To get started, you need to do the following:
 
 3. Install the nightly Mojo compiler:
 
-    We recommend using [`pixi`](https://pixi.sh/latest/), which you can install
-    with this command:
+   We recommend using [`pixi`](https://pixi.sh/latest/), which you can install
+   with this command:
 
     ```bash
     curl -fsSL https://pixi.sh/install.sh | sh
     ```
 
-    Then create a new project environment like this and it will install the
+   Then create a new project environment like this and it will install the
 latest nightly version of `mojo` (the CLI compiler) by default:
 
     ```bash
@@ -32,7 +32,7 @@ latest nightly version of `mojo` (the CLI compiler) by default:
     ```
 
     ```bash
-    pixi add modular
+    pixi add mojo
     ```
 
     Lastly enter the environment shell for `mojo` to be available and
@@ -78,7 +78,7 @@ To build and test your changes to the Mojo standard library, run the following
 `bazel` folder is located).
 
 Be sure that you meet the
-[system requirements](https://www.mojolang.org/docs/manual/install#system-requirements).
+[system requirements](https://mojolang.org/docs/requirements/).
 
 If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
 later. You may need to run `xcodebuild -downloadComponent MetalToolchain`, which

@@ -17,7 +17,7 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @export
-def PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() abi("C") -> PythonObject:
     """Create a Python module with MojoPair type that supports non-trivial initialization.
     """
     try:
@@ -145,7 +145,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
     @staticmethod
     def _get_self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         """Helper to extract the self pointer from Python object."""
         try:
             return py_self.downcast_value_ptr[Self]()

@@ -17,26 +17,29 @@
 
 from std.math import ceildiv
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.itertools import product
 
 # ========================== KERNEL CODE ==========================
 
 
 def color_to_grayscale_kernel(
-    p_out: UnsafePointer[UInt8, MutExternalOrigin],
-    p_in: UnsafePointer[UInt8, MutExternalOrigin],
-    width: Int,
-    height: Int,
+    p_out: UnsafePointer[UInt8, MutUntrackedOrigin],
+    p_in: UnsafePointer[UInt8, MutUntrackedOrigin],
+    width_dev: Int32,
+    height_dev: Int32,
 ):
     """GPU kernel for color to grayscale conversion.
 
     Args:
         p_out: Output grayscale image (device).
         p_in: Input RGB image (device).
-        width: Image width in pixels.
-        height: Image height in pixels.
+        width_dev: Image width in pixels.
+        height_dev: Image height in pixels.
     """
+    # Int is not device-passable; widen the fixed-width args.
+    var width = Int(width_dev)
+    var height = Int(height_dev)
     comptime CHANNELS = 3
 
     var col = global_idx.x
@@ -60,8 +63,8 @@ def color_to_grayscale_kernel(
 
 
 def color_to_grayscale(
-    h_input: UnsafePointer[UInt8, MutExternalOrigin],
-    h_output: UnsafePointer[UInt8, MutExternalOrigin],
+    h_input: UnsafePointer[UInt8, MutUntrackedOrigin],
+    h_output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
     ctx: DeviceContext,
@@ -95,11 +98,11 @@ def color_to_grayscale(
     var grid_dim_y = ceildiv(height, block_dim_y)
 
     # Launch kernel
-    ctx.enqueue_function_experimental[color_to_grayscale_kernel](
+    ctx.enqueue_function[color_to_grayscale_kernel](
         d_output,
         d_input,
-        width,
-        height,
+        Int32(width),
+        Int32(height),
         grid_dim=(grid_dim_x, grid_dim_y, 1),
         block_dim=(block_dim_x, block_dim_y, 1),
     )
@@ -112,8 +115,8 @@ def color_to_grayscale(
 
 
 def color_to_grayscale_cpu(
-    input: UnsafePointer[UInt8, MutExternalOrigin],
-    output: UnsafePointer[UInt8, MutExternalOrigin],
+    input: UnsafePointer[UInt8, MutUntrackedOrigin],
+    output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ):
@@ -137,7 +140,7 @@ def color_to_grayscale_cpu(
 
 
 def initialize_image(
-    image: UnsafePointer[UInt8, MutExternalOrigin], width: Int, height: Int
+    image: UnsafePointer[UInt8, MutUntrackedOrigin], width: Int, height: Int
 ):
     """Initialize a test image with gradient pattern.
 
@@ -157,8 +160,8 @@ def initialize_image(
 
 
 def verify_results(
-    cpu_output: UnsafePointer[UInt8, MutExternalOrigin],
-    gpu_output: UnsafePointer[UInt8, MutExternalOrigin],
+    cpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
+    gpu_output: UnsafePointer[UInt8, MutUntrackedOrigin],
     width: Int,
     height: Int,
 ) -> Bool:

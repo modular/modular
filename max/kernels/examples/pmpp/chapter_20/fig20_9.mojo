@@ -13,11 +13,11 @@
 
 from std.math import exp, sqrt
 from std.random import rand
-from std.collections import InlineArray
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.collections import Array
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from std.gpu.primitives.warp import (
     shuffle_idx,
     lane_group_max,
@@ -49,35 +49,37 @@ def flashattention_forward_kernel(
     Q: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     K: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     V: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
     scaling: Float32,
     out_D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     out_O: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var T_r = N // B_r
     var T_c = N // B_c
 
-    var KT_j = stack_allocation[
+    var KT_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var S_i = stack_allocation[
+    var S_i = unsafe_stack_allocation[
         B_r * B_c,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var V_j = stack_allocation[
+    var V_j = unsafe_stack_allocation[
         B_c * D_MODEL,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
 
     # Per-thread register storage (like CUDA)
-    var O_i = InlineArray[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8
-    var D_i = InlineArray[Float32, B_r_warp](fill=0.0)  # 2
-    var m_i = InlineArray[Float32, B_r_warp](fill=0.0)  # 2
-    var Q_i = InlineArray[Float32, B_r_warp * d_size](
+    var O_i = Array[Float32, B_r_warp * d_size](fill=0.0)  # 2 * 4 = 8
+    var D_i = Array[Float32, B_r_warp](fill=0.0)  # 2
+    var m_i = Array[Float32, B_r_warp](fill=0.0)  # 2
+    var Q_i = Array[Float32, B_r_warp * d_size](
         fill=0.0
     )  # 2 * 4 = 8 (Q in registers!)
 
@@ -225,10 +227,10 @@ def flashattention_forward_kernel(
 
 
 def cpu_attention(
-    h_Q: UnsafePointer[Float32, MutAnyOrigin],
-    h_K: UnsafePointer[Float32, MutAnyOrigin],
-    h_V: UnsafePointer[Float32, MutAnyOrigin],
-    h_O: UnsafePointer[Float32, MutAnyOrigin],
+    h_Q: UnsafePointer[mut=False, Float32, _],
+    h_K: UnsafePointer[mut=False, Float32, _],
+    h_V: UnsafePointer[mut=False, Float32, _],
+    h_O: UnsafePointer[mut=True, Float32, _],
     N: Int,
     D: Int,
 ):
@@ -308,11 +310,11 @@ def main() raises:
 
     print("Launching kernel with grid=", grid_size, "block=", BLOCK_SIZE, "...")
 
-    device.enqueue_function_experimental[flashattention_forward_kernel](
+    device.enqueue_function[flashattention_forward_kernel](
         d_Q,
         d_K,
         d_V,
-        N,
+        Int32(N),
         scaling,
         d_D_out,
         d_O,

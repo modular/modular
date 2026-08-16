@@ -300,8 +300,8 @@ def assert_with_measure[
     dtype: DType,
     //,
     measure: def[dtype: DType](
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+        UnsafePointer[mut=False, Scalar[dtype], _],
+        UnsafePointer[mut=False, Scalar[dtype], _],
         Int,
     ) thin -> Float64,
 ](
@@ -406,7 +406,7 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 
 
 @always_inline
-@parameter
+@__parameter
 def test_value_for_gpu_element[
     dtype: DType,
     modulo: Int = 251 if dtype == DType.float32 else 13,

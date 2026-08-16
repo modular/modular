@@ -27,6 +27,7 @@ Usage:
 from std.math import ceildiv
 from std.sys import get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -34,8 +35,8 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand, seed
 from std.utils import Index
 from internal_utils import arg_parse
@@ -67,7 +68,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scale
 def _get_run_name[
     in_type: DType,
     out_type: DType,
-](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int,) -> String:
+](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int) -> String:
     var mode_str = "1SM" if cta_group == 1 else "2SM"
     return String(
         "grouped_block_scaled_gemm(",
@@ -207,21 +208,21 @@ def bench_grouped_block_scaled_gemm[
     # Create TileTensors - 3D with batch=1
     var a_template = TileTensor(
         a_device,
-        row_major(Coord(Idx[1](), Idx(M), Idx[K_ARRAY]())),
+        row_major(Coord(Idx[1], M, Idx[K_ARRAY])),
     )
     var b_template = TileTensor(
         b_device,
         row_major(
             Coord(
-                Idx[1](),
-                Idx[NType.static_value if transpose_b else K_ARRAY](),
-                Idx[K_ARRAY if transpose_b else NType.static_value](),
+                Idx[1],
+                Idx[NType.static_value if transpose_b else K_ARRAY],
+                Idx[K_ARRAY if transpose_b else NType.static_value],
             )
         ),
     )
     var c_template = TileTensor(
         c_device,
-        row_major(Coord(Idx[1](), Idx(M), n)),
+        row_major(Coord(Idx[1], M, n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
@@ -229,11 +230,11 @@ def bench_grouped_block_scaled_gemm[
         sfa_device,
         row_major(
             Coord(
-                Idx[1](),
-                Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[1],
+                ceildiv(M, SF_MN_GROUP_SIZE),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
@@ -241,11 +242,11 @@ def bench_grouped_block_scaled_gemm[
         sfb_device,
         row_major(
             Coord(
-                Idx[1](),
-                Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
-                Idx[SF_ATOM_M[0]](),
-                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+                Idx[1],
+                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1] * SF_ATOM_K],
             )
         ),
     )
@@ -294,28 +295,28 @@ def bench_grouped_block_scaled_gemm[
 
     var problem_sizes_tensor_host = TileTensor(
         problem_sizes_host,
-        row_major(Coord(Idx[max_groups](), Idx[4]())),
+        row_major(Coord(Idx[max_groups], Idx[4])),
     )
 
     var a_ptrs_tensor = TileTensor(
         a_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var b_ptrs_tensor = TileTensor(
         b_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var c_ptrs_tensor = TileTensor(
         c_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfa_ptrs_tensor = TileTensor(
         sfa_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
     var sfb_ptrs_tensor = TileTensor(
         sfb_ptrs_device,
-        row_major(Coord(Idx[max_groups](), Idx[1]())),
+        row_major(Coord(Idx[max_groups], Idx[1])),
     )
 
     comptime BM = mma_shape[0] // cta_group
@@ -340,7 +341,7 @@ def bench_grouped_block_scaled_gemm[
     # Total FLOPs for all groups
     var total_flops = 2 * M * Int(n.value()) * Int(k.value()) * num_groups
 
-    @parameter
+    @__parameter
     @__copy_capture(
         a_ptrs_tensor,
         b_ptrs_tensor,
@@ -357,9 +358,8 @@ def bench_grouped_block_scaled_gemm[
     )
     @always_inline
     def bench_func(mut bencher: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -381,7 +381,7 @@ def bench_grouped_block_scaled_gemm[
                 ctx,
             )
 
-        bencher.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(bencher, kernel_launch, ctx)
 
     bench.bench_function[bench_func](
         BenchId(
@@ -442,7 +442,7 @@ def main() raises:
                 cta_group=cta_group,
                 k_group_size=k_group_size,
                 block_swizzle_size=block_swizzle_size,
-            ](ctx, b, Idx(0), Idx[N](), Idx[K](), M)
+            ](ctx, b, Idx[0], Idx[N], Idx[K], M)
         else:
             # Standalone mode: run default shapes
             print("=" * 70)
@@ -461,7 +461,7 @@ def main() raises:
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+            ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
             bench_grouped_block_scaled_gemm[
                 a_type,
@@ -473,7 +473,7 @@ def main() raises:
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b, Idx[128](), Idx[7168](), Idx[2048]())
+            ](ctx, b, Idx[128], Idx[7168], Idx[2048])
 
             print("\n=== DeepSeek-V2 MoE Prefill Shapes (large M) ===")
 
@@ -487,7 +487,7 @@ def main() raises:
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+            ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
             bench_grouped_block_scaled_gemm[
                 a_type,
@@ -499,7 +499,7 @@ def main() raises:
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b, Idx[4096](), Idx[7168](), Idx[2048]())
+            ](ctx, b, Idx[4096], Idx[7168], Idx[2048])
 
             # === NVFP4 Benchmarks ===
             comptime fp4_a_type = DType.uint8
@@ -521,7 +521,7 @@ def main() raises:
                 block_swizzle_size=8,
                 scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
+            ](ctx, b, Idx[128], Idx[4096], Idx[7168])
 
             bench_grouped_block_scaled_gemm[
                 fp4_a_type,
@@ -535,7 +535,7 @@ def main() raises:
                 block_swizzle_size=8,
                 scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b, Idx[128](), Idx[7168](), Idx[2048]())
+            ](ctx, b, Idx[128], Idx[7168], Idx[2048])
 
             print("\n=== NVFP4 DeepSeek-V2 MoE Prefill Shapes (large M) ===")
 
@@ -551,7 +551,7 @@ def main() raises:
                 block_swizzle_size=8,
                 scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
+            ](ctx, b, Idx[4096], Idx[4096], Idx[7168])
 
             bench_grouped_block_scaled_gemm[
                 fp4_a_type,
@@ -565,7 +565,7 @@ def main() raises:
                 block_swizzle_size=8,
                 scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b, Idx[4096](), Idx[7168](), Idx[2048]())
+            ](ctx, b, Idx[4096], Idx[7168], Idx[2048])
 
     b.dump_report()
     print("\n" + "=" * 70)

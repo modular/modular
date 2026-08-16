@@ -14,8 +14,8 @@
 from std.collections import Optional
 from std.sys import align_of, size_of
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 # Additional imports for testing
 from internal_utils import (
@@ -86,18 +86,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     var a_shape = row_major(Coord(m, k))
     var b_shape = row_major(
         Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value](),
-            Idx[KType.static_value if transpose_b else NType.static_value](),
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         )
     )
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
-        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](), m)
+        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)], m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)](),
-            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)](),
+            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)],
+            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)],
         )
     )
 
@@ -145,28 +145,28 @@ def test_matmul_sm100_blockwise_scaled_fp8[
 
     var c_tensor = c_device_nd
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         comptime assert c_tensor.flat_rank >= 2
         c_tensor.store[alignment=alignment](
-            Coord(Idx(idx[0]), Idx(idx[1])),
+            Coord(idx[0], idx[1]),
             rebind[SIMD[c_type, width]](val),
         )
 
-    rand(a_host.ptr, a_host.num_elements())
-    rand(b_host.ptr, b_host.num_elements())
+    rand(a_host._storage, a_host.num_elements())
+    rand(b_host._storage, b_host.num_elements())
     _ = c_host.fill(0)
     _ = c_host_ref.fill(0)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
@@ -223,12 +223,15 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
+        c_host._storage,
+        c_host_ref._storage,
+        c_host.num_elements(),
+        threshold=0.001,
     )
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -248,9 +251,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
-            Idx[1536](),
-            Idx[7168](),
+            Int(120),
+            Idx[1536],
+            Idx[7168],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -261,9 +264,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(120)),
-            Idx[24576](),
-            Idx[1536](),
+            Int(120),
+            Idx[24576],
+            Idx[1536],
         )
         test_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,
@@ -275,9 +278,9 @@ def main() raises:
             use_epilogue=True,
         ](
             ctx,
-            Idx(Int(128)),
-            Idx[576](),
-            Idx[7168](),
+            Int(128),
+            Idx[576],
+            Idx[7168],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -289,9 +292,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(400)),
-            Idx[32768](),
-            Idx[512](),
+            Int(400),
+            Idx[32768],
+            Idx[512],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -303,9 +306,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
-            Idx[2048](),
-            Idx[2048](),
+            Int(1024),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -317,9 +320,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(1024)),
-            Idx[2048](),
-            Idx[2048](),
+            Int(1024),
+            Idx[2048],
+            Idx[2048],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -331,9 +334,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(100)),
-            Idx[512](),
-            Idx[256](),
+            Int(100),
+            Idx[512],
+            Idx[256],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -345,9 +348,9 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(96)),
-            Idx[1024](),
-            Idx[1024](),
+            Int(96),
+            Idx[1024],
+            Idx[1024],
         )
 
         test_matmul_sm100_blockwise_scaled_fp8[
@@ -359,7 +362,7 @@ def main() raises:
             transpose_b=True,
         ](
             ctx,
-            Idx(Int(208)),
-            Idx[2048](),
-            Idx[256](),
+            Int(208),
+            Idx[2048],
+            Idx[256],
         )

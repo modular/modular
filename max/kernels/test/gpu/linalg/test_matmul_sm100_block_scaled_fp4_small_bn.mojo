@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.sys import size_of
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx
 from linalg.matmul.gpu.sm100.testbed_block_scaled_fp4 import (
     test_blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -55,9 +55,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(8)),
-                Idx[16](),
-                Idx[256](),
+                Int(8),
+                Idx[16],
+                Idx[256],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -76,9 +76,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1000)),
-                Idx[1024](),
-                Idx[1024 + 32](),
+                Int(1000),
+                Idx[1024],
+                Idx[1024 + 32],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -97,9 +97,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(512)),
-                Idx[4096](),
-                Idx[1024 + 32](),
+                Int(512),
+                Idx[4096],
+                Idx[1024 + 32],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -119,9 +119,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(500)),
-                Idx[2048](),
-                Idx[4096](),
+                Int(500),
+                Idx[2048],
+                Idx[4096],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -140,9 +140,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(999)),
-                Idx[256](),
-                Idx[128](),
+                Int(999),
+                Idx[256],
+                Idx[128],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -161,9 +161,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(777)),
-                Idx[2560](),
-                Idx[8192](),
+                Int(777),
+                Idx[2560],
+                Idx[8192],
                 alpha=0.225,
             )
 
@@ -183,9 +183,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1)),
-                Idx[576](),
-                Idx[7168](),
+                Int(1),
+                Idx[576],
+                Idx[7168],
                 alpha=0.5,
             )
 
@@ -206,9 +206,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(16)),
-                Idx[1024](),
-                Idx[1024 + 32](),
+                Int(16),
+                Idx[1024],
+                Idx[1024 + 32],
             )
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -227,16 +227,16 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(100)),
-                Idx[2560](),
-                Idx[8192](),
+                Int(100),
+                Idx[2560],
+                Idx[8192],
             )
 
         # Llama-3.1-405B TP8 FP4 shapes (small_bn kernel, M=1)
         comptime small_bn_block_tile = Index(128, 8, BK)
         comptime small_bn_umma = Index(128, 8, MMA_K)
 
-        @parameter
+        @__parameter
         def test_small_bn[N: Int, K: Int]() raises:
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -257,9 +257,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 is_small_bn=True,
             ](
                 ctx,
-                Idx(Int(1)),
-                Idx[N](),
-                Idx[K](),
+                Int(1),
+                Idx[N],
+                Idx[K],
             )
 
         test_small_bn[2304, 16384]()  # Attn.QKVProj
@@ -291,9 +291,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 normal_epilogue=True,
             ](
                 ctx,
-                Idx(Int(16)),
-                Idx[1024](),
-                Idx[1024 + 32](),
+                Int(16),
+                Idx[1024],
+                Idx[1024 + 32],
             )
 
         # swapAB + epilogue fusion
@@ -316,9 +316,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
             normal_epilogue=True,
         ](
             ctx,
-            Idx(Int(16)),
-            Idx[1024](),
-            Idx[1024 + 32](),
+            Int(16),
+            Idx[1024],
+            Idx[1024 + 32],
         )
 
 

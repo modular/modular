@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
+from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
 from std.random import rand
 from layout import Idx, TileTensor, row_major
@@ -89,42 +90,42 @@ def test_index_fp8[
     # Ragged Q tensor: [total_seq_len, num_heads, depth]
     var q_device = TileTensor(
         q_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
+        row_major((batch_size * seq_len, Idx[num_heads], Idx[depth])),
     )
 
     var qs_device = TileTensor(
         qs_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx[num_heads]())),
+        row_major((batch_size * seq_len, Idx[num_heads])),
     )
 
     var k_device = TileTensor(
         k_device_ptr,
-        row_major((Idx(batch_size * num_keys), Idx[1](), Idx[depth]())),
+        row_major((batch_size * num_keys, Idx[1], Idx[depth])),
     )
 
     var ks_device = TileTensor(
         ks_device_ptr,
-        row_major(Idx(batch_size * num_keys)),
+        row_major(batch_size * num_keys),
     )
 
     var o_device = TileTensor(
         o_device_ptr,
-        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
+        row_major((batch_size * seq_len, num_keys)),
     )
 
     var o_ref_device = TileTensor(
         o_device_ref_ptr,
-        row_major((Idx(batch_size * seq_len), Idx(num_keys))),
+        row_major((batch_size * seq_len, num_keys)),
     )
 
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     var cache_row_offsets_device = TileTensor[mut=False](
         cache_row_offsets_device_ptr,
-        row_major(Idx(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     fp8_index[num_heads, depth](
@@ -201,3 +202,67 @@ def main() raises:
         test_index_fp8[num_heads=64, depth=128](4, 722, 722, ctx)
         test_index_fp8[num_heads=64, depth=128](5, 32, 64, ctx)
         test_index_fp8[num_heads=64, depth=128](2, 128, 256, ctx)
+
+        # depth=64 stays on the scalar kernel on every target (the SM100 gate
+        # requires depth == 128): regression coverage for the Q staging, whose
+        # old layout-distributed copy silently staged nothing at this depth.
+        test_index_fp8[num_heads=64, depth=64](2, 32, 64, ctx)
+        test_index_fp8[num_heads=64, depth=64](3, 5, 33, ctx)
+        test_index_fp8[num_heads=128, depth=64](2, 16, 32, ctx)
+
+        # num_heads=32 (GLM 5.x replicated indexer): N_TOKENS=4 boundary. The
+        # scalar fallback also supports 32, so these run on every target.
+        test_index_fp8[num_heads=32, depth=128](2, 128, 128, ctx)
+        test_index_fp8[num_heads=32, depth=128](2, 3, 64, ctx)
+        test_index_fp8[num_heads=32, depth=128](1, 4, 64, ctx)
+        test_index_fp8[num_heads=32, depth=128](4, 5, 200, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 200, 200, ctx)
+        # Alternate-N-tile route (`N_TOKENS_ALT=3` from `nn/index_fp8.mojo`).
+        # Reached only when the key range is deep enough to open the key-split arm
+        # (>= 64 key tiles = 8192 keys) AND 3 divides seq_len while the default 4
+        # does not, with the alt tile's own block count inside
+        # `_KEYSPLIT_MAX_TOKEN_TILES`. That last clause confines this to speculative
+        # widths: at nh=32 it admits exactly seq_len 3, 6 and 9, so no prefill shape
+        # can reach the tile. These two are therefore the ONLY cases covering the
+        # MMA_N=96 kernel. 8192 is BM_key-aligned; 8300 leaves a 108-key tail, so a
+        # dropped or over-run final tile cannot pass on tolerance alone. 8192 is also
+        # exactly `_KEYSPLIT_MIN_KEY_TILES * BM_key`, so raising that threshold would
+        # silently demote the seq_len 6 cell to a third negative control -- check the
+        # tile is still reached rather than trusting a pass.
+        #
+        # Both cells are UNIFORM, so every token on the alt tile is live: the
+        # epilogue's per-token liveness guard is covered here only on the default
+        # tile (by the two negative controls, which do carry partial blocks). The
+        # ragged dead-token case on the alt tile lives in `test_mla_index_fp8`,
+        # whose `seq_lens=[6, 4]` cells put two dead tokens in the second block.
+        # Negative controls first, at the same key depth, so that poisoning the
+        # alternate tile (a comptime factor gated on `MMA_N != 128`) reaches every
+        # one of them before the first expected failure: 3 divides neither 2 nor
+        # 5, so both stay on the default 4-token tile -- which also keeps the
+        # 256-thread tile covered on the key-split arm.
+        test_index_fp8[num_heads=32, depth=128](3, 2, 8300, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 5, 8300, ctx)
+        test_index_fp8[num_heads=32, depth=128](2, 6, 8192, ctx)
+        test_index_fp8[num_heads=32, depth=128](3, 9, 8300, ctx)
+
+        # TP-head-sharded indexer counts exist only on the SM100 tensor-core
+        # path (the scalar fallback's [16, 8] thread layout copies nothing
+        # below 16 heads), so they are compile-gated to Blackwell.
+        comptime if _has_blackwell_tcgen05():
+            # num_heads=8 (GLM 32 heads over 4 ranks; DSv3.2 64 over 8):
+            # N_TOKENS=16, cover partial tiles around the 16-token boundary.
+            test_index_fp8[num_heads=8, depth=128](2, 128, 128, ctx)
+            test_index_fp8[num_heads=8, depth=128](2, 17, 32, ctx)
+            test_index_fp8[num_heads=8, depth=128](4, 200, 200, ctx)
+            test_index_fp8[num_heads=8, depth=128](1, 501, 501, ctx)
+            test_index_fp8[num_heads=8, depth=128](3, 15, 64, ctx)
+            test_index_fp8[num_heads=8, depth=128](5, 16, 64, ctx)
+            test_index_fp8[num_heads=8, depth=128](2, 1, 256, ctx)
+
+            # num_heads=4 (GLM 32 heads over 8 ranks): N_TOKENS=32 boundary.
+            test_index_fp8[num_heads=4, depth=128](2, 128, 128, ctx)
+            test_index_fp8[num_heads=4, depth=128](2, 33, 64, ctx)
+            test_index_fp8[num_heads=4, depth=128](1, 32, 64, ctx)
+            test_index_fp8[num_heads=4, depth=128](2, 31, 256, ctx)
+            test_index_fp8[num_heads=4, depth=128](4, 200, 200, ctx)
+            test_index_fp8[num_heads=4, depth=128](1, 1, 64, ctx)

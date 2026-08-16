@@ -15,7 +15,7 @@
 
 
 from std.gpu import global_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 comptime buffer_size = 1024
@@ -55,7 +55,7 @@ def test_simd_reduction(ctx: DeviceContext) raises:
             simd_width * global_idx.x
         ).reduce_add()
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel](
         output_buffer,
         input_buffer,
         grid_dim=buffer_size // (block_dim * simd_width),

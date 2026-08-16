@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import barrier, block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.atomic import Atomic
 from std.random import random_ui64
@@ -23,7 +24,7 @@ comptime NUM_BINS = 256
 
 # ========================== KERNEL CODE ==========================
 def histogram_kernel(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
+    image: UnsafePointer[UInt8, ImmutAnyOrigin],
     bins: UnsafePointer[UInt32, MutAnyOrigin],
     bins_pool: UnsafePointer[UInt32, MutAnyOrigin],
     width: UInt32,
@@ -58,8 +59,8 @@ def histogram_kernel(
 
 # ========================== TEST CODE ==========================
 def cpu_histogram(
-    image: UnsafePointer[UInt8, MutAnyOrigin],
-    bins: UnsafePointer[UInt32, MutAnyOrigin],
+    image: UnsafePointer[mut=False, UInt8, _],
+    bins: UnsafePointer[mut=True, UInt32, _],
     width: UInt32,
     height: UInt32,
 ):
@@ -128,7 +129,7 @@ def main() raises:
         zeros.free()
 
         # Launch kernel
-        ctx.enqueue_function_experimental[histogram_kernel](
+        ctx.enqueue_function[histogram_kernel](
             d_image,
             d_bins,
             d_bins_pool,

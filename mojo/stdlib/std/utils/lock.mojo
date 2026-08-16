@@ -29,17 +29,17 @@ from std.ffi import external_call
 struct SpinWaiter(Defaultable):
     """A proxy for the C++ runtime's SpinWaiter type."""
 
-    var storage: OpaquePointer[MutExternalOrigin]
+    var storage: OpaquePointer[MutUntrackedOrigin]
     """Pointer to the underlying SpinWaiter instance."""
 
     def __init__(out self):
         """Initializes a SpinWaiter instance."""
         self.storage = external_call[
             "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
-            OpaquePointer[MutExternalOrigin],
+            OpaquePointer[MutUntrackedOrigin],
         ]()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
             self.storage
@@ -57,16 +57,16 @@ struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 
-    comptime UNLOCKED = -1
+    comptime UNLOCKED: Int64 = -1
     """Non-zero means locked, -1 means unlocked."""
 
-    var counter: Atomic[DType.int64]
+    var counter: Atomic[Int64]
     """The atomic counter implementing the spin lock."""
 
     def __init__(out self):
         """Default constructor."""
 
-        self.counter = Atomic[DType.int64](Self.UNLOCKED)
+        self.counter = Atomic[Int64](Self.UNLOCKED)
 
     def lock(mut self, owner: Int):
         """Acquires the lock.
@@ -101,18 +101,18 @@ struct BlockingSpinLock(Defaultable):
         return True
 
 
-struct BlockingScopedLock:
+struct BlockingScopedLock[origin: MutOrigin, //]:
     """A scope adapter for BlockingSpinLock."""
 
     comptime LockType = BlockingSpinLock
     """The type of the lock."""
 
-    var lock: UnsafePointer[Self.LockType, MutAnyOrigin]
+    var lock: Pointer[Self.LockType, Self.origin]
     """The underlying lock instance."""
 
     def __init__(
         out self,
-        lock: UnsafePointer[Self.LockType, MutAnyOrigin],
+        lock: Pointer[Self.LockType, Self.origin],
     ):
         """Primary constructor.
 
@@ -122,28 +122,25 @@ struct BlockingScopedLock:
 
         self.lock = lock
 
-    def __init__(
-        out self,
-        mut lock: Self.LockType,
-    ):
+    def __init__(out self, ref[Self.origin] lock: Self.LockType):
         """Secondary constructor.
 
         Args:
             lock: A mutable reference to the underlying lock.
         """
 
-        self.lock = UnsafePointer(to=lock).as_any_origin()
+        self.lock = Pointer(to=lock)
 
     @no_inline
     def __enter__(mut self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
-        var address = UnsafePointer(to=self)
+        var address = Pointer(to=self)
         self.lock[].lock(Int(address))
 
     @no_inline
     def __exit__(mut self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
-        var address = UnsafePointer(to=self)
+        var address = Pointer(to=self)
         _ = self.lock[].unlock(Int(address))

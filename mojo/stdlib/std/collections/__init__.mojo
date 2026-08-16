@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Core data structures: List, Dict, Set, Optional, plus specialized collections.
+"""Core data types: List, Dict, Set, Optional, String, and other collections.
 
 The `collections` package provides fundamental data structures for organizing
 and managing data in Mojo programs. It includes general-purpose collections
@@ -24,13 +24,16 @@ algorithms, building custom data structures, or any task requiring collection
 types beyond basic primitives.
 """
 
+from .binary_heap import BinaryHeap
 from .bitset import BitSet
 from .counter import Counter
 from .deque import Deque
-from .dict import Dict, KeyElement, OwnedKwargsDict
-from .inline_array import InlineArray
+from .dict import Dict, KeyElement, StringDict
+from .array import Array
 from .linked_list import LinkedList
 from .list import List
 from .optional import Optional, OptionalReg
 from .set import Set
-from .check_bounds import check_bounds
+from .span import ImmSpan, MutSpan, Span
+from .check_bounds import check_bounds, check_slice_bounds
+from .type_dict import TypeDict

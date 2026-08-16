@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
-from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
+from nn.gather_scatter import gather_nd, gather_nd_shape
 
 
 # CHECK-LABEL: test_gather_nd
@@ -29,7 +30,7 @@ def main():
         # Example 1
         comptime batch_dims = 0
         comptime data_type = DType.int32
-        var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 4](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2]())
 
         data[0, 0] = 0
@@ -37,7 +38,7 @@ def main():
         data[1, 0] = 2
         data[1, 1] = 3
 
-        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices_stack = Array[Int64, 4](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 2]())
 
         indices[0, 0] = 0
@@ -54,16 +55,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 2](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 2](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:", output_data_buffer[0], ",", output_data_buffer[1]
@@ -73,7 +73,7 @@ def main():
         # Example 2
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack = InlineArray[Scalar[data_type], 4](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 4](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2]())
 
         data[0, 0] = 0
@@ -81,7 +81,7 @@ def main():
         data[1, 0] = 2
         data[1, 1] = 3
 
-        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices_stack = Array[Int64, 2](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 1]())
 
         indices[0, 0] = 1
@@ -99,16 +99,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 4](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 4](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -125,7 +124,7 @@ def main():
         # Example 3
         comptime batch_dims = 0
         comptime data_type = DType.float32
-        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 8](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         data[0, 0, 0] = 0
@@ -137,7 +136,7 @@ def main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices_stack = Array[Int64, 4](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 2]())
 
         indices[0, 0] = 0
@@ -154,16 +153,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 4](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 4](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -180,7 +178,7 @@ def main():
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 8](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         data[0, 0, 0] = 0
@@ -192,7 +190,7 @@ def main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        var indices_stack = InlineArray[Int64, 4](uninitialized=True)
+        var indices_stack = Array[Int64, 4](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 1, 2]())
 
         indices[0, 0, 0] = 0
@@ -209,16 +207,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 4](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 4](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -235,7 +232,7 @@ def main():
         # Example 5
         comptime batch_dims = 1
         comptime data_type = DType.int32
-        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 8](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         data[0, 0, 0] = 0
@@ -247,7 +244,7 @@ def main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices_stack = Array[Int64, 2](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 1]())
 
         indices[0, 0] = 1
@@ -262,16 +259,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 4](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 4](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -288,9 +284,7 @@ def main():
         # Example 6
         comptime batch_dims = 2
         comptime data_type = DType.int8
-        var data_stack = InlineArray[Scalar[data_type], 2 * 3 * 4](
-            uninitialized=True
-        )
+        var data_stack = Array[Scalar[data_type], 2 * 3 * 4](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 3, 4]())
 
         data[0, 0, 0] = 1
@@ -323,7 +317,7 @@ def main():
         data[1, 2, 2] = 23
         data[1, 2, 3] = 24
 
-        var indices_stack = InlineArray[Int64, 2 * 3](uninitialized=True)
+        var indices_stack = Array[Int64, 2 * 3](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 3, 1, 1]())
 
         indices[0, 0, 0, 0] = 1
@@ -342,16 +336,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 6](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 6](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",
@@ -372,7 +365,7 @@ def main():
         # Example 4
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack = InlineArray[Scalar[data_type], 8](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 8](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 2, 2]())
 
         data[0, 0, 0] = 0
@@ -384,7 +377,7 @@ def main():
         data[1, 1, 0] = 6
         data[1, 1, 1] = 7
 
-        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices_stack = Array[Int64, 2](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 1, 1]())
 
         indices[0, 0, 0] = 0
@@ -399,16 +392,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 8](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 8](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
 
         print(
@@ -434,7 +426,7 @@ def main():
         # Example 2
         comptime batch_dims = 0
         comptime data_type = DType.int8
-        var data_stack = InlineArray[Scalar[data_type], 6](uninitialized=True)
+        var data_stack = Array[Scalar[data_type], 6](uninitialized=True)
         var data = TileTensor(data_stack, row_major[2, 3]())
 
         data[0, 0] = 0
@@ -444,7 +436,7 @@ def main():
         data[1, 1] = 4
         data[1, 2] = 5
 
-        var indices_stack = InlineArray[Int64, 2](uninitialized=True)
+        var indices_stack = Array[Int64, 2](uninitialized=True)
         var indices = TileTensor(indices_stack, row_major[2, 1]())
 
         indices[0, 0] = 1
@@ -462,16 +454,15 @@ def main():
         )
         print("Output shape: ", output_shape)
 
-        var output_data_data = InlineArray[Scalar[data_type], 6](
-            uninitialized=True
-        )
+        var output_data_data = Array[Scalar[data_type], 6](uninitialized=True)
         var output_data_buffer = TileTensor(
             output_data_data, row_major(Coord(output_shape))
         )
-        _gather_nd_impl[batch_dims](
+        gather_nd[batch_dims](
             data.make_dynamic[DType.int64](),
             indices.make_dynamic[DType.int64](),
             output_data_buffer,
+            DeviceContext(api="cpu"),
         )
         print(
             "Output buffer:",

@@ -11,15 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from max.gpu.host import DeviceContext
 from nn.gather_scatter import scatter_elements
-from tensor import DynamicTensor
+from extensibility import DynamicTensor
 from std.testing import assert_equal
 
 from std.utils import IndexList
 
 
 def main() raises:
-    def test_scatter_ax0() raises:
+    var ctx = DeviceContext(api="cpu")
+
+    def test_scatter_ax0(ctx: DeviceContext) raises:
         print("== test_scatter_ax0")
 
         var data_ptr = List(length=9, fill=Float32(0))
@@ -52,7 +55,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](3, 3)
         )
 
-        var expected: InlineArray[Float32, 9] = [
+        var expected: Array[Float32, 9] = [
             Float32(2.0),
             1.1,
             0.0,
@@ -64,16 +67,7 @@ def main() raises:
             1.2,
         ]
 
-        @always_inline
-        @parameter
-        def use_update[
-            dtype: DType, width: Int
-        ](
-            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
-            return update_val
-
-        scatter_elements[use_update](data, indices, updates, 0, output)
+        scatter_elements(data, indices, updates, 0, output, ctx)
 
         for i in range(9):
             assert_equal(output_ptr[i], expected[i])
@@ -84,9 +78,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_ax0
     # CHECK-NOT: FAIL
-    test_scatter_ax0()
+    test_scatter_ax0(ctx)
 
-    def test_scatter_ax1() raises:
+    def test_scatter_ax1(ctx: DeviceContext) raises:
         print("== test_scatter_ax1")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -115,7 +109,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             1.1,
             3.0,
@@ -123,16 +117,7 @@ def main() raises:
             5.0,
         ]
 
-        @always_inline
-        @parameter
-        def use_update[
-            dtype: DType, width: Int
-        ](
-            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
-            return update_val
-
-        scatter_elements[use_update](data, indices, updates, 1, output)
+        scatter_elements(data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -143,9 +128,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_ax1
     # CHECK-NOT: FAIL
-    test_scatter_ax1()
+    test_scatter_ax1(ctx)
 
-    def test_scatter_neg_indices() raises:
+    def test_scatter_neg_indices(ctx: DeviceContext) raises:
         print("== test_scatter_neg_indices")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -174,7 +159,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             1.1,
             2.1,
@@ -182,16 +167,7 @@ def main() raises:
             5.0,
         ]
 
-        @always_inline
-        @parameter
-        def use_update[
-            dtype: DType, width: Int
-        ](
-            input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]
-        ) -> SIMD[dtype, width]:
-            return update_val
-
-        scatter_elements[use_update](data, indices, updates, 1, output)
+        scatter_elements(data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -202,9 +178,9 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_neg_indices
     # CHECK-NOT: FAIL
-    test_scatter_neg_indices()
+    test_scatter_neg_indices(ctx)
 
-    def test_scatter_reduce_max() raises:
+    def test_scatter_reduce_max(ctx: DeviceContext) raises:
         print("== test_scatter_reduce_max")
 
         var data_ptr = List(length=5, fill=Float32(0))
@@ -233,7 +209,7 @@ def main() raises:
             output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
-        var expected: InlineArray[Float32, 5] = [
+        var expected: Array[Float32, 5] = [
             Float32(1.0),
             2.1,
             3.0,
@@ -242,13 +218,12 @@ def main() raises:
         ]
 
         @always_inline
-        @parameter
         def _max[
-            ty: DType, width: Int
+            ty: DType, width: SIMDLength
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_elements[_max](data, indices, updates, 1, output)
+        scatter_elements[reduce_fn=_max](data, indices, updates, 1, output, ctx)
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -259,4 +234,65 @@ def main() raises:
 
     # CHECK-LABEL: test_scatter_reduce_max
     # CHECK-NOT: FAIL
-    test_scatter_reduce_max()
+    test_scatter_reduce_max(ctx)
+
+    def test_scatter_reduce_add_parallel_duplicates(
+        ctx: DeviceContext,
+    ) raises:
+        print("== test_scatter_reduce_add_parallel_duplicates")
+        # More index rows than the CPU elementwise grain size (32768), so
+        # updates run on several workers concurrently (elementwise
+        # parallelizes over the outer dimension). Duplicate indices must
+        # still accumulate atomically — with 100k rows colliding on 8
+        # target rows, a non-atomic reduce drops updates.
+        comptime rows = 64
+        comptime n_idx = 100_000
+        comptime n_targets = 8
+
+        var data_ptr = List(length=rows, fill=Float32(0))
+        for i in range(rows):
+            data_ptr[i] = Float32(i % 7)
+        var data = DynamicTensor[DType.float32, 2](
+            data_ptr.unsafe_ptr(), IndexList[2](rows, 1)
+        )
+
+        var indices_ptr = List(length=n_idx, fill=Int32(0))
+        for k in range(n_idx):
+            indices_ptr[k] = Int32((k % n_targets) * 7 + 1)
+        var indices = DynamicTensor[DType.int32, 2](
+            indices_ptr.unsafe_ptr(), IndexList[2](n_idx, 1)
+        )
+
+        var updates_ptr = List(length=n_idx, fill=Float32(1))
+        var updates = DynamicTensor[DType.float32, 2](
+            updates_ptr.unsafe_ptr(), IndexList[2](n_idx, 1)
+        )
+
+        var output_ptr = List(length=rows, fill=Float32(0))
+        var output = DynamicTensor[DType.float32, 2](
+            output_ptr.unsafe_ptr(), IndexList[2](rows, 1)
+        )
+
+        @always_inline
+        def _add[
+            ty: DType, width: SIMDLength
+        ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
+            return v1 + v2
+
+        scatter_elements[reduce_fn=_add](data, indices, updates, 0, output, ctx)
+
+        comptime dups_per_target = n_idx // n_targets
+        for i in range(rows):
+            var expected = data_ptr[i]
+            if i % 7 == 1 and i < n_targets * 7:
+                expected += Float32(dups_per_target)
+            assert_equal(output_ptr[i], expected, String("i=", i))
+
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
+
+    # CHECK-LABEL: test_scatter_reduce_add_parallel_duplicates
+    # CHECK-NOT: FAIL
+    test_scatter_reduce_add_parallel_duplicates(ctx)

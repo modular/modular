@@ -19,7 +19,7 @@ padding is algebraically identical to a single matmul:
 
 NDHWC input is already C-innermost contiguous, so we can view it as
 [M, C_in] with M = B*D*H*W on the same pointer. Filter FCQRS/QRSCF with
-Q=R=S=1 reduces to [F, C] or [C, F] respectively — no transpose kernel
+Q=R=S=1 reduces to [F, C] or [C, F] respectively; no transpose kernel
 needed. Output NDHWC collapses to [M, F]. No scratch allocation is
 required, and the epilogue unflattens (m, f) -> (b, d, h, w, f) in one
 call to the 5D lambda.
@@ -29,7 +29,7 @@ Covers every 1x1x1 case in the WAN VAE (`post_quant_conv`, per-block
 the QRSCF dispatch chain, before `dispatch_im2col_matmul_conv3d`.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from std.utils.index import IndexList
@@ -41,7 +41,8 @@ def dispatch_1x1x1_matmul_conv3d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
-    filter_is_fcrs: Bool,
+    //,
+    filter_is_fcrs: Bool = False,
     maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
 ](
     input: TileTensor[input_type, ...],
@@ -61,6 +62,24 @@ def dispatch_1x1x1_matmul_conv3d[
     Skips on: non-bf16 dtype, grouped conv, dilation != 1, stride != 1,
     non-zero padding, kernel size other than 1x1x1, and K (= C_in)
     below the matmul's minimum useful size.
+
+    Parameters:
+        input_type: Element type of the input tensor (inferred).
+        filter_type: Element type of the filter tensor (inferred).
+        output_type: Element type of the output tensor (inferred).
+        filter_is_fcrs: Whether the filter is in FCQRS layout (`True`) or
+            QRSCF layout (`False`) (defaults to `False`).
+        maybe_epilogue_func: Optional SIMD elementwise epilogue invoked per
+            output element in 5D coordinates (defaults to `None`).
+    Args:
+        input: 5D input tensor in NDHWC layout.
+        filter: 5D convolution filter in FCQRS or QRSCF layout.
+        output: 5D output tensor in NDHWC layout, written in place.
+        stride: Per-axis convolution stride for (D, H, W).
+        dilation: Per-axis dilation factor for (D, H, W).
+        symmetric_padding: Per-axis symmetric zero padding for (D, H, W).
+        num_groups: Number of convolution groups.
+        ctx: GPU device context used to launch the matmul.
     """
     comptime assert input.flat_rank == 5, "input must be rank 5 (NDHWC)"
     comptime assert filter.flat_rank == 5, "filter must be rank 5"
@@ -128,18 +147,18 @@ def dispatch_1x1x1_matmul_conv3d[
     # --- Zero-copy TileTensor views of input, filter, output. ---
     # Input NDHWC is already C-innermost contiguous, so [M, C_in] with
     # M = batch * D_out * H_out * W_out is a pure pointer reinterpret.
-    var a_tt = TileTensor(input.ptr, row_major(Coord(Idx(full_M), Idx(K))))
-    var c_tt = TileTensor(output.ptr, row_major(Coord(Idx(full_M), Idx(N))))
+    var a_tt = TileTensor(input.ptr, row_major(Coord(full_M, K)))
+    var c_tt = TileTensor(output.ptr, row_major(Coord(full_M, N)))
 
     comptime if maybe_epilogue_func:
         comptime epilogue_5d = maybe_epilogue_func.value()
 
-        @parameter
+        @__parameter
         @always_inline
         @__copy_capture(DHW_out, HW_out, H_out, W_out)
         def _gemm_epilogue[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDLength,
             *,
             alignment: Int = 1,
         ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
@@ -159,7 +178,7 @@ def dispatch_1x1x1_matmul_conv3d[
         comptime if filter_is_fcrs:
             # FCQRS [F, C, 1, 1, 1] -> [F, C] view. _matmul_gpu wants
             # B as [N, K] row-major when transpose_b=True.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(N), Idx(K))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
@@ -170,7 +189,7 @@ def dispatch_1x1x1_matmul_conv3d[
         else:
             # QRSCF [1, 1, 1, C, F] -> [C, F] view. _matmul_gpu wants
             # B as [K, N] row-major when transpose_b=False.
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(K), Idx(N))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,
@@ -180,13 +199,13 @@ def dispatch_1x1x1_matmul_conv3d[
             ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
     else:
         comptime if filter_is_fcrs:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(N), Idx(K))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(N, K)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
             ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
         else:
-            var b_tt = TileTensor(filter.ptr, row_major(Coord(Idx(K), Idx(N))))
+            var b_tt = TileTensor(filter.ptr, row_major(Coord(K, N)))
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=False,

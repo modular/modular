@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
 from layout import *
 
@@ -50,7 +50,7 @@ def main() raises:
         ctx.enqueue_copy(vec_b_dev, vec_b_ptr)
         ctx.enqueue_copy(vec_c_dev, vec_c_ptr)
 
-        ctx.enqueue_function_experimental[gpu_kernel](
+        ctx.enqueue_function[gpu_kernel](
             vec_c_dev,
             vec_a_dev,
             vec_b_dev,

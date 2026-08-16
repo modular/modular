@@ -19,7 +19,8 @@ import dataclasses
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple
 
-import torch
+# torch is a caller-supplied dep, see BUILD.bazel
+import torch  # type: ignore[import-not-found]
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.engine import InferenceSession, Model
 from max.graph import Graph
@@ -64,17 +65,16 @@ def dict_to_dataclass(cls: type[_T], d: dict[str, Any]) -> _T:
 
 
 class CompiledLayerBundle(NamedTuple):
-    """Result of compiling a layer graph.
-
-    Attributes:
-        compiled_model: The compiled model from session.load().
-        device: The GPU accelerator device.
-        session: The InferenceSession used for compilation.
-    """
+    """Result of compiling a layer graph."""
 
     compiled_model: Model
+    """The compiled model from session.load()."""
+
     device: Accelerator
+    """The GPU accelerator device."""
+
     session: InferenceSession
+    """The InferenceSession used for compilation."""
 
 
 class LayerTestHarness(ABC, Generic[StaticParamsT, DynamicParamsT, ContextT]):

@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `arg_nonzero`, which returns the indices of all nonzero elements in a tensor."""
 
 
-from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import Coord, Idx, TileTensor, coord_to_index_list
-from std.runtime.tracing import Trace, TraceLevel
+from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList
 
@@ -45,7 +46,7 @@ def arg_nonzero[
     comptime assert (
         output_buffer.flat_rank == 2
     ), "output_buffer must be of rank 2"
-    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) stores below.
+    # Provide evidence that flat_rank >= 2 for the Coord(..., ...) stores below.
     comptime assert output_buffer.flat_rank >= 2
 
     with Trace[TraceLevel.OP, target=StaticString("cpu")]("arg_nonzero"):
@@ -71,7 +72,7 @@ def arg_nonzero[
                 comptime for k in range(input_buffer.rank):
                     out_indices[1] = k
                     output_buffer.store(
-                        Coord(Idx(out_indices[0]), Idx(out_indices[1])),
+                        Coord(out_indices[0], out_indices[1]),
                         output_buffer.ElementType(coords[k].value()),
                     )
 
@@ -101,7 +102,7 @@ def arg_nonzero_shape[
 
     var j: Int = 0
     for i in range(numel):
-        var offset = input_buffer.layout(Idx(i))
+        var offset = input_buffer.layout(i)
         if input_buffer.raw_load(offset) != 0:
             j += 1
 

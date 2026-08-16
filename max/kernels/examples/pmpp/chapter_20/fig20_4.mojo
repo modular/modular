@@ -13,10 +13,10 @@
 
 from std.math import exp, abs
 from std.random import rand
-from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
-from std.gpu.memory import AddressSpace
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
@@ -70,17 +70,19 @@ def softmax_kernel(
     S: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     D: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     P: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
-    N: Int,
+    N_dev: Int32,
 ):
+    # Int is not device-passable; widen the fixed-width arg.
+    var N = Int(N_dev)
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = stack_allocation[
+    var temp_store = unsafe_stack_allocation[
         BLOCK_SIZE,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
     ]()
-    var broadcast_slot = stack_allocation[
+    var broadcast_slot = unsafe_stack_allocation[
         1,
         Scalar[DType.float32],
         address_space=AddressSpace.SHARED,
@@ -105,7 +107,9 @@ def softmax_kernel(
 
     barrier()
 
-    var max_val_row = block_reduce[max_op](max_val_thread, temp_store)
+    var max_val_row = block_reduce[max_op](
+        max_val_thread, temp_store.as_unsafe_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = max_val_row
@@ -121,7 +125,9 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](sum_thread, temp_store)
+    var sum_row = block_reduce[sum_op](
+        sum_thread, temp_store.as_unsafe_any_origin()
+    )
 
     if tid == 0:
         broadcast_slot[0] = sum_row
@@ -141,8 +147,8 @@ def softmax_kernel(
 
 
 def cpu_softmax(
-    h_S: UnsafePointer[Float32, MutAnyOrigin],
-    h_P: UnsafePointer[Float32, MutAnyOrigin],
+    h_S: UnsafePointer[mut=False, Float32, _],
+    h_P: UnsafePointer[mut=True, Float32, _],
     N: Int,
 ):
     var P_ptr = h_P
@@ -197,11 +203,11 @@ def main() raises:
 
         device.enqueue_copy(d_S, h_S)
 
-        device.enqueue_function_experimental[softmax_kernel](
+        device.enqueue_function[softmax_kernel](
             d_S,
             d_D,
             d_P,
-            N,
+            Int32(N),
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),
         )
