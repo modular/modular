@@ -185,7 +185,7 @@ def test_shapes[
     saturated: Bool,
     mixed_kernels: Bool,
 ]() raises:
-    @parameter
+    @__parameter
     def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,

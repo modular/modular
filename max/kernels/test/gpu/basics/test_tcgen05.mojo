@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.host import get_gpu_target
+from max.gpu.host.compile import _compile_code
+from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -117,7 +117,7 @@ def st_test_fn():
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
-    var data = InlineArray[Scalar[DType.float32], 64](uninitialized=True)
+    var data = Array[Scalar[DType.float32], 64](uninitialized=True)
     tcgen05_st[
         datapaths=32,
         bits=32,

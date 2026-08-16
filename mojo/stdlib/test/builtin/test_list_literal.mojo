@@ -15,7 +15,6 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_variadic_list() raises:
-    @parameter
     def check_list(*nums: Int) raises:
         assert_equal(nums[0], 5)
         assert_equal(nums[1], 8)

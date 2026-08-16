@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
 from std.testing import *
 
 
 def test_convert_asm() raises:
-    @parameter
+    @__parameter
     def my_cast[
         frm: DType, to: DType
     ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):

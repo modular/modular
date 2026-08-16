@@ -81,7 +81,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             from gpu.host import DeviceContext
             from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-            @compiler.register("histogram")
+            @extensibility.register("histogram")
             struct Histogram:
                 @staticmethod
                 fn execute[

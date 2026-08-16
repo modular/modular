@@ -60,7 +60,7 @@
 from std.random import random_float64, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.utils.numerics import inf, nan
 from layout import Coord, TileTensor, row_major
 from nn.topk import fused_token_sampling_gpu
@@ -305,9 +305,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         Float32(1.0),
         in_tt,
         out_tt,
-        k=k_tt.as_any_origin().as_immut(),
-        temperature=temp_tt.as_any_origin().as_immut(),
-        seed=rng_tt.as_any_origin().as_immut(),
+        k=k_tt.as_unsafe_any_origin().as_immut(),
+        temperature=temp_tt.as_unsafe_any_origin().as_immut(),
+        seed=rng_tt.as_unsafe_any_origin().as_immut(),
     )
 
     # The oracle read: copy the int64 output row(s) back to host.

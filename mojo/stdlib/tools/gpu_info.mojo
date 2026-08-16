@@ -13,7 +13,7 @@
 
 from std.sys.arg import argv
 
-import std.gpu.host
+import max.gpu.host
 import std.gpu.host._nvidia_cuda as cuda
 
 
@@ -66,7 +66,6 @@ def main() raises:
     if ctx.api() == "cuda":
         print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
-        print("vendor=Vendor.NVIDIA_GPU,")
         print('api="' + String(ctx.api()) + '", ')
         print(
             'arch_name="'
@@ -111,7 +110,6 @@ def main() raises:
     elif ctx.api() == "hip":
         print("GPUInfo(")
         print('name="' + ctx.name() + '", ')
-        print("vendor=Vendor.AMD_GPU,")
         print('api="' + String(ctx.api()) + '", ')
         print('arch_name="' + arch_name + '", ')
         print(

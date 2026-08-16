@@ -71,7 +71,7 @@ from std.gpu import (
     thread_idx,
 )
 from std.gpu.intrinsics import lop, ds_read_tr16_b64
-from std.gpu.compute.mma import (
+from max.gpu.compute.mma import (
     get_amd_bf8_dtype,
     get_amd_fp8_dtype,
     ld_matrix,
@@ -224,7 +224,7 @@ struct TensorCore[
         )
         and Self.shape == shape_16x8x32
     ) if is_nvidia_gpu() else (
-        Self.in_type
+        Optional[DType](Self.in_type)
         in (
             get_amd_fp8_dtype(),
             get_amd_bf8_dtype(),
@@ -253,7 +253,7 @@ struct TensorCore[
 
     comptime c_reg_tile_type = LayoutTensor[
         Self.out_type,
-        Layout.col_major(1, Self.c_reg_type.size),
+        Layout.col_major(1, Self.c_reg_type.length),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]
@@ -364,10 +364,10 @@ struct TensorCore[
         comptime fp8_dtype = get_amd_fp8_dtype()
         comptime bf8_dtype = get_amd_bf8_dtype()
 
-        comptime assert Self.in_type in (
-            DType.float32,
-            DType.bfloat16,
-            DType.float16,
+        comptime assert Optional[DType](Self.in_type) in (
+            Optional[DType](DType.float32),
+            Optional[DType](DType.bfloat16),
+            Optional[DType](DType.float16),
             fp8_dtype,
             bf8_dtype,
         ), String(
@@ -387,7 +387,7 @@ struct TensorCore[
             )
             or (
                 reg_per_thread in (8,)
-                and (Self.in_type in (fp8_dtype, bf8_dtype))
+                and (Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype))
             )
         ), "No valid mma shape to load matrix fragment"
 
@@ -540,10 +540,10 @@ struct TensorCore[
             mma_n, WARP_SIZE // mma_n
         ) if Self.transpose_b else Layout.row_major(WARP_SIZE // mma_n, mma_n)
 
-        comptime assert Self.in_type in (
-            DType.float32,
-            DType.bfloat16,
-            DType.float16,
+        comptime assert Optional[DType](Self.in_type) in (
+            Optional[DType](DType.float32),
+            Optional[DType](DType.bfloat16),
+            Optional[DType](DType.float16),
             fp8_dtype,
             bf8_dtype,
         ), String(
@@ -563,7 +563,7 @@ struct TensorCore[
             )
             or (
                 reg_per_thread in (8,)
-                and (Self.in_type in (fp8_dtype, bf8_dtype))
+                and (Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype))
             )
         ), "No valid mma shape to load matrix fragment b"
 
@@ -837,8 +837,8 @@ struct TensorCore[
         var d_reg = c_reg
         mma(d_reg, a_reg, b_reg, d_reg)
         var d = type_of(res).stack_allocation()
-        d.vectorize[1, Self.c_reg_type.size]()[0, 0] = rebind[
-            type_of(d.vectorize[1, Self.c_reg_type.size]()[0, 0])
+        d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
+            type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
         ](d_reg)
         return d
 
@@ -1360,7 +1360,9 @@ def _load_matrix_frag[
 
     var lane_offset = eval_composed[ldmatrix_layout](lane, offset) * simd_size
 
-    return ld_matrix[res.size, transpose=transposed](mma_tile.ptr + lane_offset)
+    return ld_matrix[res.length, transpose=transposed](
+        mma_tile.ptr + lane_offset
+    )
 
 
 @always_inline
@@ -1524,9 +1526,9 @@ struct TiledTensorCore[
         comptime num_m_mmas = a_reg_tile.shape[0]()
         comptime num_n_mmas = b_reg_tile.shape[0]()
 
-        comptime a_frag_size = Self.mma_op.a_reg_type.size
-        comptime b_frag_size = Self.mma_op.b_reg_type.size
-        comptime c_frag_size = Self.mma_op.c_reg_type.size
+        comptime a_frag_size = Self.mma_op.a_reg_type.length
+        comptime b_frag_size = Self.mma_op.b_reg_type.length
+        comptime c_frag_size = Self.mma_op.c_reg_type.length
 
         comptime assert Self.group_size > 0, "group_size must be greater than 0"
 
@@ -1544,7 +1546,7 @@ struct TiledTensorCore[
             num_n_mmas, num_m_mmas
         ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
 
-        @parameter
+        @__parameter
         def _inner_loop(
             a_frag: LayoutTensor,
             b_frag: LayoutTensor,

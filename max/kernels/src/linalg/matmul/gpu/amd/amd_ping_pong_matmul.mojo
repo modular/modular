@@ -28,8 +28,8 @@ from std.gpu import (
     thread_idx,
     warp_id,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.sync import schedule_barrier, s_waitcnt
+from max.gpu.host import DeviceContext
+from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from std.sys.intrinsics import readfirstlane
 
@@ -311,7 +311,18 @@ struct AMDPingPongMatmul[
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin],
     ):
-        """Structured ping-pong GEMM kernel entry point."""
+        """Structured ping-pong GEMM kernel entry point.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N` in `c_type`.
+        """
         Self.validate_config()
 
         comptime BM = Self.BM
@@ -477,19 +488,23 @@ struct AMDPingPongMatmul[
         )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_a[stage: Int, which: Int](k: Int):
             a_loader.load_tile(
-                a_load_tiles[stage][which],
+                rebind[type_of(a_load_tiles[0][0])](
+                    rebind[type_of(a_load_tiles[0])](a_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BM,
                 k_offset=k,
             )
 
         @always_inline
-        @parameter
+        @__parameter
         def load_b[stage: Int, which: Int](k: Int):
             b_loader.load_tile(
-                b_load_tiles[stage][which],
+                rebind[type_of(b_load_tiles[0][0])](
+                    rebind[type_of(b_load_tiles[0])](b_load_tiles[stage])[which]
+                ),
                 m_offset=which * half_BN,
                 k_offset=k,
             )
@@ -529,7 +544,7 @@ struct AMDPingPongMatmul[
             Self.LGKM_PER_LOAD_B,
         ](sched_config, target)
 
-        @parameter
+        @__parameter
         @always_inline
         def _bind[entry: ScheduleEntry](k_base: Int):
             comptime k_off = entry.op.k_offset.signed_bk_multiple()
@@ -540,11 +555,19 @@ struct AMDPingPongMatmul[
                 load_b[entry.op.stage, entry.op.subtile](k)
             elif entry.op.tag == MMA_LOAD_A:
                 mma_op.load_a_quadrant[entry.op.subtile](
-                    a_mma_tiles[entry.op.stage][entry.op.subtile]
+                    rebind[type_of(a_mma_tiles[0][0])](
+                        rebind[type_of(a_mma_tiles[0])](
+                            a_mma_tiles[entry.op.stage]
+                        )[entry.op.subtile]
+                    )
                 )
             elif entry.op.tag == MMA_LOAD_B:
                 mma_op.load_b_quadrant[entry.op.subtile](
-                    b_mma_tiles[entry.op.stage][entry.op.subtile]
+                    rebind[type_of(b_mma_tiles[0][0])](
+                        rebind[type_of(b_mma_tiles[0])](
+                            b_mma_tiles[entry.op.stage]
+                        )[entry.op.subtile]
+                    )
                 )
             elif entry.op.tag == MMA:
                 mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
@@ -667,7 +690,21 @@ def amd_ping_pong_matmul[
     c: TileTensor[mut=True, c_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Host launcher for the structured ping-pong matmul."""
+    """Host launcher for the structured ping-pong matmul.
+
+    Parameters:
+        a_type: Element type of the `a` input matrix (inferred).
+        b_type: Element type of the `b` input matrix (inferred).
+        c_type: Element type of the `c` output matrix (inferred).
+        enable_swizzle: Enable LDS bank-conflict avoidance swizzle
+            (defaults to `True`).
+
+    Args:
+        a: LHS input matrix tile of shape `M` x `K`.
+        b: RHS input matrix tile of shape `N` x `K`.
+        c: Output matrix tile of shape `M` x `N`.
+        ctx: Device context used to enqueue the kernel launch.
+    """
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type == DType.bfloat16 or a_type.is_float8()
@@ -679,7 +716,7 @@ def amd_ping_pong_matmul[
     var M = Int(c.dim[0]())
 
     @always_inline
-    @parameter
+    @__parameter
     def run_kernel[config: KernelConfig]() raises:
         comptime kernel = AMDPingPongMatmul[
             a_type,

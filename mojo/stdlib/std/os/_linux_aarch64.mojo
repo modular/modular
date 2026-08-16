@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import InlineArray
+from std.collections import Array
 from std.ffi import external_call
 from std.time.time import _CTimeSpec
 
@@ -61,7 +61,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
     """Time of last status change."""
     var st_birthtimespec: _CTimeSpec
     """Time of file creation(birth)."""
-    var unused: InlineArray[Int64, 2]
+    var unused: Array[Int64, 2]
     """RESERVED: DO NOT USE!."""
 
     def __init__(out self):
@@ -81,7 +81,7 @@ struct _c_stat(Copyable, Defaultable, Writable):
         self.st_mtimespec = _CTimeSpec()
         self.st_ctimespec = _CTimeSpec()
         self.st_birthtimespec = _CTimeSpec()
-        self.unused: InlineArray[Int64, 2] = [0, 0]
+        self.unused: Array[Int64, 2] = [0, 0]
 
     def write_to(self, mut writer: Some[Writer]):
         # fmt: off

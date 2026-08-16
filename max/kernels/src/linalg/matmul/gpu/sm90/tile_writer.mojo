@@ -37,6 +37,7 @@ from layout import (
     IntTuple,
     Layout,
     MixedLayout,
+    PointerStorage,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
@@ -46,7 +47,7 @@ from layout import (
 )
 from layout.tensor_storage import TensorStorage
 from layout.tile_io import copy_sram_to_dram
-from std.gpu.memory import fence_async_view_proxy
+from max.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import RegTile
 from structured_kernels.smem_types import reg_tile_to_tile_tensor
@@ -54,7 +55,7 @@ from layout.swizzle import Swizzle
 from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from std.gpu.compute.mma import st_matrix
+from max.gpu.compute.mma import st_matrix
 from std.memory import bitcast
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
@@ -172,7 +173,7 @@ trait SMemTileWriter(TrivialRegisterPassable):
 
 
 struct TileWriterTMA[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -260,6 +261,29 @@ struct TileWriterThreadwise[
     half_tile: Bool = False,  # Handle masked x2 case,
     swapAB: Bool = False,
 ](SMemTileWriter, TrivialRegisterPassable):
+    """Writes shared-memory tiles to global memory using per-thread vectorized stores.
+
+    Implements `SMemTileWriter` without hardware TMA: each thread reads a
+    SIMD-width chunk from a swizzled shared-memory tile and writes it directly
+    to the destination global tensor. Supports an optional A/B swap mapping and
+    a half-tile mode for the x2 masked-consumer case.
+
+    Parameters:
+        dtype: Data type of the source and destination tiles (inferred).
+        dst_layout: Layout of the destination global tensor (inferred).
+        dst_origin: Origin type of the destination global tensor (inferred).
+        dst_storage: Storage type of the destination global tensor (inferred).
+        dst_linear_idx_type: Linear index type for the destination tensor
+            (inferred).
+        thread_layout: Layout mapping threads across the tile for vectorized
+            stores.
+        simd_size: SIMD vector width, in elements, used for vectorized stores.
+        half_tile: Whether to write only half the tile for the masked x2
+            consumer case (defaults to False).
+        swapAB: Whether to transpose the A and B matrix mapping (defaults to
+            False).
+    """
+
     comptime _dtype = Self.dtype
 
     comptime DstType = TileTensor[
@@ -546,6 +570,7 @@ struct FragmentToSMemWriter[
             dtype=Self.c_type,
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
+            Storage=PointerStorage[element_width=1],
             ...,
         ],
         data: SIMD[Self.c_type, elements_per_op],
@@ -571,7 +596,7 @@ struct FragmentToSMemWriter[
 
         # Execute st.matrix hardware instruction
         st_matrix[simd_width=packed_width, transpose=Self.swapAB](
-            smem_tile.ptr + swizzled_offset, packed_data
+            smem_tile._storage + swizzled_offset, packed_data
         )
 
     @always_inline
@@ -604,7 +629,7 @@ struct FragmentToSMemWriter[
             origin=MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](
-            self.c_tile.ptr + tile_linear_idx * elements_per_tile,
+            self.c_tile._storage + tile_linear_idx * elements_per_tile,
             flat_tile_layout,
         )
 
@@ -974,7 +999,7 @@ struct RegisterToGMemWriter[
                         Self.c_type
                     ]()
 
-                    @parameter
+                    @__parameter
                     def epilogue_coordinates() -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed

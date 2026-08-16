@@ -39,7 +39,7 @@ from std.ffi import (
     get_errno,
 )
 
-from std.memory import Span
+from std.collections import Span
 
 
 struct FileDescriptor(TrivialRegisterPassable, Writer):
@@ -72,7 +72,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Args:
             bytes: The byte span to write to this file.
         """
-        written = external_call["write", c_ssize_t](
+        var written = external_call["write", c_ssize_t](
             self.value.__mlir_index__(),
             bytes.unsafe_ptr(),
             len(bytes).__mlir_index__(),
@@ -91,7 +91,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> Int:
+    def read_bytes(mut self, buffer: MutSpan[Byte, _]) raises -> Int:
         """Read a number of bytes from the file into a buffer.
 
         Args:

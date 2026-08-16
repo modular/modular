@@ -13,13 +13,14 @@
 
 from std.math import align_down
 
-from std.gpu import barrier, thread_idx
-from std.gpu.host import DeviceContext, get_gpu_target
-from std.gpu.host.compile import _compile_code
-from std.gpu.host.info import MI355X
+from std.gpu import thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.compile import _compile_code
+from max.gpu.host.info import MI355X
 from std.gpu.intrinsics import AMDBufferResource
-from std.gpu.memory import CacheOperation
-from std.memory import stack_allocation
+from max.gpu.memory import CacheOperation
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 
 comptime size = 257
@@ -42,7 +43,7 @@ def kernel[
 def kernel_lds[
     dtype: DType, width: Int
 ](a: UnsafePointer[Scalar[dtype], MutAnyOrigin]):
-    var a_shared = stack_allocation[
+    var a_shared = unsafe_stack_allocation[
         size, dtype, address_space=AddressSpace.SHARED
     ]()
 
@@ -188,8 +189,8 @@ def test_cache_policy_assembly_volatile() raises:
 
 
 def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    a_host_buf = alloc[Scalar[dtype]](size)
-    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
+    var a_host_buf = alloc[Scalar[dtype]](size)
+    var a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = Scalar[dtype](i + 1)
@@ -210,8 +211,8 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
 
 def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    a_host_buf = alloc[Scalar[dtype]](size)
-    a_device_buf = ctx.enqueue_create_buffer[dtype](size)
+    var a_host_buf = alloc[Scalar[dtype]](size)
+    var a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
     for i in range(size):
         a_host_buf[i] = Scalar[dtype](i + 1)

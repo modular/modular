@@ -20,8 +20,8 @@ from std.gpu import (
 )
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
-from std.algorithm import sync_parallelize
-from std.gpu.host import DeviceContext
+from max.algorithm import sync_parallelize
+from max.gpu.host import DeviceContext
 import std.math
 from std.math import exp2
 from nn.activations import silu
@@ -54,11 +54,11 @@ def varlen_selective_state_update_gpu[
     state_batch_indices_LT: TensorLayout,
 ](
     # Grid dimensions
-    total_threads: Int,  # batch * nheads * dim / BLOCK_SIZE_M
-    batch: Int,
-    nheads: Int,
-    dim: Int,
-    nheads_ngroups_ratio: Int,
+    total_threads: Int32,  # batch * nheads * dim / BLOCK_SIZE_M
+    batch: Int32,
+    nheads: Int32,
+    dim: Int32,
+    nheads_ngroups_ratio: Int32,
     pad_slot_id: Int32,
     dt_softplus: Int8,
     has_state_batch_indices: Int8,
@@ -88,16 +88,21 @@ def varlen_selective_state_update_gpu[
     out_strides: Strides3D,  # (batch, nheads, dim)
 ):
     """GPU kernel for selective state update with multi-head support."""
+    var _total_threads = Int(total_threads)
+    var _batch = Int(batch)
+    var _nheads = Int(nheads)
+    var _dim = Int(dim)
+    var _nheads_ngroups_ratio = Int(nheads_ngroups_ratio)
     comptime BLOCK_SIZE_M = 4  # Process 4 dims per thread
 
     var pid_m = block_idx.x  # Dim block index
     var pid_b = block_idx.y  # Batch index
     var pid_h = block_idx.z  # Head index
 
-    if pid_b >= batch or pid_h >= nheads:
+    if pid_b >= _batch or pid_h >= _nheads:
         return
 
-    # Determine state batch index
+    # Determine state _batch index
     var state_batch_idx = Int32(pid_b)
     if Bool(Int(has_state_batch_indices) != 0):
         state_batch_idx = state_batch_indices.raw_load(pid_b)
@@ -110,12 +115,12 @@ def varlen_selective_state_update_gpu[
     var has_z = Int(z.dim[0]()) > 0
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
 
-    var group_id = pid_h // nheads_ngroups_ratio
+    var group_id = pid_h // _nheads_ngroups_ratio
 
     # Process BLOCK_SIZE_M dims per thread
     comptime for local_m in range(BLOCK_SIZE_M):
         var m = pid_m * BLOCK_SIZE_M + local_m
-        if m >= dim:
+        if m >= _dim:
             continue
 
         # Load x value
@@ -253,9 +258,9 @@ def varlen_selective_scan_fwd_gpu[
     cache_indices_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
 ](
-    dim: Int,
-    ngroups: Int,
-    batch: Int,
+    dim: Int32,
+    ngroups: Int32,
+    batch: Int32,
     pad_slot_id: Int32,
     delta_softplus: Int8,
     # Tensors - varlen format: (dim, total_length) for u, delta, z, out
@@ -298,11 +303,14 @@ def varlen_selective_scan_fwd_gpu[
     out_strides: Strides2D,  # (dim, total_length)
 ):
     """GPU kernel for variable-length selective scan."""
-    # 2D grid: block_idx.x for dim, block_idx.y for batch
+    var _dim = Int(dim)
+    var _ngroups = Int(ngroups)
+    var _batch = Int(batch)
+    # 2D grid: block_idx.x for _dim, block_idx.y for _batch
     var d = block_dim.x * block_idx.x + thread_idx.x
     var b = block_idx.y
 
-    if d >= dim or b >= batch:
+    if d >= _dim or b >= _batch:
         return
 
     var has_D = Int(D.dim[0]()) > 0
@@ -327,7 +335,7 @@ def varlen_selective_scan_fwd_gpu[
         if cache_idx == Int(pad_slot_id):
             return
 
-    # Pre-load D and delta_bias for this dim
+    # Pre-load D and delta_bias for this _dim
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
@@ -340,7 +348,7 @@ def varlen_selective_scan_fwd_gpu[
             delta_bias.raw_load(bias_offset)
         ).cast[DType.float32]()
 
-    # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
+    # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
 
     comptime for n in range(DSTATE):
@@ -350,8 +358,8 @@ def varlen_selective_scan_fwd_gpu[
             * LOG2E
         )
 
-    # Determine group for this dim
-    var group_size = dim // ngroups
+    # Determine group for this _dim
+    var group_size = _dim // _ngroups
     var group_id = d // group_size
 
     # Initialize state - either from cache or zeros
@@ -514,7 +522,7 @@ def varlen_selective_state_update_cpu[
     var dt_softplus_bool = Bool(Int(dt_softplus) != 0)
     var has_state_batch_indices_bool = Bool(Int(has_state_batch_indices) != 0)
 
-    @parameter
+    @__parameter
     def worker(idx: Int):
         var b, remaining = divmod(idx, nheads * dim)
         var h, m = divmod(remaining, dim)
@@ -689,7 +697,7 @@ def varlen_selective_scan_fwd_cpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
     var group_size = dim // ngroups
 
-    @parameter
+    @__parameter
     def worker(d: Int):
         # Pre-load D and delta_bias for this dim
         var D_val = Float32(0.0)

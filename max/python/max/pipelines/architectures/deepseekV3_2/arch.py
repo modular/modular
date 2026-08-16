@@ -29,10 +29,8 @@ deepseekV3_2_arch = SupportedArchitecture(
         "deepseek-ai/DeepSeek-V3.2",
         "deepseek-ai/DeepSeek-V3.2-Exp",
     ],
-    default_encoding="float8_e4m3fn",
-    supported_encodings={
-        "float8_e4m3fn",
-    },
+    default_encoding=DeepseekV3_2Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3_2Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3_2Model,
     batching=DeepseekV3BatchProcessor,

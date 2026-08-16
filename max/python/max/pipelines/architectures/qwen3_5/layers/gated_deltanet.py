@@ -51,8 +51,7 @@ from max.graph import BufferValue, DeviceRef, TensorValue, Weight, ops
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
-
-from .functional_ops import (
+from max.nn.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_recurrence_fwd,
 )
