@@ -469,8 +469,7 @@ struct WeakPointer[T: Movable & Deinitable](
     """
 
     comptime _inner_type = _ArcPointerInner[Self.T]
-    # FIXME MOCO-3525: use Pointer[Self._inner_type, MutUntrackedOrigin]
-    comptime _inner_ptr_type = Pointer[NoneType, MutUntrackedOrigin]
+    comptime _inner_ptr_type = Pointer[Self._inner_type, MutUntrackedOrigin]
     var _inner: Optional[Self._inner_ptr_type]
 
     def __init__(
@@ -497,7 +496,7 @@ struct WeakPointer[T: Movable & Deinitable](
             A new `Weak` pointer sharing this allocation.
         """
         downgrade._inner[].add_weak()
-        self._inner = downgrade._inner.unsafe_bitcast[NoneType]()
+        self._inner = downgrade._inner
 
     @doc_hidden
     def __init__(
@@ -520,25 +519,16 @@ struct WeakPointer[T: Movable & Deinitable](
             copy: The existing `WeakPointer` to share an allocation with.
         """
         if copy._inner:
-            copy._inner.unsafe_value().unsafe_bitcast[
-                Self._inner_type
-            ]()[].add_weak()
+            copy._inner.unsafe_value()[].add_weak()
         self._inner = copy._inner
 
     @no_inline
     def __deinit__(deinit self):
         """Decrement the weak count and free the allocation if last."""
-        if (
-            self._inner
-            and self._inner.unsafe_value()
-            .unsafe_bitcast[Self._inner_type]()[]
-            .drop_weak()
-        ):
+        if self._inner and self._inner.unsafe_value()[].drop_weak():
             dealloc(
                 ThinAllocation(
-                    unsafe_owned_ptr=self._inner.unsafe_value().unsafe_bitcast[
-                        Self._inner_type
-                    ]()
+                    unsafe_owned_ptr=self._inner.unsafe_value()
                 ).unsafe_with_layout({count = 1})
             )
 
@@ -549,19 +539,8 @@ struct WeakPointer[T: Movable & Deinitable](
             An `ArcPointer` sharing the allocation, or `None` if the
             payload has already been destroyed (strong count reached 0).
         """
-        if (
-            self._inner
-            and self._inner.unsafe_value()
-            .unsafe_bitcast[Self._inner_type]()[]
-            .try_add_strong()
-        ):
-            return {
-                ArcPointer[Self.T](
-                    _inner=self._inner.unsafe_value().unsafe_bitcast[
-                        Self._inner_type
-                    ]()
-                )
-            }
+        if self._inner and self._inner.unsafe_value()[].try_add_strong():
+            return {ArcPointer[Self.T](_inner=self._inner.unsafe_value())}
         return Optional[ArcPointer[Self.T]]()
 
     def strong_count(self) -> UInt64:
@@ -571,11 +550,7 @@ struct WeakPointer[T: Movable & Deinitable](
             The current number of strong references to the allocation.
         """
         if self._inner:
-            return (
-                self._inner.unsafe_value()
-                .unsafe_bitcast[Self._inner_type]()[]
-                .strong_count()
-            )
+            return self._inner.unsafe_value()[].strong_count()
         else:
             return 0
 
@@ -589,17 +564,8 @@ struct WeakPointer[T: Movable & Deinitable](
         """
 
         if self._inner:
-            var w = (
-                self._inner.unsafe_value()
-                .unsafe_bitcast[Self._inner_type]()[]
-                .weak_count_with_implicit()
-            )
-            if (
-                self._inner.unsafe_value()
-                .unsafe_bitcast[Self._inner_type]()[]
-                .strong_count()
-                == 0
-            ):
+            var w = self._inner.unsafe_value()[].weak_count_with_implicit()
+            if self._inner.unsafe_value()[].strong_count() == 0:
                 return w
             # If there are any strong remaining, we don't want to
             # include the implicit weak in the returned count.
