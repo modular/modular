@@ -75,7 +75,7 @@ def find_contiguous_ranges(
 
 
 def hash_image(
-    image: npt.NDArray[Any] | bytes,
+    image: npt.NDArray[Any] | bytes | bytearray,
     size_tier: int | None = None,
 ) -> int:
     """Compute the hash of an image.

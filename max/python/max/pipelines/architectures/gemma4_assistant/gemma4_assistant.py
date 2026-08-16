@@ -351,7 +351,7 @@ class Gemma4AssistantDecoderLayer(Module):
                 kv_input_row_offsets=kv_input_row_offsets[i],
                 q_max_seq_len=q_max_seq_len,
                 **(
-                    {"rope_cache_lengths": rope_cache_lengths_list[i]}
+                    {"rope_cache_lengths": rope_cache_lengths_list[i]}  # type: ignore
                     if rope_cache_lengths_list is not None
                     else {}
                 ),

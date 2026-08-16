@@ -70,7 +70,7 @@ from pydantic import BaseModel
 from typing_extensions import TypedDict, TypeIs
 
 if TYPE_CHECKING:
-    from _csv import _writer as _CsvWriter
+    from _csv import Writer as _CsvWriter
 
 logger = logging.getLogger(__name__)
 
