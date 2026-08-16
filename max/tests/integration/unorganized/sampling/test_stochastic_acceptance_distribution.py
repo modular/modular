@@ -19,25 +19,19 @@ target distribution and drafts drawn uniformly from the target's top-5
 tokens, then checks the empirical committed-token frequencies against the
 target probabilities.
 
-Why this discriminates: let ``q`` be the draft proposal and ``p`` the target
-softmax. The sampler accepts a draft ``d`` with probability ``p(d)``. If the
-recovered token on rejection is drawn from the residual (``p`` with the
-draft token's mass removed), the committed token is exactly ``~ p`` for any
-``q``:
+Why this discriminates: let ``q`` be the draft proposal and ``p`` the
+(truncated) target distribution. The sampler draws ``x ~ p`` at each
+position and accepts the draft ``d`` iff ``d == x``; the committed token is
+``x`` either way, so the committed marginal is exactly ``p`` for any ``q``:
 
-    P(commit = x) = q(x) p(x) + sum_d q(d) (1 - p(d)) * p(x) 1{x != d} / (1 - p(d))
-                  = q(x) p(x) + p(x) (1 - q(x)) = p(x)
+    P(commit = x) = P(sample = x) * (q(x) + sum_{d != x} q(d)) = p(x)
 
-If instead the recovered token is drawn from the full target distribution
-(target-only recovery), the committed marginal is skewed:
-
-    P(commit = x) = p(x) * (q(x) + 1 - E_q[p])
-
-With drafts uniform over the top-5 (``q = 0.2`` there, ``0`` elsewhere) and
-~0.78 of target mass on the top-5, ``E_q[p] ~ 0.156``: top-5 tokens are
-inflated ~4% and the tail is deflated ~16% relative — many sigma at the
-sample sizes below, so the chi-square and tail-mass checks fail under
-target-only recovery and pass under residual recovery.
+The previous coin-flip acceptance with full-target recovery skewed the
+marginal to ``p(x) * (q(x) + 1 - E_q[p])``: with drafts uniform over the
+top-5 (``q = 0.2`` there, ``0`` elsewhere) and ~0.78 of target mass on the
+top-5, top-5 tokens were inflated ~4% and the tail deflated ~16% relative —
+many sigma at the sample sizes below, so the chi-square and tail-mass
+checks failed under that scheme (see CENG-970).
 """
 
 import numpy as np
@@ -121,12 +115,77 @@ def _make_target_probs(
     return probs, top_idx.astype(np.int64)
 
 
-@pytest.mark.skip(
-    reason="Fails since e74301ba9e9 reverted residual recovery sampling "
-    "(CENG-970): recovered tokens come from the full target distribution, "
-    "which skews the committed-token marginal. Re-enable when the "
-    "distribution-preserving sampler lands again."
-)
+def test_recovered_tokens_respect_top_p(
+    session: InferenceSession, acceptance_sampler: Model
+) -> None:
+    """Recovered tokens must stay inside the request's top-p nucleus.
+
+    Drives the sampler with drafts drawn from the deep tail (target prob
+    ~1e-4, so every draft position is rejected) and ``top_p=0.4``, whose
+    nucleus under the LLM-shaped target is the top-2 tokens (0.28 + 0.20
+    crosses 0.4). Every committed recovered token must then be one of the
+    top-3 tokens (top-3 allows for either boundary-inclusion convention).
+    A recovered path that samples the full target distribution commits a
+    tail token ~22% of the time, so with hundreds of rejected rows the
+    membership check fails immediately.
+    """
+    device = session.devices[0]
+    rng = np.random.default_rng(1)
+
+    target_probs, top_idx = _make_target_probs(rng)
+    logits_row = np.log(target_probs).astype(np.float32)
+    logits_np = np.tile(logits_row, (BATCH_SIZE * (NUM_STEPS + 1), 1))
+    logits_tensor = Buffer.from_dlpack(logits_np).to(device)
+
+    temperature = Buffer.from_numpy(np.ones(BATCH_SIZE, dtype=np.float32)).to(
+        device
+    )
+    top_k = Buffer.from_numpy(np.full(BATCH_SIZE, -1, dtype=np.int64)).to(
+        device
+    )
+    max_k = Buffer.from_numpy(np.array(-1, dtype=np.int64))
+    top_p = Buffer.from_numpy(np.full(BATCH_SIZE, 0.4, dtype=np.float32)).to(
+        device
+    )
+    min_top_p = Buffer.from_numpy(np.array(0.4, dtype=np.float32))
+
+    # Draft only tail tokens so acceptance probability is ~1e-4 and the
+    # first position is rejected on essentially every row.
+    tail_tokens = np.setdiff1d(np.arange(VOCAB_SIZE), top_idx)
+
+    committed: list[npt.NDArray[np.int64]] = []
+    for _ in range(4):
+        seed = rng.integers(np.iinfo(np.int64).max, dtype=np.uint64)
+        draft_np = rng.choice(tail_tokens, size=(BATCH_SIZE, NUM_STEPS)).astype(
+            np.int64
+        )
+        first_rejected, recovered, _bonus = acceptance_sampler(
+            Buffer.from_dlpack(draft_np).to(device),
+            logits_tensor,
+            temperature,
+            top_k,
+            max_k,
+            top_p,
+            min_top_p,
+            Buffer.from_numpy(np.array([seed], dtype=np.uint64)).to(device),
+        )
+        assert isinstance(first_rejected, Buffer)
+        assert isinstance(recovered, Buffer)
+        fri_np = first_rejected.to_numpy().reshape(BATCH_SIZE)
+        recovered_np = recovered.to_numpy()
+        rejected_rows = np.nonzero(fri_np < NUM_STEPS)[0]
+        committed.append(recovered_np[rejected_rows, fri_np[rejected_rows]])
+
+    all_tokens = np.concatenate(committed)
+    assert len(all_tokens) > BATCH_SIZE  # rejection path was exercised
+    nucleus = set(top_idx[:3].tolist())
+    outside = [int(t) for t in all_tokens if int(t) not in nucleus]
+    assert not outside, (
+        f"{len(outside)}/{len(all_tokens)} recovered tokens fell outside "
+        f"the top_p=0.4 nucleus {sorted(nucleus)}; sample: {outside[:10]}"
+    )
+
+
 def test_stochastic_acceptance_output_distribution(
     session: InferenceSession, acceptance_sampler: Model
 ) -> None:
