@@ -38,12 +38,14 @@ def _make_self(
     prefill_reqs: dict[str, PendingPrefill],
     inflight_transfers: dict[str, PendingTransfer],
     prefill_reqs_per_replica: list[int],
+    cancelled_reqs: set[str] | None = None,
 ) -> SimpleNamespace:
     self_obj = SimpleNamespace(
         scheduler_config=SimpleNamespace(decode_request_ttl_s=ttl_s),
         prefill_reqs=prefill_reqs,
         inflight_transfers=inflight_transfers,
         prefill_reqs_per_replica=prefill_reqs_per_replica,
+        cancelled_reqs=cancelled_reqs if cancelled_reqs is not None else set(),
         kv_cache=MagicMock(),
         transfer_engine=MagicMock(),
         response_queue=MagicMock(),
@@ -163,6 +165,36 @@ def test_skips_prefill_when_transfer_in_flight(
     assert self_obj.prefill_reqs_per_replica == [1, 0]
     self_obj.kv_cache.release.assert_not_called()
     self_obj.response_queue.put_nowait.assert_not_called()
+
+
+def test_evicts_stuck_transfer_already_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transfer cancelled mid-flight (see _handle_cancelled_requests)
+    that never completes must still be released by the TTL sweep, but
+    without re-notifying the client or re-sending a cancel to prefill --
+    both already happened when the cancellation was first processed.
+    """
+    monkeypatch.setattr("time.monotonic", lambda: 1000.0)
+    pending_transfer = _transfer(920.0)  # 80s ago
+    stuck = _pending("stuck", 0, 950.0)
+    self_obj = _make_self(
+        ttl_s=30.0,
+        prefill_reqs={"stuck": stuck},
+        inflight_transfers={"stuck": pending_transfer},
+        prefill_reqs_per_replica=[1, 0],
+        cancelled_reqs={"stuck"},
+    )
+
+    DecodeScheduler._evict_expired_requests(self_obj)  # type: ignore[arg-type]
+
+    assert "stuck" not in self_obj.inflight_transfers
+    assert "stuck" not in self_obj.prefill_reqs
+    assert "stuck" not in self_obj.cancelled_reqs
+    assert self_obj.prefill_reqs_per_replica == [0, 0]
+    self_obj.kv_cache.release.assert_called_once_with(stuck.context)
+    self_obj.response_queue.put_nowait.assert_not_called()
+    self_obj.dispatcher.send_request_nowait.assert_not_called()
 
 
 def test_healthy_entries_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
