@@ -558,10 +558,6 @@ def test_stochastic_acceptance_bonus_token_honors_top_p(
 
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
-@pytest.mark.xfail(
-    strict=True,
-    reason="SERVOPT-1563",
-)
 def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
     device: Device,
 ) -> None:
@@ -588,10 +584,6 @@ def test_stochastic_acceptance_honors_top_p_for_draft_tokens(
 
 
 @pytest.mark.parametrize("device", [Accelerator(), CPU()])
-@pytest.mark.xfail(
-    strict=True,
-    reason="SERVOPT-1563",
-)
 def test_stochastic_acceptance_honors_top_p_for_recovered_tokens(
     device: Device,
 ) -> None:
@@ -949,13 +941,20 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
 
 
 def test_sampled_zeroed_distribution_matches_argmax() -> None:
-    """A row with no draft distribution must behave exactly like argmax mode.
+    """A row with no draft distribution must degrade to argmax-mode behavior.
 
     The overlap scheduler clears a slot it cannot refresh, so a request new to
     the batch arrives with a zeroed row. Reading ``q`` out of that row gives 0,
     which the sampler must treat as "no draft information" rather than as a
     probability -- a literal 0 would make ``coin * q >= p_target`` false and
     accept everything.
+
+    The two modes draw acceptance through different RNG paths (argmax mode
+    matches a truncated target sample; sampled mode flips a ratio-test
+    coin), so the equivalence is statistical rather than seed-for-seed:
+    both accept a draft with its target probability, so their acceptance
+    rates must agree. The accept-everything failure this test exists to
+    catch would surface as a sampled-mode acceptance rate of ~1.0.
     """
     device = Accelerator()
     session = InferenceSession(devices=[device])
@@ -985,53 +984,66 @@ def test_sampled_zeroed_distribution_matches_argmax() -> None:
         )
     )
 
-    seed = 5
-    first_sampled, recovered_sampled, bonus_sampled = sampled.execute(
-        *_sampled_stochastic_sampler_inputs(
-            device,
-            batch_size,
-            vocab_size,
-            draft_tokens_np,
-            logits,
-            temperature_np,
-            np.zeros((batch_size, num_steps), dtype=np.float32),
-            seed=seed,
-            draft_probs_full_np=np.zeros(
-                (batch_size, num_steps, vocab_size), dtype=np.float32
-            ),
+    accepted_at_first_position = {"sampled": 0, "argmax": 0}
+    trials = 0
+    for seed in range(1, 17):
+        first_sampled, recovered_sampled, _ = sampled.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                np.zeros((batch_size, num_steps), dtype=np.float32),
+                seed=seed,
+                draft_probs_full_np=np.zeros(
+                    (batch_size, num_steps, vocab_size), dtype=np.float32
+                ),
+            )
         )
-    )
-    first_argmax, recovered_argmax, bonus_argmax = argmax.execute(
-        *_stochastic_sampler_inputs(
-            device,
-            batch_size,
-            vocab_size,
-            draft_tokens_np,
-            logits,
-            temperature_np,
-            seed=seed,
+        first_argmax, _, _ = argmax.execute(
+            *_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                seed=seed,
+            )
         )
-    )
+        first_sampled_np = cast(Buffer, first_sampled).to_numpy()
+        first_argmax_np = cast(Buffer, first_argmax).to_numpy()
+        # P(first_rejected > 0) is the position-0 acceptance rate: one
+        # clean Bernoulli per row, unpolluted by later positions.
+        accepted_at_first_position["sampled"] += int(
+            (first_sampled_np > 0).sum()
+        )
+        accepted_at_first_position["argmax"] += int((first_argmax_np > 0).sum())
+        trials += batch_size
 
-    # Both arms draw from the same seeded stream, so the acceptance decisions
-    # must match exactly, not just in distribution.
-    np.testing.assert_array_equal(
-        cast(Buffer, first_sampled).to_numpy(),
-        cast(Buffer, first_argmax).to_numpy(),
+        # Recovery must never re-emit the token the target just rejected --
+        # the failure the zero fallback exists to prevent.
+        recovered_np = cast(Buffer, recovered_sampled).to_numpy()
+        for b in range(batch_size):
+            k = int(first_sampled_np[b])
+            if k < num_steps:
+                assert recovered_np[b, k] != draft_tokens_np[b, k]
+
+    rate_sampled = accepted_at_first_position["sampled"] / trials
+    rate_argmax = accepted_at_first_position["argmax"] / trials
+    # ~8k trials per arm puts the standard error of the rate difference
+    # around 0.005; accept-everything would land rate_sampled at ~1.0.
+    assert rate_sampled < 0.9, (
+        f"zeroed draft distribution accepted {rate_sampled:.2%} of drafts: "
+        "q=0 is being treated as a probability instead of 'no information'"
     )
-    np.testing.assert_array_equal(
-        cast(Buffer, bonus_sampled).to_numpy(),
-        cast(Buffer, bonus_argmax).to_numpy(),
+    assert abs(rate_sampled - rate_argmax) < 0.03, (
+        f"zeroed-row sampled mode accepts {rate_sampled:.4f} vs argmax "
+        f"{rate_argmax:.4f}: the q=0 fallback no longer degrades to "
+        "argmax-mode behavior"
     )
-    # Recovery differs in its RNG stream, but must never re-emit the token the
-    # target just rejected -- the failure the zero fallback exists to prevent.
-    rejected = cast(Buffer, first_sampled).to_numpy()
-    recovered_np = cast(Buffer, recovered_sampled).to_numpy()
-    _ = recovered_argmax
-    for b in range(batch_size):
-        k = int(rejected[b])
-        if k < num_steps:
-            assert recovered_np[b, k] != draft_tokens_np[b, k]
 
 
 def test_stochastic_acceptance_sampler_sampled_zero_draft_tokens() -> None:
