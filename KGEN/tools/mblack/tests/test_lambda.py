@@ -254,7 +254,7 @@ def test_variadic_args():
     source = (
         "def main():\n"
         "    var f = lambda (*args: Int) {} -> Int: 0\n"
-        "    var g = lambda (**kwargs: Int) {} -> Int: 0\n"
-        "    var h = lambda (x: Int, *args: Int, **kwargs: Int) {} -> Int: x\n"
+        "    var g = lambda (var **kwargs: Int) {} -> Int: 0\n"
+        "    var h = lambda (x: Int, *args: Int, var **kwargs: Int) {} -> Int: x\n"
     )
     assert_mojo_format(source, source)

@@ -57,11 +57,7 @@ def test_fn_type_trailing_where_as_parameter_type():
         "def apply[F: def[w: Int](Int) thin -> None where w > 0](x: Int):\n"
         "    F[4](x)\n"
     )
-    expected = (
-        "def apply[F: def[w: Int](Int) thin -> None where w > 0](x: Int):\n"
-        "    F[4](x)\n"
-    )
-    assert_mojo_format(source, expected)
+    assert_mojo_format(source, source)
 
 
 # ============================================================ #
@@ -71,11 +67,11 @@ def test_fn_type_trailing_where_as_parameter_type():
 
 def test_fn_type_where_binds_to_result_type():
     """Unparenthesized: the clause belongs to the returned function type."""
-    source = "def make[n: Int]() -> def() thin -> None where n > 0:\n    pass\n"
-    expected = (
-        "def make[n: Int]() -> def() thin -> None where n > 0:\n    pass\n"
+    source = (
+        "def make[n: Int]() -> def() thin -> None where n > 0:\n"
+        "    return lambda: None\n"
     )
-    assert_mojo_format(source, expected)
+    assert_mojo_format(source, source)
 
 
 def test_fn_type_where_parenthesized_binds_to_decl():
@@ -84,10 +80,8 @@ def test_fn_type_where_parenthesized_binds_to_decl():
     The parentheses are load-bearing here, so they must survive formatting.
     """
     source = (
-        "def make[n: Int]() -> (def() thin -> None) where n > 0:\n    pass\n"
+        "def make[n: Int]() -> (def() thin -> None) where n > 0:\n"
+        "    return lambda: None\n"
     )
-    expected = (
-        "def make[n: Int]() -> (def() thin -> None) where n > 0:\n    pass\n"
-    )
-    assert_mojo_format(source, expected)
+    assert_mojo_format(source, source)
 
