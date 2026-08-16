@@ -10,76 +10,84 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Shared compile-time plugin registration and selection utilities."""
 
-from std.sys.info import _current_target
-
-from ._overlay import PLUGINS
+from std.sys.info import _TargetType, _current_target
 
 
-# Number of plugins, as a raw kgen `index`. Avoids `TypeList.size`'s `Int`
-# wrapper so the selector never touches `Int`/`SIMDSize` comparison machinery.
-comptime _PLUGIN_COUNT = __mlir_attr[
-    `#kgen.param_list.size<:`,
-    PLUGINS._mlir_type,
-    ` `,
-    +PLUGINS.values,
-    `> : index`,
-]
+trait Plugin:
+    """Defines the identity required by a compile-time plugin registry."""
+
+    comptime name: __mlir_type.`!kgen.string`
+    """The stable identifier matched against a target's plugin field."""
+
+
+struct PluginSelector[
+    Trait: type_of(Plugin),
+    //,
+    *PluginTypes: Trait,
+]:
+    comptime index_for_target[
+        target: _TargetType
+    ]: __mlir_type.index = Self._find[target, __mlir_attr.`0 : index`]()
+
+    comptime current: Self.Trait = Self.PluginTypes._get_type_at_index[
+        Self.index_for_target[_current_target()]
+    ]
+
+    comptime for_target[target: _TargetType]: Self.Trait = (
+        Self.PluginTypes._get_type_at_index[Self.index_for_target[target]]
+    )
+
+    # Avoid `TypeList.length` to keep selection in raw parameter space so it is
+    # safe during stdlib bootstrap, before `Int` and `SIMDLength` are available.
+    comptime _length = __mlir_attr[
+        `#kgen.param_list.size<:`,
+        Self.PluginTypes._mlir_type,
+        ` `,
+        +Self.PluginTypes.values,
+        `> : index`,
+    ]
+
+    @staticmethod
+    def _matches[target: _TargetType, idx: __mlir_type.index]() -> Bool:
+        """Returns whether plugin `idx` matches `target`."""
+        return __mlir_attr[
+            `#kgen.param.identical<`,
+            __mlir_attr[
+                `#kgen.param.expr<target_get_field,`,
+                target,
+                `, "stdlib_plugin" : !kgen.string`,
+                `> : !kgen.string`,
+            ],
+            `,`,
+            Self.PluginTypes._get_type_at_index[idx].name,
+            `> : !kgen.scalar<bool>`,
+        ]
+
+    @staticmethod
+    def _find[
+        target: _TargetType, idx: __mlir_type.index
+    ]() -> __mlir_type.index:
+        """Finds the plugin matching `target` through parameter recursion."""
+        comptime if not _index_lt[idx, Self._length]():
+            __mlir_op.`llvm.intr.trap`()
+            return idx
+        elif Self._matches[target, idx]():
+            return idx
+        else:
+            return Self._find[
+                target,
+                __mlir_attr[
+                    `#kgen.param.expr<add,`,
+                    idx,
+                    `, 1 : index> : index`,
+                ],
+            ]()
 
 
 def _index_lt[lhs: __mlir_type.index, rhs: __mlir_type.index]() -> Bool:
-    """`lhs < rhs` on raw `index`, via `index.cmp` (no `Int`/`SIMDSize`)."""
+    """Returns whether raw parameter index `lhs` is less than `rhs`."""
     return __mlir_op.`index.cmp`[pred=__mlir_attr.`#index<cmp_predicate ult>`](
         lhs, rhs
     )
-
-
-def _plugin_matches[
-    target: __mlir_type.`!kgen.target`, idx: __mlir_type.index
-]() -> Bool:
-    """Whether `PLUGINS[idx].name` equals `target`'s `stdlib_plugin` field."""
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        __mlir_attr[
-            `#kgen.param.expr<target_get_field,`,
-            target,
-            `, "stdlib_plugin" : !kgen.string`,
-            `> : !kgen.string`,
-        ],
-        `,`,
-        PLUGINS._get_type_at_index[idx].name,
-        `> : !kgen.scalar<bool>`,
-    ]
-
-
-def _find_plugin[
-    target: __mlir_type.`!kgen.target`, idx: __mlir_type.index
-]() -> __mlir_type.index:
-    """Parameter-recursive scan of `PLUGINS` for the matching plugin index.
-
-    Operates entirely on raw `index` (compare/increment via `index.*` ops) and
-    uses parameter recursion rather than `comptime for`, so resolving the
-    selector never instantiates `paramfor_has_next` or the `Int`/`SIMDSize`
-    comparison machinery during stdlib bootstrap.
-    """
-    comptime if not _index_lt[idx, _PLUGIN_COUNT]():
-        __mlir_op.`llvm.intr.trap`()
-        return idx
-    elif _plugin_matches[target, idx]():
-        return idx
-    else:
-        return _find_plugin[
-            target,
-            __mlir_attr[
-                `#kgen.param.expr<add,`,
-                idx,
-                `, 1 : index> : index`,
-            ],
-        ]()
-
-
-def get_plugin_index[
-    target: __mlir_type.`!kgen.target` = _current_target()
-]() -> __mlir_type.index:
-    """Returns the `index` into `PLUGINS` of the plugin matching `target`."""
-    return _find_plugin[target, __mlir_attr.`0 : index`]()

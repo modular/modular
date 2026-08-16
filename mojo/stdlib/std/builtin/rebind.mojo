@@ -70,8 +70,8 @@ def rebind[
     Returns:
         A reference to the value rebound as `dest_type`.
     """
-    lit = __get_mvalue_as_litref(src)
-    rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
+    var lit = __get_mvalue_as_litref(src)
+    var rebound = rebind[Pointer[dest_type, origin_of(src)]._mlir_lit_ref](lit)
     return __get_litref_as_mvalue(rebound)
 
 
@@ -104,7 +104,7 @@ def rebind_var[
         An owned value rebound as `dest_type`.
     """
     ref dest_ref = rebind[dest_type](src)
-    dest = UnsafePointer(to=dest_ref).take_pointee()
+    dest = Pointer(to=dest_ref).unsafe_take_pointee()
     std.memory.forget_deinit(src^)
 
 
@@ -118,30 +118,3 @@ Parameters:
     T: The type to downcast.
     _Trait: The trait type to downcast to.
 """
-
-
-@deprecated(
-    "use `conforms_to(type_of(src), Trait)` instead in a `where` clause or"
-    " `comptime assert`"
-)
-@always_inline
-def trait_downcast[
-    T: AnyType, //, Trait: type_of(AnyType)
-](ref src: T) -> ref[src] downcast[T, Trait]:
-    """Downcast a parameter input type `T` and rebind the type such that the
-    return value's type conforms the provided `Trait`. If `T`, after resolving
-    to a concrete type, does not actually conform to `Trait`, a compilation
-    error would occur.
-
-    Parameters:
-        T: The original type.
-        Trait: The trait to downcast into.
-
-    Args:
-        src: The value to downcast.
-
-    Returns:
-        The downcasted value.
-    """
-    comptime assert conforms_to(T, Trait), "Invalid downcast"
-    return rebind[downcast[T, Trait]](src)

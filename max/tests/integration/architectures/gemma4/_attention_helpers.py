@@ -12,33 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Shared helpers for the Gemma4 attention tests.
 
-The actual pytest fixtures (`text_config`, `input_tensor`,
-`attention_weights_*`, `session`, `device`) live in `conftest.py` so
-pytest auto-discovers them without imports.  This module holds the
+This module holds the
 plain-Python helpers that the test files reference directly:
 `build_max_attention`, `execute_max_attention`, `assert_fp8_matches_bf16`,
-`generate_torch_outputs`, the `CompiledAttention` bundle, and
-dtype constants.
-
-`test_attention.py` uses Bazel test sharding (`per_test_shard_count = 4`)
-to parallelize 4 tests across 4 CI workers via round-robin distribution.
-Each shard runs as its own pytest process, so each test compiles its
-graphs in parallel with the others.  Module-scoped fixtures ensure each
-unique graph compiles once per shard.
+the `CompiledAttention` bundle, and dtype constants.
 """
 
-import copy
-from typing import Any, NamedTuple
+import json
+import math
+import os
+from pathlib import Path
+from typing import NamedTuple
 
-import numpy as np
-import torch
-from conftest import (  # type: ignore[import-not-found]
-    Gemma4RotaryEmbedding,
-    Gemma4TextAttention,
-)
-from max.driver import Buffer, Device
+# torch is a lazy dep, see BUILD file for details
+import torch  # type: ignore[import-not-found]
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.nn.kv_cache import MHAKVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -50,8 +39,6 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
-from test_common.context_utils import create_text_context
-from torch.utils.dlpack import from_dlpack
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 MAX_SEQ_LEN = 1152
@@ -72,91 +59,100 @@ class CompiledAttention(NamedTuple):
     kv_manager: PagedKVCacheManager
 
 
-def _get_position_embeddings(
-    text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
-    use_global_rope: bool,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Generates rotary position embeddings based on the input tensor shape."""
-    seq_len = input_tensor.shape[1]
-    position_ids = torch.arange(
-        seq_len, dtype=torch.long, device="cuda"
-    ).unsqueeze(0)
+# ---------------------------------------------------------------------------
+# Shared fixtures for the attention tests
+# (test_attention.py, test_attention_fp8_local.py, test_attention_fp8_global.py)
+#
+# All scope="module" so each unique compile in the file pays its cost once.
+# These names are specific enough that other gemma4 tests do not collide.
+# ---------------------------------------------------------------------------
 
-    rope_params = getattr(text_config, "rope_parameters", None)
-    if isinstance(rope_params, dict) and "sliding_attention" in rope_params:
-        # v5: single embedding handles both layer types natively
-        rotary_emb = Gemma4RotaryEmbedding(config=text_config, device="cuda")
-        layer_type = (
-            "full_attention" if use_global_rope else "sliding_attention"
+
+def _attention_test_tensor(shape: tuple[int, ...]) -> torch.Tensor:
+    """Generate a unit-stddev-ish tensor for attention test fixtures."""
+    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
+
+
+def make_attention_weights_local(
+    text_config: Gemma4TextConfig,
+) -> dict[str, torch.Tensor]:
+    torch.manual_seed(42)
+
+    # calculated from google/gemma-3-1b-it checkpoint
+    O_PROJ_STD = 0.0237
+    K_PROJ_STD = 0.0309
+    Q_PROJ_STD = 0.0284
+    V_PROJ_STD = 0.0309
+    K_NORM_STD = 0.793
+    Q_NORM_STD = 0.68
+
+    q_dim = text_config.head_dim * text_config.num_attention_heads
+    kv_dim = text_config.head_dim * text_config.num_key_value_heads
+    hidden_size = text_config.hidden_size
+
+    return {
+        "k_norm.weight": _attention_test_tensor((text_config.head_dim,))
+        * K_NORM_STD,
+        "k_proj.weight": _attention_test_tensor((kv_dim, hidden_size))
+        * K_PROJ_STD,
+        "o_proj.weight": _attention_test_tensor((hidden_size, q_dim))
+        * O_PROJ_STD,
+        "q_norm.weight": _attention_test_tensor((text_config.head_dim,))
+        * Q_NORM_STD,
+        "q_proj.weight": _attention_test_tensor((q_dim, hidden_size))
+        * Q_PROJ_STD,
+        "v_proj.weight": _attention_test_tensor((kv_dim, hidden_size))
+        * V_PROJ_STD,
+    }
+
+
+def make_attention_weights_global(
+    text_config: Gemma4TextConfig,
+) -> dict[str, torch.Tensor]:
+    torch.manual_seed(42)
+
+    # calculated from google/gemma-3-1b-it checkpoint
+    O_PROJ_STD = 0.0237
+    K_PROJ_STD = 0.0309
+    Q_PROJ_STD = 0.0284
+    K_NORM_STD = 0.793
+    Q_NORM_STD = 0.68
+
+    q_dim = text_config.global_head_dim * text_config.num_attention_heads
+    kv_dim = (
+        text_config.global_head_dim * text_config.num_global_key_value_heads
+    )
+    hidden_size = text_config.hidden_size
+
+    return {
+        "k_norm.weight": _attention_test_tensor((text_config.global_head_dim,))
+        * K_NORM_STD,
+        "k_proj.weight": _attention_test_tensor((kv_dim, hidden_size))
+        * K_PROJ_STD,
+        "o_proj.weight": _attention_test_tensor((hidden_size, q_dim))
+        * O_PROJ_STD,
+        "q_norm.weight": _attention_test_tensor((text_config.global_head_dim,))
+        * Q_NORM_STD,
+        "q_proj.weight": _attention_test_tensor((q_dim, hidden_size))
+        * Q_PROJ_STD,
+    }
+
+
+def make_text_config() -> Gemma4TextConfig:
+    path = os.environ["PIPELINES_TESTDATA"]
+    config_path = Path(path) / "config.json"
+    with open(config_path) as file:
+        data = json.load(file)
+    # Use "text_config" for the multimodal variants
+    if "text_config" in data:
+        return Gemma4TextConfig(
+            **data["text_config"], attn_implementation="eager"
         )
-        cos, sin = rotary_emb(input_tensor, position_ids, layer_type=layer_type)
     else:
-        # v4: need separate embedding with hacked config for local rope
-        if use_global_rope:
-            rotary_emb = Gemma4RotaryEmbedding(
-                config=text_config, device="cuda"
-            )
-        else:
-            config = copy.deepcopy(text_config)
-            config.rope_theta = config.rope_local_base_freq
-            config.rope_scaling = {"rope_type": "default"}
-            rotary_emb = Gemma4RotaryEmbedding(config=config, device="cuda")
-        cos, sin = rotary_emb(input_tensor, position_ids)
-
-    return cos.to(TORCH_DTYPE).to("cuda"), sin.to(TORCH_DTYPE).to("cuda")
+        return Gemma4TextConfig(**data, attn_implementation="eager")
 
 
-def _causal_attention_mask(seq_len: int) -> torch.Tensor:
-    causal_mask = torch.triu(
-        torch.ones(seq_len, seq_len, dtype=torch.bool, device="cuda"),
-        diagonal=1,
-    )
-    attention_mask = torch.zeros(
-        1, 1, seq_len, seq_len, dtype=TORCH_DTYPE, device="cuda"
-    )
-    attention_mask = attention_mask.masked_fill(
-        causal_mask[None, None, :, :], torch.finfo(TORCH_DTYPE).min
-    )
-    return attention_mask
-
-
-@torch.no_grad()
-def generate_torch_outputs(
-    text_config: Gemma4TextConfig,
-    input_tensor: torch.Tensor,
-    attention_weights: dict[str, torch.Tensor],
-    layer_idx: int,
-) -> torch.Tensor:
-    """Generates the outputs of the MAX and PyTorch attention layers.
-
-    `layer_idx` affects whether the local or global `RoPE` is used. When
-    `layer_idx % 6 == 5`, the global `RoPE` is used. Otherwise, the local `RoPE`
-    is used.
-    """
-    layer = (
-        Gemma4TextAttention(
-            text_config,
-            layer_idx=layer_idx,
-        )
-        .to(TORCH_DTYPE)
-        .to("cuda")
-    )
-
-    for name, param in layer.named_parameters():
-        param.data = attention_weights[name].to(TORCH_DTYPE).to("cuda")
-
-    attention_mask = _causal_attention_mask(input_tensor.shape[1])
-    use_global_rope = layer_idx % 6 == 5
-    position_embeddings = _get_position_embeddings(
-        text_config, input_tensor, use_global_rope
-    )
-
-    return layer(input_tensor, position_embeddings, attention_mask)[0]
-
-
-def build_max_attention(
-    session: InferenceSession,
+def build_max_attention_graph(
     text_config: Gemma4TextConfig,
     attention_weights: dict[str, torch.Tensor],
     dtype: DType,
@@ -164,7 +160,7 @@ def build_max_attention(
     layer_idx: int,
     *,
     cache_dtype: DType | None = None,
-) -> CompiledAttention:
+) -> tuple[Graph, MaxGemma4Attention, MHAKVCacheParams]:
     """Builds and compiles the MAX Gemma4 attention graph.
 
     Hoist calls to this into a module-scoped fixture so each unique
@@ -249,14 +245,6 @@ def build_max_attention(
     )
     attention.load_state_dict(state_dict)
 
-    # Set up blank KV cache.
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=8,
-        session=session,
-        max_batch_size=128,
-    )
-
     # Construct input types.
     input_type = TensorType(
         dtype,
@@ -288,84 +276,4 @@ def build_max_attention(
             )
         )
 
-    compiled = session.load(graph, weights_registry=attention.state_dict())
-    return CompiledAttention(compiled=compiled, kv_manager=kv_manager)
-
-
-def execute_max_attention(
-    compiled_attention: CompiledAttention,
-    input_tensor: torch.Tensor,
-    device: Device,
-) -> torch.Tensor:
-    """Runs a previously compiled attention graph against a fresh KV claim.
-
-    Releases the request after execution so the shared kv_manager doesn't
-    accumulate state across test invocations.
-    """
-    input_seq_len = input_tensor.shape[1]
-    kv_manager = compiled_attention.kv_manager
-    compiled = compiled_attention.compiled
-
-    batch = [create_text_context(np.empty(input_seq_len))]
-    kv_manager.claim(batch[0].request_id, replica_idx=0)
-    try:
-        kv_manager.alloc(batch[0], replica_idx=0)
-        kv_runtime_inputs = kv_manager.runtime_inputs([batch])
-
-        # Under fp8 KV the kv_params.get_symbolic_inputs() expands with
-        # `kv_scales` buffer inputs.  Mirror that on the runtime side by
-        # including them in the execute call when present.
-        execute_args: list[Any] = [
-            Buffer.from_dlpack(input_tensor[0]).to(device),
-            Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
-                device
-            ),
-            *kv_runtime_inputs.flatten(),
-        ]
-        output = compiled.execute(*execute_args)[0]
-    finally:
-        kv_manager.release(batch[0].request_id, replica_idx=0)
-    return output
-
-
-def _cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> float:
-    """Cosine similarity between two flat tensors (cast to fp32)."""
-    af = a.to(torch.float32).flatten()
-    bf = b.to(torch.float32).flatten()
-    return float(
-        torch.dot(af, bf) / (torch.linalg.norm(af) * torch.linalg.norm(bf))
-    )
-
-
-def assert_fp8_matches_bf16(
-    bf16_compiled: CompiledAttention,
-    fp8_compiled: CompiledAttention,
-    input_tensor: torch.Tensor,
-    device: Device,
-    layer_idx: int,
-    head_dim_for_log: int,
-) -> None:
-    """Shared helper: execute the bf16 reference and fp8 paths on the same
-    inputs from already-compiled attention graphs; assert cosine >= 0.99.
-
-    The bf16 reference uses the dtype = MAX_DTYPE cache (= bf16). The fp8
-    path uses `cache_dtype=float8_e4m3fn` + per-block fp32 scales at
-    granularity=64 (production Gemma4 wiring).  Both paths use
-    `rope.interleaved=False` (the trained Gemma4 RoPE convention).
-    """
-    bf16_out = execute_max_attention(bf16_compiled, input_tensor, device)
-    fp8_out = execute_max_attention(fp8_compiled, input_tensor, device)
-
-    bf16_t = from_dlpack(bf16_out).to(torch.float32)
-    fp8_t = from_dlpack(fp8_out).to(torch.float32)
-    cos = _cosine_similarity(bf16_t, fp8_t)
-    max_abs_diff = float((bf16_t - fp8_t).abs().max())
-    print(
-        f"[fp8_vs_bf16] layer_idx={layer_idx} head_dim={head_dim_for_log} "
-        f"cosine={cos:.6f} max_abs_diff={max_abs_diff:.4f}"
-    )
-    assert cos >= 0.99, (
-        "fp8 KV attention output diverged from bf16 baseline: "
-        f"cosine={cos:.4f} < 0.99 (layer_idx={layer_idx} "
-        f"head_dim={head_dim_for_log})"
-    )
+    return graph, attention, kv_params

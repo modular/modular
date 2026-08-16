@@ -142,13 +142,17 @@ def _validate_zmq_address(address: str) -> None:
 #  - sglang: https://github.com/sgl-project/sglang/blob/efc52f85e2d5c9b31545d4092f2b361b6ff04d67/python/sglang/srt/utils.py#L783
 @overload
 def _open_zmq_socket(
-    path: str, mode: int, *, ctx: zmq.asyncio.Context
+    path: str,
+    mode: int,
+    *,
+    ctx: zmq.asyncio.Context,
+    high_water_mark: int | None = ...,
 ) -> zmq.asyncio.Socket: ...
 
 
 @overload
 def _open_zmq_socket(
-    path: str, mode: int, *, ctx: None = ...
+    path: str, mode: int, *, ctx: None = ..., high_water_mark: int | None = ...
 ) -> zmq.Socket[bytes]: ...
 
 
@@ -157,9 +161,19 @@ def _open_zmq_socket(
     mode: int,
     *,
     ctx: zmq.asyncio.Context | None = None,
+    high_water_mark: int | None = None,
 ) -> zmq.asyncio.Socket | zmq.Socket[bytes]:
-    """Open a ZMQ socket with the proper bind/connect semantics."""
+    """Open a ZMQ socket with the proper bind/connect semantics.
+
+    ``high_water_mark`` bounds the socket's high-water mark (messages buffered before
+    backpressure). ``None`` keeps the default unbounded behavior (``0``). When
+    set on both ends of the request queue it caps the in-transit backlog to the
+    worker; ZMQ enforces it approximately (the effective bound is roughly the
+    sum of the send and receive HWMs, and ZMQ may round the value).
+    """
     mem = psutil.virtual_memory()
+    # 0 is ZMQ's sentinel for "unbounded".
+    resolved_high_water_mark = 0 if high_water_mark is None else high_water_mark
 
     resolved_ctx: zmq.asyncio.Context | zmq.Context[zmq.Socket[bytes]] = (
         ctx if ctx is not None else zmq.Context.instance()
@@ -185,12 +199,12 @@ def _open_zmq_socket(
 
     # Configure socket options based on type
     if mode == zmq.PULL:
-        socket.setsockopt(zmq.RCVHWM, 0)
+        socket.setsockopt(zmq.RCVHWM, resolved_high_water_mark)
         socket.setsockopt(zmq.RCVBUF, buf_size)
         socket.setsockopt(zmq.LINGER, 0)
         socket.connect(path)
     elif mode == zmq.PUSH:
-        socket.setsockopt(zmq.SNDHWM, 0)
+        socket.setsockopt(zmq.SNDHWM, resolved_high_water_mark)
         socket.setsockopt(zmq.SNDBUF, buf_size)
         socket.setsockopt(zmq.LINGER, 0)
         socket.bind(path)
@@ -226,18 +240,28 @@ def _get_helper(func: Callable[[], Any]) -> Any:
 
 
 class ZmqConfig(Generic[T]):
-    def __init__(self, payload_type: Any) -> None:
+    def __init__(
+        self, payload_type: Any, high_water_mark: int | None = None
+    ) -> None:
         self._payload_type = payload_type
         self._endpoint = generate_zmq_ipc_path()
+        # High-water mark applied to both ends of this queue. ``None`` keeps
+        # ZMQ's default unbounded buffering; a finite value bounds the
+        # in-transit backlog (used for the request queue cap).
+        self._high_water_mark = high_water_mark
 
     def push(self) -> ZmqPushSocket[T]:
         return ZmqPushSocket(
-            endpoint=self._endpoint, payload_type=self._payload_type
+            endpoint=self._endpoint,
+            payload_type=self._payload_type,
+            high_water_mark=self._high_water_mark,
         )
 
     def pull(self) -> ZmqPullSocket[T]:
         return ZmqPullSocket(
-            endpoint=self._endpoint, payload_type=self._payload_type
+            endpoint=self._endpoint,
+            payload_type=self._payload_type,
+            high_water_mark=self._high_water_mark,
         )
 
     def pair(self) -> tuple[ZmqPushSocket[T], ZmqPullSocket[T]]:
@@ -245,12 +269,16 @@ class ZmqConfig(Generic[T]):
 
     def async_push(self) -> ZmqAsyncPushSocket[T]:
         return ZmqAsyncPushSocket(
-            endpoint=self._endpoint, payload_type=self._payload_type
+            endpoint=self._endpoint,
+            payload_type=self._payload_type,
+            high_water_mark=self._high_water_mark,
         )
 
     def async_pull(self) -> ZmqAsyncPullSocket[T]:
         return ZmqAsyncPullSocket(
-            endpoint=self._endpoint, payload_type=self._payload_type
+            endpoint=self._endpoint,
+            payload_type=self._payload_type,
+            high_water_mark=self._high_water_mark,
         )
 
     def async_pair(self) -> tuple[ZmqAsyncPushSocket[T], ZmqAsyncPullSocket[T]]:
@@ -263,10 +291,13 @@ class ZmqSocket:
         *,
         endpoint: str,
         mode: int,
+        high_water_mark: int | None = None,
     ) -> None:
         _validate_zmq_address(endpoint)
         self._endpoint = endpoint
-        self._socket = _open_zmq_socket(endpoint, mode)
+        self._socket = _open_zmq_socket(
+            endpoint, mode, high_water_mark=high_water_mark
+        )
         self._finalize = weakref.finalize(self, self.close)
         self._is_closed = False
 
@@ -283,6 +314,7 @@ class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
         *,
         endpoint: str,
         payload_type: Any,
+        high_water_mark: int | None = None,
     ) -> None:
         # Out-of-band, zero-copy serialization: large numpy arrays (e.g.
         # multimodal pixel_values) ride as their own ZMQ frame instead of being
@@ -292,7 +324,9 @@ class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
         # frame's lifetime is tied to the decoded array, so there is no
         # /dev/shm segment to size, leak, or clean up).
         self._serialize = msgpack_numpy_oob_encoder()
-        super().__init__(endpoint=endpoint, mode=zmq.PUSH)
+        super().__init__(
+            endpoint=endpoint, mode=zmq.PUSH, high_water_mark=high_water_mark
+        )
 
     def put(self, msg: T) -> None:
         """Send a message, blocking until the peer is ready."""
@@ -318,9 +352,17 @@ class ZmqPushSocket(Generic[T], ZmqSocket, MAXPushQueue[T]):
 
 
 class ZmqPullSocket(Generic[T], ZmqSocket, MAXPullQueue[T]):
-    def __init__(self, *, endpoint: str, payload_type: Any) -> None:
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        payload_type: Any,
+        high_water_mark: int | None = None,
+    ) -> None:
         self._deserialize = msgpack_numpy_oob_decoder(payload_type)
-        super().__init__(endpoint=endpoint, mode=zmq.PULL)
+        super().__init__(
+            endpoint=endpoint, mode=zmq.PULL, high_water_mark=high_water_mark
+        )
 
     def get_nowait(self) -> T:
         if self._is_closed:
@@ -416,11 +458,15 @@ class ZmqAsyncSocket:
         *,
         endpoint: str,
         mode: int,
+        high_water_mark: int | None = None,
     ) -> None:
         _validate_zmq_address(endpoint)
         self._endpoint = endpoint
         self._socket: zmq.asyncio.Socket = _open_zmq_socket(
-            endpoint, mode, ctx=zmq.asyncio.Context.instance()
+            endpoint,
+            mode,
+            ctx=zmq.asyncio.Context.instance(),
+            high_water_mark=high_water_mark,
         )
         self._finalize = weakref.finalize(self, self.close)
         self._is_closed = False
@@ -439,12 +485,15 @@ class ZmqAsyncPushSocket(Generic[T], ZmqAsyncSocket):
         *,
         endpoint: str,
         payload_type: type[T] | object,
+        high_water_mark: int | None = None,
     ) -> None:
         # The async API-server side and the sync model-worker side are the two
         # ends of the same intra-node queues, so this uses the same out-of-band
         # transport as the sync `ZmqPushSocket` (see its `__init__`).
         self._serialize = msgpack_numpy_oob_encoder()
-        super().__init__(endpoint=endpoint, mode=zmq.PUSH)
+        super().__init__(
+            endpoint=endpoint, mode=zmq.PUSH, high_water_mark=high_water_mark
+        )
 
     async def put(self, msg: T) -> None:
         """Send a message, awaiting until the socket is ready."""
@@ -453,6 +502,28 @@ class ZmqAsyncPushSocket(Generic[T], ZmqAsyncSocket):
         # See `ZmqPushSocket.put` for why `copy=False` is safe here.
         frames = self._serialize(msg)
         await self._socket.send_multipart(frames, copy=False)
+
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        """Whether a message can be enqueued now without blocking.
+
+        ``True`` when the socket has a connected peer with room below its
+        high-water mark; ``False`` when the queue is full (the peer has stopped
+        draining) or no peer is connected. ``timeout_s`` bounds how long to
+        wait for writability: the default ``0`` is an immediate, point-in-time
+        check for the request hot path (shed load the instant the queue backs
+        up), a positive value blocks up to that long for the peer to connect
+        (used once at startup so the runtime check is never ambiguous about
+        connectivity), and ``None`` blocks indefinitely.
+        """
+        if self._is_closed:
+            return False
+        # A Poller lets us select POLLOUT with a timeout (the async socket's own
+        # poll() does not expose a flags argument in its type stub).
+        poller = zmq.asyncio.Poller()
+        poller.register(self._socket, zmq.POLLOUT)
+        timeout_ms = None if timeout_s is None else int(timeout_s * 1000)
+        events = await poller.poll(timeout_ms)
+        return any(mask & zmq.POLLOUT for _socket, mask in events)
 
     def put_nowait(self, msg: T) -> None:
         """Send a message without blocking; raises on EAGAIN."""
@@ -468,10 +539,16 @@ class ZmqAsyncPullSocket(Generic[T], ZmqAsyncSocket):
     """Async ZMQ PULL socket using zmq.asyncio for native event loop integration."""
 
     def __init__(
-        self, *, endpoint: str, payload_type: type[T] | object
+        self,
+        *,
+        endpoint: str,
+        payload_type: type[T] | object,
+        high_water_mark: int | None = None,
     ) -> None:
         self._deserialize = msgpack_numpy_oob_decoder(payload_type)
-        super().__init__(endpoint=endpoint, mode=zmq.PULL)
+        super().__init__(
+            endpoint=endpoint, mode=zmq.PULL, high_water_mark=high_water_mark
+        )
 
     async def get(self) -> T:
         """Receive a message, awaiting until one is available."""

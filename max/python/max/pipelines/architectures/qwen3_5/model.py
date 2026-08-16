@@ -30,7 +30,6 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.buffer_utils import cast_tensors_to
-from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.pipelines.lib import (
     CompilationTimer,
@@ -39,7 +38,6 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from transformers import AutoConfig
@@ -206,10 +204,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             ).to(self.devices[0])
 
         with CompilationTimer("model") as timer:
-            # Share one MLIR module so language and vision compile together.
             module = Module()
+            state_dict = self._load_state_dict()
             language_graph = self._build_language_graph(
-                self.weights, self.adapter, module=module
+                state_dict, module=module
             )
             assert self._vision_state_dict is not None
             vision_graph = self._build_vision_graph(module=module)
@@ -398,13 +396,10 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     def _build_language_graph(
         self,
-        weights: Weights,
-        adapter: WeightsAdapter | None,
+        state_dict: dict[str, Any],
         module: Module,
     ) -> Graph:
-        full_state_dict = parse_state_dict_from_weights(
-            self.pipeline_config, weights, adapter
-        )
+        full_state_dict = state_dict
 
         model_config = Qwen3_5Config.initialize_from_config(
             self.pipeline_config, self.huggingface_config

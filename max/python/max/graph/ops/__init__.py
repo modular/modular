@@ -60,6 +60,10 @@ from . import (
     reducescatter,
 )
 from .allgather import allgather
+from .allgather_rms_norm import (
+    allgather_rms_norm,
+    allgather_rms_norm_quant_mxfp8,
+)
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k
@@ -104,6 +108,7 @@ from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
+from .reduce_scatter_rms_norm import reduce_scatter_rms_norm
 from .reduction import argmax, argmin, mean, prod, sum
 from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min

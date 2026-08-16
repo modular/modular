@@ -93,6 +93,8 @@ common --experimental_propagate_custom_flag=@rules_cc//cc/toolchains/args/archiv
 # Always use llvm-ar which works fine for macOS
 common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 
+common --features=skip_virtual_includes --host_features=skip_virtual_includes
+
 # Enable parse_headers when the feature is added (only applies to first party code)
 common --process_headers_in_dependencies
 
@@ -111,6 +113,10 @@ build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
 build --slim_profile=false
 build --rewind_lost_inputs
+
+# Local disk cache, tools/bazel opts developers in
+build:disk-cache --disk_cache=~/.cache/bazel-disk-cache
+build:disk-cache --experimental_disk_cache_gc_max_size=100G
 
 # Include full test log in failed tests
 build --test_output=errors
@@ -177,6 +183,10 @@ build:disable-mypy --output_groups=-mypy
 
 build:disable-lint --config=disable-mypy
 
+# Always skip tsc lib checking.
+common --@aspect_rules_ts//ts:skipLibCheck=always
+common --experimental_propagate_custom_flag=@aspect_rules_ts//ts:skipLibCheck
+
 build --remote_download_outputs=toplevel
 build --remote_download_regex='.*\.(inc|h)$'
 # Required for debug info references from binaries
@@ -185,8 +195,6 @@ build --experimental_remote_cache_eviction_retries=3
 build --grpc_keepalive_time=30s
 build --remote_upload_local_results
 build --remote_exec_header=x-buildbuddy-platform.default-timeout=15m
-# Set local builds to higher than CI priority
-build --remote_execution_priority=-1
 
 build:cache --bes_backend=grpcs://modular.buildbuddy.io
 build:cache --bes_results_url=https://modular.buildbuddy.io/invocation/
@@ -221,7 +229,6 @@ build:macos --build_metadata=TAG_TARGET_OS=macos
 build:ci-no-config --curses=no
 build:ci-no-config --build_metadata=ROLE=CI
 build:ci-no-config --config=cache
-build:ci-no-config --disk_cache=
 build:ci-no-config --ui_event_filters=+WARNING
 build:ci-no-config --verbose_failures
 # Disable dynamic execution for remote exec
@@ -230,8 +237,6 @@ build:ci-no-config --strategy=CppCompile=remote,worker,sandboxed,standalone
 build:ci-no-config --strategy=CppLink=remote,worker,sandboxed,standalone
 
 build:ci --config=ci-no-config
-# Set CI builds to lower priority than local builds, some CI builds override this
-build:ci --remote_execution_priority=20
 test:ci --remote_download_outputs=minimal
 
 build:ci-gpu-common --config=ci

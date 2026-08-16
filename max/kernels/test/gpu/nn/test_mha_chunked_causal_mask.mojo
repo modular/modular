@@ -14,7 +14,7 @@
 from std.math import isclose
 from std.random import rand
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -48,7 +48,7 @@ def build_ChunkedCausalMask[
         for h in range(num_heads):
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
-                    start_pos = num_keys - seq_len
+                    var start_pos = num_keys - seq_len
                     var q_chunk_idx = (q_idx + start_pos) // local_window_size
                     var k_chunk_idx = k_idx // local_window_size
                     var chunk_masked = q_chunk_idx != k_chunk_idx
@@ -56,7 +56,9 @@ def build_ChunkedCausalMask[
                     var masked = chunk_masked or causal_masked
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
+                        Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
+                            mask.dtype
+                        ](0),
                     )
 
 
@@ -273,7 +275,7 @@ def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
     comptime for type_idx in range(len(types)):
-        comptime type = types[type_idx]
+        comptime type = rebind[DType](types[type_idx])
         # context encoding
         test_attention[
             type,

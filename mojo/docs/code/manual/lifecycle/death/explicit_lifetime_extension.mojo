@@ -25,18 +25,18 @@ def main():
     # start-extension-example
     # Without explicit extension: `s` is last used at the print, so it is destroyed after it.
     var s = "abc"
-    print(s)  # s.__del__() runs after this line
+    print(s)  # s.__deinit__() runs after this line
 
     # With explicit extension: push last-use to the discard line.
     var t = "xyz"
     print(t)
 
     # ... some time later
-    _ = t  # t.__del__() runs here (after this line)
+    _ = t  # t.__deinit__() runs here (after this line)
     # end-extension-example
 
     var f = Foobat(x=1)
-    g = f
+    var g = f
     print("before discard")
     _ = f
     print("before second discard")

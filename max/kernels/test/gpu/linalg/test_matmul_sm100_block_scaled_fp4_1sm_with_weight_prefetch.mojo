@@ -25,9 +25,9 @@ from std.math import align_up, ceildiv
 from std.sys import argv, size_of
 import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.fp4_quantization import naive_block_scaled_matmul
-from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from linalg.block_scaled_quantization import naive_block_scaled_matmul
+from max.gpu.host import DeviceContext
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.random import rand
 
 from internal_utils import assert_almost_equal
@@ -57,7 +57,7 @@ from linalg.fp4_utils import (
 )
 from std.random import random_ui64
 from std.builtin.simd import _convert_f32_to_float8_ue8m0
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 def simple_init() -> Bool:
@@ -198,11 +198,11 @@ def _test_impl[
                 comptime assert b_host.flat_rank == 2
                 b_host[n, k] = UInt8(n).cast[b_type]()
     else:
-        rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
-        rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
+        rand(a_host._storage, a_host.num_elements(), min=0, max=255)
+        rand(b_host._storage, b_host.num_elements(), min=0, max=255)
 
-    rand(a_scales_host.ptr, a_scales_host.num_elements())
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(a_scales_host._storage, a_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
             0,
@@ -272,12 +272,12 @@ def _test_impl[
 
     var c_device_lt = c_tensor.to_layout_tensor()
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -326,8 +326,8 @@ def _test_impl[
             c_ref_tensor_lt.as_unsafe_any_origin(),
             a_lt,
             b_lt,
-            a_scales=a_scales_lt.get_immutable().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.get_immutable().as_unsafe_any_origin(),
+            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
+            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
             transpose_b=transpose_b,
             c_row_major=True,
             alpha=alpha,
@@ -341,11 +341,11 @@ def _test_impl[
 
     comptime if normal_epilogue:
         for i in range(c_host_ref.num_elements()):
-            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
+            c_host_ref._storage[i] = c_host_ref._storage[i] * Scalar[c_type](2)
 
     assert_almost_equal(
-        c_host.ptr,
-        c_host_ref.ptr,
+        c_host._storage,
+        c_host_ref._storage,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -374,7 +374,7 @@ def run_matmul_sm100_block_scaled_fp4_1sm_prefetch_suite[
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
+        @__parameter
         @always_inline
         def run[
             MType: CoordLike,

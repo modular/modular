@@ -21,17 +21,18 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
+from max.pipelines.architectures.qwen3_5.tool_parser import Qwen3_5ToolParser
 from max.pipelines.context import (
     BaseContext,
     GenerationStatus,
@@ -70,11 +71,14 @@ from max.serve.router.openai_routes import (
     CompletionStreamResponse,
     OpenAIChatResponseGenerator,
     OpenAICompletionResponseGenerator,
+    _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
     _create_response_format,
+    _get_cache_salt,
     _process_chat_log_probabilities,
     _resolve_grammar_constraints,
+    _set_batch_id_attributes,
     get_tool_parser,
     openai_create_chat_completion,
     openai_parse_chat_completion_request,
@@ -165,6 +169,78 @@ async def test_openai_chat_completion_single(app) -> None:  # noqa: ANN001
         choice = response.choices[0]
         assert choice.message.content == request_content
         assert choice.finish_reason == "stop"
+
+
+def _force_request_queue_full(app: FastAPI) -> None:
+    """Make the worker request queue report itself as full.
+
+    Mimics a bounded ZMQ PUSH socket at its high-water mark whose consumer has
+    stopped draining: ``writable`` returns False, so admission rejects
+    immediately with RequestQueueFull instead of attempting a push. (Startup
+    already established connectivity, so an unwritable queue means "full".)
+    """
+    worker = app.state.pipeline.model_worker
+
+    async def _not_writable(timeout_s: float | None = 0.0) -> bool:
+        return False
+
+    worker.request_queue.writable = _not_writable
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_rejects_when_queue_full(app) -> None:  # noqa: ANN001
+    """A full model-worker queue rejects new (non-streaming) requests with 429."""
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(model_name="echo", content="test data"),
+        )
+
+        assert response.status_code == 429
+        body = response.json()
+        assert body["error"]["type"] == "rate_limit_error"
+        assert body["error"]["code"] == "429"
+        # The rejected request must not leak an output-queue registration.
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_streaming_rejects_with_429_not_200(app) -> None:  # noqa: ANN001
+    """Streaming admission failures surface as a 429 status, never a 200.
+
+    Regression: the push to the worker is awaited before the SSE response is
+    constructed, so a full queue (or crashed worker) fails with a real status
+    code instead of a truncated 200 stream.
+    """
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(
+                model_name="echo", content="test data", stream=True
+            ),
+        )
+
+        assert response.status_code == 429
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_completion_streaming_rejects_with_429_not_200(app) -> None:  # noqa: ANN001
+    """The legacy /v1/completions streaming path also fails fast with 429."""
+    async with AsyncTestClient(app) as client:
+        _force_request_queue_full(app)
+
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": "test data", "stream": True},
+        )
+
+        assert response.status_code == 429
+        assert len(app.state.pipeline.model_worker.pending_out_queues) == 0
 
 
 def test_openai_chat_completion_concurrent(app) -> None:  # noqa: ANN001
@@ -569,6 +645,47 @@ def test_create_chat_completion_request_with_cache_salt() -> None:
         CreateChatCompletionRequest.model_validate(request_oversized)
 
 
+def _make_request(headers: dict[str, str]) -> Request:
+    """Minimal fastapi.Request carrying only headers, for testing
+    header-extraction helpers without a full app/TestClient."""
+    scope = {
+        "type": "http",
+        "headers": [
+            (k.lower().encode(), v.encode()) for k, v in headers.items()
+        ],
+    }
+    return Request(scope)
+
+
+def test_get_cache_salt_header_takes_precedence_over_body() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-header"
+    )
+
+
+def test_get_cache_salt_falls_back_to_body_without_header() -> None:
+    request = _make_request({})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=True)
+        == "from-body"
+    )
+
+
+def test_get_cache_salt_returns_none_when_neither_present() -> None:
+    request = _make_request({})
+    assert _get_cache_salt(request, None, use_client_cache_salt=True) is None
+
+
+def test_get_cache_salt_ignored_when_not_trusted() -> None:
+    request = _make_request({"X-Cache-Salt": "from-header"})
+    assert (
+        _get_cache_salt(request, "from-body", use_client_cache_salt=False)
+        is None
+    )
+
+
 def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
     """Test that CreateChatCompletionRequest correctly parses chat_template_kwargs field."""
     # Test with chat_template_kwargs provided
@@ -596,6 +713,89 @@ def test_create_chat_completion_request_with_chat_template_kwargs() -> None:
         request_without_kwargs
     )
     assert parsed_request_default.chat_template_kwargs is None
+
+
+# ============================================================================
+# Tests for batch id span attributes
+# ============================================================================
+
+
+def _chunk(batch_id: int | None) -> TokenGeneratorOutput:
+    return TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE, batch_id=batch_id
+    )
+
+
+@pytest.mark.parametrize(
+    ("batch_ids", "expected_first", "expected_last"),
+    [
+        ([], None, None),
+        ([None], None, None),
+        ([None, None], None, None),
+        ([5], 5, 5),
+        ([10, 11, 12], 10, 12),
+        # A request that is admitted late, or released early, has no batch id
+        # on its leading/trailing chunks; those must be skipped rather than
+        # reported as the bounds.
+        ([None, 10, 11, None], 10, 11),
+        ([10, None, None, 14], 10, 14),
+        ([None, None, 7, None], 7, 7),
+        # batch_id is a scheduler-wide counter, so a preempted request can see
+        # it move backwards. first/last are positional, never min/max.
+        ([12, 11, 10], 12, 10),
+    ],
+)
+def test_batch_id_returns_first_and_last_non_none(
+    batch_ids: list[int | None],
+    expected_first: int | None,
+    expected_last: int | None,
+) -> None:
+    chunks = [_chunk(b) for b in batch_ids]
+    assert _batch_id(chunks) == expected_first
+    assert _batch_id(chunks, last=True) == expected_last
+
+
+def test_batch_id_spans_a_multi_prompt_batch() -> None:
+    """The completions route flattens per-prompt chunk lists before scanning.
+
+    The bounds must cover the whole flattened batch -- reading them off any
+    single prompt's chunks would under-report the span.
+    """
+    prompt_a = [_chunk(10), _chunk(11), _chunk(12)]
+    prompt_b = [_chunk(11), _chunk(12), _chunk(13), _chunk(14)]
+    all_outputs = [c for req in (prompt_a, prompt_b) for c in req]
+
+    assert _batch_id(all_outputs) == 10
+    assert _batch_id(all_outputs, last=True) == 14
+
+
+def test_batch_id_does_not_consume_the_sequence() -> None:
+    """Both directions are scanned from the same list, so it must be reusable."""
+    chunks = [_chunk(10), _chunk(11)]
+
+    assert _batch_id(chunks) == 10
+    assert _batch_id(chunks, last=True) == 11
+    # Re-reading yields the same answers.
+    assert _batch_id(chunks) == 10
+    assert _batch_id(chunks, last=True) == 11
+
+
+def test_set_batch_id_attributes_tags_both_bounds() -> None:
+    span = Mock()
+
+    _set_batch_id_attributes(span, [_chunk(10), _chunk(11), _chunk(12)])
+
+    span.set_attribute.assert_any_call("max.first_batch_id", 10)
+    span.set_attribute.assert_any_call("max.last_batch_id", 12)
+
+
+def test_set_batch_id_attributes_skips_unknown_bounds() -> None:
+    """No batch id was ever observed, so neither attribute is worth emitting."""
+    span = Mock()
+
+    _set_batch_id_attributes(span, [_chunk(None)])
+
+    span.set_attribute.assert_not_called()
 
 
 # ============================================================================
@@ -915,6 +1115,20 @@ def _make_disconnect_request(
     return request
 
 
+_QueueItemT = TypeVar("_QueueItemT")
+
+
+class _WritableQueue(asyncio.Queue[_QueueItemT]):
+    """``asyncio.Queue`` that also satisfies the ``MAXAsyncPushQueue`` protocol.
+
+    Admission probes ``writable()`` before pushing; a plain ``asyncio.Queue``
+    lacks it, so this stand-in reports itself as always writable.
+    """
+
+    async def writable(self, timeout_s: float | None = 0.0) -> bool:
+        return True
+
+
 @pytest.mark.asyncio
 async def test_openai_chat_completion_cancels_disconnected_request(
     mock_pipeline_config: PipelineConfig,
@@ -924,9 +1138,9 @@ async def test_openai_chat_completion_cancels_disconnected_request(
 
     request_started = asyncio.Event()
 
-    request_queue = asyncio.Queue[BaseContext]()
+    request_queue = _WritableQueue[BaseContext]()
     response_queue = asyncio.Queue[Any]()  # not used here
-    cancel_queue = asyncio.Queue[list[RequestID]]()
+    cancel_queue = _WritableQueue[list[RequestID]]()
     model_worker = ZmqModelWorkerProxy(
         request_queue=request_queue,
         response_queue=response_queue,
@@ -1122,6 +1336,42 @@ async def test_openai_chat_completion_reasoning(
     assert response.usage.completion_tokens == expected_completion_tokens
 
 
+async def test_openai_chat_completion_usage_present_with_max_tokens_one(
+    patch_openai_metrics: None,
+) -> None:
+    """CENG-920: max_tokens=1 must still report usage, not null.
+
+    A single-token budget can be spent without incrementing either token
+    counter (e.g. hitting the length cap before any content or reasoning
+    token is produced), but ``prompt_tokens`` is always known once the
+    request ran, so ``usage`` must never collapse to ``None``.
+    """
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.MAXIMUM_LENGTH,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=None,
+            token_count=0,
+            prompt_token_count=12,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(mock_pipeline)
+    response = await generator.complete([mock_request])
+
+    assert response.choices[0].finish_reason == "length"
+    assert response.usage is not None
+    assert response.usage.prompt_tokens == 12
+    assert response.usage.completion_tokens == 0
+    assert response.usage.total_tokens == 12
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:
@@ -1209,6 +1459,47 @@ async def test_stop_sequence_not_found_leaves_message_intact(
     message = response.choices[0].message
     assert message.content == "hello world"
     assert response.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_tool_parse_failure_does_not_leak_structural_marker(
+    patch_openai_metrics: None,
+) -> None:
+    """Regression (fuzz-found): a ``max_tokens`` truncation landing mid
+    ``<tool_call>`` block makes the qwen3_5 parser's ``parse_complete``
+    raise (intentional — no complete block to parse). The non-streaming
+    raw-text fallback must then surface only the content *before* the
+    structural marker, never the raw response with the literal
+    ``<tool_call>`` marker in ``message.content``."""
+    truncated = (
+        "I'll get the weather for Paris first.\n"
+        "<tool_call>\n<function=get_weather>\n<parameter=city>\nLondon"
+    )
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=GenerationStatus.MAXIMUM_LENGTH,
+                decoded_tokens=truncated,
+                token_count=24,
+                prompt_token_count=5,
+            )
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.finish_reason == "length"
+    assert not choice.message.tool_calls
+    assert "<tool_call>" not in (choice.message.content or "")
+    assert choice.message.content == "I'll get the weather for Paris first."
 
 
 async def _run_stream(
@@ -2208,6 +2499,7 @@ def test_create_response_format_json_schema() -> None:
     assert result is not None
     assert result.type == "json_schema"
     # Schema should contain the provided JSON schema
+    assert result.json_schema is not None
     assert "properties" in result.json_schema
     assert "name" in result.json_schema["properties"]
     assert "age" in result.json_schema["properties"]
@@ -2221,6 +2513,36 @@ def test_create_response_format_boolean_schema_true() -> None:
     )
     assert result is not None
     assert result.json_schema == {}
+
+
+def test_create_response_format_empty_schema_is_enforced() -> None:
+    """An explicit empty schema (``{}`` / boolean ``true``) is "any valid JSON
+    value" and is ENFORCED, not treated as "no schema". The empty schema flows
+    through unchanged (it compiles to the backend's any-value grammar), and both
+    enforcement flags are set so generation is constrained to exactly one
+    well-formed JSON value (no trailing prose)."""
+    schema: dict[str, Any] | bool
+    for schema in ({}, True):
+        result = _create_response_format(
+            {
+                "type": "json_schema",
+                "json_schema": {"name": "any", "schema": schema},
+            },
+            enable_response_format_schema=True,
+        )
+        assert result is not None, schema
+        assert result.json_schema == {}, schema
+        assert result.grammar_enforced is True, schema
+        assert result.has_json_schema is True, schema
+        assert result.requires_structured_output_flag is True, schema
+
+
+def test_create_response_format_absent_is_unconstrained() -> None:
+    """No ``response_format`` means no schema is provided: return ``None`` so the
+    request is unconstrained (distinct from an explicit empty any-value schema)."""
+    assert _create_response_format(
+        None, enable_response_format_schema=True
+    ) is (None)
 
 
 def test_create_response_format_boolean_schema_false() -> None:
@@ -2900,6 +3222,59 @@ async def test_stream_emits_reasoning_by_default(
     responses = await _run_stream(_STREAM_REASONING_CHUNKS)
     assert responses[0].choices[0].delta.reasoning == "thinking"
     assert responses[0].choices[0].delta.reasoning_content is None
+
+
+# A single boundary chunk carrying both the reasoning tail and the first
+# content tokens — the case CENG-892 must split apart.
+_STREAM_REASONING_CONTENT_BOUNDARY_CHUNKS = [
+    TokenGeneratorOutput(
+        status=GenerationStatus.ACTIVE,
+        decoded_reasoning_tokens="thinking",
+        reasoning_token_count=1,
+        decoded_tokens="answer",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+    TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE,
+        decoded_reasoning_tokens=None,
+        reasoning_token_count=0,
+        decoded_tokens=" more",
+        token_count=1,
+        prompt_token_count=5,
+    ),
+]
+
+
+@pytest.mark.asyncio
+async def test_stream_splits_reasoning_and_content_boundary_chunk(
+    patch_openai_metrics: None,
+) -> None:
+    """CENG-892: a chunk carrying both reasoning and content is split.
+
+    No emitted delta may set both ``reasoning_content`` and ``content``, the
+    reasoning fragment must precede the content fragment, and a terminal
+    finish_reason must ride the content delta, not the reasoning delta.
+    """
+    responses = await _run_stream(
+        _STREAM_REASONING_CONTENT_BOUNDARY_CHUNKS,
+        emit_reasoning_content=True,
+    )
+    deltas = [r.choices[0].delta for r in responses]
+
+    # No delta carries both fields at once.
+    for delta in deltas:
+        assert not (delta.reasoning_content and delta.content)
+
+    # Reasoning is emitted before content, and both fragments survive intact.
+    reasoning_idx = next(i for i, d in enumerate(deltas) if d.reasoning_content)
+    content_idx = next(i for i, d in enumerate(deltas) if d.content)
+    assert reasoning_idx < content_idx
+    assert deltas[reasoning_idx].reasoning_content == "thinking"
+    assert "".join(d.content or "" for d in deltas) == "answer more"
+
+    # The reasoning delta is non-terminal; finish_reason rides content only.
+    assert responses[reasoning_idx].choices[0].finish_reason is None
 
 
 _REASONING_CONTENT_CHUNKS = [

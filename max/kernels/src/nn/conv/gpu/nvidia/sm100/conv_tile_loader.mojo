@@ -19,14 +19,13 @@ The TMA descriptor encodes convolution geometry and transforms coordinates
 on-the-fly during memory loads.
 """
 
-from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 
 struct TileLoaderTMAIm2col[
-    tma_origin: ImmutOrigin,
+    tma_origin: ImmOrigin,
     dtype: DType,
     tma_rank: Int,
     tile_shape: IndexList[tma_rank],
@@ -80,6 +79,10 @@ struct TileLoaderTMAIm2col[
         m_coord: Int,
     ):
         """Load a TileTensor tile using im2col TMA.
+
+        Parameters:
+            LayoutType: `TensorLayout` of the destination shared-memory
+                tile.
 
         Args:
             dest: Destination SMEM TileTensor tile.

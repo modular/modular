@@ -15,6 +15,7 @@ from std.collections import Set
 from std.random import random_ui64, seed
 from std.sys import get_defined_dtype, get_defined_int
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -22,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -248,7 +249,7 @@ def execute_kv_cache_ragged_matmul[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
-    @parameter
+    @__parameter
     @__copy_capture(
         hidden_state_device,
         prefix_sums_device,
@@ -258,9 +259,8 @@ def execute_kv_cache_ragged_matmul[
     )
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {imm}:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
                 hidden_state_device.to_layout_tensor(),
                 prefix_sums_device_tensor.to_layout_tensor(),
@@ -271,7 +271,7 @@ def execute_kv_cache_ragged_matmul[
                 ctx,
             )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     m.bench_function[bench_func](
         BenchId(

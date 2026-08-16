@@ -27,6 +27,7 @@ from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_linear import 
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
     FP8BlockTensor,
+    NVFP4Tensor,
 )
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid
@@ -79,13 +80,13 @@ def test_linear_fp8_parameters(
             layer.weight.block_size == fp8_quant_config.weight_scale.block_size
         )
         assert layer.weight.data.dtype == DType.float8_e4m3fn
-        assert layer.weight.scale_inv.dtype == DType.float32
+        assert layer.weight.weight_scale_inv.dtype == DType.float32
         assert list(layer.weight.data.shape) == [_FFN_DIM, _HIDDEN_DIM]
         # 512 / 128 == 4, 256 / 128 == 2
-        assert list(layer.weight.scale_inv.shape) == [4, 2]
+        assert list(layer.weight.weight_scale_inv.shape) == [4, 2]
 
         names = {name for name, _ in layer.parameters}
-        assert names == {"weight.data", "weight.scale_inv", "bias"}
+        assert names == {"weight.data", "weight.weight_scale_inv", "bias"}
 
 
 def test_linear_bf16_forward(mock_accelerator: MagicMock) -> None:
@@ -146,7 +147,7 @@ def test_mlp_bf16_parameters(mock_accelerator: MagicMock) -> None:
 def test_mlp_fp8_parameters(
     mock_accelerator: MagicMock, fp8_quant_config: QuantConfig
 ) -> None:
-    """Each FP8 projection contributes a ``data`` + ``scale_inv`` pair."""
+    """Each FP8 projection contributes a ``data`` + ``weight_scale_inv`` pair."""
     device = mock_accelerator()
     with F.lazy():
         layer = QuantizedMLP(
@@ -156,11 +157,11 @@ def test_mlp_fp8_parameters(
         names = {name for name, _ in layer.parameters}
         assert names == {
             "gate_proj.weight.data",
-            "gate_proj.weight.scale_inv",
+            "gate_proj.weight.weight_scale_inv",
             "up_proj.weight.data",
-            "up_proj.weight.scale_inv",
+            "up_proj.weight.weight_scale_inv",
             "down_proj.weight.data",
-            "down_proj.weight.scale_inv",
+            "down_proj.weight.weight_scale_inv",
         }
 
 
@@ -199,3 +200,105 @@ def test_mlp_fp8_forward(
 
         assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
         assert out.dtype == DType.bfloat16
+
+
+# --------------------------------------------------------------------------- #
+# NVFP4
+# --------------------------------------------------------------------------- #
+
+
+def test_linear_nvfp4_parameters(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    """With an NVFP4 config the weight becomes a four-leaf NVFP4Tensor."""
+    device = mock_accelerator()
+    with F.lazy():
+        layer = QuantizedLinear(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_quant_config
+        ).to(device)
+
+        assert isinstance(layer.weight, NVFP4Tensor)
+        assert (
+            layer.weight.block_size
+            == nvfp4_quant_config.weight_scale.block_size
+        )
+        assert layer.weight.data.dtype == DType.uint8
+        assert layer.weight.weight_scale.dtype == DType.float8_e4m3fn
+        # Two FP4 values per byte along K; one scale per 16-element block.
+        assert list(layer.weight.data.shape) == [_FFN_DIM, _HIDDEN_DIM // 2]
+        assert list(layer.weight.weight_scale.shape) == [
+            _FFN_DIM,
+            _HIDDEN_DIM // 16,
+        ]
+
+        names = {name for name, _ in layer.parameters}
+        assert names == {
+            "weight.data",
+            "weight.weight_scale",
+            "weight.weight_scale_2",
+            "weight.input_scale",
+            "bias",
+        }
+
+
+def test_linear_nvfp4_forward(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """NVFP4 block-scaled forward returns a bf16 ``[S, out]`` activation."""
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedLinear(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_quant_config
+        ).to(device)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+
+    assert list(out.shape) == [_SEQ_LEN, _FFN_DIM]
+    assert out.dtype == DType.bfloat16
+
+
+def test_mlp_nvfp4_parameters(
+    mock_accelerator: MagicMock, nvfp4_quant_config: QuantConfig
+) -> None:
+    """Each NVFP4 projection contributes its four scale/data leaves."""
+    device = mock_accelerator()
+    with F.lazy():
+        layer = QuantizedMLP(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_quant_config
+        ).to(device)
+
+        names = {name for name, _ in layer.parameters}
+        assert names == {
+            f"{proj}.weight.{leaf}"
+            for proj in ("gate_proj", "up_proj", "down_proj")
+            for leaf in (
+                "data",
+                "weight_scale",
+                "weight_scale_2",
+                "input_scale",
+            )
+        }
+
+
+def test_mlp_nvfp4_forward(
+    mock_accelerator: MagicMock,
+    nvfp4_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """NVFP4 MLP forward returns a bf16 ``[S, hidden]`` activation."""
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedMLP(
+            _HIDDEN_DIM, _FFN_DIM, quant_config=nvfp4_quant_config
+        ).to(device)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    assert out.dtype == DType.bfloat16

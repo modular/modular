@@ -21,7 +21,7 @@
 # relative to num_experts, the tail slots are uninitialized and the copy-back
 # reads them. Run under `--oracle initcheck` (or `poison`) to surface it.
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import random_ui64, seed
 from std.sys.defines import get_defined_int
 

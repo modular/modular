@@ -4357,6 +4357,7 @@ class TCSchemaEnforcement(BaseScenario):
         "$defs": {
             "CustomObject": {
                 "type": "object",
+                "additionalProperties": False,
                 "description": "Custom Object",
                 "title": "CustomObject",
                 "properties": {

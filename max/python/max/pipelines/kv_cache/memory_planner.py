@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
+from max.dtype import DType
 from max.nn.kv_cache import KVCacheParamInterface
 
 
@@ -118,6 +119,32 @@ class MemoryPlanner:
         """
         return 0
 
+    def infer_max_batch_size(
+        self,
+        pipeline_config: Any,
+        devices: list[Device],
+        weights_size: int,
+    ) -> int | None:
+        """Infers an architecture-specific default ``max_batch_size``.
+
+        Memory planning calls this when the user did not set
+        ``max_batch_size``, before :meth:`estimate_activation_memory` runs.
+        The default returns ``None``, deferring to the framework-wide
+        inference in memory estimation.  Override in planners for
+        architectures with per-request device memory beyond the KV cache
+        (e.g. recurrent-state pools) that need a tighter default.
+
+        Args:
+            pipeline_config: Pipeline configuration.
+            devices: Loaded devices the model will run on.
+            weights_size: Estimated model weights size in bytes.
+
+        Returns:
+            The inferred ``max_batch_size``, or ``None`` to use the
+            framework default.
+        """
+        return None
+
     def estimate_signal_buffer_memory(
         self,
         pipeline_config: Any,
@@ -136,9 +163,8 @@ class MemoryPlanner:
 
         Args:
             pipeline_config: Pipeline configuration.
-            arch_config: Optional architecture config; when provided, tightens
-                the BlockOffloadEngine term using the actual
-                ``replicates_kv_across_tp`` flag.
+            arch_config: Unused; kept for interface parity with
+                :meth:`PipelineConfig.estimate_signal_buffer_memory`.
 
         Returns:
             Estimated signal-buffer memory in bytes across all devices.
@@ -171,6 +197,27 @@ class MemoryPlanner:
             models.
         """
         return 0
+
+    def get_vision_cache_row_spec(
+        self,
+        huggingface_config: Any,
+    ) -> tuple[int, DType] | None:
+        """Describes one merged vision token's embedding row in the cache.
+
+        A non-None spec opts the architecture into the vision encoder
+        cache and lets the cache's block pool allocate at startup: the
+        reservation is a byte budget carved into fixed-size blocks of
+        ``(hidden_size, dtype)`` rows, so one large video no longer
+        collapses the cache's capacity for images.
+
+        Args:
+            huggingface_config: HuggingFace model configuration.
+
+        Returns:
+            ``(hidden_size, dtype)`` of one embedding row per device, or
+            ``None`` for architectures without a vision cache.
+        """
+        return None
 
 
 class PagedMemoryPlanner(MemoryPlanner):

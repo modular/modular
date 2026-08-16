@@ -35,7 +35,7 @@ Llama-4-Scout gate/up shape.
 from std.collections import Optional
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
