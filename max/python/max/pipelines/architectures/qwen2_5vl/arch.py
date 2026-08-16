@@ -68,12 +68,8 @@ qwen2_5_vl_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    default_encoding="bfloat16",
-    supported_encodings={
-        "float32",
-        "bfloat16",
-        "float8_e4m3fn",
-    },
+    default_encoding=Qwen2_5VLConfig.DEFAULT_ENCODING,
+    supported_encodings=Qwen2_5VLConfig.SUPPORTED_ENCODINGS,
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,
     },

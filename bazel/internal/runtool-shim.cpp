@@ -68,10 +68,6 @@ fix_bazel_paths() {
       getRequiredEnv("BUILD_WORKSPACE_DIRECTORY");
   std::filesystem::path derivedDir = workspaceDir / ".derived";
 
-  assert(std::filesystem::exists(derivedDir / "modular.cfg") &&
-         "You must run './bazelw run //:install' before running "
-         "binaries directly");
-
   // Find modular.cfg in derived for runtime dependencies
   setenv("MODULAR_HOME", derivedDir.generic_string().c_str(), 0);
   auto pwd = std::filesystem::current_path();

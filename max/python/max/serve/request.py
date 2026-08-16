@@ -18,6 +18,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+from max.serve._error_envelope import openai_error_body
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 
@@ -57,11 +59,19 @@ def register_request(app: FastAPI) -> None:
         except HTTPException as e:
             status_code = e.status_code
             raise  # already wrapped
-        except Exception as e:
+        except Exception:
+            # Returned rather than raised. This middleware runs outside
+            # Starlette's ExceptionMiddleware, so a raise here never reaches the
+            # app's HTTPException handler; it lands in ServerErrorMiddleware,
+            # which answers with a bare text/plain 500 and then re-raises,
+            # prompting uvicorn to close the connection out from under a client
+            # that was owed a response. ``status_code`` is already 500.
             logger.exception("Exception in request session : %s", request_id)
-            raise HTTPException(
-                status_code=500, headers={"X-Request-ID": request_id}
-            ) from e
+            return JSONResponse(
+                status_code=500,
+                content=openai_error_body(500, "Internal server error."),
+                headers={"X-Request-ID": request_id},
+            )
         finally:
             if _should_count_request(request.url.path):
                 METRICS.request_count(status_code, request.url.path)

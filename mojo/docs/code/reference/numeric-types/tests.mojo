@@ -123,14 +123,14 @@ def test_scalar_aliases() raises:
     assert_equal(b, c)
 
 
-# --- Generic numeric function using DType ---
+# --- Parameterized numeric function using DType ---
 
 
 def double[T: DType](x: Scalar[T]) -> Scalar[T]:
     return x * UInt8(2).cast[T]()
 
 
-def test_dtype_generic() raises:
+def test_dtype_parameterized() raises:
     assert_equal(double[DType.float32](3.5), 7.0)
     assert_equal(double[DType.int16](21), 42)
 
@@ -328,7 +328,7 @@ def main() raises:
     test_simd_clamp()
     test_min_max()
     test_scalar_aliases()
-    test_dtype_generic()
+    test_dtype_parameterized()
     test_int_constants()
     test_sized_int_bounds()
     test_byte_alias()

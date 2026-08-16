@@ -69,7 +69,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
     @staticmethod
     def _get_self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
@@ -189,7 +189,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def set_name_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        self_ptr: Pointer[Self, MutAnyOrigin],
         name: PythonObject,
     ):
         try:
@@ -199,26 +199,26 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def get_name_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin]
+        self_ptr: Pointer[Self, MutAnyOrigin]
     ) raises -> PythonObject:
         return PythonObject(self_ptr[].name)
 
     @staticmethod
     def increment_age_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin],
+        self_ptr: Pointer[Self, MutAnyOrigin],
         increment: PythonObject,
     ) raises -> PythonObject:
         self_ptr[].age += Int(py=increment)
         return PythonObject(self_ptr[].age)
 
     @staticmethod
-    def reset_auto(self_ptr: UnsafePointer[Self, MutAnyOrigin]):
+    def reset_auto(self_ptr: Pointer[Self, MutAnyOrigin]):
         self_ptr[].name = "Auto Reset Person"
         self_ptr[].age = 999
 
     @staticmethod
     def sum_kwargs_ints(
-        py_self: PythonObject, **kwargs: PythonObject
+        py_self: PythonObject, var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method that takes kwargs, adds them to person's age and returns the new age.
         """
@@ -241,7 +241,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Writable):
 
     @staticmethod
     def add_kwargs_to_age_auto(
-        self_ptr: UnsafePointer[Self, MutAnyOrigin], **kwargs: PythonObject
+        self_ptr: Pointer[Self, MutAnyOrigin], var **kwargs: PythonObject
     ) raises -> PythonObject:
         """Test method with auto-convert self + kwargs that adds kwargs to person's age.
         """

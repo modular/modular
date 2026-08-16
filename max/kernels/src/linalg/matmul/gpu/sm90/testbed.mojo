@@ -11,10 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a testbed for validating SM90 warp-specialized matmul kernels against a vendor reference."""
+
 from std.math import ceildiv
 from std.sys import align_of
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
@@ -59,6 +61,42 @@ def test_matmul_sm90[
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    """Runs an SM90 warp-specialized matmul and validates the result against a vendor reference.
+
+    Allocates host and device buffers for the operands, initializes them with
+    random data, launches the warp-specialized GEMM with multicasting, and compares
+    the output against a vendor (cuBLAS) reference using an elementwise tolerance
+    check.
+
+    Parameters:
+        MType: Coordinate-like type encoding the M dimension extent (inferred).
+        NType: Coordinate-like type encoding the N dimension extent (inferred).
+        KType: Coordinate-like type encoding the K dimension extent (inferred).
+        a_type: Element dtype of the left-hand operand.
+        b_type: Element dtype of the right-hand operand.
+        c_type: Element dtype of the output matrix.
+        cluster_shape: Thread block cluster shape as `(N, M, K)`.
+        block_tile_shape: Block tile shape as `(BM, BN, BK)`.
+        wgmma_shape: WGMMA instruction shape as `(M, N, K)`.
+        num_consumer: Number of consumer warps in the warp-specialized pipeline.
+        num_pipeline_stages: Number of software pipeline stages.
+        transpose_b: Whether the right-hand operand is stored transposed.
+        partitioned_multicast: Whether to use partitioned instead of broadcast multicast.
+        grid_shape: Optional explicit grid shape override.
+        use_tma_store: Whether to use TMA store for the epilogue.
+        schedule: Tile scheduler hint controlling launch order.
+        default_epilogue: Whether to use the default store-based epilogue.
+        elementwise_compute_lambda_fn: Optional elementwise compute lambda applied in the epilogue.
+        measure_threshold: Optional relative-difference threshold for a measured assertion.
+        backend: Vendor backend used for the reference matmul.
+        k_group_size: Group size used for grouped matmul along the K dimension.
+
+    Args:
+        ctx: Device context used for device allocations and kernel dispatch.
+        m: Number of rows of the output matrix (M dimension).
+        n: Number of columns of the output matrix (N dimension).
+        k: Contraction dimension shared by the operands (K dimension).
+    """
     var M = Int(m.value())
     var N = Int(n.value())
     var K = Int(k.value())
@@ -74,20 +112,22 @@ def test_matmul_sm90[
     # Host allocations
     var a_host_alloc = alloc(
         AllocLayout[Scalar[a_type]](count=a_size)
-    ).into_deletable()
+    ).into_managed()
     var a_host = a_host_alloc.unsafe_ptr()
     var b_host_alloc = alloc(
         AllocLayout[Scalar[b_type]](count=b_size)
-    ).into_deletable()
+    ).into_managed()
     var b_host = b_host_alloc.unsafe_ptr()
     var c_host_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
+    ).into_managed()
     var c_host = c_host_alloc.unsafe_ptr()
     var c_host_ref_alloc = alloc(
         AllocLayout[Scalar[c_type]](count=c_size)
-    ).into_deletable()
-    var c_host_ref = c_host_ref_alloc.unsafe_ptr()
+    ).into_managed()
+    var c_host_ref: UnsafePointer[
+        Scalar[c_type], origin_of(c_host_ref_alloc)
+    ] = c_host_ref_alloc.unsafe_ptr()
 
     # Device allocations
     var a_dev_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -173,12 +213,12 @@ def test_matmul_sm90[
         String(CLUSTER_N),
     )
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -261,7 +301,7 @@ def test_matmul_sm90[
     )
 
     # Cleanup host pointers
-    dealloc(a_host_alloc^.into_allocation())
-    dealloc(b_host_alloc^.into_allocation())
-    dealloc(c_host_alloc^.into_allocation())
-    dealloc(c_host_ref_alloc^.into_allocation())
+    dealloc(a_host_alloc^)
+    dealloc(b_host_alloc^)
+    dealloc(c_host_alloc^)
+    dealloc(c_host_ref_alloc^)

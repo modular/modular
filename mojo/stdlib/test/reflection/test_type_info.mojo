@@ -36,16 +36,15 @@ def test_get_linkage_name() raises:
 
 
 def test_get_linkage_name_nested() raises:
-    @parameter
-    def nested_func(x: Int) -> Int:
+    def _nested_func(x: Int) {var} -> Int:
         return x
 
-    var name = get_linkage_name[nested_func]()
+    var name = get_linkage_name[type_of(_nested_func).__call__]()
     assert_equal(
         name,
         (
-            "test_type_info::test_get_linkage_name_nested()_nested_func(::SIMD[::DType(int),"
-            " ::SIMDSize(1)])"
+            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[::DType(int),"
+            " ::SIMDLength(1)])`"
         ),
     )
 
@@ -58,7 +57,10 @@ def test_get_linkage_name_parameterized() raises:
     var name = get_linkage_name[your_func[7]]()
     assert_equal(
         name,
-        "test_type_info::your_func[::SIMD[::DType(int), ::SIMDSize(1)]](),x=7",
+        (
+            "test_type_info::your_func[::SIMD[::DType(int),"
+            " ::SIMDLength(1)]](),x=7"
+        ),
     )
 
 

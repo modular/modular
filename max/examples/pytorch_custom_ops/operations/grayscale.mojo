@@ -13,16 +13,16 @@
 
 # DOC: max/develop/custom-kernels-pytorch.mdx
 
-import compiler
+import extensibility
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import InputTensor, OutputTensor, foreach
 
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.index import IndexList
 
 
-@compiler.register("grayscale")
+@extensibility.register("grayscale")
 struct Grayscale:
     """Convert RGB image tensor to grayscale using weighted formula."""
 
@@ -42,7 +42,7 @@ struct Grayscale:
             ctx: Device context for execution.
         """
 
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
@@ -56,7 +56,7 @@ struct Grayscale:
                 Grayscale value as SIMD vector.
             """
 
-            @parameter
+            @__parameter
             def load(
                 idx: IndexList[img_in.rank],
             ) -> SIMD[DType.float32, simd_width]:

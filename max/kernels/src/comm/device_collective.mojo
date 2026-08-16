@@ -12,27 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Helpers for dispatching collective operations across devices."""
 
-from std.collections import InlineArray, Optional
-from std.gpu.host import DeviceContext, DeviceContextList
-from std.runtime.asyncrt import TaskGroup, task_id_for_device
+from std.collections import Array, Optional
+from std.runtime._asyncrt import TaskGroup
+
+from max.gpu.host import DeviceContext, DeviceContextArray
+from max.runtime.asyncrt import task_id_for_device
 
 
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: InlineArray[DeviceContext, num_devices]) raises:
+](func: F, var dev_ctxs: Array[DeviceContext, num_devices]) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
     # One Optional[Error] slot per device; None means no error.
     # Each task writes only to its own index, so there is no data race.
-    var errors = InlineArray[Optional[Error], num_devices](
-        fill=Optional[Error]()
-    )
+    var errors = Array[Optional[Error], num_devices](fill=Optional[Error]())
 
     # Wrap the launch function in a Mojo async function which does not raise.
     @always_inline
-    @parameter
+    @__parameter
     async def wrapper[index: Int]() -> None:
         try:
             func[index]()
@@ -59,20 +59,20 @@ def _launch_device_collective[
 def _launch_device_collective[
     num_devices: Int,
     F: def[Int]() raises -> None,
-](func: F, var dev_ctxs: DeviceContextList) raises:
+](func: F, var dev_ctxs: DeviceContextArray) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs.
 
-    `DeviceContextList` overload. Forwards to the `InlineArray` overload
-    by unpacking the list's underlying storage.
+    `DeviceContextArray` overload. Forwards to the `Array` overload
+    by unpacking the array's underlying storage.
     """
 
     comptime assert (
-        dev_ctxs.size == num_devices
+        dev_ctxs.length == num_devices
     ), "expected dev_ctxs to have the same number of elements as num_devices"
 
     _launch_device_collective[num_devices](
         func,
-        rebind[InlineArray[DeviceContext, num_devices]](
+        rebind[Array[DeviceContext, num_devices]](
             dev_ctxs.device_contexts^
-        ),
+        ).copy(),
     )

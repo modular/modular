@@ -35,7 +35,7 @@ combine.
 """
 
 from std.collections import OptionalReg
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import exp
 from std.random import seed
 from std.sys import has_apple_gpu_accelerator
@@ -182,7 +182,7 @@ def _run_sink_closed_form[
     var sink_dev = sink_managed.device_tensor()
     var sink_opt = OptionalReg[
         LayoutTensor[dtype, sink_layout, ImmutAnyOrigin]
-    ](sink_dev.get_immutable().as_unsafe_any_origin())
+    ](sink_dev.as_imm().as_unsafe_any_origin())
 
     naive_fa_decode_apple[
         sink=True,

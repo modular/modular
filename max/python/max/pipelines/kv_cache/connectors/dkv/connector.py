@@ -37,7 +37,7 @@ import math
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import msgspec
 from max.driver import Buffer, Device
@@ -51,6 +51,18 @@ from max.nn.kv_cache.cache_params import (
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache._nixl_backend import (
+    NIXL_BACKEND_ENV_VAR,
+    NixlBackendType,
+    validate_nixl_backend,
+)
+from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
+from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
+    CompletedTransfer,
+    KVConnectorTransfer,
+    TransferDirection,
+)
 from max.profiler import traced
 
 _logger = logging.getLogger("max.pipelines")
@@ -69,7 +81,7 @@ def _to_dkv_u64(h: bytes) -> int:
     """Packs a connector-level block hash into the 64-bit dkv wire key.
 
     The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
-    forms produced by :func:`max.pipelines.kv_cache.kv_connector.to_block_hash_bytes`:
+    forms the block hasher produces:
 
     * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
     * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
@@ -247,6 +259,83 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 _DEFAULT_ADMISSION_TIMEOUT_S = 120.0
 _ADMISSION_INITIAL_BACKOFF_S = 1.0
 _ADMISSION_MAX_BACKOFF_S = 10.0
+
+
+# Env-var overrides for the Rust client's background heartbeat poller, mapped to
+# the constructor keywords they feed. Every one is optional: an unset variable is
+# omitted from the call so the Rust default applies, which keeps the poller on the
+# timings it has always used. A shorter interval detects a dKV restart sooner at
+# the cost of one more probe per interval from every replica.
+_HEARTBEAT_ENV_KWARGS = {
+    "MODULAR_DKV_HEARTBEAT_INTERVAL_MS": "heartbeat_interval_ms",
+    "MODULAR_DKV_HEARTBEAT_REQUEST_TIMEOUT_MS": "heartbeat_request_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_TIMEOUT_MS": "heartbeat_reconnect_timeout_ms",
+    "MODULAR_DKV_HEARTBEAT_RECONNECT_COOLDOWN_MS": (
+        "heartbeat_reconnect_cooldown_ms"
+    ),
+    "MODULAR_DKV_HEARTBEAT_MAX_FAILURES": "heartbeat_max_failures",
+    "MODULAR_DKV_HEARTBEAT_DEGRADED_WARN_EVERY": (
+        "heartbeat_degraded_warn_every"
+    ),
+}
+
+
+def _heartbeat_overrides() -> dict[str, int]:
+    """Collects the heartbeat-poller overrides set in the environment.
+
+    Returns:
+        The Rust client constructor keywords for the variables in
+        :data:`_HEARTBEAT_ENV_KWARGS` that are set, keyed by keyword name. An
+        unset variable is absent, leaving the Rust default in place.
+
+    Raises:
+        ValueError: If a variable is set to something other than a non-negative
+            integer. Failing model load beats silently polling on an unintended
+            cadence, and a negative value is worth catching here rather than at
+            the extension, whose keywords are unsigned and so reject it with an
+            ``OverflowError`` about converting a negative int that names no
+            variable. Which non-negative values are meaningful is deliberately
+            not checked here, because that is per-field and belongs to
+            ``HeartbeatConfig::validate`` on the Rust side, where the reasons
+            live: a zero cooldown means no spacing between reconnects and is
+            legitimate, while a zero interval would spin the poll loop.
+    """
+    overrides: dict[str, int] = {}
+    for env_var, keyword in _HEARTBEAT_ENV_KWARGS.items():
+        raw = os.getenv(env_var, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"{env_var} must be an integer number, got {raw!r}"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{env_var} must not be negative, got {value}")
+
+        overrides[keyword] = value
+
+    return overrides
+
+
+def _nixl_backend_override() -> NixlBackendType | None:
+    """The validated NIXL transfer backend override, or ``None`` when unset.
+
+    Reads ``MODULAR_NIXL_TRANSFER_BACKEND`` with the same three-way shape as
+    the Rust ``BackendSelection`` parse: unset, empty, and case-insensitive
+    ``auto`` mean auto-select (``None`` here) — the dKV server's own
+    ``DKV_MEMXFER_BACKEND`` accepts and defaults to ``auto``, so that spelling
+    must not crash the MAX pod — and anything else goes through the same
+    validator as the KV transfer engine, so a typo fails model load with the
+    accepted set rather than surfacing as a handshake mismatch. The default
+    differs from the transfer engine on purpose: it assumes ``"ucx"``, while
+    the connector auto-selects.
+    """
+    raw = os.getenv(NIXL_BACKEND_ENV_VAR, "").strip()
+    if not raw or raw.lower() == "auto":
+        return None
+    return validate_nixl_backend(raw)
 
 
 def _dtype_tag(dtype: object) -> str:
@@ -592,13 +681,37 @@ class DKVConnector:
         # provided dkv_connector extension to be installed.
         from dkv_connector import DkvConnector as _DkvConnectorClient
 
+        # The Rust client creates a NIXL agent, which dlopens the transport
+        # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
+        # for the verbs flavors, rdma-core) symbols that must already be
+        # RTLD_GLOBAL in this process or the plugin faults as it loads. The
+        # libfabric flavor links its stack and needs none of this, but the
+        # preload skips absent libraries, so it stays backend-agnostic here
+        # rather than duplicating the backend dispatch.
+        preload_nixl_plugin_deps()
+
         if not replica_kv_memory or not all(replica_kv_memory):
             raise ValueError(
                 "DKVConnector requires at least one KV cache buffer per replica"
             )
 
         listen_port = int(os.getenv("MODULAR_DKV_NIXL_LISTEN_PORT", "0"))
-        backend = os.getenv("MODULAR_NIXL_TRANSFER_BACKEND") or None
+        backend = _nixl_backend_override()
+
+        # Kill-switch (CLIN-1534): a G0 prefix-cache hit refreshes dKV recency
+        # via touch(). Set MODULAR_DKV_DISABLE_G0_TOUCH to make touch() a no-op
+        # so the behavior can be backed out with an env var + restart, no code
+        # revert. Read once here (not per call); BlockManager always calls
+        # touch, the connector decides. Same truthy convention as block_manager's
+        # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE flag.
+        self._g0_touch_disabled = os.getenv(
+            "MODULAR_DKV_DISABLE_G0_TOUCH", "0"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+        )
 
         # Tenant deployment identity (CLIN-1477). MODULAR_DKV_TENANT_ID is
         # injected by the operator (the trust boundary — not a user-facing
@@ -654,6 +767,13 @@ class DKVConnector:
             )
         )
 
+        heartbeat_overrides = _heartbeat_overrides()
+        if heartbeat_overrides:
+            _logger.info(
+                "dKV heartbeat poller overridden from the environment: %s",
+                heartbeat_overrides,
+            )
+
         # Each client's connect + handshake ("admission") is retried on transient
         # failures (dKV still starting); model readiness is gated on ALL clients
         # admitting, so a client whose retry budget is exhausted raises here and
@@ -696,6 +816,7 @@ class DKVConnector:
                 replica_id=replica_id,
                 tenant_gpu_count=tenant_gpu_count,
                 tenant_gpu_device_ids=tenant_gpu_device_ids,
+                heartbeat_overrides=heartbeat_overrides,
             )
             self._clients.append(
                 _admit_with_retry(
@@ -756,6 +877,7 @@ class DKVConnector:
         replica_id: int,
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
+        heartbeat_overrides: Mapping[str, int],
     ) -> object:
         # Group the flat to_memory() units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -820,6 +942,7 @@ class DKVConnector:
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            **heartbeat_overrides,
         )
 
     @property
@@ -831,13 +954,13 @@ class DKVConnector:
         device_block_ids: list[int],
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
-    ) -> int:
+    ) -> KVConnectorTransfer:
         """Loads external blocks into ``replica_idx``'s device memory by hash.
 
-        Each ``block_hashes`` element must be canonical bytes from
-        :func:`to_block_hash_bytes`: 8 bytes for ``ahash64`` / ``sha256_64``
-        or 32 bytes for full ``sha256``. 32-byte digests are truncated to
-        their first 8 bytes at the dkv boundary (see :func:`_to_dkv_u64`).
+        Each ``block_hashes`` element must be canonical bytes: 8 bytes for
+        ``ahash64`` / ``sha256_64`` or 32 bytes for full ``sha256``. 32-byte
+        digests are truncated to their first 8 bytes at the dkv boundary (see
+        :func:`_to_dkv_u64`).
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set). The
@@ -848,30 +971,34 @@ class DKVConnector:
         fan-out or cross-client drain at this layer.
         """
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        return self._clients[replica_idx].load(
+        num_loaded = self._clients[replica_idx].load(
             group_id=_DKV_GROUP_FULL_ATTENTION,
             device_block_ids=device_block_ids,
             block_hashes=dkv_hashes,
+        )
+        # dKV orders its posted READs before the forward in the deprecated
+        # ``wait_for_loads`` barrier, so the manager treats the load as already
+        # complete (no cordoning / deferred commit).
+        return CompletedTransfer(
+            TransferDirection.LOAD, list(device_block_ids[:num_loaded])
         )
 
     def offload(
         self,
         block_ids: list[int],
         block_hashes: Sequence[bytes],
-        parent_seq_hash: bytes | None = None,
         replica_idx: int = 0,
-    ) -> None:
+    ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
         Each ``block_hashes`` element follows the same 8-or-32 byte
         contract as :meth:`load` (truncated to its first 8 bytes at the
         dkv boundary; see :func:`_to_dkv_u64`).
 
-        ``parent_seq_hash`` is accepted for ``KVConnector`` protocol
-        compatibility but no longer forwarded: the dKV store now dedups
-        by composite key ``(tp_shard_id, group, seq_hash)`` and does not
-        chain blocks under a parent, so the Rust client builds the keys
-        (and the NUMA striping plan) from the hashes alone.
+        The dKV store dedups by composite key ``(tp_shard_id, group,
+        seq_hash)`` and does not chain blocks under a parent, so the Rust
+        client builds the keys (and the NUMA striping plan) from the hashes
+        alone.
 
         Routes to the processing replica's single client (backend dedup: one
         client per DP replica, registering that replica's full TP GPU set).
@@ -882,6 +1009,65 @@ class DKVConnector:
             block_ids=block_ids,
             block_hashes=dkv_hashes,
         )
+        # dKV registers its posted WRITEs in the deprecated ``wait_for_offloads``
+        # barrier, so the manager keeps no pin on the source blocks.
+        return CompletedTransfer(TransferDirection.OFFLOAD, list(block_ids))
+
+    def touch(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+    ) -> None:
+        """Refreshes ``replica_idx``'s dkv recency for device-served blocks.
+
+        A block served from MAX's on-device (G0) prefix cache issues no other
+        dkv traffic, so its dkv LRU recency can freeze and dkv can evict it
+        while it is still hot on device. This forwards the served blocks'
+        hashes to the Rust client's ``touch``, which the server treats as an
+        access that bumps recency.
+
+        Touch contract: pass the full root-anchored sequence (full sequence for
+        a full-attention group, full active window for SWA); never a
+        root-omitting slice. See :meth:`KVConnector.touch` and the dKV
+        ``RegionLru::touch`` canonical contract.
+
+        Each ``block_hashes`` element follows the same 8-or-32 byte contract as
+        :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
+        :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client
+        spawns the touch RPC and returns immediately, so this never blocks the
+        caller and a missed touch costs at most a later refetch, never
+        correctness. A no-op when ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the
+        kill-switch, read once at construction).
+
+        Routes to the processing replica's single client (backend dedup: one
+        client per DP replica, registering that replica's full TP GPU set).
+        """
+        if self._g0_touch_disabled:
+            return
+        # Honor the KVConnector.touch contract ("never raises into the caller").
+        # This runs on the scheduler thread BEFORE the Rust client's fire-and-
+        # forget spawn, so a bad hash length (_to_dkv_u64 -> ValueError) or an
+        # out-of-range replica_idx (IndexError) would otherwise propagate here.
+        # A missed recency touch is never a correctness issue, so swallow and
+        # log at debug (matches offload's swallow posture; design section 4).
+        try:
+            dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+            self._clients[replica_idx].touch(
+                group_id=_DKV_GROUP_FULL_ATTENTION,
+                block_hashes=dkv_hashes,
+            )
+        except Exception as exc:
+            _logger.debug("dKV touch skipped: %s", exc)
+
+    def count_cached_prefix(
+        self, block_hashes: Sequence[bytes]
+    ) -> tuple[int, int]:
+        """Returns ``(0, 0)``: block presence is tracked by the remote dKV
+        service, so there is no cheap local index to consult synchronously.
+        Callers treat dKV-resident blocks as misses for counting purposes;
+        the ``load`` path still fetches them normally.
+        """
+        return (0, 0)
 
     def wait_for_loads(self) -> None:
         for client in self._clients:
@@ -903,22 +1089,14 @@ class DKVConnector:
         pass
 
     @property
-    def num_host_blocks(self) -> int:
-        # BlockManager gates the load path on num_host_blocks > 0. dKV capacity
-        # is managed externally by the dKV service.
-        return sys.maxsize
+    def host_block_count(self) -> BlockCount:
+        # BlockManager gates the load path on host_block_count.total > 0. dKV
+        # capacity is managed externally by the dKV service.
+        return BlockCount(free=sys.maxsize, total=sys.maxsize)
 
     @property
-    def num_used_host_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_disk_blocks(self) -> int:
-        return 0
-
-    @property
-    def num_used_disk_blocks(self) -> int:
-        return 0
+    def disk_block_count(self) -> BlockCount:
+        return BlockCount(free=0, total=0)
 
     def reset_metrics(self) -> None:
         """Clear Rust-side transfer counters after the scheduler samples a batch."""
@@ -930,6 +1108,12 @@ class DKVConnector:
         total = KVCacheMetrics()
         for client in self._clients:
             m = client.metrics()
+            # connected and reconnect_attempts are a level and a lifetime
+            # counter read live from the Rust connector, so unlike the sibling
+            # transfer keys they are not cleared by reset_metrics. Fold each
+            # client in as one client contributing its own connected 1 or 0 and
+            # its own reconnect total, so the summed metric reports how many of
+            # the replica clients are up out of the total.
             total = total + KVCacheMetrics(
                 nixl_read_blocks=m["read_blocks"],
                 nixl_write_blocks=m["write_blocks"],
@@ -941,6 +1125,9 @@ class DKVConnector:
                     "write_transfer_latency_total_ms"
                 ],
                 nixl_write_latency_count=m["write_transfer_latency_count"],
+                dkv_connected_clients=1 if m["connected"] else 0,
+                dkv_total_clients=1,
+                dkv_reconnect_attempts=m["reconnect_attempts"],
             )
         return total
 
