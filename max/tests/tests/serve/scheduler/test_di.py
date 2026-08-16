@@ -787,6 +787,71 @@ def test_cancel_pending_prefill_releases_decode_kv_blocks() -> None:
     )
 
 
+def test_cancel_after_prefill_response_defers_release_until_transfer_completes() -> (
+    None
+):
+    """Cancelling with a transfer in flight must defer KV block release
+    until the transfer engine confirms completion. ``is_complete`` is
+    forced ``False`` while cancelling, since real completion can otherwise
+    race the cancel and make this non-deterministic.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    pages_before = decode.kv_cache.block_count(replica_idx=0).used
+
+    q.request_queue.put(ctx)
+    decode.run_iteration()  # sends to prefill
+    prefill.run_iteration()  # prefill runs CE, sends PrefillResponse
+
+    # Decode receives the PrefillResponse: now in both prefill_reqs and
+    # inflight_transfers (dual membership), transfer in flight.
+    run_until(lambda: req_id in decode.inflight_transfers, decode, prefill)
+    assert req_id in decode.prefill_reqs
+
+    # Cancel while the transfer engine still reports it in flight.
+    q.cancel_queue.put([req_id])
+    with patch.object(
+        decode.transfer_engine, "is_complete", return_value=False
+    ):
+        decode.run_iteration()
+
+    # Cancellation must be deferred: still tracked in both dicts, blocks
+    # not yet released, but the client already got its cancelled() result.
+    assert req_id in decode.prefill_reqs
+    assert req_id in decode.inflight_transfers
+    assert req_id in decode.cancelled_reqs
+    pages_while_deferred = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_while_deferred > pages_before, (
+        "Blocks must not be released while the transfer is still in flight"
+    )
+    # The PrefillResponse's own generated-token result was queued before the
+    # cancellation, so scan for the cancelled entry rather than assuming it's
+    # first.
+    all_outputs = []
+    while not q.response_queue.empty():
+        batch = q.response_queue.get()
+        if req_id in batch:
+            all_outputs.append(batch[req_id])
+    assert all_outputs and all_outputs[-1].result is None  # cancelled
+
+    # Pump both schedulers until the transfer actually completes.
+    run_until(lambda: req_id not in decode.inflight_transfers, decode, prefill)
+
+    # Only now must the deferred cleanup have run.
+    assert req_id not in decode.prefill_reqs
+    assert req_id not in decode.cancelled_reqs
+    assert not decode.batch_constructor.contains(req_id)
+    pages_after_completion = decode.kv_cache.block_count(replica_idx=0).used
+    assert pages_after_completion == pages_before, (
+        f"KV blocks leaked after deferred cancel cleanup: had "
+        f"{pages_before} before, {pages_after_completion} after "
+        f"(expected {pages_before})."
+    )
+
+
 def test_stale_prefill_response_after_cancel_does_not_crash() -> None:
     """A PrefillResponse arriving after the request was cancelled must be
     silently discarded, not raise KeyError.
@@ -980,7 +1045,8 @@ def test_multiple_requests_all_transfers_cleaned_up() -> None:
 
 
 def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
-    """A request cancelled while prefill is in-flight does not enter the decode batch."""
+    """A request cancelled mid-prefill never enters the decode batch;
+    prefill_reqs cleanup is deferred until its in-flight transfer completes."""
     decode, prefill, q, ctx = (
         create_default_di_scheduler_and_submit_one_request()
     )
@@ -994,12 +1060,18 @@ def test_cancel_request_mid_prefill_produces_no_decode_output() -> None:
 
     prefill.run_iteration()
 
-    # Decode processes cancel + in-flight prefill response
-    # Request should not enter the decode batch
+    # Decode processes cancel + in-flight prefill response in one tick: the
+    # transfer that response kicked off is still running, so cleanup is
+    # deferred rather than dropped.
     decode.run_iteration()
 
-    # Request must not be in decode batch or prefill_reqs
-    assert req_id not in decode.prefill_reqs
+    assert req_id in decode.prefill_reqs
+    assert req_id in decode.cancelled_reqs
+    assert not decode.batch_constructor.contains(req_id)
+
+    # Once the transfer actually completes, the deferred cleanup runs.
+    run_until(lambda: req_id not in decode.prefill_reqs, decode, prefill)
+    assert req_id not in decode.cancelled_reqs
     assert not decode.batch_constructor.contains(req_id)
 
     # The final response should be the cancelled sentinel
