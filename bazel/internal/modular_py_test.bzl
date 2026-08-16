@@ -12,12 +12,19 @@ load(":py_imports.bzl", "compute_py_imports")
 load(":py_repl.bzl", "py_repl")
 
 def _get_manual_srcs(tags, per_test_tags, srcs):
+    # Srcs that default builds skip, so mypy has to see them via a separate
+    # library. A no-mypy suppression opts out, at either granularity.
+    if "no-mypy" in tags:
+        return []
+
     if "manual" in tags or "postsubmit" in tags:
         return srcs
 
     result = []
     for src in srcs:
         src_tags = per_test_tags.get(src, [])
+        if "no-mypy" in src_tags:
+            continue
         if "manual" in src_tags or "postsubmit" in src_tags:
             result.append(src)
 
@@ -173,6 +180,11 @@ def modular_py_test(
 
     manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
     if manual_srcs:
+        # Non-test srcs are sibling helper modules the manual tests import, so
+        # mypy needs them here too (they're already in manual_srcs when the
+        # whole target is manual).
+        mypy_srcs = manual_srcs + [src for src in non_test_srcs if src not in manual_srcs]
+
         # TODO: Remove once we run mypy-style lints in a separate test target.
         # Raw py_library, not modular_py_library: the latter loads
         # modular_py_test, so depending back on it would cycle.
@@ -185,7 +197,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             testonly = True,
-            srcs = manual_srcs + ["//bazel/internal:pytest_runner"],
+            srcs = mypy_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
             imports = compute_py_imports(native.package_name(), imports),
         )

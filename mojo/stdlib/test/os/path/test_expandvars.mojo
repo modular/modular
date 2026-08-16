@@ -93,6 +93,8 @@ def test_invalid_syntax() raises:
     # Invalid syntax should be written as is.
     assert_equal(expandvars("${}"), "${}")
     assert_equal(expandvars("${"), "${")
+    assert_equal(expandvars("${abc"), "${abc")
+    assert_equal(expandvars("prefix ${abc"), "prefix ${abc")
 
 
 def main() raises:

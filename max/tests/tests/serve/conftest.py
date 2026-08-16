@@ -22,6 +22,7 @@ import pytest
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
+    ModelManifest,
     PipelineConfig,
     PipelineRuntimeConfig,
 )
@@ -67,9 +68,6 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     runtime = PipelineRuntimeConfig.model_construct(
         max_batch_size=1,
     )
-    pipeline_config = PipelineConfig.model_construct(
-        runtime=runtime,
-    )
 
     kv_cache_config = KVCacheConfig.model_construct(
         enable_prefix_caching=enable_prefix_caching,
@@ -79,11 +77,12 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
         served_model_name="echo",
     )
     model_config._huggingface_config = PretrainedConfig()
-
     model_config.kv_cache = kv_cache_config
-    pipeline_config.model = model_config
 
-    return pipeline_config
+    return PipelineConfig.model_construct(
+        runtime=runtime,
+        models=ModelManifest({"main": model_config}),
+    )
 
 
 # simple decorator to make hung test cases fail faster than the bazel 300s timeout

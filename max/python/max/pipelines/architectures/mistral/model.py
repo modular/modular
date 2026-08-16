@@ -19,25 +19,21 @@ from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, Graph, TensorType
+from max.graph import Graph
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    CompilationTimer,
+    GraphPipelineModelWithKVCache,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModelWithKVCache,
 )
-from max.pipelines.lib.utils import (
-    parse_state_dict_from_weights,
-    upper_bounded_default,
-)
-from max.profiler import traced
+from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
+from typing_extensions import override
 
 from .batch_processor import MistralBatchProcessor
 from .distributed_mistral import DistributedMistral
@@ -64,7 +60,7 @@ class MistralInputs(ModelInputs):
     return_n_logits: Buffer
 
 
-class MistralModel(PipelineModelWithKVCache[TextContext]):
+class MistralModel(GraphPipelineModelWithKVCache[TextContext]):
     model_config_cls: ClassVar[type[Any]] = MistralConfig
     batch_processor_cls: ClassVar[type[MistralBatchProcessor]] = (
         MistralBatchProcessor
@@ -136,37 +132,55 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         assert self.batch_processor is not None
         return self.batch_processor.process_outputs(model_outputs)
 
-    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
-        assert self.batch_processor is not None
-        return tuple(
-            self.batch_processor.get_symbolic_inputs(
-                kv_params=self.kv_params,
-                device_refs=self.device_refs,
+    @override
+    def load_model(self, session: InferenceSession) -> Model:
+        if self.pipeline_config.model.enable_echo:
+            raise ValueError(
+                "Mistral model does not currently implement enable echo."
             )
-        )
+        return super().load_model(session)
 
-    @traced
-    def _build_graph(
-        self, weights: Weights, adapter: WeightsAdapter | None = None
-    ) -> Graph:
-        text_config = getattr(
+    @override
+    def _load_state_dict(self) -> dict[str, Any]:
+        if not isinstance(self.weights, SafetensorWeights):
+            raise ValueError(
+                "only safetensors weights are currently supported in Mistral models."
+            )
+        return super()._load_state_dict()
+
+    @override
+    def _hf_config_for_weights(self) -> AutoConfig | None:
+        return getattr(
             self.huggingface_config, "text_config", self.huggingface_config
         )
-        state_dict = parse_state_dict_from_weights(
-            self.pipeline_config,
-            weights,
-            adapter,
-            hf_config=text_config,
-        )
 
+    @override
+    def _create_model_config(self, state_dict: dict[str, Any]) -> MistralConfig:
+        del state_dict
+        text_config = self._hf_config_for_weights()
+        assert text_config is not None
         model_config = MistralConfig.initialize_from_config(
             self.pipeline_config,
             text_config,
         )
         model_config.return_logits = self.return_logits
+        return model_config
 
-        # Get Graph Inputs
-        graph_inputs = self.graph_inputs()
+    @override
+    def _build_graph_for_compile(
+        self,
+        session: InferenceSession,
+        state_dict: dict[str, Any],
+        model_config: MistralConfig,
+    ) -> tuple[Graph, dict[str, Any]]:
+        del session
+        assert self.batch_processor is not None
+        graph_inputs = tuple(
+            self.batch_processor.get_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_refs=self.device_refs,
+            )
+        )
 
         # Build Graph
         nn_model: Module
@@ -177,7 +191,7 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 weight_alignment=1,
                 strict=False,  # TODO(MODELS-551) vision tower weights not used
             )
-            self.state_dict = nn_model.state_dict()
+            weights_registry = nn_model.state_dict()
 
             with Graph("mistral", input_types=[*graph_inputs]) as graph:
                 tokens, input_row_offsets, return_n_logits, *variadic_args = (
@@ -203,49 +217,26 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 )
 
                 graph.output(*outputs)
-                return graph
+                return graph, weights_registry
 
-        else:
-            nn_model = Mistral(model_config)
-            nn_model.load_state_dict(
-                state_dict,
-                weight_alignment=1,
-                strict=False,  # TODO(MODELS-551) vision tower weights not used
+        nn_model = Mistral(model_config)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=False,  # TODO(MODELS-551) vision tower weights not used
+        )
+        weights_registry = nn_model.state_dict()
+
+        with Graph("mistral", input_types=graph_inputs) as graph:
+            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                graph.inputs
             )
-            self.state_dict = nn_model.state_dict()
-
-            with Graph("mistral", input_types=graph_inputs) as graph:
-                tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
-                    graph.inputs
-                )
-                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
-                outputs = nn_model(
-                    tokens.tensor,
-                    kv_collections[0],
-                    return_n_logits.tensor,
-                    input_row_offsets.tensor,
-                )
-                graph.output(*outputs)
-                return graph
-
-    @traced
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
-        if self.pipeline_config.model.enable_echo:
-            raise ValueError(
-                "Mistral model does not currently implement enable echo."
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+            outputs = nn_model(
+                tokens.tensor,
+                kv_collections[0],
+                return_n_logits.tensor,
+                input_row_offsets.tensor,
             )
-
-        if not isinstance(self.weights, SafetensorWeights):
-            raise ValueError(
-                "only safetensors weights are currently supported in Mistral models."
-            )
-
-        with CompilationTimer("model") as timer:
-            graph = self._build_graph(self.weights, self.adapter)
-            timer.mark_build_complete()
-            model = session.load(graph, weights_registry=self.state_dict)
-
-        return model
+            graph.output(*outputs)
+            return graph, weights_registry

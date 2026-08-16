@@ -35,8 +35,8 @@ _EXAMPLE_REPO_IDS = [
 llama4_arch = SupportedArchitecture(
     name="Llama4ForCausalLM",
     example_repo_ids=_EXAMPLE_REPO_IDS,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float8_e4m3fn"},
+    default_encoding=Llama4Config.DEFAULT_ENCODING,
+    supported_encodings=Llama4Config.SUPPORTED_ENCODINGS,
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
@@ -49,7 +49,6 @@ llama4_arch = SupportedArchitecture(
     # ``--no-device-graph-capture`` until the kernel gains stream-capture
     # support.
     supports_device_graph_capture=False,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
@@ -59,8 +58,8 @@ llama4_arch = SupportedArchitecture(
 llama4_conditional_arch = SupportedArchitecture(
     name="Llama4ForConditionalGeneration",
     example_repo_ids=_EXAMPLE_REPO_IDS,
-    default_encoding="bfloat16",
-    supported_encodings={"bfloat16", "float8_e4m3fn"},
+    default_encoding=Llama4Config.DEFAULT_ENCODING,
+    supported_encodings=Llama4Config.SUPPORTED_ENCODINGS,
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextTokenizer,
@@ -73,7 +72,6 @@ llama4_conditional_arch = SupportedArchitecture(
     # ``--no-device-graph-capture`` until the kernel gains stream-capture
     # support.
     supports_device_graph_capture=False,
-    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

@@ -30,9 +30,9 @@ def trmm[
     B: LayoutTensor[dtype, element_layout=element_layout, ...],
     C: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
-    m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
-    k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
-    min_kn = min(k, n)
+    var m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
+    var k, n = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
+    var min_kn = min(k, n)
     if k1 < min_kn:
         abort("trmm: A and B must have the at least the same number of columns")
     # C.fill(0.0) doesn't work
@@ -53,8 +53,8 @@ def a_mul_bt[
     B: LayoutTensor[dtype, element_layout=element_layout, ...],
     C: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
-    m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
-    n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
+    var m, k1 = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
+    var n, k = Int(B.runtime_layout.shape[0]), Int(B.runtime_layout.shape[1])
     if k1 != k:
         abort("a_mul_bt: A and B must have the same number of columns")
     # C.fill(0.0) doesn't work
@@ -75,10 +75,10 @@ def all_almost_id[
     atol: Float64,
     rtol: Float64,
 ) raises:
-    m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
+    var m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     for i in range(m):
         for j in range(n):
-            reference = SIMD[dtype, A.element_layout.size()](
+            var reference = SIMD[dtype, A.element_layout.size()](
                 1.0 if i == j else 0.0
             )
             assert_almost_equal(A[i, j], reference, atol=atol, rtol=rtol)
@@ -114,10 +114,10 @@ def create_tensor[
 
 
 def main() raises:
-    atol = 1e-5
-    rtol = 1e-3
-    m, n = 80, 50
-    min_mn = min(m, n)
+    var atol = 1e-5
+    var rtol = 1e-3
+    var m, n = 80, 50
+    var min_mn = min(m, n)
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime v_layout = Layout(UNKNOWN_VALUE)
     comptime T = Float32

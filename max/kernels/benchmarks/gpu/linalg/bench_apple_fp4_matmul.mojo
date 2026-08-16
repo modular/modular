@@ -31,7 +31,7 @@ Warmup + hot timing loops, mirroring `bench_apple_gpu_matmul.mojo`.
 """
 
 from std.sys.info import _accelerator_arch
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.os import getenv
 from std.time import perf_counter
 
@@ -131,7 +131,7 @@ def _bench_fp4_shape(
 
     # --- fused: the cooperative-SMEM kernel directly (BM/BK by M, like the
     # dispatch: BM=128/BK=64 for M>=256, BM=64/BK=32 below). ---
-    @parameter
+    @__parameter
     def _run_fused() raises:
         if m >= 256:
             _launch_apple_fp4_matmul[

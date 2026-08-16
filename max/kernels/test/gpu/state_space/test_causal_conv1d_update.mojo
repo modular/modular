@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -231,11 +231,11 @@ def run_causal_conv1d_update_gpu[
             ]()
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                state_len,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
+                Int32(state_len),
                 input_device_tt,
                 conv_state_device_tt,
                 weight_device_tt,
@@ -272,11 +272,11 @@ def run_causal_conv1d_update_gpu[
             ]()
             ctx.enqueue_function(
                 compiled_func,
-                batch,
-                dim,
-                seqlen,
-                width,
-                state_len,
+                Int32(batch),
+                Int32(dim),
+                Int32(seqlen),
+                Int32(width),
+                Int32(state_len),
                 input_device_tt,
                 conv_state_device_tt,
                 weight_device_tt,

@@ -25,7 +25,7 @@ from std.math import ceildiv
 from std.memory import bitcast
 from std.random import random_float64, random_ui64
 from std.sys.info import _accelerator_arch
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32
@@ -76,9 +76,7 @@ def test_mxfp4_matmul[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            UInt8(random_ui64(125, 129))
-        )
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -210,9 +208,7 @@ def test_mxfp4_matmul_e2e[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            UInt8(random_ui64(125, 129))
-        )
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
 
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
@@ -351,7 +347,7 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
     for i in range(N * packed_K):
         bp_hbuf[i] = b_packed_host[i]
     for i in range(N * scale_K):
-        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](b_scales_host[i])
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](b_scales_host[i])
     ctx.enqueue_copy(bp_device, bp_hbuf)
     ctx.enqueue_copy(bs_device, bs_hbuf)
     ctx.synchronize()
@@ -432,9 +428,7 @@ def test_fp8_kernel_vs_blas[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            UInt8(random_ui64(125, 129))
-        )
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(random_ui64(125, 129)))
     ctx.enqueue_copy(b_scales, bs_hbuf)
     ctx.synchronize()
 

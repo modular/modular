@@ -13,6 +13,30 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_config_init",
+    srcs = ["test_config_init.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
+)
+
+modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     tags = [

@@ -25,7 +25,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from extensibility import register
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from extensibility import (
     InputTensor,
     OutputTensor,
@@ -47,7 +47,7 @@ struct Grayscale:
         img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def color_to_grayscale[
             simd_width: Int
@@ -82,7 +82,7 @@ struct MyAdd:
         B: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def doit[simd_width: Int](idx: Coord) -> SIMD[C.dtype, simd_width]:
             var a = A.load[simd_width](idx)
@@ -102,7 +102,7 @@ struct ParameterIncrement:
         A: InputTensor[dtype=type, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        @parameter
+        @__parameter
         @always_inline
         def doit[simd_width: Int](idx: Coord) -> SIMD[B.dtype, simd_width]:
             var a = A.load[simd_width](idx)
@@ -137,7 +137,7 @@ struct UnsupportedTypeOp:
     ) raises:
         # This operation is for testing error handling only
         # The String parameter should cause a validation error
-        @parameter
+        @__parameter
         @always_inline
         def copy[simd_width: Int](idx: Coord) -> SIMD[output.dtype, simd_width]:
             return input.load[simd_width](idx)

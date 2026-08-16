@@ -12,17 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, Literal
 
 from max.graph.weights import WeightData
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 
 
 @dataclass(kw_only=True)
 class OlmoConfig(Llama3Config):
     """Model configuration for Olmo graph construction/execution."""
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float32"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float32",
+        "bfloat16",
+    }
 
     def finalize(
         self,

@@ -36,7 +36,7 @@ count when (BN//2)*BK0 == BK1*(ov_depth//4).
 """
 
 from std.sys import size_of
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from layout.tma_async import SharedMemBarrier
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -164,7 +164,12 @@ struct Depth512AttentionSMem[
     def o_smem[
         output_type: DType,
     ](self) -> SharedMemPointer[Scalar[output_type]]:
-        """Same physical memory as Q, bitcast to the output element type."""
+        """Same physical memory as Q, bitcast to the output element type.
+
+        Parameters:
+            output_type: Element type to reinterpret the Q region memory
+                as when returning the output pointer.
+        """
         return (self.base + Self.q_byte_offset).bitcast[Scalar[output_type]]()
 
     @always_inline

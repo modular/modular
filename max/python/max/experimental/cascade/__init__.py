@@ -23,12 +23,12 @@ from max.experimental.cascade.core import (
     worker_method,
 )
 from max.experimental.cascade.core.local_runtime import LocalRuntime
-from max.experimental.cascade.pipelines import CascadePipeline
-from max.experimental.cascade.pipelines.imgen import (
+from max.experimental.cascade.interfaces.imgen import (
     ImageGenInterface,
     ImageGenRequest,
 )
-from max.experimental.cascade.pipelines.textgen import (
+from max.experimental.cascade.interfaces.pipeline import CascadePipeline
+from max.experimental.cascade.interfaces.textgen import (
     ChatMessages,
     GenerateRequest,
     TextGenInterface,

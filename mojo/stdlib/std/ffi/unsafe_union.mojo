@@ -27,11 +27,10 @@ type-checked sum types.
 
 from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, Named, TypeNames
-from std.memory import (
-    UnsafePointer,
-    is_trivially_copyable,
-    is_trivially_deletable,
-    is_trivially_movable,
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
 )
 from std.sys import align_of, size_of
 
@@ -47,43 +46,10 @@ def _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    comptime for i in range(Ts.size):
-        comptime for j in range(i + 1, Ts.size):
+    comptime for i in range(Ts.length):
+        comptime for j in range(i + 1, Ts.length):
             if Ts[i] == Ts[j]:
                 return False
-    return True
-
-
-def _all_trivial_del[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial destructors."""
-
-    comptime for i in range(Ts.size):
-        if not is_trivially_deletable[Ts[i]]():
-            return False
-    return True
-
-
-def _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial copy constructors."""
-
-    comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], Copyable):
-            if not is_trivially_copyable[Ts[i]]():
-                return False
-        else:
-            return False
-    return True
-
-
-def _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    """Check if all types have trivial move constructors."""
-
-    comptime for i in range(Ts.size):
-        comptime if conforms_to(Ts[i], Movable):
-            if not is_trivially_movable[Ts[i]]():
-                return False
-        else:
-            return False
     return True
 
 
@@ -96,18 +62,18 @@ def _check_union_types[*Ts: AnyType]():
     - All types must be unique (no duplicates)
     - All types must have trivial copy, move, and destroy operations
     """
-    comptime assert Ts.size > 0, "UnsafeUnion requires at least one type"
+    comptime assert Ts.length > 0, "UnsafeUnion requires at least one type"
     comptime assert _all_types_unique[
         *Ts
     ](), "UnsafeUnion requires all types to be unique"
-    comptime assert _all_trivial_del[
-        *Ts
+    comptime assert Ts.all[
+        IsTriviallyDeinitable
     ](), "UnsafeUnion requires all types to have trivial destructors"
-    comptime assert _all_trivial_copyinit[
-        *Ts
+    comptime assert Ts.all[
+        IsTriviallyCopyable
     ](), "UnsafeUnion requires all types to have trivial copy constructors"
-    comptime assert _all_trivial_moveinit[
-        *Ts
+    comptime assert Ts.all[
+        IsTriviallyMovable
     ](), "UnsafeUnion requires all types to have trivial move constructors"
 
 
@@ -247,10 +213,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
             move: The union to move from.
         """
         # Bitwise move of the raw storage
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = move._storage
 
-    # Note: No __del__ - UnsafeUnion doesn't know what type is stored, so it
+    # Note: No __deinit__ - UnsafeUnion doesn't know what type is stored, so it
     # cannot call destructors. Users must manually manage destruction if needed.
     # For trivial types (integers, floats, pointers) this is fine.
 
@@ -261,18 +226,16 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     @always_inline("nodebug")
     def _get_ptr[
         origin: Origin, address_space: AddressSpace, //, T: AnyType
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         T, origin, address_space=address_space
     ]:
         """Get a pointer to the storage interpreted as type T."""
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        var ptr = UnsafePointer(to=self._storage)._get_kgen_pointer()
+        var ptr = Pointer(to=self._storage)._get_kgen_pointer()
         var typed_ptr = __mlir_op.`pop.union.bitcast`[
-            _type=UnsafePointer[
-                T, origin, address_space=address_space
-            ]._mlir_type,
+            _type=Pointer[T, origin, address_space=address_space]._mlir_type,
         ](ptr)
         return {_mlir_value = typed_ptr}
 
@@ -378,7 +341,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         comptime assert Self._is_element[
             T
         ](), "type is not a union element type"
-        return self._get_ptr[T]().take_pointee()
+        return self._get_ptr[T]().unsafe_take_pointee()
 
     @always_inline("nodebug")
     def unsafe_set[T: Movable](mut self, var value: T):
@@ -411,7 +374,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     @always_inline("nodebug")
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //, T: AnyType
-    ](ref[origin, address_space] self) -> UnsafePointer[
+    ](ref[origin, address_space] self) -> Pointer[
         T, origin, address_space=address_space
     ]:
         """Get a pointer to the storage interpreted as type T.

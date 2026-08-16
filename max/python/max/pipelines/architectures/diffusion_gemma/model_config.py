@@ -23,7 +23,7 @@ read-only config view, and adds the block-diffusion fields (``canvas_length``).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from max.graph.weights import WeightData
 from max.nn.transformer import ReturnLogits
@@ -31,6 +31,7 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.lib import PipelineConfig
+from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -92,6 +93,12 @@ class DiffusionGemmaForBlockDiffusionConfig(
     sizing, and the vision tower config are all inherited from the donor,
     which reads them through the view installed by ``initialize_from_config``.
     """
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float4_e2m1fnx2"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float4_e2m1fnx2",
+        "bfloat16",
+    }
 
     canvas_length: int = 256
     """Number of tokens denoised per block-diffusion canvas."""
