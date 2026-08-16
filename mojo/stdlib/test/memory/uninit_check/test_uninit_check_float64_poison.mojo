@@ -13,11 +13,11 @@
 # Tests that loading a Float64 with the debug allocator poison pattern
 # (largest finite value, DBL_MAX = 0x7FEFFFFFFFFFFFFF) triggers abort.
 
-from std.memory import UnsafePointer
+from std.memory import Pointer
 
 
 # CHECK: UNINIT_READ at {{.*}}: dtype={{.*}}: load matched debug allocator poison sentinel
 def main():
     var value = UInt64(0x7FEFFFFFFFFFFFFF)
-    var ptr = UnsafePointer(to=value).bitcast[Float64]()
-    _ = ptr.load()
+    var ptr = Pointer(to=value).unsafe_bitcast[Float64]()
+    _ = ptr.unsafe_load()

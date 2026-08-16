@@ -200,7 +200,7 @@ def write_repr_to(self, mut writer: Some[Writer]):
 ```
 
 ```mojo
-c = Complex(3.14, -2.72)
+var c = Complex(3.14, -2.72)
 print(c)        # (3.14 - 2.72i)
 print(repr(c))  # Complex(re = 3.14, im = -2.72)
 ```
@@ -220,7 +220,7 @@ def __neg__(self) -> Self:
 
 ...
 
-c = Complex(-1.2, 6.5)
+var c = Complex(-1.2, 6.5)
 print(+c)  # (-1.2 + 6.5i)
 print(-c)  # (1.2 - 6.5i)
 ```
@@ -245,7 +245,7 @@ instance:
         )
 
     def __truediv__(self, rhs: Self) -> Self:
-        denom = rhs.squared_norm()
+        var denom = rhs.squared_norm()
         return Self(
             (self.re * rhs.re + self.im * rhs.im) / denom,
             (self.im * rhs.re - self.re * rhs.im) / denom,
@@ -259,8 +259,8 @@ instance:
 ```
 
 ```mojo
-c1 = Complex(-1.2, 6.5)
-c2 = Complex(3.14, -2.72)
+var c1 = Complex(-1.2, 6.5)
+var c2 = Complex(3.14, -2.72)
 print(c1 + c2)  # (1.94 + 3.78i)
 print(c1 * c2)  # (13.91 + 23.67i)
 ```
@@ -297,7 +297,7 @@ because `Float64` doesn't know about `Complex`:
         return Self(self.re / rhs, self.im / rhs)
 
     def __rtruediv__(self, lhs: Float64) -> Self:
-        denom = self.squared_norm()
+        var denom = self.squared_norm()
         return Self(
             (lhs * self.re) / denom,
             (-lhs * self.im) / denom,
@@ -307,7 +307,7 @@ because `Float64` doesn't know about `Complex`:
 Now both orderings work:
 
 ```mojo
-c = Complex(-1.2, 6.5)
+var c = Complex(-1.2, 6.5)
 print(c + 2.5)    # (1.3 + 6.5i)
 print(2.5 + c)    # (1.3 + 6.5i)
 print(2.5 * c)    # (-3.0 + 16.25i)
@@ -357,7 +357,7 @@ a new value. You can overload for both `Complex` and
 
 ...
 
-c = Complex(-1.0, -1.0)
+var c = Complex(-1.0, -1.0)
 c += Complex(0.5, -0.5)
 print(c)       # (-0.5 - 1.5i)
 c += 2.75
@@ -384,9 +384,9 @@ in mind that, because a floating-point `NaN` never equals itself, a `Complex`
 holding a `NaN` won't equal itself either.)
 
 ```mojo
-c1 = Complex(-1.2, 6.5)
-c2 = Complex(-1.2, 6.5)
-c3 = Complex(3.14, -2.72)
+var c1 = Complex(-1.2, 6.5)
+var c2 = Complex(-1.2, 6.5)
+var c3 = Complex(3.14, -2.72)
 print(c1 == c2)  # True
 print(c1 != c3)  # True
 ```
@@ -405,8 +405,8 @@ component is nonzero:
 ```
 
 ```mojo
-c1 = Complex(0.0, 0.0)
-c2 = Complex(-1.2, 6.5)
+var c1 = Complex(0.0, 0.0)
+var c2 = Complex(-1.2, 6.5)
 print(Bool(c1))  # False
 print(Bool(c2))  # True
 
@@ -438,7 +438,7 @@ is index 0, and index 1 returns the imaginary component:
 
 ...
 
-c = Complex(3.14)
+var c = Complex(3.14)
 print(c[0], c[1])  # 3.14 0.0
 c[1] = 42.0
 print(c)            # (3.14 + 42.0i)

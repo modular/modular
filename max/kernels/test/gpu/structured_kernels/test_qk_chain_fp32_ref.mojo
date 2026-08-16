@@ -56,8 +56,9 @@ If FP8 fails -> K loader / mma_QK chain is wrong. The mismatch pattern
 ((m, n) positions, sign of error) localizes which loader is at fault.
 """
 
-from std.gpu import lane_id, thread_idx, barrier
-from std.gpu.host import DeviceContext
+from std.gpu import lane_id, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.memory import AddressSpace
 from std.testing import assert_true
 
@@ -155,7 +156,7 @@ def kernel_qk_chain[
     comptime _smem_total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _smem_total:
-        k_smem.ptr[i] = src_k_swz_ptr[i]
+        k_smem._storage[i] = src_k_swz_ptr[i]
         i += 64
     barrier()
 

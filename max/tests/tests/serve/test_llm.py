@@ -53,6 +53,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
+from max.serve.telemetry.stopwatch import StopWatch
 
 logger = logging.getLogger(__name__)
 
@@ -255,10 +256,12 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
@@ -269,7 +272,7 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
 
     # Mock request
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = []
 
     # Create pipeline mock - Mock() auto-generates nested attributes
@@ -326,6 +329,84 @@ async def test_ttft_recorded_once_per_chunk() -> None:
     mock_metrics.input_tokens.assert_not_called()
 
 
+async def _recorded_ttft_ms(timestamp_ns: int) -> float:
+    """Run a one-chunk pipeline for a request that arrived at ``timestamp_ns``."""
+    mock_metrics = MagicMock()
+    test_request_id = RequestID(value="test-request")
+
+    async def mock_stream(
+        request_id: str, context: Any
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[101],
+                        final_status=GenerationStatus.END_OF_SEQUENCE,
+                    )
+                ],
+                0,
+            )
+
+        return _gen()
+
+    mock_tokens = Mock()
+    mock_tokens.prompt_length = 10
+    mock_request = Mock(
+        request_id=test_request_id, tools=None, timestamp_ns=timestamp_ns
+    )
+    mock_request.sampling_params.stop = []
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(
+        return_value=Mock(request_id=test_request_id, tokens=mock_tokens)
+    )
+    pipeline.tokenizer.decode = AsyncMock(return_value="chunk_text")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._min_chunk_tokens = 1
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+
+    with patch("max.serve.pipelines.llm.METRICS", mock_metrics):
+        bound = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        _ = [chunk async for chunk in await bound(mock_request)]
+
+    (ttft_value,) = mock_metrics.ttft.call_args.args
+    assert isinstance(ttft_value, float)
+    return ttft_value
+
+
+@pytest.mark.asyncio
+async def test_ttft_measured_from_request_arrival() -> None:
+    """TTFT covers the pre-pipeline work the HTTP layer did (MXSERV-336).
+
+    ``timestamp_ns`` is stamped by the request middleware before the body is
+    parsed, so time spent in parsing, validation and media resolution belongs
+    in TTFT rather than being dropped by starting the clock at pipeline entry.
+    """
+    pre_pipeline_ms = 500.0
+    ttft_ms = await _recorded_ttft_ms(
+        StopWatch.time_ns() - int(pre_pipeline_ms * 1e6)
+    )
+    assert ttft_ms >= pre_pipeline_ms
+
+
+@pytest.mark.asyncio
+async def test_ttft_falls_back_to_pipeline_entry_without_arrival_time() -> None:
+    """Offline callers leave ``timestamp_ns`` at 0, so TTFT starts at entry.
+
+    ``StopWatch`` treats a zero start as "not started" and raises, so the
+    unset default must not reach it.
+    """
+    ttft_ms = await _recorded_ttft_ms(0)
+    assert 0.0 <= ttft_ms < 1000.0
+
+
 @pytest.mark.asyncio
 async def test_tpot_not_recorded_for_single_token() -> None:
     """TPOT is skipped when only one token is generated (no decode span).
@@ -346,17 +427,19 @@ async def test_tpot_not_recorded_for_single_token() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
     mock_tokens = Mock()
     mock_tokens.prompt_length = 10
     mock_context = Mock(request_id=test_request_id, tokens=mock_tokens)
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = []
 
     pipeline = Mock()
@@ -401,10 +484,12 @@ async def _run_reasoning_pipeline(
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
             for response in scheduler_responses:
-                yield [response]
+                yield [response], None
 
         return _gen()
 
@@ -414,7 +499,7 @@ async def _run_reasoning_pipeline(
     )
     mock_tokens.prompt_length = 10
 
-    mock_request = Mock(request_id=test_request_id, tools=None)
+    mock_request = Mock(request_id=test_request_id, tools=None, timestamp_ns=0)
     mock_request.sampling_params.stop = stop or []
 
     pipeline = Mock()
@@ -543,7 +628,8 @@ async def test_delimiter_only_generation_reports_prompt_and_cached_tokens() -> (
     None
 ):
     """A generation whose only token is a stripped reasoning delimiter must
-    still carry the prompt and cached token counts on its terminal chunk.
+    still carry the prompt and cached token counts on its terminal chunk, and
+    must still bill for the delimiter token itself.
 
     With max_tokens=1 a reasoning model's single generated token is often the
     think-start delimiter; the parser strips it, so the terminal chunk is the
@@ -552,12 +638,18 @@ async def test_delimiter_only_generation_reports_prompt_and_cached_tokens() -> (
     cached_token_count the prefix-cache hits never surface either. Because
     this terminal chunk is the first chunk, it carries num_cached_tokens the
     same way the regular first-chunk path does.
+
+    The delimiter token was still generated and spent the max_tokens budget,
+    so it must count toward completion_tokens as a reasoning token -- reporting
+    token_count=0 with no reasoning_token_count under-bills the request
+    (CENG-932).
     """
     chunks = await _run_reasoning_pipeline(
         _make_responses([[THINK_START_TOKEN_ID]], num_cached_tokens=7)
     )
     assert len(chunks) == 1
     assert chunks[0].token_count == 0
+    assert chunks[0].reasoning_token_count == 1
     assert chunks[0].prompt_token_count == 10
     assert chunks[0].cached_token_count == 7
 
@@ -666,15 +758,20 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
 
     async def mock_stream(
         request_id: str, context: Any
-    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
-        async def _gen() -> AsyncGenerator[list[TextGenerationOutput], None]:
-            yield [
-                TextGenerationOutput(
-                    request_id=test_request_id,
-                    tokens=[10],
-                    final_status=GenerationStatus.ACTIVE,
-                )
-            ]
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=test_request_id,
+                        tokens=[10],
+                        final_status=GenerationStatus.ACTIVE,
+                    )
+                ],
+                None,
+            )
 
         return _gen()
 
@@ -697,6 +794,7 @@ async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
     mock_request = Mock(
         request_id=test_request_id,
         tools=None,
+        timestamp_ns=0,
         sampling_params=Mock(stop=["stop_word"]),
     )
 

@@ -112,19 +112,19 @@ def static_conv(
 def test_static_conv() raises:
     print("== test_static_conv")
 
-    var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
+    var output_stack = Array[Scalar[value_type], N * HO * WO * F](
         uninitialized=True
     )
     var output = LayoutTensor[value_type, Layout.row_major(N, HO, WO, F)](
         output_stack
     ).fill(0.0)
-    var input_stack = InlineArray[Scalar[value_type], N * H * W * C](
+    var input_stack = Array[Scalar[value_type], N * H * W * C](
         uninitialized=True
     )
     var input = LayoutTensor[value_type, Layout.row_major(N, H, W, C)](
         input_stack
     ).fill(1.0)
-    var filter_stack = InlineArray[
+    var filter_stack = Array[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](uninitialized=True)
     var filter = LayoutTensor[

@@ -20,6 +20,7 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/benchmark/benchmark_shared:model_csv",
         "//max/python/max/profiler",
         requirement("cyclopts"),
         requirement("jinja2"),
@@ -31,7 +32,15 @@ modular_py_library(
         requirement("tiktoken"),
         requirement("transformers"),
         requirement("requests"),
-        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_binary(
+    name = "results_to_csv",
+    srcs = ["results_to_csv.py"],
+    main = "results_to_csv.py",
+    deps = [
+        "//max/python/max/benchmark/benchmark_shared:model_csv",
     ],
 )
 

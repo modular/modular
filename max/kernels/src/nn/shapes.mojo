@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides output-shape computation utilities for sliding-window operations such as pooling and convolution."""
 
 from std.math import ceildiv
 from std.math.uutils import ufloordiv, umod
@@ -22,7 +23,7 @@ from layout import Coord, CoordLike
 #
 # The static-folding counterpart of
 # `_get_start_indices_of_nth_subvolume[subvolume_rank](n, shape)`
-# (`std.algorithm.functional`): same semantics for every `subvolume_rank` (the
+# (`max.algorithm.functional`): same semantics for every `subvolume_rank` (the
 # trailing `subvolume_rank` dims are the subvolume set by the caller; dims
 # `1..rank-subvolume_rank-1` are decomposed; dim 0 is the final quotient), and
 # bit-identical to it for the shapes that reach it. The difference is only in
@@ -34,7 +35,7 @@ from layout import Coord, CoordLike
 # literal, so the `divmod` strength-reduces to a magic-multiply + shift
 # (verified: SASS `IMAD.HI`/`SHF`, no `IDIV`/`MUFU.RCP`) instead of the runtime
 # Newton-reciprocal divide that an `IndexList` divisor forces. Dynamic dims fall
-# back to the runtime value carried in the `Coord`, matching the stdlib baseline.
+# back to the runtime value carried in the `Coord`, matching the MAX baseline.
 #
 # The flat index `n` stays runtime, so the *result* indices are runtime; only
 # the DIVISORS fold. `rank` and the static dims are inferred from the `Coord`

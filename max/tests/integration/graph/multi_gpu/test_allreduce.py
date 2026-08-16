@@ -609,14 +609,7 @@ def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
         h = [input_tensor.to(DeviceRef.GPU(i)) for i in range(num_gpus)]
 
         # Build and invoke transformer block as a subgraph
-        subgraph_input_types = [
-            TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
-            for i in range(num_gpus)
-        ] + list(signals.input_types())
-
-        subgraph = model.build_subgraph(
-            "transformer_block", subgraph_input_types
-        )
+        subgraph = model.build_subgraph("transformer_block", [*h, *signal_bufs])
 
         results = ops.call(subgraph, *h, *signal_bufs)
         graph.output(*[r.tensor for r in results])

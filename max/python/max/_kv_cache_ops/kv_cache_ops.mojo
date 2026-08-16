@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.memory import OpaquePointer
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 
@@ -44,7 +44,7 @@ def PyInit_kv_cache_ops() abi("C") -> PythonObject:
         abort(t"failed to create kv cache op bindings module: {e}")
 
 
-def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
+def _make_int_list(values: Array[Int, 3]) -> PythonObject:
     ref cpython = Python().cpython()
     var result_py_list = cpython.PyList_New(len(values))
     for i in range(len(values)):
@@ -131,7 +131,7 @@ def mla_dispatch_args_scalar(
         is_fp8_kv,
         device_ctx,
     )
-    var result = InlineArray[Int, 3](uninitialized=True)
+    var result = Array[Int, 3](uninitialized=True)
     result[0] = scalars[0]
     result[1] = scalars[1]
     result[2] = scalars[2]
