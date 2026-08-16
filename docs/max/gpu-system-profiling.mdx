@@ -21,16 +21,16 @@ An AI coding agent can run this for you with the `profile-model` skill, which
 automates the same workflow: a GPU utilization check, then a kernel breakdown,
 then a single-kernel deep dive. It works on NVIDIA or AMD GPUs and for any model
 MAX can run, including custom architectures loaded with
-`--custom-architectures`. See [Modular skills](/max/coding-assistants#skills) to
+`--custom-architectures`. See [Modular skills](/coding-assistants#skills) to
 install it.
 
 <img src={require('./images/nsight-systems.png').default} alt="" />
 
 ## Requirements
 
-- [NVIDIA GPU compatible with MAX](/max/packages#gpu-compatibility)
+- [NVIDIA GPU compatible with MAX](/packages#gpu-compatibility)
 - [NVIDIA driver version compatible with
-  MAX](/max/packages#gpu-software-requirements)
+  MAX](/packages#gpu-software-requirements)
 
 ### Verify your `nsys` installation
 
@@ -61,8 +61,8 @@ sudo apt-get install nsight-systems
 
 ## Quickly profile with `--profile`
 
-For a one-command introduction to profiling, [`max generate`](/max/cli/generate)
-and [`max benchmark`](/max/cli/benchmark) accept a `--profile` flag. When
+For a one-command introduction to profiling, [`max generate`](/cli/generate)
+and [`max benchmark`](/cli/benchmark) accept a `--profile` flag. When
 Nsight Systems is available, the timed run is captured into an `.nsys-rep`
 file and a ranked top-N GPU kernel summary is printed to your terminal:
 
@@ -117,7 +117,7 @@ described in the rest of this page.
 When profiling code built with MAX, you have to explicitly enable profiling by
 setting the `MODULAR_ENABLE_PROFILING` environment variable to `detailed` or by
 calling
-[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
+[`InferenceSession.gpu_profiling()`](/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
 before you load your model.
 
 In most cases, you'll probably use `MODULAR_ENABLE_PROFILING` so you don't have
@@ -170,8 +170,8 @@ ready to run inference.
 
 For example, here's how to profile a benchmark workload:
 
-1. Make sure you're in a project environment with [the `modular` package
-installed](/max/packages#install).
+1. Make sure you're in a project environment with [the `max[all]` or
+`max[benchmark]` package installed](/packages#install).
 
 2. The next step deploys Google Gemma 3, so in order for MAX to download the
 model weights, you must first agree to the [Gemma 3
@@ -182,7 +182,7 @@ Token](https://huggingface.co/settings/tokens):
     export HF_TOKEN="hf_..."
     ```
 
-3. Start the MAX server ([`max serve`](/max/cli/serve)) with `nsys launch`
+3. Start the MAX server ([`max serve`](/cli/serve)) with `nsys launch`
 (this doesn't start profiling yet):
 
     ```bash
@@ -217,7 +217,7 @@ Token](https://huggingface.co/settings/tokens):
     Collecting data...
     ```
 
-6. In the second terminal, use [`max benchmark`](/max/cli/benchmark) to
+6. In the second terminal, use [`max benchmark`](/cli/benchmark) to
 run a benchmark workload:
 
     ```bash
@@ -287,8 +287,8 @@ Guide](https://docs.nvidia.com/nsight-systems/AnalysisGuide/index.html).
 Enable MAX profiling markers with the `MODULAR_ENABLE_PROFILING` environment
 variable (recommended): it needs no code or command changes and applies to any
 MAX process, including one launched under `nsys`. The
-[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
-method and the `--gpu-profiling` option for [`max serve`](/max/cli/serve) are
+[`InferenceSession.gpu_profiling()`](/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
+method and the `--gpu-profiling` option for [`max serve`](/cli/serve) are
 alternatives that override the environment variable when set.
 
 ### Enable profiling with an environment variable
@@ -312,7 +312,7 @@ MODULAR_ENABLE_PROFILING=detailed \
 ### Enable profiling with Python
 
 You can enable MAX profiling markers from Python by calling the
-[`InferenceSession.gpu_profiling()`](/max/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
+[`InferenceSession.gpu_profiling()`](/api/python/generated/max.engine.InferenceSession#max.engine.InferenceSession.gpu_profiling)
 method before you load your model:
 
 ```python
@@ -328,7 +328,7 @@ environment variable if also used, and you must call it before `load()`.
 ### Enable profiling with a `max` CLI option
 
 You can also enable MAX profiling markers by adding the `--gpu-profiling`
-option to [`max serve`](/max/cli/serve). For example:
+option to [`max serve`](/cli/serve). For example:
 
 ```bash
 max serve --gpu-profiling detailed \

@@ -6,316 +6,72 @@ This version is still a work in progress.
 
 ## Highlights
 
+- Code that performs many implicit conversions, most visibly large collection
+  literals, compiles faster: the compiler no longer runs parameter inference on
+  constructors that cannot be used for an implicit conversion in the first
+  place. Files that are mostly data, such as the standard library's Unicode
+  lookup tables, compile about 1.3x faster.
+
 ## Documentation
 
 ## Language enhancements
 
-- Mojo now support `==` and `!=` for type equality check, and `_type_is_eq` is
-  removed.
-
-- Mojo now infers `Trait` for `TypeList.of` such that
-
-  ```mojo
-  comptime TL = TypeList.of[Int, Bool]
-  # works without
-  comptime TL = TypeList.of[Trait = AnyType, Int, Bool]
-  ```
-
-- Mojo now warns about redundant trait composition
+- A `thin` function type can now carry trailing `where` clauses, constraining
+  the parameters it declares. This lets a generic algorithm state what it
+  promises the function it is handed, instead of leaving the constraint to be
+  restated at every binding site.
 
   ```mojo
-  # Warning: Redundant trait composition: 'Copyable' already implies 'AnyType'
-  comptime T : AnyType & Copyable = xxx
+  comptime Kernel = def[w: Int](Int) thin -> None where (
+      w > 0, "width must be positive"
+  )
+
+  def apply[F: Kernel](x: Int):
+      F[4](x)     # ok
+      F[0](x)     # error: violated constraint
   ```
 
-- Keyword variadic arguments can now be forwarded to another function that takes
-  keyword variadics, using Python style `**` syntax:
+  The clause binds to the innermost function type, so a declaration-level
+  `where` that follows a function-type result needs that result parenthesized:
 
   ```mojo
-  def takes_them(**kwargs: Int): ...
-  def pass_them(**kwargs: Int):
-    takes_them(**kwargs^)
+  def make[n: Int]() -> (def() thin -> None) where n > 0: ...
   ```
-
-- Dynamic function pointers with unbound type parameters can now be called
-  directly. The compiler infers parameters from the call arguments and
-  specializes the callee before the indirect call. This capability only works
-  with a limited set of parameters - those which are specialized to a single
-  value. This notably enables origin parameters on runtime function calls,
-  which can also be implicit from variadics:
-
-  ```mojo
-  var fp1: def(*Int) thin -> None
-  var fp2: def[a: ImmutOrigin](ref [a] x: Int) thin -> None
-  ...
-  fp1(1, 2)
-  fp2(42)
-  ```
-
-- Struct fields are no longer allowed to hide `UnsafeAnyOrigin` within a
-  struct. For example, this is no longer accepted:
-
-  ```mojo
-  struct Example:
-    # error: cannot use UnsafeAnyOrigin in a struct field.
-    var ptr: UnsafePointer[Int, MutUnsafeAnyOrigin]
-  ```
-
-  This is because Mojo doesn't know that uses of `Example` contain an
-  `UnsafeAnyOrigin` and therefore doesn't do lifetime extension for values in
-  its context. The typical solution for this is to add an `Origin` parameter but
-  you can also use `UntrackedOrigin` if you explicitly manage the lifetime of
-  the underlying data:
-
-  ```mojo
-  struct Example[origin: Origin]:
-    var ptr: UnsafePointer[Int, Self.origin]
-
-  # OR
-
-  struct Example:
-    var ptr: UnsafePointer[Int, MutUntrackedOrigin]
-  ```
-
-  As a temporary workaround, you can decorate fields with
-  `@__allow_legacy_any_origin_fields` to ignore the compiler error, however this
-  decorator is not stable and will eventually be removed.
-
-- Import resolution behavior has been made consistent. When resolving an import
-  of a module or package, in any given directory the resolution in order of
-  preference is: source packages; precompiled `.mojoc` files; source modules;
-  legacy precompiled `.mojopkg` files.
-
-  Previously the behavior was unspecified and would pick whichever matching
-  name it found in the directory first.
-
-- Added support for checking variadic type-list operands with `conforms_to()`.
-  For example, a variadic parameter list can pass its type-list value directly:
-
-  ```mojo
-  def copy_variadic_elements[*Ts: AnyType](
-      *args: *Ts
-  ) where conforms_to(Ts.values, Copyable):
-      pass
-  ```
-
-  To check several distinct standalone types against a trait, conjoin scalar
-  checks, for example `conforms_to(T, Trait) and conforms_to(U, Trait)`.
-
-- Mojo has improved its tracking of import locations and is now able to show
-  where a package containing a diagnostic was first introduced into the program:
-
-  ```text
-  Included from /bug.mojo:2:
-  Included from /foo/__init__.mojo:3:
-  Included from /foo/nested_pkg/__init__.mojo:4:
-  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
-  def bar(): pass
-      ^
-  ```
-
-  Compared to the previous:
-
-  ```text
-  Included from /foo/nested_pkg/__init__.mojo:1:
-  Included from /foo/nested_pkg/__init__.mojo:4:
-  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
-  def bar(): pass
-      ^
-  ```
-
-  Note that for precompiled packages (`.mojoc` files), locations *inside* the
-  package are omitted. For example, the above would instead resemble the
-  following for a precompiled `foo` package:
-
-  ```text
-  Included from /bug.mojo:2:
-  /foo/nested_pkg/my_module.mojo:1:5: note: candidate not viable: unexpected argument
-  def bar(): pass
-      ^
-  ```
-
-  Note also that for brevity the compiler does not report where any `std`
-  packages are pulled in as they're treated as privileged and implicitly
-  imported into every module. This includes if the user explicitly imports all
-  or part of the standard library themselves.
 
 ## Language changes
 
-- User-written structs must now explicitly declare closure-trait conformance
-  in their inheritance list to satisfy a `def(...) -> ...` closure trait.
-  Previously a struct with a compatible `__call__` was accepted implicitly
-  (duck-typing). Declare the trait in the struct's inheritance list:
+- Renamed the `@parameter` decorator on parametric closures to
+  `@__parameter`. The deprecated `@parameter if` / `@parameter for`
+  forms are unchanged; prefer `comptime if` / `comptime for` for
+  compile-time control flow.
 
-  ```mojo
-  def apply[F: def(Int) -> Int](f: F, x: Int) -> Int:
-      return f(x)
+- The module & package system:
 
-  struct Double(def(Int) -> Int):  # previously: `struct Double:`
-      def __call__(self, x: Int) capturing -> Int:
-          return x * 2
+  - Directories may now have "namespace" semantics; a single directory name may
+    resolve across distinct locations on disk which share that name.
 
-  _ = apply(Double(), 5)
-  ```
-
-  Conformance is checked at struct definition rather than deferred to the use
-  site.
-
-- Relative imports must now use `from` (`from . import foo`); the `import .foo`
-  form is no longer accepted.
-
-- Absolute imports `import a.b.c` now bind all of `a`, `a.b`, and `a.b.c` into
-  the scope, where previously only `a.b.c` was made available.
-
-- A bug in import handling has been fixed where absolute imports of a package
-  followed by an import of one of its submodules no longer result in a compiler
-  error.
-
-  ```mojo
-  import a
-  import a.b  # fixed; was: "invalid redefinition of 'a'"
-  ```
-
-- A bug in function-scoped imports has been fixed, allowing dotted imports:
-
-  ```mojo
-  def foo():
-    import a.b
-
-    a.b.foo() # fixed; was: "use of unknown declaration 'a'"
-  ```
-
-  Note that this was already working correctly for other forms of import
-  (`import a`, `from a import b`, `from a.b import c`, etc).
-
-- An imported package's submodules are now only accessible when the package's
-  `__init__.mojo` re-exports those submodules.
-
-  ```mojo
-  import pkg
-
-  # only ok if pkg/__init__.mojo re-exports 'sub'.
-  # Re-export submodules with, e.g.,
-  #   from . import sub
-  # Use relative imports to avoid importing system packages.
-  pkg.sub.foo()
-  ```
-
-  Note that absolute imports can always bring in that submodule, bypassing the
-  `__init__.mojo`:
-
-  ```mojo
-  # always ok, regardless of the package's __init__.mojo
-  import pkg.submodule
-
-  pkg.submodule.foo()
-  ```
-
-- Intra-package accesses without explicit `import`s are now deprecated and will
-  be removed in a future release:
-
-  ```mojo
-  package/
-      __init__.mojo:
-        # Exported or re-exported symbols
-        def foo(): pass
-
-      module1.mojo:
-        # Module-defined symbol
-        def bar(): pass
-
-      module2.mojo:
-        # Previously able to implicitly use either of the above symbols, e.g.,
-        foo()
-        module1.bar()
-  ```
-
-  With this change, `module2.mojo` above must explicitly import symbols from
-  elsewhere in the package:
-
-  ```mojo
-  # module2.mojo
-
-  from . import foo
-  from . import module1
-
-  foo()
-  module1.bar()
-  ```
-
-- The `@explicit_destroy` decorator is no longer sufficient for a `struct` type
-  to opt-out of `ImplicitlyDeletable` conformance.
-
-  As before, by default all Mojo structs implicitly conform to
-  `ImplicitlyDeletable`. Mojo now requires writing a constrained
-  `ImplicitlyDeletable where ...` conformance to narrow or opt-out of that
-  trait.
-
-  This works both for types
-  that are never `ImplicitlyDeletable` (`where False`) and for types that are
-  non-ImplicitlyDeletable based on a non-trivial condition (`where <cond>`):
-
-  ```mojo
-  # no @explicit_destroy necessary
-  struct NeverDeletable(
-      ImplicitlyDeletable where False
-  ):
-      def destroy(deinit self):
-          pass
-
-  comptime assert not conforms_to(NeverDeletable, ImplicitlyDeletable)
-
-  # no @explicit_destroy necessary
-  struct Container[T: AnyType](
-      ImplicitlyDeletable where conforms_to(T, ImplicitlyDeletable)
-  ):
-      var value: Self.T
-
-  comptime assert conforms_to(Container[Int], ImplicitlyDeletable)
-  comptime assert not conforms_to(Container[NonDeletable], ImplicitlyDeletable)
-  ```
-
-  Using `@explicit_destroy` without an argument error string is now an error, as
-  it would have no effect or purpose.
-
-  `@explicit_destroy("custom error")` can still be used to provide additional
-  instruction to users when an instance cannot be deleted implicitly.
-
-  This simplifies the language by replacing special decorator behavior with
-  generalized struct conformance logic.
-
-- `where` clauses inside a parameter list (for example,
-  `[x: Int where x > 0]`) are no longer supported, following a period of
-  deprecation. Use a trailing `where` clause after the signature instead:
-
-  ```mojo
-  # Old (no longer supported):
-  # fn foo[x: Int where x > 0]():
-
-  # New:
-  fn foo[x: Int]() where x > 0:
-      pass
-  ```
-
-## Library stabilizations
-
-- `trait ImplicitlyDeletable`
-- `trait Movable`
-- `trait Copyable`
-- `trait ImplicitlyCopyable`
-
-- List
-  - `def __init__(out self)`
-  - `def __init__(out self, *, capacity: Int)`
-  - `def __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):`
-  - `def __del__(deinit self) where conforms_to(Self.T, ImplicitlyDeletable):`
-
-  - ```def __getitem__[
-        origin: Origin, //
-      ](ref[origin] self, slice: ContiguousSlice) -> Span[Self.T, origin]:
+    ```mojo
+    # .
+    # ├── one
+    # │   └── foo
+    # │       └── bar.mojo
+    # └── two
+    #     └── foo
+    #         └── baz.mojo
+    #
+    # Compiles with -Ione -Itwo
+    import foo.bar
+    import foo.baz
     ```
 
-- Span
+  - Importing functions with the same name from different modules, combining
+    them into one overload set, is now an error, following a period of
+    deprecation.
+
+  - Intra-package accesses without explicit `import`s are now an error,
+    following a period of deprecation.
+
+## Library stabilizations
 
 ## Library changes
 
@@ -671,211 +427,225 @@ This version is still a work in progress.
   `-check-docstrings` when launching `mojo-lsp-server` from the command line
   to re-enable the previous behavior. We plan to make this checking more
   robust and re-enable it by default over time.
+- `StringDict` now conforms to `Writable` when its value type is `Writable`,
+  matching the existing behavior of `Dict`. This lets you `print()` a
+  `StringDict` or convert it to a `String`.
+
+- The `chars` argument of `strip()`, `lstrip()` and `rstrip()` on `StringSpan`,
+  `String` and `StringLiteral` is now an `ImmStringSpan`, so a mutable string
+  is accepted as `chars`, including the string being stripped (`s.strip(s)`).
+
+- `StringDict.__getitem__()` now accepts a `StringSpan`, so you can index a
+  `StringDict` with a borrowed string view without first allocating a
+  `String` just to perform the lookup.
+
+- Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
+  `Ts`, standardizing the naming convention used across the standard library.
+  The old name, `element_types`, remains as a deprecated alias.
+
+- Added experimental `DType.float6_e2m3fn` and `DType.float6_e3m2fn`, the two
+  6-bit encodings from the
+  [Open Compute microscaling specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
+  Both are finite-only, so neither has an inf nor a NaN encoding.
+
+  These are experimental storage formats for packed weights rather than
+  general-purpose numeric types, and standard library support is deliberately
+  partial. As with the existing `DType.float4_e2m1fn`, they are excluded from
+  `is_numeric()`, arithmetic is not implemented, and converting to or from
+  another floating-point type is unsupported on every target, so values cannot
+  be printed either.
+
+- `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
+
+- Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
+  `is_trivially_deletable()` in `std.memory` in favor of
+  `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and
+  `IsTriviallyDeinitable[T]` in `std.traits`. The replacements are `comptime`
+  predicates rather than functions, so drop the call parens at use sites, for
+  example `IsTriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
+
+- Renamed `UnsafeMaybeUninit` to `MaybeUninit`. It conforms to `Movable`,
+  `Copyable`/`ImplicitlyCopyable`, and `Deinitable` only when the contained
+  type's own move, copy, or implicit deinitializer is trivial, since
+  moving, copying, or destroying a `MaybeUninit` only touches its raw bits,
+  never the contained value's own lifecycle methods. Gating conformance this way
+  turns what would otherwise be silent memory-safety bugs into compile-time
+  errors.
+
+- `Atomic` is now parameterized on a value type `T` instead of a `DType`.
+  Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
+  atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
+  and so on) still only support `Scalar` types.
+
+- Added `Pointer[T].unsafe_write(def() -> T)`, which initializes the pointee
+  with the value returned by a closure, constructing it directly in place rather
+  than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
+  this does not require the pointee type to be `Movable`.
+
+- Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
+  `unsafe_write()` for types that are trivially deinitializable (for example
+  `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
+  through `write()` can't leak a resource, so it's callable without first
+  destroying the previous value. Prefer it over `unsafe_write()` whenever the
+  pointee type is trivially deinitializable.
+
+- `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
+  mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
+  is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+
+- The following APIs have been migrated to unified closures: `sort`,
+  `debug_assert`, `Span.apply`.
+
+- Uncaught exceptions now print to `stderr`, not `stdout`.
 
 ## GPU programming
 
-- Added programmatic Metal GPU frame capture in `std.gpu.host`:
-  `_start_metal_trace_capture(ctx, path)` and `_end_metal_trace_capture(ctx)`
-  bracket GPU work and write a `.gputrace` file for offline replay (requires
-  `MTL_CAPTURE_ENABLED=1`). A `_set_metal_gpu_print_enabled(ctx, enabled)`
-  toggle and the `MODULAR_DISABLE_METAL_GPU_PRINT` environment variable disable
-  Metal `os_log` GPU print; print is also suppressed during a capture, which
-  otherwise cannot be replayed.
+## Tooling changes
 
-- A bare `--target-accelerator` architecture (for example `gfx950` or `sm_90`)
-  is now handled identically to its vendor-prefixed form (`amdgpu:gfx950`,
-  `nvidia:sm_90`). Previously `has_amd_gpu_accelerator()`,
-  `has_nvidia_gpu_accelerator()`, and `has_apple_gpu_accelerator()` only
-  recognized the vendor-prefixed spelling, so code that specialized on them
-  (such as warp-tiling parameters) could silently take the wrong path and fail
-  a downstream `comptime` constraint. `amd:<arch>` is also now accepted as an
-  alias for `amdgpu:<arch>`, mirroring the existing `nvidia:<arch>` prefix.
-
-- `DeviceContext.load_function` now keys its runtime cache on the requested
-  entry-point name as well as the blob. Loading two different entry points
-  (for example `kernel_a` and `kernel_b`) from a single PTX/cubin blob no
-  longer collides — previously the second load silently returned the function
-  resolved by the first. The cache also no longer keys on the entire blob
-  when no module name is supplied: it keys on a short hash of the blob instead,
-  so each call avoids copying, hashing, and byte-comparing the whole blob (and
-  retaining a duplicate of it). The win scales with blob size and matters most
-  for large multi-entry blobs loaded on the per-execution path.
-
-- The `DeviceStream` type is now included in the API reference documentation.
-  Returned by `DeviceContext.create_stream()` and
-  `DeviceContext.create_external_stream()`, it provides methods for
-  synchronizing and sequencing asynchronous GPU work (for example,
-  `synchronize()`, `record_event()`, and `enqueue_wait_for()`). The type was
-  already public but was previously hidden from the generated docs.
-
-- Added an 8x8 `simdgroup_matrix` matrix multiply-accumulate primitive
-  (`_mma_apple_8x8()`) with `apple_mma_load_8x8()` / `apple_mma_store_8x8()`
-  fragment helpers for Apple Silicon GPUs in `std.gpu.compute.arch`. Unlike
-  the 16x16 path (Apple M5 only), the 8x8 primitive is available on all Apple
-  GPU generations (M1-M5). It accepts `Float16`, `BFloat16`, and `Float32`
-  inputs with a `Float32` accumulator.
-
-- Apple M5 `simdgroup_matrix` MMA now accepts FP8 (`float8_e4m3fn`,
-  `float8_e5m2`) inputs with an F32 accumulator, alongside the existing
-  F16/BF16/F32 and 8-bit integer types.
-
-- Added `warp.match_any()`, which returns, for each warp lane, the mask of
-  lanes whose value has the same bits. It uses NVIDIA's `match.any.sync`
-  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based
-  emulation on Apple Silicon GPUs.
-
-- Added `warp.match_all()`, which returns the warp's active-lane mask if every
-  lane holds the same bits and 0 otherwise. It uses NVIDIA's `match.all.sync`
-  instruction, a `readfirstlane` ballot fold on AMD, and a shuffle-based check
-  on Apple Silicon GPUs.
-
-- `warp.vote()` now works on Apple Silicon GPUs. Metal's AIR backend exposes no
-  usable ballot intrinsic, so it emulates the ballot with an XOR-butterfly
-  OR-reduction over `simd_shuffle_xor`, returning a 32-bit mask (or a
-  `DType.uint64` mask whose upper 32 bits are always zero); NVIDIA and AMD are
-  unchanged.
-
-- `DeviceGraphBuilder.collect_dependencies` now accepts an optional
-  `dependencies` argument. The named predecessor handles are injected as
-  ambient predecessors of every node the `work` closure adds, so the scope's
-  nodes run after those predecessors without the closure threading the handles
-  through to each `add_*` call. With the default (empty) `dependencies` the
-  behavior is unchanged. When `work` adds no nodes, the returned join node
-  falls back to depending on `dependencies` so it still chains correctly.
-
-  ```mojo
-  var producers = builder.collect_dependencies(add_producers)
-  # Every node added by `add_consumers` depends on `producers`:
-  var consumers = builder.collect_dependencies(
-      add_consumers, dependencies=[producers]
-  )
-  ```
-
-- Added a `DeviceGraphBuilder.add_function` overload that takes the kernel as a
-  compile-time parameter and compiles it automatically, mirroring the
-  parameter-based `DeviceContext.enqueue_function`. Callers no longer need a
-  separate `DeviceContext.compile_function` step to add a kernel node:
-
-  ```mojo
-  def build(mut builder: DeviceGraphBuilder) raises {read}:
-      _ = builder.add_function[kernel](
-          42, grid_dim=1, block_dim=1, dependencies=[]
-      )
-  ```
-
-- `AddressSpace` is now target-extensible rather than a fixed, portable enum.
-  The built-in GPU spaces (`GENERIC`, `GLOBAL`, `SHARED`, `CONSTANT`, `LOCAL`,
-  `SHARED_CLUSTER`, `BUFFER_RESOURCE`) are unchanged, but accessing any other
-  name — for example an accelerator-specific `AddressSpace.SCRATCHPAD` — now
-  resolves through the active hardware backend instead of being a hard-coded
-  compile error. The set of valid address-space names is the union of the
-  built-in GPU spaces and whatever the active backend defines, so accelerator
-  backends can provide their own named spaces (with their own values) only
-  where they exist. A name that no backend defines remains a compile-time
-  error.
-
-- Added support for the Steam Deck's RDNA2 Van Gogh APU.
+- `mojo doc` now reports the condition of a conditional trait conformance, and
+  the generated API docs show it alongside the trait. Previously the condition
+  was dropped, making a conditional conformance indistinguishable from an
+  unconditional one. Also fixed rendering of some `where` clauses.
 
 ## Removed
 
-- Removed the `UInt`-returning GPU indexing accessors (`thread_idx_uint`,
-  `block_idx_uint`, `block_dim_uint`, `grid_dim_uint`, `global_idx_uint`,
-  `lane_id_uint`, `warp_id_uint`). Use the `Int`-returning `thread_idx`,
-  `block_idx`, `block_dim`, `grid_dim`, `global_idx`, `lane_id`, and
-  `warp_id` accessors instead.
+This release completes the removal of APIs deprecated during the v1.0 cycle.
 
-- Removed the `store_volatile()` and `load_volatile()` intrinsics from
-  `std.gpu.intrinsics`. Use `UnsafePointer.store[volatile=True]()` and
-  `UnsafePointer.load[volatile=True]()` instead, which work across all
-  supported GPU targets rather than NVIDIA only.
+- Removed the temporary `InlineArray` alias for `Array`, including its
+  re-exports from `std.collections` and the prelude. Use `Array` directly.
 
-- Removed the deprecated `GPUAddressSpace` alias for `AddressSpace`. Use
-  `AddressSpace` directly.
+- Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
+  It timed host wall-clock, not GPU work, and reported the elapsed time with the
+  operands reversed. Time a block of host code with
+  [`perf_counter_ns()`](/docs/std/time/time/perf_counter_ns/) directly, and use
+  a GPU profiler such as Nsight Systems or `rocprof` for device timings.
+
+- Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
+  instead.
+
+- Removed `String.set_byte_length()`, an internal helper that set the length
+  field without reserving capacity.
+
+- Removed the `validate` parameter from
+  [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
+  validates. Passing `validate=False` did not skip any work on valid input; it
+  only turned characters outside the base64 alphabet into silently corrupt
+  output bytes. Drop `[validate=True]` from existing calls; calls that relied on
+  the default now raise instead of returning garbage.
+
+- Removed the origin aliases left over from the `Immut` to `Imm` and
+  `External` to `Untracked` renames. Use the surviving spelling in each case:
+  `ImmOrigin` for `ImmutOrigin`, `ImmUnsafeAnyOrigin` for
+  `ImmutUnsafeAnyOrigin`, `ImmStaticOrigin` for `StaticConstantOrigin`,
+  `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
+  `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
+  `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
+
+- Removed the pre-unification pointer aliases `MutUnsafePointer`,
+  `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
+  `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
+  `ImmOpaquePointer`, and `OptionalPointer` instead. `UnsafePointer` itself
+  remains available, but is deprecated in favor of `Pointer`.
+
+- Removed the raw memory functions superseded by their `unsafe_`-prefixed
+  spellings: `memcpy`, `memset`, `memset_zero`, `uninit_move_n`,
+  `uninit_copy_n`, and `destroy_n`. Use `unsafe_memcpy`, `unsafe_memset`,
+  `unsafe_memset_zero`, `unsafe_uninit_move_n`, `unsafe_uninit_copy_n`, and
+  `unsafe_destroy_n` instead.
+
+- Removed the `size` aliases left from the `size` to `length` rename:
+  `SIMD.size`, `Array.size`, `TypeList.size`, and the `SIMDSize` alias for
+  `SIMDLength`. Use `length` and `SIMDLength`.
+
+- Removed the `as_immutable()` and `get_immutable()` methods on `Pointer`,
+  `Span`, and `StringSpan`. Use `as_imm()`.
+
+- Removed the `ImmutSpan` alias. Use `ImmSpan`.
+
+- Removed `String.as_string_slice()`. Construct a `StringSpan` from the string
+  instead: `StringSpan(my_string)`.
+
+- Removed the `ImplicitlyDestructible` and `ImplicitlyDeletable` aliases. Use
+  `Deinitable`.
+
+- Removed the deprecated ownership-transfer methods: `List.steal_data()` and
+  `OwnedPointer.steal_data()` are now `unsafe_take_allocation()`,
+  `OwnedPointer.take()` is `into_inner()`, and `Variant.take()` and
+  `Variant.unsafe_take()` are `unwrap()` and `unsafe_unwrap()`.
+
+- Removed the `Pointer` methods superseded by their `unsafe_`-prefixed
+  spellings: `as_noalias_ptr()`, `destroy_pointee()`, `destroy_pointee_with()`,
+  `init_pointee_move()`, `init_pointee_copy()`, and `init_pointee_move_from()`.
+  Use `unsafe_as_noalias()`, `unsafe_deinit_pointee()`,
+  `unsafe_deinit_pointee_with()`, `unsafe_write()`, and
+  `unsafe_write_move_from()`. The `Pointer.type` alias for `Pointer.T` is gone
+  as well.
+
+- Removed the `ConditionalType` type function and the `std.utils.type_functions`
+  module. Use the ternary expression `T if cond else U`.
+
+- Removed `trait_downcast()`. Constrain on the trait instead, with
+  `conforms_to(type_of(src), Trait)` in a `where` clause or a
+  `comptime assert`.
+
+- Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
+  an argument to `run(f)` instead, which accepts a unified closure.
+
+- Removed `AnyCoroutine`, `Coroutine` and `RaisingCoroutine` from the prelude,
+  and made the module that defines them private. Mojo's async support is
+  unfinished, and these types being globally visible led people to build on an
+  API that carries no stability guarantees. `async def` is unaffected: the
+  compiler still synthesizes these types for you, so they continue to appear in
+  inferred types and diagnostics. There is no supported way to name them
+  directly.
+
+- Removed the async task API from the public `std.runtime.asyncrt` module,
+  which is now private. `initialize_runtime()` and `parallelism_level()` are
+  unaffected and have moved up to the `std.runtime` package, so import them
+  from `std.runtime` instead of `std.runtime.asyncrt`.
+
+- Removed support for `.mojopkg` files after a period of deprecation. Use
+  `.mojoc` files instead.
 
 ## Fixed
 
-- [#6755](https://github.com/modular/modular/issues/6755) - Volatile loads are
-  no longer removed when their results are unused.
+- `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
+  files next to the host output file. Building a kernel that an earlier build
+  had already compiled could write them into the earlier build's output
+  directory, or skip them with no diagnostic.
 
-- Type refinement from a `conforms_to()` guard now applies inside the branches
-  of a ternary `exp1 if cond else exp2` used in a `comptime` context, matching
-  the existing `comptime if` statement behavior. For example, this now compiles:
+- Parametric `raises` now accepts any primary expression as the thrown type in
+  a function signature, matching the syntax positions where types otherwise
+  appear. This most notably fixes `raises Self.SomeAssocType` on trait and
+  struct methods, which would previously fail with an error. The parenthesized
+  workaround (`raises (Self.DriveErrorType)`) is no longer required.
 
-  ```mojo
-  trait HasProperty:
-      comptime property: Int
+- An integer `range()` with a step of zero is now always empty. It previously
+  used to be an infinite loop - iterating forever at runtime, and hanging the
+  compiler at comptime.
 
-  comptime get_property_or[T: AnyType] =
-      T.property if conforms_to(T, HasProperty) else 0
-  ```
+- Fixed `ceildiv()` returning `0` for unsigned operands near the type's
+  maximum value. The unsigned code path computed `numerator + denominator -
+  1`, which overflows and wraps for large operands; it now derives the
+  ceiling from the floor division and remainder instead.
 
-  Previously the true branch failed with `'AnyType' value has no attribute
-  'property'` because `T` was not refined under the guard.
+- `Counter.most_common(n)` now returns all elements when `n` exceeds the
+  number of unique elements, matching Python, instead of aborting.
 
-- A `comptime` member with a trailing `where` clause is now accepted as a
-  witness for a conditional trait conformance when the conformance constraint
-  implies the member's constraint, for example:
+- `os.path.join()` now inserts separators based on the accumulated path rather
+  than the first argument, so `join("/", "a", "b")` returns `/a/b` (previously
+  `/ab`) and `join("a", "b/", "c")` returns `a/b/c` (previously `a/b//c`).
 
-  ```mojo
-  trait StaticSize:
-      comptime SIZE: Int
+- `base64.b64decode()` now raises an error when the input length is not
+  divisible by 4 instead of reading past the end of the input (or aborting
+  when asserts are enabled).
 
-  struct Foo[size: Int = -1](StaticSize where size >= 0):
-      comptime SIZE: Int where Self.size >= 0 = Self.size
-  ```
+- On macOS, `os.stat()` and `os.lstat()` no longer return a negative
+  `st_mode` for regular files. The underlying `mode_t` and `nlink_t` C type
+  aliases were declared as signed 16-bit integers, but macOS defines them as
+  unsigned, so any mode with the `S_IFREG` bit set (every regular file)
+  sign-extended into a negative `Int`.
 
-- The reflection-based default `Equatable` implementation no longer fails to
-  compile for single-element `RegisterPassable` structs. Such a struct is
-  flattened to its sole field's type, which previously caused the reflection
-  `field_ref` to produce an invalid `kgen.struct.gep`. For example, this now
-  compiles and prints `True`:
-
-  ```mojo
-  @fieldwise_init
-  struct Inner(Equatable, RegisterPassable):
-      var x: Int
-      var y: Int
-
-  @fieldwise_init
-  struct Outer(Equatable, RegisterPassable):
-      var inner: Inner
-
-  def main():
-      var o = Outer(Inner(1, 2))
-      print(o == o)
-  ```
-
-- A method whose return type references a constrained `comptime` member (one
-  declared with a trailing `where` clause) is now accepted when the method's
-  own `where` clause discharges that member's constraint.
-
-  ```mojo
-  trait Operation:
-      comptime Output: AnyType
-
-      def operate(self) -> Self.Output: ...
-
-  struct MyList[T: AnyType](Operation where conforms_to(T, Movable)):
-      comptime Output: AnyType where conforms_to(Self.T, Movable) = Int
-
-      def operate(self) -> Self.Output where conforms_to(Self.T, Movable):
-          return Int(123)
-  ```
-
-- A method whose return type is a generic struct instantiated with a
-  parameter that only satisfies the struct's declared trait bound via the
-  method's own `where` clause (rather than via the parameter's own
-  declaration) is now accepted, instead of spuriously rejecting the returned
-  value as a different, unconvertible type.
-
-  ```mojo
-  struct Collection[T: AnyType](Movable):
-      def foo(
-          var self,
-      ) -> Iter[Self.T] where conforms_to(Self.T, ImplicitlyDeletable):
-          return Iter(self^)
-
-  @fieldwise_init
-  struct Iter[T: ImplicitlyDeletable]:
-      var _collection: Collection[Self.T]
-  ```
+- `PythonObject` no longer leaks a CPython reference per positional argument
+  when calling a Python object, nor when setting an item, attribute, or set
+  literal element.

@@ -27,7 +27,7 @@ bench times only the GEMM+dequant); the quant kernel is timed separately.
 Run: mojo max/kernels/benchmarks/gpu/linalg/bench_apple_int8_matmul.mojo
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
 from layout import TileTensor

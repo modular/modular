@@ -89,13 +89,13 @@ config_setting(
 
 string_flag(
     name = "max_base_version",
-    build_setting_default = "26.5.0",
+    build_setting_default = "26.6.0",
     make_variable = "MAX_BASE_VERSION",
 )
 
 string_flag(
     name = "mojo_base_version",
-    build_setting_default = "1.0.0",
+    build_setting_default = "1.1.0",
     make_variable = "MOJO_BASE_VERSION",
 )
 
@@ -116,6 +116,48 @@ string_flag(
     name = "modular_version_sha",
     build_setting_default = "deadbeef",
 )
+
+bool_flag(
+    name = "use_prebuilt_mojo_toolchain",
+    build_setting_default = True,
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+config_setting(
+    name = "use_prebuilt_mojo_toolchain_disabled",
+    flag_values = {":use_prebuilt_mojo_toolchain": "false"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+[
+    config_setting(
+        name = name + "_prebuilt_mojo_toolchain_enabled",
+        constraint_values = constraints,
+        flag_values = {":use_prebuilt_mojo_toolchain": "true"},
+        # Only used in OSS build
+        tags = ["maybe-unused"],
+    )
+    for name, constraints in [
+        (
+            "linux_x86_64",
+            [
+                "@platforms//cpu:x86_64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "linux_aarch64",
+            [
+                "@platforms//cpu:aarch64",
+                "@platforms//os:linux",
+            ],
+        ),
+        (
+            "macos",
+            ["@platforms//os:macos"],
+        ),
+    ]
+]
 
 config_setting(
     name = "linux_x86_64",
@@ -402,16 +444,4 @@ config_setting(
     name = "gpu_memory_manager_disabled",
     flag_values = {"//:gpu_disable_memory_manager": "true"},
     tags = [ALLOW_UNUSED_TAG],
-)
-
-bool_flag(
-    name = "plugin",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "plugin_enabled",
-    flag_values = {
-        "//:plugin": "true",
-    },
 )

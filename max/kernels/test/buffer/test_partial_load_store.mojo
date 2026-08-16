@@ -21,10 +21,10 @@ def test_partial_load_store() raises:
     # The total amount of data to allocate
     comptime total_buffer_size: Int = 32
 
-    var read_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var read_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
-    var write_data = InlineArray[Scalar[DType.int], total_buffer_size](
+    var write_data = Array[Scalar[DType.int], total_buffer_size](
         uninitialized=True
     )
 
@@ -49,7 +49,7 @@ def test_partial_load_store() raises:
 
     # Test partial store:
     partial_simd_store[4](
-        write_ptr.mut_cast[True]() + 1,
+        write_ptr + 1,
         2,
         4,
         partial_load_data,  # idx  # lbound  # rbound
@@ -74,7 +74,7 @@ def test_partial_load_store() raises:
 
     # Test partial store at row 3, col 1:
     partial_simd_store[4](
-        write_ptr.mut_cast[True]() + 3 * width + 1,
+        write_ptr + 3 * width + 1,
         0,  # lbound
         3,  # rbound
         nd_partial_load_data,  # value

@@ -16,7 +16,9 @@
 import os
 
 import pytest
+from fastapi import FastAPI
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.serve.api_server import fastapi_config
 from max.serve.config import Settings
 
 
@@ -149,9 +151,28 @@ def test_fastapi_config_wires_graceful_shutdown_timeout() -> None:
     graceful shutdown itself is uvicorn's behavior; we only verify the wiring,
     with no model worker or server start required.
     """
-    from fastapi import FastAPI
-    from max.serve.api_server import fastapi_config
-    from max.serve.config import Settings
-
     config = fastapi_config(FastAPI(), Settings(graceful_shutdown_timeout_s=42))
     assert config.timeout_graceful_shutdown == 42
+
+
+def test_http_keepalive_timeout_outlives_pooling_clients() -> None:
+    """The default must sit above a pooling client's idle-connection timeout.
+
+    Go's ``http.Transport`` idles pooled connections out at 90s by default. If
+    the server closes first, a client reusing a pooled connection races that
+    close and sees a TCP reset instead of a response -- and cannot retry it,
+    because a proxied POST body is not replayable.
+    """
+    assert Settings().http_keepalive_timeout_s > 90
+
+
+def test_http_keepalive_timeout_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_SERVE_HTTP_KEEPALIVE_TIMEOUT_S", "300")
+    assert Settings().http_keepalive_timeout_s == 300
+
+
+def test_fastapi_config_wires_http_keepalive_timeout() -> None:
+    config = fastapi_config(FastAPI(), Settings(http_keepalive_timeout_s=137))
+    assert config.timeout_keep_alive == 137

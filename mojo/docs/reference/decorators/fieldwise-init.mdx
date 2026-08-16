@@ -1,11 +1,11 @@
 ---
 title: '@fieldwise_init'
-description: Generates fieldwise constructor for a struct.
+description: Generates fieldwise initializer for a struct.
 codeTitle: true
 ---
 
 You can add the `@fieldwise_init` decorator on a struct to generate the
-field-wise `__init__()` constructor.
+field-wise `__init__()` initializer.
 
 For example, consider a simple struct like this:
 
@@ -17,7 +17,7 @@ struct MyPet:
 ```
 
 Mojo sees the `@fieldwise_init` decorator and synthesizes a field-wise
-constructor, the result being as if you had actually written this:
+initializer, the result being as if you had actually written this:
 
 ```mojo
 struct MyPet:
@@ -29,14 +29,14 @@ struct MyPet:
         self.age = age
 ```
 
-You can synthesize the copy constructor and move constructor by adding the
+You can synthesize the copy initializer and move initializer by adding the
 `Copyable` trait to your struct. For more information about these
 lifecycle methods, read [Life of a value](/docs/manual/lifecycle/life/).
 
 ## Implicit conversion
 
 Implicit conversion lets you pass a value and lets a type build itself, without
-calling the constructor directly. This keeps caller code simple and clean. You
+calling the initializer directly. This keeps caller code simple and clean. You
 enable this by marking an initializer as
 [`@implicit`](/docs/reference/decorators/implicit/) or using
 `@fieldwise_init("implicit")` to create one for you.
@@ -45,11 +45,11 @@ For example, if `MyStruct` has an initializer that accepts an `Int`, you can
 construct an instance like this:
 
 ```mojo
-an_instance = MyStruct(42)
+var an_instance = MyStruct(42)
 ```
 
 A function that takes a `MyStruct` will accept that instance, an explicit
-constructor call, or the value that can be converted into one:
+initializer call, or the value that can be converted into one:
 
 ```mojo
 some_function(an_instance)      # pass an instance
@@ -72,7 +72,7 @@ You can declare implicit initializers in two ways:
 
 :::note
 Read more about
-[constructors and implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
+[initializers and implicit conversion](/docs/manual/lifecycle/life/#constructors-and-implicit-conversion).
 :::
 
 ### Fieldwise and implicit example
@@ -102,11 +102,11 @@ def main():
     print(floored(FlooringInt(42)))  # pass an instance, output: 42
     print(floored(2))                # pass Int, output: 2
     print(floored(52.6))             # pass Float64, output: 52
-    x = BFloat16(192.3)
+    var x = BFloat16(192.3)
     print(floored(x))                # pass BFloat16, output: 192
-    y: FlooringInt = 180
+    var y: FlooringInt = 180
     print(y.floored)                 # output 180
-    z: FlooringInt = 3.14159
+    var z: FlooringInt = 3.14159
     print(z.floored)                 # output: 3
 ```
 

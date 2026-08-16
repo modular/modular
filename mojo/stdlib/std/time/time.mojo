@@ -21,7 +21,7 @@ from std.time import perf_counter_ns
 
 from std.math import floor
 from std.os import abort
-from std.ffi import external_call, _CPointer
+from std.ffi import external_call
 from std.sys import (
     CompilationTarget,
     is_amd_gpu,
@@ -358,8 +358,8 @@ def sleep(sec: Float64):
         Int(total_secs),
         Int((sec - total_secs) * NANOSECONDS_IN_SECOND),
     )
-    var req = UnsafePointer(to=tv_spec)
-    var rem = _CPointer[_CTimeSpec, MutUntrackedOrigin]()
+    var req = Pointer(to=tv_spec)
+    var rem = OptionalPointer[_CTimeSpec, MutUntrackedOrigin]()
     _ = external_call["nanosleep", Int32](req, rem)
 
 

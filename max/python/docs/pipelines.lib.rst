@@ -68,16 +68,6 @@ Tokenizers
 
    PixelGenerationTokenizer
 
-LoRA
-----
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   LoRAManager
-
 Utilities
 ---------
 
@@ -89,6 +79,7 @@ Utilities
    CompilationTimer
    HuggingFaceRepo
    ModelManifest
+   VisionPreprocessCache
    WeightPathParser
 
 Functions

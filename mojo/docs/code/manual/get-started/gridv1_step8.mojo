@@ -20,7 +20,7 @@ struct Grid(Copyable):
 
     def grid_str(self) -> String:
         # Create an empty String
-        str = String()
+        var str = String()
 
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     CoordLike,
     Coord,
@@ -131,10 +131,10 @@ def test_matmul_dynamic_scaled_fp8[
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
         c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().get_immutable(),
-        b_tile.to_layout_tensor().get_immutable(),
-        a_scales_tile.to_layout_tensor().get_immutable(),
-        b_scales_tile.to_layout_tensor().get_immutable(),
+        a_tile.to_layout_tensor().as_imm(),
+        b_tile.to_layout_tensor().as_imm(),
+        a_scales_tile.to_layout_tensor().as_imm(),
+        b_scales_tile.to_layout_tensor().as_imm(),
         ctx,
     )
 
@@ -296,10 +296,10 @@ def test_matmul_dynamic_scaled_fp8_tensor[
         scales_granularity_mnk=Index(1, 1, k_dim),
     ](
         c_ref_tile.to_layout_tensor(),
-        a_tile.to_layout_tensor().get_immutable(),
-        b_tile.to_layout_tensor().get_immutable(),
-        a_ref_scales_tile.to_layout_tensor().get_immutable(),
-        b_ref_scales_tile.to_layout_tensor().get_immutable(),
+        a_tile.to_layout_tensor().as_imm(),
+        b_tile.to_layout_tensor().as_imm(),
+        a_ref_scales_tile.to_layout_tensor().as_imm(),
+        b_ref_scales_tile.to_layout_tensor().as_imm(),
         ctx,
     )
 

@@ -23,7 +23,7 @@ def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
 
 
 # start-infer-struct-param
-struct One[Type: Writable & Copyable & ImplicitlyDeletable]:
+struct One[Type: Writable & Copyable & Deinitable]:
     var value: Self.Type
 
     def __init__(out self, value: Self.Type):
@@ -31,15 +31,15 @@ struct One[Type: Writable & Copyable & ImplicitlyDeletable]:
 
 
 def use_one():
-    s1 = One(123)  # equivalent to One[Int](123)
-    s2 = One("Hello")  # equivalent to One[String]("Hello")
+    var s1 = One(123)  # equivalent to One[Int](123)
+    var s2 = One("Hello")  # equivalent to One[String]("Hello")
     # end-infer-struct-param
     _ = s1^
     _ = s2^
 
 
 # start-infer-constructor-static-param
-struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
+struct Two[Type: Writable & Copyable & Deinitable]:
     var val1: Self.Type
     var val2: Self.Type
 
@@ -54,7 +54,7 @@ struct Two[Type: Writable & Copyable & ImplicitlyDeletable]:
 
 
 def use_two():
-    s3 = Two(One("infer"), One("me"))
+    var s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two different values
     # end-infer-constructor-static-param

@@ -54,7 +54,7 @@ The FP4 weight is the B operand (`out = x @ W^T`, `transpose_b=True`): W is
 """
 
 from std.random import random_float64, random_si64, seed
-from std.gpu.host import DeviceContext, HostBuffer
+from max.gpu.host import DeviceContext, HostBuffer
 
 from layout import TileTensor
 from layout.tile_layout import row_major

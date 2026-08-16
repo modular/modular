@@ -24,7 +24,7 @@ After the fix, both should produce equivalent code.
 """
 
 from std.compile import compile_info
-from std.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor
 from std.testing import assert_true
 from std.utils import Index

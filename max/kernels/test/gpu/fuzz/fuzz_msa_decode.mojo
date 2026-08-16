@@ -50,7 +50,7 @@ from std.sys import (
 from std.sys.defines import get_defined_int
 from std.utils import IndexList
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
     Layout,
@@ -373,15 +373,15 @@ def run_one_case(
             TileTensor(
                 idx_dev.unsafe_ptr(), row_major(Coord(len(idx_dev)))
             ).as_immut(),
-            topk,  # indices_stride (blocks)
-            batch_size,  # num_rows_q (1 token/seq)
+            Int32(topk),  # indices_stride (blocks)
+            Int32(batch_size),  # num_rows_q (1 token/seq)
             NullMask(),
             valid_length,  # ragged Q offsets
             StaticInt[1](),  # max_prompt_len (decode)
-            topk_tokens,  # max_cache_valid_length
+            Int32(topk_tokens),  # max_cache_valid_length
             scale,
             None,  # kv_input_row_offsets
-            batch_size,
+            Int32(batch_size),
             ctx,
         )
     else:
@@ -412,7 +412,7 @@ def run_one_case(
             raise Error("MSA decode output NaN/Inf (poison tail attended?)")
 
     # f64 block-restricted softmax, masking the local tail (k_logical > cl).
-    @parameter
+    @__parameter
     def kv_off(b: Int, blk: Int, c: Int) -> Int:
         return (batch_tok_base[b] + blk * BN + c) * head_dim
 

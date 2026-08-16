@@ -36,12 +36,8 @@ example_repo_ids = [
 gemma4_arch = SupportedArchitecture(
     name="Gemma4ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float16",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=Gemma4ForConditionalGenerationConfig.DEFAULT_ENCODING,
+    supported_encodings=Gemma4ForConditionalGenerationConfig.SUPPORTED_ENCODINGS,
     pipeline_model=Gemma3_MultiModalModel,
     batching=Gemma4BatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
@@ -53,14 +49,13 @@ gemma4_arch = SupportedArchitecture(
         InputModality.IMAGE,
         InputModality.VIDEO,
     },
-    rope_type="normal",
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     reasoning_parser="gemma4",
+    default_structured_output_backend="xgrammar",
     memory_planner=Gemma4MemoryPlanner,
     supports_device_graph_capture=False,
-    default_structured_output_backend="llguidance",
 )
 
 

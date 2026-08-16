@@ -26,7 +26,7 @@ from std.testing import (
 
 def test_pipe() raises:
     var p = Pipe()
-    var s = InlineArray[UInt8, 5](fill=0)
+    var s = Array[UInt8, 5](fill=0)
     p.write_bytes("hello".as_bytes())
     assert_equal(p.read_bytes(Span(s)), 5)
     assert_true(Span(s) == "hello".as_bytes())
@@ -64,7 +64,9 @@ def test_process_run_missing() raises:
     print("== test_process_run_missing")
     # CHECK-LABEL: == test_process_run_missing
     # CHECK-NEXT: Failed to execute ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN, EINT error code: 2
-    missing_executable_file = "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
+    var missing_executable_file = (
+        "ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN"
+    )
 
     # verify that the test file does not exist before starting the test
     assert_false(

@@ -17,7 +17,6 @@ Similar to DeepseekV3NextN, but uses sparse attention.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 from max.dtype import DType
@@ -53,32 +52,6 @@ from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2DecoderLayer
 from .model_config import DeepseekV3_2NextNConfig
-
-
-def _unpack_kv_collections(
-    kv_collections: Sequence[PagedCacheValues],
-) -> tuple[
-    list[BufferValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[TensorValue],
-    list[BufferValue],
-]:
-    """Unpack KV collections into per-component lists (with optional scales)."""
-    kv_scales: list[BufferValue] = []
-    if kv_collections[0].kv_scales is not None:
-        kv_scales = [
-            kv.kv_scales for kv in kv_collections if kv.kv_scales is not None
-        ]
-    return (
-        [kv.kv_blocks for kv in kv_collections],
-        [kv.cache_lengths for kv in kv_collections],
-        [kv.lookup_table for kv in kv_collections],
-        [kv.max_prompt_length for kv in kv_collections],
-        [kv.max_cache_length for kv in kv_collections],
-        kv_scales,
-    )
 
 
 class DeepseekV3_2NextN(Module):
@@ -153,7 +126,7 @@ class DeepseekV3_2NextN(Module):
                     config.qk_rope_head_dim,
                     n_heads=config.num_attention_heads,
                     theta=config.rope_theta,
-                    max_seq_len=config.max_position_embeddings,
+                    max_seq_len=config.max_seq_len,
                     scaling_params=scaling_params,
                 )
             )
@@ -162,7 +135,7 @@ class DeepseekV3_2NextN(Module):
                 dim=config.qk_rope_head_dim,
                 n_heads=config.num_attention_heads,
                 theta=config.rope_theta,
-                max_seq_len=config.max_position_embeddings,
+                max_seq_len=config.max_seq_len,
                 head_dim=config.qk_rope_head_dim,
                 interleaved=config.rope_interleave,
             )
@@ -205,6 +178,11 @@ class DeepseekV3_2NextN(Module):
 
         self.return_logits = config.return_logits
         self.return_hidden_states = config.return_hidden_states
+        # When False, ``deepseek_logits_postprocess`` skips the last-token
+        # lm_head projection and omits ``last_logits`` from the output tuple.
+        # Default True keeps the standalone ragged contract (``last_logits``
+        # at index 0) unchanged.
+        self.emit_last_token_logits = True
         self.logits_scaling = 1.0
 
     def __call__(
@@ -295,6 +273,9 @@ class DeepseekV3_2NextN(Module):
             for i in range(n_devs)
         ]
         h = forward_sharded_layers(self.eh_proj_shards, concat_inputs)
+        h_norm = forward_sharded_layers(
+            self.decoder_layer.input_layernorm_shards, h
+        )
 
         # Create MLA prefill metadata if not in decode mode.
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
@@ -320,61 +301,17 @@ class DeepseekV3_2NextN(Module):
                 ]
             )
 
-        (
-            mla_kv_blocks,
-            mla_cache_lengths,
-            mla_lookup_tables,
-            mla_max_prompt_lengths,
-            mla_max_cache_lengths,
-            mla_kv_scales,
-        ) = _unpack_kv_collections(mla_kv_collections)
-        (
-            indexer_kv_blocks,
-            indexer_cache_lengths,
-            indexer_lookup_tables,
-            indexer_max_prompt_lengths,
-            indexer_max_cache_lengths,
-            indexer_kv_scales,
-        ) = _unpack_kv_collections(indexer_kv_collections)
-
-        mla_decode_scalar_args: list[TensorValue] | None = None
-        if mla_kv_collections[0].attention_dispatch_metadata is not None:
-            mla_decode_scalar_args = [
-                kv.attention_dispatch_metadata
-                for kv in mla_kv_collections
-                if kv.attention_dispatch_metadata is not None
-            ]
-
-        mla_num_partitions_scalars: list[TensorValue] | None = None
-        if mla_kv_collections[0].mla_num_partitions is not None:
-            mla_num_partitions_scalars = [
-                kv.mla_num_partitions
-                for kv in mla_kv_collections
-                if kv.mla_num_partitions is not None
-            ]
-
         layer_outs = self.decoder_layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             h,
+            h_norm,
             signal_buffers,
-            mla_kv_blocks,
-            mla_cache_lengths,
-            mla_lookup_tables,
-            mla_max_prompt_lengths,
-            mla_max_cache_lengths,
-            mla_kv_scales,
-            indexer_kv_blocks,
-            indexer_cache_lengths,
-            indexer_lookup_tables,
-            indexer_max_prompt_lengths,
-            indexer_max_cache_lengths,
-            indexer_kv_scales,
+            mla_kv_collections,
+            indexer_kv_collections,
             freqs_cis,
             mla_prefill_metadata_flat,
             input_row_offsets_,
             prev_topk_indices if prev_topk_indices is not None else [],
-            mla_decode_scalar_args=mla_decode_scalar_args,
-            mla_num_partitions_scalars=mla_num_partitions_scalars,
             ep_inputs=ep_inputs,
             reuse_prev_topk=reuse_prev_topk,
         )
@@ -397,6 +334,7 @@ class DeepseekV3_2NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
+            emit_last_token_logits=self.emit_last_token_logits,
         )
 
         # Append the per-device top-k selection so the unified MTP module can
