@@ -57,6 +57,31 @@ def test_model_aliases_in_custom_models() -> None:
     )
 
 
+def test_8xmi355_stays_opt_in() -> None:
+    """8xMI355 nodes are scarce, so landing there must be a deliberate choice.
+
+    Pinning the schedule means a model added without an 8xMI355 exclusion fails
+    here instead of quietly consuming the runner. Widen the expectation only
+    when a model is meant to run on it.
+    """
+    expected = {
+        "max-ci": {"MiniMaxAI/MiniMax-M3-MXFP8"},
+        "max": set(),
+        "vllm": set(),
+        "sglang": set(),
+    }
+    for framework, models in expected.items():
+        result = CliRunner().invoke(
+            smoke_test_github_matrix.main,
+            ["--framework", framework, "--run-on-8xmi355"],
+        )
+        assert result.exit_code == 0
+        scheduled = {
+            job["model"] for job in json.loads(result.output)["include"]
+        }
+        assert scheduled == models, f"{framework} on 8xMI355"
+
+
 def test_smoke_test_github_matrix_b200_max_ci() -> None:
     runner = CliRunner()
     result = runner.invoke(

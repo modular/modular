@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides manually fused GPU graph kernels for Multi-head Latent Attention (MLA).
+
+Defines the fused RoPE and RMSNorm kernel, the FP8 prefill and decode branches,
+and the combined prefill-decode graph that up-projects the latent KV cache and
+performs MLA attention with dynamic FP8 scaling.
+"""
+
 
 from std.collections import Optional, OptionalReg
 from std.math import align_up, ceildiv
@@ -19,7 +26,7 @@ from std.sys import simd_width_of, size_of
 from std.sys.info import align_of
 from std.utils.index import Index, IndexList
 
-from std.algorithm.functional import _elementwise_impl_gpu
+from max.algorithm.functional import _elementwise_impl_gpu
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -28,12 +35,13 @@ from std.gpu import (
     grid_dim,
     thread_idx,
 )
-from std.gpu.primitives.grid_controls import (
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
     Coord,
@@ -62,7 +70,16 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
-from nn.attention.gpu.nvidia.sm100.mla_prefill import mla_sm100_prefill_sparse
+from nn.attention.gpu.nvidia.sm100.mla_prefill import (
+    mla_sm100_prefill_sparse,
+    mla_sm100_prefill_sparse_fp8,
+)
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
+    mla_prefill_sparse_qkv_fp8,
+)
+from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
+    MLASparseConfig,
+)
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
@@ -91,12 +108,12 @@ def fused_rope_rmsnorm_kernel[
     q_rope_output: TileTensor[
         mut=True, dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -145,13 +162,11 @@ def fused_rope_rmsnorm_kernel[
 
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
-        TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
-        ].flat_rank
+        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -279,12 +294,12 @@ def fused_rope_rmsnorm_quantization_kernel[
     q_rope_output: TileTensor[
         mut=True, out_rope_dtype, QRopeOutputLayoutType, MutUntrackedOrigin
     ],
-    q_rope: TileTensor[dtype, QRopeLayoutType, ImmutUntrackedOrigin],
+    q_rope: TileTensor[dtype, QRopeLayoutType, ImmUntrackedOrigin],
     input_row_offsets: TileTensor[
-        DType.uint32, InputRowOffsetsLayoutType, ImmutUntrackedOrigin
+        DType.uint32, InputRowOffsetsLayoutType, ImmUntrackedOrigin
     ],
-    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin],
-    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin],
+    freqs_cis: TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin],
+    gamma: TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin],
     k_cache: cache_t,
     epsilon: Float32,
 ) -> None:
@@ -338,13 +353,11 @@ def fused_rope_rmsnorm_quantization_kernel[
 
     # Evidence asserts for TileTensor load/store Coord constraints.
     comptime assert (
-        TileTensor[
-            freq_dtype, FreqsCisLayoutType, ImmutUntrackedOrigin
-        ].flat_rank
+        TileTensor[freq_dtype, FreqsCisLayoutType, ImmUntrackedOrigin].flat_rank
         >= 2
     )
     comptime assert (
-        TileTensor[gamma_dtype, GammaLayoutType, ImmutUntrackedOrigin].flat_rank
+        TileTensor[gamma_dtype, GammaLayoutType, ImmUntrackedOrigin].flat_rank
         >= 1
     )
 
@@ -380,7 +393,12 @@ def fused_rope_rmsnorm_quantization_kernel[
                 )
 
                 if head_idx < num_q_heads:
-                    rope_q_proj[interleaved=True](
+                    # One `alignment` covers both the load and the store, so it
+                    # must hold for the narrower of the two element types.
+                    rope_q_proj[
+                        interleaved=True,
+                        alignment=align_of[SIMD[out_rope_dtype, q_width]](),
+                    ](
                         q_rope,
                         q_rope_output,
                         Index(global_token_idx, head_idx, head_dim_idx),
@@ -388,7 +406,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                         rope_dim,
                     )
                 elif head_idx == num_q_heads:
-                    val = kv_input_fn[width=k_width](
+                    var val = kv_input_fn[width=k_width](
                         {global_token_idx, kv_norm_dim + head_dim_idx}
                     )
                     var roped_val = rope_value(val, f_c).cast[dtype]()
@@ -732,7 +750,7 @@ def mla_prefill_branch_fp8[
 
     # In-place update of the rope part of the `q` tensor
     var q_rope_mut = TileTensor(
-        q_rope.ptr.mut_cast[True](),
+        q_rope.ptr.unsafe_mut_cast[True](),
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -919,6 +937,7 @@ def mla_prefill_branch_fp8[
 @always_inline
 def quantize_and_bmm_fp8_helper[
     dtype: DType,
+    c_dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
     m_scale_granularity: Int,
@@ -926,7 +945,7 @@ def quantize_and_bmm_fp8_helper[
     k_scale_granularity: Int,
     target: StaticString = "cpu",
 ](
-    c: TileTensor[mut=True, dtype, address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, c_dtype, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[fp8_dtype, address_space=AddressSpace.GENERIC, ...],
     b_scales: TileTensor[
@@ -937,6 +956,32 @@ def quantize_and_bmm_fp8_helper[
     """
     Helper function to quantize and perform a batched matrix multiplication.
     This function uses the transposed view of the input tensor `a`.
+
+    Parameters:
+        dtype: Data type of the input tensor `a`.
+        c_dtype: Data type of the output tensor `c`. When this is an FP8 type
+            the matmul epilogue quantizes as it stores, so no separate
+            conversion pass is needed downstream.
+        fp8_dtype: Data type of the FP8 quantized tensors.
+        fp8_scale_dtype: Data type of the FP8 scale tensors.
+        m_scale_granularity: Granularity of the scale for the M dimension of
+            the batched matrix multiplication.
+        n_scale_granularity: Granularity of the scale for the N dimension of
+            the batched matrix multiplication.
+        k_scale_granularity: Granularity of the scale for the K dimension of
+            the batched matrix multiplication, also the quantization group
+            size for `a`.
+        target: Target device for the batched matrix multiplication (defaults
+            to "cpu").
+
+    Args:
+        c: Output tensor for the batched matrix multiplication result. Shape:
+            [batch, m, n].
+        a: Input tensor to quantize to FP8 and use as the left operand, loaded
+            via a transposed view. Shape: [m, batch, k].
+        b: FP8 weight tensor used as the right operand. Shape: [batch, n, k].
+        b_scales: Scale tensor for `b`.
+        ctx: Device context for buffer allocation and kernel execution.
     """
 
     # Evidence assert for TileTensor load Coord constraint.
@@ -1020,6 +1065,11 @@ def mla_decode_branch_fp8[
     ],
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
+    # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
+    fold_shared_index: Bool = False,
+    # Off keeps Q in `dtype`, so the two stagings can be compared.
+    fp8_q: Bool = True,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1057,6 +1107,9 @@ def mla_decode_branch_fp8[
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
+    # Logical sparse indices for position-based causal masking; `None` keeps
+    # the prior slot-count behavior. See mla_decode_utils.mojo.
+    logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1087,6 +1140,14 @@ def mla_decode_branch_fp8[
             + qk_rope_head_dim.
         target: Target device.
         sparse_mla: Whether to use sparse MLA.
+        fold_shared_index: Whether to enable the default-off read-once
+            shared-index fold on the sparse FP8 decode path, which packs the
+            folded MTP query positions into one CTA and gathers their single
+            shared top-k list once.
+        fp8_q: Whether to stage Q in the FP8 cache dtype where the sparse
+            decode supports it, so the producers below quantize as they store.
+            Off stages Q in `dtype` and routes to the sparse kernel that reads
+            a wider Q.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1105,11 +1166,13 @@ def mla_decode_branch_fp8[
         w_uk: Weight matrix for projecting the non-rope part of each query head to
             KV latent space. Shape: [num_heads, kv_latent_dim, qk_nope_head_dim].
         w_uk_scale: The scale for the w_uk weight matrix. Shape varies
-            depending on the float8_config.
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
         w_uv: Weight matrix for projecting the output of the attention back to
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
-            depending on the float8_config.
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
         scalar_args_buf: Packed MLA dispatch metadata buffer.
         ctx: Device context.
         d_indices: Sparse decode packed indices (null when dense).
@@ -1122,6 +1185,8 @@ def mla_decode_branch_fp8[
         extra_topk_lengths: Extra-stream per-batch lengths.
         extra_scales_ptr: Extra-stream scales.
         num_partitions_in: Capturable-graph num_partitions override.
+        logical_indices: Logical sparse indices for position-based causal
+            masking; `None` keeps the prior slot-count behavior.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1154,10 +1219,26 @@ def mla_decode_branch_fp8[
     if seq_len == 0:
         return
 
-    # First, create a input buffer for the mla decode kernel
-    var mla_decode_input_buf = ctx.enqueue_create_buffer[dtype](
-        seq_len * num_heads * k_cache_dim
+    # Sparse decode over a unit-scale FP8 latent cache on SM100 hands the
+    # kernel an FP8 Q so the dispatch routes to the native-FP8 sparse kernel
+    # (MLA_SM100_Decode_Sparse_QKV_FP8). Both producers below quantize as they
+    # store, so Q is staged in FP8 directly, matching the bf16-weights branch.
+    comptime native_fp8_sparse = (
+        fp8_q
+        and sparse_mla
+        and dtype == DType.bfloat16
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
     )
+    comptime mla_decode_input_dtype = (
+        collection_t.CacheType.dtype if native_fp8_sparse else dtype
+    )
+
+    # First, create a input buffer for the mla decode kernel
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[
+        mla_decode_input_dtype
+    ](seq_len * num_heads * k_cache_dim)
     var mla_decode_input = TileTensor(
         mla_decode_input_buf,
         row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
@@ -1251,6 +1332,7 @@ def mla_decode_branch_fp8[
         target=target,
         mask_str=mask_str,
         sparse_mla=sparse_mla,
+        fold_shared_index=fold_shared_index,
     ](
         mla_decode_input,
         input_row_offsets,
@@ -1270,6 +1352,7 @@ def mla_decode_branch_fp8[
         extra_topk_lengths=extra_topk_lengths,
         extra_scales_ptr=extra_scales_ptr,
         num_partitions_in=num_partitions_in,
+        logical_indices=logical_indices,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1460,21 +1543,113 @@ def mla_prefill_branch_sparse_fp8[
         )
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    mla_sm100_prefill_sparse[
-        num_q_heads=num_heads,
-        qk_depth=k_cache_dim,
-        v_depth=kv_latent_dim,
-        indices_stride=indices_stride,
-    ](
-        raw_output,
-        mla_decode_input,
-        k_cache,
-        indices_tt,
-        topk_lengths_tt,
-        attn_sink_opt,
-        scale,
-        ctx,
+    # Unit-scale FP8 latent cache on SM100 runs the native-FP8 sparse prefill
+    # kernel (QK^T and P*V in FP8, no dequant) when the head count fits its
+    # tiles: num_q_heads == 128 (cta_group=2) or a multiple of 8 in (0, 64]
+    # (cta_group=1). `quantize_and_bmm_fp8_helper` ties its output dtype to
+    # the bf16 input, so Q is converted with a saturating-cast pass (unlike
+    # the bf16-weights branch, which stages FP8 directly).
+    comptime native_fp8_sparse = (
+        dtype == DType.bfloat16
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+        and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
     )
+    comptime if collection_t.CacheType.dtype.is_float8():
+        comptime if native_fp8_sparse:
+            var q_fp8_buf = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+                seq_len * num_heads * k_cache_dim
+            )
+            var q_fp8 = TileTensor(
+                q_fp8_buf,
+                row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+            )
+            var mla_decode_input_bf16 = TileTensor(
+                mla_decode_input.ptr.bitcast[Scalar[DType.bfloat16]](),
+                row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+            )
+            convert_bf16_to_fp8_e4m3fn(mla_decode_input_bf16, q_fp8, ctx)
+
+            comptime cta_group = 2 if num_heads == 128 else 1
+            comptime b_topk = 128 if cta_group == 2 else 64
+            comptime num_mbars = 2 if cta_group == 2 else 4
+            comptime config = MLASparseConfig[
+                DType.bfloat16,
+                b_topk_=b_topk,
+                num_mbars_=num_mbars,
+                cta_group_=cta_group,
+            ](
+                num_q_heads=num_heads,
+                num_kv_heads=1,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                group=num_heads,
+            )
+            mla_prefill_sparse_qkv_fp8[
+                config=config,
+                group=num_heads,
+                q_depth=k_cache_dim,
+                scale_block_size=0,
+            ](
+                raw_output,
+                q_fp8,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                scale,
+                Int32(indices_stride),
+                ctx,
+            )
+        else:
+            # FP8 latent cache with bf16 Q: run the FP8 sparse-prefill kernel
+            # directly over the quantized cache (no BF16 staging). Today the
+            # cache carries no dequant scales (scale_dtype=int8 => quantization
+            # disabled), so read at unit scale (scale_block_size=0), mirroring
+            # the sparse-DECODE kernel's read. scales_ptr is unused at
+            # scale_block_size=0; pass a non-null dummy (SnapMLA/SERVOPT-1094
+            # will supply real scales + a positive scale_block_size here once
+            # the cache carries them).
+            var dummy_scales = (
+                raw_output_buf.unsafe_ptr()
+                .bitcast[Float32]()
+                .as_unsafe_any_origin()
+            )
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_heads,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                dummy_scales,
+                scale,
+                ctx,
+            )
+    else:
+        mla_sm100_prefill_sparse[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            scale,
+            ctx,
+        )
 
     var output_t = TileTensor(
         output.ptr,
@@ -1516,6 +1691,12 @@ def mla_prefill_decode_graph_fp8[
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
+    # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding
+    # (fp8-KV only; on the bf16 branch it is parity plumbing, always False).
+    fold_shared_index: Bool = False,
+    # Stage Q in the FP8 cache dtype where the sparse decode supports it; see
+    # `mla_decode_branch_fp8`.
+    fp8_q: Bool = True,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1569,6 +1750,83 @@ def mla_prefill_decode_graph_fp8[
     """
     This is a manually fused kernel that performs the following operations:
     - Perform MLA prefill or decode based on the maximum sequence length.
+
+    Parameters:
+        dtype: Data type of the input and output tensors (inferred).
+        fp8_dtype: Data type of the fp8 input and output tensors (inferred).
+        fp8_scale_dtype: Data type of the fp8 scale input and output tensors
+            (inferred).
+        collection_t: Type of the KV collection (inferred).
+        m_scale_granularity: Granularity of the scale for M dimension of the
+            matrix multiplication.
+        n_scale_granularity: Granularity of the scale for N dimension of the
+            matrix multiplication.
+        k_scale_granularity: Granularity of the scale for K dimension of the
+            matrix multiplication.
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+        sparse_indices_stride: Row stride of the sparse decode index buffer
+            (defaults to 0).
+        fold_shared_index: Whether to use the read-once shared-index MTP
+            fold threaded to `flare_mla_decoding` (defaults to False).
+        fp8_q: Whether to stage Q in the FP8 cache dtype on the sparse decode
+            path (defaults to True); see `mla_decode_branch_fp8`.
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        max_seq_len: Maximum sequence length in the batch, used to select
+            prefill versus decode.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_k_scale: Scale tensor for `w_k`.
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uk_scale: The scale for the `w_uk` weight matrix. Shape varies
+            depending on the FP8 block-scaling granularity used for weight
+            quantization.
+        w_uv: Weight tensor for projecting latent values to V. Shape:
+            [num_heads, v_head_dim, kv_latent_dim].
+        w_uv_scale: Scale tensor for `w_uv`.
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Sparse decode packed indices (null when dense, defaults to
+            None).
+        indices_stride: Row stride in `d_indices` (defaults to 0).
+        topk_lengths: Per-batch valid top-k counts (defaults to None).
+        attn_sink_ptr: Optional per-batch attention sink weights (defaults to
+            None).
+        extra_k: Optional second key cache operand (see
+            `flare_mla_decoding`, defaults to None).
+        extra_d_indices: Extra-stream sparse indices (defaults to None).
+        extra_indices_stride: Stride for `extra_d_indices` (defaults to 0).
+        extra_topk_lengths: Extra-stream per-batch lengths (defaults to None).
+        extra_scales_ptr: Extra-stream scales (defaults to None).
+        num_partitions_in: Capturable-graph num_partitions override (defaults
+            to None).
     """
 
     var seq_len = q.dim(0)
@@ -1591,6 +1849,8 @@ def mla_prefill_decode_graph_fp8[
             kv_input_fn=kv_input_fn,
             target=target,
             sparse_mla=sparse_mla,
+            fold_shared_index=fold_shared_index,
+            fp8_q=fp8_q,
         ](
             output,
             q,
@@ -1620,9 +1880,13 @@ def mla_prefill_decode_graph_fp8[
         )
 
     else:
-        comptime if sparse_mla and collection_t.CacheType.dtype == (
-            DType.bfloat16
-        ):
+        comptime if sparse_mla:
+            # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
+            # branch comptime-dispatches the attention kernel on the cache
+            # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
+            # scale, mirroring sparse decode; bf16 cache =>
+            # mla_sm100_prefill_sparse). Replaces the dense FP8-cache fallback
+            # that previously ran here.
             mla_prefill_branch_sparse_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -1650,9 +1914,8 @@ def mla_prefill_decode_graph_fp8[
                 attn_sink_ptr,
             )
         else:
-            # Dense prefill. FP8-cache sparse is deferred: the sparse kernel
-            # needs external fp32 per-token scales, but the paged FP8 MLA cache
-            # stores int8 granularity-32 scales (layout mismatch).
+            # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
+            # fp8 caches) is handled by the sparse branch above.
             mla_prefill_branch_fp8[
                 m_scale_granularity=m_scale_granularity,
                 n_scale_granularity=n_scale_granularity,
@@ -1700,7 +1963,7 @@ def convert_bf16_to_fp8_e4m3fn(
     ), "Input and output must have the same rank"
 
     @always_inline
-    @parameter
+    @__parameter
     @__copy_capture(input_buffer, output_buffer)
     def convert_kernel[
         width: Int, rank: Int, alignment: Int = 1
@@ -1790,6 +2053,41 @@ def mla_prefill_branch_bf16[
 
     Applies RoPE and RMSNorm, up-projects latent KV to full K and V, then runs
     prefill attention.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_uv: Weight tensor for projecting latent values to V. Shape:
+            [num_heads, v_head_dim, kv_latent_dim].
+        ctx: Device context.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -1840,7 +2138,7 @@ def mla_prefill_branch_bf16[
 
     # In-place update of the rope part of the `q` tensor
     var q_rope_mut = TileTensor(
-        q_rope.ptr.mut_cast[True](),
+        q_rope.ptr.unsafe_mut_cast[True](),
         TileLayout(
             (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
             (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
@@ -2070,6 +2368,43 @@ def mla_decode_branch_bf16[
 
     Applies RoPE and RMSNorm, projects q_nope to latent space, concatenates with
     q_rope, and runs decode.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uv: Weight matrix for projecting the output of the attention back to
+            each head's original space. Shape: [num_heads, v_head_dim,
+            kv_latent_dim].
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Sparse decode packed indices (null when dense).
+        indices_stride: Row stride in `d_indices` (defaults to 0).
+        topk_lengths: Per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        num_partitions_in: Capturable-graph num_partitions override.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -2100,12 +2435,23 @@ def mla_decode_branch_bf16[
     if seq_len == 0:
         return
 
-    # Sparse decode Q TMA uses SWIZZLE_128B over BK=576 elements; that requires
-    # bf16 Q (1152 B). FP8 sparse uses the same bf16 staging buffer (see
-    # mla_decode_branch_fp8). Non-sparse bf16 decode may still stage Q in the
-    # KV cache dtype when the cache is FP8.
+    # Sparse decode over a unit-scale FP8 latent cache on SM100 stages Q in
+    # FP8 so the dispatch routes to the native-FP8 sparse kernel
+    # (MLA_SM100_Decode_Sparse_QKV_FP8, SWIZZLE_64B FP8 Q TMA). Other sparse
+    # configs keep bf16 Q: the BF16/converter sparse kernels' Q TMA uses
+    # SWIZZLE_128B over BK=576 elements, which requires bf16 (1152 B).
+    # Non-sparse bf16 decode may still stage Q in the KV cache dtype when the
+    # cache is FP8.
+    comptime native_fp8_sparse = (
+        sparse_mla
+        and collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+    )
     comptime mla_decode_input_dtype = (
-        DType.bfloat16 if sparse_mla else collection_t.CacheType.dtype
+        DType.bfloat16 if (
+            sparse_mla and not native_fp8_sparse
+        ) else collection_t.CacheType.dtype
     )
     var mla_decode_input_buf = ctx.enqueue_create_buffer[
         mla_decode_input_dtype
@@ -2235,6 +2581,280 @@ def mla_decode_branch_bf16[
 
 
 # ===-----------------------------------------------------------------------===#
+# Manually fused MLA sparse prefill branch (BF16)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def mla_prefill_branch_sparse_bf16[
+    collection_t: KVCollectionT,
+    //,
+    kv_input_fn: def[width: Int](IndexList[2]) capturing -> SIMD[
+        DType.bfloat16, width
+    ],
+    indices_stride: Int,
+    target: StaticString = "cpu",
+](
+    output: TileTensor[
+        mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
+    ],
+    q: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    freqs_cis: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_norm_gamma: TileTensor[_, address_space=AddressSpace.GENERIC, ...],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    epsilon: Float32,
+    w_uk: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    w_uv: TileTensor[DType.bfloat16, address_space=AddressSpace.GENERIC, ...],
+    ctx: DeviceContext,
+    d_indices: UnsafePointer[Int32, MutAnyOrigin],
+    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
+) raises:
+    """Sparse MLA prefill branch (DSv3.2/GLM absorbed shape, BF16 weights).
+
+    BF16 analogue of `mla_prefill_branch_sparse_fp8`: reuses
+    `mla_decode_branch_bf16`'s absorbed-Q construction (q_nope up-proj via `w_uk`
+    + RoPE/RMSNorm) and the identical `w_uv` output up-projection, and swaps the
+    attention call to the existing `mla_sm100_prefill_sparse` kernel over the
+    paged BF16 latent cache. The caller (`.sparse` op) has already remapped
+    `d_indices` from logical to physical rows, so they are passed straight
+    through. Only supported for a BF16 KV cache.
+    """
+    comptime kv_params = collection_t.kv_params
+    comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
+    comptime assert kv_params.num_heads == 1, "kv_params.num_heads should be 1"
+
+    comptime num_heads = q.static_shape[1]
+    comptime q_head_dim = q.static_shape[2]
+    comptime qk_rope_head_dim = freqs_cis.static_shape[1]
+    comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+    comptime v_head_dim = output.static_shape[2]
+    comptime k_cache_dim = kv_params.head_size
+
+    comptime assert (
+        w_uk.shape_known and w_uv.shape_known
+    ), "w_uk and w_uv's shapes should be static"
+    comptime assert (
+        w_uk.static_shape[2] == qk_nope_head_dim
+    ), "w_uk.static_shape[2] should be equal to qk_nope_head_dim"
+    comptime assert (
+        w_uv.static_shape[1] == v_head_dim
+    ), "w_uv.static_shape[1] should be equal to v_head_dim"
+    comptime kv_latent_dim = w_uk.static_shape[1]
+    comptime assert (
+        kv_latent_dim + qk_rope_head_dim == k_cache_dim
+    ), "kv_latent_dim + qk_rope_head_dim should be equal to kv_params.head_size"
+
+    var seq_len = Int(q.dim(0))
+    if seq_len == 0:
+        return
+
+    # Unit-scale FP8 latent cache on SM100 stages Q in FP8 and runs the
+    # native-FP8 sparse prefill kernel (QK^T and P*V in FP8, no dequant); the
+    # kernel supports num_q_heads == 128 (cta_group=2) or a multiple of 8 in
+    # (0, 64] (cta_group=1). Other configs keep bf16 Q.
+    comptime native_fp8_sparse = (
+        collection_t.CacheType.dtype == DType.float8_e4m3fn
+        and not collection_t.CacheType.quantization_enabled
+        and _is_sm10x_gpu(ctx.default_device_info)
+        and (num_heads == 128 or (num_heads <= 64 and num_heads % 8 == 0))
+    )
+    comptime q_staging_dtype = (
+        DType.float8_e4m3fn if native_fp8_sparse else DType.bfloat16
+    )
+    var mla_decode_input_buf = ctx.enqueue_create_buffer[q_staging_dtype](
+        seq_len * num_heads * k_cache_dim
+    )
+    var mla_decode_input = TileTensor(
+        mla_decode_input_buf,
+        row_major(seq_len, Idx[num_heads], Idx[k_cache_dim]),
+    )
+
+    # Transposed view [num_heads, seq_len, qk_nope_head_dim] of the first
+    # qk_nope_head_dim columns of each Q head.
+    var q_nope_t = TileTensor(
+        q.ptr,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[qk_nope_head_dim]),
+            (Idx[q_head_dim], Idx[num_heads * q_head_dim], Idx[1]),
+        ),
+    )
+    var mla_decode_input_nope = TileTensor(
+        mla_decode_input.ptr,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
+        ),
+    )
+    _batched_matmul_gpu[transpose_b=True](
+        mla_decode_input_nope, q_nope_t, w_uk, ctx
+    )
+
+    var q_rope = TileTensor(
+        q.ptr + qk_nope_head_dim,
+        TileLayout(
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * q_head_dim], Idx[q_head_dim], Idx[1]),
+        ),
+    )
+    var mla_decode_input_rope = TileTensor(
+        mla_decode_input.ptr + kv_latent_dim,
+        TileLayout(
+            (seq_len, Idx[num_heads], Idx[qk_rope_head_dim]),
+            (Idx[num_heads * k_cache_dim], Idx[k_cache_dim], Idx[1]),
+        ),
+    )
+    mla_fused_rope_rmsnorm_quantization[kv_input_fn=kv_input_fn](
+        mla_decode_input_rope,
+        q_rope,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        kv_collection,
+        layer_idx,
+        epsilon,
+        ctx,
+    )
+
+    var raw_output_buf = ctx.enqueue_create_buffer[DType.bfloat16](
+        seq_len * num_heads * kv_latent_dim
+    )
+    var raw_output = TileTensor(
+        raw_output_buf,
+        row_major(seq_len, Idx[num_heads], Idx[kv_latent_dim]),
+    )
+
+    # `d_indices` / `topk_lengths` are int32 buffers reinterpreted as uint32:
+    # invalid `-1` slots become 0xFFFFFFFF and are rejected by the kernel's
+    # `idx >= 0` gather producer.
+    var indices_tt = TileTensor(
+        d_indices.bitcast[Scalar[DType.uint32]](),
+        row_major(seq_len * indices_stride),
+    )
+    var topk_lengths_tt = TileTensor(
+        topk_lengths.bitcast[Scalar[DType.uint32]](),
+        row_major(seq_len),
+    )
+    var attn_sink_opt = Optional[UnsafePointer[Float32, ImmutAnyOrigin]](None)
+    if attn_sink_ptr:
+        attn_sink_opt = UnsafePointer[Float32, ImmutAnyOrigin](
+            attn_sink_ptr.value()
+        )
+
+    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    comptime if collection_t.CacheType.dtype.is_float8():
+        comptime if native_fp8_sparse:
+            # Native-FP8 sparse prefill: Q was staged in FP8 above, and the
+            # kernel reads the unit-scale FP8 latent cache with no dequant.
+            # Config knobs follow the kernel's validated tactics: head=128
+            # runs the 2-CTA f8f6f4 tile at b_topk=128/num_mbars=2; head<=64
+            # runs the single-CTA shared-KV tile at b_topk=64 (its only
+            # correct PV mn-major layout) with num_mbars=4.
+            comptime cta_group = 2 if num_heads == 128 else 1
+            comptime b_topk = 128 if cta_group == 2 else 64
+            comptime num_mbars = 2 if cta_group == 2 else 4
+            comptime config = MLASparseConfig[
+                DType.bfloat16,
+                b_topk_=b_topk,
+                num_mbars_=num_mbars,
+                cta_group_=cta_group,
+            ](
+                num_q_heads=num_heads,
+                num_kv_heads=1,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                group=num_heads,
+            )
+            mla_prefill_sparse_qkv_fp8[
+                config=config,
+                group=num_heads,
+                q_depth=k_cache_dim,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                scale,
+                Int32(indices_stride),
+                ctx,
+            )
+        else:
+            # FP8 latent cache with bf16 Q: run the FP8 sparse-prefill kernel
+            # directly over the quantized cache (no BF16 staging). Today the
+            # cache carries no dequant scales (scale_dtype=int8 => quantization
+            # disabled), so read at unit scale (scale_block_size=0), mirroring
+            # the sparse-DECODE kernel's read. scales_ptr is unused at
+            # scale_block_size=0; pass a non-null dummy (SnapMLA/SERVOPT-1094
+            # will supply real scales + a positive scale_block_size here once
+            # the cache carries them).
+            var dummy_scales = (
+                raw_output_buf.unsafe_ptr()
+                .bitcast[Float32]()
+                .as_unsafe_any_origin()
+            )
+            mla_sm100_prefill_sparse_fp8[
+                num_q_heads=num_heads,
+                qk_depth=k_cache_dim,
+                v_depth=kv_latent_dim,
+                indices_stride=indices_stride,
+                scale_block_size=0,
+            ](
+                raw_output,
+                mla_decode_input,
+                k_cache,
+                indices_tt,
+                topk_lengths_tt,
+                attn_sink_opt,
+                dummy_scales,
+                scale,
+                ctx,
+            )
+    else:
+        mla_sm100_prefill_sparse[
+            num_q_heads=num_heads,
+            qk_depth=k_cache_dim,
+            v_depth=kv_latent_dim,
+            indices_stride=indices_stride,
+        ](
+            raw_output,
+            mla_decode_input,
+            k_cache,
+            indices_tt,
+            topk_lengths_tt,
+            attn_sink_opt,
+            scale,
+            ctx,
+        )
+
+    var raw_output_t = TileTensor(
+        raw_output_buf,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[kv_latent_dim]),
+            (Idx[kv_latent_dim], Idx[num_heads * kv_latent_dim], Idx[1]),
+        ),
+    )
+    var output_t = TileTensor(
+        output.ptr,
+        TileLayout(
+            (Idx[num_heads], seq_len, Idx[v_head_dim]),
+            (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
+        ),
+    )
+    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
+
+
+# ===-----------------------------------------------------------------------===#
 # MLA prefill-decode graph (BF16)
 # ===-----------------------------------------------------------------------===#
 
@@ -2248,6 +2868,8 @@ def mla_prefill_decode_graph_bf16[
         DType.bfloat16, width
     ],
     target: StaticString = "cpu",
+    sparse_mla: Bool = False,
+    sparse_indices_stride: Int = 0,
 ](
     output: TileTensor[
         mut=True, DType.bfloat16, address_space=AddressSpace.GENERIC, ...
@@ -2277,12 +2899,71 @@ def mla_prefill_decode_graph_bf16[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
     """BF16 MLA prefill/decode graph.
 
     Dispatches to prefill or decode based on max sequence length in the batch.
+
+    Parameters:
+        collection_t: Type of the KV collection (inferred).
+        mask_str: Mask variant.
+        kv_input_fn: Input lambda function to load the KV latent values. Shape:
+            [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
+            + qk_rope_head_dim.
+        target: Target device (defaults to "cpu").
+        sparse_mla: Whether to use sparse MLA (defaults to False).
+        sparse_indices_stride: Row stride of the sparse decode index buffer
+            (defaults to 0).
+
+    Args:
+        output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        input_row_offsets: Indicates where each request starts and ends in
+            `q`. Shape: [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_norm_gamma: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous K buffer. This is a 1D tensor
+            of shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        max_seq_len: Maximum sequence length in the batch, used to select
+            prefill versus decode.
+        w_k: Weight matrix for up-projecting the latent cache to full K. Shape:
+            [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_uk: Weight matrix for projecting the non-rope part of each query head
+            to KV latent space. Shape: [num_heads, kv_latent_dim,
+            qk_nope_head_dim].
+        w_uv: Weight matrix for projecting the output of the attention back to
+            each head's original space. Shape: [num_heads, v_head_dim,
+            kv_latent_dim].
+        scalar_args_buf: Packed MLA dispatch metadata buffer.
+        ctx: Device context.
+        d_indices: Optional device pointer to packed int32 physical KV row
+            indices for sparse decode (defaults to None).
+        indices_stride: Stride between batch rows in `d_indices` (defaults
+            to 0).
+        topk_lengths: Optional per-batch valid top-k counts (defaults to
+            None).
+        attn_sink_ptr: Optional per-batch attention sink weights (defaults
+            to None).
+        num_partitions_in: Capturable-graph num_partitions override (defaults
+            to None).
     """
     var seq_len = q.dim(0)
 
@@ -2306,6 +2987,7 @@ def mla_prefill_decode_graph_bf16[
             mask_str=mask_str,
             kv_input_fn=kv_input_fn,
             target=target,
+            sparse_mla=sparse_mla,
         ](
             output,
             q,
@@ -2320,27 +3002,62 @@ def mla_prefill_decode_graph_bf16[
             w_uv,
             scalar_args_buf,
             ctx,
-            num_partitions_in=num_partitions_in,
+            d_indices,
+            indices_stride,
+            topk_lengths,
+            attn_sink_ptr,
+            num_partitions_in,
         )
     else:
-        mla_prefill_branch_bf16[
-            mask_str=mask_str,
-            kv_input_fn=kv_input_fn,
-            target=target,
-        ](
-            output,
-            q,
-            input_row_offsets,
-            freqs_cis,
-            kv_norm_gamma,
-            kv_collection,
-            layer_idx,
-            scale,
-            epsilon,
-            buffer_row_offsets,
-            cache_offsets,
-            buffer_length,
-            w_k,
-            w_uv,
-            ctx,
-        )
+        comptime if sparse_mla:
+            # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
+            # branch comptime-dispatches the attention kernel on the cache
+            # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
+            # scale, mirroring sparse decode; bf16 cache =>
+            # mla_sm100_prefill_sparse). Replaces the dense FP8-cache fallback
+            # that previously ran here.
+            mla_prefill_branch_sparse_bf16[
+                kv_input_fn=kv_input_fn,
+                indices_stride=sparse_indices_stride,
+                target=target,
+            ](
+                output,
+                q,
+                input_row_offsets,
+                freqs_cis,
+                kv_norm_gamma,
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk,
+                w_uv,
+                ctx,
+                d_indices.value(),
+                topk_lengths.value(),
+                attn_sink_ptr,
+            )
+        else:
+            # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
+            # fp8 caches) is handled by the sparse branch above.
+            mla_prefill_branch_bf16[
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output,
+                q,
+                input_row_offsets,
+                freqs_cis,
+                kv_norm_gamma,
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets,
+                cache_offsets,
+                buffer_length,
+                w_k,
+                w_uv,
+                ctx,
+            )

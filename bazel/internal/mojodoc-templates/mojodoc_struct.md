@@ -28,7 +28,12 @@ description: {% if decl.summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl, overload=False) %}
+{% macro process_decl_body(decl, marker_above=False) %}
+{# The page's own declaration wears its marker above the signature, clear of #}
+{# the code font; its members carry theirs inside the signature row. #}
+{% if marker_above %}
+{{ macros.stability_marker(decl, standalone=True) }}
+{% endif %}
 
 {% if decl.signature %}
 <div class="mojo-function-sig">
@@ -43,8 +48,7 @@ description: {% if decl.summary
 {% if decl.signature %}
 `` {% if decl.isStatic %}static {% endif %}{{ decl.signature }} ``
 {% endif %}
-{# for function overloads, show stability marker. #}
-{% if overload %}
+{% if not marker_above %}
 {{ macros.stability_marker(decl) }}
 {% endif %}
 
@@ -54,6 +58,11 @@ description: {% if decl.summary
 {{ decl.summary }}
 
 {{ decl.description }}
+
+{% if decl.deprecated %}
+
+**Deprecated:** {{ decl.deprecated }}
+{% endif %}
 
 {% if decl.constraints %}
 
@@ -127,20 +136,15 @@ description: {% if decl.summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload, overload=True) }}
+{{ process_decl_body(overload) }}
 
 </div>
 
 {% endfor %}
 {% else %}
 
-{{ process_decl_body(decl) }}
+{{ process_decl_body(decl, marker_above=True) }}
 
-{% endif %}
-
-{% if decl.deprecated %}
-
-**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.parameters and not decl.kind == 'function' %}
@@ -183,7 +187,7 @@ description: {% if decl.summary
 ## Implemented traits
 
 {% for trait in decl.parentTraits %}
-{% if trait.path %}[`{{ trait.name }}`]({{ api_href(trait.path) }}){% else %}`{{ trait.name }}`{% endif %}{{ ", " if not loop.last else "" }}
+{% if trait.path %}[`{{ trait.name }}`]({{ api_href(trait.path) }}){% else %}`{{ trait.name }}`{% endif %}{% if trait.condition %} (`where {{ trait.condition }}`){% endif %}{{ ", " if not loop.last else "" }}
 {% endfor %}
 
 {% endif %}

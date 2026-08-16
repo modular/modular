@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -49,7 +50,7 @@ modular_py_library(
 )
 
 # Simulated multi-device tests on CPU — runs on all CI (no GPU needed).
-modular_py_test(
+modular_eager_py_test(
     name = "tests_simulated_cpu",
     size = "large",
     srcs = [
@@ -61,6 +62,9 @@ modular_py_test(
         "functional/test_*_simulated_cpu.py",
         "module/test_*_simulated_cpu.py",
     ]),
+    cpu_only = True,
+    # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     ignore_extra_deps = [
         # lazy import
         "//max/python/max/_interpreter_ops",
@@ -115,13 +119,15 @@ modular_py_test(
 # Simulated multi-device tests on a single GPU — validates that the
 # simulated path works on GPU (important for testing GPU-only fused ops
 # in a multi-device setting without requiring multiple physical GPUs).
-modular_py_test(
+modular_eager_py_test(
     name = "tests_simulated_gpu",
     size = "large",
     srcs = glob([
         "functional/test_*_simulated_gpu.py",
         "module/test_*_simulated_gpu.py",
     ]),
+    # See tests_simulated_cpu (SDLC-4307).
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -152,10 +158,12 @@ modular_py_test(
 # CUDA_ERROR_MISALIGNED_ADDRESS on H100 due to signal buffer
 # accumulation across many EagerRealizationContext lifecycles.
 [
-    modular_py_test(
+    modular_eager_py_test(
         name = src.replace("/", "/").removesuffix(".py"),
         size = "enormous",
-        srcs = [src],
+        srcs = [
+            src,
+        ],
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },
@@ -184,10 +192,12 @@ modular_py_test(
 ]
 
 [
-    modular_py_test(
+    modular_eager_py_test(
         name = src.replace("/", "/").removesuffix(".py"),
         size = "enormous",
-        srcs = [src],
+        srcs = [
+            src,
+        ],
         exec_properties = {
             "test.resources:gpu-memory": "4",
         },

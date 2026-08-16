@@ -53,8 +53,17 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
-from max.serve.telemetry.common import configure_logging, configure_metrics
-from max.serve.telemetry.gc_utils import freeze_gc_heap, install_gc_debugger
+from max.serve.telemetry.common import (
+    configure_kernel_tracing,
+    configure_logging,
+    configure_metrics,
+    configure_tracing,
+)
+from max.serve.telemetry.gc_utils import (
+    _release_free_host_memory,
+    freeze_gc_heap,
+    install_gc_debugger,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
 from max.serve.worker_interface import (
@@ -234,6 +243,8 @@ class ModelWorker:
                 can dominate first-run startup on cold filesystem caches.
         """
         configure_logging(settings)
+        configure_tracing(settings)
+        configure_kernel_tracing(settings)
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
@@ -265,7 +276,9 @@ class ModelWorker:
             # heavyweight driver context initialization that can take
             # seconds. Doing it here at startup avoids that latency
             # hitting the first real request.
-            # Use any model's device_specs — all components share the same device.
+            # Use any model's device_specs — all components share the same
+            # device. Reads the raw field, which may name a GPU the model was
+            # downcast off of; priming an unused GPU is harmless.
             prime_start_s = time.monotonic()
             any_model = next(iter(pipeline_config.models.values()))
             first_device = load_device(any_model.device_specs[0])
@@ -318,6 +331,10 @@ class ModelWorker:
                 unaccounted_init_s,
                 other_s,
             )
+
+            if os.getenv("MODULAR_MAX_RELEASE_FREE_HOST_MEMORY"):
+                with Tracer("release_free_host_memory"):
+                    _release_free_host_memory()
 
             warmup_duration_s = 0.0
             with Tracer("graph_capture_warmup"):
@@ -396,11 +413,22 @@ class ModelWorker:
                 get_reset_prefix_cache_backend(pipeline, zmq_endpoint_base)
             )
 
+            # Tear down the KV connector when the worker exits (normal exit,
+            # exception, or SIGTERM-driven cancellation). This drains host/disk
+            # transfers and, for the tiered connector, removes the on-disk
+            # offload directory so it isn't leaked across restarts.
+            if kv_cache is not None:
+                exit_stack.callback(kv_cache.shutdown)
+
             # Get the EPLB stats accumulator (None unless profiling is
             # enabled and the pipeline supports it).
             eplb_stats_accumulator = _get_eplb_stats_accumulator(
                 pipeline, settings.eplb_profile
             )
+
+            if eplb_stats_accumulator is not None:
+                # Zero warmup/graph-capture skew so the first snapshot is clean.
+                eplb_stats_accumulator.reset()
 
             eplb_stats_backend = (
                 EplbStatsBackend(
@@ -598,4 +626,9 @@ async def start_model_worker(
         logger.debug("Model worker task is ready")
 
         async with model_worker_interface.model_worker_proxy() as model_worker:
+            # Block until the worker channel is connected before serving, so
+            # runtime admission never has to disambiguate "not connected yet"
+            # from "queue full." Reuses the model-worker readiness budget.
+            await model_worker.wait_until_connected(settings.mw_timeout_s)
+            logger.debug("Model worker channel connected")
             yield model_worker

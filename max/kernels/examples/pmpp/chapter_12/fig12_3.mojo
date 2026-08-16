@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu import block_idx, thread_idx
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu.primitives.warp import vote, shuffle_idx
 from std.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros

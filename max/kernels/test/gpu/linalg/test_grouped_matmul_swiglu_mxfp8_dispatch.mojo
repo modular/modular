@@ -42,8 +42,8 @@ in-place register epilogue; prefill cases take the cooperative
 config as well.
 """
 from std.math import align_up, ceildiv
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.memory.unsafe import bitcast
 from std.random import seed, rand
@@ -173,7 +173,7 @@ def _build_shared_b[
     for i in range(b_scales_total):
         b_scales_host_ptr[i] = sf_small
     for i in range(b_scales_perm_host.num_elements()):
-        b_scales_perm_host.ptr[i] = sf_zero
+        b_scales_perm_host._storage[i] = sf_zero
 
     # sigma-permute W on the N axis: W_perm[e, 2i, :] = W[e, i, :],
     # W_perm[e, 2i+1, :] = W[e, H + i, :].

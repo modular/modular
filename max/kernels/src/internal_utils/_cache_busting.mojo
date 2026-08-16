@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.builtin.device_passable import DevicePassable
 from std.math import align_up
 from std.sys import size_of
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import InitializationType
 
 # 512 MiB — larger than 2x the infinity cache on MI300x (256 MiB)
@@ -99,7 +100,7 @@ struct CacheBustingBuffer[dtype: DType](ImplicitlyCopyable):
 
     def init_on_device(
         self, init_type: InitializationType, ctx: DeviceContext
-    ) raises:
+    ) raises where conforms_to(Scalar[Self.dtype], DevicePassable):
         """Initialize the entire buffer on the device."""
         from internal_utils._utils import init_vector_launch
 

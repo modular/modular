@@ -28,7 +28,7 @@ from shmem import *
 from std.testing import assert_equal
 
 
-def simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
+def simple_shift_kernel(destination: Pointer[Int32, MutAnyOrigin]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes

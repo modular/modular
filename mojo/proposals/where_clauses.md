@@ -22,6 +22,12 @@ trailing `where` clauses. Trailing `where` extended to struct and `comptime`
 alias declarations. Auto-predication allows trailing `where` clauses to
 discharge constraints from constrained types appearing in a signature.
 
+**July 22, 2026**
+Status: Added an optional failure message on `where` clauses.
+String-literal messages only for now; supported on trailing function, struct,
+and `comptime` alias constraints and on struct conditional-conformance clauses.
+See "Failure messages" below.
+
 This document explores adding “where” clauses to Mojo, a major missing
 feature that will allow more safety, expressivity, and APIs that work better
 for our users.
@@ -239,6 +245,54 @@ This capability is an “obviously good” thing, but all the questions revolve
 around the implementation - how invasive is this, what are the limitations, and
 does it require building an interpreter back into the parser just after we
 excised it?
+
+### Failure messages
+
+A `where` clause may carry an optional message that is surfaced in the
+diagnostic when the constraint fails. The message is written as a parenthesized
+pair, `where (condition, "message")`:
+
+```mojo
+def foo[sc: Int]() where (sc > 1, "scaling factor must be greater than 1"):
+    ...
+```
+
+Calling `foo[0]()` then reports the message in the note:
+
+```text
+note: constraint declared here evaluated to False, expected '(sc > 1)':
+scaling factor must be greater than 1
+```
+
+The message is supported everywhere a `where` clause is: trailing function,
+struct, and `comptime` alias constraints, and struct conditional-conformance
+clauses (`struct S(Trait where (cond, "message"))`).
+
+**Why parentheses.** An earlier proposal used an unparenthesized trailing form,
+`where condition, "message"`. The bare comma was ambiguous in a conformance
+list — in `(Trait where cond, "msg", Trait2)` the comma also separates the next
+entry. Putting the comma inside the parentheses removes the ambiguity: the
+message is simply the second element of a two-element tuple expression, and the
+entry-separator comma is unambiguous.
+
+**String literals only, for now.** Unlike `comptime assert` (below) — whose
+message is checked by the elaborator and so may be any comptime string
+expression — a `where` message is captured by the parser, which has no
+interpreter. A non-literal message such as `"need " + String(N) + " values"`
+cannot be evaluated at the `where`-parsing phase, so only string literals are
+accepted (with the usual adjacent-literal concatenation); anything else is a
+targeted "the message in a 'where' clause must be a string literal" error.
+Because the parenthesized syntax already makes a non-literal message
+syntactically unambiguous, lifting this restriction later is backward
+compatible.
+
+**Where the message surfaces.** Body constraints — trailing `where` on
+functions, structs, and aliases — are checked during overload resolution and
+instantiation, and the message is appended to the "evaluated to False" and
+"needs evidence" notes. Conditional-conformance messages are attached to the
+"does not conform to trait" diagnostic instead; they are evaluated under the
+caller’s assumptions, so a conformance the caller proved via its own `where`
+clause is not reported — only the genuinely-unsatisfied ones.
 
 ## Implementation approach
 

@@ -43,7 +43,7 @@ from std.random import random_ui64, seed
 from std.sys.defines import get_defined_bool, get_defined_int
 from std.utils.numerics import isfinite, neg_inf
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from nn.moe import single_group_router
 

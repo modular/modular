@@ -51,8 +51,8 @@ Assert byte-equal: O_test == O_ref and S_test == S_ref (match_bf16=True);
 or rtol/atol-bounded fp32 dequant compare (match_bf16=False).
 """
 from std.math import align_up, ceildiv
-from std.gpu.host import DeviceBuffer, DeviceContext
-from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import alloc
 from std.random import random_ui64, seed, rand
 from std.builtin.simd import _convert_f32_to_float8_scalar
@@ -177,9 +177,9 @@ def _build_shared_b[
         input_scales_host_ptr[i] = 1.0 + Float32(i + 1) * 0.01
 
     rand(b_host_ptr, b_size, min=0, max=255)
-    rand(b_scales_host.ptr, b_scales_host.num_elements())
+    rand(b_scales_host._storage, b_scales_host.num_elements())
     for i in range(b_scales_perm_host.num_elements()):
-        b_scales_perm_host.ptr[i] = Scalar[scales_dtype](0.0)
+        b_scales_perm_host._storage[i] = Scalar[scales_dtype](0.0)
 
     var b_expert_sf_size = (
         Int(b_scales_host.dim(1))
@@ -493,10 +493,10 @@ def _test_swiglu_dispatch[
     var S_test_host_ptr = alloc[Scalar[scales_dtype]](S_size)
 
     # ---- Init A-side data (per-test) ----
-    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
+    rand(a_host._storage, a_host.num_elements(), min=0, max=255)
 
     for i in range(a_scales_host.num_elements()):
-        a_scales_host.ptr[i] = Scalar[scales_dtype](0.0)
+        a_scales_host._storage[i] = Scalar[scales_dtype](0.0)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
 
@@ -775,8 +775,9 @@ def _test_swiglu_dispatch[
                     (ref_hi_dq, test_hi_dq),
                 )
                 comptime for k in range(2):
-                    var r = nibble_pairs[k][0]
-                    var t = nibble_pairs[k][1]
+                    var pair = rebind[type_of(nibble_pairs[0])](nibble_pairs[k])
+                    var r = pair[0]
+                    var t = pair[1]
                     var ad = abs(r - t)
                     if ad > max_abs_diff:
                         max_abs_diff = ad

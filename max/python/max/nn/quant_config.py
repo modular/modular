@@ -90,6 +90,14 @@ class QuantFormat(Enum):
     MXFP4 = "mxfp4"
     """Microscaling FP4 (MX) quantization format."""
 
+    MXFP6 = "mxfp6"
+    """Microscaling FP6 (MX) quantization: six-bit elements (E2M3 or E3M2)
+    packed four-to-three-bytes, with E8M0 block scales at a 32-element K
+    granularity. AMD CDNA4 only: routes to the ``f8f6f4`` block-scaled MFMA,
+    which selects the operand format per operand. Chosen over MXFP4 where
+    accuracy matters -- E2M3 carries the same 3 mantissa bits as FP8 E4M3, so
+    A6W6 lands within ~1.3 dB of A8W8 where A4W4 loses ~13 dB."""
+
     INT8_W8A8 = "int8-w8a8"
     """Symmetric int8 W8A8: per-output-channel (rowwise) int8 weight scales and
     per-token (dynamic rowwise) int8 activation scales, both symmetric
@@ -287,12 +295,16 @@ class QuantConfig:
     Note that scales in the 5D TCGEN-interleaved layout are typically flattened
     to 2D ``[M, K//16]`` in the checkpoint."""
 
-    mxfp4_preshuffled_b: bool = False
+    _mxfp6_element_format: str = "e2m3"
+    """Which OCP FP6 encoding an MXFP6 checkpoint holds. Read through
+    :attr:`mxfp6_format`, which rejects the question for non-MXFP6 configs."""
+
+    block_scaled_preshuffled_b: bool = False
     """Whether MXFP4 weight ``B`` is preshuffled into the 5D layout that the
     AMD preb kernel reads (produced by ``Shuffler.preshuffle_b_5d``). When
     True, ``MoEQuantized`` dispatches the grouped matmul to the
-    ``mxfp4_grouped_matmul_amd_preb`` kernel variant; when False (default)
-    it dispatches to the dense row-major ``mxfp4_grouped_matmul_amd``
+    ``block_scaled_grouped_matmul_amd_preb`` kernel variant; when False (default)
+    it dispatches to the dense row-major ``block_scaled_grouped_matmul_amd``
     kernel. Must be set in lockstep with the weight loader actually
     applying the preshuffle (e.g. Kimi K2.5's
     ``weight_adapters.py:_shuffle_group``)."""
@@ -359,6 +371,11 @@ class QuantConfig:
         return self.format == QuantFormat.MXFP4
 
     @property
+    def is_mxfp6(self) -> bool:
+        """Returns ``True`` if this config represents MXFP6 quantization."""
+        return self.format == QuantFormat.MXFP6
+
+    @property
     def is_mxfp8(self) -> bool:
         """Returns ``True`` if this config represents MXFP8 quantization."""
         return self.format == QuantFormat.MXFP8
@@ -367,6 +384,52 @@ class QuantConfig:
     def is_fp4(self) -> bool:
         """``True`` if this config represents any FP4 variant (NVFP4 or MXFP4)."""
         return self.is_nvfp4 or self.is_mxfp4
+
+    @property
+    def mxfp6_format(self) -> str:
+        """The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
+
+        E2M3 is the default: with 3 mantissa bits against E3M2's 2, it is the
+        better choice for weights, whose dynamic range a per-32 block scale
+        already absorbs.
+        """
+        if not self.is_mxfp6:
+            raise ValueError(f"not an MXFP6 config: {self.format}")
+        return self._mxfp6_element_format
+
+    @property
+    def is_mx(self) -> bool:
+        """``True`` for any OCP microscaling format (MXFP4, MXFP6 or MXFP8).
+
+        These share the E8M0 per-32-element block scale; NVFP4 is excluded, as
+        it scales per 16 elements with an FP8 scale.
+        """
+        return self.is_mxfp4 or self.is_mxfp6 or self.is_mxfp8
+
+    @property
+    def mx_element_dtype(self) -> DType:
+        """The dtype of one quantized element, for MX formats.
+
+        This is the *logical* element type, not the storage type: sub-byte MX
+        weights are stored as packed :obj:`~max.dtype.DType.uint8` bytes, and
+        that spelling cannot say which format the bytes hold -- MXFP4 and MXFP6
+        share it. Code that needs to branch on the format should branch on this
+        instead of pairing ``dtype == DType.uint8`` with an ``is_mxfp6`` flag.
+
+        Raises:
+            ValueError: If this config is not an MX format.
+        """
+        if self.is_mxfp6:
+            return (
+                DType.float6_e3m2fn
+                if self._mxfp6_element_format == "e3m2"
+                else DType.float6_e2m3fn
+            )
+        if self.is_mxfp4:
+            return DType.float4_e2m1fn
+        if self.is_mxfp8:
+            return DType.float8_e4m3fn
+        raise ValueError(f"not an MX config: {self.format}")
 
     @property
     def is_int8_w8a8(self) -> bool:
@@ -396,6 +459,8 @@ class QuantConfig:
             )
         elif self.is_mxfp4:
             return _mxfp4_scales_type(quantized_shape, device_ref)
+        elif self.is_mxfp6:
+            return _mxfp6_scales_type(quantized_shape, device_ref)
         elif self.is_mxfp8:
             return _mxfp8_scales_type(quantized_shape, device_ref)
         elif (
@@ -408,12 +473,19 @@ class QuantConfig:
 
 
 def fp4_packed_k(in_dim: int, quant_config: QuantConfig | None) -> int:
-    """Returns packed K dimension for FP4 weights, else returns in_dim."""
-    return (
-        in_dim // 2
-        if quant_config is not None and quant_config.is_fp4
-        else in_dim
-    )
+    """Returns the packed K dimension for sub-byte MX weights, else ``in_dim``.
+
+    FP4 packs two codes per byte and FP6 packs four codes per three bytes, so
+    the on-disk K of a quantized weight is measured in bytes and differs from
+    its logical K. Formats whose elements are a whole byte pass through.
+    """
+    if quant_config is None:
+        return in_dim
+    if quant_config.is_fp4:
+        return in_dim // 2
+    if quant_config.is_mxfp6:
+        return in_dim * 3 // 4
+    return in_dim
 
 
 def ceildiv(n: DimLike, d: DimLike) -> Dim:
@@ -493,6 +565,23 @@ def _mxfp4_scales_type(
         raise ValueError(f"Unsupported accelerator API: {api_name}")
 
 
+def _mxfp6_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the MXFP6 scales tensor.
+
+    Identical to MXFP4's: the scale layout depends only on the 32-element block
+    granularity, not on the width of the elements inside the block.
+    """
+    if accelerator_api() != "hip":
+        raise ValueError("MXFP6 is only supported on AMD CDNA4 (gfx950)")
+    return TensorType(
+        dtype=DType.float8_e8m0fnu,
+        shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
+        device=device_ref,
+    )
+
+
 def _mxfp8_scales_type(
     quantized_shape: Shape, device_ref: DeviceRef
 ) -> TensorType:
@@ -501,6 +590,15 @@ def _mxfp8_scales_type(
     if api_name == "cuda":
         return _nvmxf4f8_scales_type(
             quantized_shape, device_ref, DType.float8_e8m0fnu, 32
+        )
+    elif api_name == "hip":
+        # Same plain rank-2 layout as MXFP4 on AMD: both formats scale groups of
+        # 32 elements, and the difference (packed nibbles vs one byte) is in the
+        # quantized operand, not its scales.
+        return TensorType(
+            dtype=DType.float8_e8m0fnu,
+            shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
+            device=device_ref,
         )
     else:
         raise ValueError(f"Unsupported accelerator API: {api_name}")

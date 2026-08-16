@@ -24,11 +24,7 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph.buffer_utils import cast_tensor_to
-from max.pipelines.lib.vision_encoder_cache import (
-    VisionEncoderCache,
-    concat_device_buffers,
-)
-from max.pipelines.request import RequestID
+from max.pipelines.context import ImageMetadata
 from max.profiler import traced
 
 from .context import Gemma4Context
@@ -48,55 +44,6 @@ class VisionRawInputs:
     cu_seqlens: list[Buffer]
     pool_gather_index: list[Buffer]
     max_seq_len: Buffer
-
-
-@dataclass
-class ImageInputs:
-    """Image-specific inputs attached to a model-input batch.
-
-    Exactly one of ``raw`` or ``cached`` is populated:
-
-    * ``raw`` — at least one image needs the vision encoder.  The
-      ``cache_*`` fields carry metadata so ``execute`` can update the
-      ``VisionEncoderCache`` after the forward pass.
-    * ``cached`` — every image was already in the cache; pre-assembled
-      embeddings and scatter indices are ready to use directly.
-    """
-
-    raw: VisionRawInputs | None = None
-
-    cache_context_batch: Sequence[Gemma4Context] | None = None
-    cache_uncached_contexts: Sequence[Gemma4Context] | None = None
-    cache_per_image_token_counts: list[int] | None = None
-
-    cached_embeddings: list[Buffer] | None = None
-    cached_token_indices: list[Buffer] | None = None
-    cached_token_indices_np: npt.NDArray[np.int32] | None = None
-
-
-@dataclass
-class VideoInputs:
-    """Video-specific inputs attached to a model-input batch.
-
-    Exactly one of ``raw`` or ``cached_embeddings`` is populated:
-
-    * ``raw`` — at least one video needs encoding.  ``cache_hashes`` and
-      ``cache_req_ids`` carry metadata so ``execute`` can store the result.
-    * ``cached_embeddings`` — every video was already in the cache; embeddings
-      are pre-assembled and ready to use directly.
-    """
-
-    raw: VisionRawInputs | None = None
-    token_indices: list[Buffer] | None = None
-    token_indices_np: npt.NDArray[np.int32] | None = None
-
-    # Metadata for caching freshly-encoded videos in execute().
-    cache_hashes: list[int] | None = None
-    cache_req_ids: list[RequestID] | None = None
-    cache_per_video_token_counts: list[int] | None = None
-
-    # Cache-hit path: all videos already cached.
-    cached_embeddings: list[Buffer] | None = None
 
 
 def create_empty_embeddings(
@@ -220,201 +167,66 @@ def pack_vision_buffers(
 
 
 @traced
-def build_image_inputs(
-    context_batch: Sequence[Gemma4Context],
-    uncached: Sequence[Gemma4Context],
-    devices: list[Device],
-    pooling_kernel_size: int,
-    ve_cache: VisionEncoderCache[Gemma4Context],
-    empty_embeddings: list[Buffer],
-    dtype: DType,
-) -> ImageInputs | None:
-    """Assemble ``ImageInputs`` — raw or cached — for a batch."""
-    k = pooling_kernel_size
-
-    if uncached:
-        all_patches: list[npt.NDArray[np.floating[Any]]] = []
-        all_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
-        patch_counts: list[int] = []
-        soft_token_counts: list[int] = []
-
-        for ctx in uncached:
-            # Slice off already-encoded images so pixel_position_ids (the full
-            # per-image list) realigns with next_images under chunked prefill.
-            ctx_pos_ids = ctx.pixel_position_ids[ctx.image_idx :]
-            for img_idx, img in enumerate(ctx.next_images):
-                num_soft = img.end_idx - img.start_idx
-                num_patches = num_soft * k * k
-                if num_patches != len(img.pixel_values):
-                    raise ValueError(
-                        f"Expected {num_patches} patches, "
-                        f"got {len(img.pixel_values)}"
-                    )
-                if (
-                    img.image_hash is not None
-                    and ve_cache.lookup(img.image_hash) is not None
-                ):
-                    continue
-                all_patches.append(img.pixel_values)
-                all_pos_ids.append(ctx_pos_ids[img_idx])
-                patch_counts.append(num_patches)
-                soft_token_counts.append(num_soft)
-
-        per_image_token_counts = [
-            img.end_idx - img.start_idx
-            for ctx in uncached
-            for img in ctx.next_images
-            if img.image_hash is None or ve_cache.lookup(img.image_hash) is None
-        ]
-
-        raw = (
-            pack_vision_buffers(
-                devices,
-                pooling_kernel_size,
-                all_patches,
-                all_pos_ids,
-                patch_counts,
-                soft_token_counts,
-                dtype,
-            )
-            if all_patches
-            else None
-        )
-
-        return ImageInputs(
-            raw=raw,
-            cache_context_batch=context_batch,
-            cache_uncached_contexts=uncached,
-            cache_per_image_token_counts=per_image_token_counts,
-        )
-
-    # All images are cached (or no images at all).
-    cached_embeds, scatter_np = ve_cache.prepare_vision_outputs(
-        context_batch=context_batch,
-        uncached_contexts=uncached,
-        vision_embeds=empty_embeddings,
-        per_image_token_counts=[],
-        n_devices=len(devices),
-        empty_embeddings=empty_embeddings,
-    )
-    if scatter_np is not None and len(scatter_np) > 0:
-        return ImageInputs(
-            cached_embeddings=cached_embeds,
-            cached_token_indices_np=scatter_np.astype(np.int32),
-        )
-
-    return None
-
-
-@traced
-def build_video_inputs(
-    context_batch: Sequence[Gemma4Context],
+def pack_uncached_images(
+    selection: Sequence[tuple[Gemma4Context, Sequence[ImageMetadata]]],
     devices: list[Device],
     pooling_kernel_size: int,
     dtype: DType,
-    ve_cache: VisionEncoderCache[Gemma4Context] | None = None,
-    empty_embeddings: list[Buffer] | None = None,
-) -> VideoInputs | None:
-    """Assemble ``VideoInputs`` from pre-unpacked per-frame context data.
+) -> VisionRawInputs | None:
+    """Pack a batch's pipeline-selected cache-miss image pixels to device.
 
-    When *ve_cache* is provided, videos already in the cache skip encoding.
-    Scatter indices are always rebuilt per chunk — they depend on
-    ``processed_length``, not on whether encoding was skipped.
+    Takes the ``(context, miss-images)`` pairs the pipeline's ``select``
+    returned and does the pinned host-to-device copy via
+    :func:`pack_vision_buffers`. Slices ``pixel_position_ids[ctx.image_idx:]``
+    so the full per-image position list realigns with ``next_images`` under
+    chunked prefill, and validates each image's patch count. Returns ``None``
+    when nothing needs encoding.
+
+    Safety invariant: ``select`` and this packer must see the SAME image objects
+    within one ``run_vision_encode`` call. The miss set is matched by object
+    identity (``id(img)``) while iterating ``next_images`` (so each image keeps
+    its ``pixel_position_ids`` slot). Rebuilding or copying ``ctx.images``
+    between select and pack raises here instead of silently dropping images.
     """
-    video_ctxs = [ctx for ctx in context_batch if ctx.video_frame_patches]
-    if not video_ctxs:
+    k = pooling_kernel_size
+    all_patches: list[npt.NDArray[np.floating[Any]]] = []
+    all_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
+    patch_counts: list[int] = []
+    soft_token_counts: list[int] = []
+    for ctx, miss_images in selection:
+        ctx_pos_ids = ctx.pixel_position_ids[ctx.image_idx :]
+        uncached_ids = {id(img) for img in miss_images}
+        consumed = 0
+        for j, img in enumerate(ctx.next_images):
+            if id(img) not in uncached_ids:
+                continue
+            consumed += 1
+            num_soft = img.end_idx - img.start_idx
+            num_patches = num_soft * k * k
+            if num_patches != len(img.pixel_values):
+                raise ValueError(
+                    f"Expected {num_patches} patches, "
+                    f"got {len(img.pixel_values)}"
+                )
+            all_patches.append(img.pixel_values)
+            all_pos_ids.append(ctx_pos_ids[j])
+            patch_counts.append(num_patches)
+            soft_token_counts.append(num_soft)
+        if consumed != len(miss_images):
+            raise ValueError(
+                f"{len(miss_images) - consumed} of {len(miss_images)} selected "
+                f"image(s) for request {ctx.request_id} are not present in "
+                "ctx.next_images. The selection must hold the same "
+                "ImageMetadata objects as the context."
+            )
+    if not all_patches:
         return None
-
-    # Build chunked-prefill-aware scatter indices for all video contexts.
-    # Absolute token positions are mapped into the current chunk's active
-    # window; positions outside the window get the int32-min sentinel so
-    # scatter_nd_skip_oob_indices ignores them.
-    oob_idx = np.iinfo(np.int32).min
-    batch_offset = 0
-    scatter_parts: list[npt.NDArray[np.int32]] = []
-    for ctx in context_batch:
-        processed_length = ctx.tokens.processed_length
-        active_len = ctx.tokens.active_length
-        for start, end in ctx.video_token_ranges:
-            rel = np.arange(start, end, dtype=np.int64) - processed_length
-            valid = (rel >= 0) & (rel < active_len)
-            scatter_parts.append(
-                np.where(
-                    valid,
-                    (rel + batch_offset).astype(np.int32),
-                    np.int32(oob_idx),
-                )
-            )
-        batch_offset += active_len
-    scatter_np = np.concatenate(scatter_parts).astype(np.int32)
-
-    # Cache-aware path: check each video against the cache.
-    if ve_cache is not None and ve_cache.enabled:
-        uncached_ctxs: list[Gemma4Context] = []
-        for ctx in video_ctxs:
-            for vh in ctx.video_hashes:
-                if ve_cache.lookup(vh):
-                    ve_cache.acquire(ctx.request_id, vh)
-                else:
-                    uncached_ctxs.append(ctx)
-                    break  # miss on at least one video — encode this ctx
-
-        if not uncached_ctxs:
-            # All videos cached — assemble embeddings from cache entries.
-            assert empty_embeddings is not None
-            all_device_bufs: list[list[Buffer]] = [[] for _ in devices]
-            for ctx in video_ctxs:
-                for vh in ctx.video_hashes:
-                    if entry := ve_cache.lookup(vh):
-                        for d in range(len(devices)):
-                            all_device_bufs[d].append(entry.embeddings[d])
-            if any(bufs for bufs in all_device_bufs):
-                cached_embs: list[Buffer] = (
-                    [dl[0] for dl in all_device_bufs]
-                    if all(len(dl) == 1 for dl in all_device_bufs)
-                    else [concat_device_buffers(dl) for dl in all_device_bufs]
-                )
-            else:
-                cached_embs = empty_embeddings
-            return VideoInputs(
-                cached_embeddings=cached_embs, token_indices_np=scatter_np
-            )
-
-        video_ctxs = uncached_ctxs  # encode only uncached contexts
-
-    # Raw (encode) path: pack pixel buffers and collect cache metadata.
-    all_frame_patches: list[npt.NDArray[np.floating[Any]]] = []
-    all_frame_pos_ids: list[npt.NDArray[np.integer[Any]]] = []
-    frame_patch_counts: list[int] = []
-    frame_soft_token_counts: list[int] = []
-    cache_hashes: list[int] = []
-    cache_req_ids: list[RequestID] = []
-    cache_per_video_token_counts: list[int] = []
-    for ctx in video_ctxs:
-        all_frame_patches.extend(ctx.video_frame_patches)
-        all_frame_pos_ids.extend(ctx.video_frame_pos_ids)
-        frame_patch_counts.extend(ctx.video_frame_patch_counts)
-        frame_soft_token_counts.extend(ctx.video_frame_soft_token_counts)
-        for i, (start, end) in enumerate(ctx.video_token_ranges):
-            cache_hashes.append(
-                ctx.video_hashes[i] if i < len(ctx.video_hashes) else 0
-            )
-            cache_req_ids.append(ctx.request_id)
-            cache_per_video_token_counts.append(end - start)
-
-    raw = pack_vision_buffers(
+    return pack_vision_buffers(
         devices,
-        pooling_kernel_size,
-        all_frame_patches,
-        all_frame_pos_ids,
-        frame_patch_counts,
-        frame_soft_token_counts,
+        k,
+        all_patches,
+        all_pos_ids,
+        patch_counts,
+        soft_token_counts,
         dtype,
-    )
-    return VideoInputs(
-        raw=raw,
-        token_indices_np=scatter_np,
-        cache_hashes=cache_hashes,
-        cache_req_ids=cache_req_ids,
-        cache_per_video_token_counts=cache_per_video_token_counts,
     )
