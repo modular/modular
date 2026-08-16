@@ -191,15 +191,21 @@ class _ThinkingRegionNewContext:
         context = await self._original(request)
 
         if not self._resolved:
-            # Set immediately — no await between check and set, so no
-            # interleaving is possible in asyncio's cooperative model.
-            self._resolved = True
             parser_cls = get_parser_cls(self._parser_name)
             if parser_cls is not None:
-                self._parser = await parser_cls.from_tokenizer(self._tokenizer)
-                self._end_token_id = await parser_cls.reasoning_end_token_id(
+                # Resolve into locals and publish only when complete.
+                # Concurrent first requests may duplicate this work, but none
+                # can observe a half-resolved state: setting _resolved before
+                # the awaits let a request that raced the first resolution
+                # skip the thinking region entirely, enforcing the grammar
+                # from token 0 inside the model's reasoning span.
+                parser = await parser_cls.from_tokenizer(self._tokenizer)
+                end_token_id = await parser_cls.reasoning_end_token_id(
                     self._tokenizer
                 )
+                self._parser = parser
+                self._end_token_id = end_token_id
+            self._resolved = True
 
         has_constrained_decoding = (
             context.grammar is not None or context.json_schema is not None
