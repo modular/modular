@@ -52,8 +52,11 @@ class SubprocGrpcRuntimeClient(Runtime):
         from max.experimental.cascade.grpc_runtime import server as grpc_server
         from max.serve.process_control import subprocess_manager
 
+        # daemon=False: the worker hosted here may spin up its own
+        # subprocesses (e.g. a MAXModelWorker launches a max.serve model
+        # worker), which daemonic processes are not allowed to do.
         proc = await self.enter_async_context(
-            subprocess_manager("Cascade gRPC Runtime")
+            subprocess_manager("Cascade gRPC Runtime", daemon=False)
         )
         proc.start(grpc_server.serve, self._bind_addr)
         self._inner = await self.enter_async_context(

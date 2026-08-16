@@ -49,9 +49,9 @@ class EchoPipelineTokenizer(
     """
 
     @property
-    def eos(self) -> int:
-        """Return a dummy EOS token ID."""
-        return 0
+    def eos_token_ids(self) -> set[int]:
+        """Echo has no EOS; generation stops by length."""
+        return set()
 
     @property
     def expects_content_wrapping(self) -> bool:
@@ -138,7 +138,7 @@ class EchoPipelineTokenizer(
             max_length=max_length,
             tokens=token_buffer,
             eos_tracker=await build_eos_tracker_for_request(
-                {self.eos},
+                self.eos_token_ids,
                 request,
                 self.encode,
             ),

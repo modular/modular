@@ -74,7 +74,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d = d_pre + d_post
 
     @always_inline
-    def get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+    def get_in_out_shapes[rank: Int = 1]() -> Array[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
@@ -107,9 +107,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
-        uninitialized=True
-    )
+    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):
@@ -127,7 +125,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     var constant = Scalar[DType.int](7)
 
     # pad
-    pad_constant(output, input, paddings.ptr, constant)
+    pad_constant(output, input, paddings._storage, constant)
 
     if verify:
         # Simple verification: check that the padding values are correct
@@ -145,7 +143,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d = d_pre + d_post
 
     @always_inline
-    def get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+    def get_in_out_shapes[rank: Int = 1]() -> Array[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
@@ -178,9 +176,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     ).fill(1)
 
     # Create a padding array
-    var paddings_stack = InlineArray[Scalar[DType.int], 2 * rank](
-        uninitialized=True
-    )
+    var paddings_stack = Array[Scalar[DType.int], 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
     comptime for i in range(rank):
@@ -195,7 +191,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
 
     # pad
-    pad_reflect(output, input, paddings.ptr)
+    pad_reflect(output, input, paddings._storage)
 
     if verify:
         # Simple verification: check that values are set

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, grid_dim, thread_idx
 
 
@@ -38,6 +38,7 @@ def test_amd_dims(ctx: DeviceContext) raises:
         grid_dim=(14, 15, 16),
         block_dim=(2, 3, 4),
     )
+    ctx.synchronize()
 
 
 def main() raises:

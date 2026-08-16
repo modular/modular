@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.memory import alloc, dealloc, Layout as AllocLayout
 from std.random import rand
 from std.sys import simd_width_of, size_of
 from std.sys.defines import get_defined_int, get_defined_string
@@ -89,18 +90,27 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = alloc[Scalar[input_type]](
-        input_alloc_size * num_copies, alignment=alignment
-    )
-    var filter_ptr = alloc[Scalar[filter_type]](
-        num_copies * filter_alloc_size, alignment=alignment
-    )
-    var output_ptr = alloc[Scalar[output_type]](
-        num_copies * output_alloc_size, alignment=alignment
-    )
+    var input_alloc = alloc(
+        AllocLayout[Scalar[input_type]].aligned[alignment](
+            count=num_copies * input_alloc_size
+        )
+    ).into_managed()
+    var input_ptr = input_alloc.unsafe_ptr()
+    var filter_alloc = alloc(
+        AllocLayout[Scalar[filter_type]].aligned[alignment](
+            count=num_copies * filter_alloc_size
+        )
+    ).into_managed()
+    var filter_ptr = filter_alloc.unsafe_ptr()
+    var output_alloc = alloc(
+        AllocLayout[Scalar[output_type]].aligned[alignment](
+            count=num_copies * output_alloc_size
+        )
+    ).into_managed()
+    var output_ptr = output_alloc.unsafe_ptr()
 
-    rand[input_type](input_ptr, num_copies * input_alloc_size)
-    rand[filter_type](filter_ptr, num_copies * filter_alloc_size)
+    rand(input_alloc.unsafe_span())
+    rand(filter_alloc.unsafe_span())
 
     var pad_d = IndexList[2](0)
     var pad_h = IndexList[2](0)
@@ -131,7 +141,7 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         num_groups=spec.num_groups,
     )
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
@@ -140,20 +150,26 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         var counter = 0
 
         @always_inline
-        @parameter
+        @__parameter
         def bench_fn():
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
-                input_ptr + (counter % num_copies) * input_alloc_size,
+                input_ptr.unsafe_offset(
+                    (counter % num_copies) * input_alloc_size
+                ),
                 RuntimeLayout[layout_2].row_major(input_shape),
             )
             var filter = LayoutTensor[filter_type, layout_3](
-                filter_ptr + (counter % num_copies) * filter_alloc_size,
+                filter_ptr.unsafe_offset(
+                    (counter % num_copies) * filter_alloc_size
+                ),
                 RuntimeLayout[layout_3].row_major(packed_filter_shape),
             )
             var output = LayoutTensor[output_type, layout_2](
-                output_ptr + (counter % num_copies) * output_alloc_size,
+                output_ptr.unsafe_offset(
+                    (counter % num_copies) * output_alloc_size
+                ),
                 RuntimeLayout[layout_2].row_major(output_shape),
             )
 
@@ -184,15 +200,15 @@ def bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String.write(spec)),
+        BenchId("Conv", String(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
     )
 
-    input_ptr.free()
-    filter_ptr.free()
-    output_ptr.free()
+    dealloc(input_alloc^)
+    dealloc(filter_alloc^)
+    dealloc(output_alloc^)
 
 
 @fieldwise_init

@@ -35,12 +35,12 @@ from std.format._utils import _WriteBufferStack
 from std.os import PathLike as stdPathLike, abort, makedirs, remove
 from std.os import SEEK_SET, SEEK_END
 from std.os.path import dirname
-from std.ffi import c_int, c_ssize_t, external_call, _CPointer
+from std.ffi import c_int, c_ssize_t, external_call
 from std.sys import size_of
 from std.sys._libc_errno import ErrNo, get_errno
 from std.sys.info import platform_map
 
-from std.memory import Span
+from std.collections import Span
 
 # ===----------------------------------------------------------------------=== #
 # open() syscall flags
@@ -128,33 +128,17 @@ def _open_file(path: String, mode: String) raises -> Int:
                     + String(e)
                 )
 
-    # Open the file with libc open() syscall
-    # Mode 0o666 allows read/write for owner, group, and others (modified by umask)
+    # int open(const char *path, int oflag, ...);
+    # Mode 0o666 allows read/write for owner, group, and others (modified by
+    # umask).
     var path_str = path
-
-    # TODO(MSTDL-2085): Remove this workaround once external_call supports
-    # C variadic functions correctly on ARM64 macOS.
-    # WORKAROUND: The variadic open() syscall doesn't correctly pass the mode
-    # argument on ARM64 macOS. We use a two-step approach:
-    # 1. Open/create the file (with potentially incorrect permissions)
-    # 2. Use fchmod to set the correct permissions after opening
-    var fd = external_call["open", c_int](
+    var fd = external_call["open", c_int, num_fixed_args=2](
         path_str.as_c_string_slice().unsafe_ptr(), c_int(flags), c_int(0o666)
     )
 
     if fd < 0:
         var err = get_errno()
         raise Error("Failed to open file '" + path + "': " + String(err))
-
-    # Fix permissions for newly created files.
-    # We use fchmod (non-variadic) because the variadic open() syscall doesn't
-    # correctly pass the mode argument on ARM64 macOS.
-    if flags & O_CREAT:
-        var chmod_result = external_call["fchmod", c_int](fd, c_int(0o666))
-        if chmod_result < 0:
-            _ = external_call["close", c_int](fd)
-            var err = get_errno()
-            raise Error("Failed to set file permissions: " + String(err))
 
     return Int(fd)
 
@@ -187,7 +171,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.handle = _open_file(String(path), String(mode))
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
@@ -302,7 +286,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var file = open(file_name, "r")
 
         # Allocate and load 8 elements
-        var buffer = InlineArray[Float32, size=8](fill=0)
+        var buffer = Array[Float32, length=8](fill=0)
         var bytes = file.read(buffer)
         print("bytes read", bytes)
 
@@ -313,7 +297,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         _ = file.seek(2 * size_of[DType.float32](), SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
-        var buffer2 = InlineArray[Float32, size=8](fill=0)
+        var buffer2 = Array[Float32, length=8](fill=0)
         var bytes2 = file.read(buffer2)
 
         var eleventh_element = buffer2[0]
@@ -402,7 +386,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var chunk_bytes_to_read = len(result) - num_read
             var chunk_bytes_read = external_call["read", c_ssize_t](
                 fd,
-                result.unsafe_ptr() + num_read,
+                result.unsafe_ptr().unsafe_offset(num_read),
                 chunk_bytes_to_read,
             )
 
@@ -424,11 +408,12 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return result^
 
-    def seek(self, offset: UInt64, whence: UInt8 = SEEK_SET) raises -> UInt64:
+    def seek(self, offset: Int, whence: UInt8 = SEEK_SET) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
-            offset: The byte offset to seek to.
+            offset: The byte offset to seek to, relative to `whence`. May be
+                negative when `whence` is `os.SEEK_CUR` or `os.SEEK_END`.
             whence: The reference point for the offset:
                 os.SEEK_SET = 0: start of file (Default).
                 os.SEEK_CUR = 1: current position.
@@ -605,7 +590,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             var fd = self._get_raw_fd()
             var bytes_written = external_call["write", c_ssize_t](
                 fd,
-                bytes.unsafe_ptr() + total_written,
+                bytes.unsafe_ptr().unsafe_offset(total_written),
                 len(bytes) - total_written,
             )
 
@@ -653,7 +638,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
     def _write(
         self,
-        ptr: UnsafePointer[mut=False, UInt8, _, address_space=_],
+        ptr: ImmPointer[UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.
@@ -672,7 +657,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var total_written = 0
 
         while total_written < len:
-            var current_ptr = ptr + total_written
+            var current_ptr = ptr.unsafe_offset(total_written)
             var bytes_written = external_call["write", c_ssize_t](
                 fd, current_ptr, len - total_written
             )

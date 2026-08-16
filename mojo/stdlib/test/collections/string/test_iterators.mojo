@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections.string.string_slice import (
+from std.collections.string.string_span import (
     _to_string_list,
     get_static_string,
 )

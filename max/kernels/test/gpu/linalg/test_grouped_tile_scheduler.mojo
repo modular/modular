@@ -22,7 +22,7 @@ These tests verify:
 from std.gpu import block_idx, grid_dim, thread_idx
 from std.iter import zip
 from std.itertools import count
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, row_major as new_row_major
 from layout._utils import ManagedLayoutTensor
 

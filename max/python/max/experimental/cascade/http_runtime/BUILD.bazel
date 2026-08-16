@@ -20,6 +20,7 @@ modular_py_library(
         requirement("aiohttp"),
         requirement("cyclopts"),
         requirement("fastapi"),
+        requirement("numpy"),
         requirement("prometheus-client"),
         requirement("uvicorn"),
         "//max/python/max/experimental/cascade/core",

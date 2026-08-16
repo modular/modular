@@ -16,7 +16,7 @@ from std.testing import assert_equal
 
 
 def use_lookup(idx: Int) -> Int64:
-    comptime numbers: InlineArray[Int64, 10] = [
+    comptime numbers: Array[Int64, 10] = [
         1,
         3,
         14,

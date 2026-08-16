@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.python import Python, PythonObject
-from std.python.numpy import from_numpy_array, to_numpy_array
+from std.python.numpy import from_numpy_array, copy_to_numpy_array
 from std.testing import (
     assert_almost_equal,
     assert_equal,
@@ -21,9 +21,9 @@ from std.testing import (
 )
 
 
-def test_to_numpy_array_float64() raises:
+def test_copy_to_numpy_array_float64() raises:
     var values: List[Float64] = [1.0, 2.5, -3.0, 4.25]
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
 
     assert_equal(Int(py=arr.size), 4)
     assert_equal(String(py=arr.dtype), "float64")
@@ -31,33 +31,33 @@ def test_to_numpy_array_float64() raises:
         assert_almost_equal(Float64(py=arr[i]), values[i])
 
 
-def test_to_numpy_array_is_independent() raises:
+def test_copy_to_numpy_array_is_independent() raises:
     # A copy must not observe later mutations of the Mojo data.
     var values: List[Float64] = [1.0, 2.0, 3.0]
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
     values[0] = 99.0
     assert_almost_equal(Float64(py=arr[0]), 1.0)
 
 
-def test_to_numpy_array_from_span() raises:
+def test_copy_to_numpy_array_from_span() raises:
     var values: List[Float32] = [1.5, 2.5, 3.5]
-    var arr = to_numpy_array(Span(values))
+    var arr = copy_to_numpy_array(Span(values))
     assert_equal(String(py=arr.dtype), "float32")
     assert_almost_equal(Float64(py=arr[1]), 2.5)
 
 
-def test_to_numpy_array_empty() raises:
+def test_copy_to_numpy_array_empty() raises:
     var values = List[Float64]()
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
     assert_equal(Int(py=arr.size), 0)
     assert_equal(String(py=arr.dtype), "float64")
 
 
-def test_to_numpy_array_float16() raises:
+def test_copy_to_numpy_array_float16() raises:
     # `float16` is the dtype `ctypes` cannot express directly, so exercise it
     # explicitly. Values chosen to be exactly representable in float16.
     var values: List[Float16] = [1.0, 2.5, -0.5]
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
     assert_equal(Int(py=arr.size), 3)
     assert_equal(String(py=arr.dtype), "float16")
     assert_almost_equal(Float64(py=arr[1]), 2.5)
@@ -124,7 +124,7 @@ def test_roundtrip_int64_signed() raises:
         5000000000,
         9223372036854775807,
     ]
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
     var span = from_numpy_array[DType.int64](arr)
     assert_equal(len(span), len(values))
     for i in range(len(values)):
@@ -151,11 +151,11 @@ def test_from_numpy_array_read_only_raises() raises:
 
 def _assert_dtype_name[dtype: DType](expected: StaticString) raises:
     var values: List[Scalar[dtype]] = [Scalar[dtype](1), Scalar[dtype](2)]
-    var arr = to_numpy_array(values)
+    var arr = copy_to_numpy_array(values)
     assert_equal(String(py=arr.dtype), String(expected))
 
 
-def test_to_numpy_array_dtype_names() raises:
+def test_copy_to_numpy_array_dtype_names() raises:
     _assert_dtype_name[DType.int8]("int8")
     _assert_dtype_name[DType.int16]("int16")
     _assert_dtype_name[DType.int32]("int32")

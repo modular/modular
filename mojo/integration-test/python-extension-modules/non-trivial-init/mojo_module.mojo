@@ -145,7 +145,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
     @staticmethod
     def _get_self_ptr(
         py_self: PythonObject,
-    ) -> UnsafePointer[Self, MutAnyOrigin]:
+    ) -> Pointer[Self, MutAnyOrigin]:
         """Helper to extract the self pointer from Python object."""
         try:
             return py_self.downcast_value_ptr[Self]()

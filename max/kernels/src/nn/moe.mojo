@@ -10,12 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements Mixture-of-Experts (MoE) routing, token dispatch, and expert computation kernels."""
 
 from std.collections import OptionalReg
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod
-from std.memory import stack_allocation
+from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic
 from std.sys import has_apple_gpu_accelerator, is_apple_gpu
@@ -26,19 +27,19 @@ from std.bit import pop_count, log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    barrier,
     block_idx,
     warp_id,
     lane_id,
     thread_idx,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.primitives.grid_controls import (
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.gpu.host.info import is_gpu
+from max.gpu.host.info import is_gpu
 from layout import (
     Coord,
     Idx,
@@ -47,7 +48,7 @@ from layout import (
     row_major,
     stack_allocation as tensor_alloc,
 )
-from std.runtime.tracing import Trace, TraceLevel
+from max.runtime.tracing import Trace, TraceLevel
 
 from std.utils.index import IndexList, StaticTuple
 from std.builtin.dtype import _uint_type_of_width
@@ -55,7 +56,7 @@ from std.builtin.dtype import _uint_type_of_width
 from nn.topk import TopK_2
 
 
-from std.gpu.memory import (
+from max.gpu.memory import (
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -66,6 +67,25 @@ from std.gpu.memory import (
 def calculate_warp_offset[
     MaskType: DType
 ](state: Bool) -> Tuple[UInt64, UInt64]:
+    """Computes warp-level write counts and per-thread offsets using warp voting.
+
+    Given a per-thread boolean vote, returns the total number of threads in the
+    warp that voted true and this thread's write offset among the preceding
+    threads that voted true.
+
+    Parameters:
+        MaskType: Unsigned integer DType wide enough to hold one bit per thread
+            in the warp.
+
+    Args:
+        state: Per-thread boolean indicating whether this thread contributes a
+            write.
+
+    Returns:
+        A tuple of (writes, offset) where writes is the total number of threads
+        in the warp that voted true, and offset is the number of preceding
+        threads (lower thread IDs) that voted true.
+    """
     # sets bits to 1 for all threads that voted true
     var mask = UInt64(warp.vote[MaskType](state))
 
@@ -584,6 +604,34 @@ def moe_create_indices[
     context: DeviceContext,
     scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
+    """Launches the MoE index creation kernel on GPU.
+
+    Groups tokens by their assigned expert using a bucket sort algorithm so
+    that downstream kernels such as grouped matmul can process each expert's
+    tokens contiguously. Allocates and zero-initializes the atomic lock buffer
+    and expert usage stats, reshapes topk_ids to 2D, and launches one block per
+    expert.
+
+    Parameters:
+        input_type: DType of the topk_ids tensor.
+        target: The target device to run the kernel on.
+        expected_count: Maximum number of token indices cached per expert in
+            shared memory before spilling to global memory.
+
+    Args:
+        token_expert_order: Output 1D tensor of token indices grouped by expert.
+        expert_start_indices: Output 1D tensor of CSR-style start offsets for
+            each expert in token_expert_order.
+        restore_token_order: Output 1D tensor mapping each token to its new
+            position in token_expert_order.
+        expert_ids: Output 1D tensor of the active expert IDs in output order.
+        expert_usage_stats: Output 1D tensor holding the maximum tokens
+            assigned to any expert and the count of active experts.
+        topk_ids: Input 1D tensor of expert IDs, one per token.
+        context: The device context.
+        scales_offset_p: Optional pointer receiving the aligned scale offsets
+            for FP8/block-scaled grouped matmul.
+    """
     comptime assert is_gpu[
         target
     ](), "Creating MoE indices is only supported on GPU"
@@ -672,7 +720,7 @@ def moe_create_indices[
 
 # Function to perform warp-level sorting
 @always_inline
-@parameter
+@__parameter
 def _warp_bitonic_sort[
     T: DType,
     num_lanes: Int = WARP_SIZE,
@@ -767,13 +815,55 @@ def group_limited_router_kernel[
     expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
 ):
-    """
-    A manually fused MoE router with the group-limited strategy. It divides all
+    """A manually fused MoE router with the group-limited strategy. It divides all
     the experts into `n_groups` groups and then finds the top `topk_group`
     groups with the highest scores. The final experts for each token are
     selected from the experts in the selected groups. The bias will be applied
     to the scores during the selection process, but the final weights will not
     include the bias.
+
+    Parameters:
+        scores_type: DType of the routing scores and the output expert
+            weights.
+        bias_type: DType of the per-expert bias added to scores during
+            selection.
+        ExpertIndicesLayoutType: `TensorLayout` of the `expert_indices`
+            output tensor.
+        ExpertWeightsLayoutType: `TensorLayout` of the `expert_weights`
+            output tensor.
+        ExpertScoresLayoutType: `TensorLayout` of the `expert_scores`
+            input tensor.
+        ExpertBiasLayoutType: `TensorLayout` of the `expert_bias` input
+            tensor.
+        n_routed_experts: Total number of routed experts scored per token.
+            Also equals the thread count per block.
+        n_experts_per_tok: Number of experts selected per token (the top-k
+            value).
+        n_groups: Number of groups the routed experts are partitioned into.
+            `n_routed_experts` must be divisible by this.
+        topk_group: Number of highest-scoring groups from which the final
+            experts are selected.
+        norm_weights: Whether to normalize the selected weights to sum to
+            one before applying the scaling factor.
+        num_threads: Threads per block; must equal `n_routed_experts` so
+            each thread scores one expert.
+        scores_input_fn: Optional lambda that loads scores given a
+            `(token, expert)` index; when `None`, scores load from
+            `expert_scores`.
+
+    Args:
+        expert_indices: Output tensor holding the selected expert index per
+            token. Shape `[num_tokens, n_experts_per_tok]`.
+        expert_weights: Output tensor holding the routing weight per
+            selected expert per token, excluding the bias. Shape
+            `[num_tokens, n_experts_per_tok]`.
+        expert_scores: Input tensor of routing scores for every expert per
+            token. Shape `[num_tokens, n_routed_experts]`.
+        expert_bias: Input tensor of per-expert bias added to scores during
+            selection but excluded from the final weights. Shape
+            `[n_routed_experts]`.
+        routed_scaling_factor: Factor multiplied into the final, optionally
+            normalized, expert weights.
     """
     comptime assert expert_indices.flat_rank == 2
     comptime assert expert_weights.flat_rank == 2
@@ -813,12 +903,12 @@ def group_limited_router_kernel[
 
     var num_tokens = expert_scores.dim(0)
 
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         topk_group * n_experts_per_tok,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
     ]()
-    var selected_group = stack_allocation[
+    var selected_group = unsafe_stack_allocation[
         topk_group, DType.int32, address_space=AddressSpace.SHARED
     ]()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
@@ -1121,7 +1211,7 @@ def single_group_router_kernel[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
@@ -1338,7 +1428,7 @@ def single_group_router_eplb_kernel[
     var l_id = lane_id()
 
     # ---- existing TopK_2 SMEM ----
-    var shared_mem = stack_allocation[
+    var shared_mem = unsafe_stack_allocation[
         total_smem,
         TopK_2[scores_type],
         address_space=AddressSpace.SHARED,
@@ -1495,7 +1585,7 @@ def single_group_router[
         scores_type: DType of routing scores and output weights.
         bias_type: DType of the expert correction bias.
         n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
-        n_experts_per_tok: Experts selected per token — must be a power of 2
+        n_experts_per_tok: Experts selected per token, must be a power of 2
             (e.g. 8 for Kimi K2.5).
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
@@ -1585,6 +1675,47 @@ def single_group_router_eplb[
     routed_scaling_factor: Float32,
     context: DeviceContext,
 ) raises:
+    """Launches the single-group MoE router with EPLB log->phy remap on GPU.
+
+    Selects the top n_experts_per_tok experts per token using warp-bitonic sort
+    (2 or 3 phases depending on warp size), then remaps each selected logical
+    expert ID to a physical expert ID via the per-layer logcnt and log2phy
+    tables. One block is launched per token.
+
+    Parameters:
+        scores_type: DType of the routing scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of routed experts.
+        n_experts_per_tok: Experts selected per token, must be a power of two.
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        num_log: Number of logical experts per layer.
+        max_replicas: Maximum number of physical replicas per logical expert.
+        hash_decorrelate: If True, xor-hash the flat position with a Knuth
+            multiplicative hash before the modulo to break structured-position
+            bias in replica selection.
+        target: The target device to run the kernel on.
+        scores_input_fn: Optional fused input lambda to load scores. If None,
+            scores are loaded directly from expert_scores.
+
+    Inputs:
+        expert_indices: Output physical expert IDs.
+            Shape: [num_tokens, n_experts_per_tok].
+        expert_indices_log: Output logical expert IDs for EPLB histogram.
+            Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights.
+            Shape: [num_tokens, n_experts_per_tok].
+        expert_scores: Input routing scores.
+            Shape: [num_tokens, n_routed_experts].
+        expert_bias: Per-expert correction bias used for selection only.
+        logcnt: Per-(layer, logical) replica count.
+            Shape: [num_layers, num_log].
+        log2phy: Per-(layer, logical, replica) physical-ID table.
+            Shape: [num_layers, num_log, max_replicas].
+        layer_idx: Rank-1 scalar tensor carrying the current MoE layer index.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: The device context.
+    """
     comptime assert is_gpu[
         target
     ](), "Single group router (EPLB) is only supported on GPU"
@@ -1687,6 +1818,34 @@ def eplb_remap_kernel[
     Optimality of choosing : hash_decorrelate=True xor-hashes the flat position with a
     Knuth multiplicative hash of the logical id before the modulo, breaking
     structured position-vs-cnt alignment without warp ops.
+
+    Parameters:
+        PhyIdxLayoutType: `TensorLayout` of the `phy_idx` output tensor.
+        RouterIdxLayoutType: `TensorLayout` of the `router_idx` input tensor.
+        LogcntLayoutType: `TensorLayout` of the `logcnt` input tensor.
+        Log2phyLayoutType: `TensorLayout` of the `log2phy` input tensor.
+        LayerIdxLayoutType: `TensorLayout` of the `layer_idx` input tensor.
+        num_log: Number of logical experts per MoE layer.
+        max_replicas: Maximum number of physical replicas per logical expert.
+        K: Number of top-K experts selected per token. Must be a power of
+            two so `tid % K` is a bitmask.
+        tile_tokens: Number of `router_idx` rows processed per block. Block
+            size is `tile_tokens * K` threads.
+        hash_decorrelate: If `True`, xor-hash the flat position with a Knuth
+            multiplicative hash of the logical id before the modulo to break
+            structured-position bias. If `False`, use plain `pos % cnt`.
+
+    Args:
+        phy_idx: Output `[num_tokens, K]` tensor of physical expert IDs after
+            EPLB remap.
+        router_idx: Input `[num_tokens, K]` tensor of logical expert IDs from
+            the gate.
+        logcnt: Input `[num_moe_layers, num_log]` tensor of replica counts per
+            (layer, logical expert).
+        log2phy: Input `[num_moe_layers, num_log, max_replicas]` tensor of
+            physical-id lookup table entries.
+        layer_idx: Input rank-1 `[1]` scalar tensor carrying the current MoE
+            layer index.
     """
 
     comptime assert phy_idx.flat_rank == 2
@@ -1721,13 +1880,13 @@ def eplb_remap_kernel[
 
     var tid = Int(thread_idx.x)
 
-    var smem_cnt = stack_allocation[
+    var smem_cnt = unsafe_stack_allocation[
         num_log,
         DType.int32,
         address_space=AddressSpace.SHARED,
     ]()
 
-    var smem_phy = stack_allocation[
+    var smem_phy = unsafe_stack_allocation[
         num_log * max_replicas,
         DType.int32,
         address_space=AddressSpace.SHARED,
@@ -1809,7 +1968,7 @@ def eplb_remap[
             preserves the exact pos % cnt semantics of the legacy chain.
         target: The target device to run the kernel on.
 
-    Inputs:
+    Args:
         phy_idx: Output physical expert ids. Shape: [num_tokens, K].
         router_idx: Input logical expert ids from the gate.
             Shape: [num_tokens, K].

@@ -22,7 +22,6 @@ from std.testing import (
 )
 
 from std.ffi import UnsafeUnion
-from std.memory import UnsafePointer
 
 
 def test_basic_int_storage() raises:

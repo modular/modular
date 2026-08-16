@@ -14,7 +14,7 @@
 import std.math
 from std.math import sqrt
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -238,10 +238,10 @@ def run_slot_indexed_gpu[
     with ctx.push_context():
         ctx.enqueue_function(
             compiled_func,
-            batch_size,
-            num_value_heads,
-            num_key_heads,
-            key_dim,
+            Int32(batch_size),
+            Int32(num_value_heads),
+            Int32(num_key_heads),
+            Int32(key_dim),
             recur_out_tt,
             pool_tt,
             slot_idx_tt,
