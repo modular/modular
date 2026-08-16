@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Idx,
     Layout,
@@ -206,9 +206,9 @@ def run_slot_indexed_gpu[
     with ctx.push_context():
         ctx.enqueue_function(
             compiled_func,
-            batch_size,
-            total_seq_len,
-            conv_dim,
+            Int32(batch_size),
+            Int32(total_seq_len),
+            Int32(conv_dim),
             qkv_input_tt,
             conv_weight_tt,
             conv_state_tt,
@@ -304,7 +304,9 @@ def run_slot_indexed_gpu[
             # carry-forward if seq_len < K-1). Reads of the old window
             # complete before any write because the write loop runs after the
             # token loop.
-            var old_window = SIMD[state_dtype, KERNEL_SIZE_MINUS_ONE](0)
+            var old_window = Array[Scalar[state_dtype], KERNEL_SIZE_MINUS_ONE](
+                fill=0
+            )
             comptime for j in range(KERNEL_SIZE_MINUS_ONE):
                 old_window[j] = pool_ref_h.ptr[
                     UInt32(slot) * conv_state_pool_stride

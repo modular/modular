@@ -20,6 +20,7 @@ from std.sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -27,7 +28,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -45,7 +46,7 @@ def _get_run_name[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String("(", dtype, ") : ")
     # M
@@ -114,13 +115,12 @@ def bench_matmul[
     cb_a.init_on_device(init_type, ctx)
     cb_b.init_on_device(init_type, ctx)
 
-    @parameter
+    @__parameter
     @__copy_capture(cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
     @always_inline
     def bench_func(mut b: Bencher):
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var tensor_a = TileTensor(
                 cb_a.offset_ptr(iteration), row_major(shape_a)
             )
@@ -131,12 +131,12 @@ def bench_matmul[
                 cb_c.offset_ptr(iteration), row_major(shape_c)
             )
 
-            @parameter
+            @__parameter
             @always_inline
             @__copy_capture(tensor_c)
             def test_lambda_add_coords_prod[
                 _dtype: DType,
-                width: SIMDSize,
+                width: SIMDLength,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -200,7 +200,7 @@ def bench_matmul[
                         ctx,
                     )
 
-        b.iter_custom[kernel_launch](ctx)
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,

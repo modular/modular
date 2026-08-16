@@ -357,15 +357,15 @@ def test_list_insert() raises:
     assert_equal(v1.get_nth(2), 3)
 
     #
-    # Test the list [1, 2, 3, 4, 5] created with negative and positive index
+    # Test the list [1, 2, 3, 4, 5] created with interior and boundary indices
     #
 
     var v2 = LinkedList[Int]()
-    v2.insert(-1729, 2)
+    v2.insert(0, 2)
     v2.insert(len(v2), 3)
     v2.insert(len(v2), 5)
-    v2.insert(-1, 4)
-    v2.insert(-len(v2), 1)
+    v2.insert(2, 4)
+    v2.insert(0, 1)
 
     assert_equal(len(v2), 5)
     assert_equal(v2.get_nth(0), 1)
@@ -375,14 +375,14 @@ def test_list_insert() raises:
     assert_equal(v2.get_nth(4), 5)
 
     #
-    # Test the list [1, 2, 3, 4] created with negative index
+    # Test the list [1, 2, 3, 4] created by inserting at the front
     #
 
     var v3 = LinkedList[Int]()
-    v3.insert(-11, 4)
-    v3.insert(-13, 3)
-    v3.insert(-17, 2)
-    v3.insert(-19, 1)
+    v3.insert(0, 4)
+    v3.insert(0, 3)
+    v3.insert(0, 2)
+    v3.insert(0, 1)
 
     assert_equal(len(v3), 4)
     assert_equal(v3.get_nth(0), 1)
@@ -588,14 +588,14 @@ def test_indexing() raises:
 def test_list_dtor() raises:
     var dtor_count = 0
 
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var l = LinkedList[DelCounter[ptr.origin]]()
     assert_equal(dtor_count, 0)
 
     l.append(DelCounter(ptr))
     assert_equal(dtor_count, 0)
 
-    l^.__del__()
+    l^.__deinit__()
     assert_equal(dtor_count, 1)
 
 
@@ -705,7 +705,7 @@ def test_linked_list_iter_owned() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -720,7 +720,7 @@ def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
 
 def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
     var dtor_count = 0
-    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_unsafe_any_origin()
+    var ptr = Pointer(to=dtor_count).as_imm().as_unsafe_any_origin()
     var ll = LinkedList[DelCounter[ptr.origin]]()
     ll.append(DelCounter(ptr))
     ll.append(DelCounter(ptr))
@@ -749,7 +749,7 @@ def test_linked_list_iter_owned_bounds() raises:
 
 def test_linked_list_move_only() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `LinkedList[T: Movable & ImplicitlyDeletable]`.
+    # conformance path of `LinkedList[T: Movable & Deinitable]`.
     assert_false(conforms_to(LinkedList[MoveOnly[Int]], Copyable))
 
     var l = LinkedList[MoveOnly[Int]]()
@@ -774,13 +774,13 @@ def test_linked_list_move_only() raises:
 
 
 # ===-------------------------------------------------------------------===#
-# Conditional `ImplicitlyDeletable` (MSTDL-2775)
+# Conditional `Deinitable` (MSTDL-2775)
 # ===-------------------------------------------------------------------===#
 
 
 def test_linked_list_conditional_implicitly_deletable() raises:
-    assert_true(conforms_to(LinkedList[Int], ImplicitlyDeletable))
-    assert_false(conforms_to(LinkedList[ExplicitDestroy], ImplicitlyDeletable))
+    assert_true(conforms_to(LinkedList[Int], Deinitable))
+    assert_false(conforms_to(LinkedList[ExplicitDestroy], Deinitable))
     assert_true(conforms_to(LinkedList[Int], IterableOwned))
     assert_true(conforms_to(LinkedList[MoveOnly[Int]], IterableOwned))
     assert_false(conforms_to(LinkedList[ExplicitDestroy], IterableOwned))
@@ -868,7 +868,7 @@ def test_linked_list_extend_into_empty_explicit_destroy() raises:
 
 def test_linked_list_insert_explicit_destroy() raises:
     # This only compiles because `insert` dropped its
-    # `ImplicitlyDeletable` requirement; re-adding it breaks this. Covers the
+    # `Deinitable` requirement; re-adding it breaks this. Covers the
     # head, tail, and middle branches.
     var l = LinkedList[ExplicitDestroy]()
     l.insert(0, ExplicitDestroy(2))  # [2]        (head into empty)

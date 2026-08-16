@@ -285,7 +285,11 @@ def test_eplb_placement_identity() -> None:
 
 def test_eplb_placement_from_uniform_snapshot() -> None:
     md = EplbStatsMetadata(
-        num_moe_layers=2, num_logical_experts=16, num_experts_per_token=2
+        num_layers=2,
+        num_moe_layers=2,
+        moe_layer_indices=(0, 1),
+        num_logical_experts=16,
+        num_experts_per_token=2,
     )
     snap = EplbStatsSnapshot.from_array(md, np.ones((2, 16), dtype=np.int64))
     p = EplbPlacement.from_snapshot(snap, ep_size=4, n_nodes=1, n_groups=1)
@@ -298,7 +302,11 @@ def test_eplb_placement_from_skewed_snapshot_logs_improvement(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     md = EplbStatsMetadata(
-        num_moe_layers=1, num_logical_experts=16, num_experts_per_token=2
+        num_layers=1,
+        num_moe_layers=1,
+        moe_layer_indices=(0,),
+        num_logical_experts=16,
+        num_experts_per_token=2,
     )
     h = np.ones((1, 16), dtype=np.int64)
     h[0, 0] = 10_000

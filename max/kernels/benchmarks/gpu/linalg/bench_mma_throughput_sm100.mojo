@@ -59,6 +59,7 @@ from std.sys import (
 )
 from std.sys._assembly import inlined_assembly
 
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -66,25 +67,26 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.compute.arch.mma_nvidia_sm100 import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma,
     mma_arrive,
 )
-from std.gpu.compute.arch.tcgen05 import (
+from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import thread_idx, warp_id as get_warp_id
-from std.gpu.memory import AddressSpace, external_memory
+from max.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -119,7 +121,7 @@ def mma_ws_cta1[
 ):
     """Issues a single `tcgen05.mma.ws.cta_group::1.<kind>` instruction.
 
-    Mirrors the structure of `mma()` from `std.gpu.compute.arch.mma_nvidia_sm100`
+    Mirrors the structure of `mma()` from `max.gpu.compute.arch.mma_nvidia_sm100`
     but emits the `.ws.` variant of the PTX instruction (which is the form used
     by `bulk_mma_ws` in `attention_utils.mojo`). The `.ws.` variant takes only
     `[c_tmem], a_desc, b_desc, idesc, predicate` — no mask operands.
@@ -273,7 +275,7 @@ def mma_throughput_kernel[
         a_type, BN, BK_DESC, swizzle_mode=b_swizzle
     ]()
 
-    a_smem = rebind[
+    var a_smem = rebind[
         UnsafePointer[
             Scalar[a_type],
             address_space=AddressSpace.SHARED,
@@ -324,8 +326,8 @@ def mma_throughput_kernel[
     comptime b_expected_bytes = b_size * size_of[a_type]()
     comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
-    tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
-    mma_mbar = tma_mbar + 1
+    var tma_mbar = (ptr_tmem_addr + 2).bitcast[SharedMemBarrier]()
+    var mma_mbar = tma_mbar + 1
 
     if thread_idx.x == 0:
         tma_mbar[0].init()
@@ -359,14 +361,14 @@ def mma_throughput_kernel[
     comptime bSBO = b_stride01 * size_of[a_type]()
     comptime bLBO = b_stride11 * size_of[a_type]()
 
-    adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
 
     comptime mma_kind = (
         UMMAKind.KIND_F8F6F4 if a_type
         == DType.float8_e4m3fn else UMMAKind.KIND_F16
     )
-    idesc = UMMAInsDescriptor[mma_kind].create[
+    var idesc = UMMAInsDescriptor[mma_kind].create[
         accum_type,
         a_type,
         a_type,
@@ -551,10 +553,10 @@ def main() raises:
             accum_type, Layout.row_major(1, num_threads)
         ](ctx)
 
-        a_tma_op = create_tensor_tile[
+        var a_tma_op = create_tensor_tile[
             Index(BM, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, a.device_tensor())
-        b_tma_op = create_tensor_tile[
+        var b_tma_op = create_tensor_tile[
             Index(BN, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, b.device_tensor())
 
@@ -581,9 +583,8 @@ def main() raises:
             num_threads=num_threads,
         ]
 
-        @parameter
         @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises {mut sink, imm}:
             ctx.enqueue_function[kernel](
                 a_tma_op,
                 b_tma_op,
@@ -596,10 +597,10 @@ def main() raises:
                 ),
             )
 
-        @parameter
+        @__parameter
         @always_inline
         def bench_func(mut bencher: Bencher) raises:
-            bencher.iter_custom[kernel_launch](ctx)
+            bencher_iter_custom(bencher, kernel_launch, ctx)
 
         var bench = Bench()
 

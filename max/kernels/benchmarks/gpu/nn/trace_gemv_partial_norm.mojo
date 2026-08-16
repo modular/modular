@@ -31,7 +31,7 @@
 
 from std.memory import alloc
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 
 from nn.gemv_partial_norm import (

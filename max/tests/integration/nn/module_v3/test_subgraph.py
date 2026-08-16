@@ -66,24 +66,28 @@ D = 4
 H = 8
 
 
-def _itype() -> TensorType:
+def default_type() -> TensorType:
     return TensorType(F32, ["batch", D], device=DeviceRef.CPU())
 
 
-def _zeros(*shape: int) -> Tensor:
+def zeros(*shape: int) -> Tensor:
     return Tensor.zeros(list(shape), dtype=F32, device=CPU())
 
 
-def _randn(rng: np.random.Generator, *shape: int) -> np.ndarray:
+def randn(rng: np.random.Generator, *shape: int) -> np.ndarray:
     return rng.standard_normal(shape).astype(np.float32)
 
 
-def _graphs(mlir: str, name: str) -> int:
+def count_graphs(mlir: str, name: str) -> int:
     return len(re.findall(rf"mo\.graph @{name}(?:_\d+)?\b", mlir))
 
 
-def _calls(mlir: str, name: str) -> int:
+def count_calls(mlir: str, name: str) -> int:
     return len(re.findall(rf"mo\.call @{name}(?:_\d+)?\b", mlir))
+
+
+def externals(mlir: str) -> int:
+    return mlir.count("mo.constant.external")
 
 
 @module_dataclass
@@ -112,7 +116,7 @@ class Block(Module[[Tensor], Tensor]):
 
 
 def _block(tag: int = 0) -> Block:
-    return Block(_zeros(D, H), _zeros(H, D), tag=tag)
+    return Block(zeros(D, H), zeros(H, D), tag=tag)
 
 
 def _block_ref(
@@ -132,15 +136,15 @@ def test_repeated_block_shares_one_subgraph() -> None:
     stack = Stack(layers=ModuleList([_block() for _ in range(3)]))
     weights: dict[str, np.ndarray] = {}
     for i in range(3):
-        weights[f"layers.{i}.w_in"] = _randn(rng, D, H)
-        weights[f"layers.{i}.w_out"] = _randn(rng, H, D)
+        weights[f"layers.{i}.w_in"] = randn(rng, D, H)
+        weights[f"layers.{i}.w_out"] = randn(rng, H, D)
 
-    mlir = str(stack.trace(_itype())._module)
-    assert _graphs(mlir, "Block") == 1
-    assert _calls(mlir, "Block") == 3
+    mlir = str(stack.trace(default_type())._module)
+    assert count_graphs(mlir, "Block") == 1
+    assert count_calls(mlir, "Block") == 3
 
-    compiled = stack.compile(_itype(), weights=weights)
-    x = _randn(rng, 2, D)
+    compiled = stack.compile(default_type(), weights=weights)
+    x = randn(rng, 2, D)
     expected = x
     for i in range(3):
         expected = _block_ref(
@@ -169,9 +173,9 @@ def test_callable_form_shares_body() -> None:
             return x
 
     stack = CallableStack(layers=ModuleList([_block() for _ in range(3)]))
-    mlir = str(stack.trace(_itype())._module)
-    assert _graphs(mlir, "Block") == 1
-    assert _calls(mlir, "Block") == 3
+    mlir = str(stack.trace(default_type())._module)
+    assert count_graphs(mlir, "Block") == 1
+    assert count_calls(mlir, "Block") == 3
 
 
 # ─── The dedup key tracks exactly what the body reads ────────────────────────
@@ -193,8 +197,8 @@ def test_dedup_key_tracks_what_the_body_reads() -> None:
     """
     # (a) Incidental field: ``tag`` differs per layer but forward never reads it.
     incidental = Stack(layers=ModuleList([_block(tag=i) for i in range(3)]))
-    mlir = str(incidental.trace(_itype())._module)
-    assert (_graphs(mlir, "Block"), _calls(mlir, "Block")) == (1, 3)
+    mlir = str(incidental.trace(default_type())._module)
+    assert (count_graphs(mlir, "Block"), count_calls(mlir, "Block")) == (1, 3)
 
     # (b) Baked per-layer index: read inside forward as a Python int, so each
     # layer bakes a different ``ops.constant`` -> a distinct body per layer.
@@ -208,10 +212,13 @@ def test_dedup_key_tracks_what_the_body_reads() -> None:
             return x @ self.w + F.constant(self.idx, F32, device=CPU())
 
     baked = Stack(
-        layers=ModuleList([BakedIndex(_zeros(D, D), idx=i) for i in range(3)])
+        layers=ModuleList([BakedIndex(zeros(D, D), idx=i) for i in range(3)])
     )
-    mlir = str(baked.trace(_itype())._module)
-    assert (_graphs(mlir, "BakedIndex"), _calls(mlir, "BakedIndex")) == (3, 3)
+    mlir = str(baked.trace(default_type())._module)
+    assert (
+        count_graphs(mlir, "BakedIndex"),
+        count_calls(mlir, "BakedIndex"),
+    ) == (3, 3)
 
     # (c) Threaded index: the same per-layer value flows in as a Tensor operand,
     # so the body reads a block argument (not a literal) and all layers share;
@@ -234,10 +241,13 @@ def test_dedup_key_tracks_what_the_body_reads() -> None:
             return x
 
     threaded = ThreadedStack(
-        layers=ModuleList([ThreadedIndex(_zeros(D, D)) for _ in range(3)])
+        layers=ModuleList([ThreadedIndex(zeros(D, D)) for _ in range(3)])
     )
-    mlir = str(threaded.trace(_itype())._module)
-    assert (_graphs(mlir, "ThreadedIndex"), _calls(mlir, "ThreadedIndex")) == (
+    mlir = str(threaded.trace(default_type())._module)
+    assert (
+        count_graphs(mlir, "ThreadedIndex"),
+        count_calls(mlir, "ThreadedIndex"),
+    ) == (
         1,
         3,
     )
@@ -266,13 +276,13 @@ def test_distinct_subclasses_split() -> None:
 
     stack = Stack(
         layers=ModuleList(
-            [Dense(_zeros(D, D)), Dense(_zeros(D, D))]
-            + [Expert(_zeros(D, D)) for _ in range(3)]
+            [Dense(zeros(D, D)), Dense(zeros(D, D))]
+            + [Expert(zeros(D, D)) for _ in range(3)]
         )
     )
-    mlir = str(stack.trace(_itype())._module)
-    assert (_graphs(mlir, "Dense"), _calls(mlir, "Dense")) == (1, 2)
-    assert (_graphs(mlir, "Expert"), _calls(mlir, "Expert")) == (1, 3)
+    mlir = str(stack.trace(default_type())._module)
+    assert (count_graphs(mlir, "Dense"), count_calls(mlir, "Dense")) == (1, 2)
+    assert (count_graphs(mlir, "Expert"), count_calls(mlir, "Expert")) == (1, 3)
 
 
 def test_captured_constant_not_in_parameters() -> None:
@@ -293,15 +303,15 @@ def test_captured_constant_not_in_parameters() -> None:
             return F.relu(x @ self.w) + cap
 
     rng = np.random.default_rng(7)
-    stack = Stack(layers=ModuleList([CapBlock(_zeros(D, D)) for _ in range(3)]))
-    weights = {f"layers.{i}.w": _randn(rng, D, D) for i in range(3)}
+    stack = Stack(layers=ModuleList([CapBlock(zeros(D, D)) for _ in range(3)]))
+    weights = {f"layers.{i}.w": randn(rng, D, D) for i in range(3)}
 
-    mlir = str(stack.trace(_itype())._module)
-    assert _graphs(mlir, "CapBlock") == 1
-    assert _calls(mlir, "CapBlock") == 3
+    mlir = str(stack.trace(default_type())._module)
+    assert count_graphs(mlir, "CapBlock") == 1
+    assert count_calls(mlir, "CapBlock") == 3
 
-    compiled = stack.compile(_itype(), weights=weights)
-    x = _randn(rng, 2, D)
+    compiled = stack.compile(default_type(), weights=weights)
+    x = randn(rng, 2, D)
     expected = x
     for i in range(3):
         expected = np.maximum(expected @ weights[f"layers.{i}.w"], 0.0) + cap_np
@@ -311,6 +321,85 @@ def test_captured_constant_not_in_parameters() -> None:
         rtol=1e-4,
         atol=1e-4,
     )
+
+
+# ─── Weight materialization: weights live once in the shared body ────────────
+
+
+def test_subgraphed_weights_materialize_once() -> None:
+    """Tests that the weight-prefix mechanism works correctly."""
+    for n_layers in (3, 8):
+        stack = Stack(layers=ModuleList([_block() for _ in range(n_layers)]))
+        mlir = str(stack.trace(default_type())._module)
+        assert count_calls(mlir, "Block") == n_layers
+        # Two external constants (w_in, w_out) regardless of depth, not 2 x N.
+        assert externals(mlir) == 2
+        # They are placeholders resolved by the call prefix, and carry the
+        # block's *relative* names -- per-layer full names are never emitted as
+        # constants (the call's prefix resolves them at load time instead).
+        assert mlir.count("isPlaceholder = true") == 2
+        assert 'name = "w_in"' in mlir and 'name = "w_out"' in mlir
+        assert 'name = "layers.0.w_in"' not in mlir
+
+
+# ─── Explicit subgraph name controls dedup (name overrides the IR hash) ──────
+
+
+def test_explicit_name_controls_sharing() -> None:
+    """``subgraphable(layer, name=...)`` keys the subgraph on the name instead
+    of the body's IR hash, so naming controls dedup in both directions:
+
+    * a shared name collapses blocks whose bodies would *otherwise hash
+      differently* into one subgraph (you vouch they match);
+    * distinct names keep *otherwise-identical* blocks as separate subgraphs.
+    """
+
+    @module_dataclass
+    class Baked(Module[[Tensor], Tensor]):
+        """Bakes a per-layer constant into the body, so unnamed blocks hash
+        differently and would not otherwise share."""
+
+        w: Tensor
+        idx: int = 0
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x @ self.w + F.constant(self.idx, F32, device=CPU())
+
+    # Unnamed: each baked constant differs, so the IR hash splits the three
+    # layers into three subgraphs.
+    unnamed = Stack(
+        layers=ModuleList(
+            [subgraphable(Baked(zeros(D, D), idx=i)) for i in range(3)]
+        )
+    )
+    mlir = str(unnamed.trace(default_type())._module)
+    assert (count_graphs(mlir, "Baked"), count_calls(mlir, "Baked")) == (3, 3)
+
+    # Same name: the three differing bodies collapse to one shared subgraph.
+    named = Stack(
+        layers=ModuleList(
+            [
+                subgraphable(Baked(zeros(D, D), idx=i), name="shared")
+                for i in range(3)
+            ]
+        )
+    )
+    mlir = str(named.trace(default_type())._module)
+    assert (count_graphs(mlir, "shared"), count_calls(mlir, "shared")) == (1, 3)
+    assert count_graphs(mlir, "Baked") == 0
+
+    # Distinct names split two identical blocks that would otherwise share.
+    distinct = Stack(
+        layers=ModuleList(
+            [
+                subgraphable(_block(), name="a"),
+                subgraphable(_block(), name="b"),
+            ]
+        )
+    )
+    mlir = str(distinct.trace(default_type())._module)
+    assert (count_graphs(mlir, "a"), count_calls(mlir, "a")) == (1, 1)
+    assert (count_graphs(mlir, "b"), count_calls(mlir, "b")) == (1, 1)
 
 
 # ─── Nesting: a subgraph inside a subgraph body inlines (any depth) ──────────
@@ -350,14 +439,11 @@ def test_nested_subgraphs_inline() -> None:
 
     stack = Stack(
         layers=ModuleList(
-            [
-                C(B(A(_zeros(D, D)), _zeros(D, D)), _zeros(D, D))
-                for _ in range(2)
-            ]
+            [C(B(A(zeros(D, D)), zeros(D, D)), zeros(D, D)) for _ in range(2)]
         )
     )
-    mlir = str(stack.trace(_itype())._module)
-    assert (_graphs(mlir, "C"), _calls(mlir, "C")) == (1, 2)
+    mlir = str(stack.trace(default_type())._module)
+    assert (count_graphs(mlir, "C"), count_calls(mlir, "C")) == (1, 2)
     # The two inner levels inline rather than nesting their own subgraphs.
     assert "mo.graph @B" not in mlir and "mo.graph @A" not in mlir
 
@@ -390,8 +476,8 @@ class TPBlock(Module[[Tensor], Tensor]):
 
 def _tp_block() -> TPBlock:
     return TPBlock(
-        w_in=F.transfer_to(_zeros(D, H), COLUMN),
-        w_out=F.transfer_to(_zeros(H, D), ROW),
+        w_in=F.transfer_to(zeros(D, H), COLUMN),
+        w_out=F.transfer_to(zeros(H, D), ROW),
     )
 
 
@@ -405,20 +491,23 @@ def test_tensor_parallel_block_shares_one_subgraph() -> None:
 
     weights: dict[str, np.ndarray] = {}
     for i in range(2):
-        weights[f"layers.{i}.w_in"] = _randn(rng, D, H)
-        weights[f"layers.{i}.w_out"] = _randn(rng, H, D)
+        weights[f"layers.{i}.w_in"] = randn(rng, D, H)
+        weights[f"layers.{i}.w_out"] = randn(rng, H, D)
 
     mlir = str(stack.trace(input_type)._module)
-    assert _graphs(mlir, "TPBlock") == 1
-    assert _calls(mlir, "TPBlock") == 2
-    # Each sharded weight registers one external constant per device.
+    assert count_graphs(mlir, "TPBlock") == 1
+    assert count_calls(mlir, "TPBlock") == 2
+    # The shared body registers each sharded weight once under its *relative*
+    # name (one external constant per device); each layer's ``mo.call`` carries
+    # the per-layer prefix that resolves those names to its own weights.
+    for weight in ("w_in", "w_out"):
+        for shard in range(2):
+            assert f'name = "{weight}._shard.{shard}"' in mlir
     for i in range(2):
-        for name in (f"layers.{i}.w_in", f"layers.{i}.w_out"):
-            for shard in range(2):
-                assert f'name = "{name}._shard.{shard}"' in mlir
+        assert f'prefix = "layers.{i}."' in mlir
 
     compiled = stack.compile(input_type, weights=weights)
-    x = _randn(rng, 2, D)
+    x = randn(rng, 2, D)
     replicated = F.transfer_to(Tensor(x, device=CPU()), REPLICATED)
     result = compiled(replicated)
     assert result.placements == (Replicated(),)
@@ -438,7 +527,7 @@ def test_tensor_parallel_block_shares_one_subgraph() -> None:
 def _block_with(
     rng: np.random.Generator,
 ) -> tuple[Block, np.ndarray, np.ndarray]:
-    w_in, w_out = _randn(rng, D, H), _randn(rng, H, D)
+    w_in, w_out = randn(rng, D, H), randn(rng, H, D)
     block = Block(Tensor(w_in, device=CPU()), Tensor(w_out, device=CPU()))
     return block, w_in, w_out
 
@@ -448,7 +537,7 @@ def test_eager_call_passes_through() -> None:
     call just computes, so the result matches the bare forward."""
     rng = np.random.default_rng(20)
     block, w_in, w_out = _block_with(rng)
-    x = _randn(rng, 2, D)
+    x = randn(rng, 2, D)
     out = block(Tensor(x, device=CPU())).to_numpy()
     np.testing.assert_allclose(
         out, _block_ref(x, w_in, w_out), rtol=1e-4, atol=1e-4
@@ -460,7 +549,7 @@ def test_lazy_shares_one_subgraph_and_runs() -> None:
     subgraph (like compile); realizing it later yields the right numerics."""
     rng = np.random.default_rng(21)
     blocks = [_block_with(rng) for _ in range(3)]
-    x = _randn(rng, 2, D)
+    x = randn(rng, 2, D)
 
     with F.lazy():
         stack = Stack(layers=ModuleList([b for b, _, _ in blocks]))
@@ -507,15 +596,18 @@ def test_structured_output_round_trips() -> None:
 
     rng = np.random.default_rng(27)
     stack = NestStack(
-        layers=ModuleList([NestBlock(_zeros(D, D)) for _ in range(3)])
+        layers=ModuleList([NestBlock(zeros(D, D)) for _ in range(3)])
     )
-    weights = {f"layers.{i}.w": _randn(rng, D, D) for i in range(3)}
+    weights = {f"layers.{i}.w": randn(rng, D, D) for i in range(3)}
 
-    mlir = str(stack.trace(_itype())._module)
-    assert (_graphs(mlir, "NestBlock"), _calls(mlir, "NestBlock")) == (1, 3)
+    mlir = str(stack.trace(default_type())._module)
+    assert (
+        count_graphs(mlir, "NestBlock"),
+        count_calls(mlir, "NestBlock"),
+    ) == (1, 3)
 
-    compiled = stack.compile(_itype(), weights=weights)
-    x = _randn(rng, 2, D)
+    compiled = stack.compile(default_type(), weights=weights)
+    x = randn(rng, 2, D)
     expected = x
     for i in range(3):
         h = np.maximum(expected @ weights[f"layers.{i}.w"], 0.0)
@@ -531,13 +623,18 @@ def test_structured_output_round_trips() -> None:
 # ─── Guardrails ──────────────────────────────────────────────────────────────
 
 
-def test_calling_outside_a_capture_raises() -> None:
-    """A subgraph wrapper is only valid inside a capture; call the module
-    directly to run eagerly."""
-    with pytest.raises(TypeError, match="only valid inside a capture"):
-        subgraphable(_block())(
-            Tensor(np.zeros((2, D), np.float32), device=CPU())
-        )
+def test_calling_outside_a_capture_runs_eager() -> None:
+    """Marking a module has no effect outside a capture: calling a subgraphable
+    instance eagerly just runs ``forward`` (no subgraph, no error) and matches
+    the bare-forward result."""
+    rng = np.random.default_rng(31)
+    block, w_in, w_out = _block_with(rng)
+    marked = subgraphable(block)
+    x = randn(rng, 2, D)
+    out = marked(Tensor(x, device=CPU())).to_numpy()
+    np.testing.assert_allclose(
+        out, _block_ref(x, w_in, w_out), rtol=1e-4, atol=1e-4
+    )
 
 
 def test_allow_subgraphs_false_inlines_everything() -> None:
@@ -549,16 +646,18 @@ def test_allow_subgraphs_false_inlines_everything() -> None:
     stack = Stack(layers=ModuleList([_block() for _ in range(3)]))
     weights: dict[str, np.ndarray] = {}
     for i in range(3):
-        weights[f"layers.{i}.w_in"] = _randn(rng, D, H)
-        weights[f"layers.{i}.w_out"] = _randn(rng, H, D)
+        weights[f"layers.{i}.w_in"] = randn(rng, D, H)
+        weights[f"layers.{i}.w_out"] = randn(rng, H, D)
 
-    graph, *_ = stack._trace((_itype(),), allow_subgraphs=False)
+    graph, *_ = stack._trace((default_type(),), allow_subgraphs=False)
     mlir = str(graph._module)
-    assert _graphs(mlir, "Block") == 0
-    assert _calls(mlir, "Block") == 0
+    assert count_graphs(mlir, "Block") == 0
+    assert count_calls(mlir, "Block") == 0
 
-    compiled = stack.compile(_itype(), weights=weights, allow_subgraphs=False)
-    x = _randn(rng, 2, D)
+    compiled = stack.compile(
+        default_type(), weights=weights, allow_subgraphs=False
+    )
+    x = randn(rng, 2, D)
     expected = x
     for i in range(3):
         expected = _block_ref(
@@ -609,6 +708,6 @@ def test_subgraph_cannot_read_parent_graph_value() -> None:
                 x = block(x)
             return x
 
-    stack = CapturingStack(_zeros(D, D))
+    stack = CapturingStack(zeros(D, D))
     with pytest.raises(TypeError, match="Can't realize from a graph context"):
-        stack.compile(_itype())
+        stack.compile(default_type())

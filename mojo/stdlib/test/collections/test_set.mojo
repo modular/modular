@@ -14,7 +14,12 @@
 from std.collections import Set
 from std.hashlib import hash
 
-from test_utils import MoveOnly, check_write_to
+from test_utils import (
+    CopyableExplicitDestroyKey,
+    ExplicitDestroyKey,
+    MoveOnly,
+    check_write_to,
+)
 from std.testing import (
     assert_false,
     assert_equal,
@@ -386,8 +391,8 @@ def test_symmetric_difference() raises:
 
 def test_symmetric_difference_update() raises:
     # Test case 1
-    set1 = {1, 2, 3}
-    set2 = {2, 3, 4}
+    var set1 = {1, 2, 3}
+    var set2 = {2, 3, 4}
     set1.symmetric_difference_update(set2)
     assert_true({1, 4} == set1)
 
@@ -397,8 +402,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 4} == set1)
 
     # Test case 2
-    set3 = {1, 2, 3}
-    set4 = {4, 5, 6}
+    var set3 = {1, 2, 3}
+    var set4 = {4, 5, 6}
     set3.symmetric_difference_update(set4)
     assert_true({1, 2, 3, 4, 5, 6} == set3)
 
@@ -408,8 +413,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3, 4, 5, 6} == set3)
 
     # Test case 3
-    set5 = {1, 2, 3}
-    set6 = Set[Int]()
+    var set5 = {1, 2, 3}
+    var set6 = Set[Int]()
     set5.symmetric_difference_update(set6)
     assert_true({1, 2, 3} == set5)
 
@@ -419,8 +424,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3} == set5)
 
     # Test case 4
-    set7 = Set[Int]()
-    set8 = {1, 2, 3}
+    var set7 = Set[Int]()
+    var set8 = {1, 2, 3}
     set7.symmetric_difference_update(set8)
     assert_true({1, 2, 3} == set7)
 
@@ -430,8 +435,8 @@ def test_symmetric_difference_update() raises:
     assert_true({1, 2, 3} == set7)
 
     # Test case 5
-    set9 = Set[Int]()
-    set10 = Set[Int]()
+    var set9 = Set[Int]()
+    var set10 = Set[Int]()
     set9.symmetric_difference_update(set10)
     assert_true(set9 == {})
 
@@ -441,8 +446,8 @@ def test_symmetric_difference_update() raises:
     assert_true(set9 == {})
 
     # Test case 6
-    set11 = {1, 2, 3}
-    set12 = {1, 2, 3}
+    var set11 = {1, 2, 3}
+    var set12 = {1, 2, 3}
     set11.symmetric_difference_update(set12)
     assert_true(set11 == {})
 
@@ -453,24 +458,24 @@ def test_symmetric_difference_update() raises:
 
 
 def test_discard() raises:
-    set1 = {1, 2, 3}
+    var set1 = {1, 2, 3}
     set1.discard(2)
     assert_true(set1 == {1, 3})
 
-    set2 = {1, 2, 3}
+    var set2 = {1, 2, 3}
     set2.discard(4)
     assert_true(set2 == {1, 2, 3})
 
-    set3 = Set[Int]()
+    var set3 = Set[Int]()
     set3.discard(1)
     assert_true(set3 == {})
 
-    set4 = {1, 2, 3, 4, 5}
+    var set4 = {1, 2, 3, 4, 5}
     set4.discard(2)
     set4.discard(4)
     assert_true(set4 == {1, 3, 5})
 
-    set5 = {1, 2, 3}
+    var set5 = {1, 2, 3}
     set5.discard(1)
     set5.discard(2)
     set5.discard(3)
@@ -479,31 +484,31 @@ def test_discard() raises:
 
 def test_clear() raises:
     # Shouldn't fail when clearing a 0 length set
-    set0 = Set[Int]()
+    var set0 = Set[Int]()
     set0.clear()
     assert_equal(0, len(set0))
 
-    set1 = {1, 2, 3}
+    var set1 = {1, 2, 3}
     set1.clear()
     assert_true(set1 == {})
 
-    set2 = Set[Int]()
+    var set2 = Set[Int]()
     set2.clear()
     assert_true(set2 == {})
 
-    set3 = {1, 2, 3}
+    var set3 = {1, 2, 3}
     set3.clear()
     set3.add(4)
     set3.add(5)
     assert_true(set3 == {4, 5})
 
-    set4 = {1, 2, 3}
+    var set4 = {1, 2, 3}
     set4.clear()
     set4.clear()
     set4.clear()
     assert_true(set4 == {})
 
-    set5 = {1, 2, 3}
+    var set5 = {1, 2, 3}
     set5.clear()
     assert_true(len(set5) == 0)
 
@@ -568,6 +573,13 @@ def test_set_conditional_conformances() raises:
     assert_false(conforms_to(Set[MoveOnly[Int]], Hashable))
     assert_false(conforms_to(Set[MoveOnly[Int]], Writable))
 
+    # Deinitable conformance is conditional on the element type.
+    assert_true(conforms_to(Set[Int], Deinitable))
+    assert_true(conforms_to(Set[String], Deinitable))
+    assert_true(conforms_to(Set[MoveOnly[Int]], Deinitable))
+    # A linear (explicitly-destroyed) element makes the set itself linear.
+    assert_false(conforms_to(Set[ExplicitDestroyKey], Deinitable))
+
 
 def test_set_iter_owned() raises:
     # Test that owned iteration works, for non-Copyable types
@@ -586,6 +598,30 @@ def test_set_iter_owned() raises:
     assert_true(3 in elems)
 
 
+def test_set_iter_copyable_linear_element() raises:
+    # Borrowing iteration only reads elements, so it requires `Copyable` but
+    # not `Deinitable` -- a linear element type still iterates.
+    var s = Set[CopyableExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: CopyableExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    s.insert(CopyableExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(CopyableExplicitDestroyKey(2)).deinit_with(dispose)
+
+    var seen = List[Int]()
+    for element in s:
+        seen.append(element.value)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len(seen), 2)
+    assert_true(1 in seen)
+    assert_true(2 in seen)
+
+
 def test_set_iter_owned_bounds() raises:
     var s = Set[Int](1, 2, 3)
     var it = s^.__iter__()
@@ -600,7 +636,7 @@ def test_set_iter_owned_bounds() raises:
 
 def test_set_move_only_element() raises:
     # `MoveOnly[Int]` is not `Copyable`; this exercises the conditional
-    # conformance path of `Set[T: KeyElement & ImplicitlyDeletable, H]`
+    # conformance path of `Set[T: KeyElement & Deinitable, H]`
     # where the element type is move-only. Copy-requiring ops (`union`,
     # `intersection`, iteration, ...) are unavailable for this `T`, but the
     # add / remove / contains / pop / discard / clear core remains usable.
@@ -637,6 +673,82 @@ def test_set_move_only_element() raises:
     s.clear()
     assert_equal(len(s), 0)
     assert_false(s.__bool__())
+
+
+def test_set_insert_linear() raises:
+    # `insert` on a linear (non-`Deinitable`) element type moves any
+    # displaced equal element out and returns it instead of destroying it in
+    # place. The returned `Optional[T]` is itself linear and is consumed via
+    # `deinit_with`. The final `deinit_with` covers `Set`'s per-element
+    # teardown path end-to-end.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    # New elements: nothing displaced, so each returned `Optional` is empty.
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    var len_after_new = len(s)
+    var disposed_after_new = len(disposed)
+
+    # Inserting an equal element displaces the previously-present one, which
+    # comes back and is disposed by the caller (not the just-inserted element).
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    var len_after_dup = len(s)
+    var disposed_after_dup = len(disposed)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_after_new, 2)
+    assert_equal(disposed_after_new, 0)
+    assert_equal(len_after_dup, 2)
+    assert_equal(disposed_after_dup, 1)
+    # Final teardown disposed the two survivors (1 and 2).
+    assert_equal(len(disposed), 3)
+    assert_true(1 in disposed)
+    assert_true(2 in disposed)
+
+
+def test_set_clear_with_linear() raises:
+    # `clear_with` on a populated linear `Set`: every element reaches the
+    # closure once, the set empties, and its capacity is reused.
+    var s = Set[ExplicitDestroyKey]()
+    var disposed = List[Int]()
+
+    def dispose(var key: ExplicitDestroyKey) {mut}:
+        disposed.append(key.value)
+        key^.destroy()
+
+    s.insert(ExplicitDestroyKey(1)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(2)).deinit_with(dispose)
+    s.insert(ExplicitDestroyKey(3)).deinit_with(dispose)
+    var len_before_clear = len(s)
+
+    s.clear_with(dispose)
+    var cleared = disposed.copy()
+    var len_after_clear = len(s)
+
+    # Capacity is retained, so the emptied set is reusable.
+    s.insert(ExplicitDestroyKey(4)).deinit_with(dispose)
+    var len_after_reuse = len(s)
+
+    s^.deinit_with(dispose)
+
+    assert_equal(len_before_clear, 3)
+    assert_equal(len_after_clear, 0)
+    assert_equal(len_after_reuse, 1)
+
+    assert_equal(len(cleared), 3)
+    assert_true(1 in cleared)
+    assert_true(2 in cleared)
+    assert_true(3 in cleared)
+
+    # Final teardown disposed the reused survivor (4).
+    assert_equal(len(disposed), 4)
+    assert_true(4 in disposed)
 
 
 def main() raises:

@@ -18,33 +18,33 @@ from std.memory import bitcast
 from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu import WARP_SIZE, barrier
-from std.gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from max.gpu.sync import barrier
+from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host import DeviceContext, FuncAttribute
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu.host.info import B200
+from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.host.info import B200
 from std.gpu import block_id_in_cluster, lane_id
 from std.gpu import warp_id as get_warp_id
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from std.gpu.compute.mma import st_matrix
-from std.gpu.compute.arch.mma_nvidia_sm100 import *
-from std.gpu.sync import (
+from max.gpu.compute.mma import st_matrix
+from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
 )
-from std.gpu.compute.arch.tcgen05 import *
+from max.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
 from layout import (
     Layout,
@@ -313,7 +313,7 @@ def stsm_helper[
     vec_dtype: DType,
     vec_size: Int,
 ](
-    vec: InlineArray[Scalar[vec_dtype], vec_size],
+    vec: Array[Scalar[vec_dtype], vec_size],
     dst: LayoutTensor[mut=True, _, _, address_space=AddressSpace.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -461,11 +461,11 @@ def multi_stage_store_C[
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](upper_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](upper_frag),
             c_smem_warp_tile.tile[16, stageN](0, 0),
         )
         stsm_helper[swizzle](
-            rebind[InlineArray[Scalar[accum_type], frag_width]](lower_frag),
+            rebind[Array[Scalar[accum_type], frag_width]](lower_frag),
             c_smem_warp_tile.tile[16, stageN](1, 0),
         )
 
@@ -532,8 +532,9 @@ def kernel_8[
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: Int,
+    num_iters_dev: Int32,
 ):
+    var num_iters = Int(num_iters_dev)
     comptime num_output_warps = 4
 
     comptime SCHEDULER_THREADS = WARP_SIZE
@@ -589,7 +590,7 @@ def kernel_8[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    base_ptr_smem = external_memory[
+    var base_ptr_smem = external_memory[
         Scalar[a_type],
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -658,18 +659,18 @@ def kernel_8[
 
     var ptr_tmem_addr = (tmem_dealloc_mbar_ptr + 1).bitcast[UInt32]()
 
-    tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
-    mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_response = clc_response_ptr.bitcast[UInt128]()
-    clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
-    tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
-    clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
+    var tma_mbar = tma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var mma_mbar = mma_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_full_mbar = accum_full_mbar_ptr.bitcast[SharedMemBarrier]()
+    var accum_empty_mbar = accum_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_response = clc_response_ptr.bitcast[UInt128]()
+    var clc_full_mbar = clc_full_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_empty_mbar = clc_empty_mbar_ptr.bitcast[SharedMemBarrier]()
+    var tmem_dealloc_mbar = tmem_dealloc_mbar_ptr.bitcast[SharedMemBarrier]()
+    var clc_throttle_full_mbar = clc_throttle_full_mbar_ptr.bitcast[
         SharedMemBarrier
     ]()
-    clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
+    var clc_throttle_empty_mbar = clc_throttle_empty_mbar_ptr.bitcast[
         SharedMemBarrier
     ]()
 
@@ -851,7 +852,7 @@ def kernel_8[
                 )
 
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
 
@@ -871,11 +872,11 @@ def kernel_8[
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
 
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             # scheduler fetch next work
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             clc_pipe_consumer_state.step()
@@ -927,7 +928,7 @@ def kernel_8[
 
     if WarpRole.is_epilogue():
         named_barrier[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
-        tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = ptr_tmem_addr[0]
 
         while work_info.is_valid():
             # WAIT FOR MMA TO FINISH AND STORE RESULT
@@ -953,7 +954,7 @@ def kernel_8[
             )
             accum_pipeline_consumer_state.step()
 
-            next_work_info = scheduler.fetch_next_work(
+            var next_work_info = scheduler.fetch_next_work(
                 work_info, clc_pipe_consumer_state
             )
             work_info = next_work_info
@@ -999,11 +1000,11 @@ def blackwell_kernel_8[
     comptime MMA_N = umma_shape[1]
     comptime MMA_K = umma_shape[2]
 
-    a_tma_op = create_tensor_tile[
+    var a_tma_op = create_tensor_tile[
         Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
     ](ctx, a)
 
-    b_tma_op = create_tensor_tile[
+    var b_tma_op = create_tensor_tile[
         Index(
             Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
         ) if transpose_b else Index(
@@ -1126,7 +1127,7 @@ def blackwell_kernel_8[
         b_tma_op,
         c_tma_op,
         cluster_dim,
-        K // BK,
+        Int32(K // BK),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
@@ -1224,7 +1225,7 @@ def test_blackwell_kernel_8[
         comptime num_warmup = 100
 
         @always_inline
-        @parameter
+        @__parameter
         def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_8[
                 transpose_b=transpose_b,

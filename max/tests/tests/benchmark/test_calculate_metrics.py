@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from unittest.mock import MagicMock
@@ -88,6 +89,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
     assert math.isclose(metrics.text_data.step_tpot_ms.p50, 100.0, rel_tol=1e-3)
     # tpot_ms is per-request: (latency - ttft) / (output_len - 1)
     #                       = (1.0 - 0.1) / (5 - 1) = 0.225 s -> 225 ms.
+    assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.p50, 225.0, rel_tol=1e-3)
 
 
@@ -137,6 +139,7 @@ def test_tpot_both_definitions() -> None:
     assert metrics.text_data is not None
 
     # Per-request tpots = [0.1, 0.2]; mean = 0.15 s -> 150 ms.
+    assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.mean, 150.0, rel_tol=1e-6)
 
     # Per-step step_tpots = [0.1]*9 + [0.2]*3; mean = 1.5/12 s -> 125 ms.
@@ -147,7 +150,7 @@ def test_tpot_both_definitions() -> None:
 
 
 def test_tpot_zero_decode_tokens() -> None:
-    """When all requests produce <= 1 token, TPOT mean is NaN."""
+    """When all requests produce <= 1 token, decode metrics are ``None``."""
     # Output with 1 token (only TTFT, no decode)
     output = RequestFuncOutput(
         success=True,
@@ -178,8 +181,12 @@ def test_tpot_zero_decode_tokens() -> None:
 
     assert metrics.text_data is not None
 
-    # With empty tpots, StandardPercentileMetrics gets [nan], so mean is nan
-    assert math.isnan(metrics.text_data.tpot_ms.mean)
+    # With no decode samples the decode-phase percentile metrics are
+    # ``None`` (rather than a NaN-filled object), while prefill-phase
+    # metrics that do have samples stay populated.
+    assert metrics.text_data.tpot_ms is None
+    assert metrics.text_data.itl_ms is None
+    assert metrics.text_data.ttft_ms is not None
 
 
 def test_empty_outputs_no_crash() -> None:
@@ -204,8 +211,22 @@ def test_empty_outputs_no_crash() -> None:
 
     assert metrics.text_data.completed == 0
     assert metrics.text_data.output_lens == []
-    # TPOT mean should be NaN since there are no outputs
-    assert math.isnan(metrics.text_data.tpot_ms.mean)
+    # With no samples, percentile metrics are ``None`` (not a NaN-filled
+    # object) so the serialized JSON stays free of null-valued percentile
+    # objects that strict downstream consumers reject.
+    assert metrics.text_data.latency_ms is None
+    assert metrics.text_data.ttft_ms is None
+    assert metrics.text_data.tpot_ms is None
+    assert metrics.text_data.itl_ms is None
+    assert metrics.text_data.input_throughput is None
+    assert metrics.text_data.output_throughput is None
+
+    # And the empty case round-trips through JSON as ``null`` fields, not
+    # ``{"p50": null, ...}`` objects (regression guard for MXTOOLS-45:
+    # legacy NaN objects tripped the dashboard's per-field drop pass).
+    dumped = json.loads(metrics.model_dump_json())
+    assert dumped["text_data"]["tpot_ms"] is None
+    assert dumped["text_data"]["latency_ms"] is None
 
 
 def test_itl_metrics_unchanged() -> None:
@@ -239,6 +260,7 @@ def test_itl_metrics_unchanged() -> None:
     assert metrics.text_data is not None
 
     # ITL should be computed from the raw itl values [0.1, 0.2, 0.3] * 1000
+    assert metrics.text_data.itl_ms is not None
     assert math.isclose(metrics.text_data.itl_ms.mean, 200.0, rel_tol=1e-3)
     assert math.isclose(metrics.text_data.itl_ms.p50, 200.0, rel_tol=1e-3)
 
@@ -283,6 +305,7 @@ def test_failed_requests_excluded() -> None:
     assert metrics.text_data.completed == 1
     assert metrics.text_data.failures == 1
     # Per-request tpot_ms uses only the successful request, not [999.0].
+    assert metrics.text_data.tpot_ms is not None
     assert metrics.text_data.tpot_ms.p50 < 500.0
     # Per-step step_tpot_ms uses only [0.1, 0.2] from the successful request.
     assert metrics.text_data.step_tpot_ms is not None
@@ -358,6 +381,8 @@ def test_skip_last_n_requests() -> None:
     assert metrics_all.text_data.completed == 3
     assert metrics_skip_last.text_data.completed == 2
     # The last request's high TTFT (0.5s) is excluded from latency metrics.
+    assert metrics_skip_last.text_data.ttft_ms is not None
+    assert metrics_all.text_data.ttft_ms is not None
     assert (
         metrics_skip_last.text_data.ttft_ms.mean
         < metrics_all.text_data.ttft_ms.mean
@@ -417,6 +442,7 @@ def test_skip_first_and_last_n_requests() -> None:
     # Only the middle request is measured.
     assert metrics.text_data.completed == 1
     # Only the middle request's TTFT (0.1s = 100ms) should be measured
+    assert metrics.text_data.ttft_ms is not None
     assert math.isclose(metrics.text_data.ttft_ms.mean, 100.0, rel_tol=1e-3)
 
 
@@ -478,6 +504,7 @@ def test_skip_last_with_cancelled_requests() -> None:
     # entries, so only the middle successful request is measured.
     assert metrics.text_data.completed == 1
     # Only the second request should be measured (skip first 1, last 1)
+    assert metrics.text_data.ttft_ms is not None
     assert math.isclose(metrics.text_data.ttft_ms.mean, 200.0, rel_tol=1e-3)
 
 
@@ -550,6 +577,7 @@ def test_calculate_pixel_generation_metrics() -> None:
         metrics.pixel_data.request_throughput, 0.4, rel_tol=1e-6
     )
     assert metrics.pixel_data.total_generated_outputs == 3
+    assert metrics.pixel_data.latency_ms is not None
     assert math.isclose(
         metrics.pixel_data.latency_ms.mean, 1500.0, rel_tol=1e-6
     )
@@ -1221,6 +1249,7 @@ def test_build_text_generation_result_detected_uses_window_with_rejection() -> (
     assert result.num_outliers_rejected is not None
     assert result.text_data is not None
     # The reported TTFT should be very close to 50 ms (all inputs are 0.05 s).
+    assert result.text_data.ttft_ms is not None
     assert result.text_data.ttft_ms.mean == pytest.approx(50.0, rel=0.05)
 
 
@@ -1337,6 +1366,7 @@ def test_build_text_generation_result_with_outlier_inputs() -> None:
     assert result_one.steady_state_warning is None  # skipped, not failed
     assert result_one.num_outliers_rejected == 0  # no rejection on fallback
     assert result_one.text_data is not None
+    assert result_one.text_data.ttft_ms is not None
     assert not math.isnan(result_one.text_data.ttft_ms.mean)
 
 

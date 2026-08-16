@@ -14,8 +14,8 @@
 
 def main():
     # While loop
-    fib_prev = 0
-    fib_curr = 1
+    var fib_prev = 0
+    var fib_curr = 1
 
     print(fib_prev, end="")
     while fib_curr < 50:
@@ -25,7 +25,7 @@ def main():
     print()
 
     # While loop with continue statement
-    n = 0
+    var n = 0
     while n < 5:
         n += 1
         if n == 3:

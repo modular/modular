@@ -49,6 +49,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     max_prompt_length: _Tensor
     max_cache_length: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
+    # Page lookup table for ``kv_scales``, present when the scales are paged
+    # independently of the values so a request's scale pages carry their own
+    # ids. ``None`` means the two share one block-id space and ``lookup_table``
+    # resolves both, which is what every non-pooled cache does.
+    scales_lookup_table: _Tensor | None = None
     attention_dispatch_metadata: _Tensor | None = None
     draft_attention_dispatch_metadata: _Tensor | None = None
     # Capturable-graph scalars: when present, the SM100 MLA dispatcher uses
@@ -56,6 +61,19 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     # Populated only for MLA paths; ``None`` otherwise.
     mla_num_partitions: _Tensor | None = None
     draft_mla_num_partitions: _Tensor | None = None
+    # One single-layer KV buffer per layer, used when the backing pool
+    # allocates a standalone buffer per layer (``KVCacheParams.per_layer_buffers``)
+    # instead of one multi-layer buffer. ``kv_blocks`` aliases
+    # ``kv_blocks_per_layer[0]`` so single-buffer consumers stay valid; a
+    # per-layer attention dispatch picks ``kv_blocks_per_layer[layer_idx]``.
+    # ``None`` (the default) for every non-per-layer cache.
+    kv_blocks_per_layer: list[_Buffer] | None = None
+    # One single-layer scale buffer per layer, the quantized-scale analog of
+    # ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized KV
+    # cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
+    # attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None`` for
+    # every non-per-layer / unquantized cache.
+    kv_scales_per_layer: list[_Buffer] | None = None
 
     def __post_init__(self) -> None:
         _verify_rank1_int64_tensor(
@@ -82,6 +100,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
             *(
+                (self.scales_lookup_table or self.lookup_table,)
+                if self.kv_scales
+                else ()
+            ),
+            *(
                 (self.attention_dispatch_metadata,)
                 if self.attention_dispatch_metadata
                 else ()
@@ -97,6 +120,10 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                 if self.draft_mla_num_partitions
                 else ()
             ),
+            # Per-layer buffers are appended at the tail so the leading fields
+            # stay byte-identical for every non-per-layer cache (``None`` -> ()).
+            *(self.kv_blocks_per_layer or ()),
+            *(self.kv_scales_per_layer or ()),
         ]
 
     # TODO: FIX THIS HACK!!!
@@ -110,6 +137,15 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.max_prompt_length,
             self.max_cache_length,
             *((self.kv_scales,) if self.kv_scales else ()),
+            *(
+                (self.scales_lookup_table or self.lookup_table,)
+                if self.kv_scales
+                else ()
+            ),
+            # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
+            # this field before calling an op, so this is ``()`` at op sites.
+            *(self.kv_blocks_per_layer or ()),
+            *(self.kv_scales_per_layer or ()),
         ]
 
     def unflatten(
@@ -127,6 +163,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             max_prompt_length=next(it),
             max_cache_length=next(it),
             kv_scales=next(it) if self.kv_scales else None,
+            scales_lookup_table=next(it) if self.kv_scales else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata
             else None,
@@ -136,6 +173,18 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             mla_num_partitions=next(it) if self.mla_num_partitions else None,
             draft_mla_num_partitions=next(it)
             if self.draft_mla_num_partitions
+            else None,
+            # Consumed last, matching the tail append in ``flatten``
+            # (kv_blocks_per_layer, then kv_scales_per_layer).
+            kv_blocks_per_layer=[
+                next(it) for _ in range(len(self.kv_blocks_per_layer))
+            ]
+            if self.kv_blocks_per_layer
+            else None,
+            kv_scales_per_layer=[
+                next(it) for _ in range(len(self.kv_scales_per_layer))
+            ]
+            if self.kv_scales_per_layer
             else None,
         )
 

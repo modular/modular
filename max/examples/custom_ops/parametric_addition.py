@@ -36,19 +36,21 @@ if __name__ == "__main__":
         # need to provide inputs as a list as well as expected output types.
         # Since the custom operation is parametric, we need to provide the
         # parameters as a dictionary.
-        forward=lambda x: ops.custom(
-            name="add_constant",
-            device=DeviceRef.from_device(device),
-            values=[x],
-            out_types=[
-                TensorType(
-                    dtype=x.dtype,
-                    shape=x.tensor.shape,
-                    device=DeviceRef.from_device(device),
-                )
-            ],
-            parameters={"value": 5},
-        )[0].tensor,
+        forward=lambda x: (
+            ops.custom(
+                name="add_constant",
+                device=DeviceRef.from_device(device),
+                values=[x],
+                out_types=[
+                    TensorType(
+                        dtype=x.dtype,
+                        shape=x.tensor.shape,
+                        device=DeviceRef.from_device(device),
+                    )
+                ],
+                parameters={"value": 5},
+            )[0].tensor
+        ),
         input_types=[
             TensorType(
                 dtype,

@@ -104,14 +104,14 @@ comptime BAD_SEQUENCES: List[List[Byte]] = [
 # ===----------------------------------------------------------------------=== #
 
 
-def validate_utf8[span: Span[Byte, ...]]() raises -> Bool:
+def validate_utf8[span: Span[Byte, _]]() raises -> Bool:
     comptime comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
 
 
-def validate_utf8(span: Span[Byte, ...]) raises -> Bool:
+def validate_utf8(span: Span[Byte, _]) raises -> Bool:
     var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
@@ -283,7 +283,7 @@ def test_count_utf8_continuation_bytes() raises:
 
     def _test(amnt: Int, items: List[UInt8]) raises:
         var p = items.unsafe_ptr()
-        var span = Span(ptr=p, length=len(items))
+        var span = Span(unsafe_ptr=p, length=len(items))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
 
     _test(5, [c, c, c, c, c])

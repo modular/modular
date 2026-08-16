@@ -33,11 +33,8 @@ gpt_oss_arch = SupportedArchitecture(
         "openai/gpt-oss-120b",
         "unsloth/gpt-oss-20b-BF16",
     ],
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-        "float4_e2m1fnx2",
-    },
+    default_encoding=GptOssConfig.DEFAULT_ENCODING,
+    supported_encodings=GptOssConfig.SUPPORTED_ENCODINGS,
     pipeline_model=GptOssModel,
     batching=GptOssBatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
@@ -45,7 +42,6 @@ gpt_oss_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    rope_type="yarn",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },

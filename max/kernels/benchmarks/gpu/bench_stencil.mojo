@@ -13,7 +13,8 @@
 
 from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
-from std.algorithm.functional import stencil, stencil_gpu
+from max.algorithm.functional import stencil, stencil_gpu
+from max.benchmark import bencher_iter_custom
 from std.benchmark import (
     Bench,
     Bencher,
@@ -28,7 +29,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
 from std.utils import IndexList
@@ -168,7 +169,7 @@ def bench_stencil_avg_pool[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -178,43 +179,47 @@ def bench_stencil_avg_pool[
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
-    @parameter
-    @always_inline
-    def bench_gpu(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                avg_pool_compute_init_gpu,
-                avg_pool_compute_gpu,
-                avg_pool_compute_finalize_gpu,
-            )
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
 
-        b.iter_custom[kernel_launch](ctx)
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            avg_pool_compute_init_gpu,
+            avg_pool_compute_gpu,
+            avg_pool_compute_finalize_gpu,
+        )
+
+    @__parameter
+    @always_inline
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -242,7 +247,7 @@ def bench_stencil_avg_pool[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -252,17 +257,17 @@ def bench_stencil_avg_pool[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -451,7 +456,7 @@ def bench_stencil_max_pool[
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -461,42 +466,46 @@ def bench_stencil_max_pool[
 
     @always_inline
     def max_pool_compute_finalize_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         d_output.store_linear(point, val)
 
-    @parameter
-    @always_inline
-    def bench_gpu(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                max_pool_compute_init_gpu,
-                max_pool_compute_gpu,
-                max_pool_compute_finalize_gpu,
-            )
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
 
-        b.iter_custom[kernel_launch](ctx)
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            max_pool_compute_init_gpu,
+            max_pool_compute_gpu,
+            max_pool_compute_finalize_gpu,
+        )
+
+    @__parameter
+    @always_inline
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -524,7 +533,7 @@ def bench_stencil_max_pool[
         return min_or_neg_inf[dtype]()
 
     def max_pool_compute_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -534,16 +543,16 @@ def bench_stencil_max_pool[
 
     @always_inline
     def max_pool_compute_finalize_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
         h_output_ref.store_linear(point, val)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -723,7 +732,7 @@ def bench_stencil_avg_pool_padded[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -733,43 +742,47 @@ def bench_stencil_avg_pool_padded[
 
     @always_inline
     def avg_pool_compute_finalize_gpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var d_output,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         d_output.store_linear(point, res)
 
-    @parameter
-    @always_inline
-    def bench_gpu(mut b: Bencher):
-        @parameter
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises:
-            comptime stencil_axis = IndexList[stencil_rank](1, 2)
-            stencil_gpu[
-                rank,
-                stencil_rank,
-                stencil_axis,
-                simd_width,
-                dtype,
-            ](
-                ctx,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_output.layout.shape_coord())
-                ),
-                rebind[IndexList[rank]](
-                    coord_to_index_list(d_input.layout.shape_coord())
-                ),
-                map_fn_gpu,
-                dilation_fn_gpu,
-                load_fn_gpu,
-                avg_pool_compute_init_gpu,
-                avg_pool_compute_gpu,
-                avg_pool_compute_finalize_gpu,
-            )
+    var out_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_output.layout.shape_coord())
+    )
+    var in_shape = rebind[IndexList[rank]](
+        coord_to_index_list(d_input.layout.shape_coord())
+    )
 
-        b.iter_custom[kernel_launch](ctx)
+    @always_inline
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {imm}:
+        comptime stencil_axis = IndexList[stencil_rank](1, 2)
+        stencil_gpu[
+            rank,
+            stencil_rank,
+            stencil_axis,
+            simd_width,
+            dtype,
+        ](
+            ctx,
+            out_shape,
+            in_shape,
+            map_fn_gpu,
+            dilation_fn_gpu,
+            load_fn_gpu,
+            avg_pool_compute_init_gpu,
+            avg_pool_compute_gpu,
+            avg_pool_compute_finalize_gpu,
+        )
+
+    @__parameter
+    @always_inline
+    def bench_gpu(mut b: Bencher) raises:
+        bencher_iter_custom(b, kernel_launch, ctx)
 
     def map_fn_cpu(
         point: IndexList[stencil_rank, ...],
@@ -799,7 +812,7 @@ def bench_stencil_avg_pool_padded[
         return SIMD[dtype, simd_width](0)
 
     def avg_pool_compute_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -809,17 +822,17 @@ def bench_stencil_avg_pool_padded[
 
     @always_inline
     def avg_pool_compute_finalize_cpu[
-        simd_width: SIMDSize
+        simd_width: SIMDLength
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) {
         var h_output_ref,
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         h_output_ref.store_linear(point, res)
 
-    @parameter
+    @__parameter
     @always_inline
     def bench_cpu(mut b: Bencher):
-        @parameter
+        @__parameter
         @always_inline
         def kernel_launch():
             comptime stencil_axis = IndexList[stencil_rank](1, 2)

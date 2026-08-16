@@ -17,7 +17,7 @@ Calls apple_matmul_kernel directly with explicit warmup + hot timing loops.
 
 from std.collections import Optional
 from std.sys.info import _accelerator_arch
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.os import getenv
 from std.time import perf_counter
 from layout import TileTensor

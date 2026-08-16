@@ -14,7 +14,7 @@
 # Tests for generics.mdx code examples.
 #
 # Compile-only (no runtime assertions, exercised by main()):
-#   - my_generic_fn, the `Some` function-type and variadic before/after
+#   - my_parameterized_fn, the `Some` function-type and variadic before/after
 #     pairs, the Foo composition struct, and the fixed/dynamic
 #     value-vs-argument examples are signature-only on the page; main()
 #     calls them to confirm they build.
@@ -23,20 +23,21 @@
 #   - The erroring `function` that prints an `AnyType` directly, the
 #     `Some` struct field that can't infer a concrete type, and the
 #     zero-capacity SizedListWrapper are negative examples on the page.
-#   - The prose-only section ("Generics and explicit destruction") has no code.
+#   - The prose-only section ("Parameterized declarations and
+#     explicit destruction") has no code.
 #
 # Renamed to coexist in one file (the page names both `Pair`):
-#   - Generic types -> `Pair`; parts conformance -> `HashablePair`.
+#   - Parameterized types -> `Pair`; parts conformance -> `HashablePair`.
 from std.testing import assert_equal, assert_false, assert_true
 from std.sys.info import is_64bit
 
 # --- Intro: value parameter alongside a type parameter ---
-# The page bounds `T` as `Comparable & ImplicitlyCopyable & ImplicitlyDeletable`
+# The page bounds `T` as `Comparable & ImplicitlyCopyable & Deinitable`
 # so the compile-time `threshold` value can be used in the runtime comparison.
 
 
 def count_above[
-    T: Comparable & ImplicitlyCopyable & ImplicitlyDeletable, threshold: T
+    T: Comparable & ImplicitlyCopyable & Deinitable, threshold: T
 ](values: List[T]) -> Int:
     var count = 0
     for v in values:
@@ -49,7 +50,7 @@ def test_count_above() raises:
     assert_equal(count_above[Int, 3]([1, 2, 3, 4, 5]), 2)
 
 
-# --- Basic generics: compare two lists ---
+# --- Basic parameterized declarations: compare two lists ---
 
 
 def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
@@ -63,7 +64,7 @@ def all_equal_int(ref lhs: List[Int], ref rhs: List[Int]) -> Bool:
 
 
 def all_equal[
-    T: Equatable & Copyable
+    T: Equatable & Copyable & Deinitable
 ](ref lhs: List[T], ref rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs):
         return False
@@ -85,14 +86,14 @@ def test_all_equal() raises:
     assert_false(all_equal(["hello", "world"], ["goodbye", "world"]))
 
 
-# --- Generic parameter types: AnyType (compile-only) ---
+# --- Parameterized types: AnyType (compile-only) ---
 
 
-def my_generic_fn[T: AnyType](value: T):
+def my_parameterized_fn[T: AnyType](value: T):
     pass
 
 
-# --- Printing under-specified generic values ---
+# --- Printing under-specified parameterized values ---
 
 
 @fieldwise_init
@@ -165,7 +166,7 @@ def show_some(*pack: *SomeTypeList[Writable]):
 
 
 @fieldwise_init
-struct IndexParam[T: Copyable & ImplicitlyDeletable]:
+struct IndexParam[T: Copyable & Deinitable]:
     var x: Self.T
 
     def __getitem__[I: Indexer, //](self, idx: I) -> ref[self.x] Self.T:
@@ -173,7 +174,7 @@ struct IndexParam[T: Copyable & ImplicitlyDeletable]:
 
 
 @fieldwise_init
-struct IndexSome[T: Copyable & ImplicitlyDeletable]:
+struct IndexSome[T: Copyable & Deinitable]:
     var x: Self.T
 
     def __getitem__(self, idx: Some[Indexer]) -> ref[self.x] Self.T:
@@ -191,7 +192,7 @@ def test_some_operator_overloads() raises:
 
 
 @fieldwise_init
-struct FixedStruct[T: Copyable & ImplicitlyDeletable & Writable](Writable):
+struct FixedStruct[T: Copyable & Deinitable & Writable](Writable):
     var x: Self.T
 
 
@@ -200,9 +201,9 @@ def test_where_some_wont_work() raises:
     assert_true("1" in String(s))  # FixedStruct[Int](x=1)
 
 
-# --- Generic types ---
+# --- Parameterized types ---
 
-comptime ComparableValue = Equatable & ImplicitlyCopyable & ImplicitlyDeletable
+comptime ComparableValue = Equatable & ImplicitlyCopyable & Deinitable
 
 
 @fieldwise_init
@@ -214,7 +215,7 @@ struct Pair[T: ComparableValue](ComparableValue):
         return self.left == other.left and self.right == other.right
 
 
-def test_generic_types() raises:
+def test_parameterized_types() raises:
     assert_true(Pair(1, 2) == Pair(1, 2))
     assert_false(Pair(1, 2) == Pair(1, 3))
 
@@ -249,9 +250,7 @@ def test_mixing_type_and_value() raises:
 
 
 def process[T: AnyType](value: T) -> String:
-    comptime if conforms_to(
-        T, Writable & ImplicitlyCopyable & ImplicitlyDeletable
-    ):
+    comptime if conforms_to(T, Writable & ImplicitlyCopyable & Deinitable):
         return String(value)
     else:
         return "<not writable>"
@@ -265,9 +264,9 @@ def test_type_refinement() raises:
     assert_equal(process({"key": "value"}), "<not writable>")
 
 
-# --- Value generics: basic example ---
+# --- Value parameters: basic example ---
 
-comptime MyCollectionElement = ImplicitlyCopyable & ImplicitlyDeletable
+comptime MyCollectionElement = ImplicitlyCopyable & Deinitable
 
 
 def make_filled[T: MyCollectionElement, size: Int](splat_value: T) -> List[T]:
@@ -288,7 +287,7 @@ def test_make_filled() raises:
 
 
 def fixed[size: Int]():
-    var buf = InlineArray[Int, size](fill=0)
+    var buf = Array[Int, size](fill=0)
     _ = buf
 
 
@@ -302,7 +301,7 @@ def dynamic(size: Int):
 # (conditional `Writable`) and its "conditional method access" example
 # (conditional `Boolable` gating `__bool__()`).
 
-comptime BaseTraits = Copyable & ImplicitlyDeletable
+comptime BaseTraits = Copyable & Deinitable
 
 
 @fieldwise_init
@@ -340,8 +339,8 @@ def test_conditional_conformance() raises:
 
 
 # --- Conditional trait conformance: parts conformance ---
-# The page names this `Pair`; renamed here to coexist with the generic
-# `Pair` from the "Generic types" section.
+# The page names this `Pair`; renamed here to coexist with the parameterized
+# `Pair` from the "Parameterized types" section.
 
 
 @fieldwise_init
@@ -376,14 +375,14 @@ struct Foo[T: AnyType](Copyable, Writable where conforms_to(T, Writable)):
 
 
 # --- Conditional conformance with value parameters ---
-# The page bounds `T` as `Writable & Copyable & ImplicitlyDeletable` (via the
+# The page bounds `T` as `Writable & Copyable & Deinitable` (via the
 # `ElementTraits` alias) so `write_to()` type-checks; the conditional behavior
 # demonstrated here is the value condition `capacity > 0`.
 
 
-struct SizedListWrapper[
-    capacity: Int, T: Writable & Copyable & ImplicitlyDeletable
-](Sized, Writable where conforms_to(T, Writable) and capacity > 0):
+struct SizedListWrapper[capacity: Int, T: Writable & Copyable & Deinitable](
+    Sized, Writable where conforms_to(T, Writable) and capacity > 0
+):
     var data: List[Self.T]
 
     def __init__(out self, value: Self.T):
@@ -459,7 +458,7 @@ def main() raises:
     test_some_arguments()
     test_some_operator_overloads()
     test_where_some_wont_work()
-    test_generic_types()
+    test_parameterized_types()
     test_mixing_type_and_value()
     test_type_refinement()
     test_make_filled()
@@ -470,7 +469,7 @@ def main() raises:
     test_comptime_if_machine()
 
     # Compile-only examples: confirm the signature-only snippets build.
-    my_generic_fn(42)
+    my_parameterized_fn(42)
     sync_parallelize_param(int_to_none)
     sync_parallelize_some(int_to_none)
     show_param(1, 2, 3)

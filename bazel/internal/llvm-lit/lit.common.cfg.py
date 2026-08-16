@@ -102,8 +102,6 @@ if sys.platform == "darwin":
 #---------------------------------------
 
 mojo_exe = "mojo"
-if shutil.which("mojo-compiler-only"):
-    mojo_exe = "mojo-compiler-only"
 
 def mojo_subst(name, args):
     return ToolSubst(name, mojo_exe, extra_args=args)

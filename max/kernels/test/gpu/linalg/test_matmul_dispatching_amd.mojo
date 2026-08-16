@@ -21,7 +21,7 @@ the production dispatch path instead of calling ping_pong_matmul directly.
 from std.sys import align_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -409,12 +409,12 @@ def test_oob_epilogue[
     )
 
     # Epilogue writes to out_tensor using global (m, n) coordinates
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -605,12 +605,12 @@ def test_oob_epilogue_dynamic_m[
 
     var out_tensor = TileTensor(out_dev, row_major(Coord(Int(alloc_m), Idx[N])))
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(out_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: SIMDSize,
+        width: SIMDLength,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
