@@ -129,8 +129,8 @@ class GenerationOutput(BaseModel):
     """List of OutputContent objects (text, images, etc.) representing generated content."""
 
     usage: Usage | None = None
-    """Usage reported in the API response. Image generation reports generated
-    pixels as ``output_tokens``."""
+    """Usage reported in the API response. Image generation keeps token
+    counts at 0 and reports metadata under ``image_generation_details``."""
 
     @property
     def is_done(self) -> bool:

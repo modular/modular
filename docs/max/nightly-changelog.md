@@ -171,6 +171,150 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Added opt-in token-balanced CE scheduling across data-parallel replicas.
+  With `--dp-ce-balance-timeout-ms` >= 0 (default -1 = off), new context
+  encoding requests wait in an unbound pool and are placed by a per-step
+  planner that prices them at their post-prefix-cache length (a read-only
+  probe of each replica's device cache and the shared host/disk tiers) and
+  binds them to the least-loaded replica when first scheduled. Unbalanced CE
+  work may be deferred up to the timeout while its replica runs decode
+  instead, until per-step occupancy reaches `--dp-ce-balance-threshold`
+  (default 0.8). A below-threshold step with CE work on two or more replicas
+  still runs immediately with each replica's chunk size reduced to the
+  balance level, so only the excess defers
+  (`--dp-ce-balance-enable-dynamic-chunk-size`, default on; skipped when the
+  balance level is under half the CE chunk target, where the extra chunks
+  would cost more than the imbalance).
+- Added `--chunked-prefill-min-chunk-size` (config key
+  `runtime.chunked_prefill_min_chunk_size`, default 0 = off) to set a floor,
+  in tokens, on any chunk created by chunked prefill. When splitting a
+  request against the CE token budget, the cut is moved earlier so that
+  neither the chunk nor its remainder is smaller than the floor; if no legal
+  cut point exists within the remaining budget, the request is left unsplit
+  for a later step. This avoids degenerate slivers (for example an 8-token
+  tail chunk after an 8192-token budget cut) that pay a full step's overhead
+  and re-read the request's entire context in attention for almost no
+  progress.
+- Fixed non-streaming chat completions leaking a literal structural tool-call
+  marker (for example `<tool_call>`) into `message.content` when a
+  `max_tokens` truncation landed mid tool-call block. The response now
+  surfaces only the content before the marker, with
+  `finish_reason == "length"`.
+- Added an experimental `--fold-sampler-into-graph` option (default off) that
+  folds greedy token selection (argmax) into the captured forward graph, so a
+  single device-graph replay materializes the sampled token instead of a
+  separate sampler submission with a blocking readback. Applies to all-greedy
+  decode batches on architectures that emit the folded token output (currently
+  Nemotron-H); non-greedy requests fall back to the separate sampler.
+- Added a `max-pending-futures` config (default 1, the classic
+  overlap-scheduler depth of one forward in flight per request). Request
+  bookkeeping now tracks unrealized future-token placeholders with a counted
+  model instead of a single-sentinel check, and setting the value to 2 enables
+  experimental schedule-ahead decoding: two forwards in flight per request,
+  with the next step's input token realized on-device from the folded sampler
+  output. Behavior at the default depth is unchanged.
+- Fixed the serve CLI dropping the `fold-sampler-into-graph`,
+  `max-pending-futures`, and greedy-sampling gate settings on their way to the
+  model worker, which silently disabled the folded greedy sampler. With the
+  flags threaded through, `--fold-sampler-into-graph` removes the per-token
+  blocking sampler submission and substantially improves decode latency on
+  architectures that support it.
+- Added `max.engine.read` for loading a compiled-model artifact (a `.mef`
+  file) without an `InferenceSession`. The resulting `CompiledModel` can
+  be initialized on any session via `InferenceSession.init`. It replaces
+  `InferenceSession.read`, which has been removed.
+- Image generation responses on the Open Responses endpoint now report
+  `usage`: token counts stay at 0 and a new `usage.image_generation_details`
+  block carries `width`, `height`, `megapixels`, `steps`, and `image_count`,
+  measured from the actual generated images rather than the requested
+  dimensions. Previously `usage` was always `null`. (An interim nightly
+  reported the raw pixel count as `output_tokens`; that encoding is replaced
+  by `image_generation_details`.)
+- Added `InferenceSession.read` for loading a compiled-model artifact (a
+  `.mef` file) previously saved with `CompiledModel.export_mef`. It accepts a
+  path or a binary file-like object (such as `io.BytesIO`), deserializes
+  without invoking the graph compiler, and returns a `CompiledModel` ready to
+  pass to `InferenceSession.init`.
+- Added `--no-enable-tool-call-constrained-decode` (config key
+  `sampling.enable_tool_call_constrained_decode`, default enabled) to decouple
+  tool-call parsing from constrained decoding. When disabled, a configured
+  `--tool-parser` still parses tool calls out of the generated text, but no
+  server-generated grammar is produced and the bitmask constrained-decode path
+  is skipped for tool calls. Note that with it disabled, `tool_choice=required`
+  or a named function can no longer force a tool call. This is independent of
+  `--enable-structured-output`, which continues to gate user-supplied
+  `response_format` JSON schemas.
+- Fixed the `code` label on the `maxserve_request_count` metric so it reports
+  the HTTP status code actually returned to the client. The count is now
+  recorded from the HTTP layer, so failures rejected before generation (for
+  example a request with an unreachable image URL) are counted with their real
+  status code instead of being labeled `200` or dropped entirely. Liveness and
+  observability endpoints (`/health`, `/version`, `/ping`, `/metrics`) are not
+  counted.
+- Failed request submissions in the OpenAI-compatible serving endpoints now
+  surface as HTTP error responses instead of a `200 OK` streaming response that
+  carries an error payload. Request tokenization and the handoff to the model
+  worker now complete before the streaming response headers are sent, so a
+  failure at submission time (for example, a dead model worker) maps to an HTTP
+  5xx (or 4xx for input errors). Errors that occur mid-stream, after the first
+  chunk has been sent, are still serialized as an error event within the stream.
+- Added request-queue backpressure to MAX serve via two cooperating caps. The
+  `--max-queue-size` flag (env var `MAX_SERVE_MAX_QUEUE_SIZE`, cap *N*) bounds
+  the request queue to the model worker; once it is full, new requests are
+  rejected immediately with HTTP 429 instead of being enqueued. The
+  `--max-pending-requests` flag (env var `MAX_SERVE_MAX_PENDING_REQUESTS`, cap
+  *M*) stops the worker from draining the request queue once its pending
+  (prefill) queue is *M* deep, so the request queue actually backs up under
+  load. Together they form a self-calibrating mechanism that sheds load to keep
+  latency within SLAs and naturally accounts for long requests holding batch
+  space. Both default to unbounded. Rejections are observable via the existing
+  `maxserve.request_count` metric with `code="429"`.
+- Added `MAX_SERVE_GRACEFUL_SHUTDOWN_TIMEOUT_S` to control how long the server
+  waits for in-flight requests to finish after receiving `SIGTERM` before
+  exiting (default 5 seconds). Raise it so long-running requests are drained
+  rather than dropped during a rolling restart.
+- Data-parallel (DP) serving now shares the prefix cache across replicas, so a
+  multi-turn conversation gets cache hits even when a later turn is scheduled on
+  a different replica than the previous one. GPU prefix-cache hits are served by
+  a cheap device-to-device copy of the cached pages onto the assigned replica,
+  and the CPU/disk offload tiers are now a single pool shared by every replica
+  (a block offloaded by one replica can be loaded by another). As a result,
+  `host_kvcache_swap_space_gb` now sizes one shared host pool of that size for
+  the whole deployment, rather than allocating a separate pool of that size per
+  replica.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now supports
+  data-parallel (DP) serving and shares its prefix cache across DP replicas on
+  the default single-tenant path, matching the `local` and `tiered` connectors.
+  Every replica resolves to the same replica-agnostic store, and the stored
+  block key carries no replica component, so a block offloaded through one
+  replica is served to any other.
+- The dKV external KV-cache connector now supports tensor parallelism
+  (TP greater than 1) on the multi-tenant path for head-sharded (MHA/GQA), MLA
+  (replicated-KV), and GQA head-replicated (`allow_kv_head_replication`) models.
+  Each GPU handshakes its own per-shard store, and every KV load/offload fans
+  out across the processing replica's shard clients with identical block ids and
+  hashes; a block counts as loaded only once every shard has it. The store key
+  reflects the KV-head slice each GPU holds: the TP rank when head-sharded, a
+  single shared shard for MLA, and the head-group index under head replication.
+- On the dKV multi-tenant tensor-parallel path, a KV load that returns
+  differing block counts across a replica's per-GPU shard clients now drains
+  the over-loading shards' in-flight device reads before returning the minimum
+  count. This keeps a stray in-flight host-to-device copy (into a block the
+  block manager frees because it did not land on every shard) from later
+  clobbering a reallocated block. The drain host-completes the reads on the
+  remote (NIXL) transport and enqueues a cross-stream ordering on the
+  co-located same-host (CUDA) transport, so it closes the window on both. The
+  common equal-count path is unchanged and pays no extra synchronization.
+- The dKV external KV-cache connector (`--kv-connector dkv`) now requires a
+  non-empty tenant identity (`MODULAR_DKV_TENANT_ID`, set by the deployment
+  operator); the empty-tenant "default" path is removed. Both the connector and
+  the dKV server now reject an unset/empty tenant rather than keying an unfenced
+  shared store, so every deployment (single-tenant included) routes through the
+  per-tenant region-sharded store — DP replicas of one tenant still share one
+  store. Multi-cache models (speculative draft+target, quantized values+scales)
+  now resolve on this path, folded into the handshake's `kv_config_hash`. A
+  single-tenant node spanning more than one GPU must set the dKV server's
+  `--fair-share-partitions` to its GPU count.
 - Added `MODULAR_MAX_RELEASE_FREE_HOST_MEMORY`, an opt-in serving knob that
   returns free host-allocator pages to the OS once model compilation finishes,
   before graph capture. Graph compilation leaves tens of GiB free-but-unreturned

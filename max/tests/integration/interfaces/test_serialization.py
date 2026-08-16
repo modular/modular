@@ -30,6 +30,7 @@ from max.pipelines.modeling.types.utils.serialization import (
     msgpack_numpy_oob_encoder,
 )
 from max.pipelines.request.open_responses import (
+    ImageGenerationDetails,
     OutputImageContent,
     OutputVideoContent,
     Usage,
@@ -243,7 +244,18 @@ def test_generation_output_serialization() -> None:
         output=[
             OutputImageContent.from_numpy(img_array, format="png"),
         ],
-        usage=Usage(input_tokens=0, output_tokens=4096, total_tokens=4096),
+        usage=Usage(
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0,
+            image_generation_details=ImageGenerationDetails(
+                width=64,
+                height=64,
+                megapixels=0.004096,
+                steps=28,
+                image_count=1,
+            ),
+        ),
     )
 
     # Encode the GenerationOutput
