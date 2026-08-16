@@ -50,11 +50,15 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
+from max.benchmark import (
+    bench_multicontext,
+    bencher_iter_custom,
+)
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse, assert_almost_equal
 
 from layout import Coord, TileTensor, row_major
@@ -87,16 +91,16 @@ def _run_rms_norm[
 
     @always_inline
     @__copy_capture(in_view)
-    @parameter
+    @__parameter
     def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
         var idx = in_view.layout(coords)
         return in_view.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(out_view)
-    @parameter
+    @__parameter
     def output_fn[
-        width: SIMDSize, alignment: Int
+        width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) -> None:
         var idx = out_view.layout(coords)
         out_view.raw_store[width=width, alignment=alignment](idx, val)
@@ -122,8 +126,8 @@ def _verify_results[
     sigs_ar: List[DeviceBuffer[DType.uint8]],
     sigs_fused: List[DeviceBuffer[DType.uint8]],
     cb_inputs: List[CacheBustingBuffer[dtype]],
-    rank_sigs_ar: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    rank_sigs_fused: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs_ar: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
+    rank_sigs_fused: Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     gamma_dev: DeviceBuffer[dtype],
     epsilon: Scalar[dtype],
 ) raises:
@@ -150,7 +154,7 @@ def _verify_results[
         dtype, type_of(row_major(0)), MutAnyOrigin
     ]
     var v_layout = row_major(length)
-    var v_in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
+    var v_in_tensors = Array[InTensorType, ngpus](uninitialized=True)
     for g in range(ngpus):
         v_in_tensors[g] = InTensorType(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -268,12 +272,12 @@ def bench_fused_lamport_allreduce_rmsnorm[
     # interleaving the two paths on the same buffer would confuse the state.
     var sigs_ar = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var sigs_fused = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
-    var rank_sigs_ar = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
-    var rank_sigs_fused = InlineArray[
-        UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-    ](uninitialized=True)
+    var rank_sigs_ar = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
+    var rank_sigs_fused = Array[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        uninitialized=True
+    )
 
     # The 2-stage path may use trailing scratch; reserve it for the unfused
     # signal so `allreduce` works for any size the YAML sweeps to.
@@ -343,8 +347,8 @@ def bench_fused_lamport_allreduce_rmsnorm[
     comptime OutTensorType = TileTensor[
         dtype, type_of(row_major(0)), MutAnyOrigin
     ]
-    var in_tensors = InlineArray[InTensorType, ngpus](uninitialized=True)
-    var ar_out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
+    var in_tensors = Array[InTensorType, ngpus](uninitialized=True)
+    var ar_out_tensors = Array[OutTensorType, ngpus](uninitialized=True)
     for i in range(ngpus):
         in_tensors[i] = InTensorType(
             rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -361,20 +365,20 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
     # Pre-capture pointers for the per-iter closures (CacheBustingBuffer uses
     # `offset_ptr(cache_iter)` to rotate through allocations).
-    var ar_out_ptrs = InlineArray[
+    var ar_out_ptrs = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
+    var unfused_out_ptrs = Array[
         UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
-    var unfused_out_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
-    var fused_out_ptrs = InlineArray[
+    var fused_out_ptrs = Array[
         UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
     # Gamma pointers stored as Mut for convenience; rebind to Immut at the
     # call site (only the kernel arg slot needs Immut).
-    var gamma_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
-    ](uninitialized=True)
+    var gamma_ptrs = Array[UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus](
+        uninitialized=True
+    )
     for i in range(ngpus):
         ar_out_ptrs[i] = ar_out_dev[i].unsafe_ptr().as_unsafe_any_origin()
         unfused_out_ptrs[i] = (
@@ -397,14 +401,13 @@ def bench_fused_lamport_allreduce_rmsnorm[
     )
 
     # ===== Benchmark 1: fused `lamport_allreduce_rmsnorm` (1 kernel) =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises {imm}:
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
                 ctx_idx,
                 rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -423,23 +426,25 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
-    b.bench_multicontext[bench_fused_iter](
+    bench_multicontext[bench_fused_iter](
+        b,
         list_of_ctx,
         BenchId("fused_lamport_allreduce_rmsnorm", input_id=bench_name_prefix),
         [ThroughputMeasure(BenchMetric.bytes, total_bytes)],
     )
 
     # ===== Benchmark 2: unfused `allreduce` + `rms_norm_gpu` (2 kernels) =====
-    @parameter
+    @__parameter
     @always_inline
     def bench_unfused_iter(
         mut bench: Bencher, ctx: DeviceContext, ctx_idx: Int
     ) raises:
-        @parameter
         @always_inline
-        def call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
+        def call_fn(
+            ctx_inner: DeviceContext, cache_iter: Int
+        ) raises {mut in_tensors, imm}:
             comptime for _j in range(ngpus):
                 in_tensors[_j] = InTensorType(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
@@ -470,9 +475,10 @@ def bench_fused_lamport_allreduce_rmsnorm[
                 ctx_inner,
             )
 
-        bench.iter_custom[call_fn](ctx)
+        bencher_iter_custom(bench, call_fn, ctx)
 
-    b.bench_multicontext[bench_unfused_iter](
+    bench_multicontext[bench_unfused_iter](
+        b,
         list_of_ctx,
         BenchId(
             "unfused_allreduce_then_rms_norm",

@@ -41,7 +41,7 @@ body's top-of-iter sync — both BM=64 and BM=128 are correct at this
 corner.
 """
 
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.random import rand
 from std.sys import get_defined_dtype
 

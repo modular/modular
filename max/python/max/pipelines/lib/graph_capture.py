@@ -39,8 +39,9 @@ from contextlib import AbstractContextManager
 from dataclasses import replace
 
 from max._core.driver import _release_buffers_to_borrowed
-from max.driver import Buffer
+from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
+from max.experimental.nn.module import CompiledModel
 from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
 from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
@@ -76,9 +77,11 @@ def _release_graph_capture_outputs_to_borrowed(
         "next_token_logits",
         "logit_offsets",
         "hidden_states",
+        "sampled_tokens",
         "num_accepted_draft_tokens",
         "next_tokens",
         "next_draft_tokens",
+        "next_draft_probs_full",
     ):
         value = getattr(outputs, field_name, None)
         if isinstance(value, Buffer):
@@ -112,10 +115,16 @@ class ServeGraphCaptureRunner:
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
+        fold_sampler_into_graph: bool = False,
     ) -> None:
         self._model = model
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
+        # When set, the architecture appends a folded greedy-token (argmax)
+        # buffer as the last forward-graph output; the capture path peels it
+        # off into ``ModelOutputs.sampled_tokens`` instead of mapping it
+        # positionally onto a logits field.
+        self._fold_sampler_into_graph = fold_sampler_into_graph
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -228,17 +237,52 @@ class ServeGraphCaptureRunner:
                     batch_size, batch_characteristics
                 ) as model_inputs:
                     input_buffers = model_inputs.buffers
-                    output_buffers = self._model.capture(
-                        _pack_model_graph_key(graph_key), *input_buffers
-                    )
-                    if not self._is_spec_decode:
-                        outputs: ModelOutputs = ModelOutputs(*output_buffers)
+                    if isinstance(self._model, CompiledModel):
+                        output_buffers = self._model.engine_model.capture(
+                            _pack_model_graph_key(graph_key),
+                            *input_buffers,
+                            *self._model.signal_buffers,
+                        )
                     else:
-                        assert len(output_buffers) == 3, "Expected 3 outputs"
+                        output_buffers = self._model.capture(
+                            _pack_model_graph_key(graph_key), *input_buffers
+                        )
+                    if not self._is_spec_decode:
+                        model_output_buffers = list(output_buffers)
+                        sampled_tokens: Buffer | None = None
+                        if (
+                            self._fold_sampler_into_graph
+                            and len(model_output_buffers) > 1
+                        ):
+                            # The folded argmax token is the last graph output;
+                            # peel it off so the remaining buffers map onto the
+                            # logits fields positionally as usual. A
+                            # single-output capture means the architecture
+                            # emits no folded token (only the logits), so
+                            # there is nothing to peel even when the fold flag
+                            # is set.
+                            sampled_tokens = model_output_buffers.pop()
+                        outputs: ModelOutputs = ModelOutputs(
+                            *model_output_buffers
+                        )
+                        outputs.sampled_tokens = sampled_tokens
+                    else:
+                        if len(output_buffers) not in (3, 4):
+                            raise RuntimeError(
+                                "spec-decode graph capture returned "
+                                f"{len(output_buffers)} outputs; expected 3 "
+                                "(num_accepted_draft_tokens, next_tokens, "
+                                "next_draft_tokens) or 4 (+ "
+                                "next_draft_probs_full, under "
+                                "draft_proposal='sampled')."
+                            )
                         outputs = UnifiedEagleOutputs(
                             num_accepted_draft_tokens=output_buffers[0],
                             next_tokens=output_buffers[1],
                             next_draft_tokens=output_buffers[2],
+                            next_draft_probs_full=output_buffers[3]
+                            if len(output_buffers) == 4
+                            else None,
                         )
                     # Graph-capture warmup keeps many output handles alive. Drop
                     # Python-side ownership so later captures can reuse the same
@@ -352,10 +396,27 @@ class ServeGraphCaptureRunner:
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
         captured_inputs, outputs = self.graph_entries[replay_graph_key]
 
+        # Refresh captured inputs. Host-resident destinations copy inline; the
+        # rest go into one batched call, which the driver splits into one
+        # submit per destination device (cuMemcpyBatchAsync on CUDA 12.8+,
+        # sequential fallback otherwise).
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
         for src_value, dst_value in zip(
             input_buffers, captured_inputs, strict=True
         ):
-            dst_value.inplace_copy_from(src_value)
+            if dst_value.device.is_host:
+                dst_value.inplace_copy_from(src_value)
+                continue
+            assert src_value.device == dst_value.device, (
+                "Graph-capture replay refresh must be a same-device copy "
+                "(single-stream ordering is the correctness premise); "
+                f"got src {src_value.device} -> dst {dst_value.device}."
+            )
+            dsts.append(dst_value)
+            srcs.append(src_value)
+
+        batch_inplace_copy(dsts, srcs)
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
@@ -364,5 +425,12 @@ class ServeGraphCaptureRunner:
                 *verify_inputs.buffers,
             )
 
-        self._model.replay(packed_model_graph_key, *captured_inputs)
+        if isinstance(self._model, CompiledModel):
+            self._model.engine_model.replay(
+                packed_model_graph_key,
+                *captured_inputs,
+                *self._model.signal_buffers,
+            )
+        else:
+            self._model.replay(packed_model_graph_key, *captured_inputs)
         return outputs

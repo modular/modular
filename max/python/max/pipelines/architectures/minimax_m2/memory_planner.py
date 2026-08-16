@@ -24,9 +24,12 @@ from max.nn.comm.ep.ep_config import (
 )
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.support.human_readable_formatter import to_human_readable_bytes
 from transformers import AutoConfig
+
+from .model_config import MiniMaxM2Config
 
 _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
@@ -45,7 +48,9 @@ class MiniMaxM2MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
-        encoding = pipeline_config.model.quantization_encoding
+        encoding = _select_quantization_encoding(
+            pipeline_config.model, MiniMaxM2Config.DEFAULT_ENCODING
+        )
         n_gpus_per_node = len(pipeline_config.model.device_specs)
         num_experts = getattr(huggingface_config, "num_local_experts", 256)
         moe_dim = getattr(huggingface_config, "intermediate_size", 1536)

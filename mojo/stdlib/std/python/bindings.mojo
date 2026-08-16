@@ -21,13 +21,13 @@ and Python code.
 """
 
 from . import ConvertibleFromPython
-from std.ffi import _Global, _CPointer, c_int, c_char
+from std.ffi import _Global, c_int, c_char
 from std.sys.info import size_of
 from std.collections import StringDict
 
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import reflect
-from std.memory import OpaquePointer, stack_allocation
+from std.memory import OpaquePointer, unsafe_stack_allocation
 from std.python import Python, PythonObject
 from std.python._cpython import (
     GILAcquired,
@@ -119,7 +119,8 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
     #   type.
 
     comptime type_name = reflect[T].name[qualified_builtins=True]()
-    if entry := type_dict[].find(type_name):
+    var entry = type_dict[].find(type_name)
+    if entry:
         return entry.take()
 
     raise Error(
@@ -135,7 +136,7 @@ def lookup_py_type_object[T: AnyType]() raises -> PythonObject:
 # https://docs.python.org/3/c-api/typeobj.html#slot-type-typedefs
 
 
-struct PyMojoObject[T: ImplicitlyDeletable]:
+struct PyMojoObject[T: Deinitable](Movable where conforms_to(T, Movable)):
     """Storage backing a PyObject* wrapping a Mojo value.
 
     This struct represents the C-level layout of a Python object that contains
@@ -171,7 +172,7 @@ struct PyMojoObject[T: ImplicitlyDeletable]:
     """Whether the Mojo value has been initialized."""
 
 
-def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
+def _tp_dealloc_wrapper[T: Deinitable](py_self: PyObjectPtr) abi("C"):
     """Python-compatible wrapper for deallocating a `PyMojoObject`.
 
     This function serves as the tp_dealloc slot for Python type objects that
@@ -192,13 +193,13 @@ def _tp_dealloc_wrapper[T: ImplicitlyDeletable](py_self: PyObjectPtr) abi("C"):
     #   Is this always safe? Wrap in GIL, because this could
     #   evaluate arbitrary code?
     if self.is_initialized:
-        UnsafePointer(to=self.mojo_value).unsafe_deinit_pointee()
+        Pointer(to=self.mojo_value).unsafe_deinit_pointee()
 
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
 
 def _tp_repr_wrapper[
-    T: ImplicitlyDeletable
+    T: Deinitable
 ](py_self: PyObjectPtr) abi("C") -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
@@ -337,9 +338,9 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     def add_type[
-        T: ImplicitlyDeletable
+        T: Deinitable
     ](mut self, type_name: StaticString) -> ref[
-        self.type_builders
+        self.type_builders[0]
     ] PythonTypeBuilder:
         """Add a type to the module and return a builder for it.
 
@@ -459,7 +460,7 @@ struct PythonModuleBuilder:
 
         Accepts functions with PythonObject arguments (up to 8), can optionally
         return a PythonObject, and can raise. Functions can also accept keyword
-        arguments via `**kwargs: PythonObject`.
+        arguments via `var **kwargs: PythonObject`.
 
         Non-kwargs callables register through CPython's `METH_FASTCALL`
         calling convention; kwargs-accepting callables use
@@ -471,8 +472,8 @@ struct PythonModuleBuilder:
 
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
-        def func(**kwargs: PythonObject) -> PythonObject: ...
-        def func(arg1: PythonObject, **kwargs: PythonObject) raises: ...
+        def func(var **kwargs: PythonObject) -> PythonObject: ...
+        def func(arg1: PythonObject, var **kwargs: PythonObject) raises: ...
         ```
 
         Parameters:
@@ -563,7 +564,7 @@ struct PythonTypeBuilder(Copyable):
     var basicsize: Int
     """The required allocation size to hold an instance of this type as a Python object."""
 
-    var _slots: Dict[Int, _CPointer[NoneType, MutUntrackedOrigin]]
+    var _slots: Dict[Int, OptionalPointer[NoneType, MutUntrackedOrigin]]
     """Dictionary of Python type slots that define the behavior of the type, mapping slot number to function pointer."""
 
     var methods: List[PyMethodDef]
@@ -589,9 +590,7 @@ struct PythonTypeBuilder(Copyable):
         self.methods = []
 
     @staticmethod
-    def bind[
-        T: ImplicitlyDeletable
-    ](type_name: StaticString) -> PythonTypeBuilder:
+    def bind[T: Deinitable](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
         Parameters:
@@ -652,7 +651,10 @@ struct PythonTypeBuilder(Copyable):
         if self.methods:
             self.methods.append(PyMethodDef())  # Zeroed item as terminator
             # FIXME: Avoid leaking the methods data pointer in this way.
-            self._insert_slot(PyType_Slot.tp_methods(self.methods.steal_data()))
+            var methods_ptr = (
+                self.methods.unsafe_take_allocation().unsafe_leak()
+            )
+            self._insert_slot(PyType_Slot.tp_methods(methods_ptr))
 
         # Convert _slots dictionary to a list of PyType_Slot structs
         var slots = List[PyType_Slot]()
@@ -664,7 +666,7 @@ struct PythonTypeBuilder(Copyable):
 
         var type_spec = PyType_Spec(
             # FIXME(MOCO-1306): This should be `T.__name__`.
-            self.type_name.unsafe_ptr().bitcast[c_char](),
+            self.type_name.as_c_string_slice(),
             c_int(self.basicsize),
             0,
             Py_TPFLAGS_DEFAULT,
@@ -674,7 +676,7 @@ struct PythonTypeBuilder(Copyable):
 
         # Construct a Python 'type' object from our type spec.
         var type_obj_ptr = cpython.PyType_FromSpec(
-            UnsafePointer(to=type_spec).as_unsafe_any_origin()
+            Pointer(to=type_spec).as_unsafe_any_origin()
         )
 
         if not type_obj_ptr:
@@ -687,7 +689,8 @@ struct PythonTypeBuilder(Copyable):
         # correctness. This check here ensures that the user is not accidentally
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
-        if type_id := self._type_id:
+        var type_id = self._type_id
+        if type_id:
             _register_py_type_object(type_id[], type_obj)
 
         Python.add_object(module, self.type_name, type_obj)
@@ -707,7 +710,7 @@ struct PythonTypeBuilder(Copyable):
         self._slots[Int(slot.slot)] = slot.pfunc
 
     def def_init_defaultable[
-        T: Defaultable & Movable & ImplicitlyDeletable,
+        T: Defaultable & Movable & Deinitable,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.
@@ -736,7 +739,7 @@ struct PythonTypeBuilder(Copyable):
         return self
 
     def def_py_init[
-        T: Movable & ImplicitlyDeletable,
+        T: Movable & Deinitable,
         //,
         init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin,
     ](mut self) raises -> ref[self] Self:
@@ -755,7 +758,7 @@ struct PythonTypeBuilder(Copyable):
         return self.def_py_init[_raising_py_init_wrapper[T, init_func]]()
 
     def def_py_init[
-        T: Movable & ImplicitlyDeletable,
+        T: Movable & Deinitable,
         //,
         init_func: def(
             out T, args: PythonObject, kwargs: PythonObject
@@ -1164,7 +1167,7 @@ def _py_new_function_wrapper[
 
 
 def _py_init_function_wrapper[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     init_func: def(out T, args: PythonObject, kwargs: PythonObject) thin raises,
 ](py_self: PyObjectPtr, args_ptr: PyObjectPtr, kwargs_ptr: PyObjectPtr) abi(
     "C"
@@ -1189,7 +1192,7 @@ def _py_init_function_wrapper[
 
 @always_inline
 def _raising_py_init_wrapper[
-    T: Movable & ImplicitlyDeletable,
+    T: Movable & Deinitable,
     init_func: def(args: PythonObject, kwargs: PythonObject) thin -> T,
 ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
     t = init_func(args, kwargs)
@@ -1300,21 +1303,22 @@ def _convert_kwargs(
 @always_inline
 def _py_kwargs_function_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDeletable,
+    self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=True` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> GenericPyFunction:
+]() -> GenericPyFunction where (
+    func.has_kwargs,
+    "non-kwargs functions should use _py_function_fastcall_wrapper",
+):
     """Converts a kwargs-accepting PyObjectFunction to a GenericPyFunction.
 
     Wraps the user's function in a `METH_VARARGS | METH_KEYWORDS` dispatch
     shim. Non-kwargs callables go through `_py_function_fastcall_wrapper`
     (METH_FASTCALL) instead.
     """
-    comptime assert (
-        func.has_kwargs
-    ), "non-kwargs functions should use _py_function_fastcall_wrapper"
     comptime FuncT = type_of(func)
 
     @always_inline
@@ -1339,12 +1343,16 @@ def _py_kwargs_function_wrapper[
 @always_inline
 def _py_function_fastcall_wrapper[
     method_type: TrivialRegisterPassable,
-    self_type: ImplicitlyDeletable,
+    self_type: Deinitable,
     //,
+    # TODO(MOCO-4568): Use `has_kwargs=False` here instead of a `where` clause
     func: PyObjectFunction[method_type, self_type, has_kwargs=_],
     *,
     is_method: Bool = False,
-]() -> PyCFunctionFast:
+]() -> PyCFunctionFast where (
+    not func.has_kwargs,
+    "fastcall wrapper requires a non-kwargs function",
+):
     """Build a `METH_FASTCALL`-shaped wrapper around a non-kwargs
     `PyObjectFunction`.
 
@@ -1370,15 +1378,12 @@ def _py_function_fastcall_wrapper[
         A function value of type `PyCFunctionFast` suitable for passing to
         `PyMethodDef.function` for `METH_FASTCALL` registration.
     """
-    comptime assert (
-        not func.has_kwargs
-    ), "fastcall wrapper requires a non-kwargs function"
     comptime FuncT = type_of(func)
 
     @always_inline
     def fastcall(
         py_self_ptr: PyObjectPtr,
-        args: UnsafePointer[PyObjectPtr, MutUntrackedOrigin],
+        args: Pointer[PyObjectPtr, MutUntrackedOrigin],
         nargs: Py_ssize_t,
     ) abi("C") -> PyObjectPtr:
         var py_self = PythonObject(from_borrowed=py_self_ptr)
@@ -1387,7 +1392,7 @@ def _py_function_fastcall_wrapper[
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
         # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `UnsafePointer` rather than `OptionalUnsafePointer`.
+        # `Pointer` rather than `OptionalPointer`.
         try:
             return FuncT._dispatch_fast[is_method](
                 func._func, py_self, args, Int(nargs)
@@ -1543,10 +1548,10 @@ def check_arguments_arity(
 
 
 def check_and_get_arg[
-    T: ImplicitlyDeletable
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+    T: Deinitable
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and downcast it to a given Mojo type.
 
     Parameters:
@@ -1590,40 +1595,17 @@ def _try_convert_arg[
         )
 
 
-def _try_convert_arg[
-    T: type_of(Int)
-](
-    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: Int
-) raises:
-    try:
-        result = T(py=py_args[argidx])
-    except convert_err:
-        raise Error(
-            "TypeError: ",
-            func_name,
-            "() expected argument at position ",
-            argidx,
-            " to be instance of (or convertible to) Mojo '",
-            reflect[T].name(),
-            "'; got '",
-            _get_type_name(py_args[argidx]),
-            "'. (Note: attempted conversion failed due to: ",
-            convert_err,
-            ")",
-        )
-
-
 # NOTE:
-#   @always_inline is needed so that the stack_allocation() that appears in
-#   the definition below is valid in the _callers_ stack frame, effectively
-#   allowing us to "return" a pointer to stack-allocated data from this
-#   function.
+#   @always_inline is needed so that the unsafe_stack_allocation() that
+#   appears in the definition below is valid in the _callers_ stack frame,
+#   effectively allowing us to "return" a pointer to stack-allocated data
+#   from this function.
 @always_inline
 def check_and_get_or_convert_arg[
     T: ConvertibleFromPython
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[T, MutAnyOrigin]:
+](func_name: StaticString, py_args: PythonObject, index: Int) raises -> Pointer[
+    T, MutAnyOrigin
+]:
     """Get the argument at the given index and convert it to a given Mojo type.
 
     If the argument cannot be directly downcast to the given type, it will be
@@ -1646,58 +1628,15 @@ def check_and_get_or_convert_arg[
     """
 
     # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, T]().as_unsafe_any_origin()
+    var converted_arg_ptr = unsafe_stack_allocation[
+        1, T
+    ]().as_unsafe_any_origin()
 
     try:
         return check_and_get_arg[T](func_name, py_args, index)
     except e:
         converted_arg_ptr.unsafe_write(
             _try_convert_arg[T](
-                func_name,
-                py_args,
-                index,
-            )
-        )
-        # Return a pointer to stack data. Only valid because this function is
-        # @always_inline.
-        return converted_arg_ptr
-
-
-@always_inline
-def check_and_get_or_convert_arg[
-    T: type_of(Int)
-](
-    func_name: StaticString, py_args: PythonObject, index: Int
-) raises -> UnsafePointer[Int, MutAnyOrigin]:
-    """Get the argument at the given index and convert it to a given Mojo type.
-
-    If the argument cannot be directly downcast to the given type, it will be
-    converted to it.
-
-    Parameters:
-        T: The Mojo type to downcast or convert the argument to.
-
-    Args:
-        func_name: The name of the function referenced in the error message if
-            the downcast fails.
-        py_args: The Python tuple object containing the arguments.
-        index: The index of the argument.
-
-    Returns:
-        A pointer to the Mojo value contained in or converted from the argument.
-
-    Raises:
-        If the argument cannot be downcast or converted to the given type.
-    """
-
-    # Stack space to hold a converted value for this argument, if needed.
-    var converted_arg_ptr = stack_allocation[1, Int]().as_unsafe_any_origin()
-
-    try:
-        return check_and_get_arg[Int](func_name, py_args, index)
-    except e:
-        converted_arg_ptr.unsafe_write(
-            _try_convert_arg[Int](
                 func_name,
                 py_args,
                 index,

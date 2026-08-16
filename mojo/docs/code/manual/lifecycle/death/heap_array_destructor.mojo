@@ -10,31 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.memory import alloc, dealloc, ThinAllocation
 
 
 struct HeapArray(Writable):
-    var data: UnsafePointer[Int, MutUntrackedOrigin]
+    var data: ThinAllocation[Int]
     var size: Int
 
     def __init__(out self, *values: Int):
         self.size = len(values)
-        self.data = alloc[Int](self.size)
+        self.data = alloc[Int]({count = self.size}).into_thin()
+        var ptr = self.data.unsafe_ptr()
         for i in range(self.size):
-            (self.data + i).unsafe_write(values[i])
+            ptr.unsafe_offset(i).unsafe_write(values[i])
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
+        var ptr = self.data.unsafe_ptr()
         for i in range(self.size):
-            writer.write(self.data[i])
+            writer.write(ptr[unsafe_offset=i])
             if i < self.size - 1:
                 writer.write(", ")
         writer.write("]")
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         print("Destroying", self.size, "elements")
+        var ptr = self.data.unsafe_ptr()
         for i in range(self.size):
-            (self.data + i).unsafe_deinit_pointee()
-        self.data.free()
+            ptr.unsafe_offset(i).unsafe_deinit_pointee()
+        dealloc(self.data^.unsafe_with_layout({count = self.size}))
 
 
 def main():

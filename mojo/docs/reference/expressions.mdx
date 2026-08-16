@@ -10,8 +10,8 @@ description: >
   and comprehensions.
 ---
 
-<!-- VERIFIED: ParserExprs.cpp, ExprNode.h, ParserBase.h,
-     ExprNodes.h -->
+{/* VERIFIED: ParserExprs.cpp, ExprNode.h, ParserBase.h,
+     ExprNodes.h */}
 
 An *expression* is any piece of code that produces a value.
 Expressions are the building blocks of computation: you combine
@@ -142,7 +142,7 @@ lists can include positional values and keyword arguments:
 {z=4, "foo"}     # initializer list with keyword argument
 ```
 
-Initializer lists are syntactic sugar for constructor calls.
+Initializer lists are syntactic sugar for initializer calls.
 `{1, "hello"}` is equivalent to `T(1, "hello")` when the
 type `T` is known from context. Use them for passing
 initialized instances as arguments:
@@ -280,23 +280,43 @@ This groups as
 
 ## Walrus operator
 
-Regular assignment (`=`) is a statement. It can't appear inside a larger
-expression. The walrus operator (also known as the assignment expression)
-`:=` is the expression form of assignment: it binds a value to a name and
-evaluates to that same value, so the result can be used immediately:
+Regular assignments (`=`) are statements, not expressions. They don't
+produce a value.
+
+The walrus operator (:=) is the expression form of assignment. It binds
+a value to a name and evaluates to that value. You can assign and use the
+result in a single step:
 
 ```mojo
+var n: Int
 if (n := len(items)) > 10:
     print(n)
 
+var name: String
 while (name := input("Prompt: ")) != "quit":
     print(name)
 ```
 
-The walrus operator introduces a new binding in a subordinate scope, such
-as an `if` clause, `for` loop, or `while` loop. It has the lowest
-precedence of any expression operator. Use parentheses to avoid ambiguity
-when needed.
+The name can be declared beforehand, as in the examples above, or introduced
+by the walrus itself. It's most often used for temporary values created as
+part of a statement, although the binding remains available for the rest of
+its scope.
+
+The value on the right side of a walrus assignment doesn't have to exist in
+memory. For example, it might be a computed value that exists only in
+registers. The walrus operator doesn't imply anything about ownership or
+reference semantics.
+
+The walrus operator has the lowest precedence of any expression operator.
+Use parentheses when needed to make your intent clear:
+
+```mojo
+if item := list[idx] < 50:        # binds comparison result
+    print(t"{item} is under 50")  # "True is under 50"
+
+if (item := list[idx]) < 50:      # binds list item
+    print(t"{item} is under 50")  # "(actual number) is under 50"
+```
 
 ## Compile-time expressions
 
@@ -351,6 +371,27 @@ def(T) -> T
 
 Function type expressions can include argument types with
 conventions, return types, and effects like `raises`.
+
+## Lambda expressions
+
+A `lambda` is an anonymous, single-expression function. Its arguments are
+parenthesized and typed, like a function declaration, and its body is a
+single expression with no `return`:
+
+```text
+lambda [[parameter-list]] [(argument-list)] [effects]
+       [{capture-list}] [-> ResultType] : expression
+```
+
+For example, this lambda returns its argument value incremented by 1:
+
+```mojo
+var inc = lambda (x: Int) {} -> Int: x + 1
+var y = inc(4)  # 5
+```
+
+For complete syntax, semantics, and examples, see the
+[lambda expressions reference](/docs/reference/lambda-expressions).
 
 ## Comprehension expressions
 

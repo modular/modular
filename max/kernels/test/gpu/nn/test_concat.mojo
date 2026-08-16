@@ -15,7 +15,7 @@ from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
-from std.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
@@ -120,11 +120,11 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     comptime B_SIZE = 32
 
-    @parameter
+    @__parameter
     @always_inline
     @__copy_capture(output_dyn)
     def epilogue_plus_one[
-        c_type: DType, _rank: Int, width: SIMDSize, *, alignment: Int
+        c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
@@ -156,7 +156,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         input_2_dyn,
         input_3_dyn,
     )
-    @parameter
+    @__parameter
     def run_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
             output_dyn.as_unsafe_any_origin(),
@@ -193,7 +193,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)
     ctx.synchronize()
 
-    def validate_results() raises {read}:
+    def validate_results() raises {imm}:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):
@@ -230,7 +230,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         input_2_dyn,
         input_3_dyn,
     )
-    @parameter
+    @__parameter
     def run_concat_gpu(ctx: DeviceContext) raises:
         # uses default stream
         _concat_gpu[

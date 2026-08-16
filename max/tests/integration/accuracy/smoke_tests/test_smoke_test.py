@@ -138,11 +138,9 @@ def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
     assert mtp_recipe.speculative.num_speculative_tokens == 3
 
     kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES[
-            "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar"
-        ]
+        MODEL_RECIPES["nvidia/Kimi-K2.7-Code-NVFP4"]
     )
-    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.5-NVFP4"
+    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.7-Code-NVFP4"
     assert kimi_recipe.speculative is not None
     assert kimi_recipe.speculative.num_speculative_tokens == 3
 
@@ -191,9 +189,9 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
-    # amd/MiniMax-M2.7-MXFP4 pins device_specs [0..7] and ep_size 8.
+    # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "amd/MiniMax-M2.7-MXFP4", gpu_spec=("AMD MI355X", 4)
+        "max", "amd/Kimi-K2.7-Code-MXFP4", gpu_spec=("AMD MI355X", 4)
     )
 
     assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
@@ -207,7 +205,7 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
-        "amd/MiniMax-M2.7-MXFP4",
+        "amd/Kimi-K2.7-Code-MXFP4",
         autoscale_devices=False,
         gpu_spec=("AMD MI355X", 4),
     )
@@ -222,8 +220,14 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
     monkeypatch.setattr(smoke_test, "_load_hf_repo_lock", lambda: {})
 
+    # MiniMaxAI/MiniMax-M2.7 has no MODEL_RECIPES entry anymore (retired from
+    # CI), but the "minimax-m2" vLLM workaround this test targets is specific
+    # to that architecture family, so pass the still-present recipe directly.
     cmd, env = smoke_test.get_server_cmd(
-        "vllm", "MiniMaxAI/MiniMax-M2.7", gpu_spec=("NVIDIA B200", 8)
+        "vllm",
+        "MiniMaxAI/MiniMax-M2.7",
+        recipe_path="max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
+        gpu_spec=("NVIDIA B200", 8),
     )
 
     assert "--enable-expert-parallel" in cmd
@@ -301,7 +305,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/Kimi-K2.5-NVFP4__eagle_tiered_kvconnector_tpep_ar",
+        "meta-llama/Llama-3.1-8B-Instruct__dflash",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -327,10 +331,8 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
         "max", alias, gpu_spec=("NVIDIA L40S", 1)
     )
 
-    assert cmd[:5] == [
-        ".venv-serve/bin/python",
-        "-m",
-        "max._entrypoints.pipelines",
+    assert cmd[:3] == [
+        ".venv-serve/bin/max",
         "serve",
         "--pretty-print-config",
     ]
@@ -340,3 +342,50 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     cfg_idx = cmd.index("--config-file")
     assert cmd[cfg_idx + 1] == recipe_path
     assert "--trust-remote-code" not in cmd
+
+
+def test_merge_serve_extra_args_appends_when_absent() -> None:
+    args = ["prog", "model", "--framework", "max-ci"]
+    merged = smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
+    assert merged == args + ["--serve-extra-args", "--kv-connector=tiered"]
+
+
+def test_merge_serve_extra_args_splices_into_two_token_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--max-batch-size=16"],
+        "--kv-connector=tiered",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args",
+        "--kv-connector=tiered --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_splices_into_equals_form() -> None:
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args=--max-batch-size=16"],
+        "--kv-connector=tiered",
+    )
+    assert merged == [
+        "prog",
+        "--serve-extra-args=--kv-connector=tiered --max-batch-size=16",
+    ]
+
+
+def test_merge_serve_extra_args_caller_value_goes_last_so_it_wins() -> None:
+    """The caller's value lands after the merged-in one, so the serve CLI's
+    last-wins parsing gives an explicit caller override of the same flag
+    precedence."""
+    merged = smoke_test.merge_serve_extra_args(
+        ["prog", "--serve-extra-args", "--kv-connector=null"],
+        "--kv-connector=tiered",
+    )
+    assert merged[2] == "--kv-connector=tiered --kv-connector=null"
+
+
+def test_merge_serve_extra_args_does_not_mutate_input() -> None:
+    args = ["prog", "--serve-extra-args", "--max-batch-size=16"]
+    snapshot = list(args)
+    smoke_test.merge_serve_extra_args(args, "--kv-connector=tiered")
+    assert args == snapshot

@@ -13,9 +13,10 @@
 
 import std.time
 
-from std.gpu import memory, sync, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from max.gpu import memory, sync
+from std.gpu import thread_idx
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 
 
 def copy_via_shared(
@@ -25,7 +26,9 @@ def copy_via_shared(
     var thread_id = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
+    ] = unsafe_stack_allocation[
+        16, Float32, address_space=AddressSpace.SHARED
+    ]()
     var src_global: UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
@@ -35,7 +38,7 @@ def copy_via_shared(
         mem_buff + thread_id,
     )
 
-    var m_barrier = stack_allocation[
+    var m_barrier = unsafe_stack_allocation[
         1, DType.int32, address_space=AddressSpace.SHARED
     ]()
     sync.mbarrier_init(m_barrier, 16)

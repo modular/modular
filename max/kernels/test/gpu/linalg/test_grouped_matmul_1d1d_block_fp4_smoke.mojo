@@ -18,8 +18,8 @@ block-scaled FP4 variants (e.g. NVFP4, MXFP4).
 """
 
 from std.math import ceildiv
-from std.gpu.host import DeviceContext
-from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceContext
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
 from std.utils.index import Index, IndexList
@@ -477,7 +477,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
 ]() raises:
     var ctx = DeviceContext()
 
-    @parameter
+    @__parameter
     @always_inline
     def test_grouped_1d1d_block_fp4[
         num_experts: Int,
@@ -630,7 +630,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
     # load method per expert based on group_size vs SF_MN_GROUP_SIZE.
     print("\n=== Grouped 1D1D NVFP4 Mixed-Expert Dynamic Switching Tests ===")
 
-    @parameter
+    @__parameter
     @always_inline
     def mixed4[
         num_experts: Int,

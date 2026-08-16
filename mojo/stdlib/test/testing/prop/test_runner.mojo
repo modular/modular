@@ -29,7 +29,6 @@ struct SimpleStrategy(Movable, Strategy):
 
 
 def test_prop_test_runner_propagates_error() raises:
-    @parameter
     def properties(_n: Int) raises:
         raise Error("prop test error 123")
 
@@ -41,7 +40,7 @@ def test_prop_test_runner_propagates_error() raises:
 struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
     comptime Value = Int
 
-    var list: UnsafePointer[List[Int], origin=Self.origin]
+    var list: Pointer[List[Int], origin=Self.origin]
 
     def value(self, mut rng: Rng) raises -> Self.Value:
         var random = rng.rand_int()
@@ -50,19 +49,17 @@ struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
 
 
 def test_prop_test_runner_executes_specified_number_of_runs() raises:
-    @parameter
     def properties(_n: Int) raises:
         pass
 
     var list = List[Int]()
-    var strategy = RecordingStrategy(UnsafePointer(to=list))
+    var strategy = RecordingStrategy(Pointer(to=list))
 
     PropTest(config=PropTestConfig(runs=10)).test[properties](strategy^)
     assert_equal(10, len(list))
 
 
 def test_prop_test_runner_using_same_seed_produces_deterministic_results() raises:
-    @parameter
     def properties(_n: Int) raises:
         pass
 
@@ -70,12 +67,12 @@ def test_prop_test_runner_using_same_seed_produces_deterministic_results() raise
 
     var initial_list = List[Int]()
     PropTest(config=config.copy()).test[properties](
-        RecordingStrategy(UnsafePointer(to=initial_list))
+        RecordingStrategy(Pointer(to=initial_list))
     )
 
     var second_list = List[Int]()
     PropTest(config=config^).test[properties](
-        RecordingStrategy(UnsafePointer(to=second_list))
+        RecordingStrategy(Pointer(to=second_list))
     )
 
     assert_equal(initial_list, second_list)
