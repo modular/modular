@@ -13,9 +13,10 @@
 
 from std.math import ceildiv
 
-from std.gpu import barrier, global_idx, thread_idx
-from std.gpu.host import DeviceContext
-from std.memory import stack_allocation
+from std.gpu import global_idx, thread_idx
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
+from std.memory import unsafe_stack_allocation
 from layout import TileTensor, Coord, Idx, row_major
 
 comptime BLOCK_DIM = 4
@@ -24,15 +25,24 @@ comptime BLOCK_DIM = 4
 def stencil2d(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    num_rows: Int,
-    num_cols: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
-    coeff3: Int,
-    coeff4: Int,
+    arr_size_dev: Int32,
+    num_rows_dev: Int32,
+    num_cols_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
+    coeff3_dev: Int32,
+    coeff4_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var num_rows = Int(num_rows_dev)
+    var num_cols = Int(num_cols_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
+    var coeff3 = Int(coeff3_dev)
+    var coeff4 = Int(coeff4_dev)
     var tidx = global_idx.x
     var tidy = global_idx.y
 
@@ -56,15 +66,24 @@ def stencil2d(
 def stencil2d_smem(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
-    arr_size: Int,
-    num_rows: Int,
-    num_cols: Int,
-    coeff0: Int,
-    coeff1: Int,
-    coeff2: Int,
-    coeff3: Int,
-    coeff4: Int,
+    arr_size_dev: Int32,
+    num_rows_dev: Int32,
+    num_cols_dev: Int32,
+    coeff0_dev: Int32,
+    coeff1_dev: Int32,
+    coeff2_dev: Int32,
+    coeff3_dev: Int32,
+    coeff4_dev: Int32,
 ):
+    # `Int` is not device-passable; widen the fixed-width args.
+    var arr_size = Int(arr_size_dev)
+    var num_rows = Int(num_rows_dev)
+    var num_cols = Int(num_cols_dev)
+    var coeff0 = Int(coeff0_dev)
+    var coeff1 = Int(coeff1_dev)
+    var coeff2 = Int(coeff2_dev)
+    var coeff3 = Int(coeff3_dev)
+    var coeff4 = Int(coeff4_dev)
     var tidx = global_idx.x
     var tidy = global_idx.y
     var lindex_x = thread_idx.x + 1
@@ -73,7 +92,7 @@ def stencil2d_smem(
     var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
     var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
 
-    var a_shared_ptr = stack_allocation[
+    var a_shared_ptr = unsafe_stack_allocation[
         (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
         DType.float32,
         address_space=AddressSpace.SHARED,
@@ -168,14 +187,14 @@ def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
         ctx.enqueue_function[func_select](
             a_device,
             b_device,
-            m,
-            num_rows,
-            num_cols,
-            coeff0,
-            coeff1,
-            coeff2,
-            coeff3,
-            coeff4,
+            Int32(m),
+            Int32(num_rows),
+            Int32(num_cols),
+            Int32(coeff0),
+            Int32(coeff1),
+            Int32(coeff2),
+            Int32(coeff3),
+            Int32(coeff4),
             grid_dim=(
                 ceildiv(num_rows, BLOCK_DIM),
                 ceildiv(num_cols, BLOCK_DIM),

@@ -41,31 +41,110 @@ from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
+import numpy as np
 from max.experimental.cascade.core import Runtime, Worker
 
 
-async def _read_framed(stream: aiohttp.StreamReader) -> AsyncIterator[bytes]:
-    """Yield envelopes off a 4-byte length-prefixed byte stream."""
+async def _read_framed(
+    stream: aiohttp.StreamReader,
+) -> AsyncIterator[list[bytes]]:
+    """Yield batches of 4-byte length-prefixed envelopes off ``stream``.
+
+    Each batch is the set of complete frames already buffered together when the
+    consumer next looked. ``StreamReader.readany`` returns *all* currently
+    buffered bytes (blocking only when the buffer is empty), so a single wake
+    scoops the whole backlog: while a synchronous detokenize call holds the
+    event loop, inbound frames pile up in the socket buffer, and the next drain
+    returns them in one go. Under light load a batch is a single frame, so the
+    behaviour matches one-at-a-time reading -- the back-pressure is natural.
+    """
+    buf = bytearray()
+
     while True:
-        try:
-            header = await stream.readexactly(4)
-        except asyncio.IncompleteReadError as exc:
-            if not exc.partial:
-                return  # 0 bytes left = clean EOF
-            raise
-        (length,) = struct.unpack(">I", header)
-        yield await stream.readexactly(length)
+        # Parse against a sliding offset and compact once per drain. Dropping
+        # each frame from the front as it is parsed would memmove the whole
+        # remaining backlog per frame, which is quadratic in the batch size --
+        # and large batches are exactly what this function exists to serve.
+        frames: list[bytes] = []
+        pos = 0
+        while len(buf) - pos >= 4:
+            (length,) = struct.unpack_from(">I", buf, pos)
+            if len(buf) - pos < 4 + length:
+                break
+            frames.append(bytes(buf[pos + 4 : pos + 4 + length]))
+            pos += 4 + length
+        del buf[:pos]
+
+        if frames:
+            yield frames
+            continue
+        chunk = await stream.readany()
+        if not chunk:  # EOF
+            if buf:
+                # Whatever is left is one truncated frame. Its header, if it
+                # arrived at all, says how long the frame should have been.
+                expected = (
+                    4 + struct.unpack_from(">I", buf, 0)[0]
+                    if len(buf) >= 4
+                    else 4
+                )
+                raise asyncio.IncompleteReadError(bytes(buf), expected)
+            return
+        buf += chunk
+
+
+def _coalesce_token_arrays(values: list[object]) -> list[object]:
+    """Merge a run of 1-D ``int32`` arrays (the token stream) into one array.
+
+    Frames that the transport drained together are handed to the detokenizer as
+    a single concatenated array, so it amortizes one HuggingFace ``decode`` over
+    many tokens instead of one per token. The gate is deliberately narrow: the
+    token stream is the only 1-D ``int32`` ndarray stream, so streamed image
+    frames (multi-dim ``uint8``) and every non-array value (text, latent dicts)
+    pass through unchanged, one item per frame, and are never corrupted by
+    concatenation.
+    """
+    out: list[object] = []
+    run: list[np.ndarray] = []
+
+    def _flush() -> None:
+        if len(run) > 1:
+            out.append(np.concatenate(run))
+        elif run:
+            out.append(run[0])
+        run.clear()
+
+    for value in values:
+        if (
+            isinstance(value, np.ndarray)
+            and value.ndim == 1
+            and value.dtype == np.int32
+        ):
+            run.append(value)
+        else:
+            _flush()
+            out.append(value)
+    _flush()
+    return out
+
+
+# aiohttp's default connection-pool limit is 100. Streaming ``call_method``
+# calls hold a connection open for the whole generation, so under concurrent
+# serving that cap deadlocks dispatch well before the model saturates (e.g. 600
+# in-flight requests starve on 100 connections). ``limit=0`` removes the cap;
+# the model worker's own scheduler bounds real concurrency downstream.
+_CONNECTION_LIMIT = 0
 
 
 def _connector_for(address: str) -> aiohttp.BaseConnector:
     """Build the right aiohttp connector for an ``http://`` or ``unix://`` URL."""
     parsed = urlparse(address)
     if parsed.scheme == "http":
-        return aiohttp.TCPConnector()
+        return aiohttp.TCPConnector(limit=_CONNECTION_LIMIT)
     if parsed.scheme == "unix":
         if not parsed.path:
             raise ValueError(f"unix:// address requires a path: {address!r}")
-        return aiohttp.UnixConnector(path=parsed.path)
+        return aiohttp.UnixConnector(path=parsed.path, limit=_CONNECTION_LIMIT)
     raise ValueError(f"Unsupported address scheme: {address!r}")
 
 
@@ -211,12 +290,19 @@ class HttpRuntimeProxy(Runtime):
             ) as response,
         ):
             response.raise_for_status()
-            async for payload in _read_framed(response.content):
-                ok, value = pickle.loads(payload)
-                if ok:
-                    yield value
-                else:
-                    raise value
+            async for batch in _read_framed(response.content):
+                values: list[object] = []
+                for payload in batch:
+                    ok, value = pickle.loads(payload)
+                    if not ok:
+                        # Surface any good items drained ahead of the error
+                        # frame, then raise.
+                        for item in _coalesce_token_arrays(values):
+                            yield item
+                        raise value
+                    values.append(value)
+                for item in _coalesce_token_arrays(values):
+                    yield item
 
     async def get_metrics(self) -> str:
         """Fetch Prometheus exposition text from the server."""

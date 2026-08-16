@@ -14,11 +14,10 @@
 from std.math import ceildiv
 from std.sys import simd_width_of
 
-from std.gpu import barrier
-from std.gpu.host import DeviceContext
+from max.gpu.sync import barrier
+from max.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
-from std.gpu.memory import (
-    AddressSpace,
+from max.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_all,
 )
@@ -41,7 +40,7 @@ from std.utils import IndexList
 
 @always_inline
 def add_op[
-    dtype: DType, width: SIMDSize
+    dtype: DType, width: SIMDLength
 ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return lhs + rhs
 

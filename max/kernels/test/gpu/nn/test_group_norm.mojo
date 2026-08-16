@@ -16,7 +16,7 @@ import std.math as math
 from std.math import rsqrt
 from std.sys import simd_width_of
 
-from std.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal, assert_true
@@ -90,7 +90,7 @@ def run_group_norm_gpu[
 
     @__copy_capture(data_buf)
     @always_inline
-    @parameter
+    @__parameter
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
@@ -100,14 +100,14 @@ def run_group_norm_gpu[
 
     @__copy_capture(gamma)
     @always_inline
-    @parameter
+    @__parameter
     def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
         return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
-    @parameter
+    @__parameter
     def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
         return beta.raw_load[width=width](idx)

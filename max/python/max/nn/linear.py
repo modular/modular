@@ -55,18 +55,27 @@ class Linear(Module, Shardable):
 
     .. code-block:: python
 
+        from max.driver import Accelerator, CPU, accelerator_count
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType
+        from max.nn import Linear
+
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         linear_layer = Linear(
             in_dim=256,
             out_dim=128,
             dtype=DType.float32,
-            device=DeviceRef.GPU(),
+            device=device_ref,
             name="linear",
             has_bias=True
         )
 
-        # Input tensor of shape: [batch, ..., 256]
-        input_tensor: TensorValue
-        output = linear_layer(input_tensor)
+        input_type = TensorType(DType.float32, [1, 256], device=device_ref)
+        with Graph("linear", input_types=[input_type]) as graph:
+            output = linear_layer(graph.inputs[0])
+            graph.output(output)
     """
 
     weight: Weight
@@ -219,6 +228,10 @@ class Linear(Module, Shardable):
             k_dim = int(self.weight.shape[1])
             if quant_config.is_fp4:
                 k_dim *= 2  # FP4 weights are packed 2x as uint8
+            elif quant_config.is_mxfp6:
+                # Four 6-bit codes per three bytes. Exact: K is a multiple of
+                # 32, so the packed width is always a multiple of 3.
+                k_dim = k_dim * 4 // 3
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),
@@ -639,16 +652,19 @@ class ColumnParallelLinear(Linear):
 
     .. code-block:: python
 
+        from max.driver import Accelerator, CPU, accelerator_count
         from max.dtype import DType
         from max.graph import DeviceRef
         from max.nn import ColumnParallelLinear
 
-        num_devices = 4
+        device = Accelerator() if accelerator_count() > 0 else CPU()
+        device_ref = DeviceRef.from_device(device)
+
         distributed_linear = ColumnParallelLinear(
-            in_dim,
-            out_dim,
+            256,
+            128,
             DType.float32,
-            devices=[DeviceRef.GPU(i) for i in range(num_devices)],
+            devices=[device_ref],
         )
     """
 

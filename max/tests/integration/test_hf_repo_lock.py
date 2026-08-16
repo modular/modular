@@ -13,12 +13,13 @@
 
 import logging
 import re
+from collections.abc import Iterator
 
 import hf_repo_lock
 import pytest
 from max import pipelines
 from pytest_mock import MockerFixture
-from test_common.mocks import DummyPipelineConfig
+from test_common.mocks import DummyPipelineConfig, patched_hf_construction
 from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 
 logger = logging.getLogger("max.pipelines")
@@ -26,6 +27,17 @@ logger = logging.getLogger("max.pipelines")
 EXAMPLE_KEY = "000EXAMPLE-for-unit-test/repo"
 EXAMPLE_VALUE = "0123456789abcdef0123456789abcdef01234567"
 EXAMPLE_NONEXISTENT_KEY = "000EXAMPLE-for-unit-test/nonexistent"
+
+
+@pytest.fixture(autouse=True)
+def _offline_hf_construction() -> Iterator[None]:
+    """Keep ``MAXModelConfig`` construction offline (CI runs
+    ``HF_HUB_OFFLINE=1``): ``__init__`` eagerly builds the HuggingFace repo
+    handles. Real cached repos resolve normally; uncached/placeholder repos
+    get a fake path.
+    """
+    with patched_hf_construction():
+        yield
 
 
 def test_load_db() -> None:

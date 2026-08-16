@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -12,7 +13,7 @@ _FILECHECK_TESTS = [
     mojo_filecheck_test(
         name = src + ".test",
         srcs = [src],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "--debug-level",
             "full",
         ],
@@ -38,7 +39,7 @@ _EXPLICIT_DEP_TESTS = [
 mojo_test(
     name = "test_tile_codegen_elementwise_fusion.mojo.test",
     srcs = ["test_tile_codegen_elementwise_fusion.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "--debug-level",
         "full",
     ],
@@ -57,7 +58,7 @@ mojo_test(
 mojo_test(
     name = "test_foreach_fusion_tile_gpu.mojo.test",
     srcs = ["test_foreach_fusion_tile_gpu.mojo"],
-    copts = [
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
         "--debug-level",
         "full",
     ],
@@ -82,7 +83,7 @@ mojo_test(
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        copts = [
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
             "--debug-level",
             "full",
         ],

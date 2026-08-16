@@ -138,7 +138,7 @@ struct MyStruct(Sized, Writable):
     def __init__(out self, *, copy: Self)
     def __init__(out self, *, deinit move: Self)
 
-    def __del__(...)
+    def __deinit__(...)
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -386,15 +386,15 @@ debug_assert(actual == expected, "expected: ", expected, " but got: ", actual)
 Make sure that you don't allocate anything in the call to `debug_assert` to
 ensure there is no runtime penalty when assertions are disabled. If you must
 have a side-effect in the condition such as allocating a `String`, you can pass
-a closure as a parameter that only runs when assertions are enabled:
+a closure that only runs when assertions are enabled:
 
 ```mojo
 tensor = Tensor[DType.uint8, 1](TensorShape(1), cpu_device())
 
-def _test_cpu() capturing -> Bool:
+def _test_cpu() {tensor} -> Bool:
     return "cpu" in String(tensor._device)
 
-debug_assert[_test_cpu]("This code is only runnable on CPU")
+debug_assert(_test_cpu, "This code is only runnable on CPU")
 ```
 
 ### Target Specific Code

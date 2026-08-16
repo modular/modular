@@ -24,7 +24,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
-from max.experimental.cascade.pipelines.imgen import (
+from max.experimental.cascade.interfaces.imgen import (
     ImageGenInterface,
     ImageGenRequest,
 )

@@ -26,13 +26,13 @@ accumulator type. Verify D[i] is close to the original A[i].
 from std.sys.info import _accelerator_arch
 
 from std.gpu import WARP_SIZE
-from std.gpu.compute.arch.mma_apple import (
+from max.gpu.compute.arch.mma_apple import (
     _mma_apple,
     _mma_apple_transposable,
     apple_mma_load,
     apple_mma_store,
 )
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 
 comptime _N = 16
 comptime _NUM_ELEMENTS = _N * _N

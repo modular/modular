@@ -51,7 +51,7 @@
 #   2 = write an out-of-range index -> trips the validity contract under diff.
 
 from std.collections import Set
-from std.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext
 from std.math import ceildiv, max, min, sqrt
 from std.random import randn, random_ui64, seed as set_seed
 from std.sys.defines import get_defined_int
@@ -304,7 +304,7 @@ def run_one_case(
     var sl_host = ctx.enqueue_create_host_buffer[DType.uint32](batch)
     var cro_host = ctx.enqueue_create_host_buffer[DType.uint32](batch + 1)
     _fill_stable(q_host.as_span(), spec.dist)
-    _fill_stable(Span(ptr=k_host.unsafe_ptr(), length=k_n), spec.dist)
+    _fill_stable(Span(unsafe_ptr=k_host.unsafe_ptr(), length=k_n), spec.dist)
     for j in range(k_pad):
         k_host[k_n + j] = Scalar[kv_type](5.0)
     var running: UInt32 = 0

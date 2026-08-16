@@ -32,7 +32,7 @@ kernels can reuse them:
 defends against the classic Lamport write-after-read hazard, so the kernel body
 and any future consumer share identical generation semantics.
 
-See `.agentwork/kernels/designs/lamport-allreduce.md` (KERN-2870), section
+See the internal Lamport allreduce design doc, section
 "Design > 1. Shared sentinel primitive", for the protocol context.
 """
 

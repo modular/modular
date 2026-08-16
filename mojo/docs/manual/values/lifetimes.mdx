@@ -4,6 +4,8 @@ sidebar_position: 4
 description: Working with origins and references.
 ---
 
+<!-- markdownlint-disable MD033 -->
+
 The Mojo compiler includes a lifetime checker, a compiler pass that analyzes
 dataflow through your program. It identifies when variables are valid and
 inserts destructor calls when a variable's lifetime ends.
@@ -23,7 +25,7 @@ def print_str(s: String):
     print(s)
 
 def main():
-    name: String = "Joan"
+    var name: String = "Joan"
     print_str(name)
 ```
 
@@ -52,7 +54,7 @@ However, in some cases you'll need to interact with origins directly:
 
 - When working with types like
   [`Pointer`](/docs/std/memory/pointer/Pointer/) or
-  [`Span`](/docs/std/memory/span/Span/) which are parameterized on the
+  [`Span`](/docs/std/collections/span/Span/) which are parameterized on the
   origin of the data they refer to.
 
 This section also covers [`ref` arguments](#ref-arguments) and
@@ -71,16 +73,16 @@ values, so values aren't destroyed prematurely.
 ### Origin types
 
 Mojo supplies a struct and a set of type aliases (`comptime` values) that you
-can use to specify origin types. As the names suggest, the `ImmutOrigin` and
+can use to specify origin types. As the names suggest, the `ImmOrigin` and
 `MutOrigin` `comptime` values represent immutable and mutable origins,
 respectively:
 
 ```mojo
-struct ImmutRef[origin: ImmutOrigin]:
+struct ImmutRef[origin: ImmOrigin]:
     pass
 ```
 
-Or you can use the [`Origin`](/docs/std/builtin/type_aliases/Origin/)
+Or you can use the [`Origin`](/docs/std/origin/Origin/)
 struct to specify an origin with parametric mutability:
 
 ```mojo
@@ -107,8 +109,8 @@ value.
 from std.memory import Pointer
 
 def use_pointer():
-    a = 10
-    ptr = Pointer(to=a)
+    var a = 10
+    var ptr = Pointer(to=a)
 ```
 
 ### Origin sets
@@ -126,32 +128,31 @@ an [origin union](#origin-unions).
 Most origin values are created by the compiler. As a developer, there are a
 few ways to specify origin values:
 
-- Static origin. The `StaticConstantOrigin` `comptime` value
+- Static origin. The `ImmStaticOrigin` `comptime` value
   represents immutable values that last for the duration of the program.
-  String literal values have a `StaticConstantOrigin`.
+  String literal values have a `ImmStaticOrigin`.
 - Derived origin. The `origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
 - Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
 - Untracked origins. The untracked origins, `MutUntrackedOrigin` and
-  `ImmutUntrackedOrigin` represent values that are not tracked by the lifetime
+  `ImmUntrackedOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-- Wildcard origins. The `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
+- Wildcard origins. The `ImmUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`
   `comptime` values are special cases indicating a reference that might access
   any live value.
 
 #### Static origins
 
-You can use the static origin `StaticConstantOrigin` when you have a
+You can use the static origin `ImmStaticOrigin` when you have a
 value that exists for the entire duration of the program.
 
 For example, the `StringLiteral` method
 [`as_string_slice()`](/docs/std/builtin/string_literal/StringLiteral/#as_string_slice)
-returns a
-[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice/) pointing
-to the original string literal. String literals are static—they're allocated at
-compile time and never destroyed—so the slice is created with an immutable,
-static origin.
+returns a [`StringSpan`](/docs/std/collections/string/string_span/StringSpan/)
+pointing to the original string literal. String literals are static—they're
+allocated at compile time and never destroyed—so the slice is created with an
+immutable, static origin.
 
 #### Derived origins
 
@@ -230,12 +231,12 @@ inferred origin.
 
 #### Untracked origins
 
-The untracked origins, `MutUntrackedOrigin` and `ImmutUntrackedOrigin` represent
+The untracked origins, `MutUntrackedOrigin` and `ImmUntrackedOrigin` represent
 values that do not alias any existing value. That is, they point to memory that
 is not owned by any other variable, and are therefore not tracked by the
 lifetime checker. For example, the
-[`alloc()`](/docs/std/memory/unsafe_pointer/alloc/) function returns an
-`UnsafePointer` to a new dynamically-allocated block of memory, with the origin
+[`alloc()`](/docs/std/memory/alloc/alloc/) function returns an
+`Allocation` for a new dynamically-allocated block of memory, with the origin
 `MutUntrackedOrigin`. The origin indicates that the memory is not managed by the
 Mojo ownership system. When you use an unsafe API like this, you're responsible
 for managing the lifetime yourself: for example, a struct that allocates memory
@@ -243,7 +244,7 @@ should generally free that memory in its destructor.
 
 #### Wildcard origins
 
-The wildcard origins, `ImmutUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
+The wildcard origins, `ImmUnsafeAnyOrigin` and `MutUnsafeAnyOrigin`, are
 special cases indicating a reference that might access any live value. These
 were previously widely used for unsafe pointers. Using a pointer with a wildcard
 origin into a scope effectively disables Mojo's ASAP destruction for any values
@@ -276,9 +277,9 @@ to use a `ref` argument:
 - You want to tie the lifetime of one argument to the lifetime of another
   argument.
 
-- When you want an argument that is guaranteed to be passed in memory: this can
-  be important and useful for generic arguments that need an identity,
-  irrespective of whether the concrete type is register passable.
+- When you want an argument that is guaranteed to be passed in memory: this
+  can be useful for parameterized arguments that need an identity, whether
+  or not the concrete type is register passable.
 
 The syntax for a `ref` argument is:
 
@@ -305,7 +306,7 @@ specifier can be either:
   ref[self]
   ```
 
-- An [`AddressSpace`](/docs/std/memory/pointer/AddressSpace/) value.
+- An [`AddressSpace`](/docs/std/memory/address_space/AddressSpace/) value.
 
 - An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
@@ -316,20 +317,19 @@ specifier can be either:
   ```
 
 You can also name the origin explicitly. This is useful if you want to
-restrict the argument to either a `ImmutOrigin` or `MutOrigin`, or if
-you want to bind a function's return value to the origin of an argument.
+restrict the argument to either a `ImmOrigin` or `MutOrigin`, or if you
+want to bind a function's return value to the origin of an argument.
 
-For example, the `Span` type is a non-owning view of contiguous data (like a
-substring of a string, or a subset of a list). Because it points to data that it
-doesn't own, it is parameterized on an origin value that represents the lifetime
-and ownership of the data it points to.
+For example, the `Span` type is a non-owning view of contiguous data (like
+a substring of a string, or a subset of a list). Because it points to data
+that it doesn't own, it is parameterized on an origin value that represents
+the lifetime and ownership of the data it points to.
 
-In the following example, the `to_byte_span()` function takes a `List[Byte]` and
-returns a `Span[Byte]` with the same origin as the list:
+In the following example, the `to_byte_span()` function takes a
+`List[Byte]` and returns a `Span[Byte]` with the same origin as the list:
 
 ```mojo
-from std.collections import List
-from std.memory import Span
+from std.collections import List, Span
 
 def to_byte_span[
     is_mutable: Bool,
@@ -339,7 +339,7 @@ def to_byte_span[
     return Span(list)
 
 def main():
-    list: List[Byte] = [77, 111, 106, 111]
+    var list: List[Byte] = [77, 111, 106, 111]
     _ = to_byte_span(list)
 ```
 
@@ -368,7 +368,7 @@ and `__setitem__()` dunder methods. These are invoked to read from and write to
 a subscripted item in a collection:
 
 ```mojo
-value = list[a]
+var value = list[a]
 list[b] += 10
 ```
 
@@ -395,14 +395,14 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names[0]] String:
         if (index >=0 and index < len(self.names)):
             return self.names[index]
         else:
             raise Error("index out of bounds")
 
 def main() raises:
-    list = NameList("Thor", "Athena", "Dana", "Vrinda")
+    var list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)
     name += "?"
@@ -447,7 +447,7 @@ def pass_immutable_list(list: NameList) raises:
     # list[2] += "?" # Error, this list is immutable
 
 def main() raises:
-    list = NameList("Sophie", "Jack", "Diana")
+    var list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)
 ```
 
@@ -476,3 +476,5 @@ this function must use the union origin `[a, b]`. This ensures that the compiler
 extends the lifetime of *both* values as long as the returned reference is live.
 
 The returned reference is mutable if **both** `a` and `b` are mutable.
+
+<!-- markdownlint-enable MD033 -->

@@ -68,13 +68,15 @@ struct Point:
         )
 
 def main():
-    p = Point(3, 4)
+    var p = Point(3, 4)
     print(p.distance()) # 5.0
 ```
 
 ## Struct body elements
 
 A struct body can contain these elements:
+
+<!-- markdownlint-disable MD013 -->
 
 | Element               | Syntax                        | Role                       |
 |-----------------------|-------------------------------|----------------------------|
@@ -83,7 +85,9 @@ A struct body can contain these elements:
 | Static method         | `@staticmethod def name(...)` | Type-level behavior        |
 | Compile-time constant | `comptime name = value`       | Evaluated at compile time  |
 | Initializer           | `def __init__(out self, ...)` | Constructs an instance     |
-| Destructor            | `def __del__(deinit self)`    | Cleanup at end of lifetime |
+| Destructor            | `def __deinit__(deinit self)` | Cleanup at end of lifetime |
+
+<!-- markdownlint-enable MD013 -->
 
 The most minimal struct uses `pass` for an empty body:
 
@@ -130,7 +134,7 @@ struct Unsound:
     var item: Writable  # Error because dynamic traits not supported
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable & ImplicitlyDeletable]:
+struct Sound[T: Writable & Copyable & Deinitable]:
     var item: Self.T    # OK: concrete at compile time
 
 def main():
@@ -151,7 +155,7 @@ struct Color:
     var b: UInt8
 
 def main():
-    color = Color(255, 0, 0)
+    var color = Color(255, 0, 0)
     print(color.r, color.g, color.b)  # 255, 0, 0
 ```
 
@@ -181,7 +185,7 @@ stores another instance of itself, even when nested within an Optional:
 ```mojo
 struct Node:
     var value: String
-    var next: Optional[Node]  # Error about this being a recursive 
+    var next: Optional[Node]  # Error about this being a recursive
                               # reference
 ```
 
@@ -197,7 +201,7 @@ valid in the struct body:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable]:
+struct Pair[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -216,7 +220,7 @@ struct MyInt(Writable, Copyable):
         writer.write(self.value)
 
 def main():
-    my_int = MyInt(42)
+    var my_int = MyInt(42)
     print(my_int)  # 42
 ```
 
@@ -238,7 +242,7 @@ A conformance list accepts traits and conditional `where` clauses:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var first: Self.T
@@ -248,13 +252,13 @@ struct Pair[T: Copyable & ImplicitlyDeletable](
 ### Implicit conformances
 
 The compiler automatically conforms every struct to `AnyType` and
-`ImplicitlyDeletable` when all members are also implicitly deletable.
-With generics, the parameter's traits must include `ImplicitlyDeletable`
+`Deinitable` when all members are also `Deinitable`. With
+parameterized types, the parameter's traits must include `Deinitable`
 for this to apply:
 
 ```mojo
 @fieldwise_init
-struct Box[T: Copyable & ImplicitlyDeletable](
+struct Box[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable)
 ):
     var item: Self.T
@@ -264,8 +268,8 @@ def main():
     print(box.item)  # OK
 ```
 
-Without `ImplicitlyDeletable`, the compiler can't verify that the struct
-is safe to destroy using the built-in `__del__()` destructor:
+Without `Deinitable`, the compiler can't verify that the struct
+is safe to destroy using the built-in `__deinit__()` destructor:
 
 ```mojo
 @fieldwise_init
@@ -290,7 +294,7 @@ support the operation:
 ```mojo
 struct Unsound(Copyable):
     var item: SomeMoveOnlyType
-    # Error: cannot synthesize copy constructor because
+    # Error about synthesizing the copy initializer because
     # field 'item' has non-copyable type SomeMoveOnlyType
 ```
 
@@ -389,11 +393,11 @@ struct Point(Writable):
     var y: Float64
 ```
 
-Consider a generic version of this `Pair` type:
+Consider a parameterized version of this `Pair` type:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable]:
+struct Pair[T: Copyable & Deinitable]:
     var first: Self.T
     var second: Self.T
 ```
@@ -409,7 +413,7 @@ conforms to `Writable` only when its fields do. Test the `T` type with
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Writable where conforms_to(T, Writable)
 ):
     var first: Self.T
@@ -421,7 +425,7 @@ You can print `Pair[Int]` because `Int` is `Writable`, but not
 
 ```mojo
 @fieldwise_init
-struct NotWritable(ImplicitlyCopyable & ImplicitlyDeletable):
+struct NotWritable(ImplicitlyCopyable & Deinitable):
     var item: Int
 
 def main():
@@ -437,7 +441,7 @@ conformance list:
 
 ```mojo
 @fieldwise_init
-struct Pair[T: Copyable & ImplicitlyDeletable](
+struct Pair[T: Copyable & Deinitable](
     Equatable where conforms_to(T, Equatable),
     Writable where conforms_to(T, Writable),
     Copyable
@@ -513,7 +517,7 @@ struct Point:
         (self.x, self.y) = (x, y)
 
 def main():
-    p = Point(3.0, 4.0)
+    var p = Point(3.0, 4.0)
     print(p.x, p.y)  # 3.0 4.0
 ```
 
@@ -534,22 +538,22 @@ overloads.
 
 ## Instance tear-down with destructors
 
-`__del__()` runs when the compiler detects no further access to an instance.
-Its `self` uses the `deinit` convention:
+`__deinit__()` runs when the compiler detects no further access to an
+instance. Its `self` uses the `deinit` convention:
 
 ```mojo
-def __del__(deinit self):
+def __deinit__(deinit self):
     print("cleaning up")
 ```
 
-Implicitly deletable structs get a default `__del__()`. A custom `__del__()`
-overrides the default. `__del__()` can't be overloaded.
+Implicitly deletable structs get a default `__deinit__()`. A custom
+`__deinit__()` overrides the default. `__deinit__()` can't be overloaded.
 
 :::note
 Explicitly destroyed structs write their own cleanup logic, using a
 consuming method with `deinit self`.
 
-Opt out with `ImplicitlyDeletable where False`.
+Opt out with `Deinitable where False`.
 :::
 
 ## `comptime` members

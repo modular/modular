@@ -15,11 +15,11 @@ models, as they follow the most stable and established implementation paradigms.
 :::note Stable and experimental APIs
 
 Most guides in this section demonstrate usage of the
-[`max.graph`](/max/api/python/graph) and [`max.nn`](/max/api/python/nn)
+[`max.graph`](/api/python/graph) and [`max.nn`](/api/python/nn)
 packages. These are the stable APIs used by all production MAX model
 architectures. However, MAX also provides an experimental API
-([`max.experimental`](/max/api/python/experimental)) that you can learn about in
-the [Eager fundamentals](/max/develop/eager-execution/) section. Be aware that
+([`max.experimental`](/api/python/experimental)) that you can learn about in
+the [Eager fundamentals](/develop/eager-execution/) section. Be aware that
 its namespace may change in the future as the API matures.
 
 :::
@@ -83,8 +83,8 @@ as `Linear`, `MLP`, `AttentionWithRope`, `Embedding`, `RMSNorm`, `Transformer`,
 model-specific behavior (such as novel attention or custom MoE gating).
 
 Learn more in
-[Build a model graph with Module](/max/develop/modules/), and see [Write a
-custom layer](/max/develop/layers/) for components like these.
+[Build a model graph with Module](/develop/modules/), and see [Write a
+custom layer](/develop/layers/) for components like these.
 
 ### Weight adapter
 
@@ -93,7 +93,7 @@ your `Module` hierarchy. Usually this is simple string replacement: the Llama 3
 adapter just strips a `"model."` prefix. The adapter is registered in
 `SupportedArchitecture` and runs once when MAX loads the model.
 
-Learn more in [Weight adapters](/max/develop/weight-adapters/).
+Learn more in [Weight adapters](/develop/weight-adapters/).
 
 ### Pipeline model
 
@@ -114,7 +114,7 @@ runtime and is responsible for:
 - **Execution**: Its `execute()` function is called by the serving loop to run
   the compiled model and return the logits.
 
-Learn more in [Model pipelines](/max/develop/pipelines/).
+Learn more in [Model pipelines](/develop/pipelines/).
 
 ### Configuration
 
@@ -126,7 +126,7 @@ necessary because Hugging Face configs aren't standardized across model families
 (different field names, nesting conventions, derived vs. explicit values).
 
 Learn more in
-[Serve custom model architectures](/max/develop/serve-custom-model-architectures/).
+[Serve custom model architectures](/develop/serve-custom-model-architectures/).
 
 ### Architecture registry
 
@@ -139,7 +139,7 @@ serves a model based on a Hugging Face repo ID, MAX looks up this registration
 to find your code.
 
 Learn more in
-[Serve custom model architectures](/max/develop/serve-custom-model-architectures/).
+[Serve custom model architectures](/develop/serve-custom-model-architectures/).
 
 ## Deploy your model
 
@@ -148,7 +148,8 @@ optionally contribute it back to MAX so everybody can use it.
 
 ### Test locally
 
-Use the `--custom-architectures` flag to serve a model with your local
+Use the `--custom-architectures` flag to
+[serve a model](/develop/serve-custom-model-architectures/) with your local
 architecture implementation.
 
 ```bash
@@ -156,8 +157,8 @@ max serve --model your-org/your-model \
   --custom-architectures path/to/your/architecture
 ```
 
-For details, see
-[Serve custom model architectures](/max/develop/serve-custom-model-architectures/).
+Once you can serve your model, you can validate its output using [logit
+comparison](/develop/logit-comparison/).
 
 ### Contribute to MAX
 
