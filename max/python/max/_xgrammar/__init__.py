@@ -314,6 +314,7 @@ class GrammarCompiler:
         require_object_root: bool = False,
         reject_unsupported: bool = False,
         separators: tuple[str, str] | None = None,
+        max_whitespace_cnt: int | None = None,
     ) -> CompiledGrammar:
         return self._impl.compile_json_schema(
             schema,
@@ -322,6 +323,7 @@ class GrammarCompiler:
             require_object_root=require_object_root,
             reject_unsupported=reject_unsupported,
             separators=separators,
+            max_whitespace_cnt=max_whitespace_cnt,
         )
 
     def compile_grammar(
